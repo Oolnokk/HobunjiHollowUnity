@@ -11426,7 +11426,7 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "suffix",
       "nameAffix": "Kylie",
-      "toolWorthy": false
+      "toolWorthy": true
     },
     "pick-shovel": {
       "label": "Pick-pommeled Long-haft",
@@ -11711,7 +11711,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         }
       },
-      "editorOnly": true,
+      "editorOnly": false,
       "mounts": [
         {
           "type": "eye",

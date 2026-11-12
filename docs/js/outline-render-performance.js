@@ -40,6 +40,7 @@
   const MASK_MIST = (1 << 5) >>> 0; // cloud-forest-fog.js mist cylinders: game.js redraws just this layer over the outline passes.
   const TARGET_ALPHA_FILL_LAYER = 30; // Temporary per-draw layer used only to render flat alpha-cutout target cards as filled billboard silhouettes.
   const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
+  const SCORE_ACTOR_DEPTH_LAYER = 24; // Temporary colorless character silhouette pass; unlike ordinary world text, active Scratchbone notes must NOT draw over the player or NPCs.
   const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
@@ -62,6 +63,9 @@
   let suppressedMaterialIdPasses = 0; // Debug counter: material-seam source draws blocked by wrappedRender().
   let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
   let finalWorldTextOverlayPasses = 0; // Debug counter: final canvas draws containing only popup/dialogue text planes.
+  let scoreActorDepthPasses = 0; // Number of active exterior-score frames that retained player/NPC silhouettes above cliff-visible notes.
+  let scoreActorDepthMeshes = 0; // Last frame's real actor meshes drawn into the depth-only score mask, exposed to mobile Pixel Probe.
+  let scoreActorRootProvider = null; // game.js supplies authoritative live player, NPC, hostile and animal roots; consulted only when a puzzle score is visible.
   let withheldWorldTextBasePasses = 0; // Debug counter: offscreen base draws where text was intentionally reserved for the final overlay.
   let abandonedWorldTextOverlays = 0; // Debug counter: stale pending overlays restored by the next base pass instead of reaching presentation.
   let targetAlphaCutoutPasses = 0; // Target-outline passes where alpha-cutout parity preparation ran.
@@ -429,7 +433,16 @@
     const entries = [];
     for (const object of cached.meshes) {
       if (!isWorldTextOverlayMesh(object)) continue;
-      entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: object.visible !== false });
+      // A hidden parent score board is not visible even when its individual note
+      // planes remain marked visible. Skip it before scheduling a final canvas
+      // pass; the cached candidate stays eligible immediately when the player
+      // steps onto the pressure plate, with no scene-wide rescan.
+      let visible = true; // Used only by this cached-candidate visibility walk, never the per-frame world-scene traversal.
+      for (let ancestor = object; ancestor; ancestor = ancestor.parent) {
+        if (ancestor.visible === false) { visible = false; break; }
+      }
+      if (!visible) continue;
+      entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
     }
     return entries;
   }
@@ -460,6 +473,83 @@
       abandonedWorldTextOverlays++;
     }
     pendingWorldTextOverlayByRenderer.delete(renderer);
+  }
+
+  // Restore a one-off depth-only actor pass before drawing cliff-visible score notes.
+  // There is no new scene scan while the score is hidden. The authored PNG/rig
+  // materials supply their true alpha-cutout silhouette (not bounding boxes or
+  // an opaque substitute material), and are restored immediately afterwards.
+  const scoreActorMeshCache = new WeakMap(); // Reuses each stable rig's meshes until the existing scene structure epoch changes.
+  function prepareScoreActorDepth(scene) {
+    const layerStates = []; // Original layer membership of only the meshes eligible to write actor depth.
+    const materialStates = []; // Preserve original depth/color/alpha state for each authored rig material.
+    const seenMeshes = new Set(); // A corpse or companion may appear in more than one gameplay collection.
+    const seenMaterials = new Set(); // Shared material instances must be modified/restored only once.
+    const maskCutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // Match the established solid-coverage PNG depth threshold.
+    const restore = () => {
+      for (const [node, layers] of layerStates) node.layers.mask = layers;
+      for (const [material, colorWrite, depthWrite, depthTest, depthFunc, alphaTest] of materialStates) {
+        material.colorWrite = colorWrite;
+        material.depthWrite = depthWrite;
+        material.depthTest = depthTest;
+        material.depthFunc = depthFunc;
+        material.alphaTest = alphaTest;
+      }
+    };
+    let roots = [];
+    try { roots = scoreActorRootProvider?.() || []; } catch (_) { return { meshes: 0, restore }; }
+    try {
+      for (const root of roots) {
+        if (!root?.traverse) continue;
+        let attached = false; // Only visible character rigs in the active scene may write this depth mask.
+        for (let node = root; node; node = node.parent) {
+          if (node.visible === false) break;
+          if (node === scene) { attached = true; break; }
+        }
+        if (!attached) continue;
+        let cached = scoreActorMeshCache.get(root);
+        if (!cached || cached.epoch !== structureEpoch) {
+          const meshes = []; // Include hidden branches; visibility can change without a scene graph mutation.
+          root.traverse(node => { if (node?.isMesh) meshes.push(node); });
+          cached = { epoch: structureEpoch, meshes };
+          scoreActorMeshCache.set(root, cached);
+        }
+        for (const node of cached.meshes) {
+          if (!node.layers || seenMeshes.has(node)) continue;
+          let visible = true;
+          for (let ancestor = node; ancestor && ancestor !== root; ancestor = ancestor.parent) {
+            if (ancestor.visible === false) { visible = false; break; }
+          }
+          if (!visible) continue;
+          const materials = Array.isArray(node.material) ? node.material : [node.material]; // Preserve the entire authored mesh material assignment.
+          // Transparent overlays without an actual alpha cutout, including additive
+          // creature eye/glow planes, would stamp their full rectangle into depth.
+          if (!materials.length || materials.some(material => !material
+              || material.visible === false || material.depthTest === false
+              || (THREE.AdditiveBlending !== undefined && material.blending === THREE.AdditiveBlending)
+              || (material.transparent && material.map && !(Number(material.alphaTest) > 0)))) continue;
+          seenMeshes.add(node);
+          layerStates.push([node, node.layers.mask]);
+          node.layers.enable(SCORE_ACTOR_DEPTH_LAYER);
+          for (const material of materials) {
+            if (seenMaterials.has(material)) continue;
+            seenMaterials.add(material);
+            materialStates.push([material, material.colorWrite, material.depthWrite, material.depthTest, material.depthFunc, material.alphaTest]);
+            material.colorWrite = false;
+            material.depthWrite = true;
+            material.depthTest = true;
+            material.depthFunc = THREE.LessEqualDepth; // Never let a farther character replace a nearer silhouette.
+            if (material.map && Number(material.alphaTest) > 0) {
+              material.alphaTest = Math.max(Number(material.alphaTest), maskCutoff); // Use actual solid PNG pixels, not antialiased fringe.
+            }
+          }
+        }
+      }
+    } catch (_) {
+      restore(); // Errors during a rig update cannot leak material or layer mutations.
+      return { meshes: 0, restore() {} };
+    }
+    return { meshes: layerStates.length, restore };
   }
 
   // Render only reserved layer 6 onto the already-composited canvas. Parent Groups
@@ -494,7 +584,48 @@
       camera.layers.set(WORLD_TEXT_OVERLAY_LAYER);
       renderer.autoClear = false;
       if (shadowMap?.enabled) shadowMap.autoUpdate = false;
-      originalRender.call(renderer, scene, camera);
+      const scoreNotes = pending.entries.filter(entry => entry.object.userData?.puzzleCaveScoreOverlay === true); // Only plate-revealed Scratchbone ink and halos need character silhouettes.
+      let mask = null;
+      const scoreMaterialStates = []; // Restore normal depth-independent score materials even if the actor-depth pass throws.
+      const temporarilyHiddenNotes = []; // Fail closed when the game cannot provide a trustworthy character mask.
+      try {
+        if (scoreNotes.length) {
+          if (typeof renderer.clearDepth === 'function' && typeof scoreActorRootProvider === 'function') {
+            mask = prepareScoreActorDepth(scene);
+          }
+          if (!mask?.meshes) {
+            // An unavailable/missing actor mask must not silently turn active
+            // score notes into a player/NPC-covering HUD effect.
+            for (const entry of scoreNotes) {
+              temporarilyHiddenNotes.push(entry.object);
+              entry.object.visible = false;
+            }
+          } else {
+            renderer.clearDepth(); // The outline composite owns canvas color; only its now-stale depth buffer is cleared.
+            camera.layers.set(SCORE_ACTOR_DEPTH_LAYER);
+            try {
+              originalRender.call(renderer, scene, camera); // Colorless alpha-aware silhouettes of the player, NPCs, hostiles and animals.
+              scoreActorDepthPasses++;
+              scoreActorDepthMeshes = mask.meshes;
+            } finally {
+              mask.restore(); // Do not leave rig material colorWrite/depthWrite or layer membership changed during final note draw.
+              mask = null;
+            }
+            for (const entry of scoreNotes) {
+              const material = entry.object.material;
+              if (!material) continue;
+              scoreMaterialStates.push([material, material.depthTest]);
+              material.depthTest = true; // The score ignores the cliff but obeys the just-written foreground character depth.
+            }
+            camera.layers.set(WORLD_TEXT_OVERLAY_LAYER);
+          }
+        }
+        originalRender.call(renderer, scene, camera); // Ordinary popup/dialogue text remains depth-independent.
+      } finally {
+        mask?.restore();
+        for (const [material, depthTest] of scoreMaterialStates) material.depthTest = depthTest;
+        for (const note of temporarilyHiddenNotes) note.visible = true;
+      }
       finalWorldTextOverlayPasses++;
       return true;
     } finally {
@@ -738,6 +869,9 @@
     installed: true,
     nonShellOutlinesSuppressed: true,
     worldTextAboveShell: true,
+    setScoreCharacterRootsProvider(provider) {
+      scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
+    },
     targetAlphaCutoutParity: true,
     targetAlphaBillboardFill: true,
     worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
@@ -752,6 +886,9 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
+        scoreActorDepthPasses,
+        scoreActorDepthMeshes,
+        scoreActorDepthReady: typeof scoreActorRootProvider === 'function',
         abandonedWorldTextOverlays,
         targetAlphaCutoutPasses,
         targetAlphaCutoutMeshesPrepared,

@@ -6,14 +6,15 @@
   const SCAN_PERIOD_S = 1.4; // Finds dev-spawned birds without checking every creature on every rendered frame.
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
-  const captivePoses = new WeakMap(); // Original rotation and size before matrix-decomposed talon carrying.
+  const captivePoses = new WeakMap(); // Original rotation and size of the actual aligned actor root, not a potentially different portrait child.
   const releasedPoseChecks = new Map(); // Two native ticks to stop a late talon renderer leaving prey permanently sideways.
   let deps = null; // WildlifeSpawn's live hostile collection and optional camera dependency.
   let scanT = 0; // Timer for bounded active-area scans rather than per-frame global searches.
   let area = null; // Last map id, used to immediately clear attachments across scene transitions.
   let seconds = 0; // Shared wing flap clock; prevents one Date.now call per bird.
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
-    lastBird: null, lastPose: null, captiveRestores: 0, tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
+    lastBird: null, lastPose: null, captiveRestores: 0, captiveRestoreMisses: 0,
+    lastCaptiveRestore: null, tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   function stableIndex(actor) {
@@ -29,7 +30,24 @@
     } // Never restore visibility on disposed or reparented creature planes.
     state.originals.length = 0;
   }
-  function rememberCaptive(prey, group = prey?.avatarRef?.group) {
+  function playerRoot(prey) {
+    if (!prey || prey !== deps?.player) return null;
+    return window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+      || window.Combat?.deps?.playerMesh
+      || window.ProceduralHandAttachments?.gameDeps?.playerMesh
+      || null; // The player is aligned through game.js's playerMesh, not the optional avatarRef portrait child.
+  }
+  function currentCaptiveGroup(prey) {
+    return playerRoot(prey) || prey?.avatarRef?.group || null; // Both capture and release must use the root that alignCaptive actually changes.
+  }
+  function stillOwnsCaptiveGroup(prey, group) {
+    if (prey === deps?.player) {
+      const liveRoot = playerRoot(prey); // An appearance rebuild may replace the real player rig before a delayed release.
+      return liveRoot ? liveRoot === group : !!group?.parent;
+    }
+    return prey?.avatarRef?.group === group; // NPC and creature visual promotion must not restore detached old portraits.
+  }
+  function rememberCaptive(prey, group = currentCaptiveGroup(prey)) {
     if (!prey || !group?.quaternion?.clone) return false;
     if (captivePoses.get(prey)?.group === group) return true;
     releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
@@ -39,13 +57,21 @@
   }
   function restoreCaptive(prey) {
     const pose = prey && captivePoses.get(prey);
-    if (!pose) return false;
+    if (!pose) {
+      debug.lastCaptiveRestore = 'no saved pose';
+      return false;
+    }
     captivePoses.delete(prey); // Never reuse a previous capture's rotation on the next abduction.
-    if (prey.avatarRef?.group !== pose.group || !pose.group?.quaternion?.copy) return false;
-    pose.group.quaternion.copy(pose.quaternion); // Native locomotion resolves position; never teleport back to the pickup.
+    if (!stillOwnsCaptiveGroup(prey, pose.group) || !pose.group?.quaternion?.copy) {
+      debug.captiveRestoreMisses++;
+      debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': visual root replaced';
+      return false;
+    }
+    pose.group.quaternion.copy(pose.quaternion); // Clear the talon orientation from the playerMesh base BEFORE ordinary walking/combat animation resumes.
     if (pose.scale) pose.group.scale?.copy?.(pose.scale); // Matrix decomposition must not leave an altered scale behind.
     releasedPoseChecks.set(prey, { ...pose, remaining: 2 }); // Clear the old pose after the release frame and next native render.
     debug.captiveRestores++;
+    debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': restored root baseline';
     return true;
   }
   function release(actor, reason = 'removed') {
@@ -174,7 +200,7 @@
     if (!deps?.hostileObjects || !activeArea) return 0;
     const step = Math.max(0, Math.min(.25, Number(dt) || 0));
     for (const [prey, reset] of releasedPoseChecks) {
-      if (prey.tzatzulCapturedBy || prey.avatarRef?.group !== reset.group || !(prey.health > 0)) {
+      if (prey.tzatzulCapturedBy || !stillOwnsCaptiveGroup(prey, reset.group) || !(prey.health > 0)) {
         releasedPoseChecks.delete(prey); continue;
       }
       reset.group.quaternion?.copy?.(reset.quaternion);

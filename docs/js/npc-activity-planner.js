@@ -351,6 +351,12 @@
     return target;
   }
 
+  function resolveLegacyBeforeSpawn(rec, callerCtx, legacyResolve) {
+    if (!legacyResolve) return null;
+    const result = window.NpcActivities.resolveDestination(LEGACY_BEATS[0], { ...callerCtx, legacyResolve }); // Uses the same reactive seating decoration as live NPCs from their first appearance.
+    return result.status === window.NpcActivities.STATUS.READY ? result.target : null;
+  }
+
   function resolveNpcTarget(rec, extra = {}) {
     const { legacyResolve } = extra;
     const npcId = rec?.id;
@@ -405,12 +411,12 @@
     // so falling back to it here — same as a no-agenda NPC already does —
     // guarantees a sane bootstrap position without inventing one.
     if (!hasExistingWalker) {
-      if (!(Array.isArray(rec?.agenda) && rec.agenda.length)) return legacyResolve ? legacyResolve(rec) : null;
+      if (!(Array.isArray(rec?.agenda) && rec.agenda.length)) return resolveLegacyBeforeSpawn(rec, ctx0, legacyResolve);
       for (const beat of eligible) {
         const res = window.NpcActivities.resolveDestination(beat, { ...ctx0, legacyResolve });
         if (res.status === window.NpcActivities.STATUS.READY) return res.target;
       }
-      return legacyResolve ? legacyResolve(rec) : null;
+      return resolveLegacyBeforeSpawn(rec, ctx0, legacyResolve);
     }
 
     // ── Live: this NPC already exists in the world ──────────────────────

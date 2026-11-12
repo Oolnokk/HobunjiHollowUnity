@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // Renderer-only culling: gameplay ownership of NPC and hostile rigs never changes.
+  // Renderer-only culling: gameplay ownership of NPC, hostile and corpse rigs never changes.
   // A generously sized whole-actor frustum keeps behind-camera character rigs out
   // of every world/outline/x-ray pass. WebGL2 async occlusion queries additionally
   // reject fully covered character rigs. No synchronous readPixels/GPU wait.
@@ -22,6 +22,7 @@
   const active = []; // Scratch list of roots belonging to the current rendered area.
   const hidden = []; // Roots temporarily hidden from rendering, restored before gameplay resumes.
   const stats = { frames:0, candidates:0, frustumHidden:0, occludedHidden:0,
+    corpseCandidates:0, corpseFrustumHidden:0, corpseOccludedHidden:0, // Mobile counters distinguish corpse savings from living actors.
     visible:0, probes:0, results:0, discarded:0, pending:0, gpuAvailable:false, disabledReason:'' };
   const sphere = THREE ? new THREE.Sphere(new THREE.Vector3(), FRUSTUM_RADIUS_TILES) : null; // Reused camera-volume test.
   const frustum = THREE ? new THREE.Frustum() : null; // Shared frustum for all actors in a frame.
@@ -160,7 +161,7 @@
     return proxy;
   }
 
-  function addActor(root, area, activeScene, playerPosition, cameraPosition, canOcclude, requestedRadius) {
+  function addActor(root, area, activeScene, playerPosition, cameraPosition, canOcclude, requestedRadius, kind) {
     if (!root?.isObject3D || root.visible !== true || !inScene(root, activeScene)) return;
     const state = getState(root);
     state.seen = stats.frames;
@@ -191,10 +192,12 @@
       outside = !frustum.intersectsSphere(sphere);
     }
     stats.candidates++;
+    if (kind === 'corpse') stats.corpseCandidates++;
     if (outside) {
       hidden.push(root);
       root.visible = false; // Rendering only: restored in endFrame before any gameplay update.
       stats.frustumHidden++;
+      if (kind === 'corpse') stats.corpseFrustumHidden++;
       return;
     }
     active.push({state, queryAllowed});
@@ -202,12 +205,14 @@
       hidden.push(root);
       root.visible = false;
       stats.occludedHidden++;
+      if (kind === 'corpse') stats.corpseOccludedHidden++;
     } else stats.visible++;
   }
 
   function beginFrame(args) {
     endFrame(); // Unwind any interrupted previous render before touching roots again.
     stats.frames++; stats.candidates=0; stats.frustumHidden=0; stats.occludedHidden=0;
+    stats.corpseCandidates=0; stats.corpseFrustumHidden=0; stats.corpseOccludedHidden=0;
     stats.visible=0; stats.probes=0; stats.pending=0;
     if (!enabled || !THREE || !args?.camera || !args.scene) return;
     const {renderer,camera,scene:activeScene,walkers,hostiles,playerPosition,area} = args;
@@ -265,6 +270,23 @@
       const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
       const radius=Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
       addActor(c.avatarRef?.group,c.areaId,activeScene,player,pos,!combat,radius);
+    }
+    // Settled, full-rig bodies still cost portrait/limb/depth passes until corpse LOD
+    // retires them. Read the canonical death registry; never change loot or AI state.
+    const corpses = window.CreatureDeath?.getCorpseObjects?.(); // Active corpse registry, exposed by the existing death owner.
+    for (const c of corpses || []) {
+      if (!c || c.areaId!==currentArea || c.state!=='corpse' || c.health>0
+          || c._denHidden || c.tzatzulCapturedBy || c._banditCorpseRetired
+          || c.avatarRef?.isCorpseMarker || c._tzFlight?.phase || c.isRuinSkeeri) continue;
+      // Animated/dying, streamed and already-retired corpses are intentionally omitted;
+      // unbounded airborne rigs retain their original renderer rather than risk pop-in.
+      const rig = c.avatarRef?.group; // Scene-owned full rig; addActor rejects detached or gameplay-hidden roots.
+      const scale = rig?.scale; // Existing species scaling expands the conservative corpse sphere.
+      const mult = Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1); // Used below for corpse bounds.
+      const extent = Math.max(1,Number(c.visualModelWidth)||0,Number(c.visualModelHeight)||0,
+        Number(c.def?.modelWidth)||0,Number(c.def?.modelHeight)||0); // Known model footprint; unknowns use a generous minimum.
+      const radius = Math.max(FRUSTUM_RADIUS_TILES,(extent*2+3)*mult+BOUND_MARGIN_TILES); // Large bodies remain frustum-only above the safe GPU proxy cap.
+      addActor(rig,c.areaId,activeScene,player,pos,true,radius,'corpse');
     }
     for (const [root,state] of states) if (state.seen!==stats.frames) {
       release(state);

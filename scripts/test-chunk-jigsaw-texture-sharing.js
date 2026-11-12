@@ -58,5 +58,25 @@ for (const file of ['docs/game.js', 'docs/js/wilderness-chunks.js']) {
   setup.clean({ group: { traverse(fn) { fn(mesh); } } });
   assert.equal(sharedMap.disposals, 0, `${file} preserves a map owned by another chunk`);
   sharedB.dispose(); assert.equal(sharedMap.disposals, 1);
+
+  const pooledMap = texture(); // Loaded by TerrainTileMaterials and shared with other wilderness-zone materials.
+  const pooledUniform = texture(); // Texture-valued shader uniform that another cached map material still owns.
+  let pooledMaterialDisposals = 0; // The chunk's wrapper material still belongs to the chunk.
+  const temporary = {
+    map: pooledMap,
+    uniforms: { uGround: { value: pooledUniform } },
+    dispose() { pooledMaterialDisposals++; },
+  };
+  const cached = { map: pooledMap, dispose() { throw new Error('cached map material disposed by a chunk'); } };
+  setup.window.TerrainTileMaterials = {
+    isSharedTexture: tex => tex === pooledMap || tex === pooledUniform,
+    isCachedMaterial: m => m === cached,
+  };
+  const pooledMesh = { userData: { wildernessChunkOwnsMaterial: true }, material: temporary };
+  const cachedMesh = { userData: { wildernessChunkOwnsMaterial: true }, material: cached };
+  setup.clean({ group: { traverse(fn) { fn(pooledMesh); fn(cachedMesh); } } });
+  assert.equal(pooledMap.disposals, 0, `${file} cannot dispose another zone's pooled PNG`);
+  assert.equal(pooledUniform.disposals, 0, `${file} cannot dispose a pooled shader uniform texture`);
+  assert.equal(pooledMaterialDisposals, 1, `${file} still frees an owned wrapper material`);
 }
-console.log('shared chunk jigsaw samplers, native pixels, final-owner release and cleanup wiring passed');
+console.log('shared chunk jigsaw samplers, pooled textures, native pixels, final-owner release and cleanup wiring passed');

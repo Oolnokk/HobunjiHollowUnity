@@ -13,9 +13,14 @@
     { id: 'azgarlu_key_stone', name: 'Azgarlu of the Flame', label: "Azgarlu's Key-Stone" },
     { id: 'nanahi_key_stone', name: 'Nanahi the Unsleeping', label: "Nanahi's Key-Stone" },
     { id: 'imlao_key_stone', name: 'Imlao the Sightless', label: "Imlao's Key-Stone" },
-  ]); // Quest items are now carried by their named Harlyao lich guardians.
+  ]); // Identifiers remain stable for existing saves and named guardian rewards.
+  const GUILD_KEY_ITEMS = Object.freeze([
+    { id: 'delversStone', label: "Delver's Stone", icon: '🔴', scope: 'world', featureId: 'delvers_ruin_license', desc: "A stone-priest's enchanted Guild amulet that proves your license and unlocks sealed Harlyao ruins. Imperial enforcement amulets, not this Stone, detect unregistered witchcraft." },
+    { id: TALISMAN_KEY, label: 'Harlyao Key Talisman', icon: '🗝️', scope: 'world', desc: 'The three lich key-stones joined together by Garanki. It pulses faster near the hidden vault.' },
+    ...KEY_STONES.map(stone => ({ id: stone.id, label: stone.label, icon: '🗝️', scope: 'world', desc: 'An ancient stone key recovered from a named Harlyao lich tomb.' })),
+  ]); // Guild membership and quest keys are world-owned, like Banubu's Color Pools Key.
   const progress = { running: false, phase: 'idle', lastError: null, lastChange: "Garanki's two tent scenes, membership stone, licensed ruin doors, and unseeded Three Key-Stones quest." }; // Mobile-friendly status.
-  let inventoryDeps = null; // ArtifactCollection's existing inventory/save adapter, reused for item grants.
+  let inventoryDeps = null; // ArtifactCollection's live inventory adapter is retained for legacy migration, feedback, and quest saves.
   let questDeps = null; // TasksPanel's live getQuestProgress adapter, reused instead of a second quest store.
 
   function profile() { return window.__hobunjiPlayerProfile || null; }
@@ -35,7 +40,7 @@
   function isMember() { return story().member === true; }
   function checkpointReferral() { return window.TownMagicCheckpoint?.hasCustody?.() === true; } // Confiscated magic provides a second route to Garanki, even before Jubmir's invitation.
   function canMeet() { return story().invited === true || isMember() || checkpointReferral(); } // Once licensed, later trust/quest dialogue remains reachable without the original invitation.
-  function hasStone() { return isMember() && (Number(inventoryDeps?.inventory?.delversStone) || 0) > 0; } // Both a live licensed membership and possession of its Stone are required at every ruin-entry gate.
+  function hasStone() { return isMember() && window.KeyItemSystem?.has?.('delversStone') === true; } // Membership and the owned Guild key both gate Harlyao ruins.
   function canEnchant() { return isMember() && story().trusted === true; }
 
   function log(message, level = 'npc') {
@@ -43,56 +48,83 @@
   }
 
   function registerItems() {
-    const defs = inventoryDeps?.ITEM_DEFS;
-    const catalog = inventoryDeps?.inventoryItems;
-    if (!defs || !Array.isArray(catalog)) return false;
-    const items = [
-      { key: 'delversStone', label: "Delver's Stone", icon: '🔴', desc: "A stone-priest's enchanted Guild amulet that proves your license and unlocks sealed Harlyao ruins. Imperial enforcement amulets, not this Stone, detect unregistered witchcraft.", important: true },
-      { key: TALISMAN_KEY, label: 'Harlyao Key Talisman', icon: '🗝️', desc: 'The key-stones of Azgarlu, Nanahi and Imlao set together by Garanki. It pulses faster as its hidden vault draws near.', important: true },
-      ...KEY_STONES.map(key => ({ key: key.id, label: key.label, icon: '🗝️', desc: 'One of three ancient stone keys recovered from a named Harlyao lich tomb.', important: true })),
-    ]; // Used by inventory definitions only; no automatic grants for the three ancient keys.
-    for (const item of items) {
-      defs[item.key] = { icon: item.icon, label: item.label, desc: item.desc, cat: 'material', tags: ['Harlyao', 'Quest'], sellPrice: 0, quest: true, important: true };
-      if (!catalog.some(entry => entry.key === item.key)) catalog.push({ key: item.key, label: item.label.toUpperCase(), icon: item.icon, max: 1 });
+    if (!window.KeyItemSystem?.defineMany) return false;
+    window.KeyItemSystem.defineMany(GUILD_KEY_ITEMS); // These are key items, not ordinary material Pack stacks.
+    return true;
+  }
+  function ownsKey(id) { return window.KeyItemSystem?.has?.(id) === true; } // Shared ownership check for quest gates and item diagnostics.
+  function clearLegacyInventory(ids) {
+    const inventory = inventoryDeps?.inventory; // Old member saves stored these story keys as normal inventory stacks.
+    if (!inventory) return false;
+    let changed = false; // Used to prevent redundant member saves if no obsolete stacks are present.
+    for (const id of ids) if (Object.prototype.hasOwnProperty.call(inventory, id)) {
+      delete inventory[id];
+      changed = true;
     }
+    if (changed) {
+      inventoryDeps.saveMemberWorldData?.();
+      inventoryDeps.buildInventoryGrid?.();
+    }
+    return changed;
+  }
+  function consumeKeyStones() {
+    if (!window.KeyItemSystem?.revoke) return false;
+    for (const stone of KEY_STONES) {
+      const result = window.KeyItemSystem.revoke(stone.id); // Handing them in removes persistent world ownership, not just Pack visibility.
+      if (!result?.ok) return false;
+    }
+    clearLegacyInventory(KEY_STONES.map(stone => stone.id));
     return true;
   }
   function restoreTalisman() {
-    if (!inventoryDeps?.inventory || !isMember() || !['search','report'].includes(vaultPhase())) return false;
-    registerItems();
-    const inventory = inventoryDeps.inventory; // The story phase is world-scoped; the physical key is its member-inventory counterpart.
-    if ((Number(inventory[TALISMAN_KEY]) || 0) >= 1) return true;
-    inventory[TALISMAN_KEY] = 1; // Repairs interrupted handoffs and older/restored saves instead of permanently soft-locking the vault quest.
-    for (const key of KEY_STONES) inventory[key.id] = 0; // The components must not become a second usable set after assembly.
-    inventoryDeps.saveMemberWorldData?.();
-    inventoryDeps.buildInventoryGrid?.();
+    if (!isMember() || !['search', 'report'].includes(vaultPhase()) || !registerItems()) return false;
+    const result = window.KeyItemSystem.grant(TALISMAN_KEY); // Repairs an interrupted handoff using the persistent world key registry.
+    if (!result?.ok) return false;
+    if (!consumeKeyStones()) return false; // Assembled components cannot remain valid alongside the talisman.
+    clearLegacyInventory([TALISMAN_KEY]); // Existing saves must not retain an obsolete material-stack copy of the assembled key.
     return true;
   }
   function restoreMembershipItem() {
-    if (!isMember() || !inventoryDeps?.inventory) return false;
-    registerItems();
-    if ((Number(inventoryDeps.inventory.delversStone) || 0) >= 1) return true;
-    inventoryDeps.inventory.delversStone = 1; // Restores a non-discardable licensed stone across older imports and load-order differences.
-    inventoryDeps.saveMemberWorldData?.();
-    inventoryDeps.buildInventoryGrid?.();
+    if (!isMember() || !registerItems()) return false;
+    const result = window.KeyItemSystem.grant('delversStone'); // Existing Guild members receive the canonical world-owned license.
+    if (!result?.ok) return false;
+    clearLegacyInventory(['delversStone']);
+    return true;
+  }
+  function migrateLegacyItems() {
+    if (!inventoryDeps?.inventory || !registerItems()) return false;
+    const inventory = inventoryDeps.inventory; // Reads restored member stacks only after the game finishes loading the character.
+    const phase = vaultPhase(); // Only still-unassembled lich stones may migrate as owned keys.
+    if (isMember() && phase === 'keys') for (const stone of KEY_STONES) {
+      if (!(Number(inventory[stone.id]) > 0)) continue;
+      const result = window.KeyItemSystem.grant(stone.id); // Persist first; do not lose an earned legacy reward on save failure.
+      if (!result?.ok) {
+        log('Could not migrate ' + stone.id + ': ' + (result?.message || 'unknown error'), 'warn');
+        continue;
+      }
+      clearLegacyInventory([stone.id]);
+    }
+    if (phase === 'complete') {
+      const result = window.KeyItemSystem.revoke?.(TALISMAN_KEY); // Garanki has already taken it on completed worlds.
+      if (result?.ok && consumeKeyStones()) clearLegacyInventory([TALISMAN_KEY]);
+    }
     return true;
   }
   function bindInventoryDeps(deps) {
-    inventoryDeps = deps; // Used for physical Stone/Key-Stone definitions and canonical save calls.
-    registerItems(); // Do not write the player's save while game.js may still be restoring their inventory.
+    inventoryDeps = deps; // This adapter is used only for migration and UI/quest notifications.
+    registerItems(); // Never change save ownership while game.js is still restoring member inventory.
   }
   function grantKeyStone(bossId) {
-    if (vaultPhase() !== 'keys') return false; // Tomb guardians cannot duplicate the three consumed stones after assembly or completion.
+    if (vaultPhase() !== 'keys' || !isMember()) return false;
     const stone = KEY_STONES.find(item => item.id === bossId || item.id === bossId + '_key_stone');
-    if (!stone || !inventoryDeps?.inventory) return false;
-    registerItems(); // The same catalog and definitions the normal Pack uses.
-    if ((Number(inventoryDeps.inventory[stone.id]) || 0) >= 1) return false;
-    inventoryDeps.inventory[stone.id] = 1; // A single physical quest key per lich, saved with ordinary inventory.
-    inventoryDeps.saveMemberWorldData?.();
-    inventoryDeps.buildInventoryGrid?.();
+    if (!stone || !registerItems()) return false;
+    migrateLegacyItems(); // A legacy inventory reward must not be duplicated by the same boss.
+    if (ownsKey(stone.id)) return false;
+    const result = window.KeyItemSystem.grant(stone.id); // Named lich rewards now share the Color Pools Key's world-key ownership model.
+    if (!result?.ok || !result.granted) return false;
     syncQuest();
     window.TasksPanel?.render?.();
-    inventoryDeps.showToast?.('Recovered ' + stone.label + '!', true);
+    inventoryDeps?.showToast?.('Recovered ' + stone.label + '!', true);
     return true;
   }
 
@@ -108,7 +140,7 @@
     return p.questProgress;
   }
   function vaultPhase() { return String(story().vaultPhase || 'keys'); }
-  function hasTalisman() { return (Number(inventoryDeps?.inventory?.[TALISMAN_KEY]) || 0) > 0; }
+  function hasTalisman() { return ownsKey(TALISMAN_KEY); }
   function vaultSite() { return story().vaultSite || null; } // World-scoped location persists on reload and is replaced only by a new Tothal cycle.
   function saveVaultSite(site) {
     if (vaultPhase() !== 'search' && vaultPhase() !== 'report') return false;
@@ -131,8 +163,8 @@
     const store = questStore();
     if (!store) return null;
     const phase = vaultPhase(); // The original three-key objective remains intact on pre-vault saves.
-    const count = KEY_STONES.filter(key => (Number(inventoryDeps?.inventory?.[key.id]) || 0) > 0).length;
-    const remaining = KEY_STONES.filter(key => !(Number(inventoryDeps?.inventory?.[key.id]) > 0)).map(key => key.name);
+    const count = KEY_STONES.filter(key => ownsKey(key.id)).length;
+    const remaining = KEY_STONES.filter(key => !ownsKey(key.id)).map(key => key.name);
     const objective = phase === 'search'
       ? 'Search the Western Slope. Follow the Harlyao Key Talisman\'s increasingly frequent pulses to the buried vault.'
       : phase === 'report'
@@ -340,7 +372,7 @@
   async function runHandoff(kind) {
     if (progress.running || !isMember() || !canEnchant()) return false;
     const isAssembly = kind === 'assemble';
-    if (isAssembly ? vaultPhase() !== 'keys' || KEY_STONES.some(key => !(Number(inventoryDeps?.inventory?.[key.id]) > 0))
+    if (isAssembly ? vaultPhase() !== 'keys' || KEY_STONES.some(key => !ownsKey(key.id))
       : vaultPhase() !== 'report' || !hasTalisman()) return false;
     progress.running = true;
     progress.phase = kind;
@@ -355,15 +387,14 @@
       if (!accepted) return false;
       if (!setStory({ vaultPhase:isAssembly ? 'search' : 'complete', ...(isAssembly ? {vaultSite:null} : {}) })) throw new Error('Could not save vault progress.');
       if (isAssembly) {
-        for (const key of KEY_STONES) inventoryDeps.inventory[key.id] = 0;
-        inventoryDeps.inventory[TALISMAN_KEY] = 1;
+        if (!restoreTalisman()) throw new Error('Could not persist the assembled key talisman.');
         inventoryDeps?.showToast?.('Received Harlyao Key Talisman — seek the vault in the Western Slope!', true);
       } else {
-        inventoryDeps.inventory[TALISMAN_KEY] = 0;
+        const result = window.KeyItemSystem?.revoke?.(TALISMAN_KEY);
+        if (!result?.ok) throw new Error(result?.message || 'Could not return the key talisman.');
+        clearLegacyInventory([TALISMAN_KEY]);
         inventoryDeps?.showToast?.('The Harlyao Key Talisman was returned to Garanki.', true);
       }
-      inventoryDeps?.saveMemberWorldData?.();
-      inventoryDeps?.buildInventoryGrid?.();
       syncQuest();
       window.TasksPanel?.render?.();
       window.RuinSites?.syncMapMarkers?.();
@@ -405,7 +436,7 @@
       if (!accepted) { progress.phase = kind + '-interrupted'; return false; }
       if (kind === 'intro') {
         if (!setStory({ member: true })) throw new Error('Could not save Delver membership.');
-        restoreMembershipItem();
+        if (!restoreMembershipItem()) throw new Error('Could not persist the Delver\'s Stone key item.');
         inventoryDeps?.showToast?.("Delver's Guild membership obtained — Delver's Stone received!", true);
       } else {
         if (!setStory({ trusted: true })) throw new Error('Could not save Garanki trust progress.');
@@ -438,7 +469,7 @@
         { id:'delvers_start_vault_report', type:'end' },
       ],
     };
-    if (phase === 'keys' && canEnchant() && KEY_STONES.every(key => (Number(inventoryDeps?.inventory?.[key.id]) || 0) > 0)) return {
+    if (phase === 'keys' && canEnchant() && KEY_STONES.every(key => ownsKey(key.id))) return {
       id:'garanki_talisman_handoff', trigger:'interact', priority:120, entryNode:'vault_assemble_choice', nodes:[
         { id:'vault_assemble_choice', type:'choice', speakerId:'player', addressedActorId:'garanki', text:'You have all three key-stones.', choices:[
           { label:'Give Garanki the three key-stones.', next:'delvers_start_vault_assemble' },
@@ -470,6 +501,8 @@
     if (node.id === 'delvers_start_vault_report') window.setTimeout(() => { void runHandoff('report'); }, 0);
   }
 
+  registerItems(); // KeyItemSystem is loaded before this module, even when the inventory adapter is not yet bound.
+
   const api = Object.freeze({
     INVITATION_KEY, QUEST_ID, KEY_STONES, TALISMAN_KEY, VAULT_ZONE, hasStone, isMember, canEnchant,
     vaultPhase, hasTalisman, vaultSite, saveVaultSite, uncoverVault, investigateVault, playVaultInvestigation, runHandoff,
@@ -480,7 +513,8 @@
       ...progress, worldId: profile()?.worldId || null, hoursNow: clockHours(),
       invited: !!story().invited, member: isMember(), trusted: canEnchant(),
       hoursAfterJubmir: opening()?.getStory?.(profile())?.jubmirFeyCompletedAtHours ?? null,
-      physicalStoneCount: Number(inventoryDeps?.inventory?.delversStone) || 0,
+      physicalStoneCount: Number(hasStone()), // Existing Pixel Probe field now reports persistent key ownership.
+      keyItems: GUILD_KEY_ITEMS.filter(item => ownsKey(item.id)).map(item => item.id), // Mobile-visible diagnostics list all owned Guild keys.
       artifactCount: window.ArtifactCollection?.value?.() || 0,
       doorstep: { // Enables mobile diagnosis if a shifted-camp Garanki walker cannot be cloned to the farm.
         source: window.DoorstepVisits?.sourceDiagnostics?.('garanki_gabu') || null,
@@ -496,7 +530,7 @@
     sync: invitationReady, next: nextInvitation, onComplete: onInvitationComplete,
   });
   document.addEventListener('hobunjiPlayerReady', () => {
-    window.setTimeout(() => { restoreMembershipItem(); restoreTalisman(); syncQuest(); window.RuinSites?.refreshStoryVault?.(); }, 0); // Reloading directly into Western Slope rehydrates the burrow after the saved talisman becomes available.
+    window.setTimeout(() => { migrateLegacyItems(); restoreMembershipItem(); restoreTalisman(); syncQuest(); window.RuinSites?.refreshStoryVault?.(); }, 0); // Reloading directly into Western Slope rehydrates the burrow after the saved talisman becomes available.
   });
   window.DevCompanion?.registerStateProvider?.('delversGuild', () => api.debugSnapshot());
 })();

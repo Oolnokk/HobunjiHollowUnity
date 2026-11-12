@@ -723,7 +723,7 @@
     const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
     if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
       itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
-      detachedForMs:entry.detachedForMs,connector:entry.connector,
+      detachedForMs:entry.detachedForMs,connector:entry.connector,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
     })))}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
@@ -995,6 +995,13 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
+    const caveOverlayState = window.PuzzleCaveEntrances?.debugSnapshot?.().areas?.find(zone => zone.area === currentArea); // One-shot mobile check for the active cliff-score glyph compositor, never a per-frame scan.
+    if (caveOverlayState?.portals?.length) {
+      const visibleScores = caveOverlayState.portals.filter(portal => portal.scoreVisible); // Plate-gated inscriptions whose note planes should appear after the cliff/outline composite.
+      const readyScores = visibleScores.filter(portal => portal.scoreOverlayReady); // Identifies missing CanvasTexture/depth options from a phone Pixel Probe report.
+      const scoreActorMask = window.OutlineRenderPerformance?.snapshot?.(); // Mobile-only check that final note rendering reconstructed character silhouettes (not a permanent on-screen diagnostic).
+      lines.push(`Puzzle Cave note overlay: portals=${caveOverlayState.portals.length} active=${visibleScores.length} finalPassReady=${readyScores.length}/${visibleScores.length} outlineOverlay=${window.OutlineRenderPerformance?.worldTextAboveShell === true ? 'installed' : 'missing'} characterMask=${scoreActorMask?.scoreActorDepthReady ? 'ready' : 'missing'} actorDepthPasses=${scoreActorMask?.scoreActorDepthPasses ?? 0} lastActorMeshes=${scoreActorMask?.scoreActorDepthMeshes ?? 0}; modes=${visibleScores.map(portal => portal.scoreOcclusion || '-').join(',') || '-'}`);
+    }
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
     if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
@@ -1076,6 +1083,11 @@
       if (dungeonFireDebug.armed || dungeonFireDebug.activeVisuals) {
         lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
       }
+    }
+    const rubblePickupPerf = window.Shattercasks?.debugSnapshot?.().performance; // Read only on Pixel Probe request, never on a gameplay frame.
+    const junkPickupPerf = window.CratePiles?.debugSnapshot?.(); // Mobile-only loot hitch timing and save diagnostics.
+    if (rubblePickupPerf || junkPickupPerf || window.BanditCamps) {
+      lines.push(`Loot pickup CPU (last): rubble=${rubblePickupPerf?.lastPilePickupMs ?? '-'}ms junk=${junkPickupPerf?.lastJunkPickupMs ?? '-'}ms enemy=${window.BanditCamps?.lastEnemyLootMs ?? '-'}ms; queued saves rubble=${!!rubblePickupPerf?.pileSaveQueued} junk=${!!junkPickupPerf?.supplySaveQueued}`);
     }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
@@ -1233,8 +1245,13 @@
       const waypoint = wildernessMapDebug.waypoint;
       lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} rememberedThreats=${wildernessMapDebug.rememberedThreats || 0} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
     }
-    const chunkAudit = window.WildernessChunks?.snapshot?.()?.lastResidencyAudit; // Used to carry the latest button-driven chunk leak result into copied probe reports.
+    const chunkSnapshot = window.WildernessChunks?.snapshot?.(); // Reused for mobile chunk-rebuild budget diagnostics and residency reporting.
+    const chunkAudit = chunkSnapshot?.lastResidencyAudit;
     if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);
+    const activeChunk = chunkSnapshot?.zones?.find(zone => zone.mapId === currentArea); // Read only the active area, not every unloaded wilderness scene.
+    if (activeChunk) lines.push(`Wilderness edit rebuilds: chunks=${activeChunk.rebuilds ?? '-'} neighborChunksAvoided=${activeChunk.neighborRebuildsAvoided ?? '-'} seamMargin=${activeChunk.editSeamMarginTiles ?? '-'} tiles`);
+    const texturePool = window.TerrainTileMaterials?.debugSnapshot?.(); // Exposes shared PNG source and GPU sampler reuse on mobile.
+    if (texturePool) lines.push(`Terrain texture pool: unique=${texturePool.sharedTextures} savedLoads=${texturePool.savedLoads} sourceLoads=${texturePool.sourceLoadsStarted} pending=${texturePool.pending} failed=${texturePool.failed} mapMaterials=${texturePool.mapMaterials}`);
     const hitboxDebug = window.__hitboxDebug?.snapshot?.(); // Mobile-readable elevation proof for the Show Hitboxes overlay.
     if (hitboxDebug?.actors?.length) {
       // AI-state suffixes (state/passive/territorial/cfMode/...) — see
@@ -1391,7 +1408,16 @@
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       const hitPointText = hit.point ? ` world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)})` : ''; // Used to compare exact foot and water intersections along this screen ray.
       lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)}${hitPointText} visible=${o.visible} renderOrder=${o.renderOrder}`);
-      if (hit.point && (o.userData?.terrainRenderChunk || o.userData?.wildernessGlobalPathGround || o.userData?.cameraObstacle)) {
+      if (o.userData?.hobunjiGroundXray) {
+        const xray = window.HeldObjectRenderOrder?.classify?.(o); // Diagnostic uses the same semantic classification as the actual replay.
+        lines.push(`     mesa ground: batched=${!!o.userData?.plateauMesaRenderBatch} xray=${xray?.ground === true} registered=${o.userData?.hobunjiHeldGroundReplay === true} materialSlots=${mats.length}`);
+      }
+      if (o.userData?.mapEditorTerrain) {
+        const terrainMaterial = mats.find(m => m?.userData?.terrainKey) || mats[0]; // Exact material bucket from TerrainTileMaterials, not a guessed color.
+        const xray = window.HeldObjectRenderOrder?.classify?.(o); // The same ground predicate used by actual held-object replay.
+        lines.push(`     terrain floor: bucket=${terrainMaterial?.userData?.terrainKey || '-'} PNG=${!!terrainMaterial?.map} texture=${terrainMaterial?.userData?.hobunjiTerrainTextureStatus || 'default'} xray=${xray?.ground === true} registered=${o.userData?.hobunjiHeldGroundReplay === true}`);
+      }
+      if (hit.point && (o.userData?.terrainRenderChunk || o.userData?.wildernessGlobalPathGround || o.userData?.cameraObstacle || o.userData?.plateauMesaRenderBatch)) {
         const tileC = Math.floor(hit.point.x), tileR = Math.floor(hit.point.z); // Used to correlate a mobile terrain hit with its live tile metadata.
         const tileDebug = o.userData?.terrainTileDebug?.(tileC, tileR); // Used to expose route exclusion state without requiring desktop devtools.
         lines.push(`     terrain hit: world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)}) tile=(${tileC},${tileR}) face=${hit.faceIndex ?? '-'} materialSlot=${hit.face?.materialIndex ?? '-'}${tileDebug ? ` tileState=${JSON.stringify(tileDebug)}` : ''}`);
@@ -1471,6 +1497,16 @@
       lines.push(`Latest camera change: ${boom.latestChange}`);
       const framing = window.HobunjiShoulderCameraCharacterFraming?.snapshot?.(); // Reads the event-time framing report so mobile users can verify head-centered targeting.
       if (framing) lines.push(`Shoulder framing: species=${framing.speciesId || '-'} center=${framing.targetSource || '-'} headY=${Number(framing.headHeightTiles || 0).toFixed(3)} neckY=${Number(framing.neckHeightTiles || 0).toFixed(3)} targetOffset=${Number(framing.resolvedTargetYOffsetTiles || 0).toFixed(3)}; ${framing.latestChange || ''}`);
+    }
+
+    const melodyCamera=window.MelodyCameraFraming?.debugSnapshot?.(); // Mobile-only readout; gameplay samples only the active plate's owned glyphs.
+    if(melodyCamera?.registered){
+      const f=melodyCamera.framing||{};
+      lines.push('Melody camera: '+(melodyCamera.active?'found note '+(melodyCamera.triggerNote+1):'searching')
+        +' groups='+melodyCamera.registered+' shown='+melodyCamera.notes
+        +' zoom='+Number(f.distanceScale||1).toFixed(2)+' fov+'+Number(f.fovExtra||0).toFixed(1)
+        +' lift='+Number(f.offsetY||0).toFixed(2)+' fitLimited='+(melodyCamera.fitLimited?'yes':'no')
+        +' status='+melodyCamera.reason);
     }
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);

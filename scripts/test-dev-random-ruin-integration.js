@@ -295,8 +295,8 @@ assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects 
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
 assert(!interactions.includes("source:'semantic-glyph'"), 'glyph targets are shot with the ordinary ranged input; the list must not add a generic "Fire <weapon>" row');
 assert(interactions.includes('window.RangedWeapons?.focusCandidates?.(candidates, 6)'), 'ruin interactions must use the shared reticle focus, listing only the aimed object\'s actions');
-assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY') && interior.includes('syncPlayerPresentationHeight:syncRuinPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
-assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.()') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
+assert(interior.includes('function getPlayerSupportY(') && interior.includes('syncPlayerPresentationHeight:syncRuinPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
+assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.(') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
 assert(interior.includes('ruin.supportY=climbY') && interior.includes('ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}'), 'ladder motion must advance the ruin step baseline so the landing cannot be rejected as an oversized step');
 assert(!interior.includes('RUIN_ELEVATION_CHANNEL'), 'ruin elevation must not post-correct attachments through a second composer channel');
 assert(interactions.includes('ClimbSystem?.startScriptedWorldClimb'), 'authored stone ladders must use the shared cliff-climb animation instead of teleporting by default');

@@ -425,6 +425,7 @@
 
   window.CreatureDeath = {
     init,
+    getCorpseObjects: () => deps?.corpseObjects || null, // Render-only consumers reuse the canonical registry without taking ownership.
     begin,
     restoreSettledPose,
     settleAsCorpse,

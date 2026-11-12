@@ -807,7 +807,7 @@
     world.ownedTexture=texture;
     // Snow-style curved edges; an individual patch is contiguous at birth and
     // remains in place until the entire ruin is left or regenerated.
-    world.plasmMaterial=new THREE.MeshBasicMaterial({color:PLASM_COLOR,map:texture,transparent:true,opacity:PLASM_OPACITY,depthWrite:false}); // The lighter violet the bomb puddles had: now the one look of ALL plasm (ground, platforms, pit).
+    world.plasmMaterial=new THREE.MeshBasicMaterial({color:PLASM_COLOR,map:texture,transparent:true,opacity:PLASM_OPACITY,depthWrite:false}); // Shared dark oil base for ground patches, shaft platforms, the pit and bomb puddles.
     updatePlasmMesh(kit);
   }
   // Mirrors EnvironmentSurfaceMicroPlateau's snow: assemble the whole
@@ -1153,7 +1153,8 @@
     }
     world.playerWasAlive=true;
     const key=tileKey(point.x,point.z);
-    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y); // Physical support chooses the matching tier when two floors share a tile.
+    const jumpSupportY=player._freeJump?.phase==='supported'?player.physicalFeetY:null; // PlayerJump updates raised support before the ruin reconciles it.
+    const playerY=Number(jumpSupportY??window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y); // Physical support chooses the matching tier when two floors share a tile.
     const room=plasmPatchAt(point.x,point.z,playerY);
     // Newly activated checkpoints are always safe, without altering or re-uploading the authored surface.
     if(!room?.plasm?.has(key)||protectedPlasmTile(kit,Math.floor(point.x),Math.floor(point.z))){
@@ -1162,7 +1163,7 @@
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    if(kit.ownsPlayerMotion?.()||player.climbing||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){ // A mid-air hop over plasm neither sinks nor pulls you.
+    if(kit.ownsPlayerMotion?.()||player.climbing||player.onClimbSurface||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||playerY<baseY-.3){ // Compare physical heights even if the player was already sinking on another level.
       world.sink=0;
       restorePlasmPresentation();
       return; // Ropes, flying and elevated supports take precedence.

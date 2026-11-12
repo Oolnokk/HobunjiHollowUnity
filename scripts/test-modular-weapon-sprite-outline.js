@@ -81,7 +81,8 @@ mark(fringe, 8, 8, [150, 70, 40, 32]);
 assert.deepEqual(pixel(window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 32).pixels, 8, 8), [150, 70, 40, 32], 'Alpha at the threshold is kept.');
 assert.throws(() => window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 256), /0 to 255/);
 
-const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'pick-shovel', 'plains-sword'] }; // New authoring-only exports on main.
+const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'plains-sword'] }; // Remaining uncalibrated authoring-only exports.
+assert.equal(api.getConfig().shafts['pick-shovel'].editorOnly, false, 'Pick-Shovel shaft is now an approved forgeable modular pick.');
 for (const [kind, keys] of Object.entries(uploaded)) for (const key of keys) {
   const part = api.getConfig()[kind][key]; // Newly registered parts must be visible in the authoring dropdowns.
   assert(part && part.editorOnly, kind + '/' + key + ' should require calibration.');

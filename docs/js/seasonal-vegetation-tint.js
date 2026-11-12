@@ -467,6 +467,10 @@
   window.SeasonalVegetationTint = {
     __sourceTaggedV6: true,
     reapply: () => syncAll(true, 'manual reapply'),
+    tintMaterial: material => { // Called for a freshly attached cached terrain PNG; avoids rewalking all seasonal materials just to tint one.
+      const tint = currentSeasonTint();
+      return tint ? applyTintToMaterial(material, tint, currentSeasonDensity()) : null;
+    },
     status: () => ({
       source: currentSeasonTint() ? 'CalendarSystem.currentSeason().grassColor' : null,
       tint: currentSeasonTint()?.getHexString?.() ? `#${currentSeasonTint().getHexString()}` : null,

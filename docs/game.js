@@ -5506,10 +5506,11 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+            scheduleLootMemberSave(); // Normal animal butcher loot uses the same deferred member save as enemy corpses.
             if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
             else { corpseObjects.delete(c); despawnCreature(c); }
             return {
-              ok: true,
+              ok: true, deferMemberSave: true, // The canonical save is already queued; skip the world-action handler's immediate second write.
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
             };
           },
@@ -9591,17 +9592,34 @@
         return meta;
       }
 
+      let pendingLootMemberSave = false; // Corpse loot is live immediately; disk serialization is coalesced until idle.
+      let queuedLootMemberSave = false; // Prevents one idle task per loot pickup.
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
           if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
+          pendingLootMemberSave = false; // An ordinary explicit save also satisfies the pending loot write.
           return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
         } catch (error) {
           window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
           return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
         }
       }
+
+      function flushLootMemberSave() {
+        if (pendingLootMemberSave) saveMemberWorldData(); // Only canonical member serializer writes member data.
+      }
+      function scheduleLootMemberSave() {
+        pendingLootMemberSave = true; // Item grants and world-object removal have already completed synchronously.
+        if (queuedLootMemberSave) return;
+        queuedLootMemberSave = true;
+        const flush = () => { queuedLootMemberSave = false; flushLootMemberSave(); };
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flush, { timeout: 1500 });
+        else setTimeout(flush, 100);
+      }
+      window.addEventListener?.('pagehide', flushLootMemberSave); // Persist pending loot before a tab/page closes.
+      document.addEventListener?.('visibilitychange', () => { if (document.hidden) flushLootMemberSave(); });
 
       // ── Owner/farmhand content visibility ─────────────────────────────
       // Generic gate dialogue trees and (future) quests can tag themselves
@@ -11340,7 +11358,7 @@
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (!tile.mesaGroundOwned) _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz); // Keep the bush, but do not paint a second ground sheet over the mesa lid.
             if (window.FoliageGenerator) {
               // Which generated object this SHRUB tile came from (see
               // terrain-preview.js's floraKind) decides its mesh: a real
@@ -11469,6 +11487,7 @@
           // An excluded PATH seam still needs an ordinary flat grass floor
           // beneath its separate paved bricks; the route heightfield is what
           // was removed here, not the walkable terrain itself.
+          if (tile.mesaGroundOwned && [TileType.GRASS, TileType.WEEDS, TileType.PATH].includes(tile.type)) continue; // Painted child tiles reuse the continuous mesa lid; paths still receive separate paving.
           const matKey = tile.type === TileType.PATH ? TileType.GRASS : (tileMats[tile.type] ? tile.type : TileType.GRASS);
           _addToBucket(matKey, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
         }
@@ -11542,11 +11561,12 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId, mapBoundary } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, mesaGroundOwned, incline, floraKind, rockKind, boulderId, mapBoundary } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
+          zGrid[r][c].mesaGroundOwned = !!mesaGroundOwned;
           zGrid[r][c].incline = !!incline;
           // Map-boundary escarpment (js/map-boundary-guard.js): solid to
           // movement, climbing and spawning alike.
@@ -11805,9 +11825,12 @@
             if (object.userData?.wildernessChunkOwnsMaterial) {
               const materials = Array.isArray(object.material) ? object.material : [object.material];
               for (const material of materials) {
-                if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
+                if (window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue; // Source materials are persistent map resources, not chunk-owned.
+                const pooled = texture => window.TerrainTileMaterials?.isSharedTexture?.(texture) === true; // Keep shared source PNGs alive when a chunk exits.
+                if (material?.map && !material.map.userData?.chunkJigsawShared && !pooled(material.map)) material.map.dispose?.();
                 for (const uniform of Object.values(material?.uniforms || {})) {
-                  if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
+                  const texture = uniform?.value; // Jigsaw leases are owned by their cloned material; pooled textures by TerrainTileMaterials.
+                  if (texture?.isTexture && !texture.userData?.chunkJigsawShared && !pooled(texture)) texture.dispose?.();
                 }
                 material?.dispose?.();
               }
@@ -14316,8 +14339,9 @@
               // decoration this rule was written for; without the exemption every
               // such object off-plateau silently vanished into invisible grass.
               if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
+              const mesaGroundOwned = outTiles.get(key)?.skipFloor === true && ['grass', 'weeds', 'shrub', 'path'].includes(type); // A painted child tile may add foliage/path art, but the already-staked mesa still owns its floor.
               outTiles.set(key, {
-                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false, mesaGroundOwned,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
                 // Which generator object ('diggableRockOre'/'undiggableBoulder')
                 // this 'rock' tile came from — see terrain-preview.js's mirrored
@@ -16120,12 +16144,20 @@
         return { materials, textures };
       }
       function disposeSceneResources(zoneScene, live) {
-        const seen = new Set(); let materials = 0, textures = 0;
+        const seen = new Set(), disposedTextures = new Set(); // Protect each texture and cached terrain material across zone eviction.
+        let materials = 0, textures = 0;
         zoneScene.traverse(object => {
           for (const material of materialsOf(object)) {
-            if (!material || seen.has(material) || live.materials.has(material)) continue;
-            seen.add(material);
-            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            if (!material || seen.has(material)) continue;
+            seen.add(material); // Repeated meshes using a pinned map material need only one lifetime check.
+            if (live.materials.has(material)
+                || window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue;
+            for (const texture of materialTextures(material)) {
+              if (disposedTextures.has(texture) || live.textures.has(texture)
+                  || window.TerrainTileMaterials?.isSharedTexture?.(texture)) continue;
+              disposedTextures.add(texture);
+              texture.dispose(); textures++;
+            }
             material.dispose(); materials++;
           }
         });
@@ -17932,6 +17964,7 @@
       }
 
       function buildInventoryGrid() {
+        if (!menuOpen) return; // Opening/switching to Pack rebuilds it; offscreen loot must not recreate dozens of DOM nodes.
         const grid = document.getElementById('invGrid');
         if (!grid) return;
         grid.innerHTML = '';
@@ -20911,6 +20944,10 @@
             startChargeAction(getReticleTile(), MINE_ROCK_STAGES);
             return;
           }
+          if (activeTool === 'hoe' && activeAction === 'till') {
+            startChargeAction(getReticleTile(), TILL_SOIL_STAGES);
+            return;
+          }
           {
             const _chargeReticle = getReticleTile();
             const _chargeTile = window.GridTileAccessors.getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
@@ -20922,10 +20959,9 @@
 
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
-        // Dig speed only scales shovel dig & fill swings (e.g. the single-tap
-        // trench redig below) — everything else swings at its normal pace.
-        if (activeTool === 'shovel' && (activeAction === 'dig' || activeAction === 'fill')) {
-          toolSwingDur /= getDigSpeedMultiplier();
+        // Ordinary one-swing terrain work also uses the equipped tool's efficacy.
+        if (['shovel', 'hoe', 'axe', 'pick'].includes(activeTool)) {
+          toolSwingDur /= getToolWorkSpeedMultiplier(activeTool);
         }
         toolSwingT = toolSwingDur;
         strikeFired = false;
@@ -22908,7 +22944,10 @@
       }
 
       function updateCameraPosition() {
-        if (applyAuthoredCinematicCamera()) return;
+        if (applyAuthoredCinematicCamera()) {
+          window.MelodyCameraFraming?.reset?.(); // The authored shot bypasses normal camera updates, so it must disarm first-note discovery before handing control back.
+          return;
+        }
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -22960,6 +22999,19 @@
           activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
         if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
+        const melodyFrame=window.MelodyCameraFraming?.update?.({
+          area:currentArea,playerX:player.x/TILE,playerZ:player.y/TILE,camera,
+          baseTarget:{x:lookAtX,y:lookY,z:lookAtZ},baseDistance:distance,azimuth,angle,
+          fovDeg:modeCfg.fovDeg??42,aspect:cameraContainerAspect(),
+          enabled:!cutscenePreviewActive&&!dialogueZoomActive()&&!dialogueOpen
+            &&!window.__mapEditorOrbitActive&&!window.CinematicCameraRuntime?.isActive?.()
+            &&activeCameraMode!=='fishing'&&activeCameraMode!=='fishCatch',
+          now:performance.now(),
+        }); // Shared gameplay camera remains authoritative; the score supplies only a discovery-gated framing correction.
+        if(melodyFrame){
+          lookAtX+=melodyFrame.offsetX;lookAtZ+=melodyFrame.offsetZ;lookY+=melodyFrame.offsetY;
+          distance*=melodyFrame.distanceScale;
+        }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
@@ -22977,7 +23029,7 @@
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.
         camera.near = _cameraBoomDebug ? Math.min(0.1, Math.max(0.01, _cameraBoomDebug.solvedDistance * 0.2)) : 0.1;
-        camera.fov = modeCfg.fovDeg ?? 42;
+        camera.fov = (modeCfg.fovDeg ?? 42)+(melodyFrame?.fovExtra||0); // Preserve every non-melody camera mode's authored FOV exactly.
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
         window.DialogueCameraFraming?.apply(camera, !!portraitAim);
@@ -23792,6 +23844,9 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
+      // The hoe uses the shovel's digging/Farming bonuses for this held soil-work sequence.
+      const TILL_SOIL_STAGES = [0.8, 0.7, 0.6].map(dur => ({ anim: 'chop', dur, sfxKey: 'dig', sfxAt: 0.28 })); // Three strokes; only completion tills the tile.
+
       // Felling a real tree (see isChoppableTreeTile) — a short flurry of
       // alternating forehand/backhand swings held through to the end, reusing
       // the melee combo's own authored SWEEP_POSE (window.Combat.poses) via
@@ -23900,8 +23955,17 @@
       // farming tool action) — updateCombatConeTrail then hides every lane.
       let combatSwingCone = null;
 
+      // One authority for tool working time. Per-slot metal efficacy includes
+      // reinforcement and shares the same scale as the inventory stats display.
+      function getToolWorkSpeedMultiplier(tool) {
+        const skillKey = tool === 'axe' ? 'foraging' : tool === 'pick' ? 'mining' : 'farming'; // Used to choose each tool's existing skill/perk speed.
+        const skillSpeed = window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1; // Used for short and long work animations.
+        const digSpeed = tool === 'shovel' || tool === 'hoe' ? Math.max(0.01, player.digSpeed || 1) : 1; // Shared by digging and tilling.
+        const metalEfficacy = toolMetalMultiplier(equipmentSlots[tool]); // Uses the equipped tool's effective/reinforced metal.
+        return Math.max(0.01, skillSpeed * digSpeed * metalEfficacy);
+      }
       function getDigSpeedMultiplier() {
-        return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
+        return getToolWorkSpeedMultiplier('shovel');
       }
 
       // Prefer the selected shovel action when it is valid: explicitly
@@ -23927,6 +23991,10 @@
         if (tool === 'pick' && action === 'mine') {
           const reticle = getReticleTile();
           return isMineableRockTile(reticle.col, reticle.row);
+        }
+        if (tool === 'hoe' && action === 'till') {
+          const reticle = getReticleTile(); // A valid tile starts the hold; changing targets cancels without modifying terrain.
+          return canUseAction(tool, action, reticle.col, reticle.row);
         }
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return false;
         const reticle = getReticleTile();
@@ -23960,34 +24028,37 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
-        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const speedMultiplier = getToolWorkSpeedMultiplier(chargeAction.tool); // Metal, skill, and player dig speed affect each held stage.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
         chargeStageSfxFired = false;
         pendingAction = null;
-        if (stageDef.pose) {
-          // Reuses the melee combo's own authored sweep pose (see
-          // combat-combo.js's SWEEP_POSE, exported as window.Combat.poses)
-          // instead of a chargeAnimOverride arc — same pose-driven branch
-          // updateToolMesh already plays for weapon swings.
-          chargeAnimOverride  = null;
-          combatSwingAnim     = 'sweep';
-          combatSwingPose     = window.Combat?.poses?.SWEEP_POSE || null;
-          combatSwingSign     = stageDef.dirSign || 1;
+        const workItemKey = equipmentSlots[chargeAction.tool]; // Current equipped assembly for the active tool's ordinary work stages.
+        const workDef = window.ToolActivityStages && typeof TOOL_ITEM_DEFS !== 'undefined' ? TOOL_ITEM_DEFS[workItemKey] : null; // Resolve when the work-style module and definitions are available; isolated efficacy runners retain the native stage.
+        const simpleStroke = stageDef.pose === true || ['sweep', 'thrust', 'chop'].includes(stageDef.anim); // Toss/refill flourishes must keep their specialized soil-handling arcs.
+        const workStyle = simpleStroke ? window.ToolActivityStages?.workStyleFor?.(chargeAction.tool, workItemKey, workDef) : null; // Null for every unmodified, non-modular tool.
+        const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.(chargeAction.tool, workItemKey, workDef, stageDef.dirSign) : null; // Resampled once per stage, with mirrored attack DELTAS anchored to a stable tool Neutral.
+        if (stageDef.pose || workPose) {
+          // Normal axes retain the authored melee pose, while fitted modular tools interpolate from
+          // the tool-slot Neutral through their *weapon* attack. Mining sweeps rotate into the overhead plane.
+          chargeAnimOverride = null;
+          combatSwingAnim = workPose ? workStyle : 'sweep';
+          combatSwingPose = workPose || window.Combat?.poses?.SWEEP_POSE || null;
+          combatSwingSign = workPose ? 1 : (stageDef.dirSign || 1); // The modular work pose already mirrors its attack delta without flipping the idle Neutral.
           combatSwingWindupFrac = 0.22;
           combatSwingStrikeFrac = 0.55;
-          combatSwingPower    = 1;
-          combatSwingHoldS    = 0;
+          combatSwingPower = 1;
+          combatSwingHoldS = 0;
           combatSwingAfflictionIds = [];
           combatSwingAfflictionMuls = {};
         } else {
-          chargeAnimOverride = stageDef.anim || null;
-          combatSwingAnim  = null;
-          combatSwingPose  = null;
+          chargeAnimOverride = workStyle || stageDef.anim || null; // Original flipped Pick-Shovel still uses its thrust arc even with an unrelated mounted head.
+          combatSwingAnim = null;
+          combatSwingPose = null;
         }
+        if (workStyle) window.ToolActivityStages?.notePlayerWork?.(chargeAction.tool, workItemKey, workStyle, !!workPose); // One mobile-readable diagnostic per stage, never a per-frame log.
       }
 
       // Plays the weapon's existing arm-swing mesh animation for durationS without
@@ -24100,6 +24171,7 @@
           heldSpin: opts.heldSpin === true,
           heldSpinBasisDeg: Number(opts.heldSpinBasisDeg) || 0,
           heldSpinRevolutions: Math.max(0, Number(opts.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS),
+          flailHeadSpin: opts.flailHeadSpin === true, // A tethered fishing flail spins only its chain/head around the shaft's real attachment.
         };
         if (opts.gripMode) window.ProceduralHandGripRuntime?.beginHeld?.(opts.gripMode);
         return true;
@@ -24248,6 +24320,7 @@
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
           if (!actionHeldDown) { cancelChargeAction('input released'); return; }
+          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action) { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
           const reticle = getReticleTile();
           if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
@@ -24449,7 +24522,9 @@
           // regardless of swing phase — a static idle-pose difference so a
           // pick-shovel equipped in both the shovel and pick slots at once
           // still reads as two distinct tools at rest, not just mid-swing.
-          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: slot === 'pick' }) : null;
+          const slotDef = itemKey ? TOOL_ITEM_DEFS[itemKey] : null; // The assembly's haft controls whether mining needs the classic end-for-end Pick-Shovel flip.
+          const pickEndFlip = slot === 'pick' && (!slotDef?.modular || slotDef.modular.shaft === 'pick-shovel'); // Other modular pick-head weapons retain their authored head-end orientation.
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: pickEndFlip }) : null;
           if (slot === 'ranged' && itemKey) setToolMeshLoadedState(toolMeshMap[slot], itemKey, window.RangedWeapons?.isLoaded?.(itemKey) !== false);
         }
         // machete alias → weapon mesh for legacy code paths
@@ -25030,6 +25105,7 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
+          musicInstrument: window.MusicMinigame?.state?.instrumentKey || null, // Pixel Probe distinguishes music visual ownership from a locked ordinary tool.
           drinkAnimating: !!_heldDrinkPhase,
           drinkPhase: _heldDrinkPhase,
           drinkProgress: _heldDrinkProgress,
@@ -25211,18 +25287,27 @@
       });
 
       function updateToolMesh(dt) {
+        if (toolHolder.userData) toolHolder.userData.authoredToolActionActive = false; // Clear an old work pose on instrument/lock returns; isolated instrument previews may supply a holder without metadata.
         _toolPoseCentroidDebug.reticleOrbitApplied = false;
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
         _toolPoseCentroidDebug.reticleTargetWorld = null;
-        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
+        const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A live music session owns its prop without unlocking ordinary combat/tools.
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')
+            && (musicInstrument !== 'kurraya' ||
+                window.CharacterActionLocks?.isLockedIgnoringOwner?.(PLAYER_ACTION_LOCK_ID, 'tools', 'music-minigame') !== false)) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
           return;
         }
-        if (window.MusicMinigame?.state?.instrumentKey) {
+        if (musicInstrument) {
           toolHolder.visible = false;
-          updateHeldItemHolder(dt);
+          if (musicInstrument === 'kurraya') {
+            window.KurrayaInstrument?.advancePlayerKurrayaNote?.(performance.now()); // One sample for holder, hands and pre-render knees.
+            updateHeldItemHolder(dt); // Music locks attacks, not the Kurraya's appearance.
+          } else {
+            heldItemHolder.visible = false; // Flute uses a mouth-mounted sprite rather than duplicating it on the chest.
+          }
           return;
         }
         if (heldMode === 'none') {
@@ -25240,6 +25325,7 @@
           return;
         }
         heldItemHolder.visible = false;
+        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && !!combatSwingPose && toolSwingT > 0; // Only real tool work and held fishing poses suppress the idle-stance rebase.
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
@@ -25306,7 +25392,9 @@
         const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
         const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
         window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
-          attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
+          attacking: toolSwingT > 0 && (activeTool === 'weapon' || ((chargeAction?.tool === activeTool || (activeTool === 'harpoon' && !!fishingThrowSpinVisual)) && !!TOOL_ITEM_DEFS[equipmentSlots[activeTool]]?.modular)), progress, // Flexible modular tool and harpoon strokes must animate their rope/head as well as their shaft.
+          fishingFlailHeadSpin: activeTool === 'harpoon' && combatSwingAnim === 'ranged' && fishingThrowSpinVisual?.flailHeadSpin === true, // Flag for head-only orbit; the shaft sprite's rotation and authored hand grip are unchanged.
+          fishingFlailSpinRevolutions: fishingThrowSpinVisual?.heldSpinRevolutions ?? TOOL_SPIN_REVOLUTIONS, // Reuse the native throw's revolution count, not a new per-flail speed.
           movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
           yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
@@ -25682,7 +25770,13 @@
           // thrust-styled pick-shovel), so baking the twist per-item at mesh creation got it
           // backwards in either direction. Deriving it from `anim` here keeps it correct
           // regardless of what's equipped.
-          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
+          const modularWorkSweep = anim === 'sweep' && activeTool !== 'weapon'
+            && chargeAction?.tool === activeTool && toolHolder.userData.authoredToolActionActive; // Only a modular tool's authored sweep needs continuity with its slot Neutral.
+          const workNeutralWeight = modularWorkSweep
+            ? (progress <= WF ? 1 - progress / Math.max(0.0001, WF)
+              : progress >= HF ? Math.min(1, (progress - HF) / Math.max(0.0001, 1 - HF)) : 0)
+            : 0; // Smoothly cancels the sweep's 90° PNG basis at the beginning/end of tool strokes.
+          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 + workNeutralWeight * Math.PI / 2 : 0;
           const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
             ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
             : null;
@@ -25802,11 +25896,13 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
+        const supportedJump = player._freeJump?.phase === 'supported'; // Elevated landings still use PlayerJump's current feet height, with the ruin's visual immersion applied.
+        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(supportedJump ? player.physicalFeetY : undefined);
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
-          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
+          : supportedJump && Number.isFinite(ruinStandY) ? ruinStandY
+          : player._freeJump ? player.physicalFeetY // Airborne and rope motion still use the independent physical elevation.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -28009,7 +28105,9 @@
               ? 'Hold to Fill'
               : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
                 ? 'Hold to Dig'
-                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
+                : activeTool === 'hoe' && allowed && action === 'till'
+                  ? 'Hold to Till'
+                  : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
               icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
@@ -30615,6 +30713,17 @@
         getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
       });
 
+      // Invoked only for active exterior clue overlays; avoids copying all actor Sets each frame.
+      // Corpses can leave the hostile registry but still have visible, lootable character rigs.
+      function* scoreActorDepthRoots() {
+        yield playerMesh;
+        for (const walker of npcWalkers) yield walker.root;
+        for (const actor of hostileObjects) yield actor.avatarRef?.group;
+        for (const actor of companionObjects) yield actor.avatarRef?.group;
+        for (const actor of animalObjects) yield actor.avatarRef?.group;
+        for (const actor of corpseObjects) yield actor.avatarRef?.group;
+      }
+      window.OutlineRenderPerformance?.setScoreCharacterRootsProvider?.(scoreActorDepthRoots);
       window.PixelProbe?.init({
         animalObjects,
         hostileObjects,
@@ -31040,6 +31149,8 @@
         worldToOverlay,
         inventory,
         equipmentSlots,
+        TOOL_ITEM_DEFS, // Modular harpoon casting needs the fitted shaft/head pair's weapon animation style.
+        toolMetalMultiplier, // Fishing's Spear Bridge uses the same metal/reinforcement efficacy as ordinary tool work.
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
@@ -33386,6 +33497,8 @@
         buildInventoryGrid,
         refreshActionBar,
         saveMemberWorldData,
+        scheduleLootMemberSave,
+        isMenuOpen: () => menuOpen,
         despawnCreature,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         getDyeCatalog: window.DyeSystem.getCatalog,

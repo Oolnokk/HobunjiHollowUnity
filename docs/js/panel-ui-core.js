@@ -553,7 +553,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   function loadIdleStanceEditor() {
     if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
     const script = document.createElement('script'); // Same existing editor module, now with a recoverable load lifecycle.
-    script.src = '../../js/attack-idle-stance-editor.js?v=20261027hcarryedit1';
+    script.src = '../../js/attack-idle-stance-editor.js?v=20261111flailPose1';
     script.defer = true;
     pendingIdleStanceScript = script;
     function endAttempt() {
@@ -632,7 +632,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261107h4488d95';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261111mesaLocalePreview1';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 
