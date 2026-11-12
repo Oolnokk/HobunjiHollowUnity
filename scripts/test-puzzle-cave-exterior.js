@@ -190,6 +190,18 @@ assert(gate.glyphs.every(g=>!g.material.depthTest && !g.material.depthWrite && !
 assert(gate.glyphs.every(g=>g.renderOrder>=1200 && g.userData.noOutline), 'authored ink uses the existing final canvas overlay, not just an ordinary world draw order');
 assert(gate.glyphGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'inner note halos follow the same selective score visibility');
 assert(gate.glyphOuterGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'outer note halos cannot vanish behind the cliff');
+for(const [kind,parts] of [['ink',gate.glyphs],['inner glow',gate.glyphGlows],['outer glow',gate.glyphOuterGlows]]){
+  assert(parts.every(mesh=>mesh.userData.puzzleCaveScoreOverlay===true),
+    `every ${kind} plane must opt into the character-depth mask, not draw over the player/NPC`);
+}
+const gameSource=read('docs/game.js'); // Verify the renderer receives the same live actor roots as gameplay, not a screenshot-only proxy.
+assert.match(gameSource, /setScoreCharacterRootsProvider\?\.\(\(\) => \[/,
+  'the gameplay bootstrap must register the character silhouette owner for active exterior score overlays');
+for(const group of ['npcWalkers','hostileObjects','companionObjects','animalObjects'])
+  assert(gameSource.includes('...'+group+'.map('),`the note occlusion provider must include live ${group} avatars`);
+assert.match(read('docs/js/outline-render-performance.js'), /renderer\.clearDepth\(\)/,
+  'final note rendering must clear only depth before rebuilding near-character silhouettes');
+
 const outlineSource=read('docs/js/outline-render-performance.js'); // Exercise the renderer's *actual* overlay selector rather than merely duplicating a matching number.
 const predicateStart=outlineSource.indexOf('  function isWorldTextOverlayMaterial(');
 const predicateEnd=outlineSource.indexOf('  // This used to traverse',predicateStart);
