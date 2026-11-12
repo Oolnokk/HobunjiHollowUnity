@@ -30713,6 +30713,17 @@
         getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
       });
 
+      // Invoked only for active exterior clue overlays; avoids copying all actor Sets each frame.
+      // Corpses can leave the hostile registry but still have visible, lootable character rigs.
+      function* scoreActorDepthRoots() {
+        yield playerMesh;
+        for (const walker of npcWalkers) yield walker.root;
+        for (const actor of hostileObjects) yield actor.avatarRef?.group;
+        for (const actor of companionObjects) yield actor.avatarRef?.group;
+        for (const actor of animalObjects) yield actor.avatarRef?.group;
+        for (const actor of corpseObjects) yield actor.avatarRef?.group;
+      }
+      window.OutlineRenderPerformance?.setScoreCharacterRootsProvider?.(scoreActorDepthRoots);
       window.PixelProbe?.init({
         animalObjects,
         hostileObjects,
