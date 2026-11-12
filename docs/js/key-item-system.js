@@ -6,6 +6,7 @@
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used to persist key ownership through the same save blob as characters/worlds.
   const definitions = new Map(); // Used to resolve labels, save scope, and future feature gates for registered key items.
   const PACK_KEY_LIST_ID = 'invKeyList'; // Existing Inventory > Pack key-item section, refreshed after ownership changes.
+  const worldKeysCache = { worldId: null, ready: false, keys: new Set() }; // Hot-path ruin/talisman checks must not JSON.parse the entire world save every frame.
 
   function normalizeDefinition(definition) { // Used to reject malformed key definitions before they can corrupt save ownership.
     if (!definition?.id) return null;
@@ -37,6 +38,20 @@
     try { return JSON.parse(global.localStorage?.getItem(SAVE_META_KEY) || 'null'); } catch (_) { return null; }
   }
 
+  function invalidateWorldKeys() { worldKeysCache.ready = false; } // Called after key mutations and whenever a different save finishes loading.
+  function ownedWorldKeys(liveProfile = profile()) { // Lazy world-key mirror for frequent ruin doors and talisman distance checks.
+    const worldId = liveProfile?.worldId || null; // Current world id is the cache lifetime; changing worlds forces a reload.
+    if (!worldId) return new Set();
+    if (!worldKeysCache.ready || worldKeysCache.worldId !== worldId) {
+      const meta = readMeta(); // Only a cold load/save-change reaches localStorage and JSON.parse.
+      const world = meta?.worlds?.find(entry => entry?.id === worldId);
+      worldKeysCache.keys = new Set(Array.isArray(world?.keyItems) ? world.keyItems : []); // Saved ownership is always authoritative.
+      worldKeysCache.worldId = worldId;
+      worldKeysCache.ready = !!world; // Missing saves are retried instead of caching a false negative forever.
+    }
+    return worldKeysCache.keys;
+  }
+
   function writeMeta(meta) { // Used after a key grant to atomically persist the modified save blob.
     if (!meta) return false;
     try { global.localStorage?.setItem(SAVE_META_KEY, JSON.stringify(meta)); return true; } catch (_) { return false; }
@@ -62,9 +77,7 @@
     const liveProfile = profile(); // Used to resolve the currently active character/world.
     if (!liveProfile) return false;
     if (definition.scope === 'character') return characterKeys(liveProfile).includes(definition.id);
-    const meta = readMeta(); // Used to read the world's shared key item list.
-    const world = meta?.worlds?.find(entry => entry?.id === liveProfile.worldId); // Used to scope world keys to the active world only.
-    return Array.isArray(world?.keyItems) && world.keyItems.includes(definition.id);
+    return ownedWorldKeys(liveProfile).has(definition.id); // Cached world ownership keeps per-frame ruin/talisman gates allocation-free.
   }
 
   function renderPackKeys() { // Populates the existing Inventory > Pack Key Items section from persistent ownership.
@@ -73,9 +86,7 @@
     if (!list) return false;
     try {
       const liveProfile = profile(); // Current character/world determines which keys are visible.
-      const meta = readMeta(); // Read the large world-save blob once rather than once per key.
-      const world = meta?.worlds?.find(entry => entry?.id === liveProfile?.worldId);
-      const worldKeys = new Set(Array.isArray(world?.keyItems) ? world.keyItems : []); // World grants are shared by characters in this world.
+      const worldKeys = ownedWorldKeys(liveProfile); // World grants are shared by characters in this world, without repeated JSON.parse.
       const characterKeysOwned = new Set(Array.isArray(liveProfile?.gearInventory?.keyItems) ? liveProfile.gearInventory.keyItems : []); // Personal keys travel with this character.
       const owned = [...definitions.values()].filter(definition => (definition.scope === 'world' ? worldKeys : characterKeysOwned).has(definition.id));
       const expandedKey = list.querySelector?.('.inv-key-chip[aria-expanded="true"]')?.dataset?.keyItemId || ''; // Preserve a tapped key's description across refreshes.
@@ -145,6 +156,7 @@
     }
 
     if (!writeMeta(meta)) return { ok: false, granted: false, message: 'Could not save key item ownership.' };
+    if (definition.scope === 'world') invalidateWorldKeys(); // A successful grant invalidates the hot-path cache before any UI/event observers run.
     if (syncCharacterOwnership) uniquePush(characterKeys(liveProfile), definition.id); // Used to mirror only successfully persisted character ownership into the live profile.
     renderPackKeys(); // New grants appear immediately without requiring a Pack reload.
     try {
@@ -171,6 +183,7 @@
     if (definition.scope === 'world') owner.keyItems = list.filter(entry => entry !== definition.id);
     else owner.gearInventory.keyItems = list.filter(entry => entry !== definition.id);
     if (!writeMeta(meta)) return { ok: false, removed: false, message: 'Could not save key item consumption.' };
+    if (definition.scope === 'world') invalidateWorldKeys(); // Consumed talismans and lich keys must disappear from cached gates immediately.
     if (definition.scope === 'character') {
       const liveKeys = characterKeys(liveProfile); // Keep the character mirror consistent only after the persistent write succeeds.
       for (let i = liveKeys.length - 1; i >= 0; i--) if (liveKeys[i] === definition.id) liveKeys.splice(i, 1);
@@ -189,13 +202,12 @@
 
   function snapshot() { // Used by mobile-visible diagnostics and tests without requiring browser developer tools.
     const liveProfile = profile(); // Used to include active save ids beside owned key arrays.
-    const meta = readMeta(); // Used to report world keys from persistent world state.
-    const world = meta?.worlds?.find(entry => entry?.id === liveProfile?.worldId); // Used to scope diagnostics to the current world.
+    const worldKeys = ownedWorldKeys(liveProfile); // Reuses current-world ownership without expensive extra save parsing.
     return {
       characterId: liveProfile?.characterId || null,
       worldId: liveProfile?.worldId || null,
       characterKeys: [...characterKeys(liveProfile)],
-      worldKeys: Array.isArray(world?.keyItems) ? [...world.keyItems] : [],
+      worldKeys: [...worldKeys],
       definitions: [...definitions.values()].map(entry => ({ ...entry })),
     };
   }
@@ -205,6 +217,6 @@
   global.KeyItemSystem = { define, defineMany, definitionFor, has, grant, revoke, featureUnlocked, snapshot, renderPackKeys };
   if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', renderPackKeys); // The authored Pack section may be parsed after this script runs.
-    document.addEventListener('hobunjiPlayerReady', renderPackKeys); // Loaded/imported saves show their keys after the active profile is restored.
+    document.addEventListener('hobunjiPlayerReady', () => { invalidateWorldKeys(); renderPackKeys(); }); // Loaded/imported saves replace the old cached ownership before rendering.
   }
 })();
