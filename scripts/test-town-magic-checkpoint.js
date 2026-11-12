@@ -9,9 +9,10 @@ const source = fs.readFileSync('docs/js/town-magic-checkpoint.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const guildSource = fs.readFileSync('docs/js/delvers-guild-story.js', 'utf8');
+const keyItemSource = fs.readFileSync('docs/js/key-item-system.js', 'utf8'); // Uses the same persistent world-key storage as the live Guild.
 const artifact = fs.readFileSync('docs/js/artifact-collection.js', 'utf8');
 const relics = fs.readFileSync('docs/js/harlyao-relics.js', 'utf8');
-for (const [name, code] of Object.entries({ source, guildSource, artifact, relics })) new vm.Script(code, { filename: name });
+for (const [name, code] of Object.entries({ source, guildSource, keyItemSource, artifact, relics })) new vm.Script(code, { filename: name });
 assert(index.includes('js/town-magic-checkpoint.js'));
 assert(index.indexOf('js/town-magic-checkpoint.js') < index.indexOf('<script src="game.js'));
 assert(game.includes('window.TownMagicCheckpoint?.onTownEntered?.({ fromArea, col, row })'));
@@ -234,10 +235,13 @@ assert(!guildSource.includes('It glows red and hums when you carry uncatalogued 
 
   // Garanki must honor Spearhead's referral even before the unrelated Jubmir quest sends an invitation.
   let guildStory = { jubmirFeyComplete: false, delversGuild: {} }; // Independent new-world fixture for early confiscation.
-  const guildInventory = {}; // No magic rewards or Delver's Stone should exist before joining.
+  const guildInventory = {}; // Guild rewards belong to KeyItemSystem and must never occupy the material Pack.
+  let guildMeta = { characters: [{ id: 'owner', gearInventory: { keyItems: [] } }], worlds: [{ id: 'early-referral', keyItems: [] }] }; // Persistent early-referral world fixture.
+  const guildStorage = { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(guildMeta) : null, setItem: (key, value) => { if (key === 'hobunjiSaveMeta') guildMeta = JSON.parse(value); } }; // Production-compatible storage interface.
   const guildWindow = {
     __hobunjiPlayerProfile: { worldId: 'early-referral', characterId: 'owner', nickname: 'Tala' },
     __hobunjiGameStarted: true,
+    localStorage: guildStorage,
     TownMagicCheckpoint: { hasCustody: () => true },
     OpeningStoryCutscene: {
       getStory: () => guildStory,
@@ -255,6 +259,7 @@ assert(!guildSource.includes('It glows red and hums when you carry uncatalogued 
     TasksPanel: { render() {} }, DevCompanion: { registerStateProvider() {} },
     setTimeout: callback => callback(), __farmLog() {},
   };
+  vm.runInNewContext(keyItemSource, { window: guildWindow, document, console });
   vm.runInNewContext(guildSource, { window: guildWindow, document, console });
   guildWindow.DelversGuild.bindInventoryDeps({
     ITEM_DEFS: {}, inventoryItems: [], inventory: guildInventory,
@@ -267,18 +272,17 @@ assert(!guildSource.includes('It glows red and hums when you carry uncatalogued 
     'a nonmember can review confiscated belongings without being forced into the Guild introduction');
   assert.equal(await guildWindow.DelversGuild.playIntro(), true);
   assert.equal(guildWindow.DelversGuild.isMember(), true);
-  assert.equal(guildInventory.delversStone, 1);
+  assert.equal(guildWindow.KeyItemSystem.has('delversStone'), true);
+  assert.equal(guildInventory.delversStone, undefined, 'Delver license is no longer a material stack');
   assert.equal(guildStory.delversGuild.member, true);
   guildStory.delversGuild.trusted = true;
-  Object.assign(guildInventory, {
-    azgarlu_key_stone: 1, nanahi_key_stone: 1, imlao_key_stone: 1,
-  });
+  for (const key of guildWindow.DelversGuild.KEY_STONES) assert.equal(guildWindow.KeyItemSystem.grant(key.id).ok, true); // Defeated lich keys use the actual world-key registry.
   const keyTree = guildWindow.DelversGuild.dialogueTree();
   assert.equal(keyTree.id, 'garanki_talisman_handoff');
   assert(keyTree.nodes[0].choices.some(choice => choice.label.includes('confiscated belongings')),
     'the three-key-stones handoff cannot block Garanki custody access');
   guildStory.delversGuild.vaultPhase = 'report';
-  guildInventory.harlyaoKeyTalisman = 1;
+  assert.equal(guildWindow.KeyItemSystem.grant(guildWindow.DelversGuild.TALISMAN_KEY).ok, true); // Quest-report key is also a key item.
   const reportTree = guildWindow.DelversGuild.dialogueTree();
   assert.equal(reportTree.id, 'garanki_vault_report');
   assert(reportTree.nodes[0].choices.some(choice => choice.actions?.[0]?.pool === 'garankiEnchanting'),
