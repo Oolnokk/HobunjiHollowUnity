@@ -6528,6 +6528,8 @@
 
       function updateCreatureMesh(c, dt, aimAngle) {
         if (c._wildlifeVisualsReleased) return; // Coarse logical wildlife has no presentation to update.
+        const rigPerf = window.PerfProfiler?.begin('Combat: creature rig sync'); // Opt-in timing for mesh, head, legs, shadow, and resource HUD work.
+        try {
         const g = c.areaGrid || grid;
         const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
@@ -6728,6 +6730,7 @@
             if (child.material) child.material.color.setHex(desiredTint);
           });
         }
+        } finally { window.PerfProfiler?.end(rigPerf); }
       }
 
       // Ground covered per run-cycle frame advance — picked so a typical
@@ -7101,6 +7104,8 @@
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
+        let engagedHostiles = 0; // Populates the opt-in slow-frame gauge while filtering the existing current-area roster.
+        let activeBandits = 0; // Captures how many of those active actors require full humanoid rigs.
         if (grazingPreyIndexArea !== currentArea) {
           grazingPreyIndexArea = currentArea;
           grazingPreyByPatchFrame.clear();
@@ -7112,11 +7117,16 @@
               window.MaskboundHeadtaker?.isActive?.(c)) window.MaskboundHeadtaker.cancel(c, 'area-changed'); // Cancel cross-area grips during the existing roster pass.
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           currentHostilesFrame.push(c);
+          if (c.isBandit) activeBandits++;
+          if (c.state === 'chase' || c.state === 'searching' || c._chunkCombatTarget?.health > 0) engagedHostiles++;
           if (c.def?.diet !== 'herbivore' || c.state !== 'at-station-grazing') continue;
           const patchPrey = grazingPreyByPatchFrame.get(c.grazingPatchId) || []; // Narrows predator scans to grazing herbivores at their linked patch.
           patchPrey.push(c);
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
+        window.PerfProfiler?.gauge?.('hostiles', currentHostilesFrame.length); // The same roster-size gauge works for idle and fighting comparison captures.
+        window.PerfProfiler?.gauge?.('engagedHostiles', engagedHostiles);
+        window.PerfProfiler?.gauge?.('bandits', activeBandits);
         for (const c of currentHostilesFrame) {
           if (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview) {
             updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the humanoid renderer and real hitboxes.
@@ -20384,6 +20394,8 @@
       function spawnLungeTrailStamp(wx, wy, areaId, grid, sceneObj, ids, muls) {
         if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
         if (!sceneObj) return;
+        const stampPerf = window.PerfProfiler?.begin('Combat: lunge stamp creation'); // Measures per-stamp geometry/material upload bursts.
+        window.PerfProfiler?.count?.('lungeStamps'); // Counts each visual stamp created in this frame.
         const chosenId = pickWeightedAfflictionId(ids, muls);
         const color = neonAfflictionColor(chosenId) ?? 0xffffff;
 
@@ -20412,6 +20424,7 @@
 
         sceneObj.add(group);
         _lungeTrailStamps.push({ group, scene: sceneObj, age: 0 });
+        window.PerfProfiler?.end(stampPerf);
       }
 
       // Per-entity stride accumulator (see _footstepAdvance) tracking how far

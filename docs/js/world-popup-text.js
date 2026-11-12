@@ -138,6 +138,8 @@
   }
 
   function makePlane(text, kind, layout) {
+    const popupPerf = kind === 'damage' ? window.PerfProfiler?.begin('Combat: damage popup creation') : null; // Only damage-related popup allocation belongs in the combat budget.
+    if (popupPerf) window.PerfProfiler?.count?.('damagePopups'); // Correlates simultaneous on-hit numbers with spikes.
     const THREE = state.deps.THREE;
     const size = layout.worldHeight;
     const canvas = document.createElement('canvas');
@@ -169,6 +171,7 @@
     plane.renderOrder = POPUP_RENDER_ORDER;
     plane.frustumCulled = false;
     plane.userData.isBillboard = true;
+    window.PerfProfiler?.end(popupPerf);
     return { plane, geometry, material, texture, width: aspect * size, height: size };
   }
 

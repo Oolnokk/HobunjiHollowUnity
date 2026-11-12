@@ -393,7 +393,7 @@
     }
   }
 
-  function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+  function spawnAfterimageForRootUnmeasured(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
     if (!(opacityScale > 0) || !Number.isFinite(opacityScale)) return false; // Stationary or fully blocked actions produce no visible blur.
     const THREE = window.THREE;
     const sources = findPortraitMeshes(root);
@@ -477,6 +477,15 @@
     afterimageRuntimeDebug.lastSourceName = entries.map(entry => entry.sourceName).filter(Boolean).join(', ') || null;
     afterimageRuntimeDebug.lastSpawnAtMs = performance.now();
     return true;
+  }
+
+  function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    const snapshotPerf = window.PerfProfiler?.begin('Combat: afterimage snapshot'); // Captures geometry baking, canvas redraw and texture upload prep.
+    try {
+      const created = spawnAfterimageForRootUnmeasured(root, reason, worldOffsetX, worldOffsetZ, opacityScale);
+      if (created) window.PerfProfiler?.count?.('afterimageSnapshots'); // Correlates bursts with measured CPU frame spikes.
+      return created;
+    } finally { window.PerfProfiler?.end(snapshotPerf); }
   }
 
   function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {

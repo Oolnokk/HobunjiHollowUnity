@@ -1719,8 +1719,12 @@
       updateProjectileVisual(p, dt);
       window.DungeonFire?.updateProjectile?.(p, dt); // Keeps thrown metal-pixel embers and upright arrow flames attached to the live trajectory.
 
-      const sweptTerrainImpact = terrainImpactForStep(p); // Uses the same height-aware collision for player and hostile shots.
-      const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
+      const collisionPerf = window.PerfProfiler?.begin('Combat: projectile collision'); // Terrain, cover and actor hitboxes for this flight step.
+      let sweptTerrainImpact, hit; // Results feed the unchanged impact, embedding and disposal branches below.
+      try {
+        sweptTerrainImpact = terrainImpactForStep(p); // Uses the same height-aware collision for player and hostile shots.
+        hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground caps actor sweeps behind a solid hit.
+      } finally { window.PerfProfiler?.end(collisionPerf); }
       if (hit?.kind === 'actor') {
         disposeProjectile(p);
         continue;
@@ -2158,7 +2162,16 @@
     window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + (bandit.combatRoleLabel ? ' - ' : ' · ') + rank);
   }
 
-  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); window.DungeonFire?.updateHeldVisual?.(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }
+  function update(dt) {
+    updatePlayerAction(dt);
+    window.PerfProfiler?.gauge?.('projectiles', projectiles.length); // Current flight/embedded population for the slow-frame report.
+    const projectilePerf = window.PerfProfiler?.begin('Combat: projectile simulation'); // Includes trail updates, cover checks, and fades.
+    try { updateProjectiles(dt); }
+    finally { window.PerfProfiler?.end(projectilePerf); }
+    window.DungeonFire?.updateHeldVisual?.(dt);
+    updateAmmoDebuffs();
+    updateBanditAimLabel();
+  }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {

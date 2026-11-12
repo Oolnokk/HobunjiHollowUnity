@@ -1124,6 +1124,8 @@
     const sightWork = window.EnemySearchAI?.debugSnapshot?.(); // Copyable hostile-perception cadence and query counts.
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
+    const combatCapture = window.PerfProfiler?.combatSpikeSnapshot?.(); // Same bounded frame capture as the Performance tab's Android copy button.
+    if (combatCapture) lines.push('Combat slow frames: ' + JSON.stringify(combatCapture)); // One copyable report with CPU/interval distinction and top exclusive phases.
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
