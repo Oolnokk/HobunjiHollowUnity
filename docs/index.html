@@ -874,7 +874,7 @@
        the top of its farm-setup sequence (well before window.BorderTerrain's
        own init() below, which captures game.js's resulting local
        resolveTileMat/resolveCliffMat aliases into its own deps). -->
-  <script src="js/terrain-tile-materials.js?v=20261019h582d56c"></script>
+  <script src="js/terrain-tile-materials.js?v=20261111wildernessTextures1"></script>
   <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
        scene-graph generation, no other window.* system reads; must load
        before game.js, which calls window.BorderTerrain.init(...) and then
@@ -2857,7 +2857,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261110npcReplayTool2"></script>
+  <script src="js/tool-icon-render.js?v=20261111wildernessXrayLoader1"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2889,7 +2889,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112flailPoseResolved1"></script>
+  <script src="js/pixel-probe.js?v=20261111wildernessFloorDebug1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
