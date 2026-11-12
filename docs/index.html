@@ -30,7 +30,7 @@
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261110cloneaudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20261013hd467097"></script>
+  <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
   <script src="js/HousePieceGen.js?v=20261102roofjoin1&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
@@ -798,7 +798,7 @@
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20261107depthSnow1"></script>
+  <script src="js/rain-planes.js?v=20261112h55e898b"></script>
   <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
        — owns both Western Slope's permanent snow and seasonal Coldmuck
        slush on every other outdoor zone, reading tile height straight from
@@ -2857,7 +2857,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261111mesaLoader1"></script>
+  <script src="js/tool-icon-render.js?v=20261112hc91a241"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -3093,9 +3093,10 @@
   <script src="js/lunge-targeting.js?v=1"></script>
   <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
+  <script src="js/instanced-wall-view-cull.js?v=20261112wallcull1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261111mesaSubstrate1"></script>
+  <script src="game.js?v=20261112h6944454"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

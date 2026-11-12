@@ -1007,6 +1007,8 @@
   let replayCullEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setReplayCullEnabled(false).
   let lastReplayCulledCount = 0; // Renderables hidden from the last scissored replay.
   let lastReplayKeptCount = 0; // Cullable renderables still drawn by the last scissored replay.
+  let lastReplayInstancedCulled = 0, lastReplayInstancedKept = 0; // Instanced wall/path brick meshes hidden from, and kept in, the last scissored replay.
+  let lastReplayInertCount = 0; // Sky shells skipped by the last scissored replay because they cannot write depth.
 
   function setReplayCullFrustum(camera, rect, width, height) {
     const x0 = Math.max(0, rect.x - CULL_EXTRA_MARGIN_PX), y0 = Math.max(0, rect.y - CULL_EXTRA_MARGIN_PX);
@@ -1044,12 +1046,46 @@
     return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
   }
 
+  // Wall and path bricks are InstancedMeshes, which r128 cannot bound by
+  // itself. WallBuilder owns a sphere around all of a mesh's instances, so
+  // those meshes can leave a scissored replay like any other static mesh.
+  let instancedReplaySphereScratch = null; // Created on first use; most scenes outside town have no instanced walls.
+  function instancedReplaySphere(object) {
+    if (!object.isInstancedMesh || object.children.length || object.userData?.hobunjiInstanceBounds !== true) return null;
+    const boundsOwner = window.WallBuilder;
+    if (!boundsOwner?.instanceWorldSphere) return null;
+    if (!instancedReplaySphereScratch) instancedReplaySphereScratch = new THREE.Sphere();
+    return boundsOwner.instanceWorldSphere(object, instancedReplaySphereScratch) || null;
+  }
+
+  // Sky shells that neither test-and-write nor write depth cannot change a
+  // colorless depth replay, and they sit on layer 0 only, so no layer-masked
+  // color draw inside a replay can show them either. The material is checked
+  // live so a later change to the sky's depth policy keeps it in the replay.
+  function isDepthReplayInert(object) {
+    if (!object.isMesh || object.userData?.hobunjiDepthReplayInert !== true || object.children.length) return false;
+    const material = object.material;
+    return !!material && !Array.isArray(material) && material.depthWrite === false
+      && !(Number(material.alphaTest) > 0) && object.layers.mask === 1;
+  }
+
+  function replayFrustumIntersects(object) {
+    if (object.isSprite) return replayCullFrustum.intersectsSprite(object);
+    const sphere = instancedReplaySphere(object);
+    return sphere ? replayCullFrustum.intersectsSphere(sphere) : replayCullFrustum.intersectsObject(object);
+  }
+
   function collectReplayCulled(scene, keep, groupCandidates = null) {
     const culled = [];
     let kept = 0;
+    lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || hasAlternateReplayPose(object) || !isReplayCullable(object)) return;
-      const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
+      if (keep.has(object) || hasAlternateReplayPose(object)) return;
+      if (isDepthReplayInert(object)) { culled.push(object); lastReplayInertCount++; return; }
+      const instanced = !!instancedReplaySphere(object);
+      if (!instanced && !isReplayCullable(object)) return;
+      const inside = replayFrustumIntersects(object);
+      if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
         kept++;
         groupCandidates?.push(object);
@@ -1065,8 +1101,7 @@
     const hidden = new Map(); // Restored immediately after this group’s colorless depth draw.
     for (const object of candidates) {
       if (!object.visible || hasAlternateReplayPose(object)) continue;
-      const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
-      if (inside) continue;
+      if (replayFrustumIntersects(object)) continue;
       hidden.set(object, true);
       object.visible = false;
     }
@@ -2062,6 +2097,7 @@
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount,
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,

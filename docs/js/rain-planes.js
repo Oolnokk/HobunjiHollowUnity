@@ -531,10 +531,10 @@
 // rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
 // synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
 if (!window.HobunjiSkyDome) {
-  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261026h0a42e0d"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261112h52d2822"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20261026h0a42e0d';
+    skyScript.src = 'js/sky-dome.js?v=20261112h52d2822';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }

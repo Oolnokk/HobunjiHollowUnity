@@ -12,6 +12,38 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: instanced bricks now leave the camera pass and the depth replays
+
+First fix from the census below. Same town view, player only, headless, exact counts:
+
+| | Before | After |
+| --- | --- | --- |
+| Triangles per frame | 3,899,054 | 1,985,674 |
+| Draw calls per frame | 839 | 624 |
+| Real world draw | 941,644 | 626,364 |
+| Each full depth replay | ~900,000 | ~390,000 |
+
+A synchronous base + shell frame read back from the main target was **pixel-identical** with the new culls on and with
+both `InstancedWallViewCull` and the whole replay cull off (0 of 90,000 pixels differ).
+
+- `WallBuilder` already kept a sphere around all of a wall mesh's instances for its raycast early-out. That is now one
+  helper (`instanceLocalSphere`); built meshes are tagged `userData.hobunjiInstanceBounds` and listed through weak
+  references (`WallBuilder.forEachInstanceMesh`, `WallBuilder.instanceWorldSphere`).
+- `js/instanced-wall-view-cull.js` hides wall/path brick meshes whose sphere is outside the camera for the synchronous
+  world render only, restored in `renderWorldPasses`' `finally` (same contract as `NpcViewFrustumCull`). In the measured
+  view 51 of 73 meshes (5,375 of 8,653 bricks) were hidden. `InstancedWallViewCull.setEnabled(false)` is the A/B switch;
+  `snapshot()` reports counts.
+- `held-object-render-order.js`'s replay cull now accepts those tagged instanced meshes (16 culled, 4 kept per replay
+  here) and drops sky shells tagged `hobunjiDepthReplayInert` whose material cannot write depth (sky dome and the three
+  visible cloud shells; the cloud depth masks stay in). `snapshot()` has `lastReplayInstancedCulled/Kept` and
+  `lastReplayInert`.
+- `scripts/test-instanced-wall-render-cull.js` runs all three pieces.
+
+**Not measured:** real-device FPS. **What is left in each replay** (about 390 k): grass billboards 168 k (two
+whole-town instanced meshes, so a bounding sphere cannot help until grass is split into spatial chunks), whole-map
+terrain meshes 97 k, and the 3 or 4 large wall meshes whose sphere crosses the scissor (66 k). Wall meshes are one per
+build call, so a big building is all-or-nothing for both culls; splitting them spatially is the next step for bricks.
+
 ## 12 Nov 2026: where a quiet frame's triangles go (town, player only)
 
 Question: what has always kept the game slow even with nothing happening? Measured in the headless harness at 400x225,
@@ -69,7 +101,8 @@ the existing grass toggle before acting on it; the triangle and pass counts abov
 **Crowd scaling, for scale:** the same view about ten minutes later, with town NPCs present, was 6.98 M triangles and
 2,384 calls.
 
-**Not fixed. Candidate work, in the order the numbers suggest:** (1) give instanced bricks and grass real per-chunk
+**Candidate work, in the order the numbers suggest** (the brick and sky half of (1) is done, see the entry above):
+(1) give instanced bricks and grass real per-chunk
 bounds so both the camera and the replay cull can drop them, and keep sky domes out of depth replays; (2) a cheaper
 brick (a box is 12 triangles) or a distance LOD, and a cheaper material than `MeshStandardMaterial`; (3) chunk the
 grass so off-screen tiles are not submitted; (4) see whether hands/feet can be depth-sorted without redrawing the

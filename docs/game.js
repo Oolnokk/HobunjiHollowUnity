@@ -27261,6 +27261,9 @@
         // culling. Suspend off-camera NPC visuals across ALL world passes,
         // then restore before any gameplay tick or subsequent render.
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
+        // Same contract for off-camera instanced brick walls/paths, which Three r128
+        // cannot frustum-cull on its own (see js/instanced-wall-view-cull.js).
+        const restoreWallVisuals = window.InstancedWallViewCull?.suspendForRender?.(activeScene, camera);
         try {
         // Frame-scoped whole-actor suppression; simulation still runs before and
         // after this render. Existing frustum culling handles camera-offscreen
@@ -27388,6 +27391,7 @@
         } finally {
           window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
+          restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);

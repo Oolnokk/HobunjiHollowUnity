@@ -27,30 +27,70 @@
   const _rayBoundsMatrix = new THREE.Matrix4();
   const _rayBoundsSphere = new THREE.Sphere();
   const _rayBoundsCache = new WeakMap(); // InstancedMesh -> { key, sphere } in mesh-local space.
-  function boundedInstancedRaycast(raycaster, intersects) {
-    const geo = this.geometry;
-    if (geo && this.count > 0) {
-      const key = this.instanceMatrix.version + ':' + this.count;
-      let cache = _rayBoundsCache.get(this);
-      if (!cache || cache.key !== key) {
-        if (!geo.boundingBox) geo.computeBoundingBox();
-        _rayBoundsBox.makeEmpty();
-        for (let i = 0; i < this.count; i++) {
-          this.getMatrixAt(i, _rayBoundsMatrix);
-          _rayBoundsInstBox.copy(geo.boundingBox).applyMatrix4(_rayBoundsMatrix);
-          // A brick with a NaN matrix can never be hit, but would poison the union.
-          if (Number.isFinite(_rayBoundsInstBox.min.x + _rayBoundsInstBox.min.y + _rayBoundsInstBox.min.z +
-              _rayBoundsInstBox.max.x + _rayBoundsInstBox.max.y + _rayBoundsInstBox.max.z)) _rayBoundsBox.union(_rayBoundsInstBox);
-        }
-        cache = { key, sphere: _rayBoundsBox.isEmpty() ? null : _rayBoundsBox.getBoundingSphere(new THREE.Sphere()) };
-        _rayBoundsCache.set(this, cache);
+  // Mesh-local sphere around every instance, or null when there is nothing
+  // finite to bound. Shared by the raycast early-out below and by the render
+  // culls (instanceWorldSphere), so both always agree on where the bricks are.
+  function instanceLocalSphere(mesh) {
+    const geo = mesh?.geometry;
+    if (!geo || !mesh.instanceMatrix || !(mesh.count > 0)) return null;
+    const key = mesh.instanceMatrix.version + ':' + mesh.count;
+    let cache = _rayBoundsCache.get(mesh);
+    if (!cache || cache.key !== key) {
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      _rayBoundsBox.makeEmpty();
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, _rayBoundsMatrix);
+        _rayBoundsInstBox.copy(geo.boundingBox).applyMatrix4(_rayBoundsMatrix);
+        // A brick with a NaN matrix can never be hit, but would poison the union.
+        if (Number.isFinite(_rayBoundsInstBox.min.x + _rayBoundsInstBox.min.y + _rayBoundsInstBox.min.z +
+            _rayBoundsInstBox.max.x + _rayBoundsInstBox.max.y + _rayBoundsInstBox.max.z)) _rayBoundsBox.union(_rayBoundsInstBox);
       }
-      if (!cache.sphere) return;
-      _rayBoundsSphere.copy(cache.sphere).applyMatrix4(this.matrixWorld);
+      cache = { key, sphere: _rayBoundsBox.isEmpty() ? null : _rayBoundsBox.getBoundingSphere(new THREE.Sphere()) };
+      _rayBoundsCache.set(mesh, cache);
+    }
+    return cache.sphere;
+  }
+
+  function boundedInstancedRaycast(raycaster, intersects) {
+    if (this.geometry && this.count > 0) {
+      const sphere = instanceLocalSphere(this);
+      if (!sphere) return;
+      _rayBoundsSphere.copy(sphere).applyMatrix4(this.matrixWorld);
       if (!raycaster.ray.intersectsSphere(_rayBoundsSphere)) return;
     }
     THREE.InstancedMesh.prototype.raycast.call(this, raycaster, intersects);
   }
+
+  // r128 gives every InstancedMesh frustumCulled=false because it can only
+  // bound the base geometry, so each brick of each wall and path was submitted
+  // in every render pass wherever the camera looked. Wall meshes built here are
+  // tagged userData.hobunjiInstanceBounds and listed (weakly, so an evicted
+  // zone's walls can still be collected) for the render-side culls in
+  // instanced-wall-view-cull.js and held-object-render-order.js.
+  const INSTANCE_BOUNDS_PAD = 0.5; // World units; covers brick jitter plus shader-side elevation nudges.
+  const _instanceMeshRefs = []; // WeakRef<InstancedMesh>, pruned while iterating.
+  function trackInstanceMesh(mesh) {
+    mesh.userData.hobunjiInstanceBounds = true;
+    if (typeof WeakRef === 'function') _instanceMeshRefs.push(new WeakRef(mesh));
+  }
+  WallBuilder.instanceWorldSphere = function (mesh, target) {
+    if (!mesh?.isInstancedMesh || mesh.userData?.hobunjiInstanceBounds !== true) return null;
+    const sphere = instanceLocalSphere(mesh);
+    if (!sphere || !target) return null;
+    target.copy(sphere).applyMatrix4(mesh.matrixWorld);
+    target.radius += INSTANCE_BOUNDS_PAD;
+    return Number.isFinite(target.radius + target.center.x + target.center.y + target.center.z) ? target : null;
+  };
+  WallBuilder.forEachInstanceMesh = function (callback) {
+    let kept = 0;
+    for (let i = 0; i < _instanceMeshRefs.length; i++) {
+      const ref = _instanceMeshRefs[i], mesh = ref.deref();
+      if (!mesh) continue;
+      _instanceMeshRefs[kept++] = ref;
+      callback(mesh);
+    }
+    _instanceMeshRefs.length = kept;
+  };
 
 
   function v3(arr) {
@@ -681,6 +721,7 @@
       inst.castShadow = true;
       inst.receiveShadow = true;
       inst.raycast = boundedInstancedRaycast;
+      trackInstanceMesh(inst);
       group.add(inst);
     }
 
