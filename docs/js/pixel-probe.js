@@ -1492,6 +1492,16 @@
       if (framing) lines.push(`Shoulder framing: species=${framing.speciesId || '-'} center=${framing.targetSource || '-'} headY=${Number(framing.headHeightTiles || 0).toFixed(3)} neckY=${Number(framing.neckHeightTiles || 0).toFixed(3)} targetOffset=${Number(framing.resolvedTargetYOffsetTiles || 0).toFixed(3)}; ${framing.latestChange || ''}`);
     }
 
+    const melodyCamera=window.MelodyCameraFraming?.debugSnapshot?.(); // Mobile-only readout; gameplay samples only the active plate's owned glyphs.
+    if(melodyCamera?.registered){
+      const f=melodyCamera.framing||{};
+      lines.push('Melody camera: '+(melodyCamera.active?'found note '+(melodyCamera.triggerNote+1):'searching')
+        +' groups='+melodyCamera.registered+' shown='+melodyCamera.notes
+        +' zoom='+Number(f.distanceScale||1).toFixed(2)+' fov+'+Number(f.fovExtra||0).toFixed(1)
+        +' lift='+Number(f.offsetY||0).toFixed(2)+' fitLimited='+(melodyCamera.fitLimited?'yes':'no')
+        +' status='+melodyCamera.reason);
+    }
+
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
 
