@@ -36,6 +36,7 @@ let state = profiler.combatSpikeSnapshot();
 assert.equal(state.sampledFrames, 1);
 assert.equal(state.cpuSpikeFrames, 0);
 assert.equal(state.recent.length, 0, 'normal frames do not retain expensive detail');
+assert.equal(Object.hasOwn(state.latest, 'top'), false, 'ordinary frames skip sorting the detailed breakdown');
 
 // Measure a 42ms game loop: hostiles (28ms) contain 16ms of bandit AI.
 clock += 10;
@@ -70,6 +71,7 @@ assert.equal(state.recent[0].gauges.engagedHostiles, 9);
 assert.equal(state.recent[0].top.find(entry => entry.name === 'hostiles').exclusiveMs, 12, 'child bandit AI must not be double-counted as hostiles');
 assert.equal(state.recent[0].top.find(entry => entry.name === 'Combat: bandit tactical AI').exclusiveMs, 16);
 assert.equal(state.recent[0].top.find(entry => entry.name === 'render passes').exclusiveMs, 10);
+assert.equal(state.recent[0].top.find(entry => entry.name === 'gameLoop uninstrumented').exclusiveMs, 4, 'remaining game-loop CPU is reported rather than silently omitted');
 assert.equal(profiler.snapshot().combatSpikes.cpuSpikeFrames, 1, 'existing copyable performance snapshot includes the capture');
 
 // A delayed start belongs to the PREVIOUS frame; the current CPU work may
