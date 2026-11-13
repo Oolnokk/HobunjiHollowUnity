@@ -38,7 +38,10 @@
   }
   const dispensers = new Map(); // Stable furniture id -> one live bomb slot.
   const breakables = new Map(); // Explicitly registered destructible props; ordinary furniture is never implicitly removed.
-  const bursts = []; // One small additive flash per active explosion.
+  const bursts = []; // Active instanced explosion effects, retired into their variant pools after fading.
+  const burstPools = new Map(); // Palette name -> reusable meshes and GPU instance buffers.
+  const BURST_POOL_LIMIT = 6; // Bounds retained effects for each tradition after chain reactions.
+  let burstPoolHits=0,burstPoolMisses=0; // Mobile diagnostics for reused versus newly allocated effects.
   let spawnSerial = 0;
   let breakableSerial = 0;
 
@@ -111,42 +114,52 @@
   function buildEffect(targetScene,x,y,z,variant=VARIANTS.hronal) {
     if (!targetScene) return;
     const palette=variant.effect;
-    const group=new THREE.Group(); // One scene root owns the expanding flash and instanced flame tongues.
-    group.name='witch_bomb_'+palette.name+'_burst';
-    group.position.set(x,y,z);
-    targetScene.add(group);
-    const flash=new THREE.Mesh(
-      new THREE.SphereGeometry(.22,12,8),
-      new THREE.MeshBasicMaterial({color:palette.flash,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})
-    );
-    flash.name='witch_bomb_'+palette.name+'_flash';
-    flash.renderOrder=12;
-    group.add(flash);
-    // Icy bursts throw sharp crystalline shards instead of flame tongues; plasm throws fat droplets.
-    const count=palette.name==='ice'?44:32;
-    const geometry=palette.name==='ice'?new THREE.ConeGeometry(.055,.42,4,1):palette.name==='plasm'?new THREE.SphereGeometry(.11,8,6):new THREE.ConeGeometry(.075,.34,5,1);
-    const material=new THREE.MeshBasicMaterial({color:palette.tongue,transparent:true,opacity:.94,depthWrite:false,blending:palette.name==='ice'?THREE.NormalBlending:THREE.AdditiveBlending,side:THREE.DoubleSide});
-    const flames=new THREE.InstancedMesh(geometry,material,count);
-    flames.name='witch_bomb_'+palette.name+'_particles';
-    flames.frustumCulled=false;
-    group.add(flames);
-    const parts=[];
-    for(let i=0;i<count;i++){
-      const angle=i*2.399963229728653,speed=1.15+(i%6)*.28;
-      parts.push({x:0,y:0,z:0,vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:1.0+(i%5)*.34});
+    let pool=burstPools.get(palette.name);
+    if(!pool){pool=[];burstPools.set(palette.name,pool);}
+    let state=pool.pop();
+    if(state)burstPoolHits++;
+    else {
+      burstPoolMisses++;
+      const group=new THREE.Group(); // Root, flash and GPU instance buffers persist between bursts.
+      group.name='witch_bomb_'+palette.name+'_burst';
+      const flash=new THREE.Mesh(
+        new THREE.SphereGeometry(.22,12,8),
+        new THREE.MeshBasicMaterial({color:palette.flash,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})
+      );
+      flash.name='witch_bomb_'+palette.name+'_flash';
+      flash.renderOrder=12;
+      group.add(flash);
+      // Preserve the original variant-specific shapes and blending.
+      const count=palette.name==='ice'?44:32;
+      const geometry=palette.name==='ice'?new THREE.ConeGeometry(.055,.42,4,1):palette.name==='plasm'?new THREE.SphereGeometry(.11,8,6):new THREE.ConeGeometry(.075,.34,5,1);
+      const material=new THREE.MeshBasicMaterial({color:palette.tongue,transparent:true,opacity:.94,depthWrite:false,blending:palette.name==='ice'?THREE.NormalBlending:THREE.AdditiveBlending,side:THREE.DoubleSide});
+      const flames=new THREE.InstancedMesh(geometry,material,count);
+      flames.name='witch_bomb_'+palette.name+'_particles';
+      flames.frustumCulled=false;
+      group.add(flames);
+      const parts=Array.from({length:count},()=>({x:0,y:0,z:0,vx:0,vz:0,vy:0}));
+      state={variantName:palette.name,group,flash,flames,geometry,material,parts,
+        dummy:new THREE.Object3D(),up:new THREE.Vector3(0,1,0),direction:new THREE.Vector3(),
+        age:0,duration:.72,gravity:palette.gravity};
     }
-    const dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0),direction=new THREE.Vector3();
-    for(let i=0;i<count;i++){
-      const part=parts[i];
-      direction.set(part.vx,part.vy,part.vz).normalize();
-      dummy.position.set(0,0,0);
-      dummy.quaternion.setFromUnitVectors(up,direction);
-      dummy.scale.setScalar(.72+(i%4)*.12);
-      dummy.updateMatrix();
-      flames.setMatrixAt(i,dummy.matrix);
+    state.group.position.set(x,y,z);
+    state.age=0;state.gravity=palette.gravity;
+    state.flash.scale.setScalar(1);state.flash.material.opacity=.92;
+    state.material.opacity=.94;
+    for(let i=0;i<state.parts.length;i++){
+      const part=state.parts[i],angle=i*2.399963229728653,speed=1.15+(i%6)*.28;
+      part.x=0;part.y=0;part.z=0;
+      part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=1.0+(i%5)*.34;
+      state.direction.set(part.vx,part.vy,part.vz).normalize();
+      state.dummy.position.set(0,0,0);
+      state.dummy.quaternion.setFromUnitVectors(state.up,state.direction);
+      state.dummy.scale.setScalar(.72+(i%4)*.12);
+      state.dummy.updateMatrix();
+      state.flames.setMatrixAt(i,state.dummy.matrix);
     }
-    flames.instanceMatrix.needsUpdate=true;
-    bursts.push({group,flash,flames,geometry,material,parts,dummy,up,direction,age:0,duration:.72,gravity:palette.gravity});
+    state.flames.instanceMatrix.needsUpdate=true;
+    targetScene.add(state.group);
+    bursts.push(state);
   }
   // Kanthic: instead of detonating, an explodeable is wrapped in plasm (SubstanceCoverShell,
   // the shared outline-layer covering) and shrunk to nothing; `done` then runs the removal /
@@ -493,8 +506,14 @@
       state.material.opacity=.94*(1-t);
       if(t>=1){
         state.group.parent?.remove(state.group);
-        state.geometry.dispose();state.material.dispose();
-        state.flash.geometry.dispose();state.flash.material.dispose();
+        let pool=burstPools.get(state.variantName);
+        if(!pool){pool=[];burstPools.set(state.variantName,pool);}
+        if(pool.length<BURST_POOL_LIMIT)pool.push(state);
+        else {
+          state.flames.dispose?.(); // Release surplus instance buffers; never grow the retained effect pool without bound.
+          state.geometry.dispose();state.material.dispose();
+          state.flash.geometry.dispose();state.flash.material.dispose();
+        }
         bursts.splice(i,1);
       }
     }
@@ -511,6 +530,7 @@
         carrier:item.enemyCarrier?.id||null,hanging:!!item.hanging,flying:!!item.flying,
       })),
       breakables:breakables.size,activeFlashes:bursts.length,
+      burstPoolHits,burstPoolMisses,pooledFlashes:Object.fromEntries([...burstPools].map(([name,pool])=>[name,pool.length])),
     };
   }
   createGroupFactory();
