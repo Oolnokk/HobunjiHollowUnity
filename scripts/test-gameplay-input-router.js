@@ -18,7 +18,10 @@ const document = {
   querySelector() { return null; },
 };
 const window = {
-  addEventListener(type, fn) { listenerMap.set(type, fn); },
+  addEventListener(type, fn) { // DOM allows several independent blur listeners (router and combat both register one).
+    if (!listenerMap.has(type)) listenerMap.set(type, []);
+    listenerMap.get(type).push(fn);
+  },
   dispatchEvent() {},
   Combat: {
     loadout: { getSlot() { return null; } },
@@ -86,7 +89,7 @@ assert.equal(router.isAttackBlocked(), false, 'last physical release restores at
 assert.equal(router.endContextPress('touch:17'), false, 'duplicate release has no effect');
 
 router.beginContextPress('keyboard:action1', 'action1', 'Inspect statue');
-listenerMap.get('blur')?.();
+for (const listener of listenerMap.get('blur') || []) listener();
 assert.equal(router.isAttackBlocked(), false, 'blur clears stale contextual ownership');
 assert.equal(router.snapshot().contextPresses.length, 0);
 
