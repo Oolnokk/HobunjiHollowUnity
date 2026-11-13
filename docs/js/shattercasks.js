@@ -1918,6 +1918,20 @@
     for(const mesh of fx.shardMeshes)mesh.dispose?.(); // Release retired instance buffers, never the shared source art.
     fx.flash.material.dispose();
   }
+  function resetBurstMatrices(fx) {
+    // Pool reuse must never display transforms from the previous blast on its first frame.
+    for(const part of fx.parts) {
+      fx.dummy.position.set(part.x,part.y,part.z);
+      fx.dummy.rotation.set(0,0,0);
+      fx.dummy.scale.setScalar(1);
+      fx.dummy.updateMatrix();
+      fx.shardMeshes[part.batch].setMatrixAt(part.index,fx.dummy.matrix);
+    }
+    for(const mesh of fx.shardMeshes) {
+      mesh.instanceMatrix.needsUpdate=true;
+      mesh.computeBoundingSphere?.(); // Reused instances may be attached at another world position.
+    }
+  }
   function shatterVisual(targetScene,x,z,y) {
     // Reuse the cached textures AND the actual GPU instance buffers between pottery explosions.
     const bodyCount=54,neckCount=DEBRIS_COUNT-bodyCount;
@@ -1957,6 +1971,7 @@
       part.x=(i%7/6-.5)*.68;part.y=((i%17)/17)*.6;part.z=(Math.floor(i/7)%7/6-.5)*.63;
       part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=2+(i%7)*.32;
     }
+    resetBurstMatrices(fx); // Initial pose must be valid before the renderer sees a recycled mesh.
     targetScene.add(fx.group);targetScene.add(fx.flash);
     burstEffects.push(fx);
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
@@ -2252,6 +2267,7 @@
       part.x=0;part.y=0;part.z=0;
       part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=1.4+(i%7)*.18;
     }
+    resetBurstMatrices(fx);
     targetScene.add(fx.group);targetScene.add(fx.flash);
     burstEffects.push(fx);
   }
