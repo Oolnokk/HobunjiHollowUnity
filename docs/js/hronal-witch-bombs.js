@@ -239,6 +239,10 @@
     legacyScanScene=scene;legacyScanEntries=found;
     return found;
   }
+  function invalidateLegacyBreakableScan() {
+    // A break callback can author a replacement prop before the outermost chain blast.
+    legacyScanScene=null;legacyScanEntries=null;
+  }
   function breakNearby(mapId,x,z,radius,variant=VARIANTS.hronal) {
     const point=new THREE.Vector3(),radiusSq=radius*radius; // One world-position scratch for this blast.
     for (const [id,record] of [...breakables]) {
@@ -250,6 +254,7 @@
       if (!p || (p.x-x)**2+(p.z-z)**2>limit*limit) continue;
       const impactY=p.y; // Capture before the scratch vector is reused or Kanthic defers completion.
       const finish=()=>{
+        invalidateLegacyBreakableScan(); // onBreak may mount new userData-marked destructibles.
         let removed=true;
         try { if (typeof record.onBreak==='function') removed=record.onBreak(record.object,{mapId,x,y:impactY,z,radius})!==false; }
         catch(error){removed=false;console.warn('[HronalWitchBombs] breakable callback failed',error);}
@@ -272,6 +277,7 @@
       if (!node.parent || node.userData.hronalBombBreakQueued) continue;
       node.userData.hronalBombBreakQueued=true;
       const finish=()=>{
+        invalidateLegacyBreakableScan(); // Newly spawned marked props must be visible to the parent blast.
         try { node.userData.onHronalBombBreak?.({mapId,x,y,z,radius}); }
         catch(error){console.warn('[HronalWitchBombs] breakable callback failed',error);}
         finally { node.parent?.remove(node); }
