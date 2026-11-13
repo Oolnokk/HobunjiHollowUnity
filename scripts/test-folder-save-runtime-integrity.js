@@ -78,6 +78,35 @@ async function main() {
     assert.equal(flushed.captured, true, 'explicit runtime flush should use the real member save callback');
     assert.equal(persistedStinkOil, 2, 'explicit runtime flush must capture the latest live inventory');
     assert.equal(farmSaves, 1, 'explicit runtime flush should also persist the current farm layout');
+
+    // A live folder capture must not stringify the entire old browser save just
+    // to detect if it changes while the canonical disk write is in flight.
+    let fullFingerprintCalls = 0; // Detects accidental regression to whole-save fingerprinting.
+    context.window.__hobunjiPlayerProfile = { worldId: 'world-test' };
+    context.window.HobunjiSaveSnapshot = {
+      capture: () => ({
+        snapshotVersion: 1,
+        meta: { version: 1, characters: [{ id: 'char-test' }], worlds: [{ id: 'world-test' }] },
+        farmLayouts: { 'world-test': { tiles: [1] } },
+      }),
+      browserCacheParts: () => ['browser-meta', 'world-test', 'browser-layout'],
+      fingerprint: () => { fullFingerprintCalls++; return 'expensive serialized save'; },
+      validate: () => {},
+    };
+    context.window.FarmEditor = { captureFarmLayout: () => ({ tiles: [2] }) };
+    context.window.FarmAnimals.init({
+      inventory,
+      saveMemberWorldData() {},
+      saveFarmLayout() {},
+      captureMemberWorldData(meta) { return meta; },
+    });
+    const directCapture = context.window.HobunjiRuntimeSave.captureSnapshot({ reason: 'test-auto' });
+    assert.equal(directCapture.ok, true, 'direct folder capture still completes');
+    assert.equal(fullFingerprintCalls, 0, 'raw browser cache parts replace expensive whole-save baseline fingerprinting');
+    assert.equal(directCapture.snapshot.browserBaselineParts.length, 3, 'transient baseline covers browser meta and farm layout');
+    assert.equal(Object.keys(directCapture.snapshot).includes('browserBaselineParts'), false,
+      'transient browser baseline cannot be serialized into primary or recovery checkpoints');
+
     console.log('OK  live Grehlr resource inventory is persisted before folder mirroring');
   }
 
