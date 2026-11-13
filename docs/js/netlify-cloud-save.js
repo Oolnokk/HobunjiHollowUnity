@@ -25,6 +25,8 @@
   let _autoTimer = null;
   let _changePollTimer = null;
   let _lastObservedBrowserParts = null; // Raw browser save parts compared by the cloud change poll without whole-save serialization.
+  let _cloudIdleQueued = false; // Prevents overlapping timer idle callbacks from each doing a full upload capture.
+  let _cloudIdleEpoch = 0; // Invalidates queued autosaves when cloud syncing is disarmed or rearmed.
   let _dirty = false;
   let _pendingAuthCallback = null;
   const _listeners = new Set();
@@ -192,10 +194,25 @@
   }
 
   function stopAutoSync() {
+    _cloudIdleEpoch++;
+    _cloudIdleQueued = false;
     if (_autoTimer) clearInterval(_autoTimer);
     if (_changePollTimer) clearInterval(_changePollTimer);
     _autoTimer = null;
     _changePollTimer = null;
+  }
+
+  function queueIdleCloudSave() {
+    if (_cloudIdleQueued || !_dirty || _busy || _conflict) return;
+    _cloudIdleQueued = true;
+    const epoch = _cloudIdleEpoch; // Older requests may not resume after a cloud account/authority change.
+    const run = () => {
+      if (epoch !== _cloudIdleEpoch) return;
+      _cloudIdleQueued = false;
+      if (_dirty && !_busy && !_conflict) safeSync({ automatic: true }).catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 50);
   }
 
   function armAutoSync() {
@@ -212,10 +229,7 @@
       _dirty = true;
       notify();
     }, CHANGE_POLL_MS);
-    _autoTimer = setInterval(() => {
-      if (!_dirty || _busy || _conflict) return;
-      safeSync({ automatic: true }).catch(() => {});
-    }, AUTO_SYNC_MS);
+    _autoTimer = setInterval(queueIdleCloudSave, AUTO_SYNC_MS); // Keep expensive cloud capture/serialization off an active gameplay frame.
   }
 
   function saveSuccessfulLink(remote, fingerprint, sentBrowserParts = null) {
