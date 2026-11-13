@@ -45,7 +45,7 @@ class Node {
 class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}getAttribute(key){return this.attributes[key];}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
 class Material { constructor(options) { Object.assign(this, options); } clone() { return new Material(this); } dispose() {} }
 class Mesh extends Node { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
-class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; this.isInstancedMesh=true; } setMatrixAt() {} }
+class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; this.isInstancedMesh=true; this.matrixWrites=0; } setMatrixAt(){this.matrixWrites++;} }
 const THREE = {
   Group:Node, Object3D:Node, Vector3:Vector, Mesh, InstancedMesh:Instances,
   PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry,
@@ -129,10 +129,14 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   fx.emitShards(1,2,3,0x726359,3.1,24);
   const first=shardWorld.bursts[0];
   assert.equal(first.mesh.count,24,'one instanced draw owns a full shard spray');
+  assert.equal(first.mesh.matrixWrites,24,'new shards receive initial matrices before the first render tick');
   for(let frame=0;frame<14;frame++)fx.updateBursts(.1);
   assert.equal(shardWorld.bursts.length,0,'an expired shard burst leaves the rendered scene');
   assert.equal(shardWorld.shardPool.get(first.key).length,1,'retired shard buffers are retained for reuse');
+  const writesBeforeReuse=first.mesh.matrixWrites;
   fx.emitShards(4,5,6,0x726359,3.1,24);
+  assert.equal(first.mesh.matrixWrites,writesBeforeReuse+24,
+    'recycled shards are all rewritten immediately instead of showing the previous explosion positions');
   assert.strictEqual(shardWorld.bursts[0].mesh,first.mesh,'the next burst reuses the same GPU instance buffer');
   assert.equal(shardWorld.shardPoolHits,1,'mobile diagnostics count one actual effect reuse');
   for(let frame=0;frame<14;frame++)fx.updateBursts(.1);
