@@ -2345,9 +2345,13 @@
     } finally {
       explosionBatchDepth--;
       if(explosionBatchDepth===0) {
-        for(const record of pendingRubbleVisuals){syncPileVisuals(record);blastRubbleRebuilds++;}
-        pendingRubbleVisuals.clear();
-        if(explosionBatchDirty){explosionBatchDirty=false;persistWorld();}
+        try {
+          for(const record of pendingRubbleVisuals){syncPileVisuals(record);blastRubbleRebuilds++;}
+        } finally {
+          // Even an out-of-memory visual rebuild must not skip saving destroyed terrain.
+          pendingRubbleVisuals.clear();
+          if(explosionBatchDirty){explosionBatchDirty=false;persistWorld();}
+        }
       }
     }
   }
