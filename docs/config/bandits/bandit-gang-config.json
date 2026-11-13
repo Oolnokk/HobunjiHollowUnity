@@ -5,7 +5,9 @@
     "mao-ao": 40,
     "mashtzarr": 35,
     "engh-sho": 20,
-    "tletingan": 5
+    "tletingan": 3.9583333333333335,
+    "nuhongan": 0.7916666666666666,
+    "longoran": 0.25
   },
   "clothingPool": {
     "_comment": "Slots + item ids intersected against each rolled species' own docs/config/species/<id>.json allowedCosmetics/cosmeticWeights at generation time -- a species that doesn't whitelist an item here (e.g. mashtzarr and hats) just never rolls it, no per-species override needed here. Exception: banditExclusiveIds (see below) bypass that whitelist check entirely.",
@@ -80,6 +82,7 @@
       "chancePerGrunt": 0.06,
       "maxPerCamp": 1,
       "speciesId": "tletingan",
+      "speciesWeights": { "tletingan": 79.16666666666667, "nuhongan": 15.833333333333334, "longoran": 5 },
       "label": "Slagothim Beastmaster",
       "companionCreatureKey": "dabinggi-hound",
       "companionHealthMultiplier": 0.6,

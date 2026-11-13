@@ -14,13 +14,15 @@
 (() => {
   'use strict';
 
-  const VERSION = 19; // Adds authored Nuhongan part axes without changing whole-character dimensions.
+  const VERSION = 20; // Adds independent Longoran body size while preserving authored Tletingan/Nuhongan scale.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 1.25, y: 1.3333333333333333, z: 1.25 }); // Calculated offline: 1 / 0.8 on X/Z, 1 / 0.75 on Y, for Tletingan-sized hands and feet.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
     'nuhongan::male': Object.freeze({ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }),
     'nuhongan::female': Object.freeze({ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }),
+    'longoran::male': Object.freeze({ x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 }), // 125% width, 150% height versus Tletingan male; tweak in Full Character Scale.
+    'longoran::female': Object.freeze({ x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 }), // Same ratio versus Tletingan female.
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),
