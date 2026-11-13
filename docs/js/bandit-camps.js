@@ -1264,11 +1264,13 @@
     const zoneId = deps.getCurrentArea();
     const tent = deps.isZoneArea(zoneId) ? aimedBanditTent(zoneId) : null;
     const actionHeldDown = deps.getActionHeldDown();
+    const holdAllowed = window.GameplayInputRouter?.canContinueHold?.('bandit_tent_interact', actionHeldDown) ?? actionHeldDown; // Combat interrupts tent looting/burning until release.
     if (!actionHeldDown) _banditTentHoldInterrupted = false;
+    if (actionHeldDown && !holdAllowed) _banditTentHoldInterrupted = true;
     const looting = !!tent?.interactable?.lootable;
     const interacting = !!tent
       && deps.getActiveAction() === 'bandit_tent_interact'
-      && actionHeldDown
+      && holdAllowed
       && !_banditTentHoldInterrupted;
     if (!interacting) {
       if (_banditTentHoldId !== null) { _banditTentHoldT = 0; _banditTentHoldId = null; }
