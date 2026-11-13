@@ -762,11 +762,17 @@
     const preferred=isRomanceable(rec)?['dance','dining','dance','dining'][(Math.floor(shift/2)+index)%4]
       :((index%5===0&&shift%3===1)?'dance':'dining');
     const kinds=isRomanceable(rec)?[preferred,preferred==='dining'?'dance':'dining']:[preferred];
+    const walkersAtDecision = deps.getWalkers?.() || []; // Shared snapshot for station and fallback occupancy within this synchronous NPC decision.
+    const otherWalkers = walkersAtDecision.filter(w => w.rec?.id !== rec.id); // Self never blocks its own currently assigned station or standing spot.
+    const occupiedStations = new Set(otherWalkers.map(w => w.currentScheduleTarget?.stationId).filter(Boolean)); // Constant-time station occupancy checks.
+    const reservedStations = new Set(); // Live festival reservations are copied once; the current NPC's own prior assignment is ignored.
+    for (const [id, assignment] of gatheringAssignments) {
+      if (id !== rec.id && assignment.scope === scope) reservedStations.add(assignment.stationId);
+    }
     const taken=station=>{
       const target=window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
       if(target?.pose==='sit' && window.FurnitureTableSystem?.isSeatTaken?.(target.area||'town',target,rec.id))return true;
-      for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope && assignment.stationId===station.id)return true;
-      return (deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id && w.currentScheduleTarget?.stationId===station.id);
+      return reservedStations.has(station.id) || occupiedStations.has(station.id);
     };
     let selected=null;
     if(festival()?.id==='gorkunash'){
@@ -791,13 +797,25 @@
       return {...target,stationId:target.stationId||selected.id,activity:festival().name};
     }
     release();
-    const walker=(deps.getWalkers?.()||[]).find(w=>w.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
+    const walker=walkersAtDecision.find(w=>w.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
     const x=walker?.area==='town'?walker.root.position.x:(anchor?.col||30)+.5, z=walker?.area==='town'?walker.root.position.z:(anchor?.row||25)+.5;
+    const standingClearance=0.6; // Same exact minimum separation as the old per-tile walker scans.
+    const blockedStandingTiles=new Set(); // Precompute only tiles whose centers are within the clearance of another town NPC.
+    for(const other of otherWalkers){
+      if(other.area!=='town'||!other.root?.position)continue;
+      const px=other.root.position.x,pz=other.root.position.z; // NPC position projected onto the town's candidate standing-tile grid.
+      if(!Number.isFinite(px)||!Number.isFinite(pz))continue;
+      for(let row=Math.floor(pz-.5-standingClearance);row<=Math.floor(pz-.5+standingClearance);row++){
+        for(let col=Math.floor(px-.5-standingClearance);col<=Math.floor(px-.5+standingClearance);col++){
+          if(Math.hypot(px-col-.5,pz-row-.5)<standingClearance)blockedStandingTiles.add(`${col},${row}`);
+        }
+      }
+    }
     for(let radius=0;radius<=4;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
       if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
       const c=Math.floor(x)+dx,r=Math.floor(z)+dz;
       if(deps.canStandAt?.('town',c,r)===false)continue;
-      if((deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id&&w.area==='town'&&Math.hypot(w.root.position.x-c-.5,w.root.position.z-r-.5)<.6))continue;
+      if(blockedStandingTiles.has(`${c},${r}`))continue;
       return {area:'town',c,r,pose:'stand',activity:festival().name}; // No preferred locale has room; wait on clear ground instead of taking an occupied chair.
     }
     return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
