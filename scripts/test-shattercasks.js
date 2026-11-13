@@ -424,7 +424,12 @@ async function scenario(reloading=false) {
   // A shot from either team uses this same swept-segment intersection.
   const hit=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},{x:5.6,y:.42,z:3.5},.08,1,area);
   assert(hit&&hit.t>0&&hit.t<1,'swept projectile crosses the vase');
+  const savesBeforeBlast=game.Shattercasks.debugSnapshot().performance.blastPersistenceWrites;
   assert(game.Shattercasks.hitProjectile(hit),'projectile triggers a single detonation');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.blastPersistenceWrites,savesBeforeBlast+1,
+    'consuming the charge and clearing several tiles persist as one completed explosion snapshot');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.blastRubbleRebuilds,1,
+    'one blast rebuilds rubble instances only after all destroyed tiles are registered');
   assert.deepEqual(playedSfx,['shattercaskBlast'],'weapon-triggered detonation plays the dedicated Shattercask cue once');
   assert.equal(damage.length,1,'player is hurt by own nearby charge');
   assert.equal(tiles[3][5].type,'grass','blast opens the mineable wall');
