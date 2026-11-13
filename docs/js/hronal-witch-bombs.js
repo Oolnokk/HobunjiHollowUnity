@@ -250,6 +250,7 @@
     for (const [id,record] of [...breakables]) {
       if (record.mapId!==mapId || !record.object?.parent) continue;
       record.object.updateWorldMatrix?.(true,true);
+      point.set(0,0,0); // Some authored groups and test stubs add into the target rather than overwrite it.
       const p=record.object.getWorldPosition?.(point) || record.object.position;
       const limit=Math.min(radius,Number(record.radius)||radius);
       if (!p || (p.x-x)**2+(p.z-z)**2>limit*limit) continue;
@@ -268,6 +269,7 @@
     for(const node of markedBreakables(currentScene())){
       if(!node.parent||node.userData?.hronalBombBreakQueued)continue;
       node.updateWorldMatrix?.(true,false);
+      point.set(0,0,0); // Each candidate must be measured from the origin, not the previous candidate.
       const p=node.getWorldPosition?.(point);
       if (!p || (p.x-x)**2+(p.z-z)**2>radiusSq) continue;
       markedProps.push({node,y:p.y});
@@ -301,6 +303,7 @@
       if (!burden||burden.id===sourceId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent||KINDS.has(burden.kind)) continue;
       if (burden.kind!=='shattercask'&&burden.kind!=='flameShattercask'&&burden.kind!=='soursap') continue;
       burden.group.updateWorldMatrix?.(true,true);
+      point.set(0,0,0); // Reset shared scratch for additive world-position helpers.
       const world=burden.group.getWorldPosition?.(point)||burden.group.position;
       if (!world||(world.x-x)**2+(world.z-z)**2>radiusSq) continue;
       burden.exploded=true; // Never detonate while it dissolves (a later hit must not pop it).
