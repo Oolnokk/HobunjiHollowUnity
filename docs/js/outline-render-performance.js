@@ -890,6 +890,28 @@
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
     },
+    prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
+      if (!scoreMeshes) return null;
+      const entries = []; // Reserve only active exterior notes for the direct canvas path.
+      for (const object of scoreMeshes) {
+        if (object.visible && isWorldTextOverlayMesh(object)) {
+          entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
+        }
+      }
+      if (!entries.length) return null;
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      return function finishDirectScoreOverlay(present) {
+        restoreWorldTextBaseVisibility(entries);
+        try {
+          if (present) drawWorldTextOverlayToCanvas(renderer, {
+            scene, camera, entries, matrixEpoch: matrixEpochOf(scene), baseAt: performance.now(),
+          });
+        } finally {
+          restoreWorldTextOverlayLayers({ entries });
+        }
+      };
+    },
     targetAlphaCutoutParity: true,
     targetAlphaBillboardFill: true,
     worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
@@ -904,7 +926,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
-        latestScoreChange: 'Timed Scratchbone glyphs stay queued through held-item and shell depth replays.',
+        latestScoreChange: 'Timed Scratchbone glyphs survive depth replays and respect character silhouettes with Outlines on or off.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',

@@ -289,6 +289,23 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
     'deactivating the plate removes the score again without a second overlay call');
   assert.equal(renderer.calls.filter(call=>call.kind==='clearDepth').length,1,
     'stepping off the plate must not trigger a second actor-depth replay');
+  const noActiveScore = api.prepareDirectScoreOverlay(renderer, scene, camera, []);
+  assert.equal(noActiveScore, null, 'a direct frame with no active score requires no overlay pass');
+  board.visible = true;
+  const finishDirectScore = api.prepareDirectScoreOverlay(renderer, scene, camera, [note]); // Emulate the canvas path with Outlines off.
+  assert.equal(note.visible, false, 'direct base and target passes must not draw the note');
+  const beforeDirect = api.snapshot(); // Compare the mask and overlay counters after direct presentation.
+  renderer.render(scene, camera);
+  finishDirectScore(true);
+  assert.equal(api.snapshot().scoreActorDepthPasses, beforeDirect.scoreActorDepthPasses + 1);
+  assert.equal(renderer.calls.at(-1).noteDepthTest, true, 'direct score tests against foreground silhouettes too');
+  assert.equal(note.layers.mask, 1, 'direct score restores its original layer');
+  assert.equal(note.visible, true, 'direct score restores its original visibility');
+  const finishFailedFrame = api.prepareDirectScoreOverlay(renderer, scene, camera, [note]); // Failed world draws only release their temporary state.
+  finishFailedFrame(false);
+  assert.equal(api.snapshot().scoreActorDepthPasses, beforeDirect.scoreActorDepthPasses + 1);
+  assert.equal(note.layers.mask, 1);
+  assert.equal(note.visible, true);
   api.setScoreCharacterRootsProvider(null);
 }
 

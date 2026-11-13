@@ -27399,23 +27399,31 @@
           // the painterly/outline post-process can't smear them.
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         } else {
-          window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
-          renderer.setRenderTarget(null);
-          renderer.render(activeScene, camera);
-          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
-          window.PerfProfiler?.end(actorProbePerf);
-          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-          if (_targetOutlineMeshes.length > 0) {
-            renderer.autoClearColor = false;
-            renderer.autoClearDepth = false;
-            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-            camera.layers.set(2);
-            renderer.render(scene, camera);
-            camera.layers.enableAll();
-            scene.overrideMaterial = null;
-            renderer.autoClearColor = true;
-            renderer.autoClearDepth = true;
+          const scoreMeshes = window.PuzzleCaveEntrances?.activeScoreMeshes?.(currentArea, activeScene); // The active cave plate owns direct-render score candidates.
+          const finishScore = window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes); // Keeps the glyphs out of actor probes and held-depth replay.
+          let worldPresented = false; // Release the temporary layer on error without drawing an overlay over an incomplete frame.
+          try {
+            window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
+            renderer.setRenderTarget(null);
+            renderer.render(activeScene, camera);
+            const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+            window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
+            window.PerfProfiler?.end(actorProbePerf);
+            // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+            if (_targetOutlineMeshes.length > 0) {
+              renderer.autoClearColor = false;
+              renderer.autoClearDepth = false;
+              scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+              camera.layers.set(2);
+              renderer.render(scene, camera);
+              camera.layers.enableAll();
+              scene.overrideMaterial = null;
+              renderer.autoClearColor = true;
+              renderer.autoClearDepth = true;
+            }
+            worldPresented = true;
+          } finally {
+            finishScore?.(worldPresented);
           }
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         }
