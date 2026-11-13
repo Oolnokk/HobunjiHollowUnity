@@ -182,7 +182,9 @@ async function main() {
     assert.equal(definition.masteryUnlock.rank, Number(rank));
     assert.equal(definition.masteryUnlock.type, type);
     assert.equal(Object.values(gained)[0], 1);
-    assert.deepEqual(Object.keys(loot.rollLootPool(id, { random: () => pool.mastery.chance })), [], 'drop chance boundary must fail');
+    const boundaryDrops = loot.rollLootPool(id, { random: () => pool.mastery.chance }); // The unattainable 1.0 RNG endpoint cannot defeat guaranteed mastery sources.
+    if (pool.mastery.chance < 1) assert.deepEqual(Object.keys(boundaryDrops), [], 'optional drop chance boundary must fail');
+    else assert.equal(Object.keys(boundaryDrops).length, 1, '100% mastery sources must never fail');
   }
   const skeleton = { enemyClass: 'minion', rosterRecord: { appearance: { speciesId: 'harlyao-skeleton' } }, def: { weaponKey: 'mace' } }; // Inherited bandit tables must not misclassify non-bandit humanoids.
   assert.equal(loot.masteryPoolForLoot('bandit_grunt', { entity: skeleton }), 'mastery_skeleton');
@@ -196,6 +198,27 @@ async function main() {
   assert.equal(loot.masteryPoolForLoot('bandit_captain', { entity: { enemyClass: 'bandit' } }), 'mastery_captain');
   assert.ok(Object.keys(loot.rollLootPool('bandit_grunt', { entity: skeleton }))[0].includes(':blunt:'), 'enemy weapon determines the damage type');
   assert.ok(Object.keys(loot.rollLootPool('bandit_captain', { entity: { enemyClass: 'bandit', def: { weaponKey: 'sword' } } }))[0].includes(':sharp:'));
+  const bandit = { enemyClass: 'bandit', def: { weaponKey: 'mace' } }; // Real bandit corpse context is required to distinguish lieutenants from inherited skeleton and ghoul loot.
+  assert.equal(pools.mastery_tent.mastery.chance, 1, 'every tent is guaranteed a mastery scroll');
+  assert.equal(pools.mastery_captain.mastery.chance, 1, 'captains remain guaranteed');
+  assert.equal(pools.mastery_bandit.mastery.chance, 0.05, 'grunt and flasker mastery chance remains 5%');
+  assert.equal(pools.mastery_bandit.mastery.chanceBySource.bandit_lieutenant, 1, 'lieutenants guarantee the same bandit-exclusive effect pool');
+  window.FestivalSystem = { fortuneMultiplier: () => 0.1 }; // Regression: reduced fortune must never defeat any guaranteed drop.
+  for (const source of ['banditTent', 'bandit_lieutenant', 'bandit_captain']) {
+    const context = source === 'banditTent' ? { zoneId: 'map_eastern_mire' } : { entity: bandit }; // Tent looting passes only a zone; corpse looting passes the defeated bandit.
+    const drops = loot.rollLootPool(source, { ...context, random: () => 0.999999 }); // Worst-case valid random roll still returns exactly one readable scroll.
+    const scrolls = Object.entries(drops).filter(([key, qty]) => key.startsWith('masteryScroll:') && qty >= 1); // Detect actual readable scroll keys, not unrelated corpse items.
+    assert.equal(scrolls.length, 1, `${source} must always yield at least one mastery scroll`);
+    assert.ok(items.ITEM_DEFS[scrolls[0][0]]?.masteryUnlock, `${source} must produce an actual registered lesson`);
+  }
+  const gruntDrops = loot.rollLootPool('bandit_grunt', { entity: bandit, random: () => 0.5 }); // Ordinary bandits still fail their optional mastery roll.
+  assert.ok(!Object.keys(gruntDrops).some(key => key.startsWith('masteryScroll:')), 'ordinary bandits are not made guaranteed');
+  const skeletonLieutenantDrops = loot.rollLootPool('bandit_lieutenant', { entity: skeleton, random: () => 0.999999 }); // Inherited skeleton loot must not receive bandit-specific guarantees.
+  assert.ok(!Object.keys(skeletonLieutenantDrops).some(key => key.startsWith('masteryScroll:')), 'skeletons do not inherit the lieutenant guarantee');
+  const tabletDrops = loot.rollLootPool('mastery_ruin_kanthic', { random: () => 0.5, damageType: 'sharp' }); // Preserve existing festival modifiers for mastery tablets.
+  assert.equal(Object.keys(tabletDrops).length, 0, 'guaranteed scrolls must not make every tablet immune to reduced fortune');
+  delete window.FestivalSystem;
+
   const kylieBandit = { enemyClass: 'bandit', def: { weaponKey: 'kylie_nativeCopper', attackTag: 'blunt' } }; // A real generated Kylie on a bandit must route to the existing blunt scroll pool.
   const kylieDrops = loot.rollLootPool('bandit_captain', { entity: kylieBandit });
   const kylieScroll = Object.keys(kylieDrops)[0];

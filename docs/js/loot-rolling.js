@@ -47,8 +47,10 @@
     const random = context.random || (() => window.GameRandom?.random?.() ?? Math.random()); // Seeded callers can supply the same event RNG as their other loot.
     const cacheSource = context.masterySource === 'caveCache' || /^mastery_(ruin|final)_/.test(poolId); // Treasure and defeated-foe fortunes never bleed into each other's mastery sources.
     const fortuneId = cacheSource ? 'treasureFortune' : 'battleFortune';
-    const chance = Math.min(1,Math.max(0,Number(config.chance)||0) * (window.FestivalSystem?.fortuneMultiplier?.(fortuneId) || 1)); // The authored base drop chance remains the only source of the probability.
-    if (random() >= chance) { lastMasteryRoll = { poolId, dropped: false, chance, fortuneId }; return {}; }
+    const sourceChance = Number(config.chanceBySource?.[context.sourcePoolId] ?? config.chance) || 0; // A specific source can guarantee its scroll without raising the drop rate for other sources sharing this mastery pool.
+    const guaranteedScroll = config.form === 'scroll' && sourceChance >= 1; // Only the requested scroll sources bypass fortune penalties; tablet drop rules keep their existing behavior.
+    const chance = guaranteedScroll ? 1 : Math.min(1, Math.max(0, sourceChance * (window.FestivalSystem?.fortuneMultiplier?.(fortuneId) || 1))); // Chance remains a source-specific configurable probability.
+    if (random() >= chance && chance < 1) { lastMasteryRoll = { poolId, dropped: false, chance, fortuneId }; return {}; }
     const ranks = Object.entries(config.rankWeights).filter(([, weight]) => Number(weight) > 0); // Weighted rank is rolled only after the single per-source drop chance succeeds.
     let roll = random() * ranks.reduce((sum, [, weight]) => sum + Number(weight), 0); // Unnormalized weights preserve the captain's stated 66:33 ratio.
     let rank = Number(ranks.at(-1)?.[0]); // Rounding-safe fallback for the final weighted bucket.
@@ -186,7 +188,7 @@
     } // Pre-bootstrap and isolated dungeon callers retain the original flat-entry fallback.
     if (pool?.mastery) return rollMasteryPool(poolId, context);
     const masteryPool = masteryPoolForLoot(poolId, context); // Select the semantic source before ordinary pool inheritance obscures its identity.
-    if (!pool) return masteryPool ? rollMasteryPool(masteryPool, context) : {};
+    if (!pool) return masteryPool ? rollMasteryPool(masteryPool, { ...context, sourcePoolId: poolId }) : {}; // Preserve the original loot source for its authored mastery chance override.
     const world = _lootShopWorldState();
     const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
     const gained = {};
@@ -212,7 +214,7 @@
       }
       if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
     }
-    if (masteryPool) Object.assign(gained, rollMasteryPool(masteryPool, context));
+    if (masteryPool) Object.assign(gained, rollMasteryPool(masteryPool, { ...context, sourcePoolId: poolId })); // Lieutenants retain bandit-exclusive effects while using their own guaranteed chance.
     return gained;
   }
 
