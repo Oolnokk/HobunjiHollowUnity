@@ -20710,6 +20710,9 @@
       }
 
       function useActiveAction() {
+        if (window.GameplayInputRouter?.holdBlocked?.(activeAction)) return; // No held world loot/harvest begins or completes during combat.
+        if (window.GameplayInputRouter?.blocksAttacks?.()
+          && ((activeTool === 'weapon' && toolActions.weapon.includes(activeAction)) || (activeTool === 'ranged' && activeAction === 'shoot'))) return;
         // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
         if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
           || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
@@ -27746,7 +27749,20 @@
       function computeActionButtons() {
         const _cabStart = performance.now();
         try {
-          const buttons = computeActionButtonsImpl(); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          let buttons = computeActionButtonsImpl(); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          if (buttons.some(button => window.GameplayInputRouter?.holdBlocked?.(button.action))) {
+            buttons = buttons.filter(button => !window.GameplayInputRouter.holdBlocked(button.action)); // A combat encounter removes world-loot holds before they can own any action slot.
+            if (!buttons.length && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')) {
+              const aimedTile = getReticleTile(); // Restore normal weapon/ranged abilities when a nest, skeleton, hive or tent is the only aimed interaction.
+              const tile = window.GridTileAccessors.getActiveGrid()?.[aimedTile.row]?.[aimedTile.col];
+              buttons = (toolActions[activeTool] || []).map((action, i) => ({
+                icon: attackActionIconHTML(activeTool, action, actionLabels[action]?.[0] || '⚔'),
+                label: window.HudUpdate.contextualActionLabel(action, tile),
+                action, style: i === 0 ? 'primary' : 'secondary',
+                allowed: canUseAction(activeTool, action, aimedTile.col, aimedTile.row),
+              }));
+            }
+          }
           const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
           if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
           return buttons;
@@ -29244,17 +29260,36 @@
         if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
-      function visibleActionOverrideForWeaponSlot(actionId) {
-        const slot = weaponActionSlot(actionId);
-        if (!slot) return null;
-        const button = actionButtonForPhysicalSlot(slot); // Preserve the world-context action actually rendered in this physical weapon slot.
-        if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
+      function visibleContextOverrideForCombatTool(actionId) {
+        if (actionId !== 'action1' && actionId !== 'action2') return null;
+        if (heldMode !== 'tool' || (activeTool !== 'weapon' && activeTool !== 'ranged')) return null;
+        const slot = actionId === 'action1' ? 1 : 2; // Only physical Action 1/2 can suppress both melee and ranged attacks.
+        const button = actionButtonForPhysicalSlot(slot); // The rendered contextual action is authoritative for both weapon and ranged slots.
+        if (!button || button.allowed === false || button.action === toolActions[activeTool]?.[slot - 1]) return null;
+        if (window.GameplayInputRouter?.holdBlocked?.(button.action)) return null; // An in-combat world-loot hold cannot displace the normal weapon action.
         return { slot, button };
       }
+      window.GameplayInputRouter?.init({
+        isInCombat: isPlayerInCombat,
+        getContextualOverride: visibleContextOverrideForCombatTool,
+        hasVisibleContextOverride: actionId => {
+          if (heldMode !== 'tool' || (activeTool !== 'weapon' && activeTool !== 'ranged')) return false;
+          if (actionId !== 'action1' && actionId !== 'action2') return false;
+          const slot = actionId === 'action1' ? 1 : 2; // Fast path only checks displayed ownership on held-combat frames; press routing still revalidates the live action descriptor.
+          const button = document.getElementById('btnAction' + slot); // Reuses the rendered arch to avoid computeActionButtons traversals on every held attack frame.
+          const action = button?.dataset?.action; // Current context signature used solely to suppress combat while the displayed action displaces a weapon input.
+          return !!action && action !== toolActions[activeTool]?.[slot - 1]
+            && !button.classList.contains('abt-hidden') && !button.classList.contains('blocked')
+            && !window.GameplayInputRouter?.holdBlocked?.(action);
+        },
+        executeContextualOverride: (actionId, override) => runActionButtonAtSlot(override.slot, actionId),
+        onContextRelease: actionId => { if (actionId === 'action1') actionHeldDown = false; },
+      }); // One semantic owner arbitrates world claims, contextual arch overrides and combat for keyboard, controller, mouse and touch.
       function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
-        const consumed=window.WorldActionInputClaims?.dispatch?.(actionId,phase,{source}); // Shared world interactions can temporarily own a physical action without teaching Combat about every door/rope/NPC system.
-        if(consumed&&actionId==='action1')actionHeldDown=false;
-        return consumed===true;
+        const consumed = window.GameplayInputRouter?.route?.(actionId, phase, source)
+          ?? window.WorldActionInputClaims?.dispatch?.(actionId, phase, { source }); // All device paths use the same press-to-release owner.
+        if (consumed && actionId === 'action1' && window.WorldActionInputClaims?.hasClaim?.('action1')) actionHeldDown = false;
+        return consumed === true;
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
@@ -29268,7 +29303,9 @@
           && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
-      function runInputAction(actionId, phase = 'press') {
+      function runInputAction(actionId, phase = 'press', source = 'game-input') {
+        if (phase === 'release' && window.GameplayInputRouter?.owns?.(actionId, source)
+          && dispatchWorldInputClaim(actionId, 'release', source)) return; // A context that opened a menu/minigame still owns the original release.
         if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
         if (actionId === 'dodge' && window.PlayerDowned?.isDowned?.()) {
           window.PlayerDowned.setGiveUpHeld(phase === 'press'); // Keyboard and controller share the same downed hold, respecting remapped physical inputs.
@@ -29279,7 +29316,7 @@
           return;
         }
         if (window.FarmworkUI?.isPlanning?.()) {
-          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork-tool'); return; }
+          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source); return; }
           if (actionId === 'dodge' || actionId === 'toolSelect') {
             if (phase === 'press') window.FarmworkUI.setPlanning(false);
             return;
@@ -29298,7 +29335,7 @@
           return;
         }
         if (window.__mapEditorGizmoActive) return;
-        if(phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input'))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
+        if(phase==='release'&&dispatchWorldInputClaim(actionId,'release',source))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -29430,14 +29467,14 @@
           return;
         }
         if (menuOpen || farmEditMode) return;
-        if(dispatchWorldInputClaim(actionId,'press','game-input'))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
+        if(dispatchWorldInputClaim(actionId,'press',source))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (heldMode === 'item' && actionId === 'action1' && window.AlchemyFlasks?.heldActions?.().length) {
           if (window.AlchemyFlasks.beginAim()) flaskActionPresses.add(actionId);
           return;
         }
         if (heldMode === 'item' && actionId === 'action2' && window.AlchemyFlasks?.aiming) { window.AlchemyFlasks.cancelAim(); return; }
         if (actionId === 'interact') { runInteractAction(); return; }
-        const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
+        const visibleOverride = visibleContextOverrideForCombatTool(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
           runActionButtonAtSlot(visibleOverride.slot, actionId);
@@ -29516,7 +29553,7 @@
       function releaseControllerGameplayInput(reason = 'released') {
         for (const button of gamepadState.previous) {
           const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
-          if (actionId) runInputAction(actionId, 'release');
+          if (actionId) runInputAction(actionId, 'release', 'controller');
         }
         gamepadState.previous.clear();
         gamepadState.actionByButton.clear();
@@ -29684,13 +29721,13 @@
           if (actionId) {
             gamepadState.actionByButton.set(button, actionId); // Pairs release with the action pressed even if a held mode shift changes first.
             lastInputDevice = 'controller';
-            runInputAction(actionId, 'press');
+            runInputAction(actionId, 'press', 'controller');
           }
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;
           const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
-          if (actionId) runInputAction(actionId, 'release');
+          if (actionId) runInputAction(actionId, 'release', 'controller');
           gamepadState.actionByButton.delete(button);
         }
         gamepadState.previous = down;
@@ -29829,7 +29866,7 @@
         const reservedDesktopCodes = [inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu];
         if (boundDesktopAction && !reservedDesktopCodes.includes(event.code)) {
           event.preventDefault();
-          if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          if (!event.repeat) runInputAction(boundDesktopAction, 'press', 'desktop-keyboard');
           return;
         }
         if (key === 'shift') {
@@ -29843,7 +29880,7 @@
         if (key === 'e') {
           event.preventDefault();
           if (isDesktop) {
-            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+            if (!event.repeat && !window.GameplayInputRouter?.holdBlocked?.('bandit_tent_interact') && window.BanditCamps?.hasNearbyTent?.()) {
               desktopTentInteractHeld = true;
               activeAction = 'bandit_tent_interact';
               actionHeldDown = true;
@@ -29939,6 +29976,11 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        const ownedDesktopActionUp = getActionForButton('desktop', event.code); // Captures the original world-context release before a newly opened fishing/menu flow can consume keyup.
+        if (ownedDesktopActionUp && window.GameplayInputRouter?.owns?.(ownedDesktopActionUp, 'desktop-keyboard')) {
+          dispatchWorldInputClaim(ownedDesktopActionUp, 'release', 'desktop-keyboard');
+          return;
+        }
         // Mirrors the keydown handler's early return: without this, releasing
         // the interact key (E) after fishingPrimaryAction() already fired on
         // keydown fell through to the 'e' handling below, which calls
@@ -29951,7 +29993,7 @@
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
         if (boundDesktopActionUp && ![inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu].includes(event.code)) {
-          runInputAction(boundDesktopActionUp, 'release');
+          runInputAction(boundDesktopActionUp, 'release', 'desktop-keyboard');
         }
         if (key === 'shift') {
           _shiftDownAt = null;
@@ -30203,10 +30245,10 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
-          if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press'); return; } // preventDefault also stops middle-click autoscroll.
+          if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press', 'desktop-mouse'); return; } // preventDefault also stops middle-click autoscroll.
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
-            runInputAction(mouseAction, 'press');
+            runInputAction(mouseAction, 'press', 'desktop-mouse');
             return;
           }
           if (mouseAction === 'action1' && furniturePlacementModeArmed()) {
@@ -30218,7 +30260,7 @@
           if(mouseAction&&dispatchWorldInputClaim(mouseAction,'press','desktop-mouse'))return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
-            const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
+            const visibleOverride = weaponSlot ? visibleContextOverrideForCombatTool(mouseAction) : null;
             if (visibleOverride) {
               visibleWeaponContextPresses.add('mouse:' + e.button);
               runActionButtonAtSlot(visibleOverride.slot);
@@ -30231,9 +30273,9 @@
               return;
             }
           }
-          if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press'); return; }
+          if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press', 'desktop-mouse'); return; }
           if (mouseAction === 'action1') {
-            if (heldMode === 'item' && window.AlchemyFlasks?.heldActions?.().length) { runInputAction(mouseAction, 'press'); return; }
+            if (heldMode === 'item' && window.AlchemyFlasks?.heldActions?.().length) { runInputAction(mouseAction, 'press', 'desktop-mouse'); return; }
             actionHeldDown = true;
             if (isHoldToCommitAction(activeAction)) {
               const started = beginHeldItemActionDescriptor(activeAction);
@@ -30244,7 +30286,7 @@
             }
             return;
           }
-          if (mouseAction) runInputAction(mouseAction, 'press'); // Any other action bound to a mouse button (e.g. a side button bound to Dodge).
+          if (mouseAction) runInputAction(mouseAction, 'press', 'desktop-mouse'); // Any other action bound to a mouse button (e.g. a side button bound to Dodge).
         });
       }
       function finishDesktopMouseAction(e) {
@@ -30265,7 +30307,7 @@
         }
         const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
         if (desktopWallFurnitureMousePresses.delete(e.button)) {
-          runInputAction(mouseAction, 'release');
+          runInputAction(mouseAction, 'release', 'desktop-mouse');
           return;
         }
         if (desktopFurniturePlacementMousePresses.delete(e.button)) {
@@ -30281,21 +30323,21 @@
             return;
           }
         }
-        if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
+        if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release', 'desktop-mouse'); return; }
         if (mouseAction === 'action1') {
-          if (flaskActionPresses.has(mouseAction)) { runInputAction(mouseAction, 'release'); return; }
+          if (flaskActionPresses.has(mouseAction)) { runInputAction(mouseAction, 'release', 'desktop-mouse'); return; }
           actionHeldDown = false;
           if (desktopHeldItemMousePresses.delete(e.button)) {
             window.HeldItemActionInput?.release();
             return;
           }
           if (heldMode === 'tool' && activeTool === 'ranged' && (window.HobunjiRangedWeaponArchetypes?.ownsThrownInput?.() ?? window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.())) {
-            runInputAction('action1', 'release');
+            runInputAction('action1', 'release', 'desktop-mouse');
             return;
           }
           return;
         }
-        if (mouseAction) runInputAction(mouseAction, 'release');
+        if (mouseAction) runInputAction(mouseAction, 'release', 'desktop-mouse');
       }
       // Capture release before action-arch/backdrop handlers can consume a
       // moved right-click gesture. `contextmenu` is Chromium/Opera's final
@@ -32341,7 +32383,7 @@
         _denNests,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getActiveAction: () => activeAction,
-        getActionHeldDown: () => actionHeldDown,
+        getActionHeldDown: () => actionHeldDown && !window.GameplayInputRouter?.holdBlocked?.(activeAction), // A newly engaged enemy interrupts an in-progress world hold immediately.
         getNestHoldT: () => _nestHoldT,
         setNestHoldT: (v) => { _nestHoldT = v; },
         currentPlayerInteractionRay,
@@ -32624,7 +32666,7 @@
 
       window.CorpseHoldLoot?.init({
         getActiveAction: () => activeAction,
-        getActionHeldDown: () => actionHeldDown,
+        getActionHeldDown: () => actionHeldDown && !window.GameplayInputRouter?.holdBlocked?.(activeAction), // A newly engaged enemy interrupts an in-progress world hold immediately.
         getAimedHoldCorpse: () => {
           if (window.PlayerDowned?.isDowned?.()) return null; // A downed player cannot loot, harvest or revive.
           const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
@@ -33543,7 +33585,7 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         getActiveAction: () => activeAction,
-        getActionHeldDown: () => actionHeldDown,
+        getActionHeldDown: () => actionHeldDown && !window.GameplayInputRouter?.holdBlocked?.(activeAction), // A newly engaged enemy interrupts an in-progress world hold immediately.
         getPackClothing: () => packClothing,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
       });
