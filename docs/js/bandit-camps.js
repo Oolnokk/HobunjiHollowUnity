@@ -1266,7 +1266,7 @@
     const actionHeldDown = deps.getActionHeldDown();
     const holdAllowed = window.GameplayInputRouter?.canContinueHold?.('bandit_tent_interact', actionHeldDown) ?? actionHeldDown; // Combat interrupts tent looting/burning until release.
     if (!actionHeldDown) _banditTentHoldInterrupted = false;
-    if (!holdAllowed) _banditTentHoldInterrupted = true;
+    if (actionHeldDown && !holdAllowed) _banditTentHoldInterrupted = true;
     const looting = !!tent?.interactable?.lootable;
     const interacting = !!tent
       && deps.getActiveAction() === 'bandit_tent_interact'
