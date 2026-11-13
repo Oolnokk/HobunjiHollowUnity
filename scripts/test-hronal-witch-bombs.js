@@ -250,6 +250,28 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    'nested chain reactions scan the scene only once');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacyScanReuses-reusesBeforeChain,1,
    'the outer blast reuses its nested chain discovery without a second traversal');
+ const eighth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const ninth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const nestedBreaks=[];
+ const nestedProp=new RuntimeGroup();nestedProp.position.set(2,0,4);
+ nestedProp.userData.hronalBombBreakable=true;
+ nestedProp.userData.onHronalBombBreak=()=>{
+   nestedBreaks.push('first');
+   const replacementProp=new RuntimeGroup();replacementProp.position.set(2,0,4);
+   replacementProp.userData.hronalBombBreakable=true;
+   replacementProp.userData.onHronalBombBreak=()=>nestedBreaks.push('replacement');
+   scene.add(replacementProp);
+ };
+ scene.add(nestedProp);
+ const scansBeforeMutation=runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans;
+ runtimeWindow.Shattercasks.triggerBurdenBlastAt=(_map,_x,_z,_radius,sourceId)=>{
+   if(sourceId===eighth.id)ninth.onImpact(ninth,'witch-bomb-chain');
+ };
+ assert(eighth.onImpact(eighth,'witch-bomb-chain'));
+ assert.deepEqual(nestedBreaks,['first','replacement'],
+   'the outer explosion discovers a prop created by the inner explosion callback');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeMutation,2,
+   'a scene-mutating callback invalidates the nested-chain cache and triggers a fresh scan');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
