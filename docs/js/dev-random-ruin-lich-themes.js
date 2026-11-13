@@ -1307,6 +1307,8 @@
       iceTiles:world.iceTiles.size,
       icicles:world.icicles.length,fallenIcicles:world.icicles.filter(p=>p.phase==='done').length,
       activeBossIcicles:world.icicles.filter(p=>p.temporary && p.phase!=='done').length, // Mobile diagnostics expose simultaneous falling boss icicles.
+      activeShardBursts:world.bursts.length,shardPoolHits:world.shardPoolHits||0,shardPoolMisses:world.shardPoolMisses||0,
+      pooledShardBursts:[...(world.shardPool?.values()||[])].reduce((total,entries)=>total+entries.length,0), // Mobile diagnostics of retained effect buffers.
       bossIcicleEmitter:world.bossIcicleEmitter ? {x:world.bossIcicleEmitter.x,z:world.bossIcicleEmitter.z} : null, // Reports where Nanahi's sole spawn point is pursuing.
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
