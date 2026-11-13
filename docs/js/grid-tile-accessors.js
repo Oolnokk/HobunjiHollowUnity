@@ -226,7 +226,10 @@
         if (col >= den.x && col < den.x + w && row >= den.y && row < den.y + h) return true;
         continue;
       }
-      const authoredState = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den) || null; // Full den-template collision state includes furniture/custom colliders plus whether to retain the legacy cave shell.
+      const authoredState = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den) || null; // Cached world-space den colliders and outer bounds; never rebuild locale geometry per A* tile.
+      const bounds = authoredState?.bounds; // Conservative union includes furniture colliders extending beyond the den footprint.
+      if (bounds && (col < bounds.x || col >= bounds.x + bounds.w || row < bounds.y || row >= bounds.y + bounds.h)) continue;
+      if (!authoredState && (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h)) continue; // No authored rectangles: legacy shell cannot block outside its footprint.
       if (authoredState) {
         for (const rect of (authoredState.rects || [])) {
           if (col >= rect.x && col < rect.x + rect.w && row >= rect.y && row < rect.y + rect.h) return true;

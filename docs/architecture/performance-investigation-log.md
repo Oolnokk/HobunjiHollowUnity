@@ -1,5 +1,34 @@
 # Performance investigation log
 
+## 13 Nov 2026: den entrance collision now reuses translated authored colliders
+
+A Chrome Performance capture at approximately 8 FPS on the wilderness slope showed
+`denEntranceCollisionState` near the top of Bottom-up (about 909 ms self time during
+the selected recording). `TilePathfinding.findPath` called collision predicates
+often enough to expose the per-query locale scan and world-rectangle allocation.
+This is CPU work, not an indication that den meshes are expensive to draw.
+
+- `ZoneDenTotemFeatures.denEntranceCollisionState` now caches each den's translated
+  colliders in a `WeakMap`, with a conservative union bound that includes authored
+  objects **outside** the den footprint. Position, dimensions, entrance template,
+  mouth anchor, or locale source changes force recomputation; dead den objects
+  are not retained. `GridTileAccessors` skips tile tests outside the union.
+- `LocalDBOverrides.getRuntimeOverride` retains a read-only parsed locale source
+  for gameplay, invalidated on same-tab edits and cross-tab `storage` events.
+  The editor's `getOverride` intentionally retains its fresh-read behavior.
+  Repository templates are loaded separately so switching back from local mode
+  cannot leave editor-authored collisions as the repo fallback.
+- Mobile Pixel Probe reports cache hits, builds and invalidations; the authored
+  den collision regression tests exercise 600 repeated checks, relocation,
+  resizing, template changes, local edits, and external furniture colliders.
+  A direct runtime test with both checked-in templates also passed 2,000
+  repeated cached reads plus source/geometry invalidation scenarios.
+
+**Not measured:** new physical-device FPS, frame time, or Chrome profiler self
+time after the change. Reprofile the same wilderness view to measure the effect,
+then investigate style recalculation and held-overlay render work separately.
+
+
 Read this before you start chasing a "the game gets slow, especially in the wilderness after fights" report.
 It records what was measured, what turned out to be the cause, and — just as important — what looked like a
 cause and was **not**, so nobody spends another session re-ruling those out.

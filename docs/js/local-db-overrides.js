@@ -78,6 +78,25 @@
     try { return JSON.parse(raw); } catch { return null; }
   }
 
+  const _runtimeOverrideCache = new Map(); // Stable parsed overrides for read-only gameplay hot paths, never exposed to editor mutation workflows.
+  const _runtimeOverrideRevisions = new Map(); // Incremented by local saves/clears and cross-tab storage changes to invalidate runtime snapshots.
+  function invalidateRuntimeOverride(id) {
+    _runtimeOverrideRevisions.set(id, (_runtimeOverrideRevisions.get(id) || 0) + 1);
+    _runtimeOverrideCache.delete(id);
+  }
+  // Unlike getOverride (intentionally fresh for editors), gameplay can reuse a
+  // parsed locale document until the saved source actually changes.
+  function getRuntimeOverride(id) {
+    if (_runtimeOverrideCache.has(id)) return _runtimeOverrideCache.get(id);
+    const value = getOverride(id); // Parsed once per database revision; never on every pathfinding collision query.
+    _runtimeOverrideCache.set(id, value);
+    return value;
+  }
+  window.addEventListener?.('storage', event => {
+    if (event.key == null) { _runtimeOverrideCache.clear(); return; }
+    if (event.key.startsWith(OVERRIDE_KEY_PREFIX)) invalidateRuntimeOverride(event.key.slice(OVERRIDE_KEY_PREFIX.length));
+  });
+
   function hasOverride(id) { return !!_readEnvelope(id); }
   function getOverride(id) {
     const data = _readEnvelope(id)?.data ?? null; // Fresh parsed local override returned to the requesting editor/runtime.
@@ -95,8 +114,12 @@
   function setOverride(id, dataObj) {
     if (!dbById(id)) throw new Error('Unknown database id: ' + id);
     localStorage.setItem(overrideKey(id), JSON.stringify({ savedAt: Date.now(), data: dataObj }));
+    invalidateRuntimeOverride(id);
   }
-  function clearOverride(id) { localStorage.removeItem(overrideKey(id)); }
+  function clearOverride(id) {
+    localStorage.removeItem(overrideKey(id));
+    invalidateRuntimeOverride(id);
+  }
 
   // For the onboarding "Database Source" panel — one row per known database,
   // regardless of whether it has an override yet.
@@ -697,7 +720,7 @@
   window.LocalDBOverrides = {
     DATABASES,
     getSourceMode, setSourceMode,
-    hasOverride, getOverride, setOverride, clearOverride,
+    hasOverride, getOverride, getRuntimeOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
     applyNpcScheduleOverrides,

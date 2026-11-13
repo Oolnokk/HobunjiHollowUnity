@@ -1017,6 +1017,8 @@
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
       lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
       lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
+      const denCollision = window.ZoneDenTotemFeatures?.denCollisionDebugSnapshot?.(); // Read cache hits/rebuilds only during a Pixel Probe; no gameplay-frame string work.
+      if (denCollision) lines.push(`Den collision cache: hits=${denCollision.hits} builds=${denCollision.builds} invalidations=${denCollision.invalidations}`);
     } catch (error) {
       lines.push('Den nest diagnostics failed: ' + String(error?.message || error));
     }
