@@ -205,7 +205,8 @@ async function main() {
   assert.equal(pools.mastery_bandit.mastery.chanceBySource.bandit_lieutenant, 1, 'lieutenants guarantee the same bandit-exclusive effect pool');
   window.FestivalSystem = { fortuneMultiplier: () => 0.1 }; // Regression: reduced fortune must never defeat any guaranteed drop.
   for (const source of ['banditTent', 'bandit_lieutenant', 'bandit_captain']) {
-    const drops = loot.rollLootPool(source, { entity: bandit, random: () => 0.999999 }); // Worst-case valid random roll still returns exactly one readable scroll.
+    const context = source === 'banditTent' ? { zoneId: 'map_eastern_mire' } : { entity: bandit }; // Tent looting passes only a zone; corpse looting passes the defeated bandit.
+    const drops = loot.rollLootPool(source, { ...context, random: () => 0.999999 }); // Worst-case valid random roll still returns exactly one readable scroll.
     const scrolls = Object.entries(drops).filter(([key, qty]) => key.startsWith('masteryScroll:') && qty >= 1); // Detect actual readable scroll keys, not unrelated corpse items.
     assert.equal(scrolls.length, 1, `${source} must always yield at least one mastery scroll`);
     assert.ok(items.ITEM_DEFS[scrolls[0][0]]?.masteryUnlock, `${source} must produce an actual registered lesson`);
