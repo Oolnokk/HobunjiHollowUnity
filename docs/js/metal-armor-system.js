@@ -565,7 +565,9 @@
     hookedSkillSystem = skillSystem;
     skillXpUnsubscribe = skillSystem.onAward(event => {
       const gained = Math.max(0, Number(event?.amount) || 0);
-      if (gained > 0) awardExperience(gained, `${event?.skillKey || 'skill'} skill XP`);
+      if (gained <= 0) return;
+      const defer = event?.deferSave && window.Combat?.deps?.scheduleCombatGearSave; // Combat kills coalesce the gear write with Motes and weapon mastery.
+      if (awardExperience(gained, `${event?.skillKey || 'skill'} skill XP`, { save: !defer }) && defer) defer();
     });
     skillXpListenerInstalled = typeof skillXpUnsubscribe === 'function';
     return skillXpListenerInstalled;

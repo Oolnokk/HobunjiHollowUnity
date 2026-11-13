@@ -78,6 +78,35 @@ async function main() {
     assert.equal(flushed.captured, true, 'explicit runtime flush should use the real member save callback');
     assert.equal(persistedStinkOil, 2, 'explicit runtime flush must capture the latest live inventory');
     assert.equal(farmSaves, 1, 'explicit runtime flush should also persist the current farm layout');
+
+    // A live folder capture must not stringify the entire old browser save just
+    // to detect if it changes while the canonical disk write is in flight.
+    let fullFingerprintCalls = 0; // Detects accidental regression to whole-save fingerprinting.
+    context.window.__hobunjiPlayerProfile = { worldId: 'world-test' };
+    context.window.HobunjiSaveSnapshot = {
+      capture: () => ({
+        snapshotVersion: 1,
+        meta: { version: 1, characters: [{ id: 'char-test' }], worlds: [{ id: 'world-test' }] },
+        farmLayouts: { 'world-test': { tiles: [1] } },
+      }),
+      browserCacheParts: () => ['browser-meta', 'world-test', 'browser-layout'],
+      fingerprint: () => { fullFingerprintCalls++; return 'expensive serialized save'; },
+      validate: () => {},
+    };
+    context.window.FarmEditor = { captureFarmLayout: () => ({ tiles: [2] }) };
+    context.window.FarmAnimals.init({
+      inventory,
+      saveMemberWorldData() {},
+      saveFarmLayout() {},
+      captureMemberWorldData(meta) { return meta; },
+    });
+    const directCapture = context.window.HobunjiRuntimeSave.captureSnapshot({ reason: 'test-auto' });
+    assert.equal(directCapture.ok, true, 'direct folder capture still completes');
+    assert.equal(fullFingerprintCalls, 0, 'raw browser cache parts replace expensive whole-save baseline fingerprinting');
+    assert.equal(directCapture.snapshot.browserBaselineParts.length, 3, 'transient baseline covers browser meta and farm layout');
+    assert.equal(Object.keys(directCapture.snapshot).includes('browserBaselineParts'), false,
+      'transient browser baseline cannot be serialized into primary or recovery checkpoints');
+
     console.log('OK  live Grehlr resource inventory is persisted before folder mirroring');
   }
 
@@ -189,6 +218,122 @@ async function main() {
     await context.window.FolderSaveQuitGuard.guardedQuit(button);
     assert.deepEqual(sequence, ['runtime', 'folder', 'alert'], 'a real primary save failure still blocks quit');
     console.log('OK  guarded Quit distinguishes primary failure from recovery warnings');
+  }
+
+  // 4) An in-flight fallback folder write must not mirror an older snapshot
+  // over browser changes that happened after serialization began.
+  {
+    const browser = makeStorage({
+      hobunjiSaveMeta: JSON.stringify({ version: 1, characters: [{ id: 'c', nickname: 'Original' }], worlds: [{ id: 'w', label: 'World' }] }),
+      'hobunji_farm_layout_v3:w': JSON.stringify({ tiles: [1] }),
+    });
+    let mutateDuringWrite = false; // Inject a browser change after the folder save snapshot has already been captured.
+    let browserMirrors = 0; // Confirms the second, stale folder save does not overwrite the newer browser cache.
+    function directory(name) {
+      const files = new Map(); // In-memory files provide a File System Access API double.
+      const dirs = new Map(); // Child directory handles for characters/worlds/layouts.
+      const notFound = () => Object.assign(new Error('not found'), { name: 'NotFoundError' });
+      return {
+        name,
+        async queryPermission() { return 'granted'; },
+        async getDirectoryHandle(child, options = {}) {
+          if (!dirs.has(child)) {
+            if (!options.create) throw notFound();
+            dirs.set(child, directory(child));
+          }
+          return dirs.get(child);
+        },
+        async getFileHandle(child, options = {}) {
+          if (!files.has(child)) {
+            if (!options.create) throw notFound();
+            files.set(child, '');
+          }
+          return {
+            kind: 'file',
+            async getFile() { return { text: async () => files.get(child) }; },
+            async createWritable() {
+              return {
+                async write(value) {
+                  files.set(child, value);
+                  if (name === 'characters' && mutateDuringWrite) {
+                    mutateDuringWrite = false;
+                    const newer = JSON.parse(browser.getItem('hobunjiSaveMeta'));
+                    newer.characters[0].nickname = 'Newer browser edit';
+                    browser.setItem('hobunjiSaveMeta', JSON.stringify(newer));
+                  }
+                },
+                async close() {},
+              };
+            },
+          };
+        },
+        async *entries() {
+          for (const [child, handle] of dirs) yield [child, { kind: 'directory', ...handle }];
+          for (const child of files.keys()) yield [child, { kind: 'file' }];
+        },
+        async removeEntry(child) { files.delete(child); },
+      };
+    }
+    const root = directory('Save Folder'); // Simulated permission-granted primary save directory.
+    const idbValues = new Map(); // Remembered folder handle store used by LocalSaveFolder.init.
+    const indexedDB = {
+      open() {
+        const req = {};
+        Promise.resolve().then(() => {
+          req.result = {
+            objectStoreNames: { contains: () => true },
+            transaction: () => {
+              const tx = {
+                objectStore: () => ({
+                  get(key) {
+                    const result = {};
+                    Promise.resolve().then(() => { result.result = idbValues.get(key); result.onsuccess?.(); });
+                    return result;
+                  },
+                  put(value, key) { idbValues.set(key, value); Promise.resolve().then(() => tx.oncomplete?.()); },
+                }),
+              };
+              return tx;
+            },
+          };
+          req.onsuccess?.();
+        });
+        return req;
+      },
+    };
+    let nextTimer = 1; // Stable timer ids let the debounce remain pending without sleeping the test.
+    const intervals = new Map(); // Pending callbacks prove the autosave debounce was scheduled.
+    const sandbox = {
+      window: {
+        showDirectoryPicker: async () => root,
+        addEventListener() {},
+        __hobunjiGameStarted: false,
+        HobunjiSaveSnapshot: {
+          browserCacheParts: () => [browser.getItem('hobunjiSaveMeta'), 'w', browser.getItem('hobunji_farm_layout_v3:w')],
+          apply() { browserMirrors++; },
+        },
+      },
+      indexedDB,
+      localStorage: browser,
+      setTimeout(callback, ms) { const id = nextTimer++; intervals.set(id, { callback, ms }); return id; },
+      clearTimeout(id) { intervals.delete(id); },
+      setInterval(callback, ms) { const id = nextTimer++; intervals.set(id, { callback, ms }); return id; },
+      clearInterval(id) { intervals.delete(id); },
+    };
+    vm.runInNewContext(read('docs/js/local-save-folder-core.js'), sandbox, { filename: 'local-save-folder-core.js' });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    await sandbox.window.LocalSaveFolder.chooseFolder();
+    const first = await sandbox.window.LocalSaveFolder.syncNow();
+    assert.equal(first.autoSyncArmed, true, 'first explicit folder save arms autosaving');
+    mutateDuringWrite = true;
+    const before = browserMirrors;
+    const status = await sandbox.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' });
+    assert.equal(status.lastError, null, 'the canonical folder write itself succeeds');
+    assert.match(status.browserMirrorWarning || '', /newer browser changes/i, 'the fallback path detects edits made during disk I/O');
+    assert.equal(browserMirrors, before, 'an old snapshot never replaces newer browser state');
+    assert.equal(status.changeSyncPending, true, 'the newer edits are queued for another folder autosave');
+    assert.equal(JSON.parse(browser.getItem('hobunjiSaveMeta')).characters[0].nickname, 'Newer browser edit');
+    console.log('OK  in-flight folder autosave preserves newer browser edits');
   }
 
   console.log('\nFolder save runtime integrity checks passed.');

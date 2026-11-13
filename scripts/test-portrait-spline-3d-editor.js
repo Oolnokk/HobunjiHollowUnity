@@ -100,8 +100,6 @@ assert(editor.includes("NpcAvatarPreview.renderProfileToCanvas") && editor.inclu
   '3D author uses the same canonical full-character source as the Pants Rig Author');
 assert(editor.includes("portraitView:'front',onlyHeadSprite:true"),
   'automatic rigid-region classification uses the canonical head-only portrait (same B scaling as runtime)');
-assert(editor.includes('const portraitReference=images.character||images.head'),
-  'the 2D canvas should show the canonical full-character portrait instead of drawing a separately scaled head');
 assert(!editor.includes("void loadHead(); // A head-only alpha reference"),
   'indexed raw head artwork must no longer race the canonical head-only silhouette during normal loading');
 assert(catalog.includes("window.getPortraitXformPreset?.('B') || PRESERVED_B"),

@@ -642,6 +642,16 @@
     }
     return roots;
   }
+  function* activeScoreMeshes(area,scene){
+    const state=areas.get(area); // Only attached scores from the currently rendered area can be presented.
+    if(state?.scene!==scene)return;
+    for(const portal of state.portals){
+      if(portal.disposed||!portal.scoreBoard?.visible||!portal.visualRoot?.visible||portal.visualRoot.parent!==scene)continue;
+      yield* portal.glyphs;
+      yield* portal.glyphGlows;
+      yield* portal.glyphOuterGlows;
+    }
+  }
   function debugSnapshot(){
     return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
       portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
@@ -653,5 +663,5 @@
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot});
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,debugSnapshot});
 });

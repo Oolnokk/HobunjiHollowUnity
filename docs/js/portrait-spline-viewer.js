@@ -37,12 +37,14 @@
     const pickable = []; // Active 3D knot spheres and axis handles, no invisible full-scene raycasts.
     const spriteSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same PNG-plane material factory as Pants Garment Renderer and AvatarPreviewScene.
     const textureFailures = new Map(); // Captures per-surface mobile CORS/decode/upload issues without hiding the 3D gizmos.
-    const headPlane = makeSheet(null,0,THREE.DoubleSide);
-    const hairPlane = makeSheet(null,.002,THREE.FrontSide);
-    const rearPlane = makeSheet(null,-.002,THREE.BackSide);
-    const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
+    const headPlane = makeSheet(null,0,THREE.FrontSide,'spline_character');
+    const rearHeadPlane = makeSheet(null,0,THREE.BackSide,'spline_character_rear');
+    const hairPlane = makeSheet(null,.002,THREE.FrontSide,'spline_hair');
+    const rearPlane = makeSheet(null,-.002,THREE.BackSide,'spline_rear');
+    const hoodPlane = makeSheet(null,.001,THREE.FrontSide,'spline_hood_reference',.25);
+    const rearHoodPlane = makeSheet(null,-.001,THREE.BackSide,'spline_hood_reference_rear',.25);
     hairPlane.material.alphaTest=.02;rearPlane.material.alphaTest=.02; // Match the in-game uncut cosmetic: no shadow from almost transparent PNG fringes.
-    sheetGroup.add(headPlane,hoodPlane,hairPlane,rearPlane); // A single full-sprite mesh replaces two abutting flat/moving textures.
+    sheetGroup.add(headPlane,rearHeadPlane,hoodPlane,rearHoodPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
     let verifiedTexturePair=''; // One on-screen GPU-health warning per loaded head/hair pair; avoids mobile readback every pose frame.
     let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
@@ -51,8 +53,7 @@
     const ndc=new THREE.Vector2();
     const axisUnit=axis=>new THREE.Vector3(...AXES[axis]);
     const coordinate=e=>{const box=canvas.getBoundingClientRect();return {x:(e.clientX-box.left)/box.width*2-1,y:1-(e.clientY-box.top)/box.height*2,box};};
-    function makeSheet(image,z,side,opacity=1) {
-      const label = opacity < 1 ? 'spline_hood_reference' : side===THREE.BackSide ? 'spline_rear' : z===0 ? 'spline_character' : 'spline_hair';
+    function makeSheet(image,z,side,label,opacity=1) {
       const overrides={side,transparent:true,depthWrite:z===0,opacity};
       const material = spriteSurface?.makeMaterial
         ? spriteSurface.makeMaterial(THREE,null,label,overrides)
@@ -201,8 +202,10 @@
       selectedIndex=selected;
       const posed=window.PortraitSplineRig.posePoints(rig,next.wind||{});
       replaceTexture(headPlane,next.head||null);
+      replaceTexture(rearHeadPlane,next.headRear||null,true);
       replaceTexture(hairPlane,next.front||null);
       replaceTexture(hoodPlane,next.hood||null);
+      replaceTexture(rearHoodPlane,next.hoodRear||null,true);
       replaceTexture(rearPlane,next.rear||null,true);
       const geometryKey=JSON.stringify([rig.points,rig.segments,rig.tipFollow,rig.pinWidthPx,rig.regionMasks,
         rig.width,rig.segmentsX,rig.segmentsY,next.wind]); // Mask edits and hierarchical pose strength must invalidate the live 3D ribbon.
@@ -334,7 +337,7 @@
       canvas.removeEventListener('pointerup',pointerUp,true);
       canvas.removeEventListener('pointercancel',pointerUp,true);
       controls?.dispose();clearChildren(markers);clearChildren(gizmo);
-      for(const mesh of [headPlane,hairPlane,rearPlane,hoodPlane]){
+      for(const mesh of [headPlane,rearHeadPlane,hairPlane,rearPlane,hoodPlane,rearHoodPlane]){
         mesh.geometry?.dispose();mesh.material.map?.dispose();mesh.material?.dispose();
       }
       axes.geometry?.dispose();axes.material?.dispose?.();renderer.dispose();
@@ -396,8 +399,9 @@
         pinnedRearVertices:rearPlane.userData.pinnedVertices||0,
         seamlessSingleMesh:true, // Unlike the previous split, hair and beard have one artwork texture and one vertex grid per view.
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
-        textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
-          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
+        textures:{head:headPlane.userData.pixelStats||null,headRear:rearHeadPlane.userData.pixelStats||null,
+          hair:hairPlane.userData.pixelStats||null,rear:rearPlane.userData.pixelStats||null,
+          hood:hoodPlane.userData.pixelStats||null,hoodRear:rearHoodPlane.userData.pixelStats||null},
         gpuTextureCount:renderer.info.memory.textures,
         textureErrors:Object.fromEntries(textureFailures), // Mobile-accessible reason, including SecurityError on a tainted canvas.
         gpuHead:probeGpuTexture(headPlane.material.map),gpuHair:probeGpuTexture(hairPlane.material.map),

@@ -39,13 +39,13 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 @media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}#view3d{height:320px}}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
-<script src="../../js/portrait-spline-rig.js?v=20261110portraitSpline1"></script>
+<script src="../../js/portrait-spline-rig.js?v=20261113hb6efa49"></script>
 <script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
 <script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js?v=20261110splineCanon1"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261110splineViewer2"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261113hcbb8fd0"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v2 · rigid/flexible pixel regions</span></header>
@@ -134,7 +134,8 @@ const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth
  return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
  rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,pinWidthPx:18,segmentsX:24,segmentsY:32};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null},dragging=false,lastPaint=null;
+let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null,characterRear:null};
+let previewPointer=null,lastPaint=null; // One captured pointer owns each knot drag or mask stroke.
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
 let viewer=null,viewerMode='translate',maskUndo=null,headGeneration=0; // The rigid/flexible mask replaces arbitrary seam-dab and hood-warp controls.
 let regionOverlayCache=null,regionSourcesCache=null; // Cached bitmap and 3D texture splits; invalidated only when artwork or masks change.
@@ -276,8 +277,12 @@ async function loadStyles(){
   const generation=++styleGeneration;
   assetGeneration++; // An outstanding sprite fetch from another species must never repaint this one's preview.
   if(!catalog || !selectedSpecies() || !selectedGender())return;
-  void loadCanonicalCharacter(); // Share the exact runtime portrait coordinate space for the full character and 2D silhouette seam.
   rememberDraft();
+  if(!manualSelected){
+    activeDraftKey=null; // Keep the saved draft intact while the next species' references load.
+    images.front=null;images.rear=null;
+  }
+  void loadCanonicalCharacter();
   setSelect('cosmeticSelect',[],'Loading indexed cosmetics…');
   message('Loading '+selectedSpecies()+' '+selectedGender()+' cosmetics…');
   try{
@@ -295,7 +300,8 @@ async function loadStyles(){
 async function loadCanonicalCharacter(){
   const generation=++canonicalPortraitGeneration;
   const species=selectedSpecies(),gender=selectedGender();
-  images.character=null;images.head=null;images.headRear=null;canonicalPortraitError=null;markRegionDirty();render();
+  images.character=null;images.characterRear=null;images.head=null;images.headRear=null;
+  canonicalPortraitError=null;markRegionDirty();render();
   if(!species||!gender)return;
   try{
     if(!canonicalPortraitPromise){
@@ -331,14 +337,19 @@ async function loadCanonicalCharacter(){
     }); // Exactly the head-only alpha-mask path used by the game: same live B preset, tint, and placement.
     if(!headRendered)throw Error('Canonical head-only renderer returned false.');
     if(generation!==canonicalPortraitGeneration)return;
-    images.head=headCanvas;
     const rearCanvas=document.createElement('canvas');rearCanvas.width=rearCanvas.height=200;
+    const rearCharacter=document.createElement('canvas');rearCharacter.width=rearCharacter.height=200;
     const rearRendered=await window.NpcAvatarPreview.renderProfileToCanvas(rearCanvas,profile,{
       forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true,
     }); // Load rear head consistently even if rear cosmetic artwork arrives after the canonical head.
     if(generation!==canonicalPortraitGeneration)return;
+    images.head=headCanvas;
     if(rearRendered)images.headRear=rearCanvas;
     markRegionDirty();maybeInitializeMasks();render(); // Rigid overlap uses the canonical head silhouette at the correct portrait scale.
+    const rearCharacterRendered=await window.NpcAvatarPreview.renderProfileToCanvas(rearCharacter,profile,{
+      forceEyesOpen:true,portraitView:'behind',
+    });
+    if(generation===canonicalPortraitGeneration && rearCharacterRendered){images.characterRear=rearCharacter;render();}
   }catch(error){
     if(generation!==canonicalPortraitGeneration)return;
     canonicalPortraitError=String(error?.message||error);
@@ -517,7 +528,7 @@ function render(){
   ctx.strokeStyle='#26364d';ctx.lineWidth=1;
   for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
   const shown=$('viewSelect').value==='rear';
-  const portraitReference=images.character||images.head; // The 2D reference uses the same complete, scaled portrait as Pants Rig Author.
+  const portraitReference=shown?(images.characterRear||regionHead('rear')):(images.character||images.head);
   if(portraitReference){ctx.globalAlpha=.72;ctx.drawImage(portraitReference,0,0,W,H);ctx.globalAlpha=1;}
   if(images[shown?'rear':'front']){ctx.globalAlpha=.8;
     if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
@@ -553,13 +564,14 @@ function render(){
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
-  if(viewer && !(dragging && (mode==='paint'||mode==='erase'))){
+  if(viewer && previewPointer?.mode!=='paint' && previewPointer?.mode!=='erase'){
     // Keep mobile brush strokes responsive: recompute binary pinned mesh vertices only when the stroke ends, without re-uploading any sprite textures.
     const sources=viewerRegionSources();
     viewer.update({rig,wind:wind(),selectedKnot,direction,
-      head:images.character||images.head,front:sources.front,rear:sources.rear,
+      head:images.character||images.head,headRear:images.characterRear||regionHead('rear'),
+      front:sources.front,rear:sources.rear,
       rearAligned:true, // All rear artwork is pre-aligned for the same continuous mesh as the game.
-      hood:shown?(images.hoodRear||images.hood):images.hood}); // All art is on one mesh; only geometry pins distinguish rigid/flexible pixels.
+      hood:images.hood,hoodRear:images.hoodRear||images.hood}); // All strand art stays on one mesh per view.
   }
 }
 function updateKnots(){
@@ -569,22 +581,25 @@ function updateKnots(){
 }
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
-  if(mode==='paint'||mode==='erase'){
-    const view=activeView();
+  const {view,mode:strokeMode}=previewPointer; // Keep a stroke on the plane and tool selected when it started.
+  if(strokeMode==='paint'||strokeMode==='erase'){
     if(!images[view])return;
     rig.regionMasks=rig.regionMasks||{};
     const current=rig.regionMasks[view]||Rig.encodePixelMask(new Uint8Array(40000));
-    rig.regionMasks[view]=Rig.paintPixelMask(current,p.u,p.v,numeric($('brush').value,6),mode==='paint');
-    markRegionDirty(); // Recompute the overlay and the flexible 3D texture only when region pixels change.
+    rig.regionMasks[view]=Rig.paintPixelMask(current,p.u,p.v,numeric($('brush').value,6),strokeMode==='paint',lastPaint);
+    lastPaint=p;
+    regionOverlayCache=null; // Mask edits leave the 3D textures intact.
   }else{
     rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;
   }
   render();
 }
 $('preview').addEventListener('pointerdown',e=>{
+  if(previewPointer||e.button!==0)return;
   e.preventDefault();
   const p=pick(e);
-  dragging=true;$('preview').setPointerCapture(e.pointerId);
+  previewPointer={id:e.pointerId,view:activeView(),mode};
+  $('preview').setPointerCapture(e.pointerId);
   if(mode==='move'){
     autoLayoutPending=false; // An author moving knots explicitly owns their placement; do not auto-fit it later.
     let best=Infinity;
@@ -593,10 +608,11 @@ $('preview').addEventListener('pointerdown',e=>{
   }else recordMaskUndo();
   paint(p);
 });
-$('preview').addEventListener('pointermove',e=>{if(dragging){e.preventDefault();paint(pick(e));}});
-for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>{
-  if(!dragging)return;
-  dragging=false;render(); // Commit the finished rigid/flexible mask to the 3D viewer once after the drag.
+$('preview').addEventListener('pointermove',e=>{if(previewPointer?.id===e.pointerId){e.preventDefault();paint(pick(e));}});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,e=>{
+  if(previewPointer?.id!==e.pointerId)return;
+  previewPointer=null;lastPaint=null;
+  render(); // Commit the finished rigid/flexible mask to the 3D viewer once after the drag.
 });
 function setPaintMode(next){
   mode=next;
@@ -696,7 +712,7 @@ window.HobunjiSplineAuthorDiagnostics=()=>({
   selected:{species:selectedSpecies(),gender:selectedGender(),cosmetic:activeStyle?.label||loadedName,slot:activeStyle?.slot||null},
   direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
   regionMasks:Object.fromEntries(['front','rear'].map(view=>[view,rig.regionMasks?.[view]?.runs.reduce((n,p)=>n+p[1],0)??null])),headLoaded:!!images.head,
-  canonicalPortrait:{loaded:!!images.character,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
+  canonicalPortrait:{loaded:!!images.character,rearLoaded:!!images.characterRear,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
   pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);

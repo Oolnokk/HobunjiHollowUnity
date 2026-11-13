@@ -33,6 +33,8 @@
   const RECOVERY_SAVE_VERSION = 1; // Manifest/debug marker for the independent recovery directory format.
   const AUTO_SYNC_MS = 30000;
   const CHANGE_POLL_MS = 1000;
+  const CHANGE_DEBOUNCE_MS = 4000; // Groups rapid browser-cache updates into one folder autosave.
+  const CHANGE_MIN_SYNC_MS = 20000; // Stops frequent cache changes from triggering full disk writes every second.
 
   function slugify(value) {
     return String(value || '')
@@ -117,7 +119,10 @@
   let _autoSyncArmed = false; // Used to prevent writes until the player explicitly chooses push or pull after reconnect.
   let _autoTimer = null;
   let _changePollTimer = null;
-  let _lastObservedFingerprint = null; // Used by the change poll to skip filesystem writes when nothing changed.
+  let _changeSyncTimer = null; // Delayed change-triggered sync; cleared when a regular autosave covers the changes.
+  let _backgroundSyncQueued = false; // Coalesces idle callbacks so multiple automatic triggers share one live capture.
+  let _autoSyncEpoch = 0; // Invalidates queued callbacks when the folder is disconnected or autosync rearmed.
+  let _lastObservedFingerprint = null; // Array of browser-cache strings compared without assembling an enormous joined string.
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
@@ -138,6 +143,8 @@
       portableFarmLayouts: _folderSupportsFarmLayouts,
       needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
       autoSyncArmed: _autoSyncArmed,
+      changeSyncPending: _changeSyncTimer !== null,
+      backgroundSyncQueued: _backgroundSyncQueued,
       dataLossRisk: _lastDataLossRisk,
       patternMirror: _lastPatternMirror,
       browserMirrorWarning: _lastBrowserMirrorWarning || null,
@@ -222,24 +229,56 @@
 
   function stopAutoSync() {
     _autoSyncArmed = false;
+    _autoSyncEpoch++; // Any pending idle callback belongs to the old folder/arming session.
+    _backgroundSyncQueued = false;
     if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
     if (_changePollTimer) { clearInterval(_changePollTimer); _changePollTimer = null; }
+    if (_changeSyncTimer !== null) { clearTimeout(_changeSyncTimer); _changeSyncTimer = null; }
+  }
+
+  function requestBackgroundSync(reason) {
+    if (_backgroundSyncQueued || !_autoSyncArmed || _state !== 'ready') return;
+    _backgroundSyncQueued = true;
+    const epoch = _autoSyncEpoch; // A delayed callback may not save through a later folder connection.
+    const run = () => {
+      if (epoch !== _autoSyncEpoch) return;
+      _backgroundSyncQueued = false;
+      if (_state !== 'ready' || !_autoSyncArmed) return;
+      syncNow({ automatic: true, reason }).catch(error => {
+        _lastError = String(error?.message || error);
+        _lastAction = 'autosync-error';
+        notify();
+      });
+    };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 50);
+  }
+
+  function scheduleChangeSync() {
+    if (_changeSyncTimer !== null) clearTimeout(_changeSyncTimer);
+    const earliest = Math.max(Date.now() + CHANGE_DEBOUNCE_MS, _lastSyncedAt + CHANGE_MIN_SYNC_MS);
+    _changeSyncTimer = setTimeout(() => {
+      _changeSyncTimer = null;
+      requestBackgroundSync('folder-change');
+    }, Math.max(0, earliest - Date.now()));
   }
 
   function startAutoSync() {
     if (_state !== 'ready' || !_handle) return;
-    if (_autoTimer) clearInterval(_autoTimer);
-    if (_changePollTimer) clearInterval(_changePollTimer);
+    stopAutoSync(); // Rearming clears old polls, change debounce, and idle work in one place.
     _autoSyncArmed = true;
     _lastObservedFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
-    _autoTimer = setInterval(() => { syncNow({ automatic: true, reason: 'folder-timer' }); }, AUTO_SYNC_MS);
+    _autoTimer = setInterval(() => {
+      if (_changeSyncTimer !== null) { clearTimeout(_changeSyncTimer); _changeSyncTimer = null; }
+      requestBackgroundSync('folder-timer'); // The regular 30-second save remains the fallback for changes not reflected in browser storage.
+    }, AUTO_SYNC_MS);
     _changePollTimer = setInterval(() => {
       if (_state !== 'ready' || !_autoSyncArmed) return;
       const nextFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
-      if (nextFingerprint === null) return; // Failed optional polling must not throw or disable the independent 30-second folder timer.
-      if (nextFingerprint === _lastObservedFingerprint) return;
+      if (nextFingerprint === null) return; // Failed optional polling must not disable the independent 30-second folder timer.
+      if (browserFingerprintMatches(nextFingerprint, _lastObservedFingerprint)) return;
       _lastObservedFingerprint = nextFingerprint;
-      syncNow({ automatic: true, reason: 'folder-change' });
+      scheduleChangeSync();
     }, CHANGE_POLL_MS);
   }
 
@@ -425,12 +464,17 @@
 
   function browserFingerprint(includeFarmLayouts) {
     const metaRaw = localStorage.getItem(SAVE_META_KEY) || '';
-    if (!includeFarmLayouts) return metaRaw;
+    const parts = [metaRaw]; // Compare each browser string separately rather than allocating a joined full-save copy every second.
+    if (!includeFarmLayouts) return parts;
     const ids = fingerprintWorldIds(metaRaw);
-    if (!ids) return metaRaw; // Unparseable meta: fingerprint on the raw string alone, as before.
-    const parts = [metaRaw];
+    if (!ids) return parts; // Unparseable meta: observe its raw string alone, as before.
     for (const id of ids) parts.push(id, localStorage.getItem(farmLayoutKey(id)) || '');
-    return parts.join('\u001f');
+    return parts;
+  }
+
+  function browserFingerprintMatches(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+      && a.every((value, index) => value === b[index]);
   }
 
   function observeBrowserFingerprint(includeFarmLayouts) {
@@ -445,7 +489,12 @@
     const meta = readBrowserMeta(); // Canonical browser metadata captured once so guards and writes operate on the same object.
     if (!meta) throw new Error('No browser save is available to write.');
     const farmLayouts = readBrowserFarmLayouts(meta, true); // Matching layout capture keeps the folder write atomic at the snapshot boundary.
-    return { snapshotVersion: 1, meta, farmLayouts };
+    const snapshot = { snapshotVersion: 1, meta, farmLayouts }; // Also used when gameplay has not initialized the direct capture bridge.
+    const browserBaselineParts = window.HobunjiSaveSnapshot?.browserCacheParts?.();
+    if (Array.isArray(browserBaselineParts)) {
+      Object.defineProperty(snapshot, 'browserBaselineParts', { value: browserBaselineParts, configurable: true }); // Protect browser edits made during a fallback folder write, without serializing the guard.
+    }
+    return snapshot;
   }
 
   function normalizeSnapshot(snapshot) {
@@ -687,16 +736,21 @@
       _lastBrowserMirrorWarning = '';
       if (!automatic) startAutoSync();
       try {
-        if (saveSnapshot.browserBaselineFingerprint !== undefined
-            && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint) {
+        const browserChangedWhileWriting = Array.isArray(saveSnapshot.browserBaselineParts)
+          ? !browserFingerprintMatches(window.HobunjiSaveSnapshot.browserCacheParts?.(), saveSnapshot.browserBaselineParts)
+          : saveSnapshot.browserBaselineFingerprint !== undefined
+            && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint;
+        if (browserChangedWhileWriting) {
           _lastBrowserMirrorWarning = 'Primary folder saved; newer browser changes made during the disk write were preserved.';
+          if (_autoSyncArmed) scheduleChangeSync(); // The poll's new baseline below must not hide edits made during the disk write.
         } else {
           window.HobunjiSaveSnapshot?.apply?.(saveSnapshot, { folderBacked: true }); // Refresh only the canonical browser cache after the durable disk commit.
         }
       } catch (mirrorError) {
         _lastBrowserMirrorWarning = `Primary folder saved; browser cache could not be updated: ${String(mirrorError?.message || mirrorError)}`;
       }
-      delete saveSnapshot.browserBaselineFingerprint; // Do not retain another whole-save fingerprint in every recovery slot.
+      delete saveSnapshot.browserBaselineFingerprint; // Release legacy adapter guard before recording recovery history.
+      delete saveSnapshot.browserBaselineParts; // Transient raw baseline must never remain pinned in a recovery checkpoint.
       _lastObservedFingerprint = observeBrowserFingerprint(true); // Optional browser bookkeeping cannot change the success of the completed disk commit.
 
       const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
@@ -797,7 +851,10 @@
       startAutoSync();
       notify();
 
-      if (changed && reloadIfChanged) reloadAfterFolderRestore();
+      if (changed && reloadIfChanged) {
+        if (window.__hobunjiGameStarted === true) window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('folder-restore');
+        reloadAfterFolderRestore();
+      }
       return {
         ok: true,
         action: _lastAction,

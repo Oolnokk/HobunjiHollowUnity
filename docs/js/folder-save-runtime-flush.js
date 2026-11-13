@@ -104,6 +104,7 @@
       // saveMemberWorldData is the canonical write of the live general bag,
       // relationships, quest/world-member state, etc. The folder mirror must
       // never run first or it can faithfully copy an older localStorage image.
+      window.CharacterMetaSave?.flush?.();
       if (typeof saveMemberWorldData === 'function') saveMemberWorldData();
       if (typeof saveFarmLayout === 'function') saveFarmLayout();
       if ((window.HobunjiStorageQuota?.getWriteFailureCount?.() || 0) > failuresBefore) {
@@ -126,14 +127,17 @@
         throw new Error('The live folder-save serializers are not ready.');
       }
       const snapshot = window.HobunjiSaveSnapshot.capture({ strict: true }); // Existing saved characters/worlds and inactive layouts form the complete snapshot baseline.
-      const browserBaseline = window.HobunjiSaveSnapshot.fingerprint(snapshot); // A completed disk write must not mirror over newer browser edits made while I/O was pending.
+      const browserBaselineParts = window.HobunjiSaveSnapshot.browserCacheParts?.() || null; // Raw cache strings detect newer browser edits without reserializing every world.
+      const browserBaseline = browserBaselineParts ? null : window.HobunjiSaveSnapshot.fingerprint(snapshot); // Compatibility with older test adapters that expose only fingerprint().
       const worldId = window.__hobunjiPlayerProfile?.worldId; // Only the active world's physical layout is replaced by live data.
       if (!worldId) throw new Error('The active world is unavailable for folder-save capture.');
       snapshot.meta = captureMemberWorldData(snapshot.meta);
+      window.CharacterMetaSave?.capturePending?.(snapshot.meta);
       snapshot.farmLayouts[worldId] = window.FarmEditor.captureFarmLayout();
       window.HobunjiSaveSnapshot.validate(snapshot);
       const captured = JSON.parse(JSON.stringify(snapshot)); // Detach runtime arrays/objects before asynchronous disk writes begin.
-      Object.defineProperty(captured, 'browserBaselineFingerprint', { value: browserBaseline, configurable: true }); // Transient capture metadata is excluded from JSON and released before recovery history retains this snapshot.
+      Object.defineProperty(captured, 'browserBaselineParts', { value: browserBaselineParts, configurable: true }); // Non-serializable transient guard for the asynchronous browser mirror.
+      if (!browserBaselineParts) Object.defineProperty(captured, 'browserBaselineFingerprint', { value: browserBaseline, configurable: true }); // Legacy adapter fallback.
       captureCount++;
       lastError = '';
       return { ok: true, captured: true, snapshot: captured, reason };

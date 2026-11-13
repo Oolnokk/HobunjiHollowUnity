@@ -50,7 +50,7 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
       return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded
-        &&info?.canonicalPortrait?.loaded&&info?.regionMasks?.front>0
+        &&info?.canonicalPortrait?.loaded&&info?.canonicalPortrait?.rearLoaded&&info?.regionMasks?.front>0
         &&info?.viewer?.pinnedFrontVertices>0; // Every strand pixel uses one textured mesh; some of its vertices must attach to the head.
     },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
@@ -58,6 +58,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(before.selected.species,'mao-ao');
     assert.equal(before.selected.gender,'male');
     assert(before.canonicalPortrait.loaded,'shared NPC portrait produced a full character model, including torso/arms');
+    assert(before.viewer.textures.headRear?.opaque>0,'the rear camera has its own canonical rear portrait texture');
     assert.equal(before.canonicalPortrait.error,null,'canonical portrait integration is error-free');
     assert.equal(Object.keys(before.viewer.textureErrors||{}).length,0,
       'no origin-tainted or invalid PNG textures: '+JSON.stringify(before.viewer.textureErrors));
@@ -111,6 +112,20 @@ const server=http.createServer((req,res)=>{
     const repainted=await debug();
     assert(repainted.regionMasks.front>erased.regionMasks.front,
       'brush transfers pixel ownership back to the rigid head plane: '+JSON.stringify({afterErase:erased.regionMasks,afterPaint:repainted.regionMasks}));
+    await page.locator('#preview').scrollIntoViewIfNeeded();
+    const preview=await page.locator('#preview').boundingBox(); // Move across a full stroke with only one pointermove.
+    await page.mouse.move(preview.x+preview.width*.15,preview.y+preview.height*.85);
+    await page.mouse.down();
+    await page.mouse.move(preview.x+preview.width*.85,preview.y+preview.height*.85);
+    await page.mouse.up();
+    const centerPainted=await page.evaluate(()=>{
+      const mask=JSON.parse(document.querySelector('#json').value).regionMasks.front;
+      const pixel=170*200+100;
+      return mask.runs.some(([start,length])=>pixel>=start&&pixel<start+length);
+    });
+    assert(centerPainted,'one fast brush drag paints the midpoint between pointer events');
+    await page.locator('#undoMask').click();
+    assert.equal((await debug()).regionMasks.front,repainted.regionMasks.front,'one undo reverses the complete brush stroke');
     await page.locator('#generateBlend').click();
     const generated=await debug();
     assert.equal(generated.regionMasks.front,repainted.regionMasks.front,
@@ -138,7 +153,7 @@ const server=http.createServer((req,res)=>{
       '3D knot posing does not discard the separately authored rigid/flexible pixel region');
     assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror/i.test(text)).length,0,
       'No unhandled source error: '+errors.join('\n').slice(-2400));
-    console.log('Portrait spline author browser: indexed head and separate rigid/flexible WebGL hair surfaces, 2D brush/eraser, and 3D gizmos pass.');
+    console.log('Portrait spline author browser: front and rear portrait references, continuous mask strokes, and 3D gizmos pass.');
   }finally{
     await browser?.close();await new Promise(resolve=>server.close(resolve));
   }

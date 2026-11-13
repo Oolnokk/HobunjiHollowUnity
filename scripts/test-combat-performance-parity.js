@@ -61,6 +61,15 @@ runtime.window.RangedWeapons.actorHitbox = actor => actor === attacker
   ? { center: new Vector3(0, 0.5, 0), box: makeBox(-0.2, 0.2) }
   : actor === target ? far : null;
 assert.equal(combat.meleeHit(attacker, target, { ...attack, debug: false }), false, 'far volume-grid target misses');
+const skippedBefore = runtime.window.__melee3DDebug.snapshot().meleeGridRejects;
+assert.equal(combat.meleeHit(attacker, target, attack), false, 'real strikes reject a box whose nearest edge is out of reach');
+assert.equal(runtime.window.__melee3DDebug.snapshot().meleeGridRejects, skippedBefore + 1, 'the real strike skips its detailed grid');
+assert.equal(runtime.window.__melee3DDebug.lastResult.bestDistanceWorld, 2.9, 'the broad-phase miss still reports the nearest distance');
+const edgeBox = { box: makeBox(1.5, 2.5), center: new Vector3(2, .5, 0) }; // Its center is out of reach, but its near edge can be hit.
+runtime.window.RangedWeapons.actorHitbox = actor => actor === attacker
+  ? { center: new Vector3(0, .5, 0), box: makeBox(-.2, .2) }
+  : actor === target ? edgeBox : null;
+assert.equal(combat.meleeHit(attacker, target, { ...attack, debug: false }), true, 'broad phase respects the edge of a large actor');
 runtime.window.RangedWeapons.actorHitbox = actor => actor === attacker
   ? { center: new Vector3(0, 0.5, 0), box: makeBox(-0.2, 0.2) }
   : actor === target ? near : null;

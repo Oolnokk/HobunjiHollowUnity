@@ -95,7 +95,7 @@
       creatureDeath.begin = function skillTaggedDeathBegin(target, ...args) {
         if (target && !target.isCompanion && combatTaggedTargets.has(target)) {
           combatTaggedTargets.delete(target);
-          award('combat', XP_GAINS.combatKill, `tagged ${combatTargetLabel(target)} defeated`);
+          award('combat', XP_GAINS.combatKill, `tagged ${combatTargetLabel(target)} defeated`, true, true);
         }
         return originalDeathBegin.call(this, target, ...args);
       };
@@ -157,10 +157,10 @@
     return Math.max(0, Math.min(1.5, effectiveLevel(skillKey) / MAX_LEVEL)); // Used by all percentage-based skill effects.
   }
 
-  function persist(write = true) {
+  function persist(write = true, deferSave = false) {
     const levels = Object.fromEntries(Object.keys(SKILLS).map(key => [key, level(key)])); // Used to keep the old level-shaped save field compatible.
     const snapshot = { levels, experience: { ...experience } }; // Used by the injected character-save adapter.
-    if (write) deps?.saveSkillProgress?.(snapshot);
+    if (write) deps?.saveSkillProgress?.(snapshot, deferSave);
     return snapshot;
   }
 
@@ -175,15 +175,15 @@
     return () => awardListeners.delete(listener);
   }
 
-  function notifyAward(skillKey, amount, reason) {
-    const event = Object.freeze({ skillKey, amount, reason }); // Used to keep listener consumers from mutating the authoritative award payload seen by later listeners.
+  function notifyAward(skillKey, amount, reason, deferSave) {
+    const event = Object.freeze(deferSave ? { skillKey, amount, reason, deferSave } : { skillKey, amount, reason }); // Used to keep listener consumers from mutating the authoritative award payload seen by later listeners.
     for (const listener of [...awardListeners]) {
       try { listener(event); }
       catch (error) { deps?.debugLog?.(`[skills] XP listener failed: ${String(error?.message || error)}`); }
     }
   }
 
-  function award(skillKey, amount, reason = '', applyRateScale = true) {
+  function award(skillKey, amount, reason = '', applyRateScale = true, deferSave = false) {
     if (!SKILLS[skillKey]) return false;
     if (skillKey === 'combat' && reason === 'landed hit') {
       installCombatTagHooks();
@@ -209,8 +209,8 @@
       if (!announcedOverhead) deps?.showToast?.(`${SKILLS[skillKey].icon} ${SKILLS[skillKey].label} reached level ${afterLevel}!`, true);
     }
     deps?.debugLog?.(`[skills] ${SKILLS[skillKey].label} +${gain}${reason ? ` (${reason})` : ''}; level ${afterLevel}`);
-    notifyAward(skillKey, gain, reason);
-    persist(true);
+    notifyAward(skillKey, gain, reason, deferSave);
+    persist(true, deferSave);
     render();
     return true;
   }

@@ -54,16 +54,27 @@
     for (let i = 0; i < bits.length; i++) bits[i] = hair[i * 4 + 3] >= 8 && skin[i * 4 + 3] >= 8 ? 1 : 0;
     return encodePixelMask(bits); // All hair/head overlap starts rigid; everything else starts flexible.
   }
-  function paintPixelMask(input, u, v, radiusPx, rigid) {
+  function paintPixelMask(input, u, v, radiusPx, rigid, previous) {
     const bits = decodePixelMask(input);
-    const x = clamp(Math.floor(finite(u) * MASK_SIZE), 0, MASK_SIZE - 1);
-    const y = clamp(Math.floor(finite(v) * MASK_SIZE), 0, MASK_SIZE - 1);
+    const x = clamp(finite(u), 0, 1) * MASK_SIZE;
+    const y = clamp(finite(v), 0, 1) * MASK_SIZE;
+    const startX = clamp(finite(previous?.u, x / MASK_SIZE), 0, 1) * MASK_SIZE;
+    const startY = clamp(finite(previous?.v, y / MASK_SIZE), 0, 1) * MASK_SIZE;
+    const dx = x - startX, dy = y - startY; // Span between pointer samples in portrait pixels.
+    const lengthSquared = dx * dx + dy * dy;
     const radius = clamp(finite(radiusPx, 3), .5, 60);
-    const reach = Math.ceil(radius);
-    for (let py = Math.max(0, y - reach); py <= Math.min(MASK_SIZE - 1, y + reach); py++)
-      for (let px = Math.max(0, x - reach); px <= Math.min(MASK_SIZE - 1, x + reach); px++)
-        if ((px + .5 - (u * MASK_SIZE)) ** 2 + (py + .5 - (v * MASK_SIZE)) ** 2 <= radius * radius)
+    const minX = Math.max(0, Math.floor(Math.min(startX, x) - radius));
+    const maxX = Math.min(MASK_SIZE - 1, Math.floor(Math.max(startX, x) + radius));
+    const minY = Math.max(0, Math.floor(Math.min(startY, y) - radius));
+    const maxY = Math.min(MASK_SIZE - 1, Math.floor(Math.max(startY, y) + radius));
+    for (let py = minY; py <= maxY; py++) {
+      for (let px = minX; px <= maxX; px++) {
+        const offsetX = px + .5 - startX, offsetY = py + .5 - startY;
+        const t = lengthSquared ? clamp((offsetX * dx + offsetY * dy) / lengthSquared, 0, 1) : 0;
+        if ((offsetX - t * dx) ** 2 + (offsetY - t * dy) ** 2 <= radius * radius)
           bits[py * MASK_SIZE + px] = rigid ? 1 : 0;
+      }
+    }
     return encodePixelMask(bits);
   }
   function attachmentPinField(mask, gripPx = 18) {

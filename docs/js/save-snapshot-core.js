@@ -6,6 +6,8 @@
   const SAVE_META_KEY = 'hobunjiSaveMeta';
   const FARM_LAYOUT_KEY_PREFIX = 'hobunji_farm_layout_v3:';
   const SNAPSHOT_VERSION = 1;
+  let cachedBrowserMeta = null; // Cache world ids for lightweight cloud change polling between localStorage updates.
+  let cachedBrowserWorldIds = []; // Layout keys read by browserCacheParts without parsing full layouts.
 
   function farmLayoutKey(worldId) {
     return FARM_LAYOUT_KEY_PREFIX + worldId;
@@ -54,6 +56,24 @@
       meta,
       farmLayouts,
     });
+  }
+
+  function browserCacheParts() {
+    const metaRaw = localStorage.getItem(SAVE_META_KEY) || '';
+    if (metaRaw !== cachedBrowserMeta) {
+      cachedBrowserMeta = metaRaw;
+      try {
+        const meta = JSON.parse(metaRaw);
+        cachedBrowserWorldIds = (meta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean).sort();
+      } catch {
+        cachedBrowserWorldIds = []; // The full snapshot parser still reports corrupt saves when a sync is attempted.
+      }
+    }
+    const parts = [metaRaw]; // Raw strings avoid JSON.parse/JSON.stringify of every world and layout on each cloud poll.
+    for (const worldId of cachedBrowserWorldIds) {
+      parts.push(worldId, localStorage.getItem(farmLayoutKey(worldId)) || '');
+    }
+    return parts;
   }
 
   function fingerprint(snapshot = null) {
@@ -122,6 +142,7 @@
     validate,
     apply,
     fingerprint,
+    browserCacheParts,
     summary,
   };
 })();

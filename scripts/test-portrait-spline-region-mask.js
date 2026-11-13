@@ -70,6 +70,13 @@ assert.equal(Rig.decodePixelMask(erase)[idx(90,70)],0,'eraser can release an ori
 assert.equal(Rig.decodePixelMask(mask)[idx(90,70)],1,'mask edits never mutate the stored prior mask (undo-safe)');
 const empty=Rig.encodePixelMask(new Uint8Array(40000));
 assert.equal(Rig.decodePixelMask(empty)[idx(90,70)],0,'explicit all-flexible mask remains valid');
+const strokeStart={u:10.5/200,v:20.5/200}; // Widely spaced pointer samples model a fast drag on the editor.
+const stroke=Rig.paintPixelMask(empty,180.5/200,strokeStart.v,1,true,strokeStart);
+const strokeBits=Rig.decodePixelMask(stroke);
+for(let x=10;x<=180;x++)assert.equal(strokeBits[idx(x,20)],1,'fast brush strokes have no gaps');
+assert.equal(strokeBits[idx(95,22)],0,'a stroke stays inside the brush radius');
+const erasedStroke=Rig.paintPixelMask(stroke,10.5/200,strokeStart.v,1,false,{u:180.5/200,v:strokeStart.v});
+assert.deepEqual(erasedStroke,empty,'a fast reverse stroke erases the entire brush path');
 const normalized=Rig.normalize({points:[{u:.5,v:.25},{u:.5,v:.65}],
   regionMasks:{front:mask,rear:empty}});
 assert.equal(normalized.regionMasks.front.runs.length,mask.runs.length,'front region survives JSON serialization');

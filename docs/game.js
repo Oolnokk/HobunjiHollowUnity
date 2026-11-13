@@ -2142,10 +2142,11 @@
         return gearInventory?.motesOfProwess || 0;
       }
 
-      function awardMotesOfProwess(amount) {
+      function awardMotesOfProwess(amount, fromCombatKill = false) {
         if (!(amount > 0) || !gearInventory) return;
         gearInventory.motesOfProwess = (gearInventory.motesOfProwess || 0) + amount;
-        saveGearInventory();
+        if (fromCombatKill) scheduleCombatGearSave();
+        else saveGearInventory();
       }
 
       // Returns false without spending anything if the player can't afford it.
@@ -2378,7 +2379,17 @@
         window.CharacterMetaSave.update(ch => { ch.gearInventory = gearInventory; });
       }
 
-      function saveSkillProgress(snapshot) {
+      function scheduleCombatGearSave() {
+        window.CharacterMetaSave.schedule({ gearInventory }); // Motes, mastery and armor share the same live character gear record.
+      }
+
+      function saveSkillProgress(snapshot, deferSave = false) {
+        if (deferSave) {
+          const progress = { skillLevels: snapshot.levels, skillExperience: snapshot.experience }; // Mirrors live progression before the coalesced disk write.
+          Object.assign(window.__hobunjiPlayerProfile || {}, progress);
+          window.CharacterMetaSave.schedule(progress);
+          return;
+        }
         // Character-scoped so skill progression follows the character across worlds.
         window.CharacterMetaSave.update(character => {
           character.skillLevels = { ...snapshot.levels };
@@ -5606,7 +5617,7 @@
         // companions never award kill progression.
         window.PlayerDowned?.noteKill?.(c); // A kill by the player or their companion triggers Second Wind (js/player-downed.js).
         if (!c.isCompanion && (window.PlayerDowned?.isTeamKill?.(c) ?? true)) { // Only the player's/companion's own kills reward Motes and combat XP, never NPC-vs-NPC deaths nearby.
-          awardMotesOfProwess(MOTES_PER_KILL);
+          awardMotesOfProwess(MOTES_PER_KILL, true);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
         }
         if (!c.isCompanion) {
@@ -9592,14 +9603,15 @@
         return meta;
       }
 
-      let pendingLootMemberSave = false; // Corpse loot is live immediately; disk serialization is coalesced until idle.
-      let queuedLootMemberSave = false; // Prevents one idle task per loot pickup.
+      let pendingLootMemberSave = false; // Deferred loot and vegetation changes share the member serializer.
+      let pendingVegetationFarmSave = false; // Farm vegetation also changes the separately stored farm layout.
+      let queuedLootMemberSave = false; // Shares one idle task across loot pickups and vegetation strikes.
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
           if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
-          pendingLootMemberSave = false; // An ordinary explicit save also satisfies the pending loot write.
+          pendingLootMemberSave = false; // An ordinary explicit save also satisfies a pending member write.
           return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
         } catch (error) {
           window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
@@ -9608,17 +9620,20 @@
       }
 
       function flushLootMemberSave() {
-        if (pendingLootMemberSave) saveMemberWorldData(); // Only canonical member serializer writes member data.
+        if (window.HobunjiSessionPersistenceStartupGuard?.exitFlushSuppressed?.()) return;
+        if (pendingVegetationFarmSave && window.FarmEditor.saveFarmLayout()) pendingVegetationFarmSave = false;
+        if (pendingLootMemberSave) saveMemberWorldData(); // Only the canonical serializer writes member data.
       }
-      function scheduleLootMemberSave() {
-        pendingLootMemberSave = true; // Item grants and world-object removal have already completed synchronously.
+      function scheduleLootMemberSave(farmLayoutChanged = false) {
+        pendingVegetationFarmSave ||= farmLayoutChanged === true;
+        pendingLootMemberSave = true; // Inventory and tile changes have already completed synchronously.
         if (queuedLootMemberSave) return;
         queuedLootMemberSave = true;
         const flush = () => { queuedLootMemberSave = false; flushLootMemberSave(); };
         if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flush, { timeout: 1500 });
         else setTimeout(flush, 100);
       }
-      window.addEventListener?.('pagehide', flushLootMemberSave); // Persist pending loot before a tab/page closes.
+      window.addEventListener?.('pagehide', flushLootMemberSave); // Persist pending loot and vegetation changes before a tab/page closes.
       document.addEventListener?.('visibilitychange', () => { if (document.hidden) flushLootMemberSave(); });
 
       // ── Owner/farmhand content visibility ─────────────────────────────
@@ -10172,6 +10187,7 @@
         updateToolMesh,
         updateCombatConeTrail,
         coneTrailLaneMeshes: () => coneTrailLaneMeshes,
+        coneTrailUploads: () => ({ ...coneTrailUploads }), // Read by Pixel Probe for mobile swing diagnostics.
         triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
@@ -19891,26 +19907,27 @@
         const minRow = window.FormatUtils.clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
         const maxRow = window.FormatUtils.clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
         let cleared = 0;
+        const farm = currentArea === 'farm'; // Farm strikes queue the farm layout as well as inventory.
+        const zone = _isZoneArea(currentArea); // Wilderness updates its targeted tile visuals immediately.
 
         for (let row = minRow; row <= maxRow; row++) {
           for (let col = minCol; col <= maxCol; col++) {
             const tile = tgrid[row]?.[col];
             if (!tile || tile.crop || (tile.type !== TileType.WEEDS && tile.type !== TileType.SHRUB)) continue;
-            if (tile.type === TileType.SHRUB && isChoppableTreeTile(col, row)) continue;
             const tileX = (col + 0.5) * TILE, tileY = (row + 0.5) * TILE;
             if (!inCone(fromX, fromY, facingAngle, tileX, tileY, rangePx, halfConeRad)) continue;
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(col, row)) continue;
 
             const previousType = tile.type; // Used to remove/cover the matching runtime visual.
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.mulch || 0) + 1);
-            if (currentArea === 'farm') markTileDirty(col, row);
-            else if (_isZoneArea(currentArea)) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
+            if (farm) markTileDirty(col, row);
+            else if (zone) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
             cleared++;
           }
         }
         if (cleared > 0) {
-          if (currentArea === 'farm') window.FarmEditor.saveFarmLayout();
-          saveMemberWorldData();
+          scheduleLootMemberSave(farm);
           debugLog(`weapon cone cleared ${cleared} non-tree vegetation tile${cleared === 1 ? '' : 's'}`);
         }
         return cleared;
@@ -19981,11 +19998,8 @@
       // itself is bottom-edge anchored there, so its world-space vertical
       // center is exactly ground + height/2.
       function playerPrismHeightTiles() {
-        let h = null;
-        playerMesh?.traverse?.(child => {
-          if (h == null && Number.isFinite(child.userData?.portraitModelHeight)) h = child.userData.portraitModelHeight;
-        });
-        return h ?? (window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9);
+        const height = playerAvatarGroup?.userData?.portraitModelHeight; // Canonical mounted portrait used by hitboxes and swipe feedback.
+        return Number.isFinite(height) ? height : (window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9);
       }
       function weaponTrailCenterY() {
         return playerMesh.position.y + playerPrismHeightTiles() / 2;
@@ -20204,12 +20218,13 @@
       const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
       const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
       const coneTrailLaneMeshes = [];
+      const coneTrailUploads = { positions: 0, colors: 0 }; // Counts position and highlight buffer writes for Pixel Probe.
       function ensureConeTrailLaneMesh(i) {
         let mesh = coneTrailLaneMeshes[i];
         if (mesh) return mesh;
         const geo = new THREE.BufferGeometry();
         const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
-        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3));
         geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
         const indices = [];
         for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
@@ -20229,9 +20244,6 @@
         });
         mesh = new THREE.Mesh(geo, mat);
         mesh.visible = false;
-        // Geometry is rebuilt fresh every visible frame — skip the
-        // per-frame bounding-sphere recompute frustum culling would need.
-        mesh.frustumCulled = false;
         coneTrailLaneMeshes[i] = mesh;
         return mesh;
       }
@@ -20282,52 +20294,52 @@
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
         const y = weaponTrailCenterY();
-        const trailDirection = new THREE.Vector3(
-          Math.cos(angle) * Math.cos(pitch),
-          Math.sin(pitch),
-          Math.sin(angle) * Math.cos(pitch),
-        ).normalize(); // Used to tilt the entire swipe plane toward the 3D aim direction.
         const ids = combatSwingAfflictionIds;
         const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
-        // Which tip (u=0 or u=1) the bright spike starts from — mirrors
-        // combatSwingSign so the highlight travels the same way the actual
-        // swing does (forehand vs backhand read as sweeping opposite ways).
-        const spikeU = combatSwingSign >= 0 ? strikeT : 1 - strikeT;
+        const spikeU = combatSwingSign >= 0 ? strikeT : 1 - strikeT; // Mirrors the highlight for a backhand.
 
-        for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
-          const mesh = ensureConeTrailLaneMesh(lane);
-          if (lane >= laneCount) { mesh.visible = false; continue; }
-          const colorNum = ids.length
-            ? (neonAfflictionColor(ids[lane]) ?? 0xffffff)
-            : 0xffffff;
-          const cr = ((colorNum >> 16) & 0xff) / 255;
-          const cg = ((colorNum >> 8) & 0xff) / 255;
-          const cb = (colorNum & 0xff) / 255;
-          const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
-          const posAttr = mesh.geometry.attributes.position;
-          const colorAttr = mesh.geometry.attributes.color;
-          window.Combat?.writeMeleeTrailRibbon?.(posAttr, {
-            samples: COMBAT_CONE_TRAIL_SAMPLES,
-            origin: new THREE.Vector3(baseX, y, baseZ),
-            direction: trailDirection,
-            rangeTiles: laneRadius,
-            halfConeRad,
-            halfThickness: COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES,
-            archUnits: COMBAT_CONE_TRAIL_ARCH_UNITS,
-          });
-          for (let sample = 0; sample <= COMBAT_CONE_TRAIL_SAMPLES; sample++) {
-            const u = sample / COMBAT_CONE_TRAIL_SAMPLES;
-            const vi = sample * 2;
-            const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
-            const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
-            colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
-            colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
+        for (let lane = 0; lane < laneCount; lane++) {
+          const mesh = ensureConeTrailLaneMesh(lane); // Allocate only the lanes this attack displays.
+          if (mesh.userData.swingCone !== combatSwingCone) {
+            window.Combat?.writeMeleeTrailRibbon?.(mesh.geometry.attributes.position, {
+              samples: COMBAT_CONE_TRAIL_SAMPLES,
+              yaw: angle,
+              pitch,
+              rangeTiles: rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET),
+              halfConeRad,
+              halfThickness: COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES,
+              archUnits: COMBAT_CONE_TRAIL_ARCH_UNITS,
+            });
+            mesh.geometry.computeBoundingSphere(); // Allows camera culling without a bounds rebuild during motion.
+            mesh.userData.swingCone = combatSwingCone; // setCombatSwingCone replaces this object whenever attack geometry changes.
+            coneTrailUploads.positions++;
           }
-          colorAttr.needsUpdate = true;
+          mesh.position.set(baseX, y, baseZ); // Follow the moving player by translating the cached local-space strip.
+
+          const colorNum = ids.length ? (neonAfflictionColor(ids[lane]) ?? 0xffffff) : 0xffffff;
+          if (mesh.userData.spikeU !== spikeU || mesh.userData.laneColor !== colorNum) {
+            const colorAttr = mesh.geometry.attributes.color;
+            const cr = ((colorNum >> 16) & 0xff) / 255;
+            const cg = ((colorNum >> 8) & 0xff) / 255;
+            const cb = (colorNum & 0xff) / 255;
+            for (let sample = 0; sample <= COMBAT_CONE_TRAIL_SAMPLES; sample++) {
+              const u = sample / COMBAT_CONE_TRAIL_SAMPLES;
+              const vi = sample * 2;
+              const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
+              const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
+              colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
+              colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
+            }
+            colorAttr.needsUpdate = true;
+            mesh.userData.spikeU = spikeU;
+            mesh.userData.laneColor = colorNum;
+            coneTrailUploads.colors++;
+          }
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
           if (mesh.parent !== parent) parent.add(mesh);
         }
+        for (let lane = laneCount; lane < coneTrailLaneMeshes.length; lane++) coneTrailLaneMeshes[lane].visible = false;
       }
 
       // Attack-lunge movement trail — a series of flat single-color ring
@@ -27277,6 +27289,12 @@
         // culling. Suspend off-camera NPC visuals across ALL world passes,
         // then restore before any gameplay tick or subsequent render.
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
+        // Same contract for instanced brick walls/paths and grass, which Three r128
+        // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
+        // first (js/grass-billboard-render-chunks.js), then off-camera tagged
+        // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
+        const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
+        const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
         try {
         // Frame-scoped whole-actor suppression; simulation still runs before and
         // after this render. Existing frustum culling handles camera-offscreen
@@ -27381,29 +27399,39 @@
           // the painterly/outline post-process can't smear them.
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         } else {
-          window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
-          renderer.setRenderTarget(null);
-          renderer.render(activeScene, camera);
-          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
-          window.PerfProfiler?.end(actorProbePerf);
-          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-          if (_targetOutlineMeshes.length > 0) {
-            renderer.autoClearColor = false;
-            renderer.autoClearDepth = false;
-            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-            camera.layers.set(2);
-            renderer.render(scene, camera);
-            camera.layers.enableAll();
-            scene.overrideMaterial = null;
-            renderer.autoClearColor = true;
-            renderer.autoClearDepth = true;
+          const scoreMeshes = window.PuzzleCaveEntrances?.activeScoreMeshes?.(currentArea, activeScene); // The active cave plate owns direct-render score candidates.
+          const finishScore = window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes); // Keeps the glyphs out of actor probes and held-depth replay.
+          let worldPresented = false; // Release the temporary layer on error without drawing an overlay over an incomplete frame.
+          try {
+            window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
+            renderer.setRenderTarget(null);
+            renderer.render(activeScene, camera);
+            const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+            window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
+            window.PerfProfiler?.end(actorProbePerf);
+            // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+            if (_targetOutlineMeshes.length > 0) {
+              renderer.autoClearColor = false;
+              renderer.autoClearDepth = false;
+              scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+              camera.layers.set(2);
+              renderer.render(scene, camera);
+              camera.layers.enableAll();
+              scene.overrideMaterial = null;
+              renderer.autoClearColor = true;
+              renderer.autoClearDepth = true;
+            }
+            worldPresented = true;
+          } finally {
+            finishScore?.(worldPresented);
           }
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         }
         } finally {
           window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
+          restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
+          restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
@@ -30672,7 +30700,11 @@
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
       function flushSessionPersistence() {
-        try { window.FarmEditor.saveFarmLayout(); saveMemberWorldData(); _saveWorldCalendar(); } catch {}
+        try {
+          if (window.FarmEditor.saveFarmLayout()) pendingVegetationFarmSave = false;
+          saveMemberWorldData();
+          _saveWorldCalendar();
+        } catch {}
       }
       window.addEventListener('beforeunload', flushSessionPersistence);
       window.addEventListener('pagehide', flushSessionPersistence);
@@ -30846,6 +30878,7 @@
         toolVerdigrisFraction,
         getGearInventory: () => gearInventory,
         saveGearInventory,
+        scheduleCombatGearSave,
         refreshActionBar,
         // Named animal projectiles use the same live Three.js elevation as
         // the player/creature renderers so Drenkirra's vertical spit aim is
@@ -33895,6 +33928,7 @@
         setFarmPlayerSave: value => { farmPlayerSave = value; },
         snapCameraTarget: () => _snapCameraTarget(),
         flushAll: () => {
+          window.CharacterMetaSave?.flush?.();
           saveMemberWorldData();
           window.FarmEditor?.saveFarmLayout?.();
           _saveWorldCalendar();

@@ -224,6 +224,11 @@ const vm = require('node:vm');
   assert.equal(store.get('hobunjiSaveCheckpoint.mapChange.v1'), travelRaw);
   assert((await api.listRecoveryChoices()).choices.some(choice => choice.slot === 'mapChange'));
 
+  const parsesBeforeRepeatedGuards = window.__hobunjiSaveCheckpointDebug.snapshot().browserCheckpointParses; // Browser checkpoint parsing should happen once per storage version.
+  for (let i = 0; i < 5; i++) api.evaluateSnapshotForFolderWrite(structuredClone(originalSnapshot));
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().browserCheckpointParses, parsesBeforeRepeatedGuards,
+    'repeated save integrity guards reuse unchanged browser recovery records instead of reparsing full snapshots');
+
   const legacyMeshRecord = JSON.parse(firstAutoRaw); // Simulates a recovery checkpoint written before treasure meshes were excluded from save data.
   legacyMeshRecord.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
     zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { payload: 'x'.repeat(20_000) } }] },
@@ -233,6 +238,8 @@ const vm = require('node:vm');
   store.set('hobunjiSaveCheckpoint.auto.v1', JSON.stringify(legacyMeshRecord));
   const meshCleanupGuard = api.evaluateSnapshotForFolderWrite(structuredClone(originalSnapshot), { recoveryKind: 'auto' }); // Clean candidate is materially smaller only because runtime mesh junk disappeared.
   assert.equal(meshCleanupGuard.ok, true, 'legacy treasure mesh bloat does not trigger the 40% save-shrink corruption guard');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().browserCheckpointParses, parsesBeforeRepeatedGuards + 1,
+    'an external overwrite of browser recovery data invalidates its cached record');
   store.set('hobunjiSaveCheckpoint.auto.v1', firstAutoRaw);
 
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
@@ -506,6 +513,24 @@ const vm = require('node:vm');
   assert.equal(travelCalls.length, 1, 'one checkpoint after destination is ready');
   assert.equal(travelCalls[0].fromArea, 'farm');
   assert.equal(travelCalls[0].toArea, 'map_i_barn');
+
+  // The timer must defer the live flush/capture itself, not only its final storage write.
+  folderStatus.state = 'not-configured';
+  folderStatus.autoSyncArmed = false;
+  now += 45_000;
+  const pendingIdleCallbacks = []; // Fake browser idle queue for verifying no gameplay capture occurs during a busy frame.
+  window.requestIdleCallback = callback => pendingIdleCallbacks.push(callback);
+  const flushesBeforeIdle = flushes;
+  const idleSave = api.saveAuto({ reason: 'timer' });
+  assert.equal(flushes, flushesBeforeIdle, 'the automatic timer does not flush gameplay before idle');
+  assert.equal(pendingIdleCallbacks.length, 1, 'the timer requests an idle slice before capturing');
+  currentSnapshot.meta.worlds[0].idleSaveTestMarker = now; // Captured only after the idle callback runs.
+  pendingIdleCallbacks.shift()();
+  const idleResult = await idleSave;
+  assert.equal(idleResult.ok, true, 'the idle autosave writes its deferred live state');
+  assert.equal(flushes, flushesBeforeIdle + 1, 'the live save is captured once in the idle callback');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.auto.v1')).snapshot.meta.worlds[0].idleSaveTestMarker, now,
+    'idle autosave captures the latest state rather than a stale pre-idle snapshot');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
