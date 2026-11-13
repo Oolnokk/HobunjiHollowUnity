@@ -20926,6 +20926,7 @@
         }
         if (activeTool === 'ranged' && activeAction === 'shoot') {
           if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // Contextual Action 1/2 ownership applies to ranged fire as well as melee.
           window.RangedWeapons?.startPlayerAction?.(equipmentSlots.ranged);
           return;
         }
@@ -28382,6 +28383,7 @@
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
+            let _pressedArchAction = null; // Captures the original touch button meaning so a re-render during a hold cannot turn its release into an attack.
             let _combatAimRelease = false; // True while this arch press is a ranged shot or weapon-slot press that must aim continuously and commit only on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
@@ -28469,6 +28471,7 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              _pressedArchAction = act; // Retain the original action throughout this pointer's press/release pair.
               const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
               if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')){
                 _claimedInputAction=physicalInputAction;
@@ -28625,7 +28628,7 @@
                     else window.HeldItemActionInput?.release();
                   }
                   else if (!_drag || combatAimOwned) {
-                    if (!pointerCanceled) _abtFire();
+                    if (!pointerCanceled && el.dataset.action === _pressedArchAction) _abtFire(); // A contextual tap cannot morph into a weapon tap if the button changes mid-hold.
                   }
                 }
               } finally {
@@ -28633,6 +28636,7 @@
                 mobileArchDragPointerId = null;
                 mobileArchDragAngle = null;
                 _claimedInputAction = null;
+                _pressedArchAction = null;
                 if (combatAimOwned) {
                   if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
                   else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
@@ -29251,8 +29255,20 @@
         if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
         return { slot, button };
       }
+      window.GameplayInputRouter?.configure?.({
+        isInCombat: isPlayerInCombat,
+        isContextOverride: actionId => {
+          if (actionId !== 'action1' && actionId !== 'action2') return false;
+          const slot = actionId === 'action1' ? 1 : 2; // Only the first two physical slots may suppress attacks through contextual replacement.
+          const button = actionButtonForPhysicalSlot(slot); // Resolve actual visible meaning before comparing with the weapon's normal binding.
+          if (!button || button.allowed === false || heldMode !== 'tool') return false;
+          if (activeTool === 'weapon') return button.action !== toolActions.weapon[slot - 1];
+          if (activeTool === 'ranged') return button.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          return false;
+        },
+      });
       function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
-        const consumed=window.WorldActionInputClaims?.dispatch?.(actionId,phase,{source}); // Shared world interactions can temporarily own a physical action without teaching Combat about every door/rope/NPC system.
+        const consumed=window.GameplayInputRouter?.route?.(actionId,phase,{source}); // One shared input router arbitrates world claims for keyboard, mouse, touch and controller.
         if(consumed&&actionId==='action1')actionHeldDown=false;
         return consumed===true;
       }
@@ -29843,7 +29859,7 @@
         if (key === 'e') {
           event.preventDefault();
           if (isDesktop) {
-            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+            if (!event.repeat && !isPlayerInCombat() && window.BanditCamps?.hasNearbyTent?.()) {
               desktopTentInteractHeld = true;
               activeAction = 'bandit_tent_interact';
               actionHeldDown = true;
