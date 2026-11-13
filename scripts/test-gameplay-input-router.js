@@ -93,6 +93,19 @@ for (const listener of listenerMap.get('blur') || []) listener();
 assert.equal(router.isAttackBlocked(), false, 'blur clears stale contextual ownership');
 assert.equal(router.snapshot().contextPresses.length, 0);
 
+for (const action of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take']) {
+  combatActive = true;
+  assert.equal(router.canOfferWorldAction(action), false, action + ' cannot override weapon buttons during combat');
+  combatActive = false;
+  assert.equal(router.canOfferWorldAction(action), true, action + ' may be offered again outside combat');
+}
+combatActive = true;
+assert.equal(router.canOfferWorldAction({ action: 'obj_search', worldInteraction: true, holdToCommit: true }), false, 'new authored world holds follow the same rule');
+assert.equal(router.canOfferWorldAction({ action: 'obj_inspect', worldInteraction: true, requiresHold: true }), false, 'world holds with explicit requiresHold are blocked');
+assert.equal(router.canOfferWorldAction({ action: 'cut', holdToCommit: true }), true, 'combat/tool hold abilities are not world-loot holds');
+assert.equal(router.canOfferWorldAction({ action: 'obj_talk', worldInteraction: true }), true, 'ordinary tap contexts are still eligible');
+combatActive = false;
+
 for (const kind of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take', 'other_hold_interaction']) {
   combatActive = true;
   assert.equal(router.canContinueHold(kind, true), false, kind + ' cannot start in combat');
