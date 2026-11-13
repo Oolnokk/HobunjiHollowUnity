@@ -37,7 +37,7 @@ class Renderer {
 }
 Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
-    noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
+    noteVisible:scene?.scoreNote?.visible, noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
     actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorAlphaTest:scene?.maskActor?.material?.alphaTest,
     effectLayers:scene?.maskEffect?.layers?.mask, actorLayers:scene?.maskActor?.layers?.mask });
 };
@@ -240,6 +240,20 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
   board.visible = true;
   renderBase(renderer, scene, camera);
   renderShell(renderer, scene, camera);
+  const beforeReplay = api.snapshot(); // A colorless render can use the base camera and target while temporarily replacing note depth settings.
+  windowObject.HeldObjectRenderOrder = { replayingDepth: true };
+  note.material.depthWrite = true;
+  try {
+    renderer.render(scene, camera);
+  } finally {
+    note.material.depthWrite = false;
+    delete windowObject.HeldObjectRenderOrder;
+  }
+  assert.equal(renderer.calls.at(-1).noteVisible, false, 'held-item depth replays must not submit pending score notes');
+  assert.equal(api.snapshot().abandonedWorldTextOverlays, beforeReplay.abandonedWorldTextOverlays,
+    'the colorless replay must leave the actual world frame’s pending score intact');
+  assert.equal(note.layers.mask, 1 << 6, 'score keeps its reserved layer until presentation');
+  assert.equal(note.visible, true, 'replay visibility is restored before the final pass');
   renderPost(renderer, post, postCamera);
   assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
     'a newly active note draws once after the shell/post composite');

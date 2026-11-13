@@ -509,7 +509,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261113h7c46782&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261113ha4aebb2&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2859,7 +2859,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261112hc91a241"></script>
+  <script src="js/tool-icon-render.js?v=20261113ha950935"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2891,7 +2891,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112hc3c1aff"></script>
+  <script src="js/pixel-probe.js?v=20261113ha0b2833"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

@@ -754,6 +754,24 @@
 
   function wrappedRender(scene, camera) {
     const renderer = this;
+    if (window.HeldObjectRenderOrder?.replayingDepth) {
+      // Held/shell replays can reach this hook through other render decorators.
+      // They may use the world camera and target while rewriting cutout depth
+      // materials. Keep the base frame's overlay pending and out of those draws.
+      const pending = pendingWorldTextOverlayByRenderer.get(renderer); // Only overlays from this renderer's matching world frame can enter the replay.
+      if (pending?.scene !== scene) return originalRender.call(renderer, scene, camera);
+      const hidden = []; // Remember only entries still visible after the replay's own scissor culling.
+      for (const { object } of pending.entries) {
+        if (!object.visible) continue;
+        hidden.push(object);
+        object.visible = false;
+      }
+      try {
+        return originalRender.call(renderer, scene, camera);
+      } finally {
+        for (const object of hidden) object.visible = true;
+      }
+    }
     const pass = classifyPass(renderer, scene, camera);
 
     // Material-ID is solely the old screen-space internal/material seam source.
@@ -886,6 +904,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
+        latestScoreChange: 'Timed Scratchbone glyphs stay queued through held-item and shell depth replays.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',
