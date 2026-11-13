@@ -166,7 +166,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  };
  runtimeWindow.window=runtimeWindow;
  vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
-  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},
+  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},queueMicrotask,
  });
  runtimeWindow.HronalWitchBombs.registerDispenser('map_witch_bomb_runtime','tube-fixture',tube,{bombFuseSeconds:7});
  const first=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
@@ -216,6 +216,13 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert(third.onImpact(third,'witch-bomb-chain'));
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().burstPoolHits,1,
    'the next detonation reuses a retired Hronal effect');
+ const fourth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,fuseSeconds:1});
+ const fifth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,fuseSeconds:1});
+ assert(fourth&&fifth,'two independent physical bombs can share one blast frame');
+ clock=20000;
+ runtimeWindow.HronalWitchBombs.tick(.016);
+ assert(runtimeWindow.HronalWitchBombs.debugSnapshot().legacyScanReuses>=1,
+   'consecutive same-stack blasts reuse one legacy scene marker scan');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
