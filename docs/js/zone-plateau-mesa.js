@@ -465,9 +465,16 @@
   // enemy-sight raycasts, _zoneMesaMeshGroups, rebuildZoneMesaMeshes) keeps
   // working on exactly the same objects; only the GPU-facing copy changes.
   const BATCH_TILES = 24; // Used as the spatial bucket edge so batches stay frustum-cullable instead of one zone-wide mesh.
-  const BATCH_MAX_SOURCE_TRIANGLES = 6000; // Used to leave already-large mesas as their own (already efficient) draw.
+  const BATCH_MAX_SOURCE_TRIANGLES = 6000; // Largest mesa that is merged with its neighbors; bigger ones are split instead.
+  // A mesa above that size used to stay one draw. The largest tiers (up to
+  // ~37k triangles) and the zone's cliff-handhold decals (~25k) each span
+  // most of a zone, so neither the camera nor a scissored held/shell depth
+  // replay could ever drop them: they were submitted whole in every pass.
+  // They are now cut into the same BATCH_TILES cells as the merged batches,
+  // with the source hidden behind them exactly like a batched source.
+  let largeMesaSplitEnabled = true; // Debug A/B switch: ZonePlateauMesa.setLargeMesaSplitEnabled(false), applied at the next (re)build.
   const _mesaBatchesByMap = new Map(); // mapId -> render-only batch meshes, disposed when that zone's mesas are rebuilt.
-  const batchStats = { passes: 0, sourceMeshes: 0, batchedMeshes: 0, batches: 0, emptyHidden: 0, skipped: 0 }; // Read by snapshot() for headless/mobile verification.
+  const batchStats = { passes: 0, sourceMeshes: 0, batchedMeshes: 0, batches: 0, emptyHidden: 0, skipped: 0, splitMeshes: 0, splitParts: 0 }; // Read by snapshot() for headless/mobile verification.
 
   function disposeMesaBatches(mapId) {
     const old = _mesaBatchesByMap.get(mapId);
@@ -519,7 +526,7 @@
     return JSON.stringify(out);
   }
 
-  function batchKeyFor(mesh) {
+  function batchKeyFor(mesh, allowTransparent = false) {
     const g = mesh.geometry;
     if (!g?.attributes?.position || mesh.children.length || mesh.isSkinnedMesh || mesh.isInstancedMesh) return null;
     if (mesh.parent?.isScene !== true || mesh.visible !== true) return null;
@@ -532,7 +539,7 @@
     if (typeof mesh.onBeforeRender === 'function' && mesh.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) return null;
     if (g.attributes.position.isInterleavedBufferAttribute || g.morphAttributes && Object.keys(g.morphAttributes).length) return null;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (materials.some(m => !m || m.transparent)) return null;
+    if (materials.some(m => !m || (m.transparent && !allowTransparent))) return null; // Merging would reorder blending between sources; splitting one source keeps its single sort position.
     const groups = g.groups || [];
     if (Array.isArray(mesh.material) && groups.length === 0) return null;
     return [
@@ -620,11 +627,108 @@
     return merged;
   }
 
+  // Cuts one large source into per-cell indexed geometries (triangles keep
+  // their material slot and their order within it). Positions/normals are
+  // baked into world space like a merged batch. Returns null when every
+  // triangle lands in one cell, i.e. there is nothing to gain.
+  function splitMesaGeometry(mesh, multiMaterial) {
+    const g = mesh.geometry, index = g.index, names = Object.keys(g.attributes), position = g.attributes.position;
+    const total = triangleVertexCount(g);
+    const groups = multiMaterial ? g.groups : [{ start: 0, count: total, materialIndex: 0 }];
+    mesh.updateMatrixWorld(true);
+    const identity = mesh.matrixWorld.equals(_identityMatrix);
+    if (!identity) _batchNormalMatrix.getNormalMatrix(mesh.matrixWorld);
+    const cells = new Map(); // "bx_bz" -> Map<slot, source vertex ids (3 per triangle)>
+    for (const group of groups) {
+      const start = Math.max(0, group.start | 0);
+      const count = Math.min(total - start, Number.isFinite(group.count) ? group.count : total - start);
+      const slot = group.materialIndex | 0;
+      for (let i = start; i + 2 < start + count; i += 3) {
+        const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
+        _batchVec.set(
+          (position.getX(a) + position.getX(b) + position.getX(c)) / 3,
+          (position.getY(a) + position.getY(b) + position.getY(c)) / 3,
+          (position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3);
+        if (!identity) _batchVec.applyMatrix4(mesh.matrixWorld);
+        const key = `${Math.floor(_batchVec.x / BATCH_TILES)}_${Math.floor(_batchVec.z / BATCH_TILES)}`;
+        let slots = cells.get(key);
+        if (!slots) cells.set(key, slots = new Map());
+        let ids = slots.get(slot);
+        if (!ids) slots.set(slot, ids = []);
+        ids.push(a, b, c);
+      }
+    }
+    if (cells.size < 2) return null;
+    const parts = [];
+    for (const [cell, slots] of cells) {
+      const remap = new Map(), sourceIds = [], outIndex = [], outGroups = [];
+      for (const slot of [...slots.keys()].sort((x, y) => x - y)) {
+        const startIndex = outIndex.length;
+        for (const id of slots.get(slot)) {
+          let next = remap.get(id);
+          if (next === undefined) { next = sourceIds.length; remap.set(id, next); sourceIds.push(id); }
+          outIndex.push(next);
+        }
+        outGroups.push({ start: startIndex, count: outIndex.length - startIndex, slot });
+      }
+      const geometry = new THREE.BufferGeometry();
+      for (const name of names) {
+        const source = g.attributes[name], size = source.itemSize;
+        const out = new (source.array.constructor)(sourceIds.length * size);
+        const transform = !identity && (name === 'position' || name === 'normal');
+        for (let v = 0; v < sourceIds.length; v++) {
+          const src = sourceIds[v];
+          if (transform) {
+            _batchVec.fromBufferAttribute(source, src);
+            if (name === 'position') _batchVec.applyMatrix4(mesh.matrixWorld);
+            else _batchVec.applyMatrix3(_batchNormalMatrix).normalize();
+            out[v * 3] = _batchVec.x; out[v * 3 + 1] = _batchVec.y; out[v * 3 + 2] = _batchVec.z;
+          } else {
+            for (let c = 0; c < size; c++) out[v * size + c] = source.array[src * size + c];
+          }
+        }
+        geometry.setAttribute(name, new THREE.BufferAttribute(out, size, source.normalized));
+      }
+      geometry.setIndex(new THREE.BufferAttribute(sourceIds.length > 65535 ? new Uint32Array(outIndex) : new Uint16Array(outIndex), 1));
+      if (multiMaterial) for (const group of outGroups) geometry.addGroup(group.start, group.count, group.slot);
+      geometry.userData = Object.assign({}, g.userData || {}, { plateauMesaRenderBatch: true, plateauMesaRenderSplit: true });
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      parts.push({ cell, geometry });
+    }
+    return parts;
+  }
+
+  // The GPU-facing stand-in for one or more hidden sources: same layers,
+  // order, shadow flags and tags (ground-surface, outline, jigsaw-ignore,
+  // cross-mesh UV ownership — so runtime UV repair keeps the already solved
+  // UVs) minus cameraObstacle: the hidden sources remain the occlusion
+  // raycast targets.
+  function makeMesaRenderMesh(first, geometry, name, mapId) {
+    const batch = new THREE.Mesh(geometry, Array.isArray(first.material) ? first.material.slice() : first.material);
+    batch.name = name;
+    batch.layers.mask = first.layers.mask;
+    batch.renderOrder = first.renderOrder;
+    batch.castShadow = first.castShadow;
+    batch.receiveShadow = first.receiveShadow;
+    batch.frustumCulled = first.frustumCulled;
+    const userData = Object.assign({}, first.userData);
+    delete userData.cameraObstacle;
+    delete userData.plateauMesaRenderBatched;
+    userData.plateauMesaRenderBatch = true;
+    userData.plateauMesaRenderBatchMapId = mapId;
+    batch.userData = userData;
+    batch.matrixAutoUpdate = false;
+    batch.updateMatrix();
+    return batch;
+  }
+
   function batchMesaMeshes(zScene, mapId, meshes) {
     ensureBatchScratch();
     batchStats.passes++;
     const hidden = [];
     const buckets = new Map(); // batchKey|bx,bz -> source meshes
+    const large = []; // Sources too big to merge; split into per-cell render meshes below.
     for (const mesh of meshes) {
       const g = mesh?.geometry;
       if (!mesh?.isMesh || !g || mesh.parent !== zScene || mesh.userData?.cliffGenerated) continue; // Mini-cliff inverted silhouettes must retain their own mesh and raycast/occlusion tags.
@@ -639,7 +743,10 @@
         batchStats.emptyHidden++;
         continue;
       }
-      if (verts / 3 > BATCH_MAX_SOURCE_TRIANGLES) { batchStats.skipped++; continue; }
+      if (verts / 3 > BATCH_MAX_SOURCE_TRIANGLES) {
+        if (largeMesaSplitEnabled && batchKeyFor(mesh, true)) large.push(mesh); else batchStats.skipped++;
+        continue;
+      }
       const key = batchKeyFor(mesh);
       if (!key) { batchStats.skipped++; continue; }
       if (!g.boundingBox) g.computeBoundingBox();
@@ -656,26 +763,8 @@
       const first = sources[0];
       const multiMaterial = Array.isArray(first.material);
       const geometry = mergeBatchGeometry(sources, multiMaterial);
-      const batch = new THREE.Mesh(geometry, multiMaterial ? first.material.slice() : first.material);
       const cell = bucketKey.slice(bucketKey.lastIndexOf('|') + 1).replace(',', '_');
-      batch.name = `${mapId}_mesa_render_batch_${cell}_${bucketIndex}`;
-      batch.layers.mask = first.layers.mask;
-      batch.renderOrder = first.renderOrder;
-      batch.castShadow = first.castShadow;
-      batch.receiveShadow = first.receiveShadow;
-      batch.frustumCulled = first.frustumCulled;
-      // Same tags as the sources (ground-surface, outline, jigsaw-ignore,
-      // cross-mesh UV ownership — so runtime UV repair keeps the already
-      // solved UVs) minus cameraObstacle: the hidden sources remain the
-      // occlusion raycast targets.
-      const userData = Object.assign({}, first.userData);
-      delete userData.cameraObstacle;
-      delete userData.plateauMesaRenderBatched;
-      userData.plateauMesaRenderBatch = true;
-      userData.plateauMesaRenderBatchMapId = mapId;
-      batch.userData = userData;
-      batch.matrixAutoUpdate = false;
-      batch.updateMatrix();
+      const batch = makeMesaRenderMesh(first, geometry, `${mapId}_mesa_render_batch_${cell}_${bucketIndex}`, mapId);
       for (const source of sources) {
         source.visible = false;
         source.userData.plateauMesaRenderBatched = true;
@@ -685,7 +774,24 @@
       batches.push(batch);
       batchStats.batchedMeshes += sources.length;
     }
-    batchStats.batches += batches.length;
+    let splitParts = 0;
+    for (const source of large) {
+      const parts = splitMesaGeometry(source, Array.isArray(source.material));
+      if (!parts) { batchStats.skipped++; continue; } // Fits one cell: already as cullable as a part would be.
+      for (const { cell, geometry } of parts) {
+        const part = makeMesaRenderMesh(source, geometry, `${source.name || mapId + '_mesa'}__render_split_${cell}`, mapId);
+        part.userData.plateauMesaRenderSplit = true;
+        zScene.add(part);
+        batches.push(part);
+      }
+      source.visible = false;
+      source.userData.plateauMesaRenderBatched = true;
+      hidden.push(source);
+      batchStats.splitMeshes++;
+      splitParts += parts.length;
+    }
+    batchStats.splitParts += splitParts;
+    batchStats.batches += batches.length - splitParts;
     _mesaBatchesByMap.set(mapId, { batches, hidden });
     console.log(`%c[zone:${mapId}] plateau mesa render batching: ${hidden.length} source mesh(es) hidden behind ${batches.length} batch mesh(es)`, 'color:#22c55e');
   }
@@ -803,6 +909,7 @@
     buildZoneMesaMeshes,
     rebuildZoneMesaMeshes,
     mesaBatchSnapshot,
+    setLargeMesaSplitEnabled: value => { largeMesaSplitEnabled = value !== false; return largeMesaSplitEnabled; }, // Takes effect when a zone's mesas are next built or rebuilt.
     hasTerrain: area => terrainSamplers.has(area), // Distinguishes empty space from an area with no geometry index.
     surfaceYAt, makeTerrainHeightSampler, // Shared physical airborne collision query and isolated geometry verification.
     releaseZone: mapId => { terrainSamplers.delete(mapId); disposeMesaBatches(mapId); }, // Called when a zone scene is torn down or evicted so _mesaBatchesByMap stops pinning it.

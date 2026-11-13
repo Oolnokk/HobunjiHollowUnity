@@ -177,7 +177,7 @@ const rejectCurrentMatrix={
 }; // Current pose is outside a camera/sub-frustum; the captured pose may still draw.
 const culling=new Function('h',[
   'const {isReplayCullable,participantProjection,participantFrustum,replayCullFrustum,setReplayCullFrustum,elevationScissorRect,scissorTargetWidth,scissorTargetHeight}=h;',
-  'let lastReplayCulledCount=0,lastReplayKeptCount=0;',
+  'let lastReplayCulledCount=0,lastReplayKeptCount=0,lastReplayInstancedCulled=0,lastReplayInstancedKept=0,lastReplayInertCount=0;',
   cullingCode,
   'return {filterOffscreenReplayMeshes,collectReplayCulled,cullReplayGroup};'
 ].join('\n'))({

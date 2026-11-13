@@ -27289,6 +27289,12 @@
         // culling. Suspend off-camera NPC visuals across ALL world passes,
         // then restore before any gameplay tick or subsequent render.
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
+        // Same contract for instanced brick walls/paths and grass, which Three r128
+        // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
+        // first (js/grass-billboard-render-chunks.js), then off-camera tagged
+        // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
+        const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
+        const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
         try {
         // Frame-scoped whole-actor suppression; simulation still runs before and
         // after this render. Existing frustum culling handles camera-offscreen
@@ -27416,6 +27422,8 @@
         } finally {
           window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
+          restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
+          restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);

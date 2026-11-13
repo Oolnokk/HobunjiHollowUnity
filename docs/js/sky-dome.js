@@ -508,6 +508,7 @@
       mesh.layers.set(0);
       mesh.userData.hobunjiNoOutline = true;
       mesh.userData.noOutline = true; // Visible cloud art owns its authored PNG edges; sphere topology must never become an outline source.
+      mesh.userData.hobunjiDepthReplayInert = true; // depthWrite:false shell; HeldObjectRenderOrder leaves it out of colorless depth replays (the depth mask above stays in).
       cloudGroup.add(depthMesh, mesh);
       return { depthMesh, depthMaterial, mesh, material, speed: CLOUD_SPEEDS[index], offset: index * 0.173 };
     });
@@ -517,7 +518,7 @@
   function buildRoot() {
     const THREE = deps.THREE; root = new THREE.Group(); root.name = 'hobunji_dynamic_skydome'; skyMaterial = makeSkyMaterial();
     const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 64, 36), skyMaterial); skyMesh.frustumCulled = false; skyMesh.renderOrder = -1000;
-    skyMesh.layers.set(0); skyMesh.userData.hobunjiNoOutline = true; skyMesh.userData.noOutline = true; // Keeps the background shell explicitly out of every geometry-outline auxiliary layer.
+    skyMesh.layers.set(0); skyMesh.userData.hobunjiNoOutline = true; skyMesh.userData.noOutline = true; skyMesh.userData.hobunjiDepthReplayInert = true; // Keeps the background shell explicitly out of every geometry-outline auxiliary layer.
     cloudGroup = new THREE.Group(); cloudGroup.name = 'hobunji_cloud_domes'; celestialGroup = new THREE.Group(); celestialGroup.name = 'hobunji_celestial_sprites'; root.add(skyMesh, celestialGroup, cloudGroup);
   }
 

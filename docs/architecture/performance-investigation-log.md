@@ -12,6 +12,274 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: large wilderness meshes split into cells (mesa tiers, cliff decals, bedrock)
+
+What the near-only replays (next entry) still resubmitted in the wilderness was a handful of zone-spanning meshes whose
+bounds always reach in front of the actor. They also sat whole in the real draw whenever any corner was on screen.
+
+- `zone-plateau-mesa.js`'s render batching left any source above 6,000 triangles as its own draw. Those sources (the
+  largest `plateau_mesa_tier` meshes, up to ~37 k triangles and two materials, and the transparent
+  `cliff-handhold-decals` mesh, ~25 k) are now cut into the same 24x24 cells as the merged batches
+  (`splitMesaGeometry`): indexed per-cell geometries, material slots and triangle order preserved, source hidden behind
+  them exactly like a batched source, so cliff/height sampling and occlusion raycasts still use the untouched source.
+  Parts stay at the source's origin, so the decals' transparent sort position is unchanged.
+  `ZonePlateauMesa.setLargeMesaSplitEnabled(false)` is the A/B switch (next build/rebuild);
+  `mesaBatchSnapshot()` has `splitMeshes` / `splitParts`.
+- `wilderness-bedrock.js` opts its one zone-wide slab into `TerrainRenderChunks` (`terrainRenderChunkEligible`); the
+  chunker no longer requires `receiveShadow` for an explicit opt-in.
+- `scripts/test-zone-plateau-mesa-large-split.js` (real three r128, like the batching test).
+
+Same frozen frame, one base + shell frame, each step applied in turn (headless, exact counts):
+
+| View | Triangles: before -> mesa/decal split -> + bedrock | Draw calls | Pixels |
+| --- | --- | --- | --- |
+| Western slope, two actor groups | 1,132,011 -> 672,499 -> 599,310 | 740 -> 749 -> 778 | colour and depth identical |
+| Cloud forest | 1,576,860 -> 1,252,604 -> (no bedrock mesh of 12 k+) | 1,088 -> 1,096 | colour and depth identical |
+
+Western slope: 9 sources became 150 parts and the bedrock 81 chunks. The live game frame there is now about 598 k
+triangles; the first wilderness census (before any of today's work) was 1.51 M at the same spot.
+
+**Not measured:** real-device FPS. Bedrock's 81 chunks cost 29 draw calls for about 73 k triangles saved per frame;
+if draw calls turn out to matter more on a device, that opt-in is the first thing to revisit.
+
+## 12 Nov 2026: held/shell replays rebuild only near depth and restore by depth copy
+
+The fix for "replays are the multiplier" (see the entries below). Wilderness numbers first, because nothing earlier
+helped there: the western slope's real world draw was already only about 270 k triangles, and 75% of its 1.5 M frame was
+five replays resubmitting mesa tiers, snow patches and cliff decor that sit *behind* the actors.
+
+An x-ray group clears depth in its scissor and redraws the scene so its held parts can be tested against "everything
+except the floor they stand on". Only occluders nearer than those parts can change that test. Now:
+
+- `js/scissor-depth-snapshot.js` (`ScissorDepthSnapshot.save/restore`) copies the replay rectangle's depth out of the
+  current render target and back with WebGL2 `blitFramebuffer`, into one depth(-stencil) renderbuffer per renderer.
+  Supported only for an offscreen single-sample target with a depth texture (the main scene target while outlines are
+  on). One `getError` check per allocation; any failure disables it for that renderer.
+- `held-object-render-order.js`: with a snapshot taken, each group's depth rebuild hides bounded objects whose whole
+  bounding box is farther than the group's farthest held part plus 1.5 units (`hideBeyondViewDepth`,
+  `replayFarViewDepth`). The base replay's ground-restore draw and the shell replay's full "final depth restore" draw
+  are replaced by the depth copy plus a depth-only redraw of the held parts. Unbounded held parts (skinned, instanced)
+  skip the far cull but still get the copy.
+- No snapshot support (WebGL1, outlines off so the scene draws straight to the canvas, a failed restore) runs the
+  original path unchanged. `HeldObjectRenderOrder.setNearReplayEnabled(false)` is the A/B switch; `snapshot()` has
+  `nearReplaySnapshots`, `nearReplayFarCulled`, `nearReplayFallbacks`, `lastNearReplayFarDepth`.
+- `scripts/test-held-near-replay-depth-snapshot.js` runs the snapshot module against a recording GL fake and the
+  compositor with and without snapshot support.
+
+Same frozen frame, new path on vs off (headless, exact counts, one base + shell frame):
+
+| View | Triangles off -> on | Draw calls off -> on | Colour |
+| --- | --- | --- | --- |
+| Western slope, player only | 1,013,776 -> 637,371 | 664 -> 460 | identical |
+| Western slope, two actor groups | 1,725,600 -> 1,338,799 | 954 -> 771 | 110 px differ (see below) |
+| Cloud forest (sphere test, before the box refinement) | 2,819,372 -> 1,817,442 | 1,376 -> 969 | identical, depth identical |
+| Town, quiet | 2,942,401 -> 1,804,340 | 1,725 -> 1,104 | identical |
+| Town, crowded (4 groups, 54% scissor) | 5,329,973 -> 3,396,496 | 2,948 -> 1,770 | identical |
+
+**The differing pixels are the old path's bug.** On the slope the old path drew faint horizontal streaks across a
+cliff base inside the replay rectangle. Against a reference frame with every held-overlay mesh hidden (so no replay
+runs at all), the new path matched the reference in all 110 differing pixels and the old path in none; the two
+references were identical to each other. A crowded town frame that differed (142 pixels along the bottom edge) scored
+the same way: 142 of 142 matched the reference with the new path, none with the old. The base pass alone was identical on and off, and the far cull made no pixel
+difference, so the streaks came from the old path's depth after a replay (a hole where filtered floor was not put
+back), which the outline pass then drew through. The depth copy restores exactly what was there.
+
+Depth after the frame does differ inside the rectangle (a few hundred pixels around the held parts): the old path left
+forced cutout/cover depth behind there (PNG avatar silhouettes, water, snow, grass), the new one leaves the scene's
+real depth, the same as everywhere outside the rectangle. In the game `PngPlaneOutlineOccluder.renderDepth` writes the
+PNG silhouettes for the whole screen right afterwards.
+
+**What still sits in a wilderness rebuild:** a handful of zone-spanning meshes whose box always reaches in front of the
+actor: the largest `plateau_mesa_tier` meshes (up to 37 k triangles, multi-material, so the terrain chunker skips
+them), `cliff-handhold-dec` (one 23-27 k mesh), `wilderness_bedrock` (one 14-15 k mesh) and the three cloud depth
+masks. Splitting those spatially is the next step for both the real draw and the rebuilds.
+
+**Not measured:** real-device FPS, and whether every mobile driver accepts a depth-stencil blit (it falls back if the
+first one reports an error).
+
+## 12 Nov 2026: town ground meshes now go through the terrain chunker; roots and bricks measured
+
+**Terrain.** `terrain-render-chunks.js` only split meshes of 60,000+ triangles (sized for 200x200 wilderness zones). The
+town's ground meshes are 47.9 k, 31.6 k, 21.9 k (path surface) and 17.4 k triangles, each spanning the whole map, so they
+were single draws in every pass that neither the camera nor a scissored replay could drop: about 743 k triangles per
+frame in a crowded town view. `MIN_SOURCE_TRIANGLES` is now 12,000 (about one 24x24 cell of subdivided floor; a mesh
+must still span two cells). Town: 4 meshes became 35 chunks. Measured on one frozen frame, before and after the split:
+3,048,582 -> 2,782,482 triangles, 1,599 -> 1,630 draw calls, **0 of 90,000 pixels differ**. The same meshes already
+went through this chunker in large wilderness zones (the held replays, path binding and `onTerrainGeometryReady` all
+handle it), which is why only the threshold changed. Not checked in-game: the farm and interiors, where any
+material-ID-layer floor of 12 k+ triangles spanning two cells now splits too.
+
+**Surface roots (measured, not changed).** The temple's `cornerFill` root layer (`config/pieces/temple.json`: 48
+strands per surface on 9 surfaces, radius 0.2, length 12) is 432 strands and about 198 k triangles, roughly 460 per
+strand (5 sides, a ring every 0.14 units). Standing beside the temple it is all in view and inside the replay scissor,
+so it was drawn in the world pass, the shell outline pass and six replays: about 1.0-1.2 M triangles per frame, the
+largest single item in that view. It is not a culling problem (each mesh is a 2-4 unit sphere and cullable). The
+strands follow sinusoidal curl with about ten rings per wavelength; halving the ring count would save about 2x with a
+visible change to thick, authored art, so this is left as an art decision: lower `count` in the recipe, or accept a
+coarser ring spacing in `appendCornerGrowth`.
+
+**Bricks (measured, not changed).** Still the largest steady cost: `Roughbrick1.glb` is 70 triangles and has no
+pre-baked reduced variant (only `cave_small_optimized60.glb` exists in `assets/models`). After culling, a crowded town
+view still draws about 1.5 M brick triangles per frame. A Geometry Workshop bake of the brick is the remaining lever.
+
+**Replays are the multiplier for everything near the player.** That view ran six scissored replays per frame (two
+base and two shell elevation groups), each resubmitting whatever sits inside a 10-25% scissor. A depth save/restore
+for the scissor rectangle (WebGL2 `blitFramebuffer`) with a near-only occluder set would remove most of that, but it
+rewrites the core of `held-object-render-order.js`; not attempted.
+
+## 12 Nov 2026: farm/town grass drawn as camera-cullable chunks
+
+Second fix from the census below. Farm grass, farm weeds, town grass and the town border grass are each one
+InstancedMesh spanning the whole map with `frustumCulled = false`, so a bounding sphere around one covers everything.
+Several systems write to those meshes (hoe/seed/shovel refills, `BuildingGrassSuppression` footprint compaction, town
+height followers, the Settings > Grass toggle), so they were **not** split at build time.
+
+- `js/grass-billboard-render-chunks.js`: a registered source mesh stays the single authority. For the synchronous
+  world render only it is hidden and a holder of per-cell InstancedMeshes (8x8 tiles, sharing its geometry and
+  material) is shown instead; the source is restored in `renderWorldPasses`' `finally`. Chunks are re-partitioned only
+  when the source's instance buffer, count or geometry change (4 rebuilds over a whole town load here; steady state is
+  zero). They carry no `isBillboard` tag, so footprint/height writers never touch them, and they do not answer
+  raycasts. Every other renderer still sees the plain source. `GrassBillboardRenderChunks.setEnabled(false)` is the A/B
+  switch; `snapshot()` reports sources, chunks and rebuilds.
+- The chunks are tagged through `InstancedMeshBounds`, so `InstancedMeshViewCull` drops off-camera ones and the
+  held/shell replay cull drops ones outside the scissor. Town: 84,066 blade planes in 122 chunks.
+- Wilderness grass and rich-foliage chunks were already split with authored geometry bounds; they are now flagged
+  `hobunjiAuthoredInstanceBounds`, which lets the replay cull trust those bounds (before, every InstancedMesh stayed in
+  every replay).
+
+Measured headless in a crowded town (NPCs out, large held-item scissor; a heavier scene than the census below, so
+compare within this table only). Same session, same view, each switch flipped alone; triangles and draw calls for one
+base + shell frame:
+
+| Configuration | Triangles | Draw calls |
+| --- | --- | --- |
+| Everything on | 5,062,562 | 2,509 |
+| Grass chunks off | 6,181,632 | 2,340 |
+| Camera cull off | 5,426,490 | 2,598 |
+| Replay cull off (the pre-existing one too) | 7,299,234 | 5,108 |
+| All three off | 9,929,352 | 4,928 |
+
+The frame was **pixel-identical** with all three on and all three off (0 of 90,000 pixels differ); this run does apply
+the camera cull and the grass swap. In the quieter first measurement of the same session, grass went from 168 k to
+80 k triangles in the real draw and from 168 k to 50-60 k in each replay. Software-raster frame time with grass chunks
+on vs off was about 2.4-3.0 s vs 8.6 s, which repeats the grass sensitivity noted below and is likely exaggerated by
+SwiftShader.
+
+**Not measured:** real-device FPS, and the farm itself (the harness starts in town; the farm meshes go through the
+same registration and the unit test covers refills). Chunking costs draw calls: 122 chunk meshes replace 2 grass
+meshes, of which roughly 30-50 are submitted per pass in this view.
+
+**Harness traps found here:** NPC portrait renders also match "no override, all layers, render target", so pick the
+scene to time by `GridTileAccessors.getActiveScene()`, not by the last such render; and a synchronous harness frame
+bypasses `renderWorldPasses`, so call the same `suspendForRender` pairs around it or the culls are not exercised.
+
+## 12 Nov 2026: instanced bricks now leave the camera pass and the depth replays
+
+First fix from the census below. Same town view, player only, headless, exact counts:
+
+| | Before | After |
+| --- | --- | --- |
+| Triangles per frame | 3,899,054 | 1,985,674 |
+| Draw calls per frame | 839 | 624 |
+| Real world draw | 941,644 | 626,364 |
+| Each full depth replay | ~900,000 | ~390,000 |
+
+A synchronous base + shell frame read back from the main target was **pixel-identical** with the replay cull on and
+off (0 of 90,000 pixels differ). That first check did not run the camera cull (the harness frame bypassed
+`renderWorldPasses`); the grass entry above repeats it with every cull applied.
+
+- The sphere around all of a mesh's instances that `WallBuilder` kept for its raycast early-out now lives in
+  `js/instanced-mesh-bounds.js` (`InstancedMeshBounds.localSphere/worldSphere/tag/forEachTracked`). Built wall meshes are
+  tagged `userData.hobunjiInstanceBounds` and tracked through weak references.
+- `js/instanced-mesh-view-cull.js` hides tagged meshes whose sphere is outside the camera for the synchronous world
+  render only, restored in `renderWorldPasses`' `finally` (same contract as `NpcViewFrustumCull`). In the measured view
+  51 of 73 brick meshes (5,375 of 8,653 bricks) were hidden. `InstancedMeshViewCull.setEnabled(false)` is the A/B
+  switch; `snapshot()` reports counts.
+- `held-object-render-order.js`'s replay cull now accepts those tagged instanced meshes (16 culled, 4 kept per replay
+  here) and drops sky shells tagged `hobunjiDepthReplayInert` whose material cannot write depth (sky dome and the three
+  visible cloud shells; the cloud depth masks stay in). `snapshot()` has `lastReplayInstancedCulled/Kept` and
+  `lastReplayInert`.
+- `scripts/test-instanced-mesh-render-cull.js` runs every piece.
+
+**Not measured:** real-device FPS. **What was left in each replay** (about 390 k): grass billboards 168 k (two
+whole-town instanced meshes; addressed by the grass entry above), whole-map
+terrain meshes 97 k, and the 3 or 4 large wall meshes whose sphere crosses the scissor (66 k). Wall meshes are one per
+build call, so a big building is all-or-nothing for both culls; splitting them spatially is the next step for bricks.
+
+## 12 Nov 2026: where a quiet frame's triangles go (town, player only)
+
+Question: what has always kept the game slow even with nothing happening? Measured in the headless harness at 400x225,
+pixel ratio 1, in town right after load (player and one hound, before the NPCs arrive). Counts are exact; see the
+caveats on timings at the end.
+
+**One frame is 3.90 M triangles in 839 draw calls, and only 0.94 M of them are the picture.**
+
+| Inner render (segmented with `scene.onBeforeRender`) | Triangles | Calls |
+| --- | --- | --- |
+| Real world draw | 941,644 | 397 |
+| Real shell outline pass (layer 1) | 55,862 | 65 |
+| PNG occluder depth | 5,592 | 4 |
+| Three scissored replays of nearly the whole world (held/foot depth, shell x-ray depth, depth restore) | 3 x ~900,000 | 110-125 each |
+| Ground replay (layer 28) | 167,954 | 15 |
+| Hands + feet themselves (overlay, shell) | 2 x 7,280 | 4 each |
+
+So **74% of the triangles in a frame are depth replays whose only purpose is to sort the player's two hands and two
+feet (7,280 triangles) against the ground**, into a scissor rectangle covering 3-3.5% of the screen. Hiding those four
+meshes drops the frame from 3.89 M to 1.00 M triangles (462 calls). The replay cull does hide 1,358 objects outside the
+scissor, but `isReplayCullable` refuses anything that is an `InstancedMesh`, has `frustumCulled === false` or has
+children, and those are exactly the heavy ones: every brick, every grass blade, the whole-map terrain meshes and the sky
+domes are resubmitted in all three replays. The scissor saves pixels, not vertices.
+
+Wilderness (`map_western_slope`, one burrow NPC nearby) shows the same shape: 1.98 M triangles per frame, about 0.3 M in
+the real draw and about 1.6 M in five replays (80%).
+
+**What the real 0.94 M world draw is made of:**
+
+- **Bricks, 567,350 (60%).** `Roughbrick1.glb` is 70 triangles and every wall and path brick is its own instance: 8,653
+  instances (5,797 wall, 1,793 + 1,063 path). `MeshStandardMaterial`, `frustumCulled = false`, no per-chunk bounds, so
+  all of them are drawn whatever the camera sees; 27% had their origin inside the view frustum.
+- **Grass billboards, 168,132 (18%).** 84,066 instanced quads in two meshes (14 crossed pairs per tile),
+  `frustumCulled = false`; 20% inside the view frustum.
+- Terrain 97 k, sky 31 k (seven 64x36 spheres), surface roots 29 k, shingles 17 k. Player rig about 20 k.
+- Trees did not make the list: they are separate culled meshes (about 920 hidden by frustum culling in this view), so
+  leaves are not the base cost here. Not measured in a dense forest view.
+
+**Depth complexity** (every mesh drawn additively with no depth test): mean 22 layers per pixel, p95 43, max 109. Sky
+is 7 full-screen layers on every pixel (sky dome, three cloud depth masks, three cloud shells), bricks 2.5, grass 1.85,
+shingles/log walls 1.4 (10 where they cover), terrain 0.7, house pieces and the rest about 8. This is an upper bound on
+overdraw, not shaded fragments: depth testing rejects much of it.
+
+**Ruled out:** shadows (the map is enabled but no shadow pass ran: zero shadow draws in any scene measured), and
+render-side JavaScript (a CPU profile of the frame is over 98% inside the GL process; scene traversal and the replay
+classification are a few ms).
+
+**Software-raster timings (relative only).** Synchronous base + shell frame, `gl.finish()` plus a one-pixel read:
+full 4.6-4.8 s; hands/feet hidden (no replays) 1.35-1.44 s; no outline pass 2.78 s; grass hidden 0.61-0.66 s; grass
+hidden and no replays 0.22 s; bricks hidden, no measurable change. Forcing `uDensity = 0` (every grass fragment
+discarded at once) changed nothing, so the grass cost here is per-instance/primitive work in the software rasteriser,
+not shading. That 7x grass figure is very likely exaggerated by SwiftShader and must be checked on a real device with
+the existing grass toggle before acting on it; the triangle and pass counts above do not depend on it.
+
+**Crowd scaling, for scale:** the same view about ten minutes later, with town NPCs present, was 6.98 M triangles and
+2,384 calls.
+
+**Candidate work, in the order the numbers suggest** (the brick and sky half of (1) is done, see the entry above):
+(1) give instanced bricks and grass real per-chunk
+bounds so both the camera and the replay cull can drop them, and keep sky domes out of depth replays; (2) a cheaper
+brick (a box is 12 triangles) or a distance LOD, and a cheaper material than `MeshStandardMaterial`; (3) chunk the
+grass so off-screen tiles are not submitted; (4) see whether hands/feet can be depth-sorted without redrawing the
+world (the 3% scissor suggests a small local proxy would do).
+
+### Measurement traps (12 Nov 2026)
+
+- **Wrapping `renderer.render` on the instance attributes the replays to the outer pass.** `held-object-render-order.js`
+  wraps below that and calls the raw render several times inside one "shell outline" call, which made the shell pass look
+  like 1.88 M triangles when the real one is 56 k. Segment with `scene.onBeforeRender` and attribute triangles by wrapping
+  `renderer.renderBufferDirect`.
+- **`requestAnimationFrame` in this sandbox ticked at a flat 5.0 s per frame** whatever was hidden, so frame intervals
+  say nothing. Time a synchronous render instead.
+- GL state read in `scene.onBeforeRender` (colour mask) is the previous pass's state; do not label passes with it.
+
 ## 12 Nov 2026: swing geometry, melee misses, and strike-triggered saves
 
 A swing can clear vegetation and immediately serialize both the farm layout and world-member state.

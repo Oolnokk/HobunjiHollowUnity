@@ -334,6 +334,7 @@
     farmGrassBillMesh.userData.isBillboard = true;
     farmGrassBillMesh.userData.noOutline = true; // Authored grass blade art already contains its own border.
     deps.scene.add(farmGrassBillMesh);
+    window.GrassBillboardRenderChunks?.register(farmGrassBillMesh); // Drawn as camera-cullable chunks (js/grass-billboard-render-chunks.js).
 
     farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
     farmWeedBillMesh.frustumCulled = false;
@@ -341,6 +342,7 @@
     farmWeedBillMesh.userData.isBillboard = true;
     farmWeedBillMesh.userData.noOutline = true; // Don't outline individual flat weed cards.
     deps.scene.add(farmWeedBillMesh);
+    window.GrassBillboardRenderChunks?.register(farmWeedBillMesh); // Drawn as camera-cullable chunks (js/grass-billboard-render-chunks.js).
 
     cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
     cuttableBillboardGlowMesh.frustumCulled = false;
@@ -414,6 +416,7 @@
     townGrassBillMesh.userData.hobunjiBillboardSourceCount = idx;
     townGrassBillMesh.instanceMatrix.needsUpdate = true;
     townScene.add(townGrassBillMesh);
+    window.GrassBillboardRenderChunks?.register(townGrassBillMesh); // Drawn as camera-cullable chunks (js/grass-billboard-render-chunks.js).
   }
 
   function _rebuildWeedTiles() {

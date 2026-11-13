@@ -1007,6 +1007,8 @@
   let replayCullEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setReplayCullEnabled(false).
   let lastReplayCulledCount = 0; // Renderables hidden from the last scissored replay.
   let lastReplayKeptCount = 0; // Cullable renderables still drawn by the last scissored replay.
+  let lastReplayInstancedCulled = 0, lastReplayInstancedKept = 0; // Instanced wall/path brick meshes hidden from, and kept in, the last scissored replay.
+  let lastReplayInertCount = 0; // Sky shells skipped by the last scissored replay because they cannot write depth.
 
   function setReplayCullFrustum(camera, rect, width, height) {
     const x0 = Math.max(0, rect.x - CULL_EXTRA_MARGIN_PX), y0 = Math.max(0, rect.y - CULL_EXTRA_MARGIN_PX);
@@ -1044,15 +1046,56 @@
     return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
   }
 
-  function collectReplayCulled(scene, keep, groupCandidates = null) {
+  // InstancedMeshes cannot normally leave a replay: r128 bounds them by their
+  // base geometry only. Two kinds can: meshes tagged by InstancedMeshBounds
+  // (wall/path bricks, farm/town grass render chunks), whose sphere covers
+  // every instance, and meshes whose authored geometry bounds already enclose
+  // every instance (wilderness grass and rich-foliage chunks).
+  let instancedReplaySphereScratch = null; // Created on first use; most scenes have few tagged meshes.
+  function instancedReplaySphere(object) {
+    if (!object.isInstancedMesh || object.children.length || object.userData?.hobunjiInstanceBounds !== true) return null;
+    const bounds = window.InstancedMeshBounds;
+    if (!bounds?.worldSphere) return null;
+    if (!instancedReplaySphereScratch) instancedReplaySphereScratch = new THREE.Sphere();
+    return bounds.worldSphere(object, instancedReplaySphereScratch) || null;
+  }
+  function hasAuthoredInstanceBounds(object) {
+    return !!(object.isInstancedMesh && !object.children.length && object.frustumCulled !== false
+      && object.userData?.hobunjiAuthoredInstanceBounds === true && object.geometry?.boundingSphere);
+  }
+
+  // Sky shells that neither test-and-write nor write depth cannot change a
+  // colorless depth replay, and they sit on layer 0 only, so no layer-masked
+  // color draw inside a replay can show them either. The material is checked
+  // live so a later change to the sky's depth policy keeps it in the replay.
+  function isDepthReplayInert(object) {
+    if (!object.isMesh || object.userData?.hobunjiDepthReplayInert !== true || object.children.length) return false;
+    const material = object.material;
+    return !!material && !Array.isArray(material) && material.depthWrite === false
+      && !(Number(material.alphaTest) > 0) && object.layers.mask === 1;
+  }
+
+  function replayFrustumIntersects(object) {
+    if (object.isSprite) return replayCullFrustum.intersectsSprite(object);
+    const sphere = instancedReplaySphere(object);
+    return sphere ? replayCullFrustum.intersectsSphere(sphere) : replayCullFrustum.intersectsObject(object);
+  }
+
+  function collectReplayCulled(scene, keep, groupCandidates = null, boundedKept = null) {
     const culled = [];
     let kept = 0;
+    lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || hasAlternateReplayPose(object) || !isReplayCullable(object)) return;
-      const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
+      if (keep.has(object) || hasAlternateReplayPose(object)) return;
+      if (isDepthReplayInert(object)) { culled.push(object); lastReplayInertCount++; return; }
+      const instanced = !!instancedReplaySphere(object) || hasAuthoredInstanceBounds(object);
+      if (!instanced && !isReplayCullable(object)) return;
+      const inside = replayFrustumIntersects(object);
+      if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
         kept++;
         groupCandidates?.push(object);
+        boundedKept?.push(object);
       } else culled.push(object);
     });
     lastReplayCulledCount = culled.length;
@@ -1065,8 +1108,7 @@
     const hidden = new Map(); // Restored immediately after this group’s colorless depth draw.
     for (const object of candidates) {
       if (!object.visible || hasAlternateReplayPose(object)) continue;
-      const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
-      if (inside) continue;
+      if (replayFrustumIntersects(object)) continue;
       hidden.set(object, true);
       object.visible = false;
     }
@@ -1536,6 +1578,117 @@
     return hideObjects(redundant);
   }
 
+  // ── Near-only depth rebuilds ───────────────────────────────────────────
+  // An x-ray group clears depth inside its scissor and redraws the scene so
+  // its held parts can be tested against "everything except the floor they
+  // stand on". Only occluders NEARER than those parts can change that test,
+  // yet the rebuild (and the restore after it) resubmitted every mesh in the
+  // rectangle, however far behind the actor: mesas, cliffs, buildings, trees.
+  // When ScissorDepthSnapshot can copy the original depth out and back, the
+  // rebuild keeps only objects that are not wholly beyond the group's farthest
+  // held part, and the final restore is a depth blit plus a depth-only redraw
+  // of the held parts themselves. Without snapshot support (WebGL1, drawing
+  // straight to the canvas, a fake renderer) the original redraw path runs.
+  let nearReplayEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setNearReplayEnabled(false).
+  let nearReplaySnapshots = 0; // Depth rectangles saved instead of redrawn.
+  let nearReplayFarCulled = 0; // Object submissions skipped because they sat wholly behind the held parts.
+  let nearReplayFallbacks = 0; // Snapshot restores that failed and fell back to a full depth redraw.
+  let lastNearReplayFarDepth = 0; // View-space depth of the last group's farthest held part (Infinity = unknown, no far cull).
+  const NEAR_REPLAY_MARGIN = 1.5; // World units behind the farthest held part that still count as "near": shell extrusion, sway, pose slack.
+  let nearScratchSphere = null, nearScratchPoint = null; // Created on first use.
+
+  function nearReplaySupport(canLockColorMask) {
+    return nearReplayEnabled && canLockColorMask && window.ScissorDepthSnapshot?.save ? window.ScissorDepthSnapshot : null;
+  }
+
+  // View-space depth of the farthest point of these held meshes, or Infinity
+  // when any of them cannot be bounded (skinned, instanced, morphed).
+  function replayFarViewDepth(camera, meshes) {
+    if (!nearScratchSphere) { nearScratchSphere = new THREE.Sphere(); nearScratchPoint = new THREE.Vector3(); }
+    let far = -Infinity, bounded = true;
+    const include = (mesh) => {
+      const geometry = mesh?.geometry;
+      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) { bounded = false; return; }
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      const source = geometry.boundingSphere;
+      if (!source || !(source.radius >= 0)) return; // Empty geometry draws nothing.
+      const parity = mesh.__hobunjiXrayBoundParity;
+      const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.() ? parity.visibleMatrixWorld : null;
+      const padding = (Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0) + (Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0);
+      for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
+        const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
+        nearScratchSphere.copy(source).applyMatrix4(matrix);
+        nearScratchPoint.copy(nearScratchSphere.center).applyMatrix4(camera.matrixWorldInverse);
+        const depth = -nearScratchPoint.z + nearScratchSphere.radius + (padding > 0 ? padding * Math.max(1, matrix.getMaxScaleOnAxis()) : 0);
+        if (!(depth <= Infinity)) { bounded = false; return; } // NaN transform.
+        if (depth > far) far = depth;
+      }
+    };
+    for (const mesh of meshes) {
+      include(mesh);
+      if (!bounded) return Infinity;
+      if (!mesh.children?.length || !mesh.traverseVisible) continue;
+      mesh.traverseVisible(child => { // Same rule as the scissor: only descendants with a live aura extend the part.
+        if (!bounded || child === mesh) return;
+        if (Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0) include(child);
+      });
+      if (!bounded) return Infinity;
+    }
+    return far;
+  }
+
+  // Every visible object with trustworthy bounds, for an unscissored replay
+  // (the scissored one gets the same list from collectReplayCulled).
+  function collectBoundedReplayObjects(scene, keep, out) {
+    scene.traverseVisible((object) => {
+      if (keep.has(object) || hasAlternateReplayPose(object)) return;
+      if (instancedReplaySphere(object) || hasAuthoredInstanceBounds(object) || isReplayCullable(object)) out.push(object);
+    });
+    return out;
+  }
+
+  // Hides candidates whose whole bound is farther from the camera than the
+  // held parts. Returns the visibility map to restore, or null.
+  function hideBeyondViewDepth(camera, candidates, farDepth) {
+    lastNearReplayFarDepth = farDepth;
+    if (!(farDepth < Infinity) || !candidates?.length) return null;
+    const limit = farDepth + NEAR_REPLAY_MARGIN;
+    let hidden = null;
+    for (const object of candidates) {
+      if (!object.visible || object.isSprite) continue;
+      let nearest; // View-space depth of the bound's nearest point.
+      let sphere = instancedReplaySphere(object);
+      const geometry = sphere ? null : object.geometry;
+      if (geometry && !geometry.boundingBox && geometry.computeBoundingBox) geometry.computeBoundingBox();
+      const box = geometry?.boundingBox;
+      if (box && box.min.x <= box.max.x) {
+        // Box corners, not the sphere: a wide flat floor or snow chunk has a
+        // sphere that reaches the camera long after its real surface is behind the parts.
+        nearest = Infinity;
+        for (let corner = 0; corner < 8; corner++) {
+          nearScratchPoint.set(corner & 1 ? box.max.x : box.min.x, corner & 2 ? box.max.y : box.min.y, corner & 4 ? box.max.z : box.min.z)
+            .applyMatrix4(object.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+          if (-nearScratchPoint.z < nearest) nearest = -nearScratchPoint.z;
+          else if (!(-nearScratchPoint.z >= nearest)) { nearest = NaN; break; } // NaN corner: keep the object.
+        }
+      } else {
+        if (!sphere) {
+          const source = geometry?.boundingSphere;
+          if (!source) continue; // Never bounded by the frustum test either: keep it.
+          sphere = nearScratchSphere.copy(source).applyMatrix4(object.matrixWorld);
+        }
+        nearScratchPoint.copy(sphere.center).applyMatrix4(camera.matrixWorldInverse);
+        nearest = -nearScratchPoint.z - sphere.radius;
+      }
+      if (!(nearest > limit)) continue; // Not wholly beyond the parts (also keeps NaN bounds).
+      if (!hidden) hidden = new Map();
+      hidden.set(object, true);
+      object.visible = false;
+    }
+    if (hidden) nearReplayFarCulled += hidden.size;
+    return hidden;
+  }
+
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
@@ -1573,6 +1726,10 @@
     let overlayHidden = null;
     const colorBuffer = renderer.state?.buffers?.color;
     const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
+    const nearReplay = groups.some(group => group.regions.length) ? nearReplaySupport(canLockColorMask) : null; // Only depth-clearing x-ray groups benefit.
+    const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
+    let nearSnapshotFailed = false;
     try {
       if (scissored) {
         glState.scissor(scissorRect);
@@ -1580,12 +1737,13 @@
         scissoredReplayCount++;
         if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
           const cullPerf = window.PerfProfiler?.begin('held-overlay: scissor cull');
-          replayCulled = hideObjects(collectReplayCulled(scene, new Set(scissorMeshes), groupCullCandidates));
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(scissorMeshes), groupCullCandidates, nearCandidates));
           window.PerfProfiler?.end(cullPerf);
-        }
+        } else if (nearCandidates) collectBoundedReplayObjects(scene, new Set(scissorMeshes), nearCandidates);
       } else {
         fullscreenReplayCount++;
         lastReplayScissorCoverage = 1;
+        if (nearCandidates) collectBoundedReplayObjects(scene, new Set(scissorMeshes), nearCandidates);
       }
       renderer.autoClear = false;
       renderer.autoClearColor = false;
@@ -1613,7 +1771,14 @@
         if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
         const supplementDepth = !group.regions.length && canLockColorMask; // The ordinary group runs first, while complete base depth is intact.
         if (supplementDepth) ordinaryDepthClearsAvoided++;
-        else renderer.clearDepth();
+        else {
+          // Taken after any ordinary supplement, so its repaired cutout/cover depth is part of what comes back.
+          if (nearReplay && !nearToken && !nearSnapshotFailed) {
+            nearToken = nearReplay.save(renderer, scissored ? scissorRect : null);
+            if (nearToken) nearReplaySnapshots++; else nearSnapshotFailed = true;
+          }
+          renderer.clearDepth();
+        }
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
         const depthMaterialStates = canLockColorMask
           ? prepareCutoutDepthMaterials(cutoutDepthMeshes, protectedDepthMeshes)
@@ -1624,10 +1789,12 @@
         }
         window.PerfProfiler?.end(prepPerf);
         let groupCulled = null; // Only depth needs the bounded world occluder list.
+        let farCulled = null; // Objects wholly behind this group's held parts; the saved depth brings them back.
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
           if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           camera.layers.mask = originalCameraMask;
@@ -1638,6 +1805,7 @@
         } finally {
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (redundantDepth) restoreVisibility(redundantDepth);
+          if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
           if (canLockColorMask) {
             colorBuffer.setLocked(false);
@@ -1673,7 +1841,31 @@
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
-      const needsGroundRestore = groups.some(group => group.regions.length) || !canLockColorMask; // An ordinary supplement never removes existing floor depth.
+      // Near-only rebuilds left depth behind the held parts empty. Copy the
+      // original back, then re-add the parts' own depth exactly as their
+      // materials write it: where a part is in front of the original scene it
+      // wins, where the floor it x-rayed through is nearer the floor wins.
+      let depthRestored = false;
+      if (nearToken) {
+        depthRestored = nearReplay.restore(renderer, nearToken, scissored ? scissorRect : null);
+        if (!depthRestored) { // Target changed under us: rebuild complete depth the original way.
+          nearReplayFallbacks++;
+          renderer.clearDepth();
+          const fullStates = prepareNonGroundDepthMaterials(scene);
+          try { camera.layers.mask = originalCameraMask; rawRender.call(renderer, scene, camera); }
+          finally { restoreMaterialStates(fullStates); }
+        }
+        colorBuffer.setMask(false);
+        colorBuffer.setLocked(true);
+        try {
+          camera.layers.mask = HELD_OVERLAY_MASK;
+          rawRender.call(renderer, scene, camera);
+        } finally {
+          colorBuffer.setLocked(false);
+          colorBuffer.setMask(true);
+        }
+      }
+      const needsGroundRestore = !depthRestored && (groups.some(group => group.regions.length) || !canLockColorMask); // An ordinary supplement never removes existing floor depth.
       const groundMaterialStates = needsGroundRestore ? prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground) : new Map();
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
@@ -1803,6 +1995,9 @@
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
     let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
+    const nearReplay = nearReplaySupport(true); // This replay silences color per material, so no color-mask lock is needed.
+    const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let nearToken = null; // Saved depth of the replay rectangle as the shell pass found it.
     
     internalReplay = true;
     try {
@@ -1816,11 +2011,16 @@
         // final restore, but can only write inside the scissor. Without it
         // the shell pass cost about as many draw calls as the base pass.
         if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
-          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates));
-        }
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates, nearCandidates));
+        } else if (nearCandidates) collectBoundedReplayObjects(scene, new Set(xrayMeshes), nearCandidates);
       } else {
         fullscreenReplayCount++;
         lastReplayScissorCoverage = 1;
+        if (nearCandidates) collectBoundedReplayObjects(scene, new Set(xrayMeshes), nearCandidates);
+      }
+      if (nearReplay) {
+        nearToken = nearReplay.save(renderer, scissored ? scissorRect : null);
+        if (nearToken) nearReplaySnapshots++;
       }
 
       renderer.autoClear = false;
@@ -1855,15 +2055,18 @@
         scene.overrideMaterial = null;
         camera.layers.mask = MASK_ALL;
         let groupCulled = null; // Keep the final depth restore outside this group’s tighter cull.
+        let farCulled = null; // Objects wholly behind this group's shells; the saved depth brings them back.
         let npcReplayRestore = null; // Skip remote NPC portraits/limbs during just this local depth rebuild.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (nearToken) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
           if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           rawRender.call(renderer, scene, camera);
           nonGroundDepthReplayCount++;
         } finally {
           npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
+          if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
@@ -1892,9 +2095,16 @@
             lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
           }
           scene.overrideMaterial = null;
-          camera.layers.mask = MASK_ALL;
-          renderer.clearDepth();
-          rawRender.call(renderer, scene, camera); // The one original-depth transaction already covers the final unfiltered restore.
+          if (nearToken && nearReplay.restore(renderer, nearToken, scissorActive ? scissorRect : null)) {
+            // Saved depth is back; add the x-ray parts' own forced depth, as the full redraw below would have.
+            camera.layers.mask = HELD_OVERLAY_MASK;
+            rawRender.call(renderer, scene, camera);
+          } else {
+            if (nearToken) nearReplayFallbacks++;
+            camera.layers.mask = MASK_ALL;
+            renderer.clearDepth();
+            rawRender.call(renderer, scene, camera); // The one original-depth transaction already covers the final unfiltered restore.
+          }
         }
       } finally {
         if (depthStates) restoreMaterialStates(depthStates); // Also restores on a thrown depth/shell/ground draw.
@@ -2062,6 +2272,9 @@
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount,
+      nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
+      lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
@@ -2132,6 +2345,7 @@
     debugLogSnapshot,
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
+    setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.

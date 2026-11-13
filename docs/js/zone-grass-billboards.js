@@ -82,6 +82,7 @@
     mesh.userData.noOutline = true; // Grass cards contain their own ink; the volumetric shell pass must ignore them.
     mesh.userData.isWildernessGrassChunk = true;
     mesh.userData.wildernessChunkOwnsGeometry = true;
+    mesh.userData.hobunjiAuthoredInstanceBounds = true; // Geometry bounds above enclose every instance, so depth-replay culls may trust them.
     mesh.userData.skipOcclusionFade = true;
     // Used by game.js's zone culler to reject entire grass chunks before draw submission.
     const bounds = geo.boundingBox;
