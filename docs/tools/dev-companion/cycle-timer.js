@@ -42,8 +42,12 @@
   }
 
   function showStatus() {
-    if (lastError || validationError) { status.textContent = lastError || validationError; return; }
+    if (lastError) { status.textContent = lastError; return; }
     if (!enabled.checked) { status.textContent = 'Off'; return; }
+    if (validationError) {
+      status.textContent = `${validationError} Previous ${seconds}s cycle remains active.`;
+      return;
+    }
     if (starting || !node) { status.textContent = 'Starting audio…'; return; }
     if (context?.state !== 'running') {
       status.textContent = 'Audio suspended by browser — switch off and on to retry';
@@ -183,7 +187,7 @@
   // UI only. The audio processor, not this throttled timer, produces chimes.
   setInterval(showStatus, 500);
   window.DevCompanionCycleTimer = {
-    getState: () => ({ enabled: enabled.checked, seconds, starting, audioState: context?.state || 'closed', error: lastError }),
+    getState: () => ({ enabled: enabled.checked, seconds, starting, audioState: context?.state || 'closed', error: lastError || validationError }),
   }; // Inspectable from the companion and paired with visible status for mobile debugging.
   showStatus();
 })();
