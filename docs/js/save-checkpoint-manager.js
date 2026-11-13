@@ -700,11 +700,21 @@
           lastAction = 'autosave-skipped-superseded';
           return { ok: true, skipped: true, reason: 'superseded' };
         }
+        if (festivalCheckpointBlocked()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-festival-test';
+          return { ok: true, skipped: true, reason: 'festival-test' };
+        }
         if (window.HobunjiAutosavePause?.isPaused?.()) {
           autosavesSkipped++;
           lastAction = 'autosave-skipped-paused';
           window.HobunjiAutosavePause.noteBlocked?.('recovery-autosave');
           return { ok: true, skipped: true, reason: 'paused' };
+        }
+        if (folderIsPrimary()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-folder-owned';
+          return { ok: true, skipped: true, reason: 'folder-autosync-owned' };
         }
         if (!isHydrated()) {
           autosavesSkipped++;
