@@ -130,13 +130,11 @@
   }
 
   function loadAnimalDenEntranceLocale(id = ANIMAL_DEN_ENTRANCE_LOCALE_ID) {
-    const local = localAnimalDenEntranceLocale(id); // Live Locale Editor override supplies the complete den template during local-db testing.
-    if (local) {
-      _animalDenEntranceLocales.set(id, local);
-      return Promise.resolve(local);
-    }
-    if (_animalDenEntranceLocalePromises.has(id)) return _animalDenEntranceLocalePromises.get(id);
-    if (typeof fetch !== 'function') return Promise.resolve(null); // Headless/unit-test runtimes keep the legacy facade without browser fetch.
+    const local = localAnimalDenEntranceLocale(id); // Live editor data must not replace the repository fallback cache.
+    if (_animalDenEntranceLocalePromises.has(id)) return local ? Promise.resolve(local) : _animalDenEntranceLocalePromises.get(id);
+    if (typeof fetch !== 'function') return Promise.resolve(local); // Headless tests can still read local overrides.
+    // Always preload the repo fallback, including in local mode, so a source
+    // switch cannot accidentally reuse the editor's colliders as repo data.
     const promise = fetch(zoneFeatureAssetUrl(`config/locales/${id}.json`), { cache:'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(locale => {
@@ -148,7 +146,7 @@
         return null;
       });
     _animalDenEntranceLocalePromises.set(id, promise);
-    return promise;
+    return local ? Promise.resolve(local) : promise;
   }
 
   function loadAllAnimalDenEntranceLocales() {
