@@ -731,8 +731,11 @@
       _lastBrowserMirrorWarning = '';
       if (!automatic) startAutoSync();
       try {
-        if (saveSnapshot.browserBaselineFingerprint !== undefined
-            && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint) {
+        const browserChangedWhileWriting = Array.isArray(saveSnapshot.browserBaselineParts)
+          ? !browserFingerprintMatches(window.HobunjiSaveSnapshot.browserCacheParts?.(), saveSnapshot.browserBaselineParts)
+          : saveSnapshot.browserBaselineFingerprint !== undefined
+            && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint;
+        if (browserChangedWhileWriting) {
           _lastBrowserMirrorWarning = 'Primary folder saved; newer browser changes made during the disk write were preserved.';
         } else {
           window.HobunjiSaveSnapshot?.apply?.(saveSnapshot, { folderBacked: true }); // Refresh only the canonical browser cache after the durable disk commit.
@@ -740,7 +743,8 @@
       } catch (mirrorError) {
         _lastBrowserMirrorWarning = `Primary folder saved; browser cache could not be updated: ${String(mirrorError?.message || mirrorError)}`;
       }
-      delete saveSnapshot.browserBaselineFingerprint; // Do not retain another whole-save fingerprint in every recovery slot.
+      delete saveSnapshot.browserBaselineFingerprint; // Release legacy adapter guard before recording recovery history.
+      delete saveSnapshot.browserBaselineParts; // Transient raw baseline must never remain pinned in a recovery checkpoint.
       _lastObservedFingerprint = observeBrowserFingerprint(true); // Optional browser bookkeeping cannot change the success of the completed disk commit.
 
       const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
