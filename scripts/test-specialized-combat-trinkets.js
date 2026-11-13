@@ -89,6 +89,8 @@ function chain(mode){
     held:null,flight:null,backCarried:null,BURDEN_IMPACT_HANDLERS:new Map(),carriedWorldPosition:null,
     backCarrierPosition:()=>null, // Modern stowed Burdens resolve their carrier's location before detonating; this chain fixture has none.
     lastEvent:'',lastBlastAttribution:null,
+    explosionBatchDepth:0,explosionBatchDirty:false,pendingRubbleVisuals:new Set(),blastRubbleRebuilds:0,
+    syncPileVisuals(){},persistWorld(){}, // The isolated chain fixture supplies the outermost-batch flush owner.
     deps:()=>({player:null,hostileObjects:new Set(),npcWalkers:new Set()}),
     tileSize:()=>64,scene:()=>({}),baseHeight:()=>0,
     disposeEmitters(){},saveConsumed(){},shatterVisual(){},destroyTerrain(){return 0;},
