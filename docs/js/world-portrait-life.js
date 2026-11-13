@@ -89,6 +89,7 @@
     try {
       window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
         breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+        deferSplineParts: true, // World models already own separate 3D strands; don't rebake a redundant full 2D composite every breath.
       }).then(() => {
         window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
       }).catch(() => {}).finally(() => { walker._portraitLifePending = false; npcLifePending = false; });
@@ -100,6 +101,8 @@
     const ctx = target.getContext('2d'); // Full-canvas copy keeps clothing, dyes, face, and current authored portrait composition intact.
     ctx.clearRect(0, 0, target.width, target.height);
     ctx.drawImage(source, 0, 0, target.width, target.height);
+    target.hobunjiSplineBaseCanvas = source.hobunjiSplineBaseCanvas || null; // A copied world expression must use its own freshly detached base, not an earlier canvas.
+    target.hobunjiSplineParts = source.hobunjiSplineParts || []; // Preserve tinted appendage pieces across the scratch-to-avatar copy.
     return true;
   }
 
@@ -127,6 +130,7 @@
     stats.playerCombatCacheBuilds++;
     playerCombatFrownCachePromise = window.NpcAvatarPreview.renderProfileToCanvas(scratch, avatar.profile, {
       forceEyesOpen: true,
+      deferSplineParts: true, // Cached combat textures must not repaint a flat beard over its moving mesh.
       breathingComposer: COMBAT_FROWN_COMPOSER,
       seatId: 'player-combat-frown-cache',
     }).then(() => {
@@ -161,6 +165,7 @@
     stats.playerRefreshes++;
     window.NpcAvatarPreview.renderProfileToCanvas(avatar.frontCanvas, avatar.profile, {
       breathingComposer: composer, seatId: 'player',
+      deferSplineParts: true, // Keep animated strand geometry and portrait texture separate.
     }).then(() => {
       const current = deps.getPlayerAvatar();
       if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion || current.group?.userData?.maskboundHeadHidden) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
@@ -206,6 +211,7 @@
     scratch.height = avatar.frontCanvas.height;
     window.NpcAvatarPreview.renderProfileToCanvas(scratch, avatar.profile, {
       forceEyesOpen: true,
+      deferSplineParts: true, // One-shot world expression capture uses the same detached pixels as ordinary breathing.
       ...(playerCombatFrown ? { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'player-combat-frown-cache' } : {}),
     }).then(() => {
       const current = deps?.getPlayerAvatar?.();

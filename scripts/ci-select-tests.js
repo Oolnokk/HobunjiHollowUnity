@@ -26,6 +26,7 @@ const TESTS = Object.freeze({
     modular: { file: 'scripts/test-modular-editor-ui-browser.js', tags: ['weapon'] },
     multisprite: { file: 'scripts/test-multi-sprite-weapon-browser.js', tags: ['weapon', 'appearance'] },
     statue: { file: 'scripts/test-statue-pose-bake-browser.js', tags: ['weapon', 'appearance'] }, // The original Attack Editor and furniture pipeline are shared with this UI.
+    portrait_spline: { file: 'scripts/test-portrait-spline-viewer-browser.js', tags: ['portrait_spline'] }, // Browser GPU readback catches the solid-black mobile portrait regression.
     omgurku_cal: { file: 'scripts/test-omgurku-calibration-browser.js', tags: ['omgurku'] },
     omgurku_game: { file: 'scripts/test-omgurku-gameplay-browser.js', tags: ['omgurku'] },
     omgurku_tribe: { file: 'scripts/test-omgurku-tribe-browser.js', tags: ['omgurku'] },
@@ -53,6 +54,8 @@ function categories(file) {
   if (/^\.github\/workflows\/(regression-suite|smoke-dev-random-ruin-full)\.yml$/.test(file)) return ['all'];
   if (file === 'docs/index.html' || file === 'docs/game.js') return ['all'];
   if (/^scripts\/(?:test-|smoke-|verify-|run-tests\.js|check-cache-busts\.js)/.test(file)) return ['test-only'];
+  if (/^docs\/tools\/portrait-spline-author\//.test(file)) return ['portrait_spline'];
+  if (/^docs\/js\/portrait-spline-/.test(file)) return ['portrait_spline'];
   if (/^docs\/tools\/debris-ifier\//.test(file)) return ['ruin'];
   if (/^docs\/config\/furniture-authored\/ruinPillarBridge\.json$/.test(file)) return ['ruin'];
   if (!file.startsWith('docs/js/')) return ['all'];

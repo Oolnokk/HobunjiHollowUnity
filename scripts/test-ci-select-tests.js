@@ -21,6 +21,26 @@ test('ruin glyph runtime affects ruin checks but not unrelated browser checks', 
   assert.equal(ruin.selected.audit, true);
 });
 
+test('portrait spline edits run the real WebGL seam regression in Chromium', () => {
+  for (const file of [
+    'docs/js/portrait-spline-viewer.js',
+    'docs/js/portrait-spline-rig.js',
+    'docs/js/portrait-spline-catalog.js',
+    'docs/tools/portrait-spline-author/index.html',
+    'scripts/test-portrait-spline-viewer-browser.js',
+  ]) {
+    const selected = selectTests('regression', [file]);
+    assert.equal(selected.selected.portrait_spline, true, file + ' must run the portrait WebGL smoke');
+    assert.equal(selected.output.needs_browser, true, 'Chromium is required for ' + file);
+    assert.equal(selected.output.needs_deps, true, 'Three.js is required for ' + file);
+  }
+  const unrelated = selectTests('regression', ['docs/js/crop-varieties.js']);
+  assert.equal(unrelated.selected.portrait_spline, false, 'unrelated crop changes should not need the GPU test');
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/regression-suite.yml'), 'utf8');
+  assert(workflow.includes('node scripts/test-portrait-spline-viewer-browser.js'),
+    'CI must actually execute the portrait spline browser test');
+});
+
 test('root-only changes spare independent V50 seed loops', () => {
   const result = selectTests('ruin', ['docs/js/root-snare-player-tear.js']);
   assert.equal(result.selected.root_tear, true);

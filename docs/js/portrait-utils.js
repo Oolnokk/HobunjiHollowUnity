@@ -1493,6 +1493,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const skipHeadSprite = renderOptions?.skipHeadSprite === true; // Headless characters (Imlao): the head sprite is simply not drawn, so everything it would have hidden shows through.
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
+  const deferSplineParts = renderOptions?.deferSplineParts === true && !renderOptions?.onlyHeadSprite && !renderOptions?.headCosmeticsOnly; // Only 3D avatar bakes omit the flat copy.
+  canvas.hobunjiSplineHood = null; // Per-bake hood foreground and beard occlusion data.
+  if (renderOptions.captureSplineHood) canvas.hobunjiSplineHoodSource = null;
+  canvas.hobunjiSplineParts = []; // Canvas reuse must discard previous actor's detached pieces.
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
   const seatId = renderOptions?.seatId ?? null;
@@ -1582,8 +1586,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
   const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
+  const canDetachSideHair = group => deferSplineParts && !!window.PortraitSplineRig?.resolveOptionRig?.(group, resolvedFighter); // Rigged side hair can pass through normal hoods.
   const hiddenCosmeticGroups = new Set([
-    ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
+    ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), ...[hairSide, hairSideL].filter(group => !canDetachSideHair(group))] : []),
     ...((hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask)) ? [facialHair] : []),
   ].filter(Boolean));
 
@@ -1601,7 +1606,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
   const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
-
+  const splineSlots = new Map([[facialHair, 'facialHair'], [hairSide, 'hairSide'], [hairSideL, 'hairSideL']]); // Only beard and side hairstyle slots.
+  const splineRigFor = group => deferSplineParts && group && !hiddenCosmeticGroups.has(group)
+    ? window.PortraitSplineRig?.resolveOptionRig?.(group, resolvedFighter) : null;
   const pushToTarget = (group, target) => {
     if (!group || hiddenCosmeticGroups?.has(group)) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
@@ -1875,7 +1882,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, paintCtx = ctx) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -1886,20 +1893,20 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
-      ctx.save();
-      ctx.globalAlpha = opacity;
+      paintCtx.save();
+      paintCtx.globalAlpha = opacity;
       let drawImg = imageForTint(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
-      ctx.filter = 'none';
-      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
-      ctx.restore();
+      paintCtx.filter = 'none';
+      _drawPortraitLayerWarped(paintCtx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      paintCtx.restore();
     } else if (opacity < 1) {
-      ctx.save();
-      ctx.globalAlpha = opacity;
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
-      ctx.restore();
+      paintCtx.save();
+      paintCtx.globalAlpha = opacity;
+      drawPortraitLayer(paintCtx, img, xform, tint, sourceKey, imageForTint);
+      paintCtx.restore();
     } else {
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(paintCtx, img, xform, tint, sourceKey, imageForTint);
     }
   };
 
@@ -1953,18 +1960,33 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
   const drawEmoteLayers = (layerList) => {
-    for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey);
-    });
+    for (let i = 0; i < layerList.length; i++) {
+      const entry = layerList[i], rig = splineRigFor(entry.group), slot = splineSlots.get(entry.group);
+      if (rig && slot && !entry.layer.pixelDye) {
+        if (renderBehindView && slot === 'facialHair') continue; // Back-view beard art is deliberately omitted.
+        const partCanvas = document.createElement('canvas'); // Preserve the original sprite transform/tint on full portrait UVs.
+        partCanvas.width = PORTRAIT_CW; partCanvas.height = PORTRAIT_CH;
+        const partCtx = partCanvas.getContext('2d');
+        if (renderBehindView) partCtx.translate(rig.rearOffset.u * PORTRAIT_CW, rig.rearOffset.v * PORTRAIT_CH);
+        withPixelDyeLayer(entry, (img, tint, sourceKey) =>
+          drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, partCtx));
+        const key = slot + ':' + String(entry.group?.id || 'unknown') + ':' + i; // Matches front and back independently composed slot indices.
+        canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas, phase: (i + 1) * 1.37 });
+        continue; // ONE intact hair texture on ONE mesh: authored rigid pixels are pinned in geometry,
+                  // flexible pixels deform, and there is no flat/moving alpha boundary to expose a black seam.
+      }
+      withPixelDyeLayer(entry, (img, tint, sourceKey) =>
+        drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey));
+    }
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList) => {
+  const drawBreathingLayers = (layerList, target = ctx) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
+        drawPortraitLayerWarped(target, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
+        drawPortraitLayer(target, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
     });
   };
@@ -2120,7 +2142,31 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  drawBreathingLayers(hoodLayers);
+  const beardParts = canvas.hobunjiSplineParts.filter(part => part.slot === 'facialHair');
+  const spline = window.PortraitSplineRig;
+  const previewBeard = hiddenCosmeticGroups.has(facialHair) || hoodHidesFacialHair(hood)
+    ? null : renderOptions.splinePreviewBeard; // Manual author artwork uses the same hood fitter as detached game beards.
+  if (hoodLayers.length && (beardParts.length || renderOptions.captureSplineHood) && spline?.fitHood) {
+    const cloth = document.createElement('canvas'); // Capture only the hood layers that normally cover the beard.
+    cloth.width = cloth.height = 200;
+    const clothContext = cloth.getContext('2d', { willReadFrequently: true });
+    clothContext.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
+    drawBreathingLayers(hoodLayers, clothContext);
+    if (renderOptions.captureSplineHood) {
+      const original = document.createElement('canvas'); // The wand samples original hood transparency before fitting.
+      original.width = cloth.width;
+      original.height = cloth.height;
+      original.getContext('2d').drawImage(cloth, 0, 0);
+      canvas.hobunjiSplineHoodSource = original;
+    }
+    const beardRig = beardParts[0]?.rig || previewBeard?.rig || {};
+    const beardCanvases = beardParts.length ? beardParts.map(part => part.canvas) : previewBeard?.canvases;
+    canvas.hobunjiSplineHood = spline.fitHood(cloth, beardRig, beardCanvases);
+    ctx.drawImage(canvas.hobunjiSplineHood.canvas, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
+    for (const part of beardParts) part.hoodFit = canvas.hobunjiSplineHood;
+  } else {
+    drawBreathingLayers(hoodLayers);
+  }
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
@@ -2406,11 +2452,15 @@ function portraitOptionFromJson(entry, json) {
                          : tintSlot);
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
+  const splineRig = json.portraitSplineRig || null; // Opt-in 3D rig loaded with the cosmetic.
+  const variantSplineRigs = Object.fromEntries(Object.entries(json.speciesVariants || {})
+    .filter(([, variant]) => variant?.portraitSplineRig)
+    .map(([key, variant]) => [key, variant.portraitSplineRig])); // Variant-specific sprite/rig pairs share lookup keys.
   const onlyExactSpeciesVariant = json.onlyExactSpeciesVariant === true; // Used by incomplete-variant equipment such as Bzabag's prize helm.
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, splineRig, variantSplineRigs };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
@@ -3354,6 +3404,8 @@ window.getPortraitXformPreset = getPortraitXformPreset;
 renderProfile.defaultBehindLayerOrder = DEFAULT_BEHIND_LAYER_ORDER;
 
 window.loadPortraitCosmetics = loadPortraitCosmetics;
+window.portraitOptionFromJson = portraitOptionFromJson;
+window.portraitHoodHidesFacialHair = hoodHidesFacialHair;
 window.renderPortraitProfile = renderProfile;
 // renderProfile is also exported as window.renderProfile for consumers that check that name
 // (bootstrap.js, scratchbones-lobby.js).

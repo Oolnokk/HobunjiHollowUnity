@@ -68,6 +68,10 @@ jobs:
       - name: Install Chromium for browser regressions
         if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
+      - name: Portrait spline 3D WebGL texture and gizmo browser smoke
+        if: steps.select.outputs.portrait_spline == 'true'
+        run: node scripts/test-portrait-spline-viewer-browser.js
+
       - name: Selector arc idle DOM and legacy scroll browser regression
         if: steps.select.outputs.needs_browser == 'true'
         run: node scripts/test-selection-arc-browser.js
