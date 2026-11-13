@@ -384,6 +384,7 @@
       const local = snapshots.capture({ strict: true });
       window.CharacterMetaSave?.capturePending?.(local.meta);
       const fingerprint = snapshots.fingerprint(local);
+      const partsAtCapture = browserCacheParts(); // Guard against local edits arriving while the remote revision request is in flight.
       const link = readLinkState();
       const remote = await refreshRemoteStatus();
 
@@ -403,8 +404,8 @@
       }
 
       if (fingerprint === link.lastSyncedFingerprint) {
-        _dirty = false;
-        _lastMessage = 'Cloud save is already current.';
+        _dirty = partsAtCapture !== null && !browserCachePartsMatch(partsAtCapture, browserCacheParts()); // Never forget edits that occurred while awaiting cloud status.
+        _lastMessage = _dirty ? 'New local changes are waiting for cloud autosave.' : 'Cloud save is already current.';
         if (!automatic && !link.autoSyncArmed) {
           writeLinkState({ ...link, autoSyncArmed: true });
           armAutoSync();
