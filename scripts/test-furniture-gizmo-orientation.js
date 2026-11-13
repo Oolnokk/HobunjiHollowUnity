@@ -11,6 +11,9 @@ const begin = html.indexOf('function configureTransformAxesForSelection()');
 const end = html.indexOf('\nfunction onTransformObjectChange()', begin);
 assert.ok(begin >= 0 && end > begin, 'Furniture Author exposes its axis configuration');
 assert.match(html, /id="gizmoSpaceStatus"/, 'axis frame is explained inside the editor for mobile debugging');
+const carryAuthor = fs.readFileSync('docs/tools/furniture-avatar-author/carryable-objects.js', 'utf8'); // Sidecar guide selection shares the same visible coordinate readout.
+assert.match(carryAuthor, /transform\.attach\(guides\[id\]\);\s*configureTransformAxesForSelection\(\)/,
+  'selecting a hand or hitbox must immediately synchronize its gizmo orientation');
 
 const status = { textContent: '' }; // Shows which frame should match the visible handles.
 let selected = null; // Selected furniture record for each test case.
