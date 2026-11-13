@@ -28384,6 +28384,7 @@
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
             let _pressedArchAction = null; // Captures the original touch button meaning so a re-render during a hold cannot turn its release into an attack.
+            let _contextPressId = null; // Touch pointer owns its contextual Action 1/2 until release even if the prompt disappears.
             let _combatAimRelease = false; // True while this arch press is a ranged shot or weapon-slot press that must aim continuously and commit only on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
@@ -28476,6 +28477,11 @@
               if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')){
                 _claimedInputAction=physicalInputAction;
                 return;
+              }
+              if ((physicalInputAction === 'action1' || physicalInputAction === 'action2')
+                  && window.GameplayInputRouter?.resolve?.(physicalInputAction)?.kind === 'context') {
+                _contextPressId = 'touch:' + ev.pointerId;
+                window.GameplayInputRouter.beginContextPress(_contextPressId, physicalInputAction, act);
               }
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
@@ -28637,6 +28643,10 @@
                 mobileArchDragAngle = null;
                 _claimedInputAction = null;
                 _pressedArchAction = null;
+                if (_contextPressId) {
+                  window.GameplayInputRouter?.endContextPress?.(_contextPressId);
+                  _contextPressId = null;
+                }
                 if (combatAimOwned) {
                   if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
                   else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
@@ -29261,7 +29271,7 @@
           if (actionId !== 'action1' && actionId !== 'action2') return false;
           const slot = actionId === 'action1' ? 1 : 2; // Only the first two physical slots may suppress attacks through contextual replacement.
           const button = document.getElementById('btnAction' + slot); // Already-rendered arch is authoritative; avoid recomputing world interactions every combat frame.
-          if (!button?.dataset?.action || button.classList.contains('abt-hidden') || button.classList.contains('blocked')) return false;
+          if (!button?.dataset?.action || button.classList.contains('abt-hidden')) return false; // Even an unavailable contextual action is not permission to attack.
           if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
           if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
@@ -29428,7 +29438,10 @@
           } else if (actionId === 'action1' && !heldChargeInputId) {
             actionHeldDown = false;
           }
-          if (visibleWeaponContextPresses.delete(actionId)) return;
+          if (visibleWeaponContextPresses.delete(actionId)) {
+            window.GameplayInputRouter?.endContextPress?.(actionId);
+            return;
+          }
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
@@ -29456,6 +29469,7 @@
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
+          window.GameplayInputRouter?.beginContextPress?.(actionId, actionId, visibleOverride.button.action); // Context owns the original press even after its prompt vanishes.
           runActionButtonAtSlot(visibleOverride.slot, actionId);
           return;
         }
@@ -30236,7 +30250,9 @@
             const weaponSlot = weaponActionSlot(mouseAction);
             const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
             if (visibleOverride) {
-              visibleWeaponContextPresses.add('mouse:' + e.button);
+              const pressId = 'mouse:' + e.button; // Mouse presses retain independent ownership from keyboard/controller presses.
+              visibleWeaponContextPresses.add(pressId);
+              window.GameplayInputRouter?.beginContextPress?.(pressId, mouseAction, visibleOverride.button.action);
               runActionButtonAtSlot(visibleOverride.slot);
               return;
             }
@@ -30269,6 +30285,7 @@
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
         if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
+          window.GameplayInputRouter?.endContextPress?.('mouse:' + e.button);
           if (weaponActionSlot(getActionForButton('desktop', 'Mouse' + e.button)) === 1) actionHeldDown = false;
           return;
         }
@@ -30339,6 +30356,11 @@
         }
         desktopFurniturePlacementMousePresses.clear();
         desktopWallFurnitureMousePresses.clear();
+        for (const pressId of [...visibleWeaponContextPresses]) {
+          if (!pressId.startsWith('mouse:')) continue;
+          visibleWeaponContextPresses.delete(pressId);
+          window.GameplayInputRouter?.endContextPress?.(pressId);
+        }
       }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
