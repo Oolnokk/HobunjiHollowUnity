@@ -29261,10 +29261,10 @@
           if (actionId !== 'action1' && actionId !== 'action2') return false;
           const slot = actionId === 'action1' ? 1 : 2; // Only the first two physical slots may suppress attacks through contextual replacement.
           const button = actionButtonForPhysicalSlot(slot); // Resolve actual visible meaning before comparing with the weapon's normal binding.
-          if (!button || button.allowed === false || heldMode !== 'tool') return false;
-          if (activeTool === 'weapon') return button.action !== toolActions.weapon[slot - 1];
-          if (activeTool === 'ranged') return button.action !== (slot === 1 ? 'shoot' : 'ammo_select');
-          return false;
+          if (!button || button.allowed === false) return false;
+          if (heldMode === 'tool' && activeTool === 'weapon') return button.action !== toolActions.weapon[slot - 1];
+          if (heldMode === 'tool' && activeTool === 'ranged') return button.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
       function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
