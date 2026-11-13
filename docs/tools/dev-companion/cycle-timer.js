@@ -44,13 +44,13 @@
   function showStatus() {
     if (lastError) { status.textContent = lastError; return; }
     if (!enabled.checked) { status.textContent = 'Off'; return; }
-    if (validationError) {
-      status.textContent = `${validationError} Previous ${seconds}s cycle remains active.`;
-      return;
-    }
     if (starting || !node) { status.textContent = 'Starting audio…'; return; }
     if (context?.state !== 'running') {
       status.textContent = 'Audio suspended by browser — switch off and on to retry';
+      return;
+    }
+    if (validationError) {
+      status.textContent = `${validationError} Previous ${seconds}s cycle remains active.`;
       return;
     }
     const elapsed = Math.max(0, context.currentTime - phaseStart);
