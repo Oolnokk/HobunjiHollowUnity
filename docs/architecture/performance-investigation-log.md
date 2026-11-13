@@ -717,3 +717,15 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - A swapped corpse is a flat dark marker, not a body. It is still lootable (looting reads the entity, never the rig),
   and revivable bodies (`keepCorpseAfterLoot`, e.g. a lich's skeletons) and timed-search bodies keep their rigs.
 - Bandits asleep under the wilderness LOD now count as residents of their zone, so a zone whose only bandits are asleep is released (and its camps re-seed) like any other bandit zone.
+
+
+## 13 Nov 2026: chained explosions — effect pooling and save coalescing
+
+- `shattercasks.js`: retired pottery and Soursap sprays return to bounded per-kind pools (maximum six each). Reusing the Three.js instanced meshes also reuses their GPU instance buffers instead of allocating a new mesh and per-flash material on every detonation. Simultaneous sprays remain independent.
+- Synchronous Shattercask chain reactions now hold a batching depth: each cleared-area rubble mesh is rebuilt once, and persisted consumptions/terrain/piles are serialized once after the outermost charge returns. The visible rubble and persisted state are still settled before the synchronous detonation call completes.
+- `hronal-witch-bombs.js`: Hronal, Tothal and Kanthic bursts each have their own bounded pool (six per variant) and independently animated effects. Legacy `userData.hronalBombBreakable` discovery is cached only inside nested bomb-chain calls; independent same-tick explosions rescan so a first blast can introduce new props safely. Registered breakables still use their Map.
+- `dev-random-ruin-lich-themes.js`: Hronal exploding pillar and Tothal icicle sprays reuse per-scene instanced shard meshes keyed by material color and count (up to four retired per style), with explicit active/pooled disposal on arena and ruin teardown. `snapshot()` reports shard reuse and active/pooled sprays.
+- Mobile diagnostics: `Shattercasks.debugSnapshot().performance` exposes burst pool hits/misses and blast saves/rubble rebuilds; `HronalWitchBombs.debugSnapshot()` exposes effect pool activity and reused scene scans. The tests exercise actual expiration and reuse of the visual instances.
+- Visual first-frame audit: pooled pottery, Soursap, Hronal pillar and Tothal icicle instance matrices are rewritten at emission rather than briefly replaying the previous spray's position. Regression tests verify immediate matrix writes on reuse.
+- Review hardening: legacy breakable scans are invalidated when break callbacks might author new props, including inside recursive chains; nested and independent same-tick blast tests cover this. Shattercask persistence now flushes in a nested `finally` even if the post-chain rubble GPU rebuild throws, with an injected-error regression.
+- **Not yet measured:** device-specific FPS, GPU upload time, or real-world long chain size. The pool limits trade a bounded amount of retired GPU memory for avoiding repeated allocation; capture a before/after explosion frame trace on mobile before claiming a measured speedup.

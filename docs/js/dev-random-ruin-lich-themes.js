@@ -341,24 +341,48 @@
     lastEvent = 'tothal:boss-targeted-icicle-'+emitter.sequence;
     return 1;
   }
+  const MAX_RETIRED_SHARDS_PER_STYLE=4; // Bound retained shard meshes for each color/count variant within one ruin.
+  function disposeShardBurst(burst) {
+    burst.mesh.dispose?.(); // Release the instancing buffer before the shared scene is torn down.
+    burst.mesh.geometry.dispose();burst.mesh.material.dispose();
+  }
   function emitShards(x, y, z, color, radius, count, pillarHeight = 0, pillarWidth = 0) {
-    const group = new THREE.Group();
-    const geo = new THREE.TetrahedronGeometry(.11);
-    const mat = new THREE.MeshBasicMaterial({ color });
-    const mesh = new THREE.InstancedMesh(geo, mat, count); // All debris in one GPU draw call instead of separate meshes.
-    const parts = [];
-    for (let i = 0; i < count; i++) {
-      const a = i * 2.399963, speed = radius * (.45 + (i % 8) / 13);
-      parts.push({
-        x:pillarWidth ? (i % 7 / 6 - .5) * pillarWidth : 0,
-        y:pillarHeight ? (i / Math.max(1,count-1) - .5) * pillarHeight : 0,
-        z:pillarWidth ? (Math.floor(i/7)%7/6 - .5) * pillarWidth : 0,
-        vx:Math.cos(a) * speed, vz:Math.sin(a) * speed, vy:2 + (i % 7) * .32
-      }); // The shattered stone first reproduces the original pillar's height/width, then sprays out like the lich eruption.
+    // Pillar and icicle explosions own their pool per scene; arena/ruin teardown frees it.
+    const pool=world.shardPool||(world.shardPool=new Map());
+    const key=color+':'+count; // Distinct GPU buffers for different material colors and instance counts.
+    let retired=pool.get(key);
+    let burst=retired?.pop();
+    if(burst){world.shardPoolHits=(world.shardPoolHits||0)+1;}
+    else {
+      world.shardPoolMisses=(world.shardPoolMisses||0)+1;
+      const group=new THREE.Group();
+      const geo=new THREE.TetrahedronGeometry(.11);
+      const mat=new THREE.MeshBasicMaterial({color});
+      const mesh=new THREE.InstancedMesh(geo,mat,count); // One instanced GPU draw call per spray.
+      group.add(mesh);
+      const parts=Array.from({length:count},()=>({x:0,y:0,z:0,vx:0,vz:0,vy:0}));
+      burst={group,mesh,parts,key,age:0,duration:1.25};
     }
-    group.position.set(x, y, z); group.add(mesh);
-    world.group.add(group);
-    world.bursts.push({ group, mesh, parts, age:0, duration:1.25 });
+    for(let i=0;i<count;i++){
+      const a=i*2.399963,speed=radius*(.45+(i%8)/13),part=burst.parts[i];
+      part.x=pillarWidth?(i%7/6-.5)*pillarWidth:0;
+      part.y=pillarHeight?(i/Math.max(1,count-1)-.5)*pillarHeight:0;
+      part.z=pillarWidth?(Math.floor(i/7)%7/6-.5)*pillarWidth:0;
+      part.vx=Math.cos(a)*speed;part.vz=Math.sin(a)*speed;part.vy=2+(i%7)*.32;
+    }
+    burst.age=0;burst.group.position.set(x,y,z);
+    // Pooled instance matrices otherwise briefly render shards at the old impact location.
+    const dummy=world.dummy;
+    for(let i=0;i<burst.parts.length;i++){
+      const part=burst.parts[i];
+      dummy.position.set(part.x,part.y,part.z);
+      dummy.rotation.set(0,0,0);dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      burst.mesh.setMatrixAt(i,dummy.matrix);
+    }
+    burst.mesh.instanceMatrix.needsUpdate=true;
+    burst.mesh.computeBoundingSphere?.();
+    world.group.add(burst.group);world.bursts.push(burst);
   }
   function updateBursts(dt) {
     for (let i = world.bursts.length - 1; i >= 0; i--) {
@@ -366,7 +390,11 @@
       burst.age += dt;
       if (burst.age >= burst.duration) {
         burst.group.parent?.remove(burst.group);
-        burst.mesh.geometry.dispose(); burst.mesh.material.dispose();
+        const pool=world.shardPool||(world.shardPool=new Map());
+        let retired=pool.get(burst.key);
+        if(!retired){retired=[];pool.set(burst.key,retired);}
+        if(retired.length<MAX_RETIRED_SHARDS_PER_STYLE)retired.push(burst);
+        else disposeShardBurst(burst);
         world.bursts.splice(i, 1);
         continue;
       }
@@ -564,7 +592,8 @@
     const active=arenaWorld; // Teardown acts on this one arena scene even if a generated ruin world has since become active.
     active.unregisterFootprint?.(); // Remove the Testing Arena's native player/NPC/projectile blocker before disposing its meshes.
     for(const pillar of active.pillars)releaseBossPillar(pillar);
-    for(const burst of active.bursts){burst.mesh.geometry?.dispose?.();burst.mesh.material?.dispose?.();}
+    for(const burst of active.bursts)disposeShardBurst(burst);
+    for(const retired of active.shardPool?.values()||[])for(const burst of retired)disposeShardBurst(burst);
     active.group.parent?.remove?.(active.group);
     arenaWorld=null;
   }
@@ -1247,7 +1276,8 @@
     for(const geometry of world.icicleGeometries||[])geometry.dispose();
     for(const shape of world.bossIcicleVariants||[])shape.geometry.dispose(); // Release the distinct single-icicle variants at ruin teardown.
     world.icicleMaterial?.dispose();
-    for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
+    for (const burst of world.bursts)disposeShardBurst(burst);
+    for (const retired of world.shardPool?.values()||[])for(const burst of retired)disposeShardBurst(burst);
     for (const pillar of world.pillars) {
       if(pillar.temporary){releaseBossPillar(pillar);continue;} // Reroll/exit clears even partially emerged boss pillars.
       if (!pillar.sourcePillar) continue;
@@ -1288,6 +1318,8 @@
       iceTiles:world.iceTiles.size,
       icicles:world.icicles.length,fallenIcicles:world.icicles.filter(p=>p.phase==='done').length,
       activeBossIcicles:world.icicles.filter(p=>p.temporary && p.phase!=='done').length, // Mobile diagnostics expose simultaneous falling boss icicles.
+      activeShardBursts:world.bursts.length,shardPoolHits:world.shardPoolHits||0,shardPoolMisses:world.shardPoolMisses||0,
+      pooledShardBursts:[...(world.shardPool?.values()||[])].reduce((total,entries)=>total+entries.length,0), // Mobile diagnostics of retained effect buffers.
       bossIcicleEmitter:world.bossIcicleEmitter ? {x:world.bossIcicleEmitter.x,z:world.bossIcicleEmitter.z} : null, // Reports where Nanahi's sole spawn point is pursuing.
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),

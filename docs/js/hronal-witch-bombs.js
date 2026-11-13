@@ -38,7 +38,10 @@
   }
   const dispensers = new Map(); // Stable furniture id -> one live bomb slot.
   const breakables = new Map(); // Explicitly registered destructible props; ordinary furniture is never implicitly removed.
-  const bursts = []; // One small additive flash per active explosion.
+  const bursts = []; // Active instanced explosion effects, retired into their variant pools after fading.
+  const burstPools = new Map(); // Palette name -> reusable meshes and GPU instance buffers.
+  const BURST_POOL_LIMIT = 6; // Bounds retained effects for each tradition after chain reactions.
+  let burstPoolHits=0,burstPoolMisses=0; // Mobile diagnostics for reused versus newly allocated effects.
   let spawnSerial = 0;
   let breakableSerial = 0;
 
@@ -111,42 +114,52 @@
   function buildEffect(targetScene,x,y,z,variant=VARIANTS.hronal) {
     if (!targetScene) return;
     const palette=variant.effect;
-    const group=new THREE.Group(); // One scene root owns the expanding flash and instanced flame tongues.
-    group.name='witch_bomb_'+palette.name+'_burst';
-    group.position.set(x,y,z);
-    targetScene.add(group);
-    const flash=new THREE.Mesh(
-      new THREE.SphereGeometry(.22,12,8),
-      new THREE.MeshBasicMaterial({color:palette.flash,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})
-    );
-    flash.name='witch_bomb_'+palette.name+'_flash';
-    flash.renderOrder=12;
-    group.add(flash);
-    // Icy bursts throw sharp crystalline shards instead of flame tongues; plasm throws fat droplets.
-    const count=palette.name==='ice'?44:32;
-    const geometry=palette.name==='ice'?new THREE.ConeGeometry(.055,.42,4,1):palette.name==='plasm'?new THREE.SphereGeometry(.11,8,6):new THREE.ConeGeometry(.075,.34,5,1);
-    const material=new THREE.MeshBasicMaterial({color:palette.tongue,transparent:true,opacity:.94,depthWrite:false,blending:palette.name==='ice'?THREE.NormalBlending:THREE.AdditiveBlending,side:THREE.DoubleSide});
-    const flames=new THREE.InstancedMesh(geometry,material,count);
-    flames.name='witch_bomb_'+palette.name+'_particles';
-    flames.frustumCulled=false;
-    group.add(flames);
-    const parts=[];
-    for(let i=0;i<count;i++){
-      const angle=i*2.399963229728653,speed=1.15+(i%6)*.28;
-      parts.push({x:0,y:0,z:0,vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:1.0+(i%5)*.34});
+    let pool=burstPools.get(palette.name);
+    if(!pool){pool=[];burstPools.set(palette.name,pool);}
+    let state=pool.pop();
+    if(state)burstPoolHits++;
+    else {
+      burstPoolMisses++;
+      const group=new THREE.Group(); // Root, flash and GPU instance buffers persist between bursts.
+      group.name='witch_bomb_'+palette.name+'_burst';
+      const flash=new THREE.Mesh(
+        new THREE.SphereGeometry(.22,12,8),
+        new THREE.MeshBasicMaterial({color:palette.flash,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})
+      );
+      flash.name='witch_bomb_'+palette.name+'_flash';
+      flash.renderOrder=12;
+      group.add(flash);
+      // Preserve the original variant-specific shapes and blending.
+      const count=palette.name==='ice'?44:32;
+      const geometry=palette.name==='ice'?new THREE.ConeGeometry(.055,.42,4,1):palette.name==='plasm'?new THREE.SphereGeometry(.11,8,6):new THREE.ConeGeometry(.075,.34,5,1);
+      const material=new THREE.MeshBasicMaterial({color:palette.tongue,transparent:true,opacity:.94,depthWrite:false,blending:palette.name==='ice'?THREE.NormalBlending:THREE.AdditiveBlending,side:THREE.DoubleSide});
+      const flames=new THREE.InstancedMesh(geometry,material,count);
+      flames.name='witch_bomb_'+palette.name+'_particles';
+      flames.frustumCulled=false;
+      group.add(flames);
+      const parts=Array.from({length:count},()=>({x:0,y:0,z:0,vx:0,vz:0,vy:0}));
+      state={variantName:palette.name,group,flash,flames,geometry,material,parts,
+        dummy:new THREE.Object3D(),up:new THREE.Vector3(0,1,0),direction:new THREE.Vector3(),
+        age:0,duration:.72,gravity:palette.gravity};
     }
-    const dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0),direction=new THREE.Vector3();
-    for(let i=0;i<count;i++){
-      const part=parts[i];
-      direction.set(part.vx,part.vy,part.vz).normalize();
-      dummy.position.set(0,0,0);
-      dummy.quaternion.setFromUnitVectors(up,direction);
-      dummy.scale.setScalar(.72+(i%4)*.12);
-      dummy.updateMatrix();
-      flames.setMatrixAt(i,dummy.matrix);
+    state.group.position.set(x,y,z);
+    state.age=0;state.gravity=palette.gravity;
+    state.flash.scale.setScalar(1);state.flash.material.opacity=.92;
+    state.material.opacity=.94;
+    for(let i=0;i<state.parts.length;i++){
+      const part=state.parts[i],angle=i*2.399963229728653,speed=1.15+(i%6)*.28;
+      part.x=0;part.y=0;part.z=0;
+      part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=1.0+(i%5)*.34;
+      state.direction.set(part.vx,part.vy,part.vz).normalize();
+      state.dummy.position.set(0,0,0);
+      state.dummy.quaternion.setFromUnitVectors(state.up,state.direction);
+      state.dummy.scale.setScalar(.72+(i%4)*.12);
+      state.dummy.updateMatrix();
+      state.flames.setMatrixAt(i,state.dummy.matrix);
     }
-    flames.instanceMatrix.needsUpdate=true;
-    bursts.push({group,flash,flames,geometry,material,parts,dummy,up,direction,age:0,duration:.72,gravity:palette.gravity});
+    state.flames.instanceMatrix.needsUpdate=true;
+    targetScene.add(state.group);
+    bursts.push(state);
   }
   // Kanthic: instead of detonating, an explodeable is wrapped in plasm (SubstanceCoverShell,
   // the shared outline-layer covering) and shrunk to nothing; `done` then runs the removal /
@@ -209,34 +222,62 @@
       return true;
     } catch(_) {return false;}
   }
+  let legacyScanScene=null,legacyScanEntries=null,explodeDepth=0; // Cache markers only while a nested blast call stack is active.
+  let legacySceneScans=0,legacyScanReuses=0; // Debug evidence of avoided full-scene traversal on chain reactions.
+  function markedBreakables(scene) {
+    if(!scene?.traverse)return [];
+    if(legacyScanScene===scene&&legacyScanEntries){
+      legacyScanReuses++;
+      return legacyScanEntries;
+    }
+    const found=[];
+    scene.traverse(node=>{if(node.userData?.hronalBombBreakable===true)found.push(node);});
+    legacySceneScans++;
+    // Registered breakables use the fast Map path. Nested chain reactions share a
+    // snapshot until the outermost explosion completes. Two independent explosions
+    // in one tick must rescan: the first could have spawned new breakable props.
+    legacyScanScene=scene;legacyScanEntries=found;
+    return found;
+  }
+  function invalidateLegacyBreakableScan() {
+    // A break callback can author a replacement prop before the outermost chain blast.
+    legacyScanScene=null;legacyScanEntries=null;
+  }
   function breakNearby(mapId,x,z,radius,variant=VARIANTS.hronal) {
+    const point=new THREE.Vector3(),radiusSq=radius*radius; // One world-position scratch for this blast.
     for (const [id,record] of [...breakables]) {
       if (record.mapId!==mapId || !record.object?.parent) continue;
       record.object.updateWorldMatrix?.(true,true);
-      const p=record.object.getWorldPosition?.(new THREE.Vector3()) || record.object.position;
-      if (!p || Math.hypot(p.x-x,p.z-z)>Math.min(radius,Number(record.radius)||radius)) continue;
+      point.set(0,0,0); // Some authored groups and test stubs add into the target rather than overwrite it.
+      const p=record.object.getWorldPosition?.(point) || record.object.position;
+      const limit=Math.min(radius,Number(record.radius)||radius);
+      if (!p || (p.x-x)**2+(p.z-z)**2>limit*limit) continue;
+      const impactY=p.y; // Capture before the scratch vector is reused or Kanthic defers completion.
       const finish=()=>{
+        invalidateLegacyBreakableScan(); // onBreak may mount new userData-marked destructibles.
         let removed=true;
-        try { if (typeof record.onBreak==='function') removed=record.onBreak(record.object,{mapId,x,y:p.y,z,radius})!==false; }
+        try { if (typeof record.onBreak==='function') removed=record.onBreak(record.object,{mapId,x,y:impactY,z,radius})!==false; }
         catch(error){removed=false;console.warn('[HronalWitchBombs] breakable callback failed',error);}
         if (removed) {record.object.parent?.remove(record.object);breakables.delete(id);}
         else record.object.scale.set(1,1,1);
       };
-      if (variant.plasm) {breakables.delete(id);dissolveWithPlasm(record.object,()=>{record.object.scale.set(1,1,1);finish();breakables.delete(id);});continue;} // Covered and shrunk, then removed.
+      if (variant.plasm) {breakables.delete(id);dissolveWithPlasm(record.object,()=>{record.object.scale.set(1,1,1);finish();breakables.delete(id);});continue;}
       finish();
     }
-    const markedProps=[]; // Collect scene nodes before callbacks or removals can change the traversal.
-    currentScene()?.traverse?.(node=>{
-      if (node.userData?.hronalBombBreakable!==true || node.userData?.hronalBombBreakQueued) return;
+    const markedProps=[];
+    for(const node of markedBreakables(currentScene())){
+      if(!node.parent||node.userData?.hronalBombBreakQueued)continue;
       node.updateWorldMatrix?.(true,false);
-      const p=node.getWorldPosition?.(new THREE.Vector3());
-      if (!p || Math.hypot(p.x-x,p.z-z)>radius) return;
+      point.set(0,0,0); // Each candidate must be measured from the origin, not the previous candidate.
+      const p=node.getWorldPosition?.(point);
+      if (!p || (p.x-x)**2+(p.z-z)**2>radiusSq) continue;
       markedProps.push({node,y:p.y});
-    });
+    }
     for (const {node,y} of markedProps) {
       if (!node.parent || node.userData.hronalBombBreakQueued) continue;
       node.userData.hronalBombBreakQueued=true;
       const finish=()=>{
+        invalidateLegacyBreakableScan(); // Newly spawned marked props must be visible to the parent blast.
         try { node.userData.onHronalBombBreak?.({mapId,x,y,z,radius}); }
         catch(error){console.warn('[HronalWitchBombs] breakable callback failed',error);}
         finally { node.parent?.remove(node); }
@@ -257,12 +298,14 @@
   }
   function dissolveNearbyExplosives(mapId,x,z,radius,sourceId) { // Kanthic: casks and the like are removed, not detonated.
     let count=0;
+    const point=new THREE.Vector3(),radiusSq=radius*radius; // Reuse the same world-position scratch for nearby Burdens.
     for (const burden of window.Shattercasks?.activeBurdenRecords?.(mapId)||[]) {
       if (!burden||burden.id===sourceId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent||KINDS.has(burden.kind)) continue;
       if (burden.kind!=='shattercask'&&burden.kind!=='flameShattercask'&&burden.kind!=='soursap') continue;
       burden.group.updateWorldMatrix?.(true,true);
-      const world=burden.group.getWorldPosition?.(new THREE.Vector3())||burden.group.position;
-      if (!world||Math.hypot(world.x-x,world.z-z)>radius) continue;
+      point.set(0,0,0); // Reset shared scratch for additive world-position helpers.
+      const world=burden.group.getWorldPosition?.(point)||burden.group.position;
+      if (!world||(world.x-x)**2+(world.z-z)**2>radiusSq) continue;
       burden.exploded=true; // Never detonate while it dissolves (a later hit must not pop it).
       if (dissolveWithPlasm(burden.group,()=>window.Shattercasks?.discardBurden?.(burden))) count++;
     }
@@ -271,6 +314,8 @@
   function explode(bomb,cause='fuse') {
     if (!bomb || bomb.exploded || bomb._witchBombExploding) return false;
     bomb._witchBombExploding=true;
+    explodeDepth++; // Brackets recursive bomb-to-bomb chains; unrelated same-tick blasts must not share stale props.
+    try {
     const variant=variantOfKind(bomb.kind);
     bomb.group?.updateWorldMatrix?.(true,true);
     const position=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
@@ -298,6 +343,9 @@
     window.Shattercasks?.discardBurden?.(bomb);
     window.__farmLog?.('[witch-bomb:'+variant.id+'] '+bomb.id+' exploded via '+cause,'world');
     return true;
+    } finally {
+      if(--explodeDepth===0){legacyScanScene=null;legacyScanEntries=null;}
+    }
   }
   function createGroupFactory() {
     for (const variant of Object.values(VARIANTS)) window.Shattercasks.registerBurdenFactory(variant.kind,async()=>{
@@ -493,8 +541,14 @@
       state.material.opacity=.94*(1-t);
       if(t>=1){
         state.group.parent?.remove(state.group);
-        state.geometry.dispose();state.material.dispose();
-        state.flash.geometry.dispose();state.flash.material.dispose();
+        let pool=burstPools.get(state.variantName);
+        if(!pool){pool=[];burstPools.set(state.variantName,pool);}
+        if(pool.length<BURST_POOL_LIMIT)pool.push(state);
+        else {
+          state.flames.dispose?.(); // Release surplus instance buffers; never grow the retained effect pool without bound.
+          state.geometry.dispose();state.material.dispose();
+          state.flash.geometry.dispose();state.flash.material.dispose();
+        }
         bursts.splice(i,1);
       }
     }
@@ -511,6 +565,8 @@
         carrier:item.enemyCarrier?.id||null,hanging:!!item.hanging,flying:!!item.flying,
       })),
       breakables:breakables.size,activeFlashes:bursts.length,
+      burstPoolHits,burstPoolMisses,pooledFlashes:Object.fromEntries([...burstPools].map(([name,pool])=>[name,pool.length])),
+      legacySceneScans,legacyScanReuses,
     };
   }
   createGroupFactory();
