@@ -214,6 +214,8 @@ async function main() {
   assert.ok(!Object.keys(gruntDrops).some(key => key.startsWith('masteryScroll:')), 'ordinary bandits are not made guaranteed');
   const skeletonLieutenantDrops = loot.rollLootPool('bandit_lieutenant', { entity: skeleton, random: () => 0.999999 }); // Inherited skeleton loot must not receive bandit-specific guarantees.
   assert.ok(!Object.keys(skeletonLieutenantDrops).some(key => key.startsWith('masteryScroll:')), 'skeletons do not inherit the lieutenant guarantee');
+  const tabletDrops = loot.rollLootPool('mastery_ruin_kanthic', { random: () => 0.5, damageType: 'sharp' }); // Preserve existing festival modifiers for mastery tablets.
+  assert.equal(Object.keys(tabletDrops).length, 0, 'guaranteed scrolls must not make every tablet immune to reduced fortune');
   delete window.FestivalSystem;
 
   const kylieBandit = { enemyClass: 'bandit', def: { weaponKey: 'kylie_nativeCopper', attackTag: 'blunt' } }; // A real generated Kylie on a bandit must route to the existing blunt scroll pool.
