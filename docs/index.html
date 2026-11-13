@@ -57,6 +57,8 @@
   <script src="js/input-bindings.js?v=20261108h170c5a5"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
+  <!-- Shared semantic input arbiter: resolves keyboard, controller, mouse and touch to one press-to-release owner before gameplay and combat can act. -->
+  <script src="js/gameplay-input-router.js?v=20261113sharedInput1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
@@ -360,7 +362,7 @@
   <script src="js/combat/companion-offense.js?v=20261104scent1439c"></script>
   <script src="js/companion-combat-response.js?v=20261110decf5f6ae3"></script>
   <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439c"></script> <!-- Scent target priority for wild/enemy animals. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
-  <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
+  <script src="js/combat/combat-input.js?v=20261113sharedInput1"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
@@ -2891,7 +2893,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261113hprobeDen2"></script>
+  <script src="js/pixel-probe.js?v=20261113sharedInputMain1677"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3100,7 +3102,7 @@
   <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261113integration1677"></script>
+  <script src="game.js?v=20261113sharedInputMain1677"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
