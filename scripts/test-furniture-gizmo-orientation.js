@@ -30,15 +30,13 @@ const context = {
 vm.createContext(context);
 vm.runInContext(html.slice(begin, end), context, { filename:'furniture-author-axis-config.js' });
 
-function check(type, kind, mode, space) {
+function check(type, kind, mode, space, axes = [true, true, true]) {
   state.selectedType = type;
   selected = kind ? { kind } : null;
   transform.mode = mode;
   vm.runInContext('configureTransformAxesForSelection()', context);
   assert.equal(transform.space, space, `${type} ${mode} gizmo must use ${space} coordinates`);
-  assert.equal(transform.showX, true);
-  assert.equal(transform.showY, true);
-  assert.equal(transform.showZ, true);
+  assert.deepEqual([transform.showX, transform.showY, transform.showZ], axes, 'visible axes match this mode');
 }
 
 for (const mode of ['translate', 'rotate', 'scale']) {
@@ -54,7 +52,7 @@ assert.match(status.textContent, /Local axes/, 'single-object gizmo explains its
 check('partGroup', null, 'rotate', 'world');
 assert.match(status.textContent, /World axes/, 'multi-piece centroid explains why it cannot use a shared local orientation');
 
-check('part', 'liquidSurface', 'rotate', 'local');
+check('part', 'liquidSurface', 'rotate', 'local', [false, false, true]);
 assert.equal(transform.mode, 'translate', 'liquid level is translate-only');
 assert.equal(transform.showX, false);
 assert.equal(transform.showY, false);
