@@ -1148,6 +1148,9 @@
       const claims=inputClaimDebug.claims?.map?.(claim=>`${claim.actionId}→${claim.label}@${claim.ownerId}`).join(', ')||'none';
       const pressed=inputClaimDebug.pressed?.map?.(claim=>`${claim.actionId}@${claim.ownerId}`).join(', ')||'none';
       lines.push(`World input claims: ${claims} · pressed=${pressed} · rev=${inputClaimDebug.revision}`);
+      const route = inputClaimDebug.lastRoute; // Latest device-neutral owner decision is included in the copyable mobile diagnostic report.
+      const contextualPresses = inputClaimDebug.contextPresses?.map?.(press => `${press.pressId}:${press.actionId}→${press.label}`).join(', ') || 'none'; // Physical device owners remain visible even after their prompt disappears.
+      lines.push(`Gameplay input: attackBlocked=${!!inputClaimDebug.attackBlocked} · contextPresses=${contextualPresses} · interruptedHolds=${inputClaimDebug.interruptedHolds?.join(', ') || 'none'} · last=${route ? `${route.actionId}/${route.phase}→${route.ownerId} (${route.source})` : 'none'}`);
     }
     const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
     if (boulderShellDebug) {
