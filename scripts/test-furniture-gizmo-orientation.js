@@ -48,6 +48,15 @@ for (const mode of ['translate', 'rotate']) {
   check('seatAnchor', null, mode, 'local');
   check('emitter', null, mode, 'local');
 }
+state.selectedId='hitbox'; // Collision box alone supports authored X/Y/Z size changes.
+check('carry', null, 'scale', 'local');
+assert.equal(transform.mode, 'scale', 'carryable hitbox retains a working scale gizmo');
+assert.match(status.textContent, /hitbox/, 'hitbox scale mode is explained in the mobile-visible status');
+state.selectedId='left'; // Hand sockets store positions/rotations, not arbitrary mesh scale.
+check('carry', null, 'scale', 'local');
+assert.equal(transform.mode, 'translate', 'non-hitbox carry guides cannot enter nonfunctional scale mode');
+check('carry', null, 'rotate', 'local');
+assert.equal(transform.mode, 'rotate', 'hand sockets keep local orientation when rotated');
 assert.match(status.textContent, /Local axes/, 'single-object gizmo explains its visual alignment');
 check('partGroup', null, 'rotate', 'world');
 assert.match(status.textContent, /World axes/, 'multi-piece centroid explains why it cannot use a shared local orientation');
