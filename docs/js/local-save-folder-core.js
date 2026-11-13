@@ -737,6 +737,7 @@
             && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint;
         if (browserChangedWhileWriting) {
           _lastBrowserMirrorWarning = 'Primary folder saved; newer browser changes made during the disk write were preserved.';
+          if (_autoSyncArmed) scheduleChangeSync(); // The poll's new baseline below must not hide edits made during the disk write.
         } else {
           window.HobunjiSaveSnapshot?.apply?.(saveSnapshot, { folderBacked: true }); // Refresh only the canonical browser cache after the durable disk commit.
         }
