@@ -163,7 +163,7 @@
     for (const id of [...pressed.keys()]) dispatch(id, 'cancel', { source: 'window-blur' });
     interruptedHolds.clear();
   });
-  document?.addEventListener?.('visibilitychange', () => {
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
     if (!document.hidden) return;
     for (const id of [...pressed.keys()]) dispatch(id, 'cancel', { source: 'hidden' });
     interruptedHolds.clear();
