@@ -30,11 +30,19 @@ buttons into semantic action IDs) or each gameplay system's action executor.
    tap/hold/queued callbacks, ranged firing and thrown windup/release use the
    same guard. An attack interrupted midway must not turn into a tap after
    the contextual target disappears.
-6. `canContinueHold(kind, held)` is used for non-combat world holds (nests,
+6. `canOfferWorldAction(button)` rejects world hold-to-loot actions in
+   combat **before** they take the action-arch slot, so the player retains
+   weapon attacks while aiming at an enemy near a nest, tent or skeleton.
+   Tap-only contextual actions remain eligible, and Action 3 does not
+   independently block attacks.
+7. `canContinueHold(kind, held)` is used for non-combat world holds (nests,
    tents, skeletons/corpses, hives and companion revival). If combat starts
-   during a hold, it latches a rejection until that input is released. This
-   deliberately does **not** forbid combat abilities or potion selectors
-   merely because those inputs can also be held.
+   during a hold, it latches a rejection until that input is released.
+   `beginContextPress(physicalId, actionId, label)` /
+   `endContextPress(physicalId)` similarly remember an already-claimed
+   Action 1/2 tap or hold after the arch changes, through keyboard, mouse,
+   and touch release. Neither path forbids combat abilities or potion
+   selectors merely because those inputs can also be held.
 
 ## Provider example
 
