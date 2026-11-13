@@ -119,6 +119,7 @@
   }
 
   function updateInterval() {
+    valueInput.max = unitInput.value === 'min' ? '60' : '3600';
     const next = durationSeconds();
     valueInput.setCustomValidity(next == null ? 'Use 1 second to 60 minutes.' : '');
     validationError = next == null ? 'Enter an interval from 1 second to 60 minutes.' : '';
@@ -170,6 +171,7 @@
     }
   }
 
+  valueInput.max = unitInput.value === 'min' ? '60' : '3600';
   enabled.addEventListener('change', () => {
     if (enabled.checked) start();
     else { lastError = ''; stop(); }
