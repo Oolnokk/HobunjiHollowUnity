@@ -70,4 +70,52 @@ assert.match(status.textContent, /Select an object/, 'empty selection has action
 assert.doesNotMatch(html, /else\s+transform\.setSpace\?\.\('world'\)/, 'no world-space fallback may override object-local axes');
 assert.match(html, /setTransformMode\(button\.dataset\.transformMode\);configureTransformAxesForSelection\(\)/, 'switching Move/Rotate/Scale recomputes axis orientation');
 assert.match(html, /configureTransformAxesForSelection\(\);const object=objectForSelection\(\)/, 'piece selection recomputes axis orientation');
+
+// Exercise the real live-drag callback: placement data is scalar-only, while authored
+// primitive pieces keep independent dimensions along their own visible axes.
+const changeStart = html.indexOf('function onTransformObjectChange()');
+const changeEnd = html.indexOf('\nfunction finalizeTransformEdit()', changeStart);
+assert.ok(changeStart >= 0 && changeEnd > changeStart, 'Furniture Author exposes the real transform update callback');
+
+const placedRecord = { id:'item', surfaceId:'surface', scale:1, cameraRelativeDeadzone:false }; // One-size export for placed items.
+const placedMesh = {
+  position: { clone: () => ({ sub: () => ({ dot: () => 0 }) }) },
+  rotation:{ x:0, y:0, z:0 },
+  scale:{ x:1.5, y:0.75, z:1.0, setScalar(size) { this.x=this.y=this.z=size; } },
+  userData:{}
+}; // A one-axis drag initially produces a nonuniform Three.js object.
+const primitivePart = {
+  id:'part', kind:'box', transform:{ x:0,y:0,z:0,rx:0,ry:0,rz:0,sx:2,sy:3,sz:4 }
+}; // Geometry owns the authored dimensions; object.scale contains drag multipliers.
+const primitiveMesh = {
+  position:{ x:0.2, y:0.6, z:0.4 },
+  rotation:{ x:0, y:Math.PI/2, z:0 },
+  scale:{ x:1.5, y:0.8, z:1.25 },
+  userData:{ authoredDimensions:{ sx:2,sy:3,sz:4 } }
+};
+const objects = new Map([['part', primitiveMesh]]);
+const previews = new Map([['item', placedMesh]]);
+const changeContext = {
+  state, transform, RAD:180/Math.PI, meshes:objects, itemPreviewMeshes:previews,
+  selectedPart:() => state.selectedType==='part'?primitivePart:null,
+  selectedPlacement:()=>state.selectedType==='placement'?placedRecord:null,
+  getSurfaceWorldFrame:() => ({ center:{},u:{},v:{},normal:{} }),
+  refreshSelectionUI:()=>{},updateLists:()=>{},rebuildItemPreviews:()=>{}
+}; // Uses real callbacks without a browser, WebGL, or missing mobile console.
+vm.createContext(changeContext);
+vm.runInContext(html.slice(changeStart,changeEnd),changeContext,{filename:'furniture-author-object-change.js'});
+
+state.selectedType='placement'; transform.mode='scale';
+vm.runInContext('onTransformObjectChange()',changeContext);
+assert.equal(placedRecord.scale, 1.0833, 'placed-item scale persists as one scalar');
+assert.deepEqual([placedMesh.scale.x,placedMesh.scale.y,placedMesh.scale.z],[placedRecord.scale,placedRecord.scale,placedRecord.scale],
+  'preview remains uniform throughout the drag, not just when pointer is released');
+
+state.selectedType='part'; transform.mode='scale';
+vm.runInContext('onTransformObjectChange()',changeContext);
+assert.equal(primitivePart.transform.sx,3,'X scale edits the independent local X dimension');
+assert.equal(primitivePart.transform.sy,2.4,'Y scale edits the independent local Y dimension');
+assert.equal(primitivePart.transform.sz,5,'Z scale edits the independent local Z dimension');
+assert.equal(primitivePart.transform.ry,90,'rotated part saves visible orientation in authored degrees');
+
 console.log('Furniture gizmo axis-orientation regression passed.');
