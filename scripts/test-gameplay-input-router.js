@@ -72,6 +72,24 @@ visibleOverride = 'action3';
 assert.equal(router.isAttackBlocked(), false, 'a contextual Action 3 replacement does not block attacks');
 visibleOverride = null;
 
+assert.equal(router.beginContextPress('touch:17', 'action3', 'Non-combat third action'), false, 'only Action 1/2 contextual presses suppress attacks');
+assert.equal(router.beginContextPress('touch:17', 'action1', 'Search skeleton'), true);
+assert.equal(router.isAttackBlocked(), true, 'a contextual Action 1 press keeps blocking after the prompt disappears');
+assert.equal(router.resolve('action1').kind, 'context-press', 'contextual press owner survives UI disappearance');
+assert.equal(router.beginContextPress('touch:17', 'action1', 'Different label'), true, 'repeat does not transfer ownership');
+assert.equal(router.snapshot().contextPresses.length, 1, 'repeat does not create duplicate owners');
+assert.equal(router.beginContextPress('mouse:2', 'action2', 'Talk'), true);
+assert.equal(router.endContextPress('touch:17'), true);
+assert.equal(router.isAttackBlocked(), true, 'other device contextual press remains owned');
+assert.equal(router.endContextPress('mouse:2'), true);
+assert.equal(router.isAttackBlocked(), false, 'last physical release restores attack permission');
+assert.equal(router.endContextPress('touch:17'), false, 'duplicate release has no effect');
+
+router.beginContextPress('keyboard:action1', 'action1', 'Inspect statue');
+listenerMap.get('blur')?.();
+assert.equal(router.isAttackBlocked(), false, 'blur clears stale contextual ownership');
+assert.equal(router.snapshot().contextPresses.length, 0);
+
 for (const kind of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take', 'other_hold_interaction']) {
   combatActive = true;
   assert.equal(router.canContinueHold(kind, true), false, kind + ' cannot start in combat');
@@ -94,6 +112,14 @@ combatInput.pressEnd(1);
 assert.equal(attackCount, 1, 'a newly advertised Action 2 override cancels an already-pressed Action 1 tap');
 assert.equal(combatInput.getState(1).down, false);
 router.clearClaims('new-context');
+
+combatInput.pressStart(1);
+router.beginContextPress('touch:22', 'action2', 'Take egg');
+elapsedMs += 350;
+combatInput.update(0.35);
+router.endContextPress('touch:22');
+combatInput.pressEnd(1);
+assert.equal(attackCount, 1, 'same held attack cannot restart when a temporarily claimed Action 2 releases');
 
 combatInput.pressStart(1);
 visibleOverride = 'action1';
