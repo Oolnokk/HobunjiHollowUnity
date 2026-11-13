@@ -652,10 +652,10 @@
     }
   }
 
-  // The timer autosave serializes the full checkpoint (JSON.stringify plus a
-  // synchronous localStorage.setItem, hundreds of ms on a big save). Capture
-  // stays immediate so the record reflects the moment the timer fired, but the
-  // write waits for an idle slice so it does not land in the middle of a frame.
+  // Browser-fallback timer autosaves serialize a full checkpoint (JSON.stringify
+  // plus synchronous localStorage.setItem). Wait for an idle slice before the
+  // live capture and write so both expensive phases avoid active gameplay frames.
+  // Explicit travel/hidden-page saves still capture immediately.
   let autoSaveGeneration = 0;
 
   function waitForIdle(timeout = 2000) {
