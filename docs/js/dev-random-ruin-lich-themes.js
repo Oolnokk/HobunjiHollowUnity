@@ -371,6 +371,17 @@
       part.vx=Math.cos(a)*speed;part.vz=Math.sin(a)*speed;part.vy=2+(i%7)*.32;
     }
     burst.age=0;burst.group.position.set(x,y,z);
+    // Pooled instance matrices otherwise briefly render shards at the old impact location.
+    const dummy=world.dummy;
+    for(let i=0;i<burst.parts.length;i++){
+      const part=burst.parts[i];
+      dummy.position.set(part.x,part.y,part.z);
+      dummy.rotation.set(0,0,0);dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      burst.mesh.setMatrixAt(i,dummy.matrix);
+    }
+    burst.mesh.instanceMatrix.needsUpdate=true;
+    burst.mesh.computeBoundingSphere?.();
     world.group.add(burst.group);world.bursts.push(burst);
   }
   function updateBursts(dt) {
