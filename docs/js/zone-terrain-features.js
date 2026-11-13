@@ -355,7 +355,7 @@
     deps.displaceZoneGeometry(geo, mapId);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, deps.resolveTileMat(mapId, deps.TileType.ROCK)); // Shared natural-rock material used by every terrain rock surface.
-    mesh.userData.retainNaturalSurfaceShellOutline = true; // Keeps the rounded silhouette through rock texture remaps.
+    mesh.userData.retainNaturalSurfaceShellOutline = true; // Preserve the rounded shell through PNG material and UV remapping.
     deps.markOutline(mesh);
     mesh.name = 'undiggable_boulder_shell_' + rangeKey(bounds); // Pixel Probe label makes the new combined renderer visible on mobile.
     mesh.castShadow = mesh.receiveShadow = true;

@@ -743,8 +743,8 @@
 
   async function spawnConfiguredBandit(rec, rank, x, y, options = {}) {
     const variant = rollGruntVariant(rec, rank);
-    const speciesId = variant?.speciesId;
-    const entityCfg = speciesId ? { ...rec.cfg, speciesWeights: { [speciesId]: 1 } } : rec.cfg;
+    const variantSpecies = variant?.speciesWeights || (variant?.speciesId ? { [variant.speciesId]: 1 } : null); // Beastmaster subspecies use the same 5% Longoran / 1:5 Nuhongan:Tletingan split.
+    const entityCfg = variantSpecies ? { ...rec.cfg, speciesWeights: variantSpecies } : rec.cfg;
     const c = await window.BanditCombat.makeEntity(entityCfg, rank, rec.tier, x, y, {
       ...options,
       defOverride: variant ? { ...(options.defOverride || {}), label: variant.label || 'Slagothim Beastmaster' } : options.defOverride,

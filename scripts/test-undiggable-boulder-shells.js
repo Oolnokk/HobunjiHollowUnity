@@ -68,6 +68,10 @@ assert(gameSource.includes('zGrid[r][c].boulderId = boulderId || null'), 'runtim
 assert(previewSource.includes("boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder'"), 'merged generated maps must preserve boulder IDs');
 
 
+assert(gameSource.includes('rockMesh.userData.retainNaturalSurfaceShellOutline = true'), 'mineable rock mounds must retain shell outlines');
+assert(gameSource.includes('mesh.userData.retainNaturalSurfaceShellOutline = true'), 'structural rock buckets must retain shell outlines');
+assert(gameSource.includes('markOutline: _markOutline,\n        markTerrainEdgeId: _markTerrainEdgeId'), 'streamed boulder meshes must receive the shared outline registrar');
+
 // Check the real mesh builder with Three.js when available (as in CI).
 const threePath = process.env.THREE_MIN_JS || 'three/build/three.min.js'; // Matches the runtime dependency used by the terrain batching tests.
 let THREE;

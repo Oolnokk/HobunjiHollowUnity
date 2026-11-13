@@ -53,6 +53,8 @@
   let restoreRollbacks = 0; // Counts failed restores that successfully rolled the folder back.
   let lastAction = 'initialized'; // Latest checkpoint operation shown in diagnostics.
   const folderOnlyRecords = new Map(); // Keeps disk-backed checkpoints usable for rotation and recovery when their browser mirrors do not fit.
+  const browserRecordCache = new Map(); // Reuses validated browser checkpoint objects until the underlying storage string changes.
+  let browserCheckpointParses = 0; // Mobile diagnostic for full checkpoint JSON parses avoided by the record cache.
   let browserMirrorsSkipped = 0; // Mobile diagnostics count optional mirrors rejected by the browser quota.
   let lastBrowserMirrorWarning = ''; // Recovery UI explains why checkpoints are available from the folder only.
   let lastError = ''; // Latest checkpoint/recovery failure shown in diagnostics.
@@ -192,14 +194,22 @@
   function readRecord(key) {
     try {
       const raw = localStorage.getItem(key);
-      return raw ? safeValidateRecord(JSON.parse(raw)) : null;
+      const cached = browserRecordCache.get(key);
+      if (cached && cached.raw === raw) return cached.record;
+      const record = raw ? safeValidateRecord(JSON.parse(raw)) : null;
+      if (raw) browserCheckpointParses++;
+      browserRecordCache.set(key, { raw, record }); // Still detects external/cross-tab changes and quota evictions on the next read.
+      return record;
     } catch {
+      browserRecordCache.delete(key);
       return null;
     }
   }
 
   function writeRecord(key, record) {
-    localStorage.setItem(key, JSON.stringify(record));
+    const raw = JSON.stringify(record); // Cache exactly the bytes committed; failed writes must not make a newer record appear durable.
+    localStorage.setItem(key, raw);
+    browserRecordCache.set(key, { raw, record });
   }
 
   function readSlot(slot) {
@@ -240,7 +250,10 @@
   function removeSlot(slot) {
     folderOnlyRecords.delete(slot);
     const key = SLOT_KEYS[slot]; // Folder authority clears stale browser history for recovery slots the folder does not contain.
-    if (key) localStorage.removeItem(key);
+    if (key) {
+      localStorage.removeItem(key);
+      browserRecordCache.delete(key);
+    }
   }
 
   function activeIds() {
@@ -400,7 +413,7 @@
     return true;
   }
 
-  async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false } = {}) {
+  async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false, fingerprint = null } = {}) {
     const current = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('auto')) : readSlot('auto'); // Disk remains authoritative when quota eviction removed a successful browser mirror.
     const previous = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('autoPrevious')) : readSlot('autoPrevious'); // Rotation must preserve the folder history too.
     if (current && (!previous || current.savedAt - previous.savedAt >= AUTO_PREVIOUS_MIN_AGE_MS)) {
@@ -411,7 +424,7 @@
     const record = createRecord('autosave', snapshot, reason, savedAt);
     if (writeFolder) await persistFolderRecord('auto', record);
     else writeSlot('auto', record);
-    lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(snapshot) || '';
+    lastAutosaveFingerprint = fingerprint ?? (snapshotApi()?.fingerprint?.(snapshot) || ''); // Browser fallback already computed this fingerprint before its unchanged-save check.
     autosavesWritten++;
     lastIntegrityWarning = '';
     lastError = '';
@@ -639,10 +652,10 @@
     }
   }
 
-  // The timer autosave serializes the full checkpoint (JSON.stringify plus a
-  // synchronous localStorage.setItem, hundreds of ms on a big save). Capture
-  // stays immediate so the record reflects the moment the timer fired, but the
-  // write waits for an idle slice so it does not land in the middle of a frame.
+  // Browser-fallback timer autosaves serialize a full checkpoint (JSON.stringify
+  // plus synchronous localStorage.setItem). Wait for an idle slice before the
+  // live capture and write so both expensive phases avoid active gameplay frames.
+  // Explicit travel/hidden-page saves still capture immediately.
   let autoSaveGeneration = 0;
 
   function waitForIdle(timeout = 2000) {
@@ -679,11 +692,41 @@
     }
 
     try {
+      const useFolder = folderIsPrimary(); // Capture mode is fixed for this attempt; explicit travel saves still run immediately.
+      if (reason === 'timer' && !mapChange && !useFolder) {
+        await waitForIdle(); // Defer the live flush, snapshot capture, and JSON work, not just the final localStorage write.
+        if (generation !== autoSaveGeneration) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-superseded';
+          return { ok: true, skipped: true, reason: 'superseded' };
+        }
+        if (festivalCheckpointBlocked()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-festival-test';
+          return { ok: true, skipped: true, reason: 'festival-test' };
+        }
+        if (window.HobunjiAutosavePause?.isPaused?.()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-paused';
+          window.HobunjiAutosavePause.noteBlocked?.('recovery-autosave');
+          return { ok: true, skipped: true, reason: 'paused' };
+        }
+        if (folderIsPrimary()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-folder-owned';
+          return { ok: true, skipped: true, reason: 'folder-autosync-owned' };
+        }
+        if (!isHydrated()) {
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-not-hydrated';
+          return { ok: false, skipped: true, reason: 'not-hydrated' };
+        }
+      }
       const api = snapshotApi();
-      const snapshot = captureLiveSnapshot(`auto-checkpoint:${reason}`, folderIsPrimary());
+      const snapshot = captureLiveSnapshot(`auto-checkpoint:${reason}`, useFolder);
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
-      const fingerprint = api.fingerprint(snapshot);
-      if (!mapChange && !folderIsPrimary() && fingerprint === lastAutosaveFingerprint) {
+      const fingerprint = !useFolder && !mapChange ? api.fingerprint(snapshot) : null;
+      if (!mapChange && !useFolder && fingerprint === lastAutosaveFingerprint) {
         autosavesSkipped++;
         lastAction = 'autosave-skipped-unchanged';
         return { ok: true, skipped: true, reason: 'unchanged' };
@@ -698,7 +741,7 @@
         return { ok: false, skipped: true, reason: 'integrity', warning: risk };
       }
 
-      if (folderIsPrimary()) {
+      if (useFolder) {
         const status = await folderApi().syncSnapshot(snapshot, { automatic: true, recoveryKind: mapChange ? 'mapChange' : 'auto', reason });
         if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
           lastError = status.lastError;
@@ -709,17 +752,8 @@
         return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
-      if (reason === 'timer' && !mapChange) {
-        await waitForIdle();
-        if (generation !== autoSaveGeneration) { // A newer save (e.g. visibility-hidden) already wrote fresher data; never overwrite it with this older capture.
-          autosavesSkipped++;
-          lastAction = 'autosave-skipped-superseded';
-          return { ok: true, skipped: true, reason: 'superseded' };
-        }
-      }
-
       const record = mapChange ? createRecord('map-change', snapshot, reason)
-        : await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false }); // Browser-only travel saves stay independent too.
+        : await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false, fingerprint }); // Reuse the unchanged-save fingerprint rather than reserializing the world.
       if (mapChange) { writeSlot('mapChange', record); lastAction = 'map-change-saved'; }
       return { ok: true, record, folder: false };
     } catch (error) {
@@ -1323,6 +1357,8 @@
       folderRecoveryReads,
       folderRecoveryWrites,
       browserMirrorsSkipped,
+      browserCheckpointParses,
+      cachedBrowserCheckpoints: browserRecordCache.size,
       lastBrowserMirrorWarning: lastBrowserMirrorWarning || null,
       latestChange: 'Folder recovery writes survive a full browser quota; folder-only checkpoints remain available for recovery and rotation.',
       folderBaselineSeeds,

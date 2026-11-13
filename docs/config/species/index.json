@@ -56,6 +56,11 @@
       "path": "./nuhongan.json"
     },
     {
+      "speciesId": "longoran",
+      "label": "Longoran",
+      "path": "./longoran.json"
+    },
+    {
       "speciesId": "kenkari",
       "label": "Kenkari",
       "path": "./kenkari.json"

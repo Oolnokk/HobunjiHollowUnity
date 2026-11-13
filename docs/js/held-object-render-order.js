@@ -2346,6 +2346,7 @@
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
+    get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.

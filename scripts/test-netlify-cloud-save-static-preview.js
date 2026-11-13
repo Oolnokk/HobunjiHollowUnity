@@ -14,6 +14,43 @@ assert.match(source, /startsWith\('\/\.netlify\/functions\/'\)[\s\S]{0,220}!netl
 assert.match(loader, /netlify-cloud-save\.js\?v=[A-Za-z0-9_.-]+/,
   'the parser-time cloud-save loader cache-busts the static-preview guard');
 
+// Cloud change polling must compare raw browser cache parts, rather than repeatedly
+// parse and stringify an entire world/farm layout just to see if it changed.
+{
+  const snapshotSource = fs.readFileSync('docs/js/save-snapshot-core.js', 'utf8');
+  const cache = new Map([
+    ['hobunjiSaveMeta', JSON.stringify({ characters: [{ id: 'c' }], worlds: [{ id: 'w' }] })],
+    ['hobunji_farm_layout_v3:w', JSON.stringify({ tiles: [1] })],
+  ]);
+  let parses = 0; // Counts full JSON.parse calls performed during browser cache observation.
+  const instrumentedJson = {
+    parse(raw) { parses++; return JSON.parse(raw); },
+    stringify(...args) { return JSON.stringify(...args); },
+  };
+  const cacheWindow = {};
+  vm.runInNewContext(snapshotSource, {
+    window: cacheWindow,
+    JSON: instrumentedJson,
+    localStorage: {
+      getItem(key) { return cache.get(key) ?? null; },
+    },
+  }, { filename: 'save-snapshot-core.js' });
+  const observe = () => cacheWindow.HobunjiSaveSnapshot.browserCacheParts(); // Shared fast poll consumed by cloud autosync.
+  const initial = observe();
+  for (let i = 0; i < 20; i++) observe();
+  assert.equal(parses, 1, 'unchanged browser metadata is parsed once across repeated cloud polls');
+  cache.set('hobunji_farm_layout_v3:w', JSON.stringify({ tiles: [2] }));
+  assert.notDeepEqual(observe(), initial, 'farm-layout-only edits trigger cloud dirty detection');
+  assert.equal(parses, 1, 'layout edits do not require metadata or layout JSON parsing');
+  cache.set('hobunjiSaveMeta', JSON.stringify({ characters: [{ id: 'c' }], worlds: [{ id: 'w' }, { id: 'z' }] }));
+  cache.set('hobunji_farm_layout_v3:z', JSON.stringify({ tiles: [3] }));
+  assert.equal(observe().length, 5, 'new world layouts participate in the next cloud signature');
+  assert.equal(parses, 2, 'world IDs are refreshed only when raw metadata actually changes');
+  assert.match(source, /browserCachePartsMatch\(next, _lastObservedBrowserParts\)/,
+    'cloud timer uses lightweight cache signatures instead of serializing a full save each second');
+}
+
+
 (async () => {
   let fetchCalls = 0;
   const listeners = {};
@@ -75,6 +112,73 @@ assert.match(loader, /netlify-cloud-save\.js\?v=[A-Za-z0-9_.-]+/,
   assert.equal(fetchCalls, 0, 'GitHack preview does not probe /.netlify/functions and therefore emits no expected 404');
   assert.equal(status.availability, 'not-netlify', 'GitHack preview is reported as a static non-Netlify host');
   console.log('netlify cloud save static-preview host gate passed');
+
+  // A cloud status request can take seconds. Browser edits arriving during the
+  // request must not be forgotten by the otherwise-unchanged sync branch.
+  let revision = 'old'; // Simulated browser save revision captured before and after the cloud status request.
+  let statusReads = 0; // First read initializes the link; the second is held in-flight during the regression.
+  let releaseStatus = null; // Deferred network response lets the test modify the local save while awaiting status.
+  let nextIntervalId = 1; // Stable ids for simulated cloud autosave and change-poll intervals.
+  const cloudIntervals = new Map(); // Records change polling callbacks to simulate the 1-second observer.
+  const cloudStorage = new Map([[
+    'hobunjiCloudSaveState:v1:player',
+    JSON.stringify({ revision: 2, lastSyncedFingerprint: 'old', autoSyncArmed: true }),
+  ]]);
+  const cloudSandbox = {
+    console, Promise, Date, Math, JSON, Set, Map, URL, URLSearchParams,
+    location: { hostname: 'hobunji-test.netlify.app', protocol: 'https:', pathname: '/', search: '', hash: '' },
+    history: { replaceState() {} },
+    localStorage: {
+      getItem(key) { return cloudStorage.get(key) ?? null; },
+      setItem(key, value) { cloudStorage.set(key, String(value)); },
+      removeItem(key) { cloudStorage.delete(key); },
+    },
+    sessionStorage: { getItem() { return null; } },
+    crypto: { randomUUID: () => 'test-device' },
+    HobunjiSaveSnapshot: {
+      capture() { return { meta: { characters: [{ id: 'c' }], worlds: [{ id: 'w' }] }, farmLayouts: {} }; },
+      fingerprint() { return revision; },
+      browserCacheParts() { return [revision]; },
+    },
+    setInterval(callback, ms) {
+      const id = nextIntervalId++;
+      cloudIntervals.set(id, { callback, ms });
+      return id;
+    },
+    clearInterval(id) { cloudIntervals.delete(id); },
+    document: { readyState: 'loading', body: null, addEventListener() {} },
+    async fetch(url, options) {
+      const action = JSON.parse(options.body).action;
+      if (url.includes('hobunji-auth') && action === 'status') {
+        return { ok: true, json: async () => ({ user: { id: 'player' } }) };
+      }
+      if (url.includes('hobunji-cloud-save') && action === 'status') {
+        statusReads++;
+        if (statusReads === 1) return { ok: true, json: async () => ({ remote: { revision: 2 } }) };
+        return new Promise(resolve => { releaseStatus = resolve; });
+      }
+      throw new Error('Unexpected cloud request ' + url + ': ' + action);
+    },
+  };
+  cloudSandbox.window = cloudSandbox;
+  cloudSandbox.globalThis = cloudSandbox;
+  vm.createContext(cloudSandbox);
+  vm.runInContext(source, cloudSandbox, { filename: 'netlify-cloud-save.js' });
+  await cloudSandbox.NetlifyCloudSave.refresh();
+  assert.equal(cloudSandbox.NetlifyCloudSave.getStatus().autoSyncArmed, true, 'linked cloud autosync is armed');
+
+  const inFlightSync = cloudSandbox.NetlifyCloudSave.syncNow();
+  for (let tries = 0; tries < 20 && !releaseStatus; tries++) await Promise.resolve();
+  assert.ok(releaseStatus, 'cloud revision request is now pending');
+  revision = 'new'; // Gameplay changes while the cloud status request is still pending.
+  for (const { callback, ms } of cloudIntervals.values()) if (ms === 1000) callback();
+  assert.equal(cloudSandbox.NetlifyCloudSave.getStatus().dirty, true, 'the local change was observed');
+  releaseStatus({ ok: true, json: async () => ({ remote: { revision: 2 } }) });
+  const unchangedResult = await inFlightSync;
+  assert.equal(unchangedResult.unchanged, true, 'previously captured state did match the cloud revision');
+  assert.equal(cloudSandbox.NetlifyCloudSave.getStatus().dirty, true,
+    'new edits made during cloud status fetch remain dirty for the next autosave');
+  console.log('netlify cloud save in-flight dirty-state regression passed');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

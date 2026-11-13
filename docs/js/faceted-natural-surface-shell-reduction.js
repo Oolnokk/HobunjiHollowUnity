@@ -2,7 +2,7 @@
   'use strict';
 
   const SHELL_LAYER = 1; // Existing inverted-shell render layer removed from faceted natural surfaces after their authored PNG edge treatment is applied.
-  const FACETED_SURFACES = new Set(['rocks', 'cliffs']); // Texture categories that default to PNG edges unless the geometry needs a shell silhouette.
+  const FACETED_SURFACES = new Set(['rocks', 'cliffs']); // Rock and cliff texture categories; only explicitly tagged rounded meshes retain their 3D shell.
   const countedMeshes = new WeakSet(); // Prevents repeated remap/naturalize passes from inflating the mobile diagnostics.
   const stats = {
     naturalizeWrapInstalled: false,

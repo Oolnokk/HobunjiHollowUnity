@@ -754,6 +754,24 @@
 
   function wrappedRender(scene, camera) {
     const renderer = this;
+    if (window.HeldObjectRenderOrder?.replayingDepth) {
+      // Held/shell replays can reach this hook through other render decorators.
+      // They may use the world camera and target while rewriting cutout depth
+      // materials. Keep the base frame's overlay pending and out of those draws.
+      const pending = pendingWorldTextOverlayByRenderer.get(renderer); // Only overlays from this renderer's matching world frame can enter the replay.
+      if (pending?.scene !== scene) return originalRender.call(renderer, scene, camera);
+      const hidden = []; // Remember only entries still visible after the replay's own scissor culling.
+      for (const { object } of pending.entries) {
+        if (!object.visible) continue;
+        hidden.push(object);
+        object.visible = false;
+      }
+      try {
+        return originalRender.call(renderer, scene, camera);
+      } finally {
+        for (const object of hidden) object.visible = true;
+      }
+    }
     const pass = classifyPass(renderer, scene, camera);
 
     // Material-ID is solely the old screen-space internal/material seam source.
@@ -872,6 +890,28 @@
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
     },
+    prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
+      if (!scoreMeshes) return null;
+      const entries = []; // Reserve only active exterior notes for the direct canvas path.
+      for (const object of scoreMeshes) {
+        if (object.visible && isWorldTextOverlayMesh(object)) {
+          entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
+        }
+      }
+      if (!entries.length) return null;
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      return function finishDirectScoreOverlay(present) {
+        restoreWorldTextBaseVisibility(entries);
+        try {
+          if (present) drawWorldTextOverlayToCanvas(renderer, {
+            scene, camera, entries, matrixEpoch: matrixEpochOf(scene), baseAt: performance.now(),
+          });
+        } finally {
+          restoreWorldTextOverlayLayers({ entries });
+        }
+      };
+    },
     targetAlphaCutoutParity: true,
     targetAlphaBillboardFill: true,
     worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
@@ -886,6 +926,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
+        latestScoreChange: 'Timed Scratchbone glyphs survive depth replays and respect character silhouettes with Outlines on or off.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',
