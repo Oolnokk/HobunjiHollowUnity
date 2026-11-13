@@ -83,15 +83,19 @@ assert.equal(normalized.regionMasks.front.runs.length,mask.runs.length,'front re
 assert.equal(normalized.regionMasks.rear.runs.length,0,'rear mask is independent and can be explicitly all-flexible');
 assert.equal(Rig.decodePixelMask(normalized.regionMasks.front)[idx(90,70)],1);
 assert.equal(typeof Rig.splitByMask,'undefined','no legacy two-texture seam-splitting function survives');
-const pinField=Rig.attachmentPinField(mask,18);
+const pinField=Rig.attachmentPinField(mask);
 assert(pinField&&pinField.length===40000,'binary anchored vertex field covers the full portrait UV grid');
 assert.equal(Rig.isPinnedPixel(pinField,90.5/200,70.5/200),true,
   'head-overlap hair vertices always stay fixed');
-assert.equal(Rig.isPinnedPixel(pinField,90.5/200,111.5/200),true,
-  'hard head grip extends beyond the authored rigid region without a graded influence');
+assert.equal(Rig.isPinnedPixel(pinField,90.5/200,101.5/200),false,'the first unpainted pixel is flexible');
+assert.equal(Rig.attachmentMotion(pinField,90.5/200,100.5/200),0,'rigid pixels have no 3D motion');
+assert(Rig.attachmentMotion(pinField,90.5/200,101.5/200)>0&&Rig.attachmentMotion(pinField,90.5/200,101.5/200)<1,
+  'the 3D mesh softens in the first two pixels outside the hard mask');
+assert.equal(Rig.attachmentMotion(pinField,90.5/200,103.5/200),1,'the thin transition gives way to full motion');
+assert(Rig.attachmentMotion(pinField,80.5/200,80.5/200)>0,'an isolated flexible pixel can move');
 assert.equal(Rig.isPinnedPixel(pinField,90.5/200,142.5/200),false,
   'the hanging tip is completely free once outside the grip');
-assert.equal(Rig.attachmentPinField(empty,18),null,
+assert.equal(Rig.attachmentPinField(empty),null,
   'explicitly all-flexible hair has no phantom anchored vertices');
 assert.equal(Rig.isPinnedPixel(null,.5,.5),false,'legacy unmasked hair remains movable');
 const reference=Rig.normalize({points:[{u:.45,v:.30,depth:.02},{u:.47,v:.55,depth:.03}],
@@ -104,7 +108,7 @@ assert(Math.abs(pinned.x-(.46-.5))<1e-9,'pinned hair position exactly matches po
 assert(Math.abs(pinned.y-(.5-.45))<1e-9,'pinned hair position exactly matches portrait Y coordinate');
 assert(Math.abs(pinned.z-.0008)<1e-9,'pinned hair depth is fixed flush against the portrait plane');
 assert(free.x>neutral.x,'outside the rigid region, hair gets the full authored movement');
-assert.equal(reference.pinWidthPx,18,'new head-grip radius round-trips without restoring influence blends');
+assert(!('pinWidthPx' in reference),'legacy broad grip never overrides the exact head mask');
 assert(!('blendRadiusPx' in reference),'legacy blendRadiusPx is ignored and dropped from exported rigs');
 const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
 assert(defaultWind[1].poses.left.translate.x<0&&defaultWind[1].poses.right.translate.x>0,
@@ -119,3 +123,19 @@ assert(!portrait.includes('splitByMask?.('),
   'in-game avatar no longer cuts the single hair image at the formerly visible black seam');
 assert(!portrait.includes('warpHoodCanvas?.('),'hoods remain outside the old seam authoring path');
 console.log('Single-mesh spline region masks: alpha overlap, binary head grip, untouched artwork, guarded edges, brush, eraser and RLE pass.');
+
+const hood=new Canvas(); // A solid cloth patch covers the beard and a neighboring empty part of the portrait.
+for(let y=70;y<90;y++)for(let x=85;x<130;x++)paint(hood,x,y,[50,100,80,255]);
+const opening=Rig.paintPixelMask(null,95.5/200,80.5/200,2,true,{u:125.5/200,v:80.5/200});
+const overlap=Rig.paintPixelMask(null,96.5/200,75.5/200,1,true);
+const hoodRig=Rig.normalize({...reference,hoodOpeningMask:opening,hoodOverlapMask:overlap});
+const fitted=Rig.fitHood(hood,hoodRig,[hair]);
+assert.equal(fitted.coverage[idx(95,80)],0,'painted beard pixels open the hood');
+assert.equal(fitted.coverage[idx(125,80)],1,'the opening cannot punch a hole past the beard silhouette');
+assert.equal(fitted.overlap[idx(96,75)],1,'covered beard pixels may render above the hood');
+assert.equal(fitted.overlap[idx(100,75)],0,'unpainted beard is occluded by the hood');
+const rigidOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,2);
+assert.deepEqual(rigidOver,pinned,'rigid overlap preserves the portrait-local position');
+const bentOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1);
+assert.equal(bentOver.z,.003,'bend overlap clears the hood by the minimum depth');
+assert(bentOver.x>rigidOver.x,'bend overlap retains flexible motion');

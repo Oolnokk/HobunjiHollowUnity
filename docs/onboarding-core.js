@@ -314,6 +314,7 @@
       }
     }
     window.HobunjiNuhonganSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA);
+    window.HobunjiLongoranSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA); // Returning saves reopen the Longoran creator/grooming controls.
     const spec = SPECIES_DATA[key];
     if (spec) return spec;
     const authored = configured[key];

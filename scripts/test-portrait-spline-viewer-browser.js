@@ -77,12 +77,11 @@ const server=http.createServer((req,res)=>{
       const authored=JSON.parse(document.querySelector('#json').value);
       return {tip:authored.segments.at(-1).poses.right.translate.x,
         upper:authored.segments[0].poses.right.translate.x,
-        pinWidth:authored.pinWidthPx,follow:authored.tipFollow,hasOldBlend:'blendRadiusPx' in authored};
+        follow:authored.tipFollow,hasOldGrip:'pinWidthPx' in authored};
     });
     assert(natural.tip>natural.upper&&natural.tip>0,
       'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
-    assert(natural.pinWidth>=18&&natural.follow>0&&!natural.hasOldBlend,
-      'rigid head-grip and bottom-parent influence are enabled, but smooth attachment influence is entirely removed');
+    assert(natural.follow>0&&!natural.hasOldGrip,'authored head pixels alone determine the hard mask');
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
     assert(before.viewer.seamlessSingleMesh && before.viewer.pinnedFrontVertices>0,
       'beard geometry must consist of one full-art mesh with nonzero hard-pinned head vertices');
@@ -151,9 +150,67 @@ const server=http.createServer((req,res)=>{
     assert(Math.abs(rotated.pose.roll)>0.5,'dragging the Z rotation ring authors the real roll pose');
     assert.equal(rotated.regionMasks.front,repainted.regionMasks.front,
       '3D knot posing does not discard the separately authored rigid/flexible pixel region');
-    assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror/i.test(text)).length,0,
+    const selectHood=async id=>{
+      const value=await page.locator('#hoodSelect option').evaluateAll((options,suffix)=>
+        options.find(option=>option.value.endsWith('/'+suffix+'.json'))?.value,id);
+      assert(value,'canonical hood exists in the catalog: '+id);
+      await page.locator('#hoodSelect').selectOption(value);
+      await page.waitForFunction(id=>{
+        const result=window.HobunjiSplineAuthorDiagnostics?.();
+        return result?.hood.ready&&result.hood.equipped===id;
+      },id);
+    };
+    await selectHood('fine_hood');
+    const ordinary=await debug();
+    assert(ordinary.viewer.hoodCoveragePixels>0&&ordinary.viewer.hairLoaded,'the game renderer supplies the Fine Hood foreground');
+    const gameplay=await page.evaluate(async()=>{
+      const registry=await window.NpcAvatarPreview.ensurePortraitCosmetics();
+      const fighter=window.getPortraitFighters().find(f=>f.speciesId==='mao-ao'&&f.gender==='male');
+      const hood=registry.hoodOptions.find(option=>option.id==='fine_hood');
+      const beard=registry.facialHairOptions.find(option=>option.splineRig&&option.label==='Grand Beard');
+      const rig=window.PortraitSplineRig;
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
+      const profile={fighter,hood,hairFront:null,facialHair:beard,bodyColors:{}};
+      await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,deferSplineParts:true});
+      const part=canvas.hobunjiSplineParts.find(item=>item.slot==='facialHair');
+      const pixels=part.canvas.getContext('2d').getImageData(0,0,200,200).data;
+      const covered=part.hoodFit.coverage.findIndex((value,i)=>value&&pixels[i*4+3]>=128);
+      if(covered<0)throw Error('Fine Hood fixture needs an opaque pixel covering Grand Beard.');
+      const authored={...part.rig,hoodOpeningMask:{size:200,runs:[[covered,1]]}};
+      profile.facialHair={...beard,splineRig:authored,variantSplineRigs:{}};
+      await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,deferSplineParts:true});
+      const opening=canvas.hobunjiSplineParts[0].hoodFit.coverage[covered];
+      profile.facialHair={...profile.facialHair,splineRig:{...authored,hoodOpeningMask:null,hoodOverlapMask:{size:200,runs:[[covered,1]]}}};
+      await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,deferSplineParts:true});
+      const overlap=canvas.hobunjiSplineParts[0].hoodFit.overlap[covered];
+      const THREE=await import('https://esm.sh/three@0.128.0');
+      const island=rig.normalize({...part.rig,regionMasks:{front:{size:200,runs:[[0,10050],[10051,29949]]}}});
+      const mesh=rig.strandGeometry(THREE,island,1,1),uv=mesh.attributes.uv;
+      let hasIslandVertex=false;
+      for(let i=0;i<uv.count;i++)if(Math.abs(uv.getX(i)-50.5/200)<1e-6&&Math.abs(uv.getY(i)-(1-50.5/200))<1e-6)hasIslandVertex=true;
+      mesh.dispose();
+      return {opening,overlap,hasIslandVertex};
+    });
+    assert.deepEqual(gameplay,{opening:0,overlap:1,hasIslandVertex:true},'the gameplay bake carries both masks and preserves isolated flexible pixels in 3D');
+    await page.locator('#maskSelect').selectOption('opening');
+    await page.locator('#paintMode').click();await clickMaskPixel();
+    assert((await debug()).hood.opening>0,'the opening brush authors a separate beard mask');
+    await page.locator('#maskSelect').selectOption('overlap');
+    await page.locator('#paintMode').click();await clickMaskPixel();
+    assert((await debug()).hood.overlap>0,'bend paint authors its own overlap pixels');
+    await page.locator('#overlapMode').selectOption('rigid');
+    await clickMaskPixel();
+    const masked=await debug();
+    assert(masked.hood.rigid>0&&masked.hood.opening>0,'rigid overlap paint preserves the opening mask');
+    assert.equal(masked.hood.overlap,0,'rigid paint replaces bend paint at the same pixel');
+    assert.equal(masked.regionMasks.front,rotated.regionMasks.front,'hood masks leave the hard head mask intact');
+    await selectHood('facewrap');
+    assert((await debug()).hood.hidden&&!(await debug()).viewer.hairLoaded,'the game facewrap rule hides the beard in preview');
+    await page.locator('#hoodSelect').selectOption('');
+    assert((await debug()).viewer.hairLoaded,'removing the hood restores the beard and clears its shader mask');
+    assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror|shader error|validate_status/i.test(text)).length,0,
       'No unhandled source error: '+errors.join('\n').slice(-2400));
-    console.log('Portrait spline author browser: front and rear portrait references, continuous mask strokes, and 3D gizmos pass.');
+    console.log('Portrait spline author browser: canonical hood and facewrap, independent masks, and 3D gizmos pass.');
   }finally{
     await browser?.close();await new Promise(resolve=>server.close(resolve));
   }

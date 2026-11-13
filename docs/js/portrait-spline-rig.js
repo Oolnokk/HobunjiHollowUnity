@@ -51,7 +51,7 @@
     ctx.drawImage(head, 0, 0, MASK_SIZE, MASK_SIZE);
     const skin = ctx.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
     const bits = new Uint8Array(MASK_SIZE * MASK_SIZE);
-    for (let i = 0; i < bits.length; i++) bits[i] = hair[i * 4 + 3] >= 8 && skin[i * 4 + 3] >= 8 ? 1 : 0;
+    for (let i = 0; i < bits.length; i++) bits[i] = hair[i * 4 + 3] >= 128 && skin[i * 4 + 3] >= 128 ? 1 : 0;
     return encodePixelMask(bits); // All hair/head overlap starts rigid; everything else starts flexible.
   }
   function paintPixelMask(input, u, v, radiusPx, rigid, previous) {
@@ -77,40 +77,184 @@
     }
     return encodePixelMask(bits);
   }
-  function attachmentPinField(mask, gripPx = 18) {
-    const bits=decodePixelMask(mask);
-    if (!mask || !bits.includes(1)) return null; // Unrigged legacy art retains its previous unrestricted spline.
-    const distance=new Float32Array(MASK_SIZE * MASK_SIZE); // Built once per hairstyle: exact binary head anchoring, never a smooth influence gradient.
-    const diagonal=Math.SQRT2;
-    for(let i=0;i<distance.length;i++) distance[i]=bits[i] ? 0 : 1e6;
-    for(let y=0;y<MASK_SIZE;y++)for(let x=0;x<MASK_SIZE;x++){
-      const i=y*MASK_SIZE+x;
-      if(x)distance[i]=Math.min(distance[i],distance[i-1]+1);
-      if(y){
-        distance[i]=Math.min(distance[i],distance[i-MASK_SIZE]+1);
-        if(x)distance[i]=Math.min(distance[i],distance[i-MASK_SIZE-1]+diagonal);
-        if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i-MASK_SIZE+1]+diagonal);
-      }
-    }
-    for(let y=MASK_SIZE-1;y>=0;y--)for(let x=MASK_SIZE-1;x>=0;x--){
-      const i=y*MASK_SIZE+x;
-      if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i+1]+1);
-      if(y<MASK_SIZE-1){
-        distance[i]=Math.min(distance[i],distance[i+MASK_SIZE]+1);
-        if(x)distance[i]=Math.min(distance[i],distance[i+MASK_SIZE-1]+diagonal);
-        if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i+MASK_SIZE+1]+diagonal);
-      }
-    }
-    const grip=clamp(finite(gripPx,18),0,40);
-    const pinned=new Uint8Array(distance.length); // 1 means completely fixed to the portrait; 0 means fully posed.
-    for(let i=0;i<distance.length;i++)pinned[i]=distance[i]<=grip ? 1 : 0;
-    return pinned;
+  function attachmentPinField(mask) {
+    const bits = decodePixelMask(mask);
+    return bits.includes(1) ? bits : null;
   }
-  function isPinnedPixel(field,u,v) {
-    if(!field)return false;
-    const x=clamp(Math.floor(finite(u)*MASK_SIZE),0,MASK_SIZE-1);
-    const y=clamp(Math.floor(finite(v)*MASK_SIZE),0,MASK_SIZE-1);
-    return field[y*MASK_SIZE+x]===1; // No intermediate motion weights or interpolation across the authored pixel mask.
+  function maskPixel(u, v) {
+    return clamp(Math.floor(v * MASK_SIZE), 0, MASK_SIZE - 1) * MASK_SIZE
+      + clamp(Math.floor(u * MASK_SIZE), 0, MASK_SIZE - 1);
+  }
+  function isPinnedPixel(field, u, v) {
+    return field?.[maskPixel(u, v)] === 1;
+  }
+  function attachmentMotion(field, u, v) {
+    if (!field) return 1;
+    if (isPinnedPixel(field, u, v)) return 0;
+    const x = u * MASK_SIZE, y = v * MASK_SIZE;
+    let distance = 2; // Only the first two pixels outside the hard mask soften in 3D.
+    for (let py = Math.max(0, Math.floor(y - 2)); py < Math.min(MASK_SIZE, Math.ceil(y + 2)); py++) {
+      for (let px = Math.max(0, Math.floor(x - 2)); px < Math.min(MASK_SIZE, Math.ceil(x + 2)); px++) {
+        if (!field[py * MASK_SIZE + px]) continue;
+        distance = Math.min(distance, Math.hypot(Math.max(0, px - x, x - px - 1), Math.max(0, py - y, y - py - 1)));
+      }
+    }
+    const t = distance / 2;
+    return t * t * (3 - 2 * t);
+  }
+
+  function strandGeometry(THREE, rig, width, height, rear = false) {
+    const head = attachmentPinField(rig.regionMasks?.[rear ? 'rear' : 'front']);
+    const overlap = rear ? null : attachmentPinField(rig.hoodOverlapMask);
+    const rigidOverlap = rear ? null : attachmentPinField(rig.hoodRigidOverlapMask);
+    if ((!head && !overlap && !rigidOverlap) || !THREE.BufferGeometry) return new THREE.PlaneGeometry(width, height, rig.segmentsX, rig.segmentsY);
+
+    const columns = rig.segmentsX, rows = rig.segmentsY;
+    const xs = Array.from({ length: columns + 1 }, (_, i) => Math.round(i * MASK_SIZE / columns));
+    const ys = Array.from({ length: rows + 1 }, (_, i) => Math.round(i * MASK_SIZE / rows));
+    const refined = new Uint8Array(columns * rows); // Subdivide near mask edges, including tiny disconnected flexible islands.
+    const needsPixels = (x, y, right, bottom) => {
+      const first = maskPixel((rear ? MASK_SIZE - x - .5 : x + .5) / MASK_SIZE, (y + .5) / MASK_SIZE);
+      for (let py = y; py < bottom; py++) for (let px = x; px < right; px++) {
+        const i = py * MASK_SIZE + (rear ? MASK_SIZE - 1 - px : px);
+        if (head?.[i] !== head?.[first] || overlap?.[i] !== overlap?.[first] || rigidOverlap?.[i] !== rigidOverlap?.[first]) return true;
+      }
+      return false;
+    };
+    for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+      refined[row * columns + col] = needsPixels(Math.max(0, xs[col] - 2), Math.max(0, ys[row] - 2),
+        Math.min(MASK_SIZE, xs[col + 1] + 2), Math.min(MASK_SIZE, ys[row + 1] + 2));
+    }
+    const vertices = new Map(), positions = [], uv = [], indices = []; // Shared boundary vertices prevent gaps between mesh resolutions.
+    const vertex = (x, y) => {
+      const key = y * 2 * (MASK_SIZE * 2 + 1) + x * 2;
+      if (vertices.has(key)) return vertices.get(key);
+      const index = positions.length / 3;
+      vertices.set(key, index);
+      positions.push((x / MASK_SIZE - .5) * width, (.5 - y / MASK_SIZE) * height, 0);
+      uv.push(x / MASK_SIZE, 1 - y / MASK_SIZE);
+      return index;
+    };
+    const cell = (x, y, right, bottom, topFine, rightFine, bottomFine, leftFine) => {
+      const perimeter = [vertex(x, y)];
+      if (leftFine) for (let py = y + 1; py < bottom; py++) perimeter.push(vertex(x, py));
+      perimeter.push(vertex(x, bottom));
+      if (bottomFine) for (let px = x + 1; px < right; px++) perimeter.push(vertex(px, bottom));
+      perimeter.push(vertex(right, bottom));
+      if (rightFine) for (let py = bottom - 1; py > y; py--) perimeter.push(vertex(right, py));
+      perimeter.push(vertex(right, y));
+      if (topFine) for (let px = right - 1; px > x; px--) perimeter.push(vertex(px, y));
+      const center = vertex((x + right) / 2, (y + bottom) / 2);
+      for (let i = 0; i < perimeter.length; i++) indices.push(center, perimeter[i], perimeter[(i + 1) % perimeter.length]);
+    };
+    for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+      const i = row * columns + col;
+      if (refined[i]) {
+        for (let y = ys[row]; y < ys[row + 1]; y++) for (let x = xs[col]; x < xs[col + 1]; x++) {
+          cell(x, y, x + 1, y + 1);
+        }
+      } else {
+        cell(xs[col], ys[row], xs[col + 1], ys[row + 1], refined[i - columns],
+          col + 1 < columns && refined[i + 1], refined[i + columns], col > 0 && refined[i - 1]);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geometry.setIndex(indices);
+    return geometry;
+  }
+
+  function fitHood(hood, rig, beardCanvases = []) {
+    if (!hood) return null;
+    const context = hood.getContext('2d');
+    const image = context.getImageData(0, 0, MASK_SIZE, MASK_SIZE);
+    const opening = decodePixelMask(rig.hoodOpeningMask);
+    if (opening.includes(1)) {
+      const beardAlpha = beardCanvases.map(canvas => canvas.getContext('2d').getImageData(0, 0, MASK_SIZE, MASK_SIZE).data);
+      for (let i = 0; i < opening.length; i++) {
+        if (opening[i] && !beardAlpha.some(pixels => pixels[i * 4 + 3] >= 8)) opening[i] = 0;
+      }
+    }
+    const hasOpening = opening.includes(1);
+    if (hasOpening) {
+      const source = new Uint8ClampedArray(image.data); // Sample the original cloth throughout the opening deformation.
+      const reach = 3; // Pull the nearby cloth rim outward around the painted opening.
+      const nearest = new Int32Array(opening.length).fill(-1);
+      const distance = new Uint8Array(opening.length).fill(reach * reach + 1);
+      for (let i = 0; i < opening.length; i++) {
+        if (!opening[i]) continue;
+        const x = i % MASK_SIZE, y = Math.floor(i / MASK_SIZE);
+        for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+          const px = x + dx, py = y + dy, d = dx * dx + dy * dy;
+          if (px < 0 || py < 0 || px >= MASK_SIZE || py >= MASK_SIZE || d > reach * reach) continue;
+          const at = py * MASK_SIZE + px;
+          if (d < distance[at]) { distance[at] = d; nearest[at] = i; }
+        }
+      }
+      for (let i = 0; i < opening.length; i++) {
+        if (opening[i]) { image.data[i * 4 + 3] = 0; continue; }
+        const edge = nearest[i];
+        if (edge < 0 || distance[i] >= reach * reach) continue;
+        const x = i % MASK_SIZE, y = Math.floor(i / MASK_SIZE);
+        const dx = x - edge % MASK_SIZE, dy = y - Math.floor(edge / MASK_SIZE);
+        const pull = (reach - Math.sqrt(distance[i])) / reach;
+        const sample = Math.round(y - dy * pull) * MASK_SIZE + Math.round(x - dx * pull);
+        image.data.set(source.subarray(sample * 4, sample * 4 + 4), i * 4);
+      }
+    }
+    if (hasOpening) context.putImageData(image, 0, 0);
+    const overlap = decodePixelMask(rig.hoodOverlapMask);
+    const rigidOverlap = decodePixelMask(rig.hoodRigidOverlapMask);
+    const coverage = new Uint8Array(opening.length); // Per-pixel hood coverage in the posed portrait coordinate space.
+    for (let i = 0; i < coverage.length; i++) {
+      coverage[i] = image.data[i * 4 + 3] >= 8 ? 1 : 0;
+      overlap[i] = coverage[i] ? (rigidOverlap[i] ? 2 : overlap[i]) : 0;
+    }
+    return { canvas: hood, coverage, overlap };
+  }
+
+  function hoodOcclusion(THREE, material) {
+    const uniform = { value: null }; // One packed nearest-filtered map carries hood coverage and overlap permission.
+    const prior = material.onBeforeCompile;
+    material.onBeforeCompile = function (shader, renderer) {
+      prior?.call(this, shader, renderer);
+      shader.uniforms.splineHoodMask = uniform;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 splineHoodPosition; uniform vec2 splinePortraitSize;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nsplineHoodPosition = position.xy / splinePortraitSize + 0.5;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 splineHoodPosition; uniform sampler2D splineHoodMask;')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          if (all(greaterThanEqual(splineHoodPosition, vec2(0.0))) && all(lessThanEqual(splineHoodPosition, vec2(1.0)))
+              && texture2D(splineHoodMask, splineHoodPosition).r > 0.5
+              && texture2D(splineHoodMask, vUv).g < 0.5) discard;
+        `);
+      shader.uniforms.splinePortraitSize = size;
+    };
+    const size = { value: new THREE.Vector2(1, 1) }; // Used to map deformed model coordinates back to the hood portrait.
+    let texture = null;
+    return {
+      update(fit, width, height) {
+        size.value.set(width, height);
+        if (!fit && !texture) return;
+        if (!fit) { texture.image.data.fill(0); texture.needsUpdate = true; return; }
+        if (!texture) {
+          texture = new THREE.DataTexture(new Uint8Array(MASK_SIZE * MASK_SIZE * 4), MASK_SIZE, MASK_SIZE, THREE.RGBAFormat);
+          texture.minFilter = texture.magFilter = THREE.NearestFilter;
+          uniform.value = texture;
+        }
+        const data = texture.image.data;
+        for (let i = 0; i < fit.coverage.length; i++) {
+          const x = i % MASK_SIZE, y = Math.floor(i / MASK_SIZE);
+          const at = ((MASK_SIZE - 1 - y) * MASK_SIZE + x) * 4;
+          data[at] = fit.coverage[i] * 255;
+          data[at + 1] = fit.overlap[i] ? 255 : 0;
+        }
+        texture.needsUpdate = true;
+      },
+      dispose() { texture?.dispose(); },
+    };
   }
   function prepareSplineTexture(canvas, rearView = false) {
     if(!canvas)return null;
@@ -256,6 +400,9 @@
         const normalized = normalizePixelMask(input.regionMasks?.[view]);
         return normalized ? [[view, normalized]] : [];
       })), // Per-plane rigid/flexible regions; absence means an unconverted legacy hairstyle.
+      hoodOpeningMask: normalizePixelMask(input.hoodOpeningMask),
+      hoodOverlapMask: normalizePixelMask(input.hoodOverlapMask),
+      hoodRigidOverlapMask: normalizePixelMask(input.hoodRigidOverlapMask),
       rearOffset: {
         u: clamp(finite(input.rearOffset?.u), -.25, .25),
         v: clamp(finite(input.rearOffset?.v), -.25, .25),
@@ -263,7 +410,6 @@
       width: clamp(finite(input.width, .1), .01, .5),
       windResponse: clamp(finite(input.windResponse, 1), 0, 5),
       tipFollow: clamp(finite(input.tipFollow, .58), 0, .9), // Bottom-most knot drives the middle one; the head attachment remains immobile.
-      pinWidthPx: clamp(finite(input.pinWidthPx, 18), 0, 40), // Binary anchoring extends beyond the painted head overlap to grip the same continuous hair mesh.
       segmentsX: clamp(Math.round(finite(input.segmentsX, 24)), 4, 40),
       segmentsY: clamp(Math.round(finite(input.segmentsY, 32)), 4, 48),
     };
@@ -360,8 +506,9 @@
       cubic(value(a, axis), value(b, axis), value(c, axis), value(d, axis), t)]));
   }
 
-  function deformPosition(rig, posed, u, v, width, height, pinned = false) {
+  function deformPosition(rig, posed, u, v, width, height, pinned = false, motion = pinned ? 0 : 1, overlap = 0) {
     const x = u - .5, y = .5 - v;
+    if (pinned || overlap === 2) return { x: x * width, y: y * height, z: .0008 * height };
     let index = 0, fraction = 0, closest = Infinity;
     for (let i = 0; i < rig.points.length - 1; i++) {
       const a = rig.points[i], b = rig.points[i + 1];
@@ -373,17 +520,18 @@
     }
     const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
     const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
-    if(pinned)return {x:x*width,y:y*height,z:.0008*height}; // Exact fixed head attachment; NO weighted/faded influence transition.
-    const influence=1-clamp(Math.sqrt(closest)/Math.max(.01,rig.width),0,1)**2; // Existing lateral spline-width falloff is unrelated to the removed attachment blend.
-    return {x:(x+(target.x-rest.x)*influence)*width,
-      y:(y+(target.y-rest.y)*influence)*height,
-      z:Math.max(.003,rest.z+(target.z-rest.z)*influence)*height}; // The shared mesh connects pinned and free vertices through its own triangles.
+    const influence = (1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2) * motion;
+    const z = overlap ? .003 : Math.max(.003, rest.z + (target.z - rest.z) * influence);
+    return { x: (x + (target.x - rest.x) * influence) * width,
+      y: (y + (target.y - rest.y) * influence) * height,
+      z: (.0008 + (z - .0008) * motion) * height };
   }
 
   function makePart(THREE, front, rear, width, height, name) {
-    const rig = front.rig, geometry = new THREE.PlaneGeometry(width, height, rig.segmentsX, rig.segmentsY);
+    const rig = front.rig, geometry = strandGeometry(THREE, rig, width, height);
     const base = new Float32Array(geometry.attributes.position.array); // Stable rest data reused by every wind update.
-    const rearGeometry = rear?.canvas ? geometry.clone() : null; // The rear-facing strand must sit BEHIND the rear portrait, not behind the front camera.
+    const rearGeometry = rear?.canvas ? strandGeometry(THREE, rig, width, height, true) : null;
+    const rearBase = rearGeometry?.attributes.position.array.slice(); // The rear-facing strand must sit BEHIND the rear portrait, not behind the front camera.
     const makeTexture = (canvas, rearView) => {
       const source=prepareSplineTexture(canvas,rearView);
       const shared=window.HobunjiSpritePngSurface; // Same canonical PNG-plane color management as Pants and the main avatar.
@@ -408,9 +556,23 @@
     const frontMesh = makeMesh(front.canvas, false);
     const rearMesh = rear?.canvas ? makeMesh(rear.canvas, true) : null;
     const rest = geometry.attributes.position;
-    const frontPins=attachmentPinField(rig.regionMasks?.front,rig.pinWidthPx);
-    const rearPins=rearGeometry?attachmentPinField(rig.regionMasks?.rear,rig.pinWidthPx):null; // Precompute hard vertex anchors once; no 200px influence blending each wind frame.
+    const frontPins=attachmentPinField(rig.regionMasks?.front);
+    const rearPins=rearGeometry?attachmentPinField(rig.regionMasks?.rear):null;
     const rearPositions = rearGeometry?.attributes.position || null; // Same authored UV-to-spline mapping, with mirrored depth relative to the rear plane.
+    const frontMotion = new Float32Array(rest.count); // Cached attachment weights for the live wind loop.
+    const frontPixels = new Uint16Array(rest.count); // Reuse mask indices for the per-frame hood overlap check.
+    const rearMotion = rearGeometry ? new Float32Array(rearPositions.count) : null;
+    for (let i = 0; i < rest.count; i++) {
+      const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
+      frontMotion[i] = attachmentMotion(frontPins, u, v);
+      frontPixels[i] = maskPixel(u, v);
+      if (frontMotion[i] === 0) rest.setXYZ(i, base[i * 3], base[i * 3 + 1], .0008 * height);
+    }
+    if (rearMotion) for (let i = 0; i < rearMotion.length; i++) {
+      rearMotion[i] = attachmentMotion(rearPins, .5 - rearBase[i * 3] / width, .5 - rearBase[i * 3 + 1] / height);
+      if (rearMotion[i] === 0) rearPositions.setXYZ(i, rearBase[i * 3], rearBase[i * 3 + 1], -.0008 * height);
+    }
+    let hoodFit = null, occlusion = null;
     let lastTime = -Infinity, lastX = NaN, lastY = NaN, lastZ = NaN;
     const applyWind = (wind = { x: 0, y: 0, z: 0 }, force = false) => {
       if (!force && Math.abs(wind.x - lastX) + Math.abs(wind.y - lastY) + Math.abs(wind.z - lastZ) < .025) return;
@@ -418,16 +580,18 @@
       const posed = posePoints(rig, wind);
       for (let i = 0; i < rest.count; i++) {
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
-        const p=deformPosition(rig,posed.points,u,v,width,height,isPinnedPixel(frontPins,u,v));
+        if (frontMotion[i] === 0) continue; // Fixed vertices were initialized directly from the portrait plane.
+        const p=deformPosition(rig,posed.points,u,v,width,height,false,frontMotion[i],hoodFit?.overlap[frontPixels[i]]);
         rest.setXYZ(i,p.x,p.y,p.z);
-        if(rearPositions){
-          const back=deformPosition(rig,posed.points,u,v,width,height,isPinnedPixel(rearPins,1-u,v)); // Rear UVs are mirrored.
-          rearPositions.setXYZ(i,back.x,back.y,-back.z);
-        }
+      }
+      if(rearPositions) for (let i = 0; i < rearPositions.count; i++) {
+        const u = rearBase[i * 3] / width + .5, v = .5 - rearBase[i * 3 + 1] / height;
+        if (rearMotion[i] === 0) continue;
+        const back=deformPosition(rig,posed.points,u,v,width,height,false,rearMotion[i]);
+        rearPositions.setXYZ(i,back.x,back.y,-back.z);
       }
       rest.needsUpdate = true;
-      geometry.computeBoundingSphere();
-      if (rearPositions) { rearPositions.needsUpdate = true; rearGeometry.computeBoundingSphere(); }
+      if (rearPositions) rearPositions.needsUpdate = true; // Both strand meshes opt out of frustum culling.
       frontMesh.userData.portraitSplineCollisionLimits = posed.collisions;
     };
     const update = () => {
@@ -440,10 +604,26 @@
         y: clamp(Math.cos(wind.time * .85 + phase * 1.7) * strength * .35, -1, 1),
         z: clamp(Math.sin(wind.time * 1.1 + phase * 2) * strength * .5, -1, 1) });
     };
+    const setHood = fit => {
+      if (fit === hoodFit) return;
+      const previous = hoodFit;
+      hoodFit = fit || null;
+      if (hoodFit && !occlusion) {
+        occlusion = hoodOcclusion(THREE, frontMesh.material);
+        frontMesh.material.needsUpdate = true;
+        frontMesh.userData.disposeSplineHood = () => occlusion.dispose();
+      }
+      occlusion?.update(hoodFit, width, height);
+      const before = previous?.overlap, after = hoodFit?.overlap;
+      if (before && after ? before.some((value, i) => value !== after[i]) : (before || after)?.some(Boolean)) {
+        applyWind({ x: lastX, y: lastY, z: lastZ }, true);
+      }
+    };
     applyWind({ x: 0, y: 0, z: 0 }, true);
+    if (front.hoodFit) setHood(front.hoodFit);
     frontMesh.onBeforeRender = update;
     if (rearMesh) rearMesh.onBeforeRender = update;
-    return { frontMesh, rearMesh, applyWind, rig, name };
+    return { frontMesh, rearMesh, applyWind, setHood, rig, name };
   }
 
   function attach(THREE, root, assembly, frontCanvas, backCanvas, modelWidth, modelHeight) {
@@ -480,6 +660,7 @@
     if (!holder) return;
     const materials = new Set(), geometries = new Set();
     holder.traverse(mesh => {
+      mesh.userData?.disposeSplineHood?.();
       if (mesh.geometry) geometries.add(mesh.geometry);
       if (mesh.material) (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach(mat => materials.add(mat));
     });
@@ -510,6 +691,7 @@
     const rears = new Map((backCanvas?.hobunjiSplineParts || []).map(p => [p.key, p]));
     for (const part of active) {
       const f = fronts.get(part.name), b = rears.get(part.name);
+      part.setHood(f?.hoodFit);
       for (const [mesh, canvas] of [[part.frontMesh, f?.canvas], [part.rearMesh, b?.canvas]]) {
         if (!mesh || !canvas) continue;
         const image = mesh.material.map.image;
@@ -534,7 +716,8 @@
     }));
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
-    deformPosition, attachmentPinField, isPinnedPixel, prepareSplineTexture, makeDefaultSegments, suggestRestPoints,
+    sampleHoodOverlap: (fit, u, v) => fit?.overlap[maskPixel(u, v)] || 0,
+    deformPosition, attachmentPinField, isPinnedPixel, attachmentMotion, strandGeometry, fitHood, hoodOcclusion, prepareSplineTexture, makeDefaultSegments, suggestRestPoints,
     normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask,
     attach, refresh, detach, debug };
 })();

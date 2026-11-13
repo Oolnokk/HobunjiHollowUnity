@@ -289,7 +289,8 @@ const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
 const PORTRAIT_IMAGE_RETRY_BASE_MS = 1000; // First failed image retries on demand after a one-second cooldown.
 const PORTRAIT_IMAGE_RETRY_MAX_MS = 30000; // Persistent missing optional art backs off instead of retrying every portrait frame.
 const portraitImageLoadDebug = { failures: 0, retries: 0, recoveries: 0,
-  latestChange: 'Failed portrait images retry with a bounded cooldown when rendered again.' }; // Included in existing mobile pixel-cache diagnostics.
+  cacheHits: 0, pendingHits: 0, requests: 0, slowLoads: 0, longestLoadMs: 0, slowestAsset: null, // Existing mobile pixel-cache panel uses these counters to identify a slow image path.
+  latestChange: 'Head-only rendering skips all non-head PNGs; static portraits skip blink assets. Cold image-load timings are tracked.' }; // Included in existing mobile pixel-cache diagnostics.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
@@ -355,8 +356,9 @@ function loadImg(relPath) {
   const cached = IMG_CACHE.get(relPath);
   // Fast path: image already resolved — return a pre-resolved promise so callers
   // can still await it uniformly, but the microtask queue is not involved.
-  if (cached instanceof Image) return Promise.resolve(cached);
-  if (cached !== undefined && (!cached.portraitRetryAtMs || Date.now() < cached.portraitRetryAtMs)) return cached;
+  if (cached instanceof Image) { portraitImageLoadDebug.cacheHits++; return Promise.resolve(cached); }
+  if (cached !== undefined && (!cached.portraitRetryAtMs || Date.now() < cached.portraitRetryAtMs)) { portraitImageLoadDebug.pendingHits++; return cached; }
+  const startedAtMs = Date.now(); // One wall-clock start for the complete source/fallback attempt in mobile diagnostics.
   const previousFailures = cached?.portraitFailureCount || 0; // A retry replaces only an expired failure; pending loads still deduplicate.
   if (previousFailures) portraitImageLoadDebug.retries++;
 
@@ -395,6 +397,7 @@ function loadImg(relPath) {
   });
 
   const tryLoadUrl = (url) => new Promise((resolve, reject) => {
+    portraitImageLoadDebug.requests++; // Includes any necessary alternate host requests.
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
@@ -418,11 +421,21 @@ function loadImg(relPath) {
 
   // Once the image resolves, upgrade the cache entry from Promise → Image so
   // subsequent calls get a synchronous hit and renderProfile can skip await.
+  const recordLoadDuration = () => {
+    const elapsedMs = Math.max(0, Date.now() - startedAtMs); // Includes all fallback attempts for this asset, whether successful or failed.
+    if (elapsedMs > 1500) portraitImageLoadDebug.slowLoads++;
+    if (elapsedMs > portraitImageLoadDebug.longestLoadMs) {
+      portraitImageLoadDebug.longestLoadMs = elapsedMs;
+      portraitImageLoadDebug.slowestAsset = String(relPath).slice(0, 180); // Mobile diagnostics can reveal a stalled/missing file even when its final attempt fails.
+    }
+  }; // Shared by successful and failed loads so neither delay disappears from the slow-asset report.
   promise.then(img => {
+    recordLoadDuration();
     if (IMG_CACHE.get(relPath) !== promise) return; // Cleared/evicted requests cannot resurrect their cache entries.
     IMG_CACHE.set(relPath, img);
     if (previousFailures) portraitImageLoadDebug.recoveries++;
   }, () => {
+    recordLoadDuration();
     if (IMG_CACHE.get(relPath) !== promise) return;
     promise.portraitFailureCount = previousFailures + 1;
     promise.portraitRetryAtMs = Date.now() + Math.min(PORTRAIT_IMAGE_RETRY_MAX_MS,
@@ -1312,6 +1325,7 @@ const _MOUTH_SPECIES_MAP = {
   'engh-sho': { sprite: 'engh',     gendered: true,  masked: false },
   'engh_sho': { sprite: 'engh',     gendered: true,  masked: false },
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
+  'longoran': { sprite: 'tletingan',gendered: true,   masked: false }, // Same expression sprite family, before any runtime alias wraps direct lookups.
   'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
   'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
   'mammakhbuur': { sprite: 'mashtz', gendered: true, masked: true },
@@ -1480,6 +1494,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const deferSplineParts = renderOptions?.deferSplineParts === true && !renderOptions?.onlyHeadSprite && !renderOptions?.headCosmeticsOnly; // Only 3D avatar bakes omit the flat copy.
+  canvas.hobunjiSplineHood = null; // Per-bake hood foreground and beard occlusion data.
   canvas.hobunjiSplineParts = []; // Canvas reuse must discard previous actor's detached pieces.
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
@@ -1748,6 +1763,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ? [...eyesLayers, ...elevatedEyeAccessoryLayers].filter(isSnowgogglesLayer)
     : [];
 
+  const forceEyesOpen = renderOptions?.forceEyesOpen === true; // Static head/front/back bakes never need speculative blink sprite requests.
   const neededUrls = new Set([
     ...(headUrl ? [headUrl] : []),
     ...(renderBehindView ? behindUrLayers.map(m => m.url) : urLayerSource.map(m => m.url)),
@@ -1770,13 +1786,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
-    ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
+    ...((renderBehindView || forceEyesOpen || onlyHeadSprite) ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
   const optionalBehindUrls = new Set(behindUrLayers.filter(layer => layer.optional).map(layer => layer.url));
   let imgMap;
   // Fast synchronous path: all images already resolved in cache — avoid async overhead.
-  const _allUrls = [...neededUrls];
+  const _allUrls = onlyHeadSprite ? (headUrl ? [headUrl] : []) : [...neededUrls]; // Alpha-only neck rig masks require the head PNG, not every outfit layer.
   const _allResolved = _allUrls.every(url => layerImageOverrides?.has(url) || IMG_CACHE.get(url) instanceof Image);
   if (_allResolved) {
     imgMap = new Map(_allUrls.map(url => [url, layerImageOverrides?.get(url) || IMG_CACHE.get(url)]));
@@ -1822,7 +1838,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
   // Load mouth expression sprite separately — it may not exist for all species/gender combos.
   let mouthImg = null;
-  if (mouthSpriteUrl && renderHeadSprite) {
+  if (!onlyHeadSprite && mouthSpriteUrl && renderHeadSprite) { // Head masks have no separate expression mouth.
     const _mouthCached = IMG_CACHE.get(mouthSpriteUrl);
     if (_mouthCached instanceof Image) {
       mouthImg = _mouthCached;
@@ -1850,7 +1866,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   // forceEyesOpen callers: makeNpcWalker/refreshPlayerAvatar's world avatar
   // builds). A continuously-refreshed canvas (dialogue portraits, cutscenes)
   // doesn't set this and blinks normally.
-  const forceEyesOpen = renderOptions?.forceEyesOpen === true;
   const isBlinkFrame = !forceEyesOpen && shouldRenderBlink(headUrl, nowMs);
   const resolveXform = (layer) => layer.xformPreset
     ? getPortraitXformPreset(layer.xformPreset)
@@ -1955,7 +1970,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         withPixelDyeLayer(entry, (img, tint, sourceKey) =>
           drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, partCtx));
         const key = slot + ':' + String(entry.group?.id || 'unknown') + ':' + i; // Matches front and back independently composed slot indices.
-        const view = renderBehindView ? 'rear' : 'front'; // Distinct rigid/flexible author masks for independently rendered planes.
         canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas, phase: (i + 1) * 1.37 });
         continue; // ONE intact hair texture on ONE mesh: authored rigid pixels are pinned in geometry,
                   // flexible pixels deform, and there is no flat/moving alpha boundary to expose a black seam.
@@ -1966,13 +1980,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList, isHood = false) => {
+  const drawBreathingLayers = (layerList, target = ctx) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      // Rigid/flexible masks partition the cosmetic itself; hood pixels are never punched out or reprojected.
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
+        drawPortraitLayerWarped(target, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
+        drawPortraitLayer(target, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
     });
   };
@@ -2033,9 +2046,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         ctx.beginPath();
         ctx.rect(0, cropTop, PORTRAIT_CW, PORTRAIT_CH);
         ctx.clip();
-        drawBreathingLayers([rearTrim], true);
+        drawBreathingLayers([rearTrim]);
         ctx.restore();
-        drawBreathingLayers(hoodLayers.slice(1), true); // The existing finehood-back shell covers the fur, preserving the intended edge.
+        drawBreathingLayers(hoodLayers.slice(1)); // The existing finehood-back shell covers the fur, preserving the intended edge.
       },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
@@ -2128,7 +2141,24 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  drawBreathingLayers(hoodLayers);
+  const beardParts = canvas.hobunjiSplineParts.filter(part => part.slot === 'facialHair');
+  const spline = window.PortraitSplineRig;
+  const previewBeard = hiddenCosmeticGroups.has(facialHair) || hoodHidesFacialHair(hood)
+    ? null : renderOptions.splinePreviewBeard; // Manual author artwork uses the same hood fitter as detached game beards.
+  if (hoodLayers.length && (beardParts.length || renderOptions.captureSplineHood) && spline?.fitHood) {
+    const cloth = document.createElement('canvas'); // Capture only the hood layers that normally cover the beard.
+    cloth.width = cloth.height = 200;
+    const clothContext = cloth.getContext('2d', { willReadFrequently: true });
+    clothContext.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
+    drawBreathingLayers(hoodLayers, clothContext);
+    const beardRig = beardParts[0]?.rig || previewBeard?.rig || {};
+    const beardCanvases = beardParts.length ? beardParts.map(part => part.canvas) : previewBeard?.canvases;
+    canvas.hobunjiSplineHood = spline.fitHood(cloth, beardRig, beardCanvases);
+    ctx.drawImage(canvas.hobunjiSplineHood.canvas, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
+    for (const part of beardParts) part.hoodFit = canvas.hobunjiSplineHood;
+  } else {
+    drawBreathingLayers(hoodLayers);
+  }
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
@@ -3366,6 +3396,8 @@ window.getPortraitXformPreset = getPortraitXformPreset;
 renderProfile.defaultBehindLayerOrder = DEFAULT_BEHIND_LAYER_ORDER;
 
 window.loadPortraitCosmetics = loadPortraitCosmetics;
+window.portraitOptionFromJson = portraitOptionFromJson;
+window.portraitHoodHidesFacialHair = hoodHidesFacialHair;
 window.renderPortraitProfile = renderProfile;
 // renderProfile is also exported as window.renderProfile for consumers that check that name
 // (bootstrap.js, scratchbones-lobby.js).

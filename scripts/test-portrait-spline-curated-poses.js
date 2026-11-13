@@ -33,7 +33,7 @@ for(const [filename,kind] of styles){
  assert(rig&&rig.points.length===3&&rig.segments.length===2,filename+' has an editable root/mid/tip spline');
  assert.equal(rig.tipFollow,raw.tipFollow,filename+' keeps its bottom-led knot parenting');
  assert(!('blendRadiusPx' in rig),filename+' must use hard head pinning, not the removed influence blend');
- assert(rig.width>0&&rig.pinWidthPx>=10&&rig.pinWidthPx<=40,filename+' has style-sized geometry and a strong rigid attachment');
+ assert(rig.width>0&&!('pinWidthPx' in rig),filename+' uses the exact authored head mask');
  assert(rig.segmentsX<=24&&rig.segmentsY<=32,
    filename+' limits extra mesh cost when NPCs share this haircut');
  const front=rig.regionMasks.front;
@@ -41,7 +41,7 @@ for(const [filename,kind] of styles){
  const requiredRear=kind==='braid'||kind==='cluster';
  if(requiredRear)assert(rig.regionMasks.rear?.runs?.length>0,filename+' also attaches the rear side-hair artwork');
  else assert(!rig.regionMasks.rear,filename+' avoids constructing an unused rear beard mask');
- const pins=Rig.attachmentPinField(front,rig.pinWidthPx);
+ const pins=Rig.attachmentPinField(front);
  assert(pins&&pins.some(x=>x===1)&&pins.some(x=>x===0),filename+' has both fully anchored and free areas');
  let pinnedVertices=0;
  for(let y=0;y<=rig.segmentsY;y++)for(let x=0;x<=rig.segmentsX;x++)

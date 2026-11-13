@@ -14,15 +14,13 @@ p,.hint{color:var(--soft);font-size:12px;margin:6px 0 12px}.row{display:flex;gap
 button,input,select,textarea{font:inherit;color:var(--ink);background:#07131f;border:1px solid var(--line);border-radius:7px;padding:7px;min-width:0}
 button{cursor:pointer;background:#24374c}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue)}
 button.active{background:#205081;border-color:var(--blue)}button:disabled{opacity:.45}
-label{font-size:12px;color:var(--soft)}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
+label{font-size:12px;color:var(--soft)}.entry[hidden]{display:none}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
 input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]{max-width:100%;font-size:11px}
 #preview{width:100%;max-width:420px;display:block;margin:auto;aspect-ratio:1;image-rendering:pixelated;touch-action:none;background:#0c1926;border:1px solid #38506c;border-radius:10px}
 #view3d{width:100%;height:380px;display:block;touch-action:none;background:#0b1726;border:1px solid #38506c;border-radius:10px}
 #viewerStatus{min-height:22px;display:block;font-size:12px;color:var(--soft);margin:6px 0 10px;overflow-wrap:anywhere}
 #poseActions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 #regionTools{margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:8px}
-#regionLegend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px}
-#regionLegend span::before{content:'';width:12px;height:12px;display:inline-block;margin-right:5px;vertical-align:middle;border-radius:3px;background:var(--region-color)}
 #regionTools .entry{grid-template-columns:minmax(130px,155px) minmax(0,1fr)}
 .buttons{display:flex;flex-wrap:wrap;gap:6px}#status{min-height:55px;background:#07131f;color:#c8def7;border:1px solid #2e4866;padding:9px;border-radius:8px;white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace}
 #segmentEditor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
@@ -39,16 +37,16 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 @media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}#view3d{height:320px}}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
-<script src="../../js/portrait-spline-rig.js?v=20261113hb6efa49"></script>
+<script src="../../js/portrait-spline-rig.js?v=20261113h8123381"></script>
 <script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
 <script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20261110splineCanon1"></script>
+<script src="../../js/portrait-utils.js?v=20261113h171a55e"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261113hcbb8fd0"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261113hd30fbb8"></script>
 </head>
 <body>
-<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v2 · rigid/flexible pixel regions</span></header>
+<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">Beard and hood masks</span></header>
 <main>
 <section>
 <h2>2D spline rigging and pixel masks</h2>
@@ -57,7 +55,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="entry"><label for="genderSelect">Gender</label><select id="genderSelect" disabled aria-label="Cosmetic gender"></select></div>
 <div class="entry"><label for="slotSelect">Style type</label><select id="slotSelect"><option value="facialHair">Beard</option><option value="hairSide">Right-side hair</option><option value="hairSideL">Left-side hair</option></select></div>
 <div class="entry"><label for="cosmeticSelect">Cosmetic</label><select id="cosmeticSelect" disabled aria-label="Indexed cosmetic style"><option>Loading styles…</option></select></div>
-<div class="entry"><label for="hoodSelect">Hood reference</label><select id="hoodSelect" disabled aria-label="Optional indexed hood reference"><option value="">None</option></select></div>
+<div class="entry"><label for="hoodSelect">Preview hood</label><select id="hoodSelect" disabled aria-label="Equip a hood in the preview"><option value="">None</option></select></div>
 <div class="buttons"><button id="reloadIndex" type="button" class="secondary">Reload repository index</button></div>
 <output id="catalogStatus" role="status" aria-live="polite">Loading cosmetic index…</output>
 <div id="sourcePath" class="hint">Source: no cosmetic selected</div>
@@ -72,26 +70,27 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 </details>
 <div class="buttons" style="margin:12px 0">
 <button id="moveMode" class="active">Move 2D knots</button><button id="paintMode">Brush: Rigid</button>
-<button id="eraseMode">Eraser: Flexible</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
+<button id="eraseMode">Erase mask</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
 </div>
 <canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
 <div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
 <label for="brush">Brush radius, px</label><input type="number" id="brush" value="6" min=".5" max="60" step=".5" style="width:74px"></div>
 <div id="regionTools">
-  <h3>Rigid portrait pixels vs. flexible spline pixels</h3>
-  <p>The mask starts with every opaque hair/beard pixel that overlaps the selected head silhouette assigned to the rigid group. Brush adds rigid pixels; eraser returns pixels to the moving spline. Rigid pixels never bend or move off the portrait.</p>
-  <div id="regionLegend"><span style="--region-color:#43d0d1">Fixed · painted rigid + auto-grip</span><span style="--region-color:#c66de7">Flexible · follows spline</span></div>
-  <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show pixel region overlay</label></div>
-  <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Make all flexible</button></div>
+  <div class="entry"><label for="maskSelect">Paint mask</label><select id="maskSelect">
+    <option value="head">Head attachment</option><option value="opening">Hood opening</option><option value="overlap">Hood overlap</option>
+  </select></div>
+  <div class="entry" id="overlapSettings" hidden><label for="overlapMode">Overlap brush</label><select id="overlapMode"><option value="bend">Bend just over the hood</option><option value="rigid">Hold rigid over the hood</option></select></div>
+  <p id="maskHelp">Cyan pixels stay fixed to the head. Purple pixels follow the spline.</p>
+  <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show mask overlay</label></div>
+  <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Clear mask</button></div>
 </div>
-<p>Yellow knots position the resting spline in 2D; cyan traces its directional 3D pose. Edit the mask on the artwork in the front or rear view. The two pixel groups use the exact same sprite and only the flexible group gets 3D deformation.</p>
+<p>Yellow knots set the rest spline. The cyan curve shows its 3D pose.</p>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
 <div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
-<div class="entry"><label for="pinWidth">Head attachment grip (px)</label><input id="pinWidth" type="number" min="0" max="40" step="1" value="18"></div>
 <div class="entry"><label for="tipFollow">Bottom leads middle</label><input id="tipFollow" type="range" min="0" max=".9" step=".01" value=".58" aria-label="How much the bottom knot pulls the middle knot"></div>
-<p>All hair pixels use one continuous 3D mesh. The painted rigid region and its automatic head-grip collar are fully pinned (no influence blending); the rest follows the spline. The tip drives the middle knot, never the reverse.</p>
+
 <div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
 </section>
 <section>
@@ -132,17 +131,19 @@ const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pit
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
 const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
  return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
- rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,pinWidthPx:18,segmentsX:24,segmentsY:32};};
+ rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,segmentsX:24,segmentsY:32};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null,characterRear:null};
-let previewPointer=null,lastPaint=null; // One captured pointer owns each knot drag or mask stroke.
-let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
+let images={front:null,rear:null,hood:null,head:null,headRear:null,character:null,characterRear:null};
+let previewPointer=null,lastPaint=null,overlapBrush='bend'; // One captured pointer owns each knot drag or mask stroke.
+let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null,canonicalProfile=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
+let hoodOption=null,hoodPortrait=null,hoodRenderGeneration=0,lastHoodRequest=null; // Cache canonical hood bakes independently of wind and knot edits.
 let viewer=null,viewerMode='translate',maskUndo=null,headGeneration=0; // The rigid/flexible mask replaces arbitrary seam-dab and hood-warp controls.
 let regionOverlayCache=null,regionSourcesCache=null; // Cached bitmap and 3D texture splits; invalidated only when artwork or masks change.
 let autoLayoutPending=false; // A newly selected unrigged cosmetic receives one art-fitted default spline, never overwriting manual knot edits.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
+const hoodMaskKeys={opening:'hoodOpeningMask',overlap:'hoodOverlapMask',rigid:'hoodRigidOverlapMask'}; // Both hood masks use front portrait UVs.
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
 function message(value){$('catalogStatus').textContent=value;} // Source loading and error messages must remain visible alongside pose diagnostics.
@@ -182,6 +183,27 @@ function markRegionDirty(){
   regionOverlayCache=null;regionSourcesCache=null; // Rebuild 2D overlay and 3D texture partitions only after artwork or mask edits.
 }
 function activeView(){return $('viewSelect').value==='rear'?'rear':'front';}
+function activeMask(){return activeView()==='rear'||$('slotSelect').value!=='facialHair'?'head':$('maskSelect').value;}
+function readMask(kind,view){return kind==='head'?rig.regionMasks?.[view]:rig[hoodMaskKeys[kind]];}
+function writeMask(kind,view,mask){
+  if(kind==='head'){
+    rig.regionMasks=rig.regionMasks||{};
+    if(mask)rig.regionMasks[view]=mask;else delete rig.regionMasks[view];
+  }else rig[hoodMaskKeys[kind]]=mask;
+  regionOverlayCache=null;
+}
+function updateMaskControls(){
+  const hoodMasksAvailable=activeView()==='front'&&$('slotSelect').value==='facialHair';
+  $('maskSelect').disabled=!hoodMasksAvailable;
+  const kind=activeMask();
+  $('overlapSettings').hidden=kind!=='overlap';
+  $('overlapMode').value=overlapBrush;
+  $('autoMask').disabled=kind!=='head';
+  $('paintMode').textContent=kind==='head'?'Brush: Rigid':'Paint mask';
+  $('maskHelp').textContent={head:'Cyan stays fixed. Purple follows the spline.',
+    opening:'Orange marks where hood cloth opens around the beard.',
+    overlap:'Green bends over covering cloth. Blue stays rigid over it.'}[kind];
+}
 function regionHead(view){return view==='rear'?(images.headRear||images.head):images.head;}
 function maybeInitializeMasks(){
   if(autoLayoutPending && images.front && images.head){
@@ -209,24 +231,26 @@ function maybeInitializeMasks(){
   return assigned;
 }
 function makeRegionOverlay(){
-  const view=activeView(),sprite=images[view],mask=rig.regionMasks?.[view];
-  if(!sprite||!mask)return null;
-  const key=JSON.stringify([mask,rig.pinWidthPx]);
-  if(regionOverlayCache&&regionOverlayCache.source===sprite&&regionOverlayCache.view===view
-    &&regionOverlayCache.key===key&&regionOverlayCache.offset===rig.rearOffset.u+':'+rig.rearOffset.v)
-    return regionOverlayCache.canvas;
+  const view=activeView(),kind=activeMask(),sprite=images[view],mask=readMask(kind,view);
+  if(!sprite)return null;
+  const key=JSON.stringify([kind,mask,kind==='overlap'?rig.hoodRigidOverlapMask:null]);
+  const offset=rig.rearOffset.u+':'+rig.rearOffset.v;
+  if(regionOverlayCache?.source===sprite&&regionOverlayCache.view===view
+    &&regionOverlayCache.key===key&&regionOverlayCache.offset===offset) return regionOverlayCache.canvas;
   const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
   else ctx.drawImage(sprite,0,0,200,200);
   const data=ctx.getImageData(0,0,200,200),bits=Rig.decodePixelMask(mask);
-  const pinned=Rig.attachmentPinField(mask,rig.pinWidthPx); // Binary vertex anchoring: no softened influence weights.
+  const colors={head:[67,208,209],opening:[255,170,83],overlap:[139,224,106]};
+  const rigid=kind==='overlap'?Rig.decodePixelMask(rig.hoodRigidOverlapMask):null;
   for(let i=0;i<bits.length;i++){
     const at=i*4,alpha=data.data[at+3];
     if(!alpha)continue;
-    const anchored=bits[i] || pinned?.[i];
-    data.data[at]=anchored?67:198;data.data[at+1]=anchored?208:109;data.data[at+2]=anchored?209:231;
-    data.data[at+3]=Math.round(alpha*(bits[i]?.64:anchored?.48:.28)); // Cyan: fixed attachment/grip; purple: full spline motion.
+    const selected=bits[i]||rigid?.[i];
+    const color=rigid?.[i]?[106,167,255]:selected?colors[kind]:[198,109,231];
+    data.data[at]=color[0];data.data[at+1]=color[1];data.data[at+2]=color[2];
+    data.data[at+3]=Math.round(alpha*(selected?.64:kind==='head'?.28:0));
   }
   ctx.putImageData(data,0,0);
   regionOverlayCache={source:sprite,view,key,offset:rig.rearOffset.u+':'+rig.rearOffset.v,canvas};
@@ -248,8 +272,8 @@ function viewerRegionSources(){
   return data;
 }
 function recordMaskUndo(){
-  const view=activeView(),current=rig.regionMasks?.[view];
-  maskUndo={view,mask:current?JSON.parse(JSON.stringify(current)):null}; // One stroke or auto-classification can be undone without altering other views.
+  const view=activeView(),kind=activeMask(),current=readMask(kind,view);
+  maskUndo={view,kind,mask:current||null,rigid:rig.hoodRigidOverlapMask}; // One stroke or auto-classification can be undone without altering other views.
 }
 function setSelect(id,options,emptyLabel){
   const el=$(id);el.replaceChildren();
@@ -299,7 +323,9 @@ async function loadStyles(){
 }
 async function loadCanonicalCharacter(){
   const generation=++canonicalPortraitGeneration;
+  hoodPortrait=null;lastHoodRequest=null;hoodRenderGeneration++;
   const species=selectedSpecies(),gender=selectedGender();
+  canonicalProfile=null;
   images.character=null;images.characterRear=null;images.head=null;images.headRear=null;
   canonicalPortraitError=null;markRegionDirty();render();
   if(!species||!gender)return;
@@ -329,6 +355,7 @@ async function loadCanonicalCharacter(){
     });
     if(!result)throw Error('Canonical portrait renderer returned false.');
     if(generation!==canonicalPortraitGeneration)return;
+    canonicalProfile=profile;
     images.character=canvas;render(); // Preserve the correctly scaled, existing 3D character backing.
     const headCanvas=document.createElement('canvas'); // Shared 200×200 portrait pixel space; no independently scaled sprite reference.
     headCanvas.width=headCanvas.height=canvas.width;
@@ -439,25 +466,47 @@ async function loadHoods(){
     message('Could not read indexed hood references: '+error.message);
   }
 }
-async function loadHoodPreview(){
-  const generation=++hoodGeneration;
+function loadHoodPreview(){
   const item=hoods.find(hood=>hood.key===$('hoodSelect').value);
-  images.hood=null;images.hoodRear=null;render();
-  if(!item)return;
-  message('Loading hood reference: '+item.label+'…');
-  const species=selectedSpecies(),gender=selectedGender();
-  const settled=await Promise.allSettled([
-    Catalog.composeArtwork(item.config,species,gender,'front'),
-    Catalog.composeArtwork(item.config,species,gender,'rear'),
-  ]);
-  if(generation!==hoodGeneration)return;
-  images.hood=settled[0].status==='fulfilled'?settled[0].value:null;
-  images.hoodRear=settled[1].status==='fulfilled'?settled[1].value:null;
+  hoodOption=item?window.portraitOptionFromJson(item.entry,item.config):null;
+  images.hood=null;hoodPortrait=null;lastHoodRequest=null;hoodRenderGeneration++;
   render();
-  const hidesBeard=activeStyle?.slot==='facialHair'&&item.config.tags?.includes('hides-facial-hair');
-  if(hidesBeard)message(item.label+' is a facewrap: the game hides the beard, so its hood-passage mask is disabled.');
-  else if(!images.hood)message(item.label+' has no artwork for '+species+' '+gender+'. The hair remains editable.');
-  else message('Showing '+item.label+' as a translucent hood reference.');
+}
+function hoodPreview(){
+  if(!canonicalProfile||(!hoodOption&&!images.hood)){hoodPortrait=null;return;}
+  const isBeard=$('slotSelect').value==='facialHair';
+  const request=[canonicalProfile,hoodOption,images.hood,images.front,isBeard,rig.hoodOpeningMask,rig.hoodOverlapMask,rig.hoodRigidOverlapMask];
+  if(lastHoodRequest?.every((item,index)=>item===request[index]))return;
+  lastHoodRequest=request;
+  const generation=++hoodRenderGeneration;
+  const profile={...canonicalProfile,hood:hoodOption||canonicalProfile.hood};
+  const hidden=isBeard&&window.portraitHoodHidesFacialHair(hoodOption);
+  const makeCanvas=()=>{const canvas=document.createElement('canvas');canvas.width=canvas.height=200;return canvas;};
+  const front=makeCanvas(),rear=makeCanvas(),beard=makeCanvas();
+  if(images.front)beard.getContext('2d').drawImage(images.front,0,0,200,200);
+  const options={forceEyesOpen:true,captureSplineHood:true,splinePreviewBeard:isBeard&&!hidden?{rig,canvases:[beard]}:null};
+  Promise.all([
+    window.NpcAvatarPreview.renderProfileToCanvas(front,profile,options),
+    window.NpcAvatarPreview.renderProfileToCanvas(rear,profile,{forceEyesOpen:true,portraitView:'behind'}),
+  ]).then(()=>{
+    if(generation!==hoodRenderGeneration)return;
+    let fit=front.hobunjiSplineHood;
+    if(images.hood){
+      const cloth=makeCanvas();cloth.getContext('2d').drawImage(images.hood,0,0,200,200);
+      fit=Rig.fitHood(cloth,isBeard?rig:{},[beard]);
+      front.getContext('2d').drawImage(fit.canvas,0,0);
+    }
+    const visibleBeard=makeCanvas(); // Cache rest-frame beard occlusion for the 2D painting surface.
+    const draw=visibleBeard.getContext('2d',{willReadFrequently:true});
+    draw.drawImage(beard,0,0);
+    if(isBeard&&fit){
+      const pixels=draw.getImageData(0,0,200,200);
+      for(let i=0;i<fit.coverage.length;i++)if(fit.coverage[i]&&!fit.overlap[i])pixels.data[i*4+3]=0;
+      draw.putImageData(pixels,0,0);
+    }
+    hoodPortrait={front,rear,fit:isBeard?fit:null,hidden,visibleBeard};
+    render();
+  }).catch(error=>{if(generation===hoodRenderGeneration)message('Hood preview failed: '+error.message);});
 }
 async function initCatalog(){
   const generation=++indexGeneration;
@@ -497,9 +546,9 @@ function controls(){
   $('segmentSelect').replaceChildren(...rig.segments.map((_,i)=>{const opt=document.createElement('option');opt.value=i;opt.textContent=(i+1)+': knot '+(i+1)+' → '+(i+2);return opt;}));
   selectedSegment=clamp(selectedSegment,0,rig.segments.length-1);$('segmentSelect').value=selectedSegment;
   for(const el of document.querySelectorAll('[data-direction]'))el.classList.toggle('active',el.dataset.direction===direction);
-  for(const el of ['rearU','rearV','strandWidth','response','pinWidth','tipFollow']){
+  for(const el of ['rearU','rearV','strandWidth','response','tipFollow']){
     const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse,
-      pinWidth:rig.pinWidthPx??18,tipFollow:rig.tipFollow??.58};
+      tipFollow:rig.tipFollow??.58};
     $(el).value=values[el];
   }
   const slot=safeSegment(),holder=$('segmentEditor');holder.replaceChildren();
@@ -528,14 +577,15 @@ function render(){
   ctx.strokeStyle='#26364d';ctx.lineWidth=1;
   for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
   const shown=$('viewSelect').value==='rear';
-  const portraitReference=shown?(images.characterRear||regionHead('rear')):(images.character||images.head);
-  if(portraitReference){ctx.globalAlpha=.72;ctx.drawImage(portraitReference,0,0,W,H);ctx.globalAlpha=1;}
-  if(images[shown?'rear':'front']){ctx.globalAlpha=.8;
-    if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
-    ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);
-    if(shown)ctx.restore();ctx.globalAlpha=1;}
-  const hoodReference=shown?(images.hoodRear||images.hood):images.hood;
-  if(hoodReference){ctx.globalAlpha=.28;ctx.drawImage(hoodReference,0,0,W,H);ctx.globalAlpha=1;}
+  updateMaskControls();
+  if(!previewPointer)hoodPreview();
+  const portraitReference=shown?(hoodPortrait?.rear||images.characterRear||regionHead('rear')):(hoodPortrait?.front||images.character||images.head);
+  if(portraitReference){ctx.globalAlpha=1;ctx.drawImage(portraitReference,0,0,W,H);ctx.globalAlpha=1;}
+  if(images[shown?'rear':'front'] && !hoodPortrait?.hidden){
+    if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);}
+    ctx.drawImage(shown?images.rear:(hoodPortrait?.visibleBeard||images.front),0,0,W,H);
+    if(shown)ctx.restore();
+  }
   if($('showRegions').checked){
     try{const overlay=makeRegionOverlay();if(overlay)ctx.drawImage(overlay,0,0,W,H);} // Cyan pixels are anchored; translucent purple pixels follow the spline.
     catch(error){message('Could not display the pixel region mask: '+error.message);}
@@ -568,10 +618,10 @@ function render(){
     // Keep mobile brush strokes responsive: recompute binary pinned mesh vertices only when the stroke ends, without re-uploading any sprite textures.
     const sources=viewerRegionSources();
     viewer.update({rig,wind:wind(),selectedKnot,direction,
-      head:images.character||images.head,headRear:images.characterRear||regionHead('rear'),
-      front:sources.front,rear:sources.rear,
+      head:hoodPortrait?.front||images.character||images.head,headRear:hoodPortrait?.rear||images.characterRear||regionHead('rear'),
+      front:hoodPortrait?.hidden?null:sources.front,rear:sources.rear,
       rearAligned:true, // All rear artwork is pre-aligned for the same continuous mesh as the game.
-      hood:images.hood,hoodRear:images.hoodRear||images.hood}); // All strand art stays on one mesh per view.
+      hoodFit:hoodPortrait?.fit});
   }
 }
 function updateKnots(){
@@ -581,14 +631,14 @@ function updateKnots(){
 }
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
-  const {view,mode:strokeMode}=previewPointer; // Keep a stroke on the plane and tool selected when it started.
+  const {view,kind,overlapBrush:brushMode,mode:strokeMode}=previewPointer; // Keep a stroke on the plane and tool selected when it started.
   if(strokeMode==='paint'||strokeMode==='erase'){
     if(!images[view])return;
-    rig.regionMasks=rig.regionMasks||{};
-    const current=rig.regionMasks[view]||Rig.encodePixelMask(new Uint8Array(40000));
-    rig.regionMasks[view]=Rig.paintPixelMask(current,p.u,p.v,numeric($('brush').value,6),strokeMode==='paint',lastPaint);
+    const radius=numeric($('brush').value,6);
+    const apply=(key,enabled)=>writeMask(key,view,Rig.paintPixelMask(readMask(key,view),p.u,p.v,radius,enabled,lastPaint));
+    apply(kind,strokeMode==='paint'&&(kind!=='overlap'||brushMode==='bend'));
+    if(kind==='overlap')apply('rigid',strokeMode==='paint'&&brushMode==='rigid');
     lastPaint=p;
-    regionOverlayCache=null; // Mask edits leave the 3D textures intact.
   }else{
     rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;
   }
@@ -598,7 +648,7 @@ $('preview').addEventListener('pointerdown',e=>{
   if(previewPointer||e.button!==0)return;
   e.preventDefault();
   const p=pick(e);
-  previewPointer={id:e.pointerId,view:activeView(),mode};
+  previewPointer={id:e.pointerId,view:activeView(),kind:activeMask(),overlapBrush,mode};
   $('preview').setPointerCapture(e.pointerId);
   if(mode==='move'){
     autoLayoutPending=false; // An author moving knots explicitly owns their placement; do not auto-fit it later.
@@ -624,17 +674,19 @@ $('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two kno
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
 for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
 $('testStrength').oninput=render;$('viewSelect').onchange=render;
+$('maskSelect').onchange=render;
+$('overlapMode').onchange=e=>{overlapBrush=e.target.value;};
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],
   ['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v],
-  ['pinWidth',v=>rig.pinWidthPx=v],['tipFollow',v=>rig.tipFollow=v]]){
+['tipFollow',v=>rig.tipFollow=v]]){
   $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));markRegionDirty();controls();render();};
 }
 $('clearMask').onclick=()=>{
   recordMaskUndo();
-  rig.regionMasks=rig.regionMasks||{};
-  rig.regionMasks[activeView()]=Rig.encodePixelMask(new Uint8Array(40000)); // Explicit empty mask stays all-flexible, not auto-reinitialized.
-  markRegionDirty();render();
-  message('This sprite view is now entirely flexible. Use the rigid brush to attach selected pixels to the portrait.');
+  const kind=activeMask(),empty=Rig.encodePixelMask(new Uint8Array(40000));
+  writeMask(kind,activeView(),empty);
+  if(kind==='overlap')writeMask('rigid',activeView(),empty);
+  render();message('Cleared the selected mask.');
 };
 $('resetRig').onclick=()=>{
   const points=images.front?Rig.suggestRestPoints(images.front,images.head):null;
@@ -654,10 +706,9 @@ $('autoMask').onclick=()=>{
 };
 $('undoMask').onclick=()=>{
   if(!maskUndo){message('There is no mask change to undo.');return;}
-  rig.regionMasks=rig.regionMasks||{};
-  if(maskUndo.mask)rig.regionMasks[maskUndo.view]=maskUndo.mask;
-  else delete rig.regionMasks[maskUndo.view];
-  maskUndo=null;markRegionDirty();render();message('Restored the previous rigid/flexible mask.');
+  writeMask(maskUndo.kind,maskUndo.view,maskUndo.mask);
+  if(maskUndo.kind==='overlap')writeMask('rigid',maskUndo.view,maskUndo.rigid);
+  maskUndo=null;render();message('Restored the previous mask.');
 };
 $('showRegions').onchange=render;
 $('generateBlend').onclick=()=>{
@@ -713,6 +764,8 @@ window.HobunjiSplineAuthorDiagnostics=()=>({
   direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
   regionMasks:Object.fromEntries(['front','rear'].map(view=>[view,rig.regionMasks?.[view]?.runs.reduce((n,p)=>n+p[1],0)??null])),headLoaded:!!images.head,
   canonicalPortrait:{loaded:!!images.character,rearLoaded:!!images.characterRear,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
+  hood:{equipped:hoodOption?.id||null,hidden:!!hoodPortrait?.hidden,ready:!!hoodPortrait,
+    opening:rig.hoodOpeningMask?.runs.reduce((n,p)=>n+p[1],0)||0,overlap:rig.hoodOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,rigid:rig.hoodRigidOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,brush:overlapBrush},
   pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
