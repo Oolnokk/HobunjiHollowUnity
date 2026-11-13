@@ -818,6 +818,7 @@
           if (browserBefore && !readSlot('preRestore')) writeSlot('preRestore', createRecord('pre-restore', browserBefore, 'before-emergency-import-browser', Date.now())); // Never replace a trusted imported pre-restore checkpoint with a possibly damaged browser fallback.
         } catch {} // A broken browser fallback must not block a known-good imported checkpoint.
         snapshotApi().apply(restoredSnapshot);
+        window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('emergency-recovery-import');
         try { await folderApi()?.forget?.(); } catch {} // Disconnect only the browser's wedged handle; never modify the selected disk folder.
         try { window.sessionStorage?.setItem?.('hobunjiFolderPrimarySkipOnce', 'emergency-recovery-import'); } catch {}
         try { window.sessionStorage?.removeItem?.(EMERGENCY_IMPORT_SESSION_KEY); } catch {} // The wedged handle is now forgotten; leaving this set would make later recoveries in this tab bypass (and forget) a newly chosen folder.

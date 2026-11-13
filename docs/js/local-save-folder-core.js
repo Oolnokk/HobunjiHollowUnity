@@ -797,7 +797,10 @@
       startAutoSync();
       notify();
 
-      if (changed && reloadIfChanged) reloadAfterFolderRestore();
+      if (changed && reloadIfChanged) {
+        if (window.__hobunjiGameStarted === true) window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('folder-restore');
+        reloadAfterFolderRestore();
+      }
       return {
         ok: true,
         action: _lastAction,

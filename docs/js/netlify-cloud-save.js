@@ -294,6 +294,7 @@
     const snapshots = snapshotApi();
     if (!snapshots) throw new Error('Save snapshot adapter is not loaded.');
     const snapshot = snapshots.capture({ strict: true });
+    window.CharacterMetaSave?.capturePending?.(snapshot.meta);
     const fingerprint = snapshots.fingerprint(snapshot);
     const link = readLinkState();
     const baseRevision = Number(link?.revision) || 0;
@@ -333,6 +334,7 @@
     const snapshots = snapshotApi();
     if (!snapshots) throw new Error('Save snapshot adapter is not loaded.');
     snapshots.apply(result.snapshot);
+    window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('cloud-load');
     const fingerprint = snapshots.fingerprint(result.snapshot);
     saveSuccessfulLink(result.remote, fingerprint);
     _lastError = '';
@@ -353,6 +355,7 @@
       const snapshots = snapshotApi();
       if (!snapshots) throw new Error('Save snapshot adapter is not loaded.');
       const local = snapshots.capture({ strict: true });
+      window.CharacterMetaSave?.capturePending?.(local.meta);
       const fingerprint = snapshots.fingerprint(local);
       const link = readLinkState();
       const remote = await refreshRemoteStatus();

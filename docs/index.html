@@ -170,10 +170,10 @@
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
-  <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
+  <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
-  <link rel="stylesheet" href="style.css?v=20261109craftHours1">
+  <link rel="stylesheet" href="style.css?v=20261112keyPack2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -315,7 +315,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261109festivalauditloader4"></script>
+  <script src="js/local-save-folder.js?v=20261112h8b3bd73"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261107cultivar2"></script>
@@ -339,7 +339,7 @@
   <script src="js/weapon-sprite-assemblies.js?v=20261111fishFlailHead1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261109grappledonor1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
-  <script src="js/combat/combat-core.js?v=20261110meleePool1"></script>
+  <script src="js/combat/combat-core.js?v=20261112hbb5144a"></script>
   <script src="js/combat/enemy-search-ai.js?v=20261110h608e181"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -421,12 +421,12 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261112flailPoseResolved1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261112h0305e6e"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20261102-food24h"></script>
-  <script src="js/skill-system.js?v=20261110tzkFortune1"></script>
+  <script src="js/skill-system.js?v=20261112he5ffaa9"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261106trinkets20"></script>
@@ -436,7 +436,7 @@
   <script src="js/cooking-data.js?v=20261107mushtardReview2"></script>
   <script src="js/food-processing.js?v=20261109craftHours1"></script>
   <script src="js/cooking-system.js?v=20261110h1f7ed44"></script>
-  <script src="js/key-item-system.js?v=20260918banubu1"></script>
+  <script src="js/key-item-system.js?v=20261112keyPack2"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -509,7 +509,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261112hce57b9e&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261113h7c46782&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -635,10 +635,11 @@
   <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
+  <script src="js/melody-camera-framing.js?v=20261112dynamicMelodyAudit3"></script><!-- Plate-discovered, geometry-fitted camera framing; loaded before every score producer. -->
   <script src="js/puzzle-cave-melody.js?v=20261110rhythmMotifs3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261110melodyClock1"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261112dynamicMelodyAudit2"></script>
   <script src="js/ruin-layer-playable.js?v=20261110h8b3a4fc"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261110h0efff27"></script>
@@ -943,7 +944,7 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261110melodyClock1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261112scoreMaskCameraMerge2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
   <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
@@ -2890,7 +2891,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261111mesaProbe1"></script>
+  <script src="js/pixel-probe.js?v=20261112hc3c1aff"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3045,7 +3046,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261111he69c3fb"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261112dynamicMelodyAudit2"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3062,7 +3063,7 @@
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20261106hed5723a"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
-  <script src="js/character-meta-save.js?v=20260930ench1"></script>
+  <script src="js/character-meta-save.js?v=20261112hfb494ec"></script>
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
@@ -3087,7 +3088,7 @@
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261103magicCustody5"></script>
+  <script src="js/delvers-guild-story.js?v=20261112keyPack2"></script>
   <script src="js/town-magic-checkpoint.js?v=20261103magicCustody6"></script> <!-- Spearhead and Oddclaw exterior gate check, legal item registration and Garanki's persistent custody. -->
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
@@ -3099,12 +3100,12 @@
   <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261112h6944454"></script>
+  <script src="game.js?v=20261113hff8fb38"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
-  <script src="js/ui-element-editor.js?v=20260814a"></script>
+  <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>
   <script src="js/controller-ui-nav.js?v=20261110barnStableUI2"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>

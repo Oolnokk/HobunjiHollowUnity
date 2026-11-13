@@ -995,6 +995,13 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
+    const caveOverlayState = window.PuzzleCaveEntrances?.debugSnapshot?.().areas?.find(zone => zone.area === currentArea); // One-shot mobile check for the active cliff-score glyph compositor, never a per-frame scan.
+    if (caveOverlayState?.portals?.length) {
+      const visibleScores = caveOverlayState.portals.filter(portal => portal.scoreVisible); // Plate-gated inscriptions whose note planes should appear after the cliff/outline composite.
+      const readyScores = visibleScores.filter(portal => portal.scoreOverlayReady); // Identifies missing CanvasTexture/depth options from a phone Pixel Probe report.
+      const scoreActorMask = window.OutlineRenderPerformance?.snapshot?.(); // Mobile-only check that final note rendering reconstructed character silhouettes (not a permanent on-screen diagnostic).
+      lines.push(`Puzzle Cave note overlay: portals=${caveOverlayState.portals.length} active=${visibleScores.length} finalPassReady=${readyScores.length}/${visibleScores.length} outlineOverlay=${window.OutlineRenderPerformance?.worldTextAboveShell === true ? 'installed' : 'missing'} characterMask=${scoreActorMask?.scoreActorDepthReady ? 'ready' : 'missing'} actorDepthPasses=${scoreActorMask?.scoreActorDepthPasses ?? 0} lastActorMeshes=${scoreActorMask?.scoreActorDepthMeshes ?? 0}; modes=${visibleScores.map(portal => portal.scoreOcclusion || '-').join(',') || '-'}`);
+    }
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
     if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
@@ -1293,6 +1300,8 @@
         ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
       lines.push(`Melee trail pool: free=${meleeDebug.pooledTrailCount || 0} created=${meleeDebug.trailMeshesCreated || 0} reused=${meleeDebug.trailMeshesReused || 0} freed=${meleeDebug.trailMeshesDisposed || 0}`); // Mobile-visible proof that successive strikes reuse GPU buffers.
+      const swipeUploads = window.__climbDebug?.coneTrailUploads?.();
+      if (swipeUploads) lines.push(`Swing work: ribbon position writes=${swipeUploads.positions} highlight writes=${swipeUploads.colors} melee grids skipped=${meleeDebug.meleeGridRejects || 0}`);
       const strikeTimes = meleeDebug.strikeCpuMs; // Combat's small snapshot avoids collecting all profiler buckets during live debugging.
       if ((strikeTimes?.enemy?.samples || 0) + (strikeTimes?.player?.samples || 0) > 0)
         lines.push(`Strike CPU peak/last: enemy=${Number(strikeTimes.enemy.max).toFixed(1)}/${Number(strikeTimes.enemy.last).toFixed(1)}ms player=${Number(strikeTimes.player.max).toFixed(1)}/${Number(strikeTimes.player.last).toFixed(1)}ms (Performance Profiler)`);
@@ -1490,6 +1499,16 @@
       lines.push(`Latest camera change: ${boom.latestChange}`);
       const framing = window.HobunjiShoulderCameraCharacterFraming?.snapshot?.(); // Reads the event-time framing report so mobile users can verify head-centered targeting.
       if (framing) lines.push(`Shoulder framing: species=${framing.speciesId || '-'} center=${framing.targetSource || '-'} headY=${Number(framing.headHeightTiles || 0).toFixed(3)} neckY=${Number(framing.neckHeightTiles || 0).toFixed(3)} targetOffset=${Number(framing.resolvedTargetYOffsetTiles || 0).toFixed(3)}; ${framing.latestChange || ''}`);
+    }
+
+    const melodyCamera=window.MelodyCameraFraming?.debugSnapshot?.(); // Mobile-only readout; gameplay samples only the active plate's owned glyphs.
+    if(melodyCamera?.registered){
+      const f=melodyCamera.framing||{};
+      lines.push('Melody camera: '+(melodyCamera.active?'found note '+(melodyCamera.triggerNote+1):'searching')
+        +' groups='+melodyCamera.registered+' shown='+melodyCamera.notes
+        +' zoom='+Number(f.distanceScale||1).toFixed(2)+' fov+'+Number(f.fovExtra||0).toFixed(1)
+        +' lift='+Number(f.offsetY||0).toFixed(2)+' fitLimited='+(melodyCamera.fitLimited?'yes':'no')
+        +' status='+melodyCamera.reason);
     }
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
