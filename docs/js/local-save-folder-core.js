@@ -489,7 +489,12 @@
     const meta = readBrowserMeta(); // Canonical browser metadata captured once so guards and writes operate on the same object.
     if (!meta) throw new Error('No browser save is available to write.');
     const farmLayouts = readBrowserFarmLayouts(meta, true); // Matching layout capture keeps the folder write atomic at the snapshot boundary.
-    return { snapshotVersion: 1, meta, farmLayouts };
+    const snapshot = { snapshotVersion: 1, meta, farmLayouts }; // Also used when gameplay has not initialized the direct capture bridge.
+    const browserBaselineParts = window.HobunjiSaveSnapshot?.browserCacheParts?.();
+    if (Array.isArray(browserBaselineParts)) {
+      Object.defineProperty(snapshot, 'browserBaselineParts', { value: browserBaselineParts, configurable: true }); // Protect browser edits made during a fallback folder write, without serializing the guard.
+    }
+    return snapshot;
   }
 
   function normalizeSnapshot(snapshot) {
