@@ -90,11 +90,26 @@ const read = file => fs.readFileSync(path.join(docs, file), 'utf8');
   units.trigger('change');
   assert.equal(messages.at(-1).seconds, 2, 'editing interval reconfigures the running audio clock');
   assert.match(status.textContent, /Next chime/);
+  const messageCount = messages.length;
+  duration.value = '0';
+  duration.trigger('change');
+  assert.equal(messages.length, messageCount, 'invalid edits never reconfigure the audio clock');
+  assert.equal(ctx.DevCompanionCycleTimer.getState().seconds, 2, 'previous duration remains active');
+  assert.match(status.textContent, /Previous 2s cycle remains active/, 'visible warning explains continued chimes');
+  duration.value = '3';
+  duration.trigger('change');
+  assert.equal(messages.at(-1).seconds, 3, 'a corrected interval applies without restarting');
+  assert.match(status.textContent, /Next chime/, 'corrected input clears the visible warning');
   checkbox.checked = false;
   checkbox.trigger('change');
   assert.equal(messages.at(-1).type, 'stop');
   assert.equal(audioContexts[0].closed, true, 'stopping releases the audio context');
   assert.equal(ctx.DevCompanionCycleTimer.getState().enabled, false);
+  duration.value = '0';
+  duration.trigger('change');
+  assert.equal(status.textContent, 'Off', 'stopped timer never claims to chime with an invalid interval');
+  events.get('pagehide')?.();
+  assert.equal(ctx.DevCompanionCycleTimer.getState().enabled, false, 'pagehide leaves no armed silent timer');
 
   let Processor = null;
   class WorkletBase { constructor() { this.port = { onmessage: null }; } }
