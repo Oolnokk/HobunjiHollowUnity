@@ -19818,7 +19818,7 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'harpoon' && action === 'fish') {
-          return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+          return tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL; // Waterfall crests share river fishing and host Frenzy water tiles.
         }
         if (tool === 'machete' || tool === 'axe') {
           const targets = getMacheteTargets(col, row, action);
@@ -20907,7 +20907,7 @@
         if (activeTool === 'harpoon' && activeAction === 'fish') {
           const reticle = getReticleTile();
           if (!canUseAction('harpoon', 'fish', reticle.col, reticle.row)) {
-            showToast('No river or stream here to fish.', false);
+            showToast('No river, stream or waterfall here to fish.', false);
             return;
           }
           window.Fishing?.beginCast();
