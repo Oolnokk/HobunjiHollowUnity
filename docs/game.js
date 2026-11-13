@@ -27755,6 +27755,9 @@
           window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
         }
       }
+      function eligibleWorldButtons(buttons) {
+        return (buttons || []).filter(button => window.GameplayInputRouter?.canOfferWorldAction?.(button) !== false); // Combat-ineligible holds must relinquish their action slot to the normal weapon/tool actions.
+      }
       function computeActionButtonsImpl() {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
@@ -27838,10 +27841,16 @@
 
         const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
         const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
-        if (rubbleButtons) return rubbleButtons;
+        if (rubbleButtons) {
+          const eligible = eligibleWorldButtons(rubbleButtons);
+          if (eligible.length) return eligible;
+        }
         const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
         const directFurnitureButtons = directFurniture?.getButtons?.() || [];
-        if (directFurnitureButtons.length) return directFurnitureButtons;
+        if (directFurnitureButtons.length) {
+          const eligible = eligibleWorldButtons(directFurnitureButtons);
+          if (eligible.length) return eligible;
+        }
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
         if ((window.FestivalSystem?.dance?.targetNpcId || window.FestivalSystem?.pendingDance?.targetNpcId) && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
@@ -27918,21 +27927,33 @@
             if (near?.id === _lastOfferedCorpseId) aimedCorpse = near;
           }
           _lastOfferedCorpseId = aimedCorpse?.id || null;
-          if (aimedCorpse) return aimedCorpse.getButtons(corpseReticle);
+          if (aimedCorpse) {
+            const eligible = eligibleWorldButtons(aimedCorpse.getButtons(corpseReticle));
+            if (eligible.length) return eligible; // A skeleton's Search hold must not displace Cut/Slash during combat.
+          }
           const devRuinActions = currentArea === 'map_i_dev_random_ruin'
             ? window.DevRandomRuinInteractions?.getActionButtons?.()
             : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
-          if (devRuinActions?.length) return devRuinActions;
-          const nest = window.DenNestSystem.currentAimedNest();
+          if (devRuinActions?.length) {
+            const eligible = eligibleWorldButtons(devRuinActions);
+            if (eligible.length) return eligible;
+          }
+          const nest = window.GameplayInputRouter?.canOfferWorldAction?.('nest_take') === false ? null : window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
-          if (bInteractable) return bInteractable.getButtons();
+          if (bInteractable) {
+            const eligible = eligibleWorldButtons(bInteractable.getButtons());
+            if (eligible.length) return eligible;
+          }
           const caveReagent = window.CaveSiteSystem?.objectAt?.(currentArea, bReticle.col, bReticle.row); // Reuses the interior reticle so walking across Duskcaps never harvests them.
-          if (caveReagent) return caveReagent.getButtons(bReticle);
+          if (caveReagent) {
+            const eligible = eligibleWorldButtons(caveReagent.getButtons(bReticle));
+            if (eligible.length) return eligible;
+          }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
           // bar here, same as farm/zone (below), even though every other
@@ -28000,13 +28021,14 @@
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
           const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
-          if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
+          if (obj2) eligibleWorldButtons(obj2.getButtons(reticle)).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
 
         // A branch nest claims Action 1 only while its 3D volume is under
         // the centered reticle and its Nestmother is no longer guarding it.
-        const zoneNest = _isZoneArea(currentArea) ? window.DenNestSystem.currentAimedNest() : null;
+        const zoneNest = _isZoneArea(currentArea) && window.GameplayInputRouter?.canOfferWorldAction?.('nest_take') !== false
+          ? window.DenNestSystem.currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
@@ -28014,13 +28036,14 @@
 
         // A standing honeyfuzzle hive stump under the reticle: one long hold
         // (js/corpse-hold-loot.js owns the timer) takes its eggs and honey.
-        const aimedHive = _isZoneArea(currentArea) ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
+        const aimedHive = _isZoneArea(currentArea) && window.GameplayInputRouter?.canOfferWorldAction?.('corpse_hold_loot') !== false
+          ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
         if (aimedHive) return [{ icon: '🍯', label: 'Hold to Harvest Hive', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: aimedHive.promptRoot }];
 
         // A downed companion beside the player, or a Root Totem while one is
         // down: same hold contract as hives (js/companion-downed.js).
         const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
-        if (companionReviveButton) return [companionReviveButton];
+        if (companionReviveButton && eligibleWorldButtons([companionReviveButton]).length) return [companionReviveButton];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -28028,7 +28051,7 @@
         const banditTentAction = _isZoneArea(currentArea)
           ? window.BanditCamps?.getNearbyTentAction?.()
           : null;
-        if (banditTentAction) return [banditTentAction];
+        if (banditTentAction && eligibleWorldButtons([banditTentAction]).length) return [banditTentAction];
 
         // A placed wilderness campfire, same runtime-prop pattern as bandit
         // tents above — walking up to it puts Save/Cook/Brew each on their
@@ -28101,7 +28124,7 @@
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
           : getAimedFarmInteractionObject(reticle.col, reticle.row);
         if (obj) {
-          const objBtns = obj.getButtons(reticle);
+          const objBtns = eligibleWorldButtons(obj.getButtons(reticle));
           objBtns.forEach(b => btns.push(b));
         }
 
