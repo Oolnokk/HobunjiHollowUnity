@@ -57,6 +57,60 @@ async function run() {
     assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(den.x, den.y + 3, area), true, 'collapsed cave remains sealed');
   }
 
+  // Cached geometry must survive repeated A* tile checks without rescanning the locale.
+  const authored = templates[0]; // Real den locale supplies the collision fixture.
+  const cave = authored.objects.find(object => object.key === 'cave_small'); // Reference transform for authored colliders.
+  const moving = { x:20, y:20, w:cave.w*2, h:cave.h*2, cliffBacked:true,
+    entranceTemplateId:authored.id, mouthAnchor:{x:23,y:23} }; // Mutable den used to exercise cache invalidation.
+  const initial = context.ZoneDenTotemFeatures.denEntranceCollisionState(moving); // First computed state.
+  const before = context.ZoneDenTotemFeatures.denCollisionDebugSnapshot(); // Mobile-visible diagnostics before repeated lookups.
+  for (let i=0; i<600; i++) assert.strictEqual(context.ZoneDenTotemFeatures.denEntranceCollisionState(moving), initial);
+  const after = context.ZoneDenTotemFeatures.denCollisionDebugSnapshot(); // Verifies the expensive computation did not repeat.
+  assert.equal(after.hits - before.hits, 600);
+  assert.equal(after.builds, before.builds);
+
+  moving.x += 7;
+  const relocated = context.ZoneDenTotemFeatures.denEntranceCollisionState(moving); // Relocation recalculates world rectangles.
+  assert.notStrictEqual(relocated, initial);
+  assert.equal(relocated.rects[0].x, moving.x);
+  moving.w *= 1.5;
+  const resized = context.ZoneDenTotemFeatures.denEntranceCollisionState(moving); // Resizing recalculates collider scaling.
+  assert.notStrictEqual(resized, relocated);
+  assert.equal(resized.rects[0].w, moving.w);
+  moving.mouthAnchor.x++;
+  assert.notStrictEqual(context.ZoneDenTotemFeatures.denEntranceCollisionState(moving), resized);
+  moving.entranceTemplateId = templates[1].id;
+  assert.notStrictEqual(context.ZoneDenTotemFeatures.denEntranceCollisionState(moving), resized);
+
+  // The authored furniture outside the footprint cannot be discarded by the new broad-phase.
+  moving.entranceTemplateId = authored.id;
+  const local = structuredClone(authored); // Independent edited locale; never modifies repository fixture data.
+  const furniture = { id:'external_test', kind:'furniture', key:'test_prop', col:cave.col+cave.w+2,
+    row:cave.row+1, w:1, h:1, collision:{mode:'footprint'} }; // Collider deliberately beyond den.x + den.w.
+  local.objects.push(furniture);
+  let mode = 'local'; // Simulates the game's live local-vs-repo source switch.
+  let override = {locales:[local]}; // Runtime override reader guarantees stable identity until a save.
+  context.LocalDBOverrides = { getSourceMode:() => mode, getRuntimeOverride:() => override };
+  const external = context.ZoneDenTotemFeatures.denEntranceCollisionState(moving); // Rebuild after source switch.
+  const cx = moving.x + (furniture.col-cave.col) * moving.w/cave.w; // World-space authored furniture column.
+  const cy = moving.y + (furniture.row-cave.row) * moving.h/cave.h; // World-space authored furniture row.
+  context.GridTileAccessors.init({ _zoneLayouts:new Map([[area,{dens:[moving]}]]) });
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(cx,cy,area),true,'outside-footprint furniture remains solid');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(cx-1,cy,area),false,'outside collider bounds do not overblock');
+  assert.strictEqual(context.ZoneDenTotemFeatures.denEntranceCollisionState(moving),external);
+
+  const edited = structuredClone(local); // Simulates saved Locale Editor change.
+  edited.objects.find(object=>object.id==='external_test').col += 2;
+  override = {locales:[edited]};
+  const changed = context.ZoneDenTotemFeatures.denEntranceCollisionState(moving);
+  assert.notStrictEqual(changed,external,'saved locale revision invalidates cached collider');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(cx,cy,area),false,'old furniture position clears');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(cx+2*moving.w/cave.w,cy,area),true,'new furniture position blocks');
+  mode = 'repo';
+  assert.notStrictEqual(context.ZoneDenTotemFeatures.denEntranceCollisionState(moving),changed,'source switch invalidates cache');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(cx+2*moving.w/cave.w,cy,area),false,'repo locale omits edited furniture');
+  assert.ok(context.ZoneDenTotemFeatures.denCollisionDebugSnapshot().invalidations >= 6);
+
   const generic = { x:10, y:10, w:6, h:6, mouthAnchor:{ x:13, y:16 } }; // A legacy free-standing den borrows the shared cave model without choosing an authored entrance template.
   const fallbackState = context.ZoneDenTotemFeatures.denEntranceCollisionState(generic); // A visual template must not silently replace unassigned den collision.
   assert.equal(fallbackState.useLegacyCave, true, 'free-standing den must keep its old doorway collider');
