@@ -85,15 +85,18 @@ function chain(mode){
   const vases=new Map(); // The real chain dispatcher iterates the same map.
   const records=new Map([['zone',{vases,scene:{}}]]);
   const events=[]; // Real blast event data from the isolated authoritative functions.
+  const flushes={saves:0,rubble:0}; // Counts chain-complete persistence and instance-buffer sync calls.
   const ctx={RADIUS:5,DAMAGE:34,records,THREE:{Vector3:class Vector3{}},
     held:null,flight:null,backCarried:null,BURDEN_IMPACT_HANDLERS:new Map(),carriedWorldPosition:null,
     backCarrierPosition:()=>null, // Modern stowed Burdens resolve their carrier's location before detonating; this chain fixture has none.
     lastEvent:'',lastBlastAttribution:null,
     explosionBatchDepth:0,explosionBatchDirty:false,pendingRubbleVisuals:new Set(),blastRubbleRebuilds:0,
-    syncPileVisuals(){},persistWorld(){}, // The isolated chain fixture supplies the outermost-batch flush owner.
+    syncPileVisuals(){flushes.rubble++;},
+    persistWorld(){if(ctx.explosionBatchDepth)ctx.explosionBatchDirty=true;else flushes.saves++;}, // Reproduces the actual synchronous batch gate.
     deps:()=>({player:null,hostileObjects:new Set(),npcWalkers:new Set()}),
     tileSize:()=>64,scene:()=>({}),baseHeight:()=>0,
-    disposeEmitters(){},saveConsumed(){},shatterVisual(){},destroyTerrain(){return 0;},
+    disposeEmitters(){},saveConsumed(){ctx.persistWorld();},shatterVisual(){},
+    destroyTerrain(_map,rec){ctx.pendingRubbleVisuals.add(rec);ctx.persistWorld();return 1;},
     cancelShatterAim(){},setHeldRearXray(){},prompt(){},
     window:{WorldEvents:{emit:(_type,data)=>events.push(data)},
       AudioSystem:{playObjectSfxKey(){}},ResourceSystem:{spendFooting(){}},__farmLog(){}},
@@ -113,6 +116,9 @@ function chain(mode){
   else api.triggerBurdenBlastAt('zone',0,0,5,'witchbomb');
   assert.equal(vases.size,0,'all three Shattercasks detonate exactly once');
   assert.equal(events.length,3);
+  assert.equal(flushes.saves,1,'a three-charge chain serializes its world changes only once');
+  assert.equal(flushes.rubble,1,'a three-charge chain rebuilds the affected rubble instances once');
+  assert.equal(ctx.explosionBatchDepth,0,'the outermost charge always closes the batch after recursion');
   assert(events.every(e=>Math.abs(e.radius-(mode==='wearer'?5.75:5))<1e-9),'blast radius follows player-only provenance');
   assert.equal(ctx.lastBlastAttribution.rootId,mode==='wearer'?'a':null,'final link retains correct chain root');
 }
