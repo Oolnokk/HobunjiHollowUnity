@@ -49,6 +49,14 @@
     catch (error) { console.warn('[GameplayInputRouter] combat resolver failed', error); return false; }
   }
 
+  const WORLD_HOLD_ACTION_IDS = new Set(['nest_take', 'bandit_tent_interact', 'corpse_hold_loot']); // Known den, tent, corpse, hive and companion-revival holds.
+  function canOfferWorldAction(button) {
+    const actionId = typeof button === 'string' ? button : String(button?.action || '');
+    const hold = WORLD_HOLD_ACTION_IDS.has(actionId) || (button && typeof button === 'object'
+      && button.worldInteraction === true && (button.holdToCommit === true || button.requiresHold === true || Number(button.holdSeconds) > 0));
+    return !hold || !isInCombat(); // Remove a combat-ineligible hold from Action 1/2, restoring normal attacks instead of trapping the player.
+  }
+
   function canContinueHold(kind, held) {
     kind = String(kind || '').trim();
     if (!kind) return false;
@@ -173,6 +181,7 @@
     endContextPress,
     isAttackBlocked,
     isInCombat,
+    canOfferWorldAction,
     canContinueHold,
     setClaims,
     clearClaims,
