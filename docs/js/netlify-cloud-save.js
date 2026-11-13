@@ -24,7 +24,9 @@
   let _panelOpen = false;
   let _autoTimer = null;
   let _changePollTimer = null;
-  let _lastObservedFingerprint = '';
+  let _lastObservedBrowserParts = null; // Raw browser save parts compared by the cloud change poll without whole-save serialization.
+  let _cloudIdleQueued = false; // Prevents overlapping timer idle callbacks from each doing a full upload capture.
+  let _cloudIdleEpoch = 0; // Invalidates queued autosaves when cloud syncing is disarmed or rearmed.
   let _dirty = false;
   let _pendingAuthCallback = null;
   const _listeners = new Set();
@@ -84,6 +86,16 @@
   function localFingerprint() {
     try { return snapshotApi()?.fingerprint?.() || ''; }
     catch { return ''; }
+  }
+
+  function browserCacheParts() {
+    try { return snapshotApi()?.browserCacheParts?.() || null; }
+    catch { return null; }
+  }
+
+  function browserCachePartsMatch(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+      && a.every((value, index) => value === b[index]);
   }
 
   function getStatus() {
@@ -182,10 +194,25 @@
   }
 
   function stopAutoSync() {
+    _cloudIdleEpoch++;
+    _cloudIdleQueued = false;
     if (_autoTimer) clearInterval(_autoTimer);
     if (_changePollTimer) clearInterval(_changePollTimer);
     _autoTimer = null;
     _changePollTimer = null;
+  }
+
+  function queueIdleCloudSave() {
+    if (_cloudIdleQueued || !_dirty || _busy || _conflict) return;
+    _cloudIdleQueued = true;
+    const epoch = _cloudIdleEpoch; // Older requests may not resume after a cloud account/authority change.
+    const run = () => {
+      if (epoch !== _cloudIdleEpoch) return;
+      _cloudIdleQueued = false;
+      if (_dirty && !_busy && !_conflict) safeSync({ automatic: true }).catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 50);
   }
 
   function armAutoSync() {
@@ -193,22 +220,19 @@
     const link = readLinkState();
     if (!link?.autoSyncArmed) return;
     stopAutoSync();
-    _lastObservedFingerprint = localFingerprint();
+    _lastObservedBrowserParts = browserCacheParts();
     _dirty = false;
     _changePollTimer = setInterval(() => {
-      const next = localFingerprint();
-      if (!next || next === _lastObservedFingerprint) return;
-      _lastObservedFingerprint = next;
+      const next = browserCacheParts();
+      if (!next || browserCachePartsMatch(next, _lastObservedBrowserParts)) return;
+      _lastObservedBrowserParts = next;
       _dirty = true;
       notify();
     }, CHANGE_POLL_MS);
-    _autoTimer = setInterval(() => {
-      if (!_dirty || _busy || _conflict) return;
-      safeSync({ automatic: true }).catch(() => {});
-    }, AUTO_SYNC_MS);
+    _autoTimer = setInterval(queueIdleCloudSave, AUTO_SYNC_MS); // Keep expensive cloud capture/serialization off an active gameplay frame.
   }
 
-  function saveSuccessfulLink(remote, fingerprint) {
+  function saveSuccessfulLink(remote, fingerprint, sentBrowserParts = null) {
     const now = Date.now();
     writeLinkState({
       revision: Number(remote?.revision) || 0,
@@ -219,8 +243,10 @@
     _remote = remote || null;
     _conflict = null;
     _dirty = false;
-    _lastObservedFingerprint = fingerprint || localFingerprint();
     armAutoSync();
+    if (sentBrowserParts && !browserCachePartsMatch(sentBrowserParts, _lastObservedBrowserParts)) {
+      _dirty = true; // Edits made during the network upload must still sync on the next automatic pass.
+    }
   }
 
   function setConflict(remote, reason, message) {
@@ -296,6 +322,7 @@
     const snapshot = snapshots.capture({ strict: true });
     window.CharacterMetaSave?.capturePending?.(snapshot.meta);
     const fingerprint = snapshots.fingerprint(snapshot);
+    const sentBrowserParts = snapshots.browserCacheParts?.() || null; // Browser state at upload capture; used to detect edits while the request is in flight.
     const link = readLinkState();
     const baseRevision = Number(link?.revision) || 0;
 
@@ -306,7 +333,7 @@
         force,
         deviceId: getDeviceId(),
       });
-      saveSuccessfulLink(result.remote, fingerprint);
+      saveSuccessfulLink(result.remote, fingerprint, sentBrowserParts);
       _lastError = '';
       _lastMessage = automatic ? 'Cloud autosave complete.' : 'Saved this device to the cloud.';
       notify();
@@ -357,6 +384,7 @@
       const local = snapshots.capture({ strict: true });
       window.CharacterMetaSave?.capturePending?.(local.meta);
       const fingerprint = snapshots.fingerprint(local);
+      const partsAtCapture = browserCacheParts(); // Guard against local edits arriving while the remote revision request is in flight.
       const link = readLinkState();
       const remote = await refreshRemoteStatus();
 
@@ -376,8 +404,8 @@
       }
 
       if (fingerprint === link.lastSyncedFingerprint) {
-        _dirty = false;
-        _lastMessage = 'Cloud save is already current.';
+        _dirty = partsAtCapture !== null && !browserCachePartsMatch(partsAtCapture, browserCacheParts()); // Never forget edits that occurred while awaiting cloud status.
+        _lastMessage = _dirty ? 'New local changes are waiting for cloud autosave.' : 'Cloud save is already current.';
         if (!automatic && !link.autoSyncArmed) {
           writeLinkState({ ...link, autoSyncArmed: true });
           armAutoSync();
