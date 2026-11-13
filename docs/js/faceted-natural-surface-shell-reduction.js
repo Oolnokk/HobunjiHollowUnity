@@ -2,7 +2,7 @@
   'use strict';
 
   const SHELL_LAYER = 1; // Existing inverted-shell render layer removed from faceted natural surfaces after their authored PNG edge treatment is applied.
-  const FACETED_SURFACES = new Set(['rocks', 'cliffs']); // Natural surfaces whose irregular flat-face PNG mapping replaces a generated shell silhouette.
+  const FACETED_SURFACES = new Set(['rocks', 'cliffs']); // Rock and cliff texture categories; only explicitly tagged rounded meshes retain their 3D shell.
   const countedMeshes = new WeakSet(); // Prevents repeated remap/naturalize passes from inflating the mobile diagnostics.
   const stats = {
     naturalizeWrapInstalled: false,
@@ -30,7 +30,7 @@
   }
 
   function suppressMesh(mesh, requestedSurface = null) {
-    if (!mesh?.isMesh) return false;
+    if (!mesh?.isMesh || mesh.userData?.retainNaturalSurfaceShellOutline) return false;
     const surface = FACETED_SURFACES.has(requestedSurface) ? requestedSurface : materialSurface(mesh);
     if (!FACETED_SURFACES.has(surface)) return false;
 
@@ -180,7 +180,7 @@
     naturalizeRockRoot,
     snapshot() {
       return Object.assign({}, stats, {
-        policy: 'rocks/cliffs use authored irregular-surface PNG outlines; rounded natural meshes may retain shell outlines',
+        policy: 'faceted rock and cliffs use PNG edges; rounded wilderness stones retain shell outlines',
       });
     },
   };
