@@ -171,7 +171,16 @@
     const image = context.getImageData(0, 0, MASK_SIZE, MASK_SIZE);
     const opening = decodePixelMask(rig.hoodOpeningMask);
     if (opening.includes(1)) {
-      const beardAlpha = beardCanvases.map(canvas => canvas.getContext('2d').getImageData(0, 0, MASK_SIZE, MASK_SIZE).data);
+      const beardAlpha = beardCanvases.map(canvas => {
+        if (canvas.width === MASK_SIZE && canvas.height === MASK_SIZE) {
+          return canvas.getContext('2d').getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+        }
+        const aligned = document.createElement('canvas'); // Sample alternate portrait sizes in the same mask UVs.
+        aligned.width = aligned.height = MASK_SIZE;
+        const draw = aligned.getContext('2d', { willReadFrequently: true });
+        draw.drawImage(canvas, 0, 0, MASK_SIZE, MASK_SIZE);
+        return draw.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+      });
       for (let i = 0; i < opening.length; i++) {
         if (opening[i] && !beardAlpha.some(pixels => pixels[i * 4 + 3] >= 8)) opening[i] = 0;
       }
@@ -221,20 +230,46 @@
       prior?.call(this, shader, renderer);
       shader.uniforms.splineHoodMask = uniform;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 splineHoodPosition; uniform vec2 splinePortraitSize;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nsplineHoodPosition = position.xy / splinePortraitSize + 0.5;');
+        .replace('#include <common>', '#include <common>\nvarying vec3 splineHoodPosition;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nsplineHoodPosition = position;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 splineHoodPosition; uniform sampler2D splineHoodMask;')
+        .replace('#include <common>', `#include <common>
+          varying vec3 splineHoodPosition;
+          uniform sampler2D splineHoodMask;
+          uniform vec2 splinePortraitSize;
+          uniform vec3 splineEye;
+          uniform vec3 splineViewDirection;
+          uniform bool splineOrthographic;
+        `)
         .replace('#include <map_fragment>', `#include <map_fragment>
-          if (all(greaterThanEqual(splineHoodPosition, vec2(0.0))) && all(lessThanEqual(splineHoodPosition, vec2(1.0)))
-              && texture2D(splineHoodMask, splineHoodPosition).r > 0.5
-              && texture2D(splineHoodMask, vUv).g < 0.5) discard;
+          vec3 hoodRay = splineOrthographic ? splineViewDirection : splineHoodPosition - splineEye;
+          if (abs(hoodRay.z) > 0.00001 && texture2D(splineHoodMask, vUv).g < 0.5) {
+            vec2 hoodUV = (splineHoodPosition.xy - hoodRay.xy * (splineHoodPosition.z / hoodRay.z)) / splinePortraitSize + 0.5;
+            if (all(greaterThanEqual(hoodUV, vec2(0.0))) && all(lessThanEqual(hoodUV, vec2(1.0)))
+                && texture2D(splineHoodMask, hoodUV).r > 0.5) discard;
+          }
         `);
       shader.uniforms.splinePortraitSize = size;
+      shader.uniforms.splineEye = eye;
+      shader.uniforms.splineViewDirection = direction;
+      shader.uniforms.splineOrthographic = orthographic;
     };
     const size = { value: new THREE.Vector2(1, 1) }; // Used to map deformed model coordinates back to the hood portrait.
+    const eye = { value: new THREE.Vector3() }; // Perspective eye in strand-local coordinates.
+    const direction = { value: new THREE.Vector3() }; // Parallel ray used by orthographic game cameras.
+    const orthographic = { value: false };
+    const inverse = new THREE.Matrix4(); // Reused by the render callback for both camera types.
     let texture = null;
     return {
+      setCamera(mesh, camera) {
+        inverse.copy(mesh.matrixWorld).invert();
+        orthographic.value = camera.isOrthographicCamera === true;
+        if (orthographic.value) {
+          direction.value.setFromMatrixColumn(camera.matrixWorld, 2).transformDirection(inverse);
+        } else {
+          eye.value.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(inverse);
+        }
+      },
       update(fit, width, height) {
         size.value.set(width, height);
         if (!fit && !texture) return;
@@ -621,7 +656,10 @@
     };
     applyWind({ x: 0, y: 0, z: 0 }, true);
     if (front.hoodFit) setHood(front.hoodFit);
-    frontMesh.onBeforeRender = update;
+    frontMesh.onBeforeRender = (_renderer, _scene, camera) => {
+      update();
+      if (hoodFit) occlusion.setCamera(frontMesh, camera);
+    };
     if (rearMesh) rearMesh.onBeforeRender = update;
     return { frontMesh, rearMesh, applyWind, setHood, rig, name };
   }

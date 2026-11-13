@@ -11344,7 +11344,10 @@
                 geometry.computeVertexNormals();
                 const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Metal-colored rock with optional verdigris markings, shared with caves and the town mine.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
-                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Preserve original continuous rock UVs after terrain displacement.
+                if (matKey === TileType.ROCK) {
+                  rockMesh.userData.retainNaturalSurfaceShellOutline = true; // Keep the individually removable stone's perimeter despite rock PNG texturing.
+                  window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`);
+                }
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -11516,6 +11519,10 @@
           mesh.receiveShadow = true;
           mesh.userData.mapEditorTerrain = { mapId };
           mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (matKey === TileType.ROCK) {
+            mesh.userData.retainNaturalSurfaceShellOutline = true; // Structural rounded stone mounds share this chunk-local render bucket.
+            _markOutline(mesh);
+          }
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
             mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
             mesh.userData.wildernessGlobalPathGround = true;
@@ -32750,6 +32757,7 @@
       window.ZoneTerrainFeatures?.init({
         TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
         displaceZoneGeometry, resolveTileMat,
+        markOutline: _markOutline,
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,

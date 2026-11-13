@@ -214,6 +214,7 @@
       if(hoodChanged){
         if(next.hoodFit && !hoodClip){
           hoodClip=window.PortraitSplineRig.hoodOcclusion(THREE,hairPlane.material);
+          hairPlane.onBeforeRender=(_renderer,_scene,activeCamera)=>hoodClip.setCamera(hairPlane,activeCamera);
           hairPlane.material.needsUpdate=true;
         }
         hoodClip?.update(next.hoodFit,1,1);

@@ -192,6 +192,44 @@ const server=http.createServer((req,res)=>{
       return {opening,overlap,hasIslandVertex};
     });
     assert.deepEqual(gameplay,{opening:0,overlap:1,hasIslandVertex:true},'the gameplay bake carries both masks and preserves isolated flexible pixels in 3D');
+    const projected=await page.evaluate(async()=>{
+      const THREE=await import('https://esm.sh/three@0.128.0');
+      const renderer=new THREE.WebGLRenderer();
+      const target=new THREE.WebGLRenderTarget(32,32);
+      const scene=new THREE.Scene();
+      const sprite=document.createElement('canvas');sprite.width=sprite.height=1;
+      sprite.getContext('2d').fillRect(0,0,1,1);
+      const material=new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sprite)});
+      const geometry=new THREE.PlaneGeometry(.08,.08);
+      geometry.translate(.16,0,.32); // Oblique rays hit the hood at x=0, while a straight-on ray misses.
+      const mesh=new THREE.Mesh(geometry,material);
+      const clip=window.PortraitSplineRig.hoodOcclusion(THREE,material);
+      const coverage=new Uint8Array(40000),overlap=new Uint8Array(40000);
+      for(let y=80;y<120;y++)for(let x=90;x<110;x++)coverage[y*200+x]=1;
+      mesh.onBeforeRender=(_renderer,_scene,camera)=>clip.setCamera(mesh,camera);
+      scene.background=new THREE.Color('white');
+      scene.add(mesh);
+      const parallel=new THREE.OrthographicCamera(-.2,.2,.2,-.2,.1,10);
+      const perspective=new THREE.PerspectiveCamera(15,1,.1,10);
+      const read=(camera,x,z)=>{
+        camera.position.set(x,0,z);
+        camera.lookAt(0,0,0);
+        renderer.setRenderTarget(target);renderer.render(scene,camera);
+        const pixels=new Uint8Array(32*32*4);
+        renderer.readRenderTargetPixels(target,0,0,32,32,pixels);
+        return pixels.some((value,i)=>i%4===0&&value<128);
+      };
+      clip.update({coverage,overlap},1,1);
+      const covered=[read(parallel,1,2),read(perspective,1,2)];
+      overlap.fill(1);clip.update({coverage,overlap},1,1);
+      const permitted=[read(parallel,1,2),read(perspective,1,2)];
+      clip.update(null,1,1);
+      const removed=read(parallel,1,2);
+      clip.dispose();geometry.dispose();material.map.dispose();material.dispose();target.dispose();renderer.dispose();
+      return {covered,permitted,removed};
+    });
+    assert.deepEqual(projected,{covered:[false,false],permitted:[true,true],removed:true},
+      'actual WebGL fragments follow the hood under oblique perspective and orthographic cameras');
     await page.locator('#maskSelect').selectOption('opening');
     await page.locator('#paintMode').click();await clickMaskPixel();
     assert((await debug()).hood.opening>0,'the opening brush authors a separate beard mask');

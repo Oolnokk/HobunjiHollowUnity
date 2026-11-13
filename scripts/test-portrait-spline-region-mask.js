@@ -9,6 +9,10 @@ const vm=require('node:vm');
 const root=path.resolve(__dirname,'..'); // Keep fixtures relative to the project rather than the test's working directory.
 class Canvas {
   constructor(width=200,height=200){this.width=width;this.height=height;this.pixels=new Uint8ClampedArray(width*height*4);}
+  get width(){return this._width;}
+  set width(value){this._width=value;this.pixels=new Uint8ClampedArray(value*(this._height||0)*4);}
+  get height(){return this._height;}
+  set height(value){this._height=value;this.pixels=new Uint8ClampedArray(this._width*value*4);}
   getContext(kind) {
     assert.equal(kind,'2d');
     const canvas=this;
@@ -35,7 +39,7 @@ vm.runInNewContext(fs.readFileSync(path.join(root,'docs/js/portrait-spline-rig.j
   {window,document,Uint8Array,Uint8ClampedArray,Float32Array,Math,Number});
 const Rig=window.PortraitSplineRig;
 const head=new Canvas(),hair=new Canvas(); // Two independent opaque silhouettes share the canonical portrait UV grid.
-const paint=(canvas,x,y,rgba)=>canvas.pixels.set(rgba,(y*200+x)*4);
+const paint=(canvas,x,y,rgba)=>canvas.pixels.set(rgba,(y*canvas.width+x)*4);
 for(let y=40;y<=100;y++)for(let x=70;x<=130;x++)paint(head,x,y,[210,150,110,255]);
 for(let y=60;y<=160;y++)for(let x=70;x<=120;x++)paint(hair,x,y,[90,65,45,255]);
 paint(hair,80,80,[0,0,0,0]); // Transparent cosmetic pixels never become rigid by default.
@@ -134,6 +138,11 @@ assert.equal(fitted.coverage[idx(95,80)],0,'painted beard pixels open the hood')
 assert.equal(fitted.coverage[idx(125,80)],1,'the opening cannot punch a hole past the beard silhouette');
 assert.equal(fitted.overlap[idx(96,75)],1,'covered beard pixels may render above the hood');
 assert.equal(fitted.overlap[idx(100,75)],0,'unpainted beard is occluded by the hood');
+const smallBeard=new Canvas(100,100); // A different source size still uses canonical 200px mask coordinates.
+paint(smallBeard,47,40,[90,65,45,255]);
+paint(hood,94,80,[50,100,80,255]);
+const resized=Rig.fitHood(hood,{hoodOpeningMask:{size:200,runs:[[idx(94,80),1]]}},[smallBeard]);
+assert.equal(resized.coverage[idx(94,80)],0,'hood opening rescales alternate beard sizes before alpha testing');
 const rigidOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,2);
 assert.deepEqual(rigidOver,pinned,'rigid overlap preserves the portrait-local position');
 const bentOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1);
