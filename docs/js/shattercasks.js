@@ -8,7 +8,13 @@
   const DEBRIS_COUNT = 72; // One instanced draw call for pottery shards.
   const POLL_S = .14; // Limits interaction/area scans on mobile.
   const records = new Map(); // Area -> {scene, vases:Map, piles:Map}, reused until its rendered scene is destroyed.
-  const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
+  const burstEffects = []; // Active shrapnel sprays; reused after their animation ends.
+  const burstPool = {pottery:[],fruit:[]}; // Retired GPU instance buffers/materials reused by the next blast of each kind.
+  const BURST_POOL_LIMIT = 6; // Bound retained effects per kind instead of retaining every historical chain blast.
+  let burstPoolHits=0,burstPoolMisses=0; // Mobile debug counters for effect reuse versus GPU allocations.
+  let explosionBatchDepth=0,explosionBatchDirty=false; // Coalesce persistence across recursively chained charges.
+  const pendingRubbleVisuals=new Set(); // Scene records needing a single rubble instance-buffer rebuild after the chain.
+  let blastPersistenceWrites=0,blastRubbleRebuilds=0; // Mobile debug counters for synchronous blast side effects.
   let sharedBurstArt = null; // Source textures/materials/geometries cached across all explosions to avoid GPU uploads during combat.
   let sharedPileArt = null; // Rock/wood pile geometry and material shared by per-area instanced render batches.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
@@ -150,7 +156,9 @@
     }catch(error){window.__farmLog?.('[shattercask] partial persistence recovery: '+error.message,'warn');}
   }
   function persistWorld() {
+    if(explosionBatchDepth){explosionBatchDirty=true;return;} // Chained detonations write one complete snapshot on exit.
     if(!storeIdentity || storeIdentity.startsWith('session|'))return;
+    blastPersistenceWrites++;
     try{
       localStorage.setItem('hobunji.shattercasks.v1:'+storeIdentity,JSON.stringify([...persisted]));
       localStorage.setItem('hobunji.shattercasks.terrain.v1:'+storeIdentity,
@@ -1898,15 +1906,26 @@
     const d=deps(),t=tileSize();
     return Number(d?.worldSurfaceY?.((col+.5)*t,(row+.5)*t)) || 0;
   }
+  function takeBurst(kind) {
+    const fx=burstPool[kind].pop();
+    if(fx)burstPoolHits++;else burstPoolMisses++;
+    return fx||null;
+  }
+  function recycleBurst(fx) {
+    fx.group.parent?.remove(fx.group);fx.flash.parent?.remove(fx.flash);
+    const pool=burstPool[fx.kind];
+    if(pool.length<BURST_POOL_LIMIT){pool.push(fx);return;}
+    for(const mesh of fx.shardMeshes)mesh.dispose?.(); // Release retired instance buffers, never the shared source art.
+    fx.flash.material.dispose();
+  }
   function shatterVisual(targetScene,x,z,y) {
-    // Hronal pillar's gold-angle instancing and gravity-driven shard spray,
-    // remapped to the vase's own pottery textures and colors, not fire colors.
-    const bodyCount=54,neckCount=DEBRIS_COUNT-bodyCount; // Separate textured shard batches preserve BOTH supplied material treatments.
+    // Reuse the cached textures AND the actual GPU instance buffers between pottery explosions.
+    const bodyCount=54,neckCount=DEBRIS_COUNT-bodyCount;
     if(!sharedBurstArt) {
       const loader=new THREE.TextureLoader(); // One texture upload per source material per page, never per explosion.
-      const bodyTexture=loader.load('assets/textures/boards.png'); // The user's original brown pottery surface.
-      const neckTexture=loader.load('assets/textures/carved_smooth.png'); // Separate lighter neck material.
-      textureBatchesCreated++; // Asset creation, not explosion count; stays at one during repeated blasts.
+      const bodyTexture=loader.load('assets/textures/boards.png');
+      const neckTexture=loader.load('assets/textures/carved_smooth.png');
+      textureBatchesCreated++;
       sharedBurstArt={
         geometries:[new THREE.TetrahedronGeometry(.11),new THREE.TetrahedronGeometry(.08)],
         materials:[
@@ -1914,27 +1933,32 @@
           new THREE.MeshBasicMaterial({color:0x8a6a3a,map:neckTexture,side:THREE.DoubleSide,transparent:true}),
         ],
         flashGeometry:new THREE.SphereGeometry(1,16,12),
-      }; // Shared draw assets are intentionally retained for subsequent charge blasts.
+      }; // Shared textures, source geometry and materials are intentionally retained.
     }
-    const shardMeshes=[
-      new THREE.InstancedMesh(sharedBurstArt.geometries[0],sharedBurstArt.materials[0],bodyCount),
-      new THREE.InstancedMesh(sharedBurstArt.geometries[1],sharedBurstArt.materials[1],neckCount),
-    ];
-    const group=new THREE.Group();group.position.set(x,y,z);
-    for(const mesh of shardMeshes){mesh.frustumCulled=false;group.add(mesh);}
-    targetScene.add(group);
-    const parts=[];
-    for(let i=0;i<DEBRIS_COUNT;i++) {
-      const angle=i*2.399963, speed=RADIUS*(.45+(i%8)/13);
-      parts.push({x:(i%7/6-.5)*.68,y:((i%17)/17)*.6,z:(Math.floor(i/7)%7/6-.5)*.63,
-        vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:2+(i%7)*.32,
-        batch:i<bodyCount?0:1,index:i<bodyCount?i:i-bodyCount});
+    let fx=takeBurst('pottery');
+    if(!fx){
+      const shardMeshes=[
+        new THREE.InstancedMesh(sharedBurstArt.geometries[0],sharedBurstArt.materials[0],bodyCount),
+        new THREE.InstancedMesh(sharedBurstArt.geometries[1],sharedBurstArt.materials[1],neckCount),
+      ];
+      const group=new THREE.Group();
+      for(const mesh of shardMeshes){mesh.frustumCulled=false;group.add(mesh);}
+      const flash=new THREE.Mesh(sharedBurstArt.flashGeometry,
+        new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false,blending:THREE.AdditiveBlending}));
+      const parts=Array.from({length:DEBRIS_COUNT},(_,i)=>({x:0,y:0,z:0,vx:0,vy:0,vz:0,
+        batch:i<bodyCount?0:1,index:i<bodyCount?i:i-bodyCount}));
+      fx={kind:'pottery',group,shardMeshes,parts,flash,age:0,duration:1.25,dummy:new THREE.Object3D()};
     }
-    const flash=new THREE.Mesh(sharedBurstArt.flashGeometry,
-      new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false,blending:THREE.AdditiveBlending}));
-    flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
-    burstEffects.push({group,shardMeshes,parts,flash,age:0,duration:1.25,scene:targetScene,
-      dummy:new THREE.Object3D()}); // Two instanced meshes share the cached original body and neck surface textures.
+    fx.group.position.set(x,y,z);fx.flash.position.set(x,y,z);
+    fx.flash.scale.setScalar(.15);fx.flash.material.opacity=.82;fx.flash.visible=true;
+    fx.age=0;
+    for(let i=0;i<DEBRIS_COUNT;i++){
+      const part=fx.parts[i],angle=i*2.399963,speed=RADIUS*(.45+(i%8)/13);
+      part.x=(i%7/6-.5)*.68;part.y=((i%17)/17)*.6;part.z=(Math.floor(i/7)%7/6-.5)*.63;
+      part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=2+(i%7)*.32;
+    }
+    targetScene.add(fx.group);targetScene.add(fx.flash);
+    burstEffects.push(fx);
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
   function syncPileVisuals(rec) {
@@ -2064,7 +2088,10 @@
       if(chunked) for(const cell of changedChunks.values())window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
       else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
     }
-    if(count){syncPileVisuals(rec);persistWorld();} // Two debris draw calls, one batched persistence write per explosion.
+    if(count){
+      if(explosionBatchDepth)pendingRubbleVisuals.add(rec);
+      else {syncPileVisuals(rec);persistWorld();}
+    } // Rebuild the instance matrices once per full recursive explosion chain.
     return count;
   }
   function restoreLooseFruit(mapId, rec) {
@@ -2199,27 +2226,34 @@
   }
   function fruitBurstVisual(targetScene,x,z,y) {
     if(!targetScene)return;
-    // Same cheap instanced spray update as Shattercask debris, but amber flesh rather than pottery.
+    // Fruit uses the same bounded effect pool as pottery, with its own material and smaller spray.
     if(!sharedPileArt)sharedPileArt={};
     if(!sharedPileArt.fruitBurst)sharedPileArt.fruitBurst={
       geometry:new THREE.DodecahedronGeometry(.10,0),
       material:new THREE.MeshLambertMaterial({color:0xd98e3b}),
       flashGeometry:new THREE.SphereGeometry(1,12,8),
     };
-    const count=24,art=sharedPileArt.fruitBurst;
-    const spray=new THREE.InstancedMesh(art.geometry,art.material,count);
-    const group=new THREE.Group();group.position.set(x,y,z);group.add(spray);targetScene.add(group);
-    const flash=new THREE.Mesh(art.flashGeometry,new THREE.MeshBasicMaterial({
-      color:0xd4d96b,transparent:true,opacity:.7,depthWrite:false,blending:THREE.AdditiveBlending}));
-    flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
-    const parts=[];
-    for(let i=0;i<count;i++){
-      const angle=i*2.399963;
-      parts.push({x:0,y:0,z:0,vx:Math.cos(angle)*(1.5+i%5*.28),
-        vz:Math.sin(angle)*(1.5+i%5*.28),vy:1.4+(i%7)*.18,batch:0,index:i});
+    let fx=takeBurst('fruit');
+    if(!fx){
+      const art=sharedPileArt.fruitBurst,count=24;
+      const spray=new THREE.InstancedMesh(art.geometry,art.material,count);
+      const group=new THREE.Group();group.add(spray);
+      const flash=new THREE.Mesh(art.flashGeometry,new THREE.MeshBasicMaterial({
+        color:0xd4d96b,transparent:true,opacity:.7,depthWrite:false,blending:THREE.AdditiveBlending}));
+      const parts=Array.from({length:count},(_,i)=>({x:0,y:0,z:0,vx:0,vy:0,vz:0,batch:0,index:i}));
+      fx={kind:'fruit',group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
+        dummy:new THREE.Object3D()};
     }
-    burstEffects.push({group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
-      dummy:new THREE.Object3D()});
+    fx.group.position.set(x,y,z);fx.flash.position.set(x,y,z);
+    fx.flash.scale.setScalar(.15);fx.flash.material.opacity=.7;fx.flash.visible=true;
+    fx.age=0;
+    for(let i=0;i<fx.parts.length;i++){
+      const part=fx.parts[i],angle=i*2.399963,speed=1.5+(i%5)*.28;
+      part.x=0;part.y=0;part.z=0;
+      part.vx=Math.cos(angle)*speed;part.vz=Math.sin(angle)*speed;part.vy=1.4+(i%7)*.18;
+    }
+    targetScene.add(fx.group);targetScene.add(fx.flash);
+    burstEffects.push(fx);
   }
   function detonateFruit(fruit,cause) {
     if(!fruit||fruit.exploded)return false;
@@ -2259,6 +2293,8 @@
     const flaskmasterPower=Math.max(1,Number(attribution?.power)||1); // Composed once at the root and snapshotted for a blast chain.
     const flaskmasterRadius=Math.max(1,Number(attribution?.radius)||1); // A subsequent gear swap cannot boost or weaken a fired Shattercask.
     cask.exploded=true;
+    explosionBatchDepth++; // Includes recursive chain reactions until the outermost charge returns.
+    try {
     window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
     if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
@@ -2290,6 +2326,14 @@
     lastEvent='blast '+cask.id+' via '+cause+', terrain='+cleared;
     window.__farmLog?.('[shattercask] '+lastEvent,'world');
     return true;
+    } finally {
+      explosionBatchDepth--;
+      if(explosionBatchDepth===0) {
+        for(const record of pendingRubbleVisuals){syncPileVisuals(record);blastRubbleRebuilds++;}
+        pendingRubbleVisuals.clear();
+        if(explosionBatchDirty){explosionBatchDirty=false;persistWorld();}
+      }
+    }
   }
   function sweepMelee(opts={}) {
     if(!opts.actor||!(opts.rangePx>0))return;
@@ -2403,10 +2447,7 @@
     for(let i=burstEffects.length-1;i>=0;i--) {
       const fx=burstEffects[i];fx.age+=dt;
       if(fx.age>=fx.duration) {
-        fx.group.parent?.remove(fx.group);fx.flash.parent?.remove(fx.flash);
-        // Geometry, materials and texture maps belong to sharedBurstArt, not to one burst.
-        // Disposing them here would force a GPU texture rebuild on every blast.
-        fx.flash.material.dispose();burstEffects.splice(i,1);continue;
+        recycleBurst(fx);burstEffects.splice(i,1);continue;
       }
       const f=fx.age/fx.duration;
       fx.flash.scale.setScalar(.15+(fx.radius||RADIUS)*Math.min(1,fx.age/.16));
@@ -2664,6 +2705,8 @@
         heldPartsInWeaponReplay:[...heldRenderOrders.keys()].filter(mesh=>mesh.userData?.hobunjiHeldObjectPlane===true).length,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,lastPilePickupMs,pileSaveQueued,
+        burstPoolHits,burstPoolMisses,pooledPotteryBursts:burstPool.pottery.length,pooledFruitBursts:burstPool.fruit.length,
+        activeBursts:burstEffects.length,explosionBatchDepth,blastPersistenceWrites,blastRubbleRebuilds,
         meshRaycastQueries,meshRaycastBroadphaseRejects,meshRaycastTriangleQueries,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
