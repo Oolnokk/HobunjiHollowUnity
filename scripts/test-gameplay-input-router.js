@@ -39,6 +39,11 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync('docs/js/world-action-input-claims.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'), context);
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Read the production world-action selection helper instead of duplicating its filter logic.
+const helperStart = game.indexOf('      function eligibleWorldButtons(');
+const helperEnd = game.indexOf('      function computeActionButtonsImpl()', helperStart);
+assert(helperStart >= 0 && helperEnd > helperStart, 'combat world-hold filtering is installed ahead of action selection');
+vm.runInContext(game.slice(helperStart, helperEnd), context);
 const router = window.GameplayInputRouter; // Single authority exported alongside the legacy provider alias.
 const combatInput = window.Combat.input; // Real tap/hold implementation wired to the common guard.
 assert.equal(window.WorldActionInputClaims, router);
@@ -105,6 +110,18 @@ assert.equal(router.canOfferWorldAction({ action: 'obj_inspect', worldInteractio
 assert.equal(router.canOfferWorldAction({ action: 'cut', holdToCommit: true }), true, 'combat/tool hold abilities are not world-loot holds');
 assert.equal(router.canOfferWorldAction({ action: 'obj_talk', worldInteraction: true }), true, 'ordinary tap contexts are still eligible');
 combatActive = false;
+
+combatActive = true;
+const combatButtons = [
+  { action: 'nest_take', worldInteraction: true },
+  { action: 'corpse_hold_loot', worldInteraction: true },
+  { action: 'bandit_tent_interact', worldInteraction: true },
+  { action: 'obj_talk', worldInteraction: true },
+  { action: 'cut', style: 'primary' },
+];
+assert.equal(context.eligibleWorldButtons(combatButtons).map(button => button.action).join(','), 'obj_talk,cut', 'actual action selection removes hold interactions and preserves combat and tap options');
+combatActive = false;
+assert.equal(context.eligibleWorldButtons(combatButtons).length, combatButtons.length, 'hold interactions return outside combat');
 
 for (const kind of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take', 'other_hold_interaction']) {
   combatActive = true;
