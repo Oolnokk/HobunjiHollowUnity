@@ -115,5 +115,5 @@ elapsedMs += 30;
 combatInput.pressEnd(2);
 assert.equal(attackCount, 2, 'normal Action 2 attacks resume after contextual ownership clears');
 
-assert.match(fs.readFileSync('docs/index.html', 'utf8'), /world-action-input-claims\\.js\\?v=[A-Za-z0-9_-]+/, 'the canonical input router must load in the game');
+assert.ok(fs.readFileSync('docs/index.html', 'utf8').includes('world-action-input-claims.js?v='), 'the canonical input router must load in the game');
 console.log('gameplay input router: input priority, tap/hold, context changes, combat holds and Attack 1/2 suppression passed');
