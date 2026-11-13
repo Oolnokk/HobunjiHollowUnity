@@ -82,7 +82,7 @@ const files = [
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
-  'js/combat/ranged-weapon-archetypes.js?v=20261104scent1439c',
+  'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
   'tools/enemy-loadout-editor/source-data.js?v=20261110geomMainMerge1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
