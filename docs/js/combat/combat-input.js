@@ -217,12 +217,13 @@
   }
 
   function fireTap(slotIndex) {
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // Shared context ownership outranks every tap-slot attack, including delayed legacy attacks.
     window.BandageSystem?.cancel?.('attack');
     if (blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     runAfterAttackAlignment(() => {
-      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone) return;
+      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || window.GameplayInputRouter?.isAttackBlocked?.()) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
       else legacyTapFallback(slotIndex);
     }, slotIndex);
@@ -230,7 +231,7 @@
 
   function startHold(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || blockedByActionLock() || blockedByStagger()) return;
+    if (!s || blockedByActionLock() || blockedByStagger() || window.GameplayInputRouter?.isAttackBlocked?.()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     s.holdAbility = ability;
@@ -238,7 +239,7 @@
     s.releaseQueued = false;
     const start = () => {
       s.alignmentRequest = null;
-      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
+      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || (!s.down && !s.releaseQueued) || !ability?.onHoldStart || window.GameplayInputRouter?.isAttackBlocked?.()) return;
       s.holdStarted = true;
       ability.onHoldStart({ slotIndex, slotId });
       if (s.releaseQueued) {
@@ -288,6 +289,7 @@
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
   function pressStart(slotIndex) {
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // No attack state and no bandage cancellation on a context-owned press.
     window.BandageSystem?.cancel?.('attack');
     const s = slots[slotIndex];
     if (!s || s.down || blockedByActionLock()) return;
@@ -306,7 +308,7 @@
   function pressEnd(slotIndex) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
-    if (blockedByActionLock()) { abortPress(slotIndex); return; }
+    if (blockedByActionLock() || window.GameplayInputRouter?.isAttackBlocked?.()) { abortPress(slotIndex); return; }
     try {
       if (s.holding) endHold(slotIndex);
       else fireTap(slotIndex);
@@ -372,7 +374,11 @@
 
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
-    if (blockedByActionLock()) { abortAllPresses(); return; }
+    if (blockedByActionLock() || window.GameplayInputRouter?.isAttackBlocked?.()) {
+      abortAllPresses(); // A context appearing during an existing tap/hold cancels that physical input permanently until a fresh press.
+      for (const request of [...queuedAttacks.values()]) request.cancel(); // A buffered swing cannot fire later after the contextual prompt disappears.
+      return;
+    }
     if (window.Combat.deps?.player?.prone || window.Combat.isStaggered(window.Combat.deps?.player)) {
       abortAllPresses();
       return;
