@@ -18,7 +18,10 @@ const document = {
   querySelector() { return null; },
 };
 const window = {
-  addEventListener(type, fn) { listenerMap.set(type, fn); },
+  addEventListener(type, fn) { // DOM allows several independent blur listeners (router and combat both register one).
+    if (!listenerMap.has(type)) listenerMap.set(type, []);
+    listenerMap.get(type).push(fn);
+  },
   dispatchEvent() {},
   Combat: {
     loadout: { getSlot() { return null; } },
@@ -36,6 +39,11 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync('docs/js/world-action-input-claims.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'), context);
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Read the production world-action selection helper instead of duplicating its filter logic.
+const helperStart = game.indexOf('      function eligibleWorldButtons(');
+const helperEnd = game.indexOf('      function computeActionButtonsImpl()', helperStart);
+assert(helperStart >= 0 && helperEnd > helperStart, 'combat world-hold filtering is installed ahead of action selection');
+vm.runInContext(game.slice(helperStart, helperEnd), context);
 const router = window.GameplayInputRouter; // Single authority exported alongside the legacy provider alias.
 const combatInput = window.Combat.input; // Real tap/hold implementation wired to the common guard.
 assert.equal(window.WorldActionInputClaims, router);
@@ -72,6 +80,49 @@ visibleOverride = 'action3';
 assert.equal(router.isAttackBlocked(), false, 'a contextual Action 3 replacement does not block attacks');
 visibleOverride = null;
 
+assert.equal(router.beginContextPress('touch:17', 'action3', 'Non-combat third action'), false, 'only Action 1/2 contextual presses suppress attacks');
+assert.equal(router.beginContextPress('touch:17', 'action1', 'Search skeleton'), true);
+assert.equal(router.isAttackBlocked(), true, 'a contextual Action 1 press keeps blocking after the prompt disappears');
+assert.equal(router.resolve('action1').kind, 'context-press', 'contextual press owner survives UI disappearance');
+assert.equal(router.beginContextPress('touch:17', 'action1', 'Different label'), true, 'repeat does not transfer ownership');
+assert.equal(router.snapshot().contextPresses.length, 1, 'repeat does not create duplicate owners');
+assert.equal(router.beginContextPress('mouse:2', 'action2', 'Talk'), true);
+assert.equal(router.endContextPress('touch:17'), true);
+assert.equal(router.isAttackBlocked(), true, 'other device contextual press remains owned');
+assert.equal(router.endContextPress('mouse:2'), true);
+assert.equal(router.isAttackBlocked(), false, 'last physical release restores attack permission');
+assert.equal(router.endContextPress('touch:17'), false, 'duplicate release has no effect');
+
+router.beginContextPress('keyboard:action1', 'action1', 'Inspect statue');
+for (const listener of listenerMap.get('blur') || []) listener();
+assert.equal(router.isAttackBlocked(), false, 'blur clears stale contextual ownership');
+assert.equal(router.snapshot().contextPresses.length, 0);
+
+for (const action of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take']) {
+  combatActive = true;
+  assert.equal(router.canOfferWorldAction(action), false, action + ' cannot override weapon buttons during combat');
+  combatActive = false;
+  assert.equal(router.canOfferWorldAction(action), true, action + ' may be offered again outside combat');
+}
+combatActive = true;
+assert.equal(router.canOfferWorldAction({ action: 'obj_search', worldInteraction: true, holdToCommit: true }), false, 'new authored world holds follow the same rule');
+assert.equal(router.canOfferWorldAction({ action: 'obj_inspect', worldInteraction: true, requiresHold: true }), false, 'world holds with explicit requiresHold are blocked');
+assert.equal(router.canOfferWorldAction({ action: 'cut', holdToCommit: true }), true, 'combat/tool hold abilities are not world-loot holds');
+assert.equal(router.canOfferWorldAction({ action: 'obj_talk', worldInteraction: true }), true, 'ordinary tap contexts are still eligible');
+combatActive = false;
+
+combatActive = true;
+const combatButtons = [
+  { action: 'nest_take', worldInteraction: true },
+  { action: 'corpse_hold_loot', worldInteraction: true },
+  { action: 'bandit_tent_interact', worldInteraction: true },
+  { action: 'obj_talk', worldInteraction: true },
+  { action: 'cut', style: 'primary' },
+];
+assert.equal(context.eligibleWorldButtons(combatButtons).map(button => button.action).join(','), 'obj_talk,cut', 'actual action selection removes hold interactions and preserves combat and tap options');
+combatActive = false;
+assert.equal(context.eligibleWorldButtons(combatButtons).length, combatButtons.length, 'hold interactions return outside combat');
+
 for (const kind of ['bandit_tent_interact', 'corpse_hold_loot', 'nest_take', 'other_hold_interaction']) {
   combatActive = true;
   assert.equal(router.canContinueHold(kind, true), false, kind + ' cannot start in combat');
@@ -94,6 +145,14 @@ combatInput.pressEnd(1);
 assert.equal(attackCount, 1, 'a newly advertised Action 2 override cancels an already-pressed Action 1 tap');
 assert.equal(combatInput.getState(1).down, false);
 router.clearClaims('new-context');
+
+combatInput.pressStart(1);
+router.beginContextPress('touch:22', 'action2', 'Take egg');
+elapsedMs += 350;
+combatInput.update(0.35);
+router.endContextPress('touch:22');
+combatInput.pressEnd(1);
+assert.equal(attackCount, 1, 'same held attack cannot restart when a temporarily claimed Action 2 releases');
 
 combatInput.pressStart(1);
 visibleOverride = 'action1';
