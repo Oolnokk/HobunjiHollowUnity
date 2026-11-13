@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Dev Companion</title>
-<link rel="stylesheet" href="dev-companion.css?v=20261019handoff1">
+<link rel="stylesheet" href="dev-companion.css?v=20261113cycle1">
 </head>
 <body>
 <div id="shell">
@@ -24,6 +24,14 @@
       <label class="switch" title="Stop automatic writes to the save folder and recovery autosaves for this game tab">
         <input type="checkbox" id="autosaveToggle"><span>Autosave paused</span>
       </label>
+    </div>
+    <div class="cycle-timer" role="group" aria-label="Cycle chime timer">
+      <label class="mini-check"><input type="checkbox" id="cycleTimerEnabled"> 🔔 Cycle chime</label>
+      <label class="mini-check" for="cycleTimerValue">Every</label>
+      <input type="number" id="cycleTimerValue" aria-label="Chime interval" min="1" max="3600" step="any" value="5" inputmode="decimal">
+      <select id="cycleTimerUnit" aria-label="Chime interval units"><option value="min" selected>minutes</option><option value="sec">seconds</option></select>
+      <button type="button" id="cycleTimerPreview" class="small" title="Play the chime now">Test sound</button>
+      <span id="cycleTimerStatus" class="muted small-text" role="status" aria-live="polite">Off</span>
     </div>
     <div id="gameDiscovery" class="game-discovery" hidden>
       <div class="discovery-heading"><strong>Open game sessions</strong><span id="discoveryStatus" class="muted small-text" role="status">Searching…</span></div>
@@ -189,5 +197,6 @@
 </dialog>
 
 <script src="dev-companion.js?v=20261109festivaltest1"></script>
+<script src="cycle-timer.js?v=20261113cycle1"></script>
 </body>
 </html>
