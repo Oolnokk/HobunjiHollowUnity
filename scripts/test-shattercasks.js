@@ -469,6 +469,14 @@ async function scenario(reloading=false) {
   assert.equal(playedSfx.length,2,'the one-shot guard prevents duplicate explosion audio');
   assert.equal(game.Shattercasks.debugSnapshot().performance.textureBatchesCreated,1,
     'repeated explosions reuse pooled GPU source assets');
+  for(let frame=0;frame<15;frame++)game.Combat.update(.1); // Fade both effects until eligible for reuse.
+  assert(game.Shattercasks.debugSnapshot().performance.pooledPotteryBursts>=2,
+    'retired simultaneous sprays retain separate GPU instance buffers');
+  const thirdGroup=new Node();thirdGroup.position.set(4.5,0,3.5);
+  assert(game.Shattercasks.detonate({id:'performance-reused',kind:'shattercask',mapId:area,col:4,row:3,
+    group:thirdGroup,exploded:false,carried:false},'regression'));
+  assert(game.Shattercasks.debugSnapshot().performance.burstPoolHits>=1,
+    'another blast reuses a retired instanced mesh');
 }
 async function arenaScenario() {
   let currentArea='map_dev_arena',modelBuilds=0;
