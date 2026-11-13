@@ -29283,6 +29283,10 @@
         return consumed===true;
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      window.addEventListener('blur', () => {
+        for (const pressId of visibleWeaponContextPresses) window.GameplayInputRouter?.endContextPress?.(pressId);
+        visibleWeaponContextPresses.clear(); // A lost keyup must not swallow a later weapon release after focus returns.
+      });
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
