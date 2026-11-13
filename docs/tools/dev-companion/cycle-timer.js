@@ -21,6 +21,7 @@
   let generation = 0; // Invalidates an in-progress asynchronous worklet setup after Stop.
   let starting = false; // Shows initialization state before the worklet is ready.
   let lastError = ''; // Visible diagnostic when audio is unavailable or suspended.
+  let validationError = ''; // Keeps invalid interval feedback visible until corrected.
 
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
@@ -41,7 +42,7 @@
   }
 
   function showStatus() {
-    if (lastError) { status.textContent = lastError; return; }
+    if (lastError || validationError) { status.textContent = lastError || validationError; return; }
     if (!enabled.checked) { status.textContent = 'Off'; return; }
     if (starting || !node) { status.textContent = 'Starting audio…'; return; }
     if (context?.state !== 'running') {
@@ -120,10 +121,8 @@
   function updateInterval() {
     const next = durationSeconds();
     valueInput.setCustomValidity(next == null ? 'Use 1 second to 60 minutes.' : '');
-    if (next == null) {
-      status.textContent = 'Enter an interval from 1 second to 60 minutes.';
-      return;
-    }
+    validationError = next == null ? 'Enter an interval from 1 second to 60 minutes.' : '';
+    if (next == null) { showStatus(); return; }
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({ value: Number(valueInput.value), unit: unitInput.value }));
     } catch (_) {}
