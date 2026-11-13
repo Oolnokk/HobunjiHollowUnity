@@ -29260,10 +29260,10 @@
         isContextOverride: actionId => {
           if (actionId !== 'action1' && actionId !== 'action2') return false;
           const slot = actionId === 'action1' ? 1 : 2; // Only the first two physical slots may suppress attacks through contextual replacement.
-          const button = actionButtonForPhysicalSlot(slot); // Resolve actual visible meaning before comparing with the weapon's normal binding.
-          if (!button || button.allowed === false) return false;
-          if (heldMode === 'tool' && activeTool === 'weapon') return button.action !== toolActions.weapon[slot - 1];
-          if (heldMode === 'tool' && activeTool === 'ranged') return button.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          const button = document.getElementById('btnAction' + slot); // Already-rendered arch is authoritative; avoid recomputing world interactions every combat frame.
+          if (!button?.dataset?.action || button.classList.contains('abt-hidden') || button.classList.contains('blocked')) return false;
+          if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
+          if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
