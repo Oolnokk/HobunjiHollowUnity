@@ -550,7 +550,7 @@ assert.match(houseCore, /const roofRect = _renderRectFor\(entry, exts\)/, 'only 
 assert.match(wallPlacement, /ControllerInput\.subscribe\('wall-ornament-placement'/, 'wall preview may reuse the shared controller frame cadence without private gamepad polling');
 assert.match(wallPlacement, /sharedControllerFrame\(\)[\s\S]{0,180}updatePlayerReticlePreview\(\)/, 'shared controller cadence must update only the reticle preview and leave movement/look channels untouched');
 assert.match(gameSource, /WallOrnamentPlacement\?\.handleGameplayAction\?\.\(actionId, phase\)/, 'keyboard/controller/touch must route wall Action 1\/2 through the central semantic gameplay dispatcher');
-assert.match(gameSource, /isPlayerReticlePlacementActive\?\.\(\)[\s\S]{0,260}runInputAction\(mouseAction, 'press'\)/, 'mouse Action 1\/2 must use the same reticle action path instead of click-position placement');
+assert.match(gameSource, /isPlayerReticlePlacementActive\?\.\(\)[\s\S]{0,260}runInputAction\(mouseAction, 'press', 'desktop-mouse'\)/, 'mouse Action 1\/2 must use the same reticle action path instead of click-position placement');
 assert.doesNotMatch(gameSource, /if \(furniturePlacementArmedKey \|\| furnitureMoveArmedId\) return;/, 'reticle furniture placement must never freeze mouse camera rotation');
 assert.match(gameSource, /menuOpen \|\| window\._desktopSelectionArc\?\.entryMenuOpen\?\.\(\) \|\| window\.FurniturePlacer\?\.isOpen\?\.\(\)/, 'mouse camera motion must be disabled for the full lifetime of the click-required furniture selector');
 assert.match(gameSource, /isUiBlockingPointerLock: \(\) => [^\n]*FurniturePlacer\?\.isOpen\?\.\(\)/, 'Pointer Lock must not be reacquired while a click-required furniture menu is open');
