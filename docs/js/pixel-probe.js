@@ -1149,6 +1149,12 @@
       const pressed=inputClaimDebug.pressed?.map?.(claim=>`${claim.actionId}@${claim.ownerId}`).join(', ')||'none';
       lines.push(`World input claims: ${claims} · pressed=${pressed} · rev=${inputClaimDebug.revision}`);
     }
+    const inputRouterDebug = window.GameplayInputRouter?.snapshot?.(); // Copyable press-to-release ownership and suppressed attack state for mobile diagnostics.
+    if (inputRouterDebug) {
+      const owned = inputRouterDebug.active?.map?.(press => `${press.key}→${press.owner}${press.action ? ':' + press.action : ''}`).join(', ') || 'none';
+      const last = inputRouterDebug.lastDecision;
+      lines.push(`Input router: combat=${inputRouterDebug.inCombat} attacksBlocked=${window.GameplayInputRouter.blocksAttacks()} pressed=${owned} · last=${last ? last.actionId + '/' + last.phase + '/' + last.source + '→' + last.owner : 'none'}`);
+    }
     const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
     if (boulderShellDebug) {
       lines.push(`Boulder shells: indexBuilds=${boulderShellDebug.indexBuilds} cacheHits=${boulderShellDebug.indexHits} gridTilesScanned=${boulderShellDebug.gridTilesScanned} chunkBuilds=${boulderShellDebug.shellBuilds}`);
