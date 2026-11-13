@@ -20933,6 +20933,7 @@
         }
         if (activeTool === 'ranged' && activeAction === 'shoot') {
           if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // Contextual Action 1/2 ownership applies to ranged fire as well as melee.
           window.RangedWeapons?.startPlayerAction?.(equipmentSlots.ranged);
           return;
         }
@@ -27761,6 +27762,9 @@
           window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
         }
       }
+      function eligibleWorldButtons(buttons) {
+        return (buttons || []).filter(button => window.GameplayInputRouter?.canOfferWorldAction?.(button) !== false); // Combat-ineligible holds must relinquish their action slot to the normal weapon/tool actions.
+      }
       function computeActionButtonsImpl() {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
@@ -27844,10 +27848,16 @@
 
         const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
         const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
-        if (rubbleButtons) return rubbleButtons;
+        if (rubbleButtons) {
+          const eligible = eligibleWorldButtons(rubbleButtons);
+          if (eligible.length) return eligible;
+        }
         const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
         const directFurnitureButtons = directFurniture?.getButtons?.() || [];
-        if (directFurnitureButtons.length) return directFurnitureButtons;
+        if (directFurnitureButtons.length) {
+          const eligible = eligibleWorldButtons(directFurnitureButtons);
+          if (eligible.length) return eligible;
+        }
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
         if ((window.FestivalSystem?.dance?.targetNpcId || window.FestivalSystem?.pendingDance?.targetNpcId) && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
@@ -27924,21 +27934,33 @@
             if (near?.id === _lastOfferedCorpseId) aimedCorpse = near;
           }
           _lastOfferedCorpseId = aimedCorpse?.id || null;
-          if (aimedCorpse) return aimedCorpse.getButtons(corpseReticle);
+          if (aimedCorpse) {
+            const eligible = eligibleWorldButtons(aimedCorpse.getButtons(corpseReticle));
+            if (eligible.length) return eligible; // A skeleton's Search hold must not displace Cut/Slash during combat.
+          }
           const devRuinActions = currentArea === 'map_i_dev_random_ruin'
             ? window.DevRandomRuinInteractions?.getActionButtons?.()
             : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
-          if (devRuinActions?.length) return devRuinActions;
-          const nest = window.DenNestSystem.currentAimedNest();
+          if (devRuinActions?.length) {
+            const eligible = eligibleWorldButtons(devRuinActions);
+            if (eligible.length) return eligible;
+          }
+          const nest = window.GameplayInputRouter?.canOfferWorldAction?.('nest_take') === false ? null : window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
-          if (bInteractable) return bInteractable.getButtons();
+          if (bInteractable) {
+            const eligible = eligibleWorldButtons(bInteractable.getButtons());
+            if (eligible.length) return eligible;
+          }
           const caveReagent = window.CaveSiteSystem?.objectAt?.(currentArea, bReticle.col, bReticle.row); // Reuses the interior reticle so walking across Duskcaps never harvests them.
-          if (caveReagent) return caveReagent.getButtons(bReticle);
+          if (caveReagent) {
+            const eligible = eligibleWorldButtons(caveReagent.getButtons(bReticle));
+            if (eligible.length) return eligible;
+          }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
           // bar here, same as farm/zone (below), even though every other
@@ -28006,13 +28028,14 @@
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
           const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
-          if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
+          if (obj2) eligibleWorldButtons(obj2.getButtons(reticle)).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
 
         // A branch nest claims Action 1 only while its 3D volume is under
         // the centered reticle and its Nestmother is no longer guarding it.
-        const zoneNest = _isZoneArea(currentArea) ? window.DenNestSystem.currentAimedNest() : null;
+        const zoneNest = _isZoneArea(currentArea) && window.GameplayInputRouter?.canOfferWorldAction?.('nest_take') !== false
+          ? window.DenNestSystem.currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
@@ -28020,13 +28043,14 @@
 
         // A standing honeyfuzzle hive stump under the reticle: one long hold
         // (js/corpse-hold-loot.js owns the timer) takes its eggs and honey.
-        const aimedHive = _isZoneArea(currentArea) ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
+        const aimedHive = _isZoneArea(currentArea) && window.GameplayInputRouter?.canOfferWorldAction?.('corpse_hold_loot') !== false
+          ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
         if (aimedHive) return [{ icon: '🍯', label: 'Hold to Harvest Hive', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: aimedHive.promptRoot }];
 
         // A downed companion beside the player, or a Root Totem while one is
         // down: same hold contract as hives (js/companion-downed.js).
         const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
-        if (companionReviveButton) return [companionReviveButton];
+        if (companionReviveButton && eligibleWorldButtons([companionReviveButton]).length) return [companionReviveButton];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -28034,7 +28058,7 @@
         const banditTentAction = _isZoneArea(currentArea)
           ? window.BanditCamps?.getNearbyTentAction?.()
           : null;
-        if (banditTentAction) return [banditTentAction];
+        if (banditTentAction && eligibleWorldButtons([banditTentAction]).length) return [banditTentAction];
 
         // A placed wilderness campfire, same runtime-prop pattern as bandit
         // tents above — walking up to it puts Save/Cook/Brew each on their
@@ -28107,7 +28131,7 @@
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
           : getAimedFarmInteractionObject(reticle.col, reticle.row);
         if (obj) {
-          const objBtns = obj.getButtons(reticle);
+          const objBtns = eligibleWorldButtons(obj.getButtons(reticle));
           objBtns.forEach(b => btns.push(b));
         }
 
@@ -28389,6 +28413,8 @@
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
+            let _pressedArchAction = null; // Captures the original touch button meaning so a re-render during a hold cannot turn its release into an attack.
+            let _contextPressId = null; // Touch pointer owns its contextual Action 1/2 until release even if the prompt disappears.
             let _combatAimRelease = false; // True while this arch press is a ranged shot or weapon-slot press that must aim continuously and commit only on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
@@ -28476,10 +28502,16 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              _pressedArchAction = act; // Retain the original action throughout this pointer's press/release pair.
               const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
               if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')){
                 _claimedInputAction=physicalInputAction;
                 return;
+              }
+              if ((physicalInputAction === 'action1' || physicalInputAction === 'action2')
+                  && window.GameplayInputRouter?.resolve?.(physicalInputAction)?.kind === 'context') {
+                _contextPressId = 'touch:' + ev.pointerId;
+                window.GameplayInputRouter.beginContextPress(_contextPressId, physicalInputAction, act);
               }
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
@@ -28632,7 +28664,7 @@
                     else window.HeldItemActionInput?.release();
                   }
                   else if (!_drag || combatAimOwned) {
-                    if (!pointerCanceled) _abtFire();
+                    if (!pointerCanceled && el.dataset.action === _pressedArchAction) _abtFire(); // A contextual tap cannot morph into a weapon tap if the button changes mid-hold.
                   }
                 }
               } finally {
@@ -28640,6 +28672,11 @@
                 mobileArchDragPointerId = null;
                 mobileArchDragAngle = null;
                 _claimedInputAction = null;
+                _pressedArchAction = null;
+                if (_contextPressId) {
+                  window.GameplayInputRouter?.endContextPress?.(_contextPressId);
+                  _contextPressId = null;
+                }
                 if (combatAimOwned) {
                   if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
                   else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
@@ -29258,12 +29295,28 @@
         if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
         return { slot, button };
       }
+      window.GameplayInputRouter?.configure?.({
+        isInCombat: isPlayerInCombat,
+        isContextOverride: actionId => {
+          if (actionId !== 'action1' && actionId !== 'action2') return false;
+          const slot = actionId === 'action1' ? 1 : 2; // Only the first two physical slots may suppress attacks through contextual replacement.
+          const button = document.getElementById('btnAction' + slot); // Already-rendered arch is authoritative; avoid recomputing world interactions every combat frame.
+          if (!button?.dataset?.action || button.classList.contains('abt-hidden')) return false; // Even an unavailable contextual action is not permission to attack.
+          if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
+          if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
+        },
+      });
       function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
-        const consumed=window.WorldActionInputClaims?.dispatch?.(actionId,phase,{source}); // Shared world interactions can temporarily own a physical action without teaching Combat about every door/rope/NPC system.
+        const consumed=window.GameplayInputRouter?.route?.(actionId,phase,{source}); // One shared input router arbitrates world claims for keyboard, mouse, touch and controller.
         if(consumed&&actionId==='action1')actionHeldDown=false;
         return consumed===true;
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      window.addEventListener('blur', () => {
+        for (const pressId of visibleWeaponContextPresses) window.GameplayInputRouter?.endContextPress?.(pressId);
+        visibleWeaponContextPresses.clear(); // A lost keyup must not swallow a later weapon release after focus returns.
+      });
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
@@ -29419,7 +29472,10 @@
           } else if (actionId === 'action1' && !heldChargeInputId) {
             actionHeldDown = false;
           }
-          if (visibleWeaponContextPresses.delete(actionId)) return;
+          if (visibleWeaponContextPresses.delete(actionId)) {
+            window.GameplayInputRouter?.endContextPress?.(actionId);
+            return;
+          }
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
@@ -29447,6 +29503,7 @@
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
+          window.GameplayInputRouter?.beginContextPress?.(actionId, actionId, visibleOverride.button.action); // Context owns the original press even after its prompt vanishes.
           runActionButtonAtSlot(visibleOverride.slot, actionId);
           return;
         }
@@ -29850,7 +29907,7 @@
         if (key === 'e') {
           event.preventDefault();
           if (isDesktop) {
-            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+            if (!event.repeat && !isPlayerInCombat() && window.BanditCamps?.hasNearbyTent?.()) {
               desktopTentInteractHeld = true;
               activeAction = 'bandit_tent_interact';
               actionHeldDown = true;
@@ -30227,7 +30284,9 @@
             const weaponSlot = weaponActionSlot(mouseAction);
             const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
             if (visibleOverride) {
-              visibleWeaponContextPresses.add('mouse:' + e.button);
+              const pressId = 'mouse:' + e.button; // Mouse presses retain independent ownership from keyboard/controller presses.
+              visibleWeaponContextPresses.add(pressId);
+              window.GameplayInputRouter?.beginContextPress?.(pressId, mouseAction, visibleOverride.button.action);
               runActionButtonAtSlot(visibleOverride.slot);
               return;
             }
@@ -30260,6 +30319,7 @@
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
         if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
+          window.GameplayInputRouter?.endContextPress?.('mouse:' + e.button);
           if (weaponActionSlot(getActionForButton('desktop', 'Mouse' + e.button)) === 1) actionHeldDown = false;
           return;
         }
@@ -30330,6 +30390,11 @@
         }
         desktopFurniturePlacementMousePresses.clear();
         desktopWallFurnitureMousePresses.clear();
+        for (const pressId of [...visibleWeaponContextPresses]) {
+          if (!pressId.startsWith('mouse:')) continue;
+          visibleWeaponContextPresses.delete(pressId);
+          window.GameplayInputRouter?.endContextPress?.(pressId);
+        }
       }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
@@ -32757,7 +32822,6 @@
       window.ZoneTerrainFeatures?.init({
         TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
         displaceZoneGeometry, resolveTileMat,
-        markOutline: _markOutline,
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
