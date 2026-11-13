@@ -118,6 +118,32 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   return {api,kit,context,composer,player,tick,damageEvents,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches,presentationHeights};
 }
 
+// Execute the actual shard owner with renderer stand-ins: retire, reuse, and cap a burst style.
+{
+  const start=themeSource.indexOf('  const MAX_RETIRED_SHARDS_PER_STYLE=');
+  const end=themeSource.indexOf('  function findMixedPillarRooms(',start);
+  assert(start>=0&&end>start,'the lich effect pool owner is present');
+  const shardWorld={group:new Node(),bursts:[],dummy:new Node()};
+  const fx=vm.runInNewContext('let world=shardWorld;\n'+themeSource.slice(start,end)+
+    '\n({emitShards,updateBursts,disposeShardBurst})',{THREE,shardWorld});
+  fx.emitShards(1,2,3,0x726359,3.1,24);
+  const first=shardWorld.bursts[0];
+  assert.equal(first.mesh.count,24,'one instanced draw owns a full shard spray');
+  for(let frame=0;frame<14;frame++)fx.updateBursts(.1);
+  assert.equal(shardWorld.bursts.length,0,'an expired shard burst leaves the rendered scene');
+  assert.equal(shardWorld.shardPool.get(first.key).length,1,'retired shard buffers are retained for reuse');
+  fx.emitShards(4,5,6,0x726359,3.1,24);
+  assert.strictEqual(shardWorld.bursts[0].mesh,first.mesh,'the next burst reuses the same GPU instance buffer');
+  assert.equal(shardWorld.shardPoolHits,1,'mobile diagnostics count one actual effect reuse');
+  for(let frame=0;frame<14;frame++)fx.updateBursts(.1);
+  for(let i=0;i<5;i++)fx.emitShards(i,0,i,0x726359,3.1,24);
+  const five=shardWorld.bursts.map(burst=>burst.mesh);
+  for(let frame=0;frame<14;frame++)fx.updateBursts(.1);
+  assert.equal(shardWorld.shardPool.get(first.key).length,4,'retired per-style bursts have a bounded pool');
+  assert.equal(five.filter(mesh=>mesh.geometry.disposed).length,1,
+    'excess retired geometry is released rather than retained forever');
+}
+
 function assertPlasmSeams(t) {
   t.kit.root.traverse(mesh=>{
     if(!mesh.name?.startsWith('kanthic_plasm_connected_room_'))return;
