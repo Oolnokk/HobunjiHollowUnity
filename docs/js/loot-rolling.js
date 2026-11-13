@@ -48,7 +48,8 @@
     const cacheSource = context.masterySource === 'caveCache' || /^mastery_(ruin|final)_/.test(poolId); // Treasure and defeated-foe fortunes never bleed into each other's mastery sources.
     const fortuneId = cacheSource ? 'treasureFortune' : 'battleFortune';
     const sourceChance = Number(config.chanceBySource?.[context.sourcePoolId] ?? config.chance) || 0; // A specific source can guarantee its scroll without raising the drop rate for other sources sharing this mastery pool.
-    const chance = sourceChance >= 1 ? 1 : Math.min(1, Math.max(0, sourceChance * (window.FestivalSystem?.fortuneMultiplier?.(fortuneId) || 1))); // Guaranteed sources stay at 100% even if temporary fortune effects reduce other chances.
+    const guaranteedScroll = config.form === 'scroll' && sourceChance >= 1; // Only the requested scroll sources bypass fortune penalties; tablet drop rules keep their existing behavior.
+    const chance = guaranteedScroll ? 1 : Math.min(1, Math.max(0, sourceChance * (window.FestivalSystem?.fortuneMultiplier?.(fortuneId) || 1))); // Chance remains a source-specific configurable probability.
     if (random() >= chance && chance < 1) { lastMasteryRoll = { poolId, dropped: false, chance, fortuneId }; return {}; }
     const ranks = Object.entries(config.rankWeights).filter(([, weight]) => Number(weight) > 0); // Weighted rank is rolled only after the single per-source drop chance succeeds.
     let roll = random() * ranks.reduce((sum, [, weight]) => sum + Number(weight), 0); // Unnormalized weights preserve the captain's stated 66:33 ratio.
