@@ -105,11 +105,19 @@ const changeContext = {
 vm.createContext(changeContext);
 vm.runInContext(html.slice(changeStart,changeEnd),changeContext,{filename:'furniture-author-object-change.js'});
 
-state.selectedType='placement'; transform.mode='scale';
+state.selectedType='placement'; transform.mode='scale'; transform.axis='X';
 vm.runInContext('onTransformObjectChange()',changeContext);
-assert.equal(placedRecord.scale, 1.0833, 'placed-item scale persists as one scalar');
+assert.equal(placedRecord.scale, 1.5, 'X-axis scale is not diluted by untouched Y and Z dimensions');
 assert.deepEqual([placedMesh.scale.x,placedMesh.scale.y,placedMesh.scale.z],[placedRecord.scale,placedRecord.scale,placedRecord.scale],
   'preview remains uniform throughout the drag, not just when pointer is released');
+placedMesh.scale.setScalar(1);placedMesh.scale.y=.6;transform.axis='Y';
+vm.runInContext('onTransformObjectChange()',changeContext);
+assert.equal(placedRecord.scale, .6, 'Y-axis handle governs the uniform placement size');
+assert.deepEqual([placedMesh.scale.x,placedMesh.scale.y,placedMesh.scale.z],[.6,.6,.6],
+  'Y-axis scaling is visible immediately instead of snapping at release');
+placedMesh.scale.setScalar(1.2);transform.axis='XYZ';
+vm.runInContext('onTransformObjectChange()',changeContext);
+assert.equal(placedRecord.scale,1.2, 'center XYZ scale handle keeps its proportional uniform size');
 
 state.selectedType='part'; transform.mode='scale';
 vm.runInContext('onTransformObjectChange()',changeContext);
