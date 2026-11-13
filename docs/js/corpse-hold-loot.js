@@ -50,7 +50,7 @@
     const held = !!deps.getActionHeldDown();
     const holdAllowed = window.GameplayInputRouter?.canContinueHold?.(HOLD_ACTION, held) ?? held; // Shared combat lock latches until the original loot press is released.
     if (!held) interrupted = false;
-    if (!holdAllowed) interrupted = true;
+    if (held && !holdAllowed) interrupted = true;
     const target = holdAllowed && !interrupted && deps.getActiveAction() === HOLD_ACTION ? deps.getAimedHoldCorpse() : null;
     if (!target) { if (holdId !== null || hudVisible) reset(); return; }
     if (holdId !== target.id) {
