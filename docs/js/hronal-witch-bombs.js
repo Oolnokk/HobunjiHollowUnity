@@ -222,7 +222,7 @@
       return true;
     } catch(_) {return false;}
   }
-  let legacyScanScene=null,legacyScanEntries=null,legacyScanSerial=0; // Cache legacy scene markers only for one synchronous blast chain.
+  let legacyScanScene=null,legacyScanEntries=null,explodeDepth=0; // Cache markers only while a nested blast call stack is active.
   let legacySceneScans=0,legacyScanReuses=0; // Debug evidence of avoided full-scene traversal on chain reactions.
   function markedBreakables(scene) {
     if(!scene?.traverse)return [];
@@ -233,16 +233,10 @@
     const found=[];
     scene.traverse(node=>{if(node.userData?.hronalBombBreakable===true)found.push(node);});
     legacySceneScans++;
-    // Registered breakables use the fast Map path. Legacy userData markers still get a
-    // complete scene scan, but synchronous chained bombs reuse the same candidate snapshot.
-    // Clear before the next event-loop task so newly inserted puzzle props remain discoverable.
-    if(typeof queueMicrotask==='function'){
-      legacyScanScene=scene;legacyScanEntries=found;
-      const serial=++legacyScanSerial;
-      queueMicrotask(()=>{
-        if(serial===legacyScanSerial){legacyScanScene=null;legacyScanEntries=null;}
-      });
-    }
+    // Registered breakables use the fast Map path. Nested chain reactions share a
+    // snapshot until the outermost explosion completes. Two independent explosions
+    // in one tick must rescan: the first could have spawned new breakable props.
+    legacyScanScene=scene;legacyScanEntries=found;
     return found;
   }
   function breakNearby(mapId,x,z,radius,variant=VARIANTS.hronal) {
@@ -314,6 +308,8 @@
   function explode(bomb,cause='fuse') {
     if (!bomb || bomb.exploded || bomb._witchBombExploding) return false;
     bomb._witchBombExploding=true;
+    explodeDepth++; // Brackets recursive bomb-to-bomb chains; unrelated same-tick blasts must not share stale props.
+    try {
     const variant=variantOfKind(bomb.kind);
     bomb.group?.updateWorldMatrix?.(true,true);
     const position=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
@@ -341,6 +337,9 @@
     window.Shattercasks?.discardBurden?.(bomb);
     window.__farmLog?.('[witch-bomb:'+variant.id+'] '+bomb.id+' exploded via '+cause,'world');
     return true;
+    } finally {
+      if(--explodeDepth===0){legacyScanScene=null;legacyScanEntries=null;}
+    }
   }
   function createGroupFactory() {
     for (const variant of Object.values(VARIANTS)) window.Shattercasks.registerBurdenFactory(variant.kind,async()=>{
