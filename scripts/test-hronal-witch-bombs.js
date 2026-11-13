@@ -208,6 +208,14 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.deepEqual(playedSfx,['witchBombBlast','witchBombBlast'],'fuse and chain detonations each emit the lowblast cue once');
  assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),false,'an already exploded Witch-bomb cannot replay the sound');
  assert.equal(playedSfx.length,2,'duplicate impacts do not duplicate explosion audio');
+ for(let frame=0;frame<9;frame++)runtimeWindow.HronalWitchBombs.tick(.1);
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().pooledFlashes.fire,2,
+   'expired effects retain their own GPU instance buffers');
+ const third=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(third,'recycled visual effects do not block physical dispenser');
+ assert(third.onImpact(third,'witch-bomb-chain'));
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().burstPoolHits,1,
+   'the next detonation reuses a retired Hronal effect');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
