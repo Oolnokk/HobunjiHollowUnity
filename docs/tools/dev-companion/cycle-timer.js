@@ -179,7 +179,7 @@
   valueInput.addEventListener('change', updateInterval);
   unitInput.addEventListener('change', updateInterval);
   preview.addEventListener('click', playPreview);
-  window.addEventListener('pagehide', stop);
+  window.addEventListener('pagehide', () => { enabled.checked = false; stop(); }); // BFCache restores must never show an armed but silent timer.
   // UI only. The audio processor, not this throttled timer, produces chimes.
   setInterval(showStatus, 500);
   window.DevCompanionCycleTimer = {
