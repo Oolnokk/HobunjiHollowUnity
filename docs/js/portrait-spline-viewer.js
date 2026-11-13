@@ -231,7 +231,12 @@
         rearPlane.position.x=next.rearAligned?0:rig.rearOffset.u;
         rearPlane.position.y=next.rearAligned?0:-rig.rearOffset.v; // Masked rear artwork is already shifted before its pixels are partitioned.
       }
-      addKnots(posed.points);addGizmo(posed.points);
+      if(next.editKnots!==false){
+        addKnots(posed.points);addGizmo(posed.points);
+      }else{
+        clearChildren(markers);clearChildren(gizmo);
+        dots=[];handles=[];pickable.length=0;
+      }
       const blocked=posed.collisions;
       handlers.onStatus?.(blocked?blocked+' segment(s) reached the portrait collision limit':null);
       schedule();
@@ -249,7 +254,7 @@
       return mode==='translate' ? Number(pose.translate?.[axis]||0) : Number(pose[POSE_ROTATIONS[axis]]||0);
     }
     function pointerDown(e){
-      if(disposed||!state)return; // Keep knot-picking live even if the anchored root knot currently hides its gizmo.
+      if(disposed||!state||state.editKnots===false)return;
       const c=coordinate(e);ndc.set(c.x,c.y);raycaster.setFromCamera(ndc,camera);
       const hits=raycaster.intersectObjects(pickable,false);
       if(!hits.length)return; // Empty-space drag remains the normal orbit camera interaction.

@@ -1495,6 +1495,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const deferSplineParts = renderOptions?.deferSplineParts === true && !renderOptions?.onlyHeadSprite && !renderOptions?.headCosmeticsOnly; // Only 3D avatar bakes omit the flat copy.
   canvas.hobunjiSplineHood = null; // Per-bake hood foreground and beard occlusion data.
+  if (renderOptions.captureSplineHood) canvas.hobunjiSplineHoodSource = null;
   canvas.hobunjiSplineParts = []; // Canvas reuse must discard previous actor's detached pieces.
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
@@ -2151,6 +2152,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const clothContext = cloth.getContext('2d', { willReadFrequently: true });
     clothContext.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
     drawBreathingLayers(hoodLayers, clothContext);
+    if (renderOptions.captureSplineHood) {
+      const original = document.createElement('canvas'); // The wand samples original hood transparency before fitting.
+      original.width = cloth.width;
+      original.height = cloth.height;
+      original.getContext('2d').drawImage(cloth, 0, 0);
+      canvas.hobunjiSplineHoodSource = original;
+    }
     const beardRig = beardParts[0]?.rig || previewBeard?.rig || {};
     const beardCanvases = beardParts.length ? beardParts.map(part => part.canvas) : previewBeard?.canvases;
     canvas.hobunjiSplineHood = spline.fitHood(cloth, beardRig, beardCanvases);

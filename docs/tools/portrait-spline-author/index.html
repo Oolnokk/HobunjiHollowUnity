@@ -14,7 +14,7 @@ p,.hint{color:var(--soft);font-size:12px;margin:6px 0 12px}.row{display:flex;gap
 button,input,select,textarea{font:inherit;color:var(--ink);background:#07131f;border:1px solid var(--line);border-radius:7px;padding:7px;min-width:0}
 button{cursor:pointer;background:#24374c}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue)}
 button.active{background:#205081;border-color:var(--blue)}button:disabled{opacity:.45}
-label{font-size:12px;color:var(--soft)}.entry[hidden]{display:none}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
+label{font-size:12px;color:var(--soft)}[hidden]{display:none!important}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
 input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]{max-width:100%;font-size:11px}
 #preview{width:100%;max-width:420px;display:block;margin:auto;aspect-ratio:1;image-rendering:pixelated;touch-action:none;background:#0c1926;border:1px solid #38506c;border-radius:10px}
 #view3d{width:100%;height:380px;display:block;touch-action:none;background:#0b1726;border:1px solid #38506c;border-radius:10px}
@@ -37,19 +37,19 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 @media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}#view3d{height:320px}}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
-<script src="../../js/portrait-spline-rig.js?v=20261113hed0e70f"></script>
+<script src="../../js/portrait-spline-rig.js?v=20261113hab9122b"></script>
 <script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
 <script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20261113h171a55e"></script>
+<script src="../../js/portrait-utils.js?v=20261113h3f54fed"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261113hfd1ce6d"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261113hdac556d"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">Beard and hood masks</span></header>
 <main>
 <section>
-<h2>2D spline rigging and pixel masks</h2>
+<h2>Portrait authoring</h2>
 <p>Choose an indexed cosmetic. Its original JSON and sprite layers load directly from the repository. No uploads are required.</p>
 <div class="entry"><label for="speciesSelect">Species</label><select id="speciesSelect" disabled aria-label="Cosmetic species"><option>Loading index…</option></select></div>
 <div class="entry"><label for="genderSelect">Gender</label><select id="genderSelect" disabled aria-label="Cosmetic gender"></select></div>
@@ -69,13 +69,15 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <div class="entry"><label for="headFile">Full head silhouette</label><input id="headFile" type="file" accept="image/png,image/webp,image/*" title="Optional 200×200 aligned head reference"></div>
 </details>
 <div class="buttons" style="margin:12px 0">
-<button id="moveMode" class="active">Move 2D knots</button><button id="paintMode">Brush: Rigid</button>
-<button id="eraseMode">Erase mask</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
+<button id="moveMode" class="active" aria-pressed="true">Spline rigging</button>
+<button id="maskMode" aria-pressed="false">Mask painting</button>
 </div>
 <canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
 <div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
-<label for="brush">Brush radius, px</label><input type="number" id="brush" value="6" min=".5" max="60" step=".5" style="width:74px"></div>
-<div id="regionTools">
+</div>
+<div id="regionTools" hidden>
+  <div class="buttons"><button id="paintMode">Brush</button><button id="eraseMode">Erase mask</button><button id="wandMode" hidden>Magic wand</button></div>
+  <div class="row" id="brushSize"><label for="brush">Brush radius, px</label><input type="number" id="brush" value="6" min=".5" max="60" step=".5" style="width:74px"></div>
   <div class="entry"><label for="maskSelect">Paint mask</label><select id="maskSelect">
     <option value="head">Head attachment</option><option value="opening">Hood opening</option><option value="overlap">Hood overlap</option>
   </select></div>
@@ -84,6 +86,8 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show mask overlay</label></div>
   <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Clear mask</button></div>
 </div>
+<div id="splineTools">
+<div class="buttons"><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button></div>
 <p>Yellow knots set the rest spline. The cyan curve shows its 3D pose.</p>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
@@ -92,17 +96,19 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="entry"><label for="tipFollow">Bottom leads middle</label><input id="tipFollow" type="range" min="0" max=".9" step=".01" value=".58" aria-label="How much the bottom knot pulls the middle knot"></div>
 
 <div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
+</div>
 </section>
 <section>
-<h2>3D directional blend-space author</h2>
-<p>Place resting knots on the left in 2D, then choose a wind direction and manipulate its 3D pose here. Tap a knot sphere to select it. Drag a colored axis gizmo to <strong>translate</strong> its endpoint or a colored ring to <strong>rotate</strong> that segment. Drag empty space to orbit the camera. The first knot is anchored to the head.</p>
+<h2>3D preview</h2>
+<p id="poseHelp">Place resting knots on the left in 2D, then choose a wind direction and manipulate its 3D pose here. Tap a knot sphere to select it. Drag a colored axis gizmo to <strong>translate</strong> its endpoint or a colored ring to <strong>rotate</strong> that segment. Drag empty space to orbit the camera. The first knot is anchored to the head.</p>
 <canvas id="view3d" width="540" height="380" aria-label="Interactive 3D head and hair viewer with knot translation and rotation gizmos"></canvas>
 <output id="viewerStatus" role="status" aria-live="polite">Loading 3D viewer…</output>
 <div id="poseActions">
-  <button id="gizmoTranslate" class="active">Translate XYZ</button><button id="gizmoRotate">Rotate XYZ</button>
+  <button data-rig-control id="gizmoTranslate" class="active">Translate XYZ</button><button data-rig-control id="gizmoRotate">Rotate XYZ</button>
   <button data-camera="front">Front</button><button data-camera="angle">Angle</button>
   <button data-camera="side">Side</button><button data-camera="rear">Rear</button>
 </div>
+<div id="poseTools">
 <div id="poseMatrix">
 <button data-direction="up">↑ Up</button><button data-direction="toward">⊙ Toward viewer</button><button data-direction="away">⊗ Away from viewer</button>
 <button data-direction="left">← Left</button><button data-direction="down">↓ Down</button><button data-direction="right">Right →</button>
@@ -111,6 +117,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div id="segmentEditor"></div>
 <div class="buttons"><button id="generateBlend" type="button">Generate natural 6-direction poses</button></div>
 <p>Default wind poses are calculated from the current strand length, orientation, and knot position. Regenerating replaces only directional poses and deadzones; it keeps your pixel masks and resting knots.</p>
+</div>
 <h3>Preview the directional wind</h3>
 <div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
 <div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
@@ -132,7 +139,7 @@ const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIO
 const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
  return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
  rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,segmentsX:24,segmentsY:32};};
-let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
+let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move',maskTool='paint';
 let images={front:null,rear:null,hood:null,head:null,headRear:null,character:null,characterRear:null};
 let previewPointer=null,lastPaint=null,overlapBrush='bend'; // One captured pointer owns each knot drag or mask stroke.
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null,canonicalProfile=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
@@ -193,15 +200,32 @@ function writeMask(kind,view,mask){
   regionOverlayCache=null;
 }
 function updateMaskControls(){
+  const editing=mode!=='move'; // The workspace controls which authoring gestures are available.
+  $('regionTools').hidden=!editing;
+  $('splineTools').hidden=editing;
+  $('poseHelp').hidden=editing;
+  $('poseTools').hidden=editing;
+  for(const button of document.querySelectorAll('[data-rig-control]'))button.hidden=editing;
+  for(const [id,pressed] of [['moveMode',!editing],['maskMode',editing]]){
+    $(id).classList.toggle('active',pressed);$(id).setAttribute('aria-pressed',pressed);
+  }
   const hoodMasksAvailable=activeView()==='front'&&$('slotSelect').value==='facialHair';
   $('maskSelect').disabled=!hoodMasksAvailable;
   const kind=activeMask();
+  if(kind!=='opening'&&maskTool==='wand'){maskTool='paint';if(editing)mode=maskTool;}
+  $('wandMode').hidden=kind!=='opening';
+  $('wandMode').disabled=!hoodPortrait?.source;
+  $('brushSize').hidden=mode==='wand';
+  for(const tool of ['paint','erase','wand']){
+    $(tool+'Mode').classList.toggle('active',mode===tool);
+    $(tool+'Mode').setAttribute('aria-pressed',mode===tool);
+  }
   $('overlapSettings').hidden=kind!=='overlap';
   $('overlapMode').value=overlapBrush;
   $('autoMask').disabled=kind!=='head';
   $('paintMode').textContent=kind==='head'?'Brush: Rigid':'Paint mask';
   $('maskHelp').textContent={head:'Cyan stays fixed. Purple follows the spline.',
-    opening:'Orange marks where hood cloth opens around the beard.',
+    opening:'Orange marks the opening mask. With the wand, tap inside an enclosed transparent area of the hood.',
     overlap:'Green bends over covering cloth. Blue stays rigid over it.'}[kind];
 }
 function regionHead(view){return view==='rear'?(images.headRear||images.head):images.head;}
@@ -232,7 +256,7 @@ function maybeInitializeMasks(){
 }
 function makeRegionOverlay(){
   const view=activeView(),kind=activeMask(),sprite=images[view],mask=readMask(kind,view);
-  if(!sprite)return null;
+  if(!sprite&&kind!=='opening')return null;
   const key=JSON.stringify([kind,mask,kind==='overlap'?rig.hoodRigidOverlapMask:null]);
   const offset=rig.rearOffset.u+':'+rig.rearOffset.v;
   if(regionOverlayCache?.source===sprite&&regionOverlayCache.view===view
@@ -240,12 +264,12 @@ function makeRegionOverlay(){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
-  else ctx.drawImage(sprite,0,0,200,200);
+  else if(sprite)ctx.drawImage(sprite,0,0,200,200);
   const data=ctx.getImageData(0,0,200,200),bits=Rig.decodePixelMask(mask);
   const colors={head:[67,208,209],opening:[255,170,83],overlap:[139,224,106]};
   const rigid=kind==='overlap'?Rig.decodePixelMask(rig.hoodRigidOverlapMask):null;
   for(let i=0;i<bits.length;i++){
-    const at=i*4,alpha=data.data[at+3];
+    const at=i*4,alpha=kind==='opening'&&bits[i]?255:data.data[at+3];
     if(!alpha)continue;
     const selected=bits[i]||rigid?.[i];
     const color=rigid?.[i]?[106,167,255]:selected?colors[kind]:[198,109,231];
@@ -490,10 +514,12 @@ function hoodPreview(){
     window.NpcAvatarPreview.renderProfileToCanvas(rear,profile,{forceEyesOpen:true,portraitView:'behind'}),
   ]).then(()=>{
     if(generation!==hoodRenderGeneration)return;
-    let fit=front.hobunjiSplineHood;
+    let fit=front.hobunjiSplineHood,source=front.hobunjiSplineHoodSource;
     if(images.hood){
       const cloth=makeCanvas();cloth.getContext('2d').drawImage(images.hood,0,0,200,200);
-      fit=Rig.fitHood(cloth,isBeard?rig:{},[beard]);
+      source=cloth;
+      const fitted=makeCanvas();fitted.getContext('2d').drawImage(cloth,0,0);
+      fit=Rig.fitHood(fitted,isBeard?rig:{},[beard]);
       front.getContext('2d').drawImage(fit.canvas,0,0);
     }
     const visibleBeard=makeCanvas(); // Cache rest-frame beard occlusion for the 2D painting surface.
@@ -504,7 +530,7 @@ function hoodPreview(){
       for(let i=0;i<fit.coverage.length;i++)if(fit.coverage[i]&&!fit.overlap[i])pixels.data[i*4+3]=0;
       draw.putImageData(pixels,0,0);
     }
-    hoodPortrait={front,rear,fit:isBeard?fit:null,hidden,visibleBeard};
+    hoodPortrait={front,rear,source,fit:isBeard?fit:null,hidden,visibleBeard};
     render();
   }).catch(error=>{if(generation===hoodRenderGeneration)message('Hood preview failed: '+error.message);});
 }
@@ -579,32 +605,35 @@ function render(){
   const shown=$('viewSelect').value==='rear';
   updateMaskControls();
   if(!previewPointer)hoodPreview();
-  const portraitReference=shown?(hoodPortrait?.rear||images.characterRear||regionHead('rear')):(hoodPortrait?.front||images.character||images.head);
+  const wandSource=mode==='wand'&&hoodPortrait?.source; // Show raw hood alpha against the grid while selecting a hole.
+  const portraitReference=wandSource||(shown?(hoodPortrait?.rear||images.characterRear||regionHead('rear')):(hoodPortrait?.front||images.character||images.head));
   if(portraitReference){ctx.globalAlpha=1;ctx.drawImage(portraitReference,0,0,W,H);ctx.globalAlpha=1;}
-  if(images[shown?'rear':'front'] && !hoodPortrait?.hidden){
+  if(!wandSource&&images[shown?'rear':'front'] && !hoodPortrait?.hidden){
     if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);}
     ctx.drawImage(shown?images.rear:(hoodPortrait?.visibleBeard||images.front),0,0,W,H);
     if(shown)ctx.restore();
   }
-  if($('showRegions').checked){
+  if(mode!=='move'&&$('showRegions').checked){
     try{const overlay=makeRegionOverlay();if(overlay)ctx.drawImage(overlay,0,0,W,H);} // Cyan pixels are anchored; translucent purple pixels follow the spline.
     catch(error){message('Could not display the pixel region mask: '+error.message);}
   }
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
-  const drawCurve=(controlPoints,neutral)=>{
-    ctx.beginPath();
-    for(let i=0;i<controlPoints.length-1;i++)for(let j=0;j<=12;j++){
-      if(i && !j)continue;
-      const p=Rig.curvePoint(controlPoints,i,j/12,neutral); // Preview the same smooth Catmull-Rom spline used to deform the in-world PNG.
-      const X=(.5+p.x+(neutral?0:p.z*.4))*W,Y=(.5-p.y-(neutral?0:p.z*.17))*H;
-      if(!i && !j)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);
-    }
-    ctx.stroke();
-  };
-  ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';drawCurve(rig.points,true);
-  ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';drawCurve(pts,false);
-  rig.points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.u*W,p.v*H,i===selectedKnot?7:5,0,Math.PI*2);ctx.fillStyle=i===selectedKnot?'#fff2a2':'#ffd365';ctx.fill();ctx.strokeStyle='#1f2a37';ctx.stroke();});
+  if(mode==='move'){
+    const drawCurve=(controlPoints,neutral)=>{
+      ctx.beginPath();
+      for(let i=0;i<controlPoints.length-1;i++)for(let j=0;j<=12;j++){
+        if(i && !j)continue;
+        const p=Rig.curvePoint(controlPoints,i,j/12,neutral); // Preview the same smooth Catmull-Rom spline used to deform the in-world PNG.
+        const X=(.5+p.x+(neutral?0:p.z*.4))*W,Y=(.5-p.y-(neutral?0:p.z*.17))*H;
+        if(!i && !j)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);
+      }
+      ctx.stroke();
+    };
+    ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';drawCurve(rig.points,true);
+    ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';drawCurve(pts,false);
+    rig.points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.u*W,p.v*H,i===selectedKnot?7:5,0,Math.PI*2);ctx.fillStyle=i===selectedKnot?'#fff2a2':'#ffd365';ctx.fill();ctx.strokeStyle='#1f2a37';ctx.stroke();});
+  }
   const view=activeView(),mask=rig.regionMasks?.[view],rigidPixels=mask?.runs.reduce((n,p)=>n+p[1],0)||0;
   const regionNote=mask ? 'rigid: '+rigidPixels+'px / flexible: '+(40000-rigidPixels)+'px'
     : 'waiting for artwork and head overlap to classify pixel regions';
@@ -621,7 +650,7 @@ function render(){
       head:hoodPortrait?.front||images.character||images.head,headRear:hoodPortrait?.rear||images.characterRear||regionHead('rear'),
       front:hoodPortrait?.hidden?null:sources.front,rear:sources.rear,
       rearAligned:true, // All rear artwork is pre-aligned for the same continuous mesh as the game.
-      hoodFit:hoodPortrait?.fit});
+      hoodFit:hoodPortrait?.fit,editKnots:mode==='move'});
   }
 }
 function updateKnots(){
@@ -648,6 +677,18 @@ $('preview').addEventListener('pointerdown',e=>{
   if(previewPointer||e.button!==0)return;
   e.preventDefault();
   const p=pick(e);
+  if(mode==='wand'){
+    if(!hoodPortrait?.source)return;
+    const selected=Rig.selectHoodOpening(hoodPortrait.source,p.u,p.v,rig.hoodOpeningMask);
+    if(!selected.added){
+      message({cloth:'Tap inside a transparent hood opening.',outside:'That transparent area reaches the edge of the hood image.'}[selected.reason]||'That opening is already selected.');
+      return;
+    }
+    recordMaskUndo();
+    writeMask('opening','front',selected.mask);
+    render();message('Added '+selected.added+' pixels from the enclosed hood opening.');
+    return;
+  }
   previewPointer={id:e.pointerId,view:activeView(),kind:activeMask(),overlapBrush,mode};
   $('preview').setPointerCapture(e.pointerId);
   if(mode==='move'){
@@ -664,11 +705,9 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview
   previewPointer=null;lastPaint=null;
   render(); // Commit the finished rigid/flexible mask to the 3D viewer once after the drag.
 });
-function setPaintMode(next){
-  mode=next;
-  for(const key of ['move','paint','erase'])$(key+'Mode').classList.toggle('active',key===next);
-}
-for(const m of ['move','paint','erase'])$(m+'Mode').addEventListener('click',()=>setPaintMode(m));
+$('moveMode').onclick=()=>{mode='move';render();};
+$('maskMode').onclick=()=>{mode=maskTool;render();};
+for(const tool of ['paint','erase','wand'])$(tool+'Mode').onclick=()=>{mode=maskTool=tool;render();};
 $('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});selectedKnot=i+1;updateKnots();};
 $('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}rig.points.splice(selectedKnot,1);selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);updateKnots();};
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
@@ -690,8 +729,10 @@ $('clearMask').onclick=()=>{
 };
 $('resetRig').onclick=()=>{
   const points=images.front?Rig.suggestRestPoints(images.front,images.head):null;
-  rig=makeRig(points||undefined);autoLayoutPending=!points;
-  maskUndo=null;selectedKnot=1;selectedSegment=0;markRegionDirty();maybeInitializeMasks();controls();render();
+  const reset=makeRig(points||undefined);
+  rig={...rig,points:reset.points,segments:reset.segments,width:reset.width,windResponse:reset.windResponse,tipFollow:reset.tipFollow};
+  autoLayoutPending=!points;
+  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();controls();render();
 };
 $('autoMask').onclick=()=>{
   const view=activeView(),sprite=images[view],head=regionHead(view);
@@ -743,7 +784,9 @@ async function init3D(){
         if(input)input.value=Number(value.toFixed(3));
         render();
       },
-      onStatus:text=>{$('viewerStatus').textContent=text||'3D ready · drag axes or rings, tap knots, or orbit on empty space.';},
+      onStatus:text=>{$('viewerStatus').textContent=text||(mode==='move'
+        ?'3D ready · drag axes or rings, tap knots, or orbit on empty space.'
+        :'3D ready · drag to orbit. Paint masks in the 2D preview.');},
     });
     viewer.setMode(viewerMode);render();
     $('viewerStatus').textContent='3D ready · tap a knot, then drag an XYZ gizmo. Empty space orbits the camera.';

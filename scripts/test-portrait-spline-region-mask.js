@@ -148,3 +148,19 @@ assert.deepEqual(rigidOver,pinned,'rigid overlap preserves the portrait-local po
 const bentOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1);
 assert.equal(bentOver.z,.003,'bend overlap clears the hood by the minimum depth');
 assert(bentOver.x>rigidOver.x,'bend overlap retains flexible motion');
+
+const ring=new Canvas(); // Two isolated holes and a transparent exterior share one hood PNG.
+for(let y=20;y<36;y++)for(let x=20;x<44;x++) {
+  if(y<25||y>=30||x<24||(x>=29&&x<34)||x>=39)paint(ring,x,y,[50,100,80,255]);
+}
+const wand=(x,y,mask)=>Rig.selectHoodOpening(ring,(x+.5)/200,(y+.5)/200,mask);
+assert.equal(wand(1,1).reason,'outside','wand ignores transparent background connected to a canvas edge');
+assert.equal(wand(20,20).reason,'cloth','wand ignores opaque cloth');
+const firstHole=wand(25,27);
+assert.equal(firstHole.added,25,'wand selects the full enclosed transparent component');
+assert.equal(wand(25,27,firstHole.mask).added,0,'selecting the same opening twice is a no-op');
+const bothHoles=wand(35,27,firstHole.mask);
+assert.equal(bothHoles.added,25,'a second enclosed opening is added to the existing mask');
+assert.equal(Rig.decodePixelMask(bothHoles.mask)[idx(25,27)],1,'the first opening is preserved');
+for(let y=20;y<25;y++)paint(ring,25,y,[0,0,0,0]);
+assert.equal(wand(25,27).reason,'outside','a narrow transparent channel to the exterior rejects the region');

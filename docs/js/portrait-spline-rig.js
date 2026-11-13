@@ -165,6 +165,35 @@
     return geometry;
   }
 
+  function selectHoodOpening(hood, u, v, mask) {
+    const alpha = hood.getContext('2d').getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+    const first = maskPixel(u, v);
+    const visited = new Uint8Array(MASK_SIZE * MASK_SIZE);
+    const queue = new Uint16Array(visited.length); // Flood the clicked transparent region once, using edge-adjacent pixels.
+    let count = 0;
+    function visit(index) {
+      if (visited[index] || alpha[index * 4 + 3] >= 8) return;
+      visited[index] = 1;
+      queue[count++] = index;
+    }
+    visit(first);
+    if (!count) return { reason: 'cloth' };
+    for (let i = 0; i < count; i++) {
+      const index = queue[i];
+      const x = index % MASK_SIZE, y = Math.floor(index / MASK_SIZE);
+      if (x === 0 || y === 0 || x === MASK_SIZE - 1 || y === MASK_SIZE - 1) return { reason: 'outside' };
+      visit(index - 1); visit(index + 1);
+      visit(index - MASK_SIZE); visit(index + MASK_SIZE);
+    }
+    const selected = decodePixelMask(mask);
+    let added = 0;
+    for (let i = 0; i < count; i++) {
+      added += 1 - selected[queue[i]];
+      selected[queue[i]] = 1;
+    }
+    return { mask: encodePixelMask(selected), added };
+  }
+
   function fitHood(hood, rig, beardCanvases = []) {
     if (!hood) return null;
     const context = hood.getContext('2d');
@@ -755,7 +784,7 @@
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
     sampleHoodOverlap: (fit, u, v) => fit?.overlap[maskPixel(u, v)] || 0,
-    deformPosition, attachmentPinField, isPinnedPixel, attachmentMotion, strandGeometry, fitHood, hoodOcclusion, prepareSplineTexture, makeDefaultSegments, suggestRestPoints,
+    deformPosition, attachmentPinField, isPinnedPixel, attachmentMotion, strandGeometry, selectHoodOpening, fitHood, hoodOcclusion, prepareSplineTexture, makeDefaultSegments, suggestRestPoints,
     normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask,
     attach, refresh, detach, debug };
 })();

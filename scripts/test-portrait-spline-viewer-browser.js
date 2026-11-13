@@ -89,6 +89,9 @@ const server=http.createServer((req,res)=>{
       'there must be no independently rendered rigid portrait texture to open a black seam');
     assert(before.viewer.textures.hair?.opaque>0,
       'single mesh retains opaque rigid beard art and flexible hanging pixels in the same GPU texture');
+    await page.locator('#maskMode').click();
+    assert(await page.locator('#addPoint').isHidden(),'mask mode hides spline tools');
+    assert.equal((await debug()).viewer.handles,0,'mask mode removes the 3D rig gizmos');
     await page.locator('#autoMask').click();
     const initial=await debug();
     assert(initial.regionMasks.front>0,'automatic overlap classification produces a non-empty rigid region');
@@ -125,6 +128,8 @@ const server=http.createServer((req,res)=>{
     assert(centerPainted,'one fast brush drag paints the midpoint between pointer events');
     await page.locator('#undoMask').click();
     assert.equal((await debug()).regionMasks.front,repainted.regionMasks.front,'one undo reverses the complete brush stroke');
+    await page.locator('#moveMode').click();
+    assert(await page.locator('#paintMode').isHidden(),'rigging mode hides brush tools');
     await page.locator('#generateBlend').click();
     const generated=await debug();
     assert.equal(generated.regionMasks.front,repainted.regionMasks.front,
@@ -230,6 +235,7 @@ const server=http.createServer((req,res)=>{
     });
     assert.deepEqual(projected,{covered:[false,false],permitted:[true,true],removed:true},
       'actual WebGL fragments follow the hood under oblique perspective and orthographic cameras');
+    await page.locator('#maskMode').click();
     await page.locator('#maskSelect').selectOption('opening');
     await page.locator('#paintMode').click();await clickMaskPixel();
     assert((await debug()).hood.opening>0,'the opening brush authors a separate beard mask');
@@ -246,6 +252,24 @@ const server=http.createServer((req,res)=>{
     assert((await debug()).hood.hidden&&!(await debug()).viewer.hairLoaded,'the game facewrap rule hides the beard in preview');
     await page.locator('#hoodSelect').selectOption('');
     assert((await debug()).viewer.hairLoaded,'removing the hood restores the beard and clears its shader mask');
+    const hoodPng=await page.evaluate(()=>{
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
+      const ctx=canvas.getContext('2d');ctx.fillRect(50,50,100,100);ctx.clearRect(80,80,20,20);
+      return canvas.toDataURL().split(',')[1];
+    });
+    await page.locator('#hoodFile').setInputFiles({name:'wand-fixture.png',mimeType:'image/png',buffer:Buffer.from(hoodPng,'base64')});
+    await page.locator('#maskSelect').selectOption('opening');
+    await page.locator('#wandMode').click();
+    const openingBefore=(await debug()).hood.opening;
+    await page.locator('#preview').scrollIntoViewIfNeeded();
+    const wandCanvas=await page.locator('#preview').boundingBox();
+    const tap=(u,v)=>page.mouse.click(wandCanvas.x+wandCanvas.width*u,wandCanvas.y+wandCanvas.height*v);
+    await tap(.1,.1);
+    assert.equal((await debug()).hood.opening,openingBefore,'exterior transparency leaves the mask alone');
+    await tap(.45,.45);
+    assert((await debug()).hood.opening>openingBefore,'the wand adds the uploaded hood opening');
+    await page.locator('#undoMask').click();
+    assert.equal((await debug()).hood.opening,openingBefore,'one undo restores the previous opening mask');
     assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror|shader error|validate_status/i.test(text)).length,0,
       'No unhandled source error: '+errors.join('\n').slice(-2400));
     console.log('Portrait spline author browser: canonical hood and facewrap, independent masks, and 3D gizmos pass.');
