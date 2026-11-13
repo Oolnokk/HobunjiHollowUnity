@@ -220,6 +220,122 @@ async function main() {
     console.log('OK  guarded Quit distinguishes primary failure from recovery warnings');
   }
 
+  // 4) An in-flight fallback folder write must not mirror an older snapshot
+  // over browser changes that happened after serialization began.
+  {
+    const browser = makeStorage({
+      hobunjiSaveMeta: JSON.stringify({ version: 1, characters: [{ id: 'c', nickname: 'Original' }], worlds: [{ id: 'w', label: 'World' }] }),
+      'hobunji_farm_layout_v3:w': JSON.stringify({ tiles: [1] }),
+    });
+    let mutateDuringWrite = false; // Inject a browser change after the folder save snapshot has already been captured.
+    let browserMirrors = 0; // Confirms the second, stale folder save does not overwrite the newer browser cache.
+    function directory(name) {
+      const files = new Map(); // In-memory files provide a File System Access API double.
+      const dirs = new Map(); // Child directory handles for characters/worlds/layouts.
+      const notFound = () => Object.assign(new Error('not found'), { name: 'NotFoundError' });
+      return {
+        name,
+        async queryPermission() { return 'granted'; },
+        async getDirectoryHandle(child, options = {}) {
+          if (!dirs.has(child)) {
+            if (!options.create) throw notFound();
+            dirs.set(child, directory(child));
+          }
+          return dirs.get(child);
+        },
+        async getFileHandle(child, options = {}) {
+          if (!files.has(child)) {
+            if (!options.create) throw notFound();
+            files.set(child, '');
+          }
+          return {
+            kind: 'file',
+            async getFile() { return { text: async () => files.get(child) }; },
+            async createWritable() {
+              return {
+                async write(value) {
+                  files.set(child, value);
+                  if (name === 'characters' && mutateDuringWrite) {
+                    mutateDuringWrite = false;
+                    const newer = JSON.parse(browser.getItem('hobunjiSaveMeta'));
+                    newer.characters[0].nickname = 'Newer browser edit';
+                    browser.setItem('hobunjiSaveMeta', JSON.stringify(newer));
+                  }
+                },
+                async close() {},
+              };
+            },
+          };
+        },
+        async *entries() {
+          for (const [child, handle] of dirs) yield [child, { kind: 'directory', ...handle }];
+          for (const child of files.keys()) yield [child, { kind: 'file' }];
+        },
+        async removeEntry(child) { files.delete(child); },
+      };
+    }
+    const root = directory('Save Folder'); // Simulated permission-granted primary save directory.
+    const idbValues = new Map(); // Remembered folder handle store used by LocalSaveFolder.init.
+    const indexedDB = {
+      open() {
+        const req = {};
+        Promise.resolve().then(() => {
+          req.result = {
+            objectStoreNames: { contains: () => true },
+            transaction: () => {
+              const tx = {
+                objectStore: () => ({
+                  get(key) {
+                    const result = {};
+                    Promise.resolve().then(() => { result.result = idbValues.get(key); result.onsuccess?.(); });
+                    return result;
+                  },
+                  put(value, key) { idbValues.set(key, value); Promise.resolve().then(() => tx.oncomplete?.()); },
+                }),
+              };
+              return tx;
+            },
+          };
+          req.onsuccess?.();
+        });
+        return req;
+      },
+    };
+    let nextTimer = 1; // Stable timer ids let the debounce remain pending without sleeping the test.
+    const intervals = new Map(); // Pending callbacks prove the autosave debounce was scheduled.
+    const sandbox = {
+      window: {
+        showDirectoryPicker: async () => root,
+        addEventListener() {},
+        __hobunjiGameStarted: false,
+        HobunjiSaveSnapshot: {
+          browserCacheParts: () => [browser.getItem('hobunjiSaveMeta'), 'w', browser.getItem('hobunji_farm_layout_v3:w')],
+          apply() { browserMirrors++; },
+        },
+      },
+      indexedDB,
+      localStorage: browser,
+      setTimeout(callback, ms) { const id = nextTimer++; intervals.set(id, { callback, ms }); return id; },
+      clearTimeout(id) { intervals.delete(id); },
+      setInterval(callback, ms) { const id = nextTimer++; intervals.set(id, { callback, ms }); return id; },
+      clearInterval(id) { intervals.delete(id); },
+    };
+    vm.runInNewContext(read('docs/js/local-save-folder-core.js'), sandbox, { filename: 'local-save-folder-core.js' });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    await sandbox.window.LocalSaveFolder.chooseFolder();
+    const first = await sandbox.window.LocalSaveFolder.syncNow();
+    assert.equal(first.autoSyncArmed, true, 'first explicit folder save arms autosaving');
+    mutateDuringWrite = true;
+    const before = browserMirrors;
+    const status = await sandbox.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' });
+    assert.equal(status.lastError, null, 'the canonical folder write itself succeeds');
+    assert.match(status.browserMirrorWarning || '', /newer browser changes/i, 'the fallback path detects edits made during disk I/O');
+    assert.equal(browserMirrors, before, 'an old snapshot never replaces newer browser state');
+    assert.equal(status.changeSyncPending, true, 'the newer edits are queued for another folder autosave');
+    assert.equal(JSON.parse(browser.getItem('hobunjiSaveMeta')).characters[0].nickname, 'Newer browser edit');
+    console.log('OK  in-flight folder autosave preserves newer browser edits');
+  }
+
   console.log('\nFolder save runtime integrity checks passed.');
 }
 
