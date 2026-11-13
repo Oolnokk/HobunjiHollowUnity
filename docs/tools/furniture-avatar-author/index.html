@@ -2368,18 +2368,19 @@ function configureTransformAxesForSelection() {
   transform.showX=true;transform.showY=true;transform.showZ=true;
   const part=selectedPart();
   const isGroup=state.selectedType==='partGroup'; // Group centroids have no single object orientation; their axes stay world-aligned.
-  const hasLocalObject=['part','placement','seatAnchor','emitter'].includes(state.selectedType); // Single-object move, rotate and scale handles track the object's visible rotation.
+  const hasLocalObject=['part','placement','seatAnchor','emitter','carry'].includes(state.selectedType); // Single-object and carry-guide handles track their visible rotation.
   const mode=transform.getMode?.()||'translate'; // Active drag mode determines whether surface-placed items need a uniform-scale explanation.
+  const carryGuide=state.selectedType==='carry'?state.selectedId:null; // Only the collision hitbox has an authored scale in Carryable mode.
   if(part?.kind==='liquidSurface'){
     const axis=linkedCup(part)?.taperAxis||'y'; // A liquid surface can only move on the vessel's own fill axis.
     transform.showX=axis==='x';transform.showY=axis==='y';transform.showZ=axis==='z';
     if((transform.getMode?.()||'translate')!=='translate')setTransformMode('translate');
-  }else if(['seatAnchor','emitter'].includes(state.selectedType)&&(transform.getMode?.()||'translate')==='scale'){
-    setTransformMode('translate'); // Anchor and emitter size is fixed; never display nonfunctional scale handles.
+  }else if((['seatAnchor','emitter'].includes(state.selectedType)||(carryGuide&&carryGuide!=='hitbox'))&&mode==='scale'){
+    setTransformMode('translate'); // Hand/grip guides, anchors and emitters have fixed scale; never display nonfunctional scale handles.
   }
   transform.setSpace?.(isGroup?'world':'local');
   const status=$('gizmoSpaceStatus'); // Mobile-visible explanation of which coordinate frame the draggable axes use.
-  if(status)status.textContent=isGroup?'World axes · multi-piece centroid':state.selectedType==='placement'&&mode==='scale'?'Local axes · placed items scale uniformly':hasLocalObject?'Local axes · follow the selected object’s orientation':'Select an object to show its transform axes.';
+  if(status)status.textContent=isGroup?'World axes · multi-piece centroid':state.selectedType==='placement'&&mode==='scale'?'Local axes · placed items scale uniformly':carryGuide==='hitbox'&&mode==='scale'?'Local axes · resize carryable hitbox':hasLocalObject?'Local axes · follow the selected object’s orientation':'Select an object to show its transform axes.';
 }
 
 function onTransformObjectChange() { const mode=transform?.getMode?.()||transform?.mode||'translate';if(state.selectedType==='partGroup'){previewPartGroupTransform();return;}if(state.selectedType==='part'){const part=selectedPart();if(part?.kind==='liquidSurface'){previewLiquidTransform();return;}const object=meshes.get(part?.id);if(!part||!object)return;part.transform.x=+object.position.x.toFixed(4);part.transform.y=+object.position.y.toFixed(4);part.transform.z=+object.position.z.toFixed(4);part.transform.rx=+(object.rotation.x*RAD).toFixed(3);part.transform.ry=+(object.rotation.y*RAD).toFixed(3);part.transform.rz=+(object.rotation.z*RAD).toFixed(3);if(mode==='scale'){const base=object.userData.authoredDimensions||{sx:part.transform.sx,sy:part.transform.sy,sz:part.transform.sz};part.transform.sx=+Math.max(.001,Math.abs(Number(base.sx)||.001)*Math.abs(object.scale.x)).toFixed(4);part.transform.sy=+Math.max(.001,Math.abs(Number(base.sy)||.001)*Math.abs(object.scale.y)).toFixed(4);part.transform.sz=+Math.max(.001,Math.abs(Number(base.sz)||.001)*Math.abs(object.scale.z)).toFixed(4);}if(part.kind==='cup')updateLinkedLiquids(part.id);rebuildItemPreviews();refreshSelectionUI();return;}if(state.selectedType==='placement'){const record=selectedPlacement(),object=itemPreviewMeshes.get(record?.id),frame=getSurfaceWorldFrame(record?.surfaceId);if(!record||!object||!frame)return;const delta=object.position.clone().sub(frame.center);record.position={u:+delta.dot(frame.u).toFixed(4),v:+delta.dot(frame.v).toFixed(4),normal:+delta.dot(frame.normal).toFixed(4)};if(mode==='scale'){
