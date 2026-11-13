@@ -153,6 +153,10 @@
     return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools') || window.PlayerDowned?.isDowned?.()); // A downed player cannot start melee abilities (js/player-downed.js); the ranged weapon bypasses Combat.input.
   }
 
+  function blockedByInputOwnership() {
+    return window.GameplayInputRouter?.blocksAttacks?.() === true; // Contextual Action 1/2 claims suppress both combat slots, including delayed or buffered attacks.
+  }
+
   function blockedByStagger() {
     const deps = window.Combat.deps;
     if (!window.Combat.isStaggered(deps?.player)) return false;
@@ -217,12 +221,13 @@
   }
 
   function fireTap(slotIndex) {
+    if (blockedByInputOwnership()) return; // A noncombat tap can never also start a melee attack or cancel bandaging.
     window.BandageSystem?.cancel?.('attack');
     if (blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     runAfterAttackAlignment(() => {
-      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone) return;
+      if (blockedByInputOwnership() || blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
       else legacyTapFallback(slotIndex);
     }, slotIndex);
@@ -230,7 +235,7 @@
 
   function startHold(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || blockedByActionLock() || blockedByStagger()) return;
+    if (!s || blockedByInputOwnership() || blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     s.holdAbility = ability;
@@ -238,7 +243,7 @@
     s.releaseQueued = false;
     const start = () => {
       s.alignmentRequest = null;
-      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
+      if (blockedByInputOwnership() || blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
       s.holdStarted = true;
       ability.onHoldStart({ slotIndex, slotId });
       if (s.releaseQueued) {
@@ -288,6 +293,7 @@
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
   function pressStart(slotIndex) {
+    if (blockedByInputOwnership()) return; // Do not arm a hold that a contextual press has already claimed.
     window.BandageSystem?.cancel?.('attack');
     const s = slots[slotIndex];
     if (!s || s.down || blockedByActionLock()) return;
@@ -306,7 +312,7 @@
   function pressEnd(slotIndex) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
-    if (blockedByActionLock()) { abortPress(slotIndex); return; }
+    if (blockedByInputOwnership() || blockedByActionLock()) { abortPress(slotIndex); return; }
     try {
       if (s.holding) endHold(slotIndex);
       else fireTap(slotIndex);
@@ -372,7 +378,7 @@
 
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
-    if (blockedByActionLock()) { abortAllPresses(); return; }
+    if (blockedByActionLock() || ((slots[1].down || slots[2].down || queuedAttacks.size > 0) && blockedByInputOwnership())) { abortAllPresses(); return; } // Skip expensive contextual action resolution on idle combat frames.
     if (window.Combat.deps?.player?.prone || window.Combat.isStaggered(window.Combat.deps?.player)) {
       abortAllPresses();
       return;
