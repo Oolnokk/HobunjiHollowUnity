@@ -7,6 +7,7 @@
   let combatResolver = () => false; // Injected player combat state; used to prevent beginning or resuming world hold interactions in combat.
   let contextResolver = () => false; // Injected visible action-arch override check; used to arbitrate combat even before a button is pressed.
   const interruptedHolds = new Set(); // World hold action kinds invalidated by combat until their original physical input is released.
+  const contextPresses = new Map(); // Physical press ID -> captured Action 1/2 context; keeps attack suppression through prompt changes until button-up.
   let lastRoute = null; // Mobile-readable diagnostics for the latest resolved input and its owner.
 
   function configure(options = {}) {
@@ -19,10 +20,28 @@
     catch (error) { console.warn('[GameplayInputRouter] context resolver failed', error); return false; }
   }
 
+  function beginContextPress(pressId, actionId, label = actionId) {
+    pressId = String(pressId || '').trim();
+    actionId = String(actionId || '').trim();
+    if (!pressId || (actionId !== 'action1' && actionId !== 'action2')) return false;
+    if (contextPresses.has(pressId)) return true; // Repeats never replace the owner of an already-held button.
+    contextPresses.set(pressId, { actionId, label: String(label || actionId) });
+    revision++;
+    return true;
+  }
+
+  function endContextPress(pressId) {
+    const changed = contextPresses.delete(String(pressId || ''));
+    if (changed) revision++;
+    return changed;
+  }
+
   function isAttackBlocked() {
-    // Only contextual Action 1/2 ownership suppresses all attacks. Claims on Action 3, Dodge,
-    // Interact or other inputs never disable attacks by themselves.
-    return ['action1', 'action2'].some(id => pressed.has(id) || isClaimed(id) || safeContextOverride(id));
+    // The first two contextual action slots suppress *all* attacks, including when
+    // their original press outlives the visible prompt. Action 3/other claims do not.
+    if (contextPresses.size || pressed.has('action1') || pressed.has('action2')) return true;
+    return isClaimed('action1') || isClaimed('action2')
+      || safeContextOverride('action1') || safeContextOverride('action2');
   }
 
   function isInCombat() {
@@ -44,6 +63,9 @@
     if (active) return { actionId, ownerId: active.ownerId, kind: 'owned', label: active.label };
     const claim = claimFor(actionId);
     if (claim) return { actionId, ownerId: claim.ownerId, kind: 'claim', label: claim.label };
+    for (const [pressId, press] of contextPresses) {
+      if (press.actionId === actionId) return { actionId, ownerId: pressId, kind: 'context-press', label: press.label };
+    }
     if (safeContextOverride(actionId)) return { actionId, ownerId: 'visible-context', kind: 'context', label: actionId };
     return { actionId, ownerId: 'gameplay', kind: 'default', label: actionId };
   }
@@ -137,6 +159,7 @@
       claims,
       pressed:[...pressed.entries()].map(([actionId,claim])=>({actionId,ownerId:claim.ownerId,label:claim.label})),
       interruptedHolds:[...interruptedHolds],
+      contextPresses:[...contextPresses.entries()].map(([pressId,press]) => ({ pressId, ...press })),
       attackBlocked:isAttackBlocked(),
       lastRoute,
     };
@@ -146,6 +169,8 @@
     configure,
     route,
     resolve,
+    beginContextPress,
+    endContextPress,
     isAttackBlocked,
     isInCombat,
     canContinueHold,
@@ -162,10 +187,12 @@
   window.addEventListener?.('blur', () => {
     for (const id of [...pressed.keys()]) dispatch(id, 'cancel', { source: 'window-blur' });
     interruptedHolds.clear();
+    contextPresses.clear();
   });
   if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
     if (!document.hidden) return;
     for (const id of [...pressed.keys()]) dispatch(id, 'cancel', { source: 'hidden' });
     interruptedHolds.clear();
+    contextPresses.clear();
   });
 })();
