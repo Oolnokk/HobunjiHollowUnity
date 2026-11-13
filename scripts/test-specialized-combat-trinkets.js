@@ -81,7 +81,7 @@ assert(flask.includes("const flaskmasterPower = window.TrinketSystem?.combatMult
 assert(flask.includes("const flaskmasterRadius = window.TrinketSystem?.combatMultiplier?.('flaskRadius') || 1;"));
 assert(shatter.includes('c._flaskmasterSource ='),'player throw retains source attribution');
 
-function chain(mode){
+function chain(mode,{visualFailure=false}={}){
   const vases=new Map(); // The real chain dispatcher iterates the same map.
   const records=new Map([['zone',{vases,scene:{}}]]);
   const events=[]; // Real blast event data from the isolated authoritative functions.
@@ -91,7 +91,7 @@ function chain(mode){
     backCarrierPosition:()=>null, // Modern stowed Burdens resolve their carrier's location before detonating; this chain fixture has none.
     lastEvent:'',lastBlastAttribution:null,
     explosionBatchDepth:0,explosionBatchDirty:false,pendingRubbleVisuals:new Set(),blastRubbleRebuilds:0,
-    syncPileVisuals(){flushes.rubble++;},
+    syncPileVisuals(){flushes.rubble++;if(visualFailure)throw new Error('simulated rubble GPU rebuild failure');},
     persistWorld(){if(ctx.explosionBatchDepth)ctx.explosionBatchDirty=true;else flushes.saves++;}, // Reproduces the actual synchronous batch gate.
     deps:()=>({player:null,hostileObjects:new Set(),npcWalkers:new Set()}),
     tileSize:()=>64,scene:()=>({}),baseHeight:()=>0,
@@ -111,7 +111,11 @@ function chain(mode){
     const group={position:pos,parent:{remove(){}},updateWorldMatrix(){},getWorldPosition(){return pos;}};
     vases.set(id,{id,mapId:'zone',kind:'shattercask',col:x,row:0,group,exploded:false,carried:false,flying:false});
   }
-  if(mode==='wearer')api.detonate(vases.get('a'),'melee',{power:1.25,radius:1.15,rootId:'a',origin:'player-melee'});
+  if(mode==='wearer'){
+    const detonate=()=>api.detonate(vases.get('a'),'melee',{power:1.25,radius:1.15,rootId:'a',origin:'player-melee'});
+    if(visualFailure)assert.throws(detonate,/simulated rubble GPU rebuild failure/);
+    else detonate();
+  }
   else if(mode==='enemy')api.detonate(vases.get('a'),'projectile');
   else api.triggerBurdenBlastAt('zone',0,0,5,'witchbomb');
   assert.equal(vases.size,0,'all three Shattercasks detonate exactly once');
@@ -119,8 +123,11 @@ function chain(mode){
   assert.equal(flushes.saves,1,'a three-charge chain serializes its world changes only once');
   assert.equal(flushes.rubble,1,'a three-charge chain rebuilds the affected rubble instances once');
   assert.equal(ctx.explosionBatchDepth,0,'the outermost charge always closes the batch after recursion');
+  assert.equal(ctx.pendingRubbleVisuals.size,0,'pending visuals are cleared after success or failure');
+  assert.equal(ctx.explosionBatchDirty,false,'the world save completes even if visual cleanup fails');
   assert(events.every(e=>Math.abs(e.radius-(mode==='wearer'?5.75:5))<1e-9),'blast radius follows player-only provenance');
   assert.equal(ctx.lastBlastAttribution.rootId,mode==='wearer'?'a':null,'final link retains correct chain root');
 }
 chain('wearer');chain('enemy');chain('environment');
+chain('wearer',{visualFailure:true}); // A failed GPU rebuild must never suppress persistence or strand the batch.
 console.log('specialized combat trinket regressions passed');
