@@ -151,6 +151,26 @@ assert(box.max.z<=-24,'all rendered stone remains outside the map and border ter
 assert(Math.abs(box.max.y-layout.topWorldY)<1e-5,'flat stone crown exactly reaches the intended height');
 assert(layout.flatCapVertices>=3,'several vertices must form a level cap');
 assert(layout.flatCapTriangles>=1,'flattening must create an actual horizontal plateau triangle, not just high vertices');
+const ridgeThreshold=1/Math.sqrt(1+0.194); // Matches NaturalSurfaceCliffRidgeIsolation's production top-vs-side normal threshold.
+const position=mesh.geometry.getAttribute('position'); // Inspect the actual transformed triangle winding, not only the heights.
+let upwardCapTriangles=0,steepCliffTriangles=0; // The ridge split depends on having both upward top and sloped side faces.
+for(let i=0;i+2<position.count;i+=3){
+  const a=[position.getX(i),position.getY(i),position.getZ(i)];
+  const b=[position.getX(i+1),position.getY(i+1),position.getZ(i+1)];
+  const c=[position.getX(i+2),position.getY(i+2),position.getZ(i+2)];
+  const ab=b.map((value,j)=>value-a[j]),ac=c.map((value,j)=>value-a[j]);
+  const nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0];
+  const len=Math.hypot(nx,ny,nz);
+  if(!(len>1e-9))continue;
+  const normalY=ny/len;
+  if(a[1]===layout.topWorldY&&b[1]===layout.topWorldY&&c[1]===layout.topWorldY){
+    assert(normalY>0.99,'the horizontal cap must face upward: negative Y normals break the ridge-surface detector');
+    upwardCapTriangles++;
+  }
+  if(normalY<ridgeThreshold)steepCliffTriangles++;
+}
+assert(upwardCapTriangles>=1,'the rock must contain at least one upward-facing cap triangle');
+assert(steepCliffTriangles>=1,'the rock must contain visibly distinct steep side triangles for the ridge isolator');
 assert.equal(api.getDebugState().clearOfPlayableMap,true);
 assert.strictEqual(api.attach(scene,200,200),root,'duplicate attach must not create second rock');
 assert.equal(sources.length,18,'duplicate attach must not rebuild');
