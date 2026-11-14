@@ -3086,26 +3086,13 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <!-- Toast/zone-banner + message history, and the keyboard QoL layer (menu hotkeys, F1 cheat sheet, H message log); game.js inits both. -->
-  <script src="js/toast-notifications.js?v=20261025qol1"></script>
-  <!-- Shared location arrival titles and musical stings after loading. -->
-  <script src="js/location-arrival.js?v=20261030harrivalreview2"></script>
-  <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
-  <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
-  <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261112keyPack2"></script>
-  <script src="js/town-magic-checkpoint.js?v=20261103magicCustody6"></script> <!-- Spearhead and Oddclaw exterior gate check, legal item registration and Garanki's persistent custody. -->
-  <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
-  <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
+  <!-- Parser-ordered feature groups; edit their manifests rather than this shared entrypoint.
+       See architecture/classic-script-groups.md. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="qol"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="guild"></script>
+  <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
-  <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
-  <script src="js/instanced-mesh-view-cull.js?v=20261112meshcull1"></script>
-  <script src="js/grass-billboard-render-chunks.js?v=20261112grasschunk1"></script>
-  <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
-  <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
-  <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="render"></script>
   <script src="game.js?v=20261113inputrouter2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
