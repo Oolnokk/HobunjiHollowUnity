@@ -19,19 +19,25 @@
 
   function chooseAggroTarget(enemy, players, companions, areaId, radiusPx, canSee) {
     if (!enemy || !(radiusPx > 0)) return null;
-    let best = null; // Nearest visible eligible opponent for one new aggro acquisition.
-    let bestDistanceSq = radiusPx * radiusPx; // Squared range avoids sqrt for rejected candidates.
-    function consider(candidate) {
-      if (!viable(candidate, areaId) || candidate === enemy) return;
-      const dx = candidate.x - enemy.x, dy = candidate.y - enemy.y; // Used for squared proximity comparison.
-      const distanceSq = dx * dx + dy * dy; // Checked before any expensive line-of-sight probe.
-      if (distanceSq > bestDistanceSq || (best && distanceSq === bestDistanceSq)) return;
-      if (canSee && !canSee(enemy, candidate, radiusPx)) return;
-      best = candidate; bestDistanceSq = distanceSq;
+    const radiusSq = radiusPx * radiusPx; // Reused for cheap proximity checks before line-of-sight work.
+    let occluded = null; // Allocated only if the nearest opponent fails the shared sight/attack-cone test.
+    for (;;) {
+      let closest = null; // Nearest remaining viable opponent, checked against sight once.
+      let closestDistanceSq = radiusSq; // Never run costly LOS against distant players or pets.
+      function consider(candidate) {
+        if (!viable(candidate, areaId) || candidate === enemy || occluded?.has(candidate)) return;
+        const dx = candidate.x - enemy.x, dy = candidate.y - enemy.y; // Compared as squared distance without square-root churn.
+        const distanceSq = dx * dx + dy * dy;
+        if (distanceSq <= closestDistanceSq && (!closest || distanceSq < closestDistanceSq)) {
+          closest = candidate; closestDistanceSq = distanceSq;
+        }
+      }
+      for (const person of players || []) consider(person);
+      for (const companion of companions || []) if (groundPet(companion, areaId)) consider(companion);
+      if (!closest) return null;
+      if (!canSee || canSee(enemy, closest, radiusPx)) return closest;
+      (occluded ||= new Set()).add(closest); // A blocked nearer pet must not conceal a visible player farther back.
     }
-    for (const person of players || []) consider(person);
-    for (const companion of companions || []) if (groundPet(companion, areaId)) consider(companion);
-    return best;
   }
 
   function chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx) {
