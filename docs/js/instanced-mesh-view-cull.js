@@ -42,8 +42,11 @@
   // Returns a restore closure (or null when nothing was hidden). The caller
   // MUST invoke it in a finally block around all world passes.
   function suspendForRender(activeScene, camera) {
+    let sceneryRestore = null; // Independent distant-scene scope: safe even when instancing is disabled.
+    try { sceneryRestore = window.DistantSceneryViewCull?.suspendForRender?.(activeScene, camera) || null; }
+    catch (_) { window.DistantSceneryViewCull?.reset?.(); } // Optional optimization must fail open.
     const bounds = window.InstancedMeshBounds;
-    if (!enabled || !activeScene?.isScene || !camera?.isCamera || !bounds || !ensureThree()) return null;
+    if (!enabled || !activeScene?.isScene || !camera?.isCamera || !bounds || !ensureThree()) return sceneryRestore;
     if (hiddenScratch.length) restore(); // A previous call that was never restored must not leave meshes hidden.
     camera.updateMatrixWorld?.(true); // Resolve the current view before Three's own render does.
     if (!camera.projectionMatrix || !camera.matrixWorldInverse) return null;
@@ -62,7 +65,10 @@
     });
     stats.frames++; stats.tracked = tracked; stats.inScene = inScene;
     stats.hidden = hiddenScratch.length; stats.hiddenInstances = hiddenInstances;
-    return hiddenScratch.length ? restore : null;
+    if (!sceneryRestore) return hiddenScratch.length ? restore : null;
+    return function restoreViewCulling() {
+      try { restore(); } finally { sceneryRestore(); }
+    }; // Both visibility scopes unwind in the caller's existing render finally.
   }
 
   window.InstancedMeshViewCull = Object.freeze({
