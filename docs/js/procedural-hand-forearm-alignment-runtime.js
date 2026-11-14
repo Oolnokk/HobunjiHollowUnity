@@ -128,14 +128,6 @@
     // Outline/material-id passes must replay the already aligned visible hand,
     // not solve another orientation during the secondary pass.
     if (renderScene?.overrideMaterial) return;
-    // The same frame's later passes (held/shell replays, depth passes) draw the
-    // pose the first pass aligned; solving it again per pass was up to six
-    // solves per rig per frame. Same frame-id memo as the hand sync sentinel.
-    const frameId = window.RuntimeFrameScheduler?.frameId?.();
-    if (frameId != null) {
-      if (record._lastAlignFrameId === frameId) return;
-      record._lastAlignFrameId = frameId;
-    }
     alignSide(record, 'left');
     alignSide(record, 'right');
   }
@@ -149,7 +141,6 @@
       0.0001, 0, 0,
       0, 0.0001, 0,
     ], 3));
-    geometry.setDrawRange?.(0, 0); // Hook only: onBeforeRender still runs, no GL draw is issued (see the hand sync sentinel).
     const material = new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false });
     material.colorWrite = false;
     const sentinel = new THREE.Mesh(geometry, material);

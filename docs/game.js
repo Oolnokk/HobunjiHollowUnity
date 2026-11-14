@@ -7212,7 +7212,7 @@
           const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
           const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
           let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
-          if (initiallyLodSleeping || window.OffscreenRigLod.shouldCoarseTickAi(c, initialDistanceTiles)) { // Calm off-camera humanoids share the far-wildlife 5 Hz cadence; js/offscreen-rig-lod.js.
+          if (initiallyLodSleeping) {
             c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
             if (c._farWildlifeAiAccumS < FAR_WILDLIFE_AI_TICK_INTERVAL_S) continue;
             entityDt = Math.min(0.6, c._farWildlifeAiAccumS);
@@ -27338,7 +27338,6 @@
         // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
         // first (js/grass-billboard-render-chunks.js), then off-camera tagged
         // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
-        window.EnvironmentSurfaceMicroPlateau?.updateDistanceLod?.(camera); // Far snow/slush chunks draw their flat slab; js/environment-surface-micro-plateau.js.
         const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
         const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
         try {

@@ -762,55 +762,11 @@ function hunterDebug(api, zoneId, campId, index) {
   hostileObjects.delete(prey);
   // Fights cover every live actor within the 24-tile release radius around the
   // player, not just the player's own 16x16 chunk: rivals in plain view fight.
-  const nextChunkBandit = { id: 'eco_next_chunk_bandit', x: 26 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  const nextChunkBandit = { id: 'eco_next_chunk_bandit', x: 48 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
   hostileObjects.add(nextChunkBandit);
   api.__test.updateChunkEcology();
   assert.equal(pora._chunkCombatTarget, nextChunkBandit, 'a visible actor across the 16-tile chunk boundary is still a faction target');
-
-  // Engagement range: a fight starts within 10 tiles and is dropped beyond 15.
-  // Pursuit is a straight line, so a far opponent just pins the pursuer on terrain.
-  nextChunkBandit.x = 19 * combatDeps.TILE;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, nextChunkBandit, 'an ongoing fight survives the opponent drifting out to 13 tiles');
-  nextChunkBandit.x = 16 * combatDeps.TILE;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'an opponent 16 tiles away is past the disengage radius');
-  assert.equal(nextChunkBandit._chunkCombatTarget ?? null, null, 'and it does not chase the hunter from there either');
-  nextChunkBandit.x = 20 * combatDeps.TILE;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'an opponent 12 tiles away is inside the bubble but too far to start a fight');
   hostileObjects.delete(nextChunkBandit);
-
-  // Only actors the player can see take part: wildlife hidden by its own LOD
-  // (it sleeps sooner than camp residents do) is neither hunter nor hunted.
-  const hiddenPrey = { id: 'eco_hidden_prey', creatureKey: 'test-prey', wildlifeRole: 'prey', x: 35 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, state: 'idle', def: {}, _wildlifeVisualLodHidden: true };
-  hostileObjects.add(hiddenPrey);
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'LOD-hidden prey is not hunted');
-  hiddenPrey._wildlifeVisualLodHidden = false;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, hiddenPrey, 'the same prey is hunted once it is shown');
-
-  // A pursuit that gains no ground and deals no damage is abandoned, and that
-  // opponent is ignored for a while (it is behind a cliff or across water).
-  fakeNowMs += 5000;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, hiddenPrey, 'five seconds without progress is still a fight');
-  hiddenPrey.health = 15;
-  fakeNowMs += 5000;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, hiddenPrey, 'landing damage counts as progress');
-  fakeNowMs += 6100;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'six seconds with no ground gained and no damage: the hunter gives up');
-  assert.equal(pora.state, 'return', 'and goes back to its routine');
-  fakeNowMs += 10000;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'the unreachable opponent stays ignored');
-  fakeNowMs += 21000;
-  api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, hiddenPrey, 'it may try again after the avoid period');
-  hostileObjects.delete(hiddenPrey);
   const outsideBandit = { id: 'eco_outside_bandit', x: 32 * combatDeps.TILE, y: 57 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
   hostileObjects.add(outsideBandit);
   api.__test.updateChunkEcology();

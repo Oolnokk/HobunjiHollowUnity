@@ -322,37 +322,13 @@
     return import('three/addons/loaders/GLTFLoader.js').then(module => new module.GLTFLoader());
   }
 
-  // meshBudget 'npc' (town NPCs and every BanditCombat humanoid): a hand is a few
-  // pixels on anyone but the player, yet the authored GLB is about 3,100
-  // triangles a hand, six times the capped portrait plane, and is drawn in the
-  // held overlay, shell and depth passes. Those rigs load the shipped pre-baked
-  // reduced model (the Geometry Detail "Low" variant) whatever the player's own
-  // setting is. No reduced variant in the manifest, or a failed load, falls
-  // back to the ordinary path below.
-  let npcHandBudgetEnabled = true; // A/B switch; applies to hands built afterwards.
-  const npcHandBudgetStats = { reducedLoads: 0, fallbacks: 0, noVariant: 0 };
-  function loadGlbScene(THREE, path, meshBudget = null) {
+  function loadGlbScene(THREE, path) {
     const quality = global.GeometryQuality; // Gameplay quality settings choose a baked hand model without changing any rig transforms.
+    const key = resolveAssetPath(path) + '|geometry:' + (quality?.getTier?.() || 'original'); // Isolate cached scenes by quality tier.
+    if (glbCache.has(key)) return glbCache.get(key);
     const load = requested => loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
       loader.load(resolveAssetPath(requested), gltf => resolve(gltf?.scene || gltf), undefined, reject);
     }));
-    if (meshBudget === 'npc' && npcHandBudgetEnabled) {
-      const reduced = quality?.resolvePath?.(path, 'low');
-      if (reduced && reduced !== path) {
-        const reducedKey = resolveAssetPath(reduced) + '|budget:npc';
-        if (!glbCache.has(reducedKey)) {
-          glbCache.set(reducedKey, load(reduced).then(scene => { npcHandBudgetStats.reducedLoads++; return scene; }).catch(() => {
-            glbCache.delete(reducedKey);
-            npcHandBudgetStats.fallbacks++;
-            return loadGlbScene(THREE, path, null);
-          }));
-        }
-        return glbCache.get(reducedKey);
-      }
-      npcHandBudgetStats.noVariant++;
-    }
-    const key = resolveAssetPath(path) + '|geometry:' + (quality?.getTier?.() || 'original'); // Isolate cached scenes by quality tier.
-    if (glbCache.has(key)) return glbCache.get(key);
     const promise = (quality?.loadWithFallback ? quality.loadWithFallback(path, load) : load(path)).catch(error => {
       glbCache.delete(key);
       throw error;
@@ -432,7 +408,7 @@
   }
 
   async function buildGlbHand(THREE, modelKey, model, options, side) {
-    const source = await loadGlbScene(THREE, model.glb, options.meshBudget);
+    const source = await loadGlbScene(THREE, model.glb);
     if (!source) throw new Error(`Hand GLB had no scene: ${model.glb}`);
     const clone = cloneSceneWithOwnedResources(THREE, source, modelKey, model, options.speciesId, options.bodyColors);
 
@@ -817,7 +793,6 @@
             bodyColors: options.bodyColors,
             baseTargetHeight,
             speciesScale: values.speciesScale,
-            meshBudget: options.meshBudget,
           }, side),
         ]));
         if (state.disposed || generation !== state.loadGeneration) {
@@ -1037,8 +1012,6 @@
   }
   const publicApi = {
     attach,
-    setNpcHandBudgetEnabled(value) { npcHandBudgetEnabled = value !== false; return npcHandBudgetEnabled; }, // Hands built afterwards only.
-    npcHandBudgetSnapshot: () => ({ enabled: npcHandBudgetEnabled, ...npcHandBudgetStats }),
     modelCalibrationForSpecies,
     installGameRuntime(injectedDeps) { gameDeps = injectedDeps || null; },
     get gameDeps() { return gameDeps; },
