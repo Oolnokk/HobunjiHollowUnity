@@ -505,7 +505,8 @@
     roomSession=RoomSystem.mount({layout:allRooms,getPlayerPosition,getPlayerY,
       mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
       tile:Number(root.Combat?.deps?.TILE)||64,
-      getHostiles:()=>root.Combat?.deps?.hostileObjects}); // Hostiles outside the current room are reset, hidden and skipped by updateHostiles.
+      getHostiles:()=>root.Combat?.deps?.hostileObjects,
+      getWalkers:()=>root.Combat?.deps?.npcWalkers||root._npcWalkers}); // Both hostiles and ordinary NPC walkers sleep outside the current room.
     owner.registerRooms=additional=>roomSession?.addRooms?.(additional); // Native V50 rooms arrive after their reserved story geometry mounts.
     owner.tick=(dt)=>{
       if(owner.disposed)return;
