@@ -389,6 +389,9 @@
       uOpacity: { value: Math.max(0, Math.min(1, options.opacity ?? 0.8)) },
       uHobunjiSurfaceOcclusionDepthOnly: { value: 0 },
       uHobunjiSurfaceOcclusionDepthAlphaThreshold: { value: depthAlphaThreshold },
+      uHobunjiWaterReplayClipScopeCount: { value: 0 }, // Zero disables physical clipping during normal water rendering.
+      uHobunjiWaterReplayClipRadius: { value: 0 }, // The held renderer supplies the same tile radius used by its CPU guard.
+      uHobunjiWaterReplayClipScopes: { value: new Float32Array(24) }, // Six vec4 pairs cover twelve owner tiles with modest WebGL1 uniforms.
     };
     const material = new THREE.ShaderMaterial({
       name: 'merged_textured_water_material',
@@ -401,7 +404,9 @@
         varying float vDepth;
         varying float vCoverage;
         varying vec2 vFlow;
+        varying vec2 vWaterWorldXZ;
         void main() {
+          vWaterWorldXZ = (modelMatrix * vec4(position, 1.0)).xz; // Per-fragment world position, never the merged river's huge bounds.
           vUv = uv;
           vDepth = aDepth;
           vCoverage = aCoverage;
@@ -417,11 +422,30 @@
         uniform float uOpacity;
         uniform float uHobunjiSurfaceOcclusionDepthOnly;
         uniform float uHobunjiSurfaceOcclusionDepthAlphaThreshold;
+        uniform float uHobunjiWaterReplayClipScopeCount;
+        uniform float uHobunjiWaterReplayClipRadius;
+        uniform vec4 uHobunjiWaterReplayClipScopes[6];
+        varying vec2 vWaterWorldXZ;
         varying vec2 vUv;
         varying float vDepth;
         varying float vCoverage;
         varying vec2 vFlow;
         void main() {
+          // The selective held/foot replay clips physical water fragments to
+          // nearby owner tiles, even when one merged river spans the whole zone.
+          // Scope count stays zero in the ordinary world color pass.
+          if (uHobunjiWaterReplayClipScopeCount > 0.5) {
+            bool nearOwner = false;
+            for (int i = 0; i < 6; i++) {
+              float first = float(i * 2);
+              vec4 pair = uHobunjiWaterReplayClipScopes[i];
+              if (first < uHobunjiWaterReplayClipScopeCount
+                  && all(lessThanEqual(abs(vWaterWorldXZ - (pair.xy + vec2(0.5))), vec2(uHobunjiWaterReplayClipRadius)))) nearOwner = true;
+              if (first + 1.0 < uHobunjiWaterReplayClipScopeCount
+                  && all(lessThanEqual(abs(vWaterWorldXZ - (pair.zw + vec2(0.5))), vec2(uHobunjiWaterReplayClipRadius)))) nearOwner = true;
+            }
+            if (!nearOwner) discard;
+          }
           vec2 textureOffset = vec2(uTime * ${TEXTURE_SCROLL_U.toFixed(3)}, uTime * ${TEXTURE_SCROLL_V.toFixed(3)});
           vec2 textureUv = fract(vUv + textureOffset);
           vec3 textureColor = texture2D(uWaterTexture, textureUv).rgb;
