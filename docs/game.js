@@ -33838,6 +33838,8 @@
         Object.assign(inventory, playerData.isNewWorld
           ? { ...STARTING_INVENTORY }
           : { ...(playerData.nonGearInventory || {}) });
+        window.CropVarieties?.attach?.({ cropData, ITEM_DEFS, inventory, inventoryItems,
+          loadStorage: _loadWorldStorage, getWorldId: _tothalWorldId }); // Rehydrate saved cultivar seeds after the world-specific bag and ID load, before pack/recipe restoration.
         // Learned designs belong to this world's active member; starter designs are automatically known.
         window.CraftingPanel?.restoreBlueprints?.(playerData.knownFurnitureBlueprints);
         delete inventory.campfireKitFurnitureBlueprint; // Retire the old immortal starter paper now that Campfire Kit is automatically known.
