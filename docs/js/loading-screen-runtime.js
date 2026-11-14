@@ -77,6 +77,25 @@
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
   const hiddenListeners = new Set(); // Signals location arrivals after a loading overlay genuinely finishes hiding.
+  const pendingFetches = new Map(); // Real outstanding fetch requests, shared with the subtle in-game loading status.
+  const pendingFetchListeners = new Set(); // Notified on network edges only; no per-frame DOM or polling overhead.
+  let nextPendingFetchId = 0; // Distinguishes concurrent requests to the same URL for precise completion counts.
+  function notifyPendingFetchListeners() {
+    for (const listener of pendingFetchListeners) {
+      try { listener(); } catch (_) {} // A UI observer cannot change fetch semantics or strand loading progress.
+    }
+  }
+  function startTrackedFetch(input) {
+    const id = ++nextPendingFetchId; // Token returned to the wrapper so success and failure settle the same request.
+    const value = typeof input === 'string' ? input : input?.url || 'resource'; // Request objects carry their original URL.
+    pendingFetches.set(id, String(value).split('?')[0]); // Query tokens are unnecessary for user-facing load names.
+    notifyPendingFetchListeners();
+    return id;
+  }
+  function finishTrackedFetch(id) {
+    if (!pendingFetches.delete(id)) return;
+    notifyPendingFetchListeners();
+  }
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const nowMs = () => (window.performance?.now?.() ?? Date.now());
 
@@ -533,18 +552,22 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     const wrappedFetch = function hobunjiLoadingProgressFetch(...args) {
       const generation = state.visible ? state.generation : 0; // Used so a request started for an older screen cannot advance a newer loading session.
       if (generation) noteRequestStart();
+      const requestId = startTrackedFetch(args[0]); // Track real requests even after the full-screen loading overlay hides.
       let request;
       try { request = originalFetch(...args); }
       catch (error) {
+        finishTrackedFetch(requestId);
         if (generation && generation === state.generation) noteRequestComplete();
         throw error;
       }
       return Promise.resolve(request).then(
         response => {
+          finishTrackedFetch(requestId);
           if (generation && generation === state.generation) noteRequestComplete();
           return response;
         },
         error => {
+          finishTrackedFetch(requestId);
           if (generation && generation === state.generation) noteRequestComplete();
           throw error;
         },
@@ -1034,6 +1057,12 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       return () => hiddenListeners.delete(listener);
     }, // Completed-loading event for HUD arrivals, rather than a guessed delay.
     coversWorld,
+    pendingRequestNames() { return [...pendingFetches.values()]; }, // Snapshot is created only when the live loading UI asks.
+    onPendingRequestsChanged(listener) {
+      if (typeof listener !== 'function') return () => {};
+      pendingFetchListeners.add(listener);
+      return () => pendingFetchListeners.delete(listener);
+    }, // Uses the existing fetch wrapper rather than wrapping window.fetch again.
     beginIntroduction,
     skipIntroduction() { state.skipIntroduction = true; state.introduction?.skip?.(); return !!state.introduction; }, // Dev/test: also ?skipIntro=1. Skips the opening's holds and Continue prompts.
     setProgress,
@@ -1049,6 +1078,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       progressSource: state.progressSource,
       requestStarted: state.requestStarted,
       requestCompleted: state.requestCompleted,
+      pendingFetches: pendingFetches.size,
       tankanFontSettled: state.tankanFontSettled,
       area: safeCurrentArea(),
       contextText: state.contextText,
