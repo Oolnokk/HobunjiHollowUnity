@@ -110,7 +110,7 @@
       return at?fixture(id,'small',at,.72):null; // Native V50 plateaus need their actual surface height, not the nominal story datum.
     }
     const ignitionSources=[]; // Reusable Tothal projectile-fire sources, not teleport destinations or Great Door goals.
-    const tothal=String(ruin.theme||'').toLowerCase()==='tothal';
+    const tothal=ruin.hachutu!==true&&String(ruin.theme||'').toLowerCase()==='tothal'; // Hachutu's exclusive temple never receives unrelated Harlyao fire mechanisms.
     function igniteNextShot(at){
       if(disposed||!closeEnough(player(),at,2.1))return false;
       if(root.DungeonFire?.armNextProjectile?.()===true){
