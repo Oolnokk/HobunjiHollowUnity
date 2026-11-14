@@ -132,12 +132,17 @@ async function host(options = {}) {
   impassable.setArea('map_northern_cliffs'); impassable.movePlayer(2, 100); impassable.tick(); await flush();
   assert.equal(impassable.deps.hostileObjects.size, 0); assert.equal(impassable.api.debugSnapshot().membersAlive, 20);
   assert.equal(impassable.made[0].avatarRef.group.parent, null);
-  const blockedRetry = await host({ canEnter: () => false, memberCount: 1 }); // One soldier isolates repeated failed builds from the initial twenty-member arrival queue.
+  let blockedStill = true; // Mutable collision result proves a formerly obstructed arrival can recover without changing zones.
+  const blockedRetry = await host({ canEnter: () => !blockedStill, memberCount: 1 }); // One soldier isolates repeated failed builds from the initial twenty-member arrival queue.
   blockedRetry.setArea('map_northern_cliffs'); blockedRetry.movePlayer(2, 100);
   for (let i = 0; i < 40; i++) { blockedRetry.tick(); await flush(); }
   const retryReport = blockedRetry.api.debugSnapshot();
   assert(blockedRetry.made.length <= 8, 'blocked terrain must not rebuild and dispose an expensive ghost rig at planner frequency');
   assert(retryReport.blockedBuildSkips > 0 && retryReport.blockedPlacements > 0, 'mobile diagnostics expose failed placements and suppressed retries');
+  blockedStill = false; // Simulates clearing blocked terrain after the member's most recent failed arrival.
+  for (let i = 0; i < 90 && blockedRetry.deps.hostileObjects.size === 0; i++) { blockedRetry.tick(); await flush(); }
+  assert.equal(blockedRetry.deps.hostileObjects.size, 1, 'periodic blocked-spawn retries recover when the current emergence tile becomes passable');
+  assert.equal(blockedRetry.api.debugSnapshot().membersAlive, 1, 'blocked-spawn retries never lose logical army members');
   const warm = await host(); // Temporarily leaving a rendering bubble in the same zone should reuse fully built spectral rigs.
   warm.setArea('map_northern_cliffs'); warm.movePlayer(8, 100);
   for (let i = 0; i < 24; i++) { warm.tick(); await flush(); }
@@ -150,6 +155,11 @@ async function host(options = {}) {
   for (let i = 0; i < 2; i++) warm.tick();
   assert.equal(warm.made.length, 20, 'waking before the same-zone grace period performs no new avatar construction');
   assert.equal(warm.api.debugSnapshot().detailedMembers, 20, 'all cached ghosts wake into native travel without altering squad size');
+  warm.movePlayer(100, 100); // Staying distant beyond the grace period must eventually dispose expensive cached portraits.
+  for (let i = 0; i < 70; i++) warm.tick();
+  assert.equal(warm.deps.hostileObjects.size, 0, 'same-zone dormant ghosts eventually leave the native hostile update collection');
+  assert.equal(warm.api.debugSnapshot().membersCached, 0, 'same-zone grace period does not retain indefinite avatar or tool rigs');
+  assert.equal(warm.api.debugSnapshot().membersAlive, 20, 'dormant retirement preserves the offscreen logical formation');
   for (const day of [1, 2, 3, 4]) { // All four daily directions retain a cohesive data-only army.
     const routeHost = await host(); routeHost.setDay(day); routeHost.tick();
     const start = routeHost.api.commanderTarget(); // Route-specific entry point.
