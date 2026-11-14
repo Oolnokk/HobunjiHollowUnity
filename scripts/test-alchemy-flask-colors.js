@@ -12,6 +12,7 @@ global.window = {};
 require(path.join(root, 'docs/js/color-fill.js'));
 require(path.join(root, 'docs/js/sprite-recolor.js'));
 require(path.join(root, 'docs/js/alchemy-system.js'));
+require(path.join(root, 'docs/js/object-sprite-catalog.js')); // Pack catalog must not overwrite a brewed narcotic's authored bottle art.
 
 const ITEM_DEFS = {};
 const inventory = {}; // Shared authoritative bag count for provenance tests.
@@ -31,10 +32,18 @@ for (const recipeId of Object.keys(A.RECIPE_DEFS)) {
   assert(!foundColors.has(tint), recipeId + ' standard visual should be distinct from other found potions');
   foundColors.add(tint);
   const key = A.ensureRecipeItemDef(recipeId, 0); // No ingredient history on found/shop registration.
+  const authoredSprite = ITEM_DEFS[key].spriteIcon; // Alchemy authored this icon, which must survive the generic object resolver.
+  const authoredColor = ITEM_DEFS[key].spriteColor; // The catalog must not recolor tagged narcotics as powders.
+  window.ObjectSpriteCatalog.ensure(key, ITEM_DEFS[key]);
+  assert.equal(ITEM_DEFS[key].spriteIcon, authoredSprite, recipeId + ' retains its authored bottle/flask shape through Pack art classification');
+  assert.equal(ITEM_DEFS[key].spriteColor, authoredColor, recipeId + ' retains its ingredient-derived color through Pack art classification');
   assert.equal(ITEM_DEFS[key].spriteColor, A.RECIPE_DEFS[recipeId].useMode === 'throw'
     ? A.throwingFlaskColors(standard).primaryColor : tint, recipeId + ' registration has the standard recipe tint');
 }
 assert.equal(foundColors.size, Object.keys(A.RECIPE_DEFS).length, 'all existing potions have authored distinct standard pigments');
+const ordinaryPowder = { label: 'Ground Narcotic Powder', cat: 'processed', tags: ['Narcotic'] }; // Unrelated dry items still use the shared powder art.
+window.ObjectSpriteCatalog.ensure('groundNarcotic', ordinaryPowder);
+assert.equal(ordinaryPowder.spriteIcon, 'powder.png', 'non-alchemy narcotic powders still use the generic powder art');
 assert.equal(A.recipeSpriteColor('unmappedLegacy'), A.recipeSpriteColor('unmappedLegacy'), 'older unknown potion fallback stays deterministic');
 const legacyA = A.ensurePotionItemDef(['regeneration', 'clarity']); // Old effect combinations are still supported.
 const legacyB = A.ensurePotionItemDef(['speed', 'clarity']);
