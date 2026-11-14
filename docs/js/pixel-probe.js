@@ -704,7 +704,7 @@
     if (sleeping?.begins) lines.push(`Bed lie-down: ${JSON.stringify(sleeping)}`);
     const npcBedPoses = window.BedLiePose?.npcDebug?.(window._npcWalkers || []) || []; // Real NPC mattress height, full-body blend and x-ray are inspectable on mobile.
     if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
-    const npcYawns = window.NpcYawnRest?.debugSnapshot?.(); // On-demand, copyable NPC yawn/buff/voice/Koma diagnostics for mobile testers.
+    const npcYawns = window.NpcYawnRest?.debugSnapshot?.(); // Copyable yawns, voice fallback and daily Koma status for mobile.
     if (npcYawns) lines.push(`NPC yawns: ${JSON.stringify(npcYawns)}`);
     const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
     if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
@@ -1232,6 +1232,11 @@
       lines.push(`Creature death: RECOVERED ${recovery.creature} at ${recovery.areaId}:${recovery.col},${recovery.row} reason=${String(recovery.reason || 'unknown').split('\n')[0]}`);
     } else if (creatureDeathDebug?.lastBegin) {
       lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
+    }
+    const buffDom = window.EffectBuffBar?.getDebug?.(); // Mobile report of real writes versus identical-value skips in buff icons.
+    const promptDom = window.ActionPromptUI?.getDebug?.(); // Mobile report of real writes versus identical-value skips in contextual action prompts.
+    if (buffDom || promptDom) {
+      lines.push(`HUD DOM styles: buffs=${buffDom?.appliedWrites ?? 0} writes/${buffDom?.skippedWrites ?? 0} skips, ${buffDom?.rebuilds ?? 0} rebuilds/${buffDom?.refreshes ?? 0} refreshes; prompts=${promptDom?.appliedWrites ?? 0} writes/${promptDom?.skippedWrites ?? 0} skips over ${promptDom?.refreshes ?? 0} refreshes (${promptDom?.visible ? 'visible' : 'hidden'})`);
     }
     const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
     if (compassDebug) {
