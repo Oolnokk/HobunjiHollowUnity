@@ -363,6 +363,13 @@
 
   function discoverIcedDoors(kit,context) {
     if(!world||world.theme!=='tothal')return 0;
+    // The initial room's persistent, reusable brazier must exist before any ice
+    // blockade may spawn. A missing source is more serious than a missing ice prop:
+    // without it a detonated one-use Shattercask could permanently seal the door.
+    if(!world.source){
+      lastEvent='Tothal ice skipped: no reachable entrance-room ignition brazier';
+      return 0;
+    }
     const candidates=iceDoorCandidates(kit,context); // Door-kind-neutral discovery is shared by authored, generated, and modular panels.
     world.iceEligibleCount=candidates.length; // Mobile diagnostics distinguish missing door assets from a broken ice builder.
     let added=0; // Mobile snapshot exposes how many real doors acquired visual ice.
