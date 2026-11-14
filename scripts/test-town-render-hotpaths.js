@@ -372,7 +372,7 @@ assert.match(pixelProbe, /stopImmediatePropagation\?\.\(\)/,
   'Pixel Probe consumes its sampling pointer before gameplay handlers can attack');
 assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0\)/,
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
-assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
+assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
 assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && \(held.length \|\| feet.length\)\)\)/,
   'feet or held weapons with water/slush trigger the overlay even without grass/path ground');

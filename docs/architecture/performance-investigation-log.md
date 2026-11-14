@@ -1,5 +1,37 @@
 # Performance investigation log
 
+## 14 Nov 2026 (device data): CPU-bound on draw submission; most draws were hand/foot replays for NPCs
+
+**First real-device reading** (player's desktop, Opera GX, outdoors, Performance Profiler overlay): GPU 8-14%
+busy while frames took 44-76 ms, so the game is **CPU-bound**, not fill-bound. Outlines off: 21 FPS, game loop
+34 ms, render passes 25 ms. Outlines on: 11 FPS, game loop 50 ms, render passes 39 ms (base 14.4, held-overlay
+replays 11.4, shell outline 9.9) plus 24 ms "unattributed" (time outside game JS: the browser/GPU process working
+through draw calls). The lever is draw calls per frame.
+
+Draw census by pass in the headless harness (one frame each, `HeldObjectRenderOrder.replayingDepth` separating
+replay draws):
+
+| | Real base | Base replays | Real shell | Shell replays | Total |
+| --- | --- | --- | --- | --- | --- |
+| Town, before | 575 | 646 | 77 | 785 | 2,107 |
+| Town, player-only participants | 607 | 217 | 110 | 150 | 1,108 |
+
+Replays were 60-75% of all draws. Most of that was **NPC rigs**: every visible NPC's hands and feet joined the
+ground x-ray (town: 4 elevation groups, 42 participating meshes; western slope: 2 groups, 13), each group
+re-submitting nearby scenery and the union widening the scissor. `held-object-render-order.js` now x-rays only the
+player's own hands, feet and held items (plus parts with no resolvable owner, the old fail-safe); NPC and creature
+hands/feet draw with ordinary depth like the rest of their body and are hidden from the replays' overlay passes so
+they are not drawn twice. Town screenshots with the old and new policy show no visible difference.
+`HeldObjectRenderOrder.setReplayParticipants('all')` restores the old set; `snapshot()` has
+`nonParticipantReplaySkips`. Tradeoff: an NPC's foot or held weapon can now be clipped by uneven ground the same way
+its body is. `scripts/test-held-replay-participants.js` runs the real ownership code on a fake rig hierarchy.
+
+Also: replay-inert detection now covers sprites with alpha cutoffs (sun/moon; only meshes get depth forced for
+cutouts) and Points (campfire/bonfire particles), and, only when the replay restores depth by copy, objects whose
+material pins depth to the far plane (cloud masks via `skyLayerDepthNdc`, Western Slope backdrops via
+`backgroundMaxDepthNdc`). Replay path counters showed 682 of 686 wilderness replays scissored and culled, so the
+full-screen fallback was left as it was.
+
 ## 14 Nov 2026 (later): outdoor JS, not just graphics; failed NPC path searches retried forever
 
 After the sky/grass/replay pass the report was still ~17 FPS outdoors. Per-area CPU profiles (headless, same world):
