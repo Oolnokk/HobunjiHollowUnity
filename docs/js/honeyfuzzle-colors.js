@@ -145,9 +145,9 @@
     return palette.length ? palette[hashString(String(key)) % palette.length] : null;
   }
 
-  // Eggs keep their stump's color AND optional markings in the existing per-world FIFO.
-  // Legacy saved entries are hex strings, while new ones include {color, genotype}.
-  // The bag only counts eggs, so the FIFO survives save/reload independently.
+  // Queens inherit their stump's color and markings. Retain the original egg FIFO
+  // storage key and read APIs so pre-queen saves keep all their existing appearances.
+  // The bag counts queens separately; no save-file rewrite is required.
   const EGG_QUEUE_KEY = 'hobunji_honeyfuzzle_egg_colors_v1';
   function readQueues() {
     try { return JSON.parse(localStorage.getItem(EGG_QUEUE_KEY) || '{}') || {}; } catch (_) { return {}; }
@@ -176,9 +176,12 @@
   }
   function queueEggColors(worldId, colors) { queueEggAppearances(worldId, colors); } // Keeps callers and older tests working.
   function takeEggColor(worldId) { return takeEggAppearance(worldId)?.color || null; } // Legacy API still consumes one FIFO entry.
+  const queueQueenAppearances = queueEggAppearances; // Same per-world FIFO, so existing saved hive genes are never orphaned.
+  const takeQueenAppearance = takeEggAppearance; // Queens consume the oldest queued inherited appearance.
 
   window.HoneyfuzzleColors = {
     queueEggColors, takeEggColor, queueEggAppearances, takeEggAppearance,
+    queueQueenAppearances, takeQueenAppearance,
     EXCLUDED_ZONES, REGIONS, ZONE_REGION, AUTHORED,
     hexToRgb, hexToHsl, classify, regionPalettes, zonePalette, isExcludedZone, pickForKey,
     resetCache: () => { cache = null; },
