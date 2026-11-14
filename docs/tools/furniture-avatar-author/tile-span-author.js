@@ -57,7 +57,7 @@
     }
     $('footprintW').value = state.tileBase.footprintW;
     $('footprintD').value = state.tileBase.footprintD;
-    sync();preview();editor.rebuildTileBase();editor.frameFurniture();editor.queueUndoHistory('change furniture tile span');
+    sync();preview();editor.rebuildItemPreviews?.();editor.rebuildPlacementGrid?.();editor.rebuildTileBase();editor.frameFurniture();editor.queueUndoHistory('change furniture tile span');
   }
 
   function options(id, values, selected) {
@@ -95,7 +95,7 @@
       roots[key] = {partId, surfaceId, face:key==='start'?'max':'min'};
     }
     part.tileSpanRoots = roots;
-    selected(part);preview();editor.updateLists();editor.queueUndoHistory('edit span role or surface roots');
+    selected(part);preview();editor.rebuildItemPreviews?.();editor.rebuildPlacementGrid?.();editor.updateLists();editor.queueUndoHistory('edit span role or surface roots');
   }
 
   function stairBridge() {
