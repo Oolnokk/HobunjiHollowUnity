@@ -23,6 +23,7 @@ async function main() {
   const hostiles = new Set(); // The actual Combat.deps hostile set gates NPC yawns.
   const listeners = {}; // Captures the real sleep-completion event listener added by NpcYawnRest.
   let playerKomaOptions = null; // Records action-lock and facing ownership on the player ceremony.
+  let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
@@ -35,6 +36,7 @@ async function main() {
     _npcWalkers: [walker],
     __hobunjiPlayerProfile: { characterId: 'character-a', appearance: { speciesId: 'mao-ao', gender: 'female' } },
     WorldPortraitLife: { getPlayerAvatar: () => ({ group: playerAvatar }) },
+    BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
       getAbsoluteGameHour: () => hour, // Full-day clock remains monotonic at midnight and at the 06:00 rollover.
@@ -239,7 +241,13 @@ async function main() {
   sleepEvent({ detail: { kind: 'sleep', hours: 8 } });
   hour += 25; ms += 6500; frame({ timestamp: ms });
   assert.equal(toasts.length, 3, 'generic Slagothim are not an eligible player subspecies');
-  console.log('NPC yawns, full-day clock, silent NPC Koma, player-only subspecies toast and combat retries: OK');
+  ms += 5100; frame({ timestamp: ms });
+  window.__hobunjiPlayerProfile.appearance.speciesId = 'tletingan';
+  completedBedSleeps++; // Legacy bed sleep completes with no hobunji-time-passage event.
+  hour += 25; ms += 6500; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'player waking', 'legacy bed wake also animates the player');
+  assert.equal(toasts.length, 4, 'legacy bed wake still lets an eligible player chew their daily Koma');
+  console.log('NPC yawns, full-day clock, both sleep paths, silent NPC Koma and player-only subspecies toast: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
