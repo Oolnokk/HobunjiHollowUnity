@@ -1619,7 +1619,8 @@
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
     const inheritedCompile = material.onBeforeCompile; // Three's Material.clone keeps userData but drops custom shader callbacks; explicit callback copies can instead close over an older material's state.
-    if (state && inheritedCompile?.__hobunjiXrayElevationState === state) return state;
+    if (state && inheritedCompile?.__hobunjiXrayElevationState === state
+        && inheritedCompile?.__hobunjiXrayMaterialOwner === material) return state; // Clones that shallow-copy BOTH metadata and callback must not share tile uniforms.
     state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, tileCount: { value: 0 }, tiles: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof inheritedCompile === 'function'
@@ -1686,6 +1687,7 @@
       state.supported = true;
     };
     material.onBeforeCompile.__hobunjiXrayElevationState = state; // Used to detect stale copied userData after a terrain material clone.
+    material.onBeforeCompile.__hobunjiXrayMaterialOwner = material; // The function belongs to this material even if another clone shares its metadata reference.
     material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
       return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v4';
