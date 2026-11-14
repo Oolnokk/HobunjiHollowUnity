@@ -9,7 +9,7 @@ const instanced = fs.readFileSync('docs/js/instanced-mesh-view-cull.js', 'utf8')
 const actors = fs.readFileSync('docs/js/actor-render-occlusion.js', 'utf8'); // Shared after-base depth slot must submit GPU proxies.
 const loader = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Both scenery owners load before the new culler.
 assert.match(instanced, /DistantSceneryViewCull\?\.suspendForRender/, 'new culler must participate in the existing render-only scope');
-assert.match(instanced, /sceneryRestore\(\)/, 'temporarily hidden scenery must be restored on world-render completion');
+assert.match(instanced, /sceneryRestore\?\.\(\)/, 'temporarily hidden scenery must be restored on world-render completion');
 assert.match(actors, /DistantSceneryViewCull\?\.probeAfterBase/, 'GPU depth queries must run only after the opaque base pass');
 assert(loader.indexOf("'WesternSlopeMountainBackdrops'") < loader.indexOf("'NorthernCliffsPlateauBackdrop'"));
 assert(loader.indexOf("'NorthernCliffsPlateauBackdrop'") < loader.indexOf("'DistantSceneryViewCull'"));
