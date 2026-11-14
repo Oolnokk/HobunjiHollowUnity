@@ -348,6 +348,21 @@
       "postSX": 1,
       "postSY": 1,
       "postSZ": 1
+    },
+    {
+      "id": "f_ikmc_roof_ladder",
+      "itemKey": "ikmcBalconyLadderFurniture",
+      "col": 6,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "nonColliding": true,
+      "ceilingTarget": true
     }
   ],
   "exits": [
@@ -365,6 +380,27 @@
       "spawnRow": 0,
       "direction": "north",
       "generateDoor": true
+    },
+    {
+      "id": "exit_ikmc_roof_ladder",
+      "label": "Climb to Roof Balcony",
+      "tiles": [
+        [
+          6,
+          8
+        ]
+      ],
+      "targetMap": "",
+      "spawnCol": 7,
+      "spawnRow": 45,
+      "direction": "north",
+      "generateDoor": false,
+      "requiresInteraction": true,
+      "roofAccess": {
+        "balconyId": "ikmc_rooftop",
+        "pieceId": "3da34777-9c9d-4fd2-b9f9-234fe30392fb",
+        "heightMode": "wall"
+      }
     }
   ],
   "colliders": [],
@@ -441,5 +477,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "wallHeight": 1.75
 }
