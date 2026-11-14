@@ -9,9 +9,19 @@ const piece = read('docs/config/pieces/ikmc-outpost.json');
 assert.equal(piece.name, 'IKMC Outpost');
 assert.equal(piece.preset, 'outpost');
 assert.equal(piece.wallStyle, 'logs', 'IKMC Outpost exterior must use stacked generated logs');
-assert.equal(piece.base.faces.length, 6, 'Outpost shipping piece must retain the exact six-face prism');
-assert(piece.base.faces.every(face => face.tag === 'wall'), 'all six Outpost prism faces must remain tagged wall');
-assert.deepEqual(new Set(piece.base.faces.map(face => face.outpostFace)), new Set(['bottom','top','south','north','west','east']));
+const structuralFaces = piece.base.faces.filter(face => face.outpostFace); // The cabin walls retain their structural bounds even after cutting the south portal.
+assert(structuralFaces.every(face => face.tag === 'wall'), 'structural Outpost walls must retain stacked-log tags');
+assert.deepEqual(new Set(structuralFaces.map(face => face.outpostFace)), new Set(['bottom','top','south','north','west','east']));
+assert.equal(structuralFaces.filter(face => face.outpostFace === 'south').length, 3, 'south wall must have two solid jamb runs and an overhead lintel');
+assert(piece.base.faces.some(face => face.tag === 'roof'), 'the Outpost must have a visible pitched roof');
+const mouthFaces = piece.base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening); // Physical framing at the outside end of the covered tunnel.
+assert(mouthFaces.length > 0 && mouthFaces.every(face => face.extensionFace === 'south'), 'the visible doorframe must face the approach');
+assert.deepEqual(piece.footprint.door, { x: 13, y: 11 }, 'authored doorway belongs outside the shell, within its covered entry tunnel');
+assert.deepEqual(piece.footprint.extensions.entryTunnels, [{ x: 13, y: 11 }]);
+assert(piece.footprint.extensions.porches.length <= 3 && piece.footprint.extensions.porchStairs.length === 3, 'no giant invisible porch footprint');
+const shellSouthLeft = structuralFaces.find(face => face.entryPortalPart === 'leftWall'); // Left solid span, ending at the new physical opening.
+const shellSouthRight = structuralFaces.find(face => face.entryPortalPart === 'rightWall'); // Right solid span, starting beyond the new physical opening.
+assert(shellSouthRight.v[0][0] - shellSouthLeft.v[1][0] > 0.8, 'the south wall must contain a real full-width walkable gap');
 
 const structuralCells = piece.footprint.cells;
 const gridCenter = Math.floor((piece.gridSize || 18) / 2);
@@ -21,13 +31,13 @@ const expectedPieceBounds = [
   Math.min(...structuralCells.map(c => c.y)) - gridCenter,
   Math.max(...structuralCells.map(c => c.y)) + 1 - gridCenter,
 ];
-const outpostVertices = piece.base.faces.flatMap(face => face.v);
+const outpostVertices = structuralFaces.flatMap(face => face.v);
 assert.deepEqual([
   Math.min(...outpostVertices.map(v => v[0])),
   Math.max(...outpostVertices.map(v => v[0])),
   Math.min(...outpostVertices.map(v => v[2])),
   Math.max(...outpostVertices.map(v => v[2])),
-], expectedPieceBounds, 'Outpost six-face prism must occupy the same local bounds as its painted structural footprint');
+], expectedPieceBounds, 'Outpost structural wall faces must occupy the same local bounds as its painted structural footprint');
 
 const interior = read('docs/config/maps/map_i_ikmc_outpost.json');
 assert.equal(interior.wallStyle, 'logs', 'IKMC Outpost interior walls must use the shared stacked-log renderer');
@@ -65,7 +75,7 @@ const carpenter = town.buildings.find(b => b.id === 'bldg_pb9bn');
 assert.deepEqual([mine.gridX, mine.gridZ, mine.footprintW, mine.footprintD], [12,0,2,2], 'Mine must match the screenshot-approved northern town placement');
 assert.deepEqual([mineDoor.col, mineDoor.row], [13,2], 'Mine door transition must move with the approved building');
 assert(outpost && outpost.pieceFile === 'config/pieces/ikmc-outpost.json', 'town must place the authored IKMC Outpost piece');
-assert.deepEqual([outpost.gridX, outpost.gridZ, outpost.footprintW, outpost.footprintD], [15,18,11,7], 'IKMC Outpost must use the screenshot-approved southern placement and larger footprint');
+assert.deepEqual([outpost.gridX, outpost.gridZ, outpost.footprintW, outpost.footprintD], [15,18,6,6], 'IKMC cabin must stay at the approved southern placement without the oversized phantom footprint');
 assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [17,22,'map_i_ikmc_outpost']);
 const mineConfig = read('docs/config/town-mine.json').townEntrance; // Runtime TownMine.decorateTownMap overrides the building/door from this config on every load.
 assert.deepEqual([mineConfig.gridX, mineConfig.gridZ, mineConfig.doorCol, mineConfig.doorRow, mineConfig.rotationDeg],
