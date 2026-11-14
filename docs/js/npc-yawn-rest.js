@@ -224,6 +224,7 @@
     entry.voiceClaim = claim;
     entry.voice = renderer(plan.url, {
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
+      preservePitchOnFallback: true, // A locked/unsupported Web Audio device must not turn a fourfold breath stretch into a low-pitched recording.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
