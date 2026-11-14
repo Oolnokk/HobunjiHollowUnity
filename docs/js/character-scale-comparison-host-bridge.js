@@ -44,7 +44,7 @@
 
   function normalizedRigScaleNumber(value) {
     const number = Number(value);
-    return Number.isFinite(number) ? Math.max(0.25, Math.min(2, number)) : null;
+    return Number.isFinite(number) ? Math.max(0.1, Math.min(4, number)) : null; // Same [10%, 400%] envelope as HobunjiCharacterRigScale; female Longoran's 209.4% height must survive save/reload.
   }
 
   function normalizedOffsetYNumber(value) {
@@ -206,13 +206,30 @@
     } catch (_) {}
   }
 
+  function migratePreviousLongoranDefaults(key, value) {
+    const previous = { // The only old saved profiles eligible for automatic migration, never an author's custom Longoran shape.
+      'longoran::male': { x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 },
+      'longoran::female': { x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 },
+    }[key];
+    const scale = normalizedRigScale(value); // Current fields are normalized once before comparing with the old shipped defaults.
+    if (!previous || !scale || !Object.keys(previous).every(field => Math.abs(scale[field] - previous[field]) <= 0.000051)) {
+      return { value, upgraded: false }; // Preserve genuinely edited values, including the uploaded custom male Longoran.
+    }
+    const [, gender] = key.split('::');
+    const next = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.('longoran', gender);
+    return next ? { value: next, upgraded: true } : { value, upgraded: false };
+  }
+
   function restorePersistedRigScales() {
     let recoveredLegacy = 0;
+    let migratedLongoran = false; // Persists migrated earlier *default* saves so they do not mask the newly shipped female Longoran height.
     try {
       const parsed = JSON.parse(localStorage.getItem(RIG_SCALE_STORAGE_KEY) || '{}');
       for (const [key, value] of Object.entries(parsed || {})) {
         const [species, gender] = key.split('::');
-        setRigScale(species, gender, value, { persist: false });
+        const migrated = migratePreviousLongoranDefaults(key, value); // Do not overwrite custom values; only old shipped Longoran defaults migrate.
+        migratedLongoran ||= migrated.upgraded;
+        setRigScale(species, gender, migrated.value, { persist: false });
       }
     } catch (_) {}
     // Pre-split saves stored a single uniform number per species/gender — normalizedRigScale
@@ -222,7 +239,9 @@
         const parsedLegacy = JSON.parse(localStorage.getItem(LEGACY_SCALE_STORAGE_KEY_V1) || '{}');
         for (const [key, value] of Object.entries(parsedLegacy || {})) {
           const [species, gender] = key.split('::');
-          if (setRigScale(species, gender, value, { persist: false }) != null) recoveredLegacy += 1;
+          const migrated = migratePreviousLongoranDefaults(key, value); // Handles old single-axis saved scales without changing unrelated species.
+          migratedLongoran ||= migrated.upgraded;
+          if (setRigScale(species, gender, migrated.value, { persist: false }) != null) recoveredLegacy += 1;
         }
       } catch (_) {}
     }
@@ -231,10 +250,12 @@
       for (const [key, scale] of importedRigScaleEntries(legacy)) {
         if (rigScaleOverrides.has(key)) continue;
         const [species, gender] = key.split('::');
-        if (setRigScale(species, gender, scale, { persist: false }) != null) recoveredLegacy += 1;
+        const migrated = migratePreviousLongoranDefaults(key, scale); // Recover canonical values from earlier attachment-rig saves too.
+        migratedLongoran ||= migrated.upgraded;
+        if (setRigScale(species, gender, migrated.value, { persist: false }) != null) recoveredLegacy += 1;
       }
     } catch (_) {}
-    if (recoveredLegacy) persistRigScaleOverrides();
+    if (recoveredLegacy || migratedLongoran) persistRigScaleOverrides();
     return recoveredLegacy;
   }
 
