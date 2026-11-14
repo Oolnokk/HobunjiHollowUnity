@@ -293,7 +293,9 @@
             material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
           owner.geometryCount+=shell.meshes.length;
-          roomAudits.push(shell.audit);
+          const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ); // Verify actual exposed wall faces before accepting the generated room.
+          if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');
+          roomAudits.push({...shell.audit,...walls});
           const doorPlan=plannedDoors.get(room.id);
           if(!doorPlan)throw new Error('Missing room door: '+room.id);
           const doorTiles=Array.from({length:doorPlan.span},(_,j)=>[
