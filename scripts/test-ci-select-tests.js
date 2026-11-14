@@ -136,6 +136,7 @@ test('specialist workflows use conditional jobs, not pending-prone workflow path
     const yaml = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/', filename), 'utf8'); // Inspects the actual published check wiring.
     assert.match(yaml, /\n  pull_request:\s*\n  workflow_dispatch:/, filename + ' always creates a PR check');
     assert.match(yaml, /run: node scripts\/ci-select-tests\.js --suite=feature/, filename + ' calls the shared selector');
+    assert(yaml.includes("node-version: '22'"), filename + ' runs impact detection under the pinned Node toolchain');
     assert(yaml.includes('steps.select.outputs.' + key), filename + ' routes its correct feature flag');
     assert(yaml.includes('  ' + job + ':\n    needs: impact\n    if:'), filename + ' uses a job-level skip condition');
     assert(yaml.includes("needs.impact.result != 'success'"), filename + ' fails open after a selector failure');
