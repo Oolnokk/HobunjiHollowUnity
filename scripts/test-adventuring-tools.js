@@ -61,7 +61,7 @@ assert.equal(torch.isLit(), false);
 assert.equal(torch.register({ id:'lantern',label:'Lantern',onSelect() {} }), true);
 assert.equal(torch.entries().length, 1); // Registered is not synonymous with unlocked.
 assert.equal(torch.unlock('lantern'), true);
-assert.deepEqual(persisted, ['lantern']);
+assert.deepEqual(Array.from(persisted), ['lantern']); // Normalize VM-origin arrays before asserting.
 assert.equal(torch.entries().length, 2);
 torch.init({ ...deps, getUnlocked: () => ['lantern'] });
 assert.equal(torch.entries().length, 2);
