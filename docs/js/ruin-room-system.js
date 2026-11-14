@@ -73,6 +73,17 @@
         y,wingId:null,challenge:null,x,z,w,d,ambient:{darknessOffset:0,color}}];
     });
   }
+  function projectedFloorArea(data){
+    const p=data?.positions;
+    if(!p?.length||p.length%12!==0)return 0; // Each merged quad consists of four vertices, preserving exact floor area.
+    let area=0;
+    for(let i=0;i<p.length;i+=12){
+      const ax=p[i+3]-p[i],az=p[i+5]-p[i+2];
+      const bx=p[i+9]-p[i],bz=p[i+11]-p[i+2];
+      area+=Math.abs(ax*bz-az*bx);
+    }
+    return area;
+  }
   function floorAudit(room,supportedCells){
     let expected=0,missing=0; // Checks only required floors; a rope pit is a deliberate open volume, not a missing tile.
     for(let z=room.z;z<room.z+room.d;z++)for(let x=room.x;x<room.x+room.w;x++){
@@ -252,7 +263,7 @@
     live=session;
     return session;
   }
-  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,floorAudit,makeShell,roomAt,mount,
+  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,makeShell,roomAt,mount,
     isRoomActive:id=>live?.isRoomActive(id)===true,
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
