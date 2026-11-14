@@ -7317,9 +7317,9 @@
           if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
-            const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget?.(
-              c, players, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget
-            ); // Check the player and eligible ground pets using the existing sight cone/LOS and leash.
+            const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
+              ? window.EnemyPetTargeting.chooseAggroTarget(c, players, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
+              : (distToPlayer <= def.aggroRangePx && enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx) ? targetPlayer : null); // Legacy player-only fallback for isolated runtimes that omit the new targeting module.
             if (acquiredTarget) {
               c.state = 'chase';
               c.targetPlayer = acquiredTarget; // The existing movement and attack paths use this committed actor directly.
@@ -7600,18 +7600,14 @@
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
-                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against player (fallback: plain bite telegraph).`, 'wildlife');
+                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against opponent (fallback: plain bite telegraph).`, 'wildlife');
                   window.Combat.telegraph.start(c, {
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
-                      // damagePlayer/respawnPlayer are still hardwired to the
-                      // single local `player` (see their definitions above) —
-                      // making a hit against an arbitrary targetPlayer
-                      // actually land is the per-player-instancing work this
-                      // pass deliberately doesn't take on. Harmless today
-                      // since targetPlayer === player whenever `players` has
-                      // one entry.
+                      // Committed target identity persists through the windup: hit the
+                      // player through damagePlayer or a ground companion through
+                      // damageCreature, preserving both actors' usual hit reactions.
                       const attackTag = def.attackTag || 'sharp'; // Used to tint the hostile's new 3D swipe and preserve its existing affliction type.
                       const enemyAim = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing || 0, 0);
                       const attackHalfConeRad = def.attackHalfConeRad || THREE.MathUtils.degToRad(38); // Shared by this hostile's trail and exact 3D hit test.
@@ -7622,7 +7618,9 @@
                         halfConeRad: attackHalfConeRad,
                         color: trailColor,
                       });
-                      if (window.EnemyPetTargeting?.viable?.(targetPlayer, currentArea) && window.Combat?.meleeHit?.(c, targetPlayer, {
+                      if (targetPlayer?.health > 0 && !targetPlayer._downed &&
+                          (!targetPlayer.areaId || targetPlayer.areaId === currentArea) &&
+                          window.Combat?.meleeHit?.(c, targetPlayer, {
                         rangePx: def.attackRangePx,
                         halfConeRad: attackHalfConeRad,
                         direction: enemyAim?.direction,
@@ -9017,9 +9015,12 @@
             if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
           }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
+          const beastmasterTargeting = window.EnemyPetTargeting?.chooseBeastmasterTarget; // Shared ground-pet and player selector, if loaded.
           let target = isBanditCompanion
-            ? (window.EnemyPetTargeting?.chooseBeastmasterTarget?.(c, master, players, companionObjects, currentArea, ALERT_RANGE_PX) || null)
-            : null; // Enemy pets consider the player and their ground companion without reusing player-only targeting.
+            ? (beastmasterTargeting
+              ? beastmasterTargeting(c, master, players, companionObjects, currentArea, ALERT_RANGE_PX)
+              : (player.health > 0 && Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX ? player : null))
+            : null; // Preserve player-only behavior if an isolated test omits the new module.
           if (!isBanditCompanion) {
             if (window.CompanionCombatResponse) {
               if (window.CompanionCombatResponse.shouldReevaluate(c, master, currentArea, ALERT_RANGE_PX)) {
