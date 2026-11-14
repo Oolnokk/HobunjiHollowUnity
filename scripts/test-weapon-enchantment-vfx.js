@@ -8,7 +8,7 @@ const verdigrisPath = path.resolve(__dirname, '../docs/js/tool-metal-recolor.js'
 const indexPath = path.resolve(__dirname, '../docs/index.html'); // Used to verify the VFX module is a normal cache-busted parser dependency after EnchantmentSystem.
 const vfxSource = fs.readFileSync(vfxPath, 'utf8'); // Used by structural regression assertions below.
 const verdigrisSource = fs.readFileSync(verdigrisPath, 'utf8'); // Used to compare canonical metal-selection constants.
-const indexSource = fs.readFileSync(indexPath, 'utf8'); // Used to protect the explicit combat-module load order.
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(fs.readFileSync(indexPath, 'utf8')); // Used to protect the explicit combat-module load order.
 const loadoutUiSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/combat-loadout-ui.js'), 'utf8'); // Used to verify aura controls are part of the loadout's authoritative render path.
 
 function numberConstant(source, name) {

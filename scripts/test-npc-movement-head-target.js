@@ -109,7 +109,7 @@ assert.equal(gaze.applyHostileRunPitch({ neckJoint: { front, back } }, .25, 0, [
 const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Verifies the actual walker/hostile simulation invokes the new API.
 const bridge = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8'); // Ensures hostile correction runs inside the render boundary.
 const combat = fs.readFileSync(path.join(root, 'docs/js/combat/combat-bandit.js'), 'utf8'); // All humanoid enemies share the exposed fallback.
-const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Checks the new browser module is loaded before the game.
+const html = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Checks the new browser module is loaded before the game.
 assert(game.includes('updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions)'));
 assert(game.includes('updateMovementHeadLook?.(c, entityDt, moving, aimAngle)'));
 const movingHeadIndex = game.indexOf('const hasMovementGaze = window.BanditCombat?.updateMovementHeadLook?.(c, entityDt, moving, aimAngle);'); // Captures the visible hostile's movement-gaze dispatch.
