@@ -29,7 +29,7 @@ grid[4][4]={type:'stream',bridgeCrossing:true}; // The bridge above does not per
 const route={id:'uncut-main-road',nodes:[[1,4],[4,4],[7,4]]}; // Same original unsplit route endpoints.
 const spline=terrain.preparePathSplineData(grid,9,9,[route],'town');
 assert(spline,'Road spline is still selected despite the river gap');
-assert(spline.samples?.length>2,'The route is not split or truncated on the water');
+assert(spline.samples?.length===1 && spline.samples[0]?.length>2,'The single route is not split or truncated on the water');
 assert(spline.containsPoint(2.5,4.5),'Road on the eastern bank is still paved');
 assert(spline.containsPoint(6.5,4.5),'Road on the western bank is still paved');
 assert(!spline.containsPoint(4.5,4.5),'A bridge-crossing tile remains permanent water, not paved road');
