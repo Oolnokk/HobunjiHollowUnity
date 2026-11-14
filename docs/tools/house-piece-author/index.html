@@ -1642,9 +1642,12 @@ function generateOutpostBaseFromFootprint(recordUndo=true){
     addFace([p(info.minX,y0,info.minZ),p(info.minX,y0,info.maxZ),p(info.minX,y1,info.maxZ),p(info.minX,y1,info.minZ)], 'wall', {outpostFace:'west'}),
     addFace([p(info.maxX,y0,info.maxZ),p(info.maxX,y0,info.minZ),p(info.maxX,y1,info.minZ),p(info.maxX,y1,info.maxZ)], 'wall', {outpostFace:'east'}),
   ];
+  // Outposts may have porch/rail/entry-tunnel extensions; preserve the shared generator instead of reverting to a bare six-face box.
+  const currentInfo=footprintInfo();
+  if(currentInfo) addHouseExtensionsToFaces(state.piece.base.faces,currentInfo,y0,y1-y0,0);
   window.HouseBalconies?.regenerate(state.piece);
   state.selectedFaceIds.clear(); rebuildFaceMeshes(); rebuildRoofPreview(); frameScene(); refreshExport();
-  log('Generated Outpost prism plus authored rooftop balconies; stacked generated logs are the preset default.');
+  log('Generated Outpost prism and attached extensions; rooftop balconies remain independently editable.');
   return true;
 }
 function generateFlatSlabFromFootprint(recordUndo=true){
@@ -2493,11 +2496,16 @@ for(const id of ['balconyHeightMode','balconyHeight','balconyRails']){
 }
 $('balconyFlatRoof').addEventListener('change',()=>{
   pushUndo('Change rooftop roof type');
-  if($('balconyFlatRoof').checked)state.piece.roof.style='flat-balcony';
-  else delete state.piece.roof.style;
-  // Restores a sloped roof through the owning preset, instead of leaving deleted roof faces in place.
-  applyBasePreset(state.piece.preset||'highland',false);
-  refreshBalconyGeometry();refreshExport();
+  const roof=state.piece.roof; // Stores the original sloping faces for nondestructive roof-type toggles.
+  if($('balconyFlatRoof').checked){
+    roof.preBalconyFaces=state.piece.base.faces.filter(f=>f.tag==='roof'||f.roofRidgeCap).map(f=>JSON.parse(JSON.stringify(f)));
+    roof.style='flat-balcony';
+  } else {
+    delete roof.style;
+    if(Array.isArray(roof.preBalconyFaces)) state.piece.base.faces.push(...roof.preBalconyFaces);
+    delete roof.preBalconyFaces;
+  }
+  refreshBalconyGeometry();refreshExport(); // Preserve custom doors, IKMC log walls, wraparound porches and authored attachments.
 });
 
 function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',door:'toolDoor',connector:'toolConnector',entryTunnel:'toolEntryTunnel',tallEntryTunnel:'toolTallEntryTunnel',chimney:'toolChimney',porch:'toolPorch',balcony:'toolBalcony',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
