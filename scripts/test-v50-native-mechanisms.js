@@ -140,6 +140,16 @@ player.y=0;door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,
 player.y=4;door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door can reopen from its opposite side');
 player.z=2;for(let i=0;i<12;i++)runtime.tick(.05);
 assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door also auto-closes on reverse passage');
+const autoRoom={mounted:()=>true,doorNear:(pos,gate,wasOpen,y)=>
+  pos&&Math.abs(y-gate.y)<4.6&&Math.hypot(pos.x-gate.x,pos.z-gate.z)<(wasOpen?3.5:2.8)};
+globalThis.RuinRoomSystem=autoRoom; // Fixture enables seamless room ownership only during the new automatic-door test.
+player.y=4;player.x=20;player.z=3;
+runtime.tickDoors(.05);
+assert.equal(runtime.inventory.transitDoors[0].target,1,'native door opens automatically without an interaction while its puzzle room is sleeping');
+player.z=9;
+runtime.tickDoors(.05);
+assert.equal(runtime.inventory.transitDoors[0].target,0,'native door closes again after the player moves clear');
+delete globalThis.RuinRoomSystem;
 assert(blockers.some(record=>record.id.includes('v50-fixed-block')),'immovable native push-route shapers have real upper-story collision');
 const raisedBlocker=blockers.find(record=>record.id.includes('pushblock-'+block.id)); // Verify actor height is checked against the actual world-space block, not the overlapping 2D tile.
 assert(raisedBlocker&&!raisedBlocker.blocksAt(3,2,1.25,null,0,{y:0}),
