@@ -567,17 +567,23 @@
 
   function expandCavernMapData(mapData, clearances, rng) {
     const expandedFloor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
-    // Tall points (ruin doors) get the full height, easing down to the base
-    // height away from them; without any, the cave keeps the base height.
+    // The same roof-height points serve ruins and puzzle chambers. Puzzle chambers
+    // may request a taller peak, while the surrounding corridors retain normal headroom.
     const tallTiles = (Array.isArray(mapData.cavernTallTiles) ? mapData.cavernTallTiles : []).filter(tile => Number.isFinite(tile?.[0]) && Number.isFinite(tile?.[1]));
     const shape = caveShape();
-    const heightScale = tallTiles.length ? shape.full : shape.base; // Taller caves are carved taller, not stretched after the fact.
-    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale, tallTiles]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, height, or tall points change.
+    const puzzlePeak = Number(mapData.cavernPuzzleCeilingScale); // The optional puzzle vault is taller than the nominal target to offset low faceted corners.
+    const puzzleVault = tallTiles.length > 0 && Number.isFinite(puzzlePeak) && puzzlePeak > 0; // Other tall points, including ruin doors, keep their original roof treatment.
+    const heightScale = tallTiles.length ? Math.max(shape.full, puzzleVault ? puzzlePeak : 0) : shape.base; // The SDF sculptor carves the added headroom, never stretches a finished wall.
+    const minHeightFraction = shape.base / heightScale; // The roof descends to the unchanged ordinary tunnel height outside tall-point influence.
+    const tallRadius = puzzleVault ? [Math.max(7, shape.radius[0]), Math.max(16, shape.radius[1])] : shape.radius; // Full headroom reaches even the corners of the 9x9 puzzle chamber.
+    const minFacetRise = puzzleVault ? 0.5 : 0; // Keeps the lowest facets high enough for real, not merely nominal, double-height clearance.
+    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale, minHeightFraction, tallTiles, tallRadius, minFacetRise]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, height, or tall points change.
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
     const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(expandedFloor,
       { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
         ...tallCaveSculptOptions(heightScale, mapData.id),
-        vaultTallTiles: tallTiles, vaultTallRadiusTiles: shape.radius, vaultMinHeightFrac: shape.minFraction,
+        vaultTallTiles: tallTiles, vaultTallRadiusTiles: tallRadius, vaultMinHeightFrac: minHeightFraction,
+        vaultTallMinFacetRise: minFacetRise,
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
     const rockCovered = rockCoveredFloorTiles(expandedFloor, generated.mesh, new Set([`${mapData.exitCol},${mapData.exitRow}`])); // Same geometry/collision agreement as generateCavernFloor.
