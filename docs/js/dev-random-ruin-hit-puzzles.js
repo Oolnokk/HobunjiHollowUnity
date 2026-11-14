@@ -1,11 +1,10 @@
 // Dev Random Test Ruin — V50 hit-driven puzzle runtime, batch 2.
 //
-// Owns only the puzzle interactions that must be physical rather than ordinary
-// Interact prompts: projectile glyphs and temporary carried torches/braziers.
+// Owns hit-driven projectile glyphs, stationary fire-hazard sources, and
+// permanent Adventuring Tools torch contacts for real V50 puzzle mechanisms.
 // It loads before the base ruin adapter so its pre-render pass can publish
 // mechanism signal proxies before the adapter resolves moving geometry. A
-// second, delayed post-render-prep pass runs after the base/prototype adapters
-// to own the temporary-torch prompt and suppress their old DEV shortcuts.
+// second, delayed post-render-prep pass suppresses old Interact shortcuts.
 (() => {
   'use strict';
 
@@ -14,29 +13,12 @@
 
   const MAP_ID = 'map_i_dev_random_ruin';
   const CONTROL_RANGE = 1.65;
-  const PLAYER_REACH_HEIGHT = 1.65; // Used by torch pickup, rung restrictions and hit-driven prompt suppression, measured above the actual supported feet.
-  const PLAYER_REACH_BELOW = .18; // A dropped torch just below the supporting surface remains reachable; adjacent stories do not.
-  const TORCH_BURN_MS = 12000;
-  const TORCH_SPRITE = 'assets/toolsprites/harpoon_fishingmace.png';
-  const TORCH_PLANE_WIDTH = 0.50 * 1.15; // Fishing-mace baseline weapon scale.
-  const TORCH_HEAD_RADIUS = 0.11;
+  const PLAYER_REACH_HEIGHT = 1.65; // Used by physical brazier reach and hit-driven input suppression at the player's supported feet.
+  const PLAYER_REACH_BELOW = .18; // Reject upper/lower floor braziers even when they overlap in X/Z.
   const SIGNAL_SPEED = 1.8;
   const GLYPH_HITBOX_PAD = 0.045;
-  const TORCH_SWING_SECONDS = 0.50;
-  const TORCH_ABILITY_ID = 'ruinTorchSwing';
-
-  // Exact Fishing Mace sweep preset from the Attack Animation Editor. Keeping
-  // this here means the temporary torch uses the same neutral reach and spin
-  // as the mace sprite it visually reuses instead of inventing a dev-only pose.
-  const TORCH_SWEEP_POSE = Object.freeze({
-    neutral: Object.freeze({ x:0, y:0, z:0.16, pitch:0, yaw:0, bodyYaw:0, roll:0 }),
-    windup: Object.freeze({ x:0, y:0, z:0.16, pitch:0, yaw:0, bodyYaw:0, roll:-126.05 }),
-    strike: Object.freeze({ x:0, y:0, z:0.16, pitch:0, yaw:0, bodyYaw:0, roll:121.49 }),
-  });
 
   let devDeps = null;
-  let actionDeps = null;
-  let equipmentDeps = null;
   let combatDeps = null;
   let root = null;
   const extraNativeRoots = new Set(); // The upper V50 floor owner registers/deregisters its real authored puzzle roots here.
@@ -48,18 +30,11 @@
   let ladders = [];
   let mechanismRoots = new Map();
   let mechanismSignals = new Map();
-  let temporaryTorches = [];
-  let carriedTorch = null;
-  let activeSwing = null;
-  let promptOwned = false;
-  let controllerInteractDown = false;
   let suppressedBaseInteract = false;
   let lastFrameMs = performance.now();
   let hitSerial = 0;
   let installedInputBindingGuard = false;
   let installedRangedHook = false;
-  let installedCombatAbility = false;
-  let hiddenWeaponMeshes = new Map();
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -79,8 +54,6 @@
     api.init = wrapped;
   }
   wrapInit(window.DevSpawner, deps => { devDeps = deps; });
-  wrapInit(window.ActionArcUI, deps => { actionDeps = deps; });
-  wrapInit(window.EquipmentPanel, deps => { equipmentDeps = deps; });
   wrapInit(window.Combat, deps => { combatDeps = deps; });
 
   function currentArea() {
@@ -214,7 +187,7 @@
   }
 
   function buildForRoot(nextRoot) {
-    clearRuntimeObjects(true);
+    clearRuntimeObjects();
     root = nextRoot;
     generatorApi = null;
     mechanismRoots = new Map();
@@ -282,6 +255,10 @@
       uniqueSources.push(object);
     }
     torchSources = uniqueSources;
+    for (const source of torchSources) {
+      source.userData = source.userData || {};
+      source.userData.fireHazard = true; // Persistent, lit V50 sources ignite the player's own torch; they are never inventory pickups.
+    }
     lastFrameMs = performance.now();
     window.__farmLog?.(`[random-ruin-hit] glyphs=${glyphTargets.length} ignition=${ignitionTargets.length} torchSources=${torchSources.length}`, 'world');
   }
@@ -296,30 +273,8 @@
     }
   }
 
-  function disposeTorchVisual(record) {
-    if (!record?.group) return;
-    record.group.parent?.remove(record.group);
-    record.group.traverse?.(child => {
-      child.geometry?.dispose?.();
-      if (child.material?.map && child.material.map !== record.texture) child.material.map.dispose?.();
-      child.material?.dispose?.();
-    });
-    record.texture?.dispose?.();
-  }
-
-  function restoreUnderlyingWeaponVisuals() {
-    for (const [mesh, visible] of hiddenWeaponMeshes) if (mesh) mesh.visible = visible;
-    hiddenWeaponMeshes = new Map();
-  }
-
-  function clearRuntimeObjects(restoreHeld = true) {
+  function clearRuntimeObjects() {
     restoreSignalLinks();
-    if (carriedTorch && restoreHeld) restoreHeldState(carriedTorch);
-    for (const record of temporaryTorches) disposeTorchVisual(record);
-    temporaryTorches = [];
-    carriedTorch = null;
-    activeSwing = null;
-    restoreUnderlyingWeaponVisuals();
     glyphTargets = [];
     ignitionTargets = [];
     torchSources = [];
@@ -329,9 +284,6 @@
     generatorApi = null;
     root = null;
     suppressedBaseInteract = false;
-    controllerInteractDown = false;
-    if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-    promptOwned = false;
   }
 
   function segmentBoxInterval(start, end, rawBox, radius = 0) {
@@ -456,202 +408,8 @@
     for (const target of ignitionTargets) api.applyProgress(target.object, target.lit ? 1 : 0);
   }
 
-  function updateFlameVisual(record) {
-    if (!record) return;
-    const lit = !!record.lit;
-    if (record.flame) record.flame.visible = lit;
-    if (record.light) record.light.intensity = lit ? 2.4 : 0;
-  }
-
-  function createTorchVisual() {
-    const group = new THREE.Group();
-    group.name = 'DevRuinTemporaryTorch';
-    const texture = new THREE.TextureLoader().load(TORCH_SPRITE, tex => {
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.NearestFilter;
-      const image = tex.image;
-      if (!image?.width || !image?.height || !group.userData.plane) return;
-      const height = TORCH_PLANE_WIDTH * image.height / image.width;
-      const plane = group.userData.plane;
-      plane.geometry?.dispose?.();
-      plane.geometry = new THREE.PlaneGeometry(TORCH_PLANE_WIDTH, height);
-      group.userData.headAnchor.position.y = height * .43;
-    });
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.NearestFilter;
-    const material = new THREE.MeshBasicMaterial({ map:texture, transparent:true, alphaTest:.08, side:THREE.DoubleSide, depthWrite:false });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(TORCH_PLANE_WIDTH, TORCH_PLANE_WIDTH * 1.8), material);
-    plane.name = 'DevRuinTorchMacePlane';
-    group.add(plane);
-    const headAnchor = new THREE.Object3D();
-    headAnchor.name = 'DevRuinTorchHead';
-    headAnchor.position.set(0, TORCH_PLANE_WIDTH*.78, .015);
-    group.add(headAnchor);
-    const flame = new THREE.Mesh(new THREE.SphereGeometry(.045, 8, 6), new THREE.MeshBasicMaterial({ color:0xff8c33, transparent:true, opacity:.92, depthWrite:false }));
-    flame.position.set(0,0,.01);
-    headAnchor.add(flame);
-    const light = new THREE.PointLight(0xff8c33, 2.4, 4.2, 2);
-    light.userData.intentionalFakeLightSource = true; // Puzzle flames retain a visible fake glow while local Three.js lighting stays globally disabled.
-    light.userData.furnitureLightMask = true;
-    window.FurnitureLightRegistry?.register(light);
-    headAnchor.add(light);
-    group.userData.plane = plane;
-    group.userData.headAnchor = headAnchor;
-    return { group, plane, headAnchor, flame, light, texture };
-  }
-
-  function getHeldMode() { return actionDeps?.getHeldMode?.() ?? combatDeps?.getHeldMode?.() ?? null; }
-  function getActiveTool() { return actionDeps?.getActiveTool?.() ?? equipmentDeps?.getActiveTool?.() ?? combatDeps?.getActiveTool?.() ?? null; }
-  function setActiveTool(value) {
-    if (typeof actionDeps?.setActiveTool === 'function') return actionDeps.setActiveTool(value);
-    if (typeof equipmentDeps?.setActiveTool === 'function') return equipmentDeps.setActiveTool(value);
-    return undefined;
-  }
-
-  function heldSignature() {
-    const mode = getHeldMode();
-    const activeTool = getActiveTool();
-    const weapon = actionDeps?.equipmentSlots?.weapon ?? equipmentDeps?.equipmentSlots?.weapon ?? combatDeps?.currentWeaponKey?.() ?? null;
-    const ranged = actionDeps?.equipmentSlots?.ranged ?? window.RangedWeapons?.equippedRangedKey?.() ?? null;
-    return `${mode}|${activeTool}|${weapon}|${ranged}`;
-  }
-
-  function forceTorchWeaponMode(record) {
-    record.restoreState = {
-      heldMode:getHeldMode(),
-      activeTool:getActiveTool(),
-      lastHeldFarmTool:actionDeps?.getLastHeldFarmTool?.() ?? null,
-    };
-    actionDeps?.setHeldMode?.('tool');
-    actionDeps?.setLastHeldFarmTool?.('weapon');
-    setActiveTool('weapon');
-    actionDeps?.refreshActionBar?.();
-    devDeps?.refreshActionBar?.();
-    record.expectedSignature = heldSignature();
-    record.ignoreSwitchUntil = performance.now() + 180;
-  }
-
-  function restoreHeldState(record) {
-    const restore = record?.restoreState;
-    if (!restore || !actionDeps) return;
-    if (restore.heldMode != null) actionDeps.setHeldMode?.(restore.heldMode);
-    if (restore.lastHeldFarmTool != null) actionDeps.setLastHeldFarmTool?.(restore.lastHeldFarmTool);
-    if (restore.activeTool != null) setActiveTool(restore.activeTool);
-    actionDeps.refreshActionBar?.();
-    devDeps?.refreshActionBar?.();
-  }
-
-  function hideUnderlyingWeaponVisual() {
-    const mesh = equipmentDeps?.toolMeshMap?.weapon || null;
-    if (!mesh || mesh === carriedTorch?.group) return;
-    if (!hiddenWeaponMeshes.has(mesh)) hiddenWeaponMeshes.set(mesh, mesh.visible);
-    mesh.visible = false;
-  }
-
-  function resolvedToolHolder() {
-    const equipmentHolder = equipmentDeps?.toolHolder;
-    if (equipmentHolder) return equipmentHolder;
-    const combatHolder = combatDeps?.toolHolder;
-    if (typeof combatHolder === 'function') return combatHolder();
-    return combatHolder || devDeps?.toolHolder || null;
-  }
-
-  function attachTorchToHand(record) {
-    const holder = resolvedToolHolder();
-    if (!holder || !record?.group) return false;
-    record.group.parent?.remove(record.group);
-    holder.add(record.group);
-    record.group.position.set(0,0,0);
-    record.group.rotation.set(0,0,0);
-    record.group.scale.setScalar(1);
-    record.status = 'held';
-    carriedTorch = record;
-    hideUnderlyingWeaponVisual();
-    updateFlameVisual(record);
-    return true;
-  }
-
-  function dropTorch(record, reason = 'dropped', options = {}) {
-    if (!record || record.status !== 'held') return false;
-    const p = currentPlayerWorld();
-    const scene = currentScene();
-    if (!p || !scene) return false;
-    record.group.parent?.remove(record.group);
-    scene.add(record.group);
-    record.group.position.set(p.x, currentSupportY() + .045, p.z);
-    record.group.rotation.set(-Math.PI/2, 0, finite(devDeps?.player?.angle ?? combatDeps?.player?.angle, 0));
-    record.group.scale.setScalar(1);
-    record.status = 'dropped';
-    record.expectedSignature = null;
-    if (carriedTorch === record) carriedTorch = null;
-    activeSwing = null;
-    restoreUnderlyingWeaponVisuals();
-    if (options.restoreHeld) restoreHeldState(record);
-    devDeps?.refreshActionBar?.();
-    if (reason && reason !== 'area-exit') devDeps?.showToast?.(`Torch ${reason}.`, true);
-    return true;
-  }
-
-  function setTorchLit(record, lit, resetTimer = false) {
-    if (!record) return;
-    const wasLit=!!record.lit; // The carried torch's fire state controls whether a re-ignition sound is warranted.
-    record.lit = !!lit;
-    if(record.lit&&!wasLit)window.RuinInteractionAudio?.igniteTorch?.();
-    if(record.lit&&resetTimer)record.burnRemainingMs=TORCH_BURN_MS;
-    if(!record.lit)record.burnRemainingMs=0; // Torch lifetime is measured in active, frame-clamped game time; a stuck WebGL frame cannot consume an entire puzzle window.
-    updateFlameVisual(record);
-  }
-
-  function spawnSourceTorch(sourceObject) {
-    if (carriedTorch) return false;
-    const visual = createTorchVisual();
-    const record = {
-      id:`temp-torch-${Date.now().toString(36)}-${temporaryTorches.length}`,
-      sourceObject,
-      ...visual,
-      status:'held',
-      lit:true,
-      burnRemainingMs:TORCH_BURN_MS, // Twelve active gameplay seconds, excluding GPU/GC stalls.
-      restoreState:null,
-      expectedSignature:null,
-      ignoreSwitchUntil:0,
-    };
-    temporaryTorches.push(record);
-    forceTorchWeaponMode(record);
-    attachTorchToHand(record);
-    devDeps?.showToast?.('Picked up a lit ruin torch — 12 seconds of burn time.', true);
-    return true;
-  }
-
-  function pickupDroppedTorch(record) {
-    if (!record || record.status !== 'dropped' || carriedTorch) return false;
-    forceTorchWeaponMode(record);
-    attachTorchToHand(record);
-    const left=record.lit?Math.max(0,(record.burnRemainingMs||0)/1000):0;
-    devDeps?.showToast?.(record.lit ? `Picked up torch — ${left.toFixed(1)}s burn left.` : 'Picked up an extinguished torch.', true);
-    return true;
-  }
-
   function nearestPickupControl() {
-    if (carriedTorch || !root) return null;
-    if(!currentPlayerWorld())return null;
-    let nearest=null;
-    let best=CONTROL_RANGE;
-    for(const source of torchSources){
-      const distance=worldDistanceTo(source);
-      if(distance>best)continue;
-      best=distance;nearest={kind:'torchSource',object:source,
-        label:'Take Lit Torch',onPress:()=>worldDistanceTo(source)<=CONTROL_RANGE&&spawnSourceTorch(source)};
-    }
-    for(const record of temporaryTorches){
-      if(record.status!=='dropped')continue;
-      const distance=worldDistanceTo(record.group);
-      if(distance>best)continue;
-      best=distance;nearest={kind:'droppedTorch',object:record.group,
-        label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',
-        onPress:()=>worldDistanceTo(record.group)<=CONTROL_RANGE&&pickupDroppedTorch(record)};
-    }
-    return nearest;
+    return null; // V50 source braziers no longer dispense temporary torches, even to legacy interaction bindings.
   }
 
   function nearestLadderDistance() {
@@ -667,9 +425,7 @@
   }
 
   function updateInteractionSuppression() {
-    const blocksHitShortcut = nearestHitDrivenDistance() <= CONTROL_RANGE;
-    const blocksLadder = !!carriedTorch && nearestLadderDistance() <= CONTROL_RANGE;
-    suppressedBaseInteract = currentArea() === MAP_ID && (blocksHitShortcut || blocksLadder);
+    suppressedBaseInteract = currentArea() === MAP_ID && nearestHitDrivenDistance() <= CONTROL_RANGE;
   }
 
   function installInputBindingGuard() {
@@ -700,195 +456,69 @@
 
   // This listener is registered before prototype-hooks/base-adapter listeners
   // because this script is parser-loaded before them. It blocks only hit-driven
-  // props and torch+ladder attempts; ordinary doors/cubes/push blocks continue.
+  // props; ordinary doors/cubes/push blocks remain interactive.
   document.addEventListener('keydown', event => {
     if (currentArea() !== MAP_ID || !root) return;
     const raw = rawBindings()?.desktop?.interact;
     if (!raw || interactionCode(raw) !== event.code) return;
-    const pickup = nearestPickupControl();
-    if (pickup) {
-      event.preventDefault(); event.stopImmediatePropagation(); pickup.onPress?.(); return;
-    }
-    if (carriedTorch && nearestLadderDistance() <= CONTROL_RANGE) {
-      event.preventDefault(); event.stopImmediatePropagation();
-      devDeps?.showToast?.('You cannot climb a ladder while carrying the torch.', false);
-      return;
-    }
     if (nearestHitDrivenDistance() <= CONTROL_RANGE) {
       event.preventDefault(); event.stopImmediatePropagation();
     }
   }, true);
 
-  function installCombatAbility() {
-    if (installedCombatAbility || !window.Combat?.abilities?.register || !window.Combat?.loadout) return false;
-    const combat = window.Combat;
-    combat.abilities.register(TORCH_ABILITY_ID, {
-      label:'Torch Sweep', slotFamily:'tap', category:'combo',
-      onTap:() => beginTorchSwing(),
-    });
-    const loadout = combat.loadout;
-    const nativeGetSlot = loadout.getSlot.bind(loadout);
-    const nativeGet = loadout.get.bind(loadout);
-    loadout.getSlot = function (slotId) {
-      if (carriedTorch && currentArea() === MAP_ID) return slotId === 'tap1' ? TORCH_ABILITY_ID : null;
-      return nativeGetSlot(slotId);
-    };
-    loadout.get = function () {
-      const value = nativeGet();
-      if (!carriedTorch || currentArea() !== MAP_ID) return value;
-      return { ...value, tap1:TORCH_ABILITY_ID, tap2:null, hold1:null, hold2:null };
-    };
-    installedCombatAbility = true;
+  function igniteIgnitionTarget(target) {
+    if (!target || target.lit) return false;
+    target.lit = true;
+    if (target.object?.userData) target.object.userData.fireHazard = true; // The newly lit brazier becomes a reusable torch-ignition source.
+    window.RuinInteractionAudio?.igniteTorch?.();
+    const state = mechanismSignals.get(target.mechanismId);
+    if (state && state.target < 1) {
+      state.target = 1;
+      (window.RuinInteractionAudio?.puzzleComplete?.() || window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
+    }
+    devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
+    window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
     return true;
   }
 
-  function beginTorchSwing() {
-    if (!carriedTorch || currentArea() !== MAP_ID) return false;
-    const now = performance.now();
-    if (activeSwing && now < activeSwing.endsAt) return false;
-    hideUnderlyingWeaponVisual();
-    combatDeps?.triggerWeaponSwingVisual?.(TORCH_SWING_SECONDS, {
-      anim:'sweep', dirSign:1,
-      windupFrac:.16, strikeFrac:.28,
-      power:1, pose:TORCH_SWEEP_POSE, holdS:0,
-      coneRangePx:0, coneHalfConeRad:0,
-    });
-    activeSwing = {
-      startedAt:now,
-      endsAt:now + TORCH_SWING_SECONDS*1000,
-      lastHead:null,
-      hitIds:new Set(),
-    };
-    return true;
+  function isIgnitionSourceAlongSegment(start, end, maxT = 1, radius = .18) {
+    if (!root || currentArea() !== MAP_ID || !start || !end) return false;
+    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
+    // The same exact floor-aware reach and 3D hitboxes as the original torch puzzle.
+    const litSources = [
+      ...torchSources,
+      ...ignitionTargets.filter(target => target.lit).map(target => target.object),
+      ...(window.DevRandomRuinDungeonFire?.litSourceObjects?.() || []),
+      ...(window.RuinCheckpointTravel?.litSourceObjects?.() || []),
+    ]; // All ruin fire-hazard sources use the same physical proximity, height and segment tests.
+    return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE
+      && segmentBoxInterval(start, finish, boxFor(object), radius));
   }
 
-  function targetContactBox(target) {
-    if (!target?.object) return null;
-    const box = boxFor(target.object);
-    return box?.clone?.().expandByScalar(TORCH_HEAD_RADIUS) || box;
-  }
-
-  function transferFire(target) {
-    if (!carriedTorch || !target) return false;
-    if (target.kind === 'source') {
-      if (!carriedTorch.lit) {
-        setTorchLit(carriedTorch, true, true);
-        devDeps?.showToast?.('The permanent flame relights the torch.', true);
-        return true;
-      }
-      return false;
-    }
-    if (carriedTorch.lit && !target.lit) {
-      target.lit = true;
-      window.RuinInteractionAudio?.igniteTorch?.(); // The actual torch or brazier takes fire, not just a puzzle-complete flag.
-      const state = mechanismSignals.get(target.mechanismId);
-      if (state && state.target < 1) { state.target = 1; (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete')); }
-      devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
-      window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
-      return true;
-    }
-    if (!carriedTorch.lit && target.lit) {
-      setTorchLit(carriedTorch, true, true);
-      devDeps?.showToast?.('The lit brazier relights your torch.', true);
-      return true;
-    }
-    return false;
-  }
-
-  function updateTorchSwing(now) {
-    if (!activeSwing || !carriedTorch?.headAnchor) return;
-    if (now > activeSwing.endsAt) { activeSwing = null; return; }
-    carriedTorch.group.updateWorldMatrix?.(true, true);
-    const head = carriedTorch.headAnchor.getWorldPosition(new THREE.Vector3());
-    const previous = activeSwing.lastHead;
-    activeSwing.lastHead = head.clone();
-    if (!previous) return;
-
-    const contacts = ignitionTargets.map(target => ({ ...target, contactKind:'ignition' }));
-    for (const source of torchSources) contacts.push({ id:`source-${source.id}`, kind:'source', object:source, lit:true, contactKind:'source' });
+  function contactAdventuringTorchSegment(start, end, maxT = 1, radius = .12, requireReach = false) {
+    if (!root || currentArea() !== MAP_ID || !start || !end) return false;
+    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
     let nearest = null;
-    for (const target of contacts) {
-      if (activeSwing.hitIds.has(target.id)) continue;
-      const box = targetContactBox(target);
-      const interval = segmentBoxInterval(previous, head, box, 0);
-      if (!interval || (nearest && interval.enter >= nearest.t)) continue;
-      nearest = { target, t:interval.enter };
+    for (const target of ignitionTargets) {
+      if (target.lit || (requireReach && worldDistanceTo(target.object) > CONTROL_RANGE)) continue;
+      const interval = segmentBoxInterval(start, finish, boxFor(target.object), radius);
+      if (interval && (!nearest || interval.enter < nearest.t)) nearest = { target, t:interval.enter };
     }
-    if (!nearest) return;
-    activeSwing.hitIds.add(nearest.target.id);
-    transferFire(nearest.target);
-  }
-
-  function updateTorchTimers(dt) {
-    for(const record of temporaryTorches){
-      if(record.lit){
-        record.burnRemainingMs=Math.max(0,(Number(record.burnRemainingMs)||0)-dt*1000);
-      }
-      if(record.lit&&record.burnRemainingMs<=0){
-        setTorchLit(record, false, false);
-        if (record.status === 'held') devDeps?.showToast?.('The ruin torch burns out.', false);
-      }
-      if (record.status === 'held') hideUnderlyingWeaponVisual();
-    }
-  }
-
-  function updateCarrySwitchDetection(now) {
-    if (!carriedTorch || now < carriedTorch.ignoreSwitchUntil) return;
-    const signature = heldSignature();
-    if (signature === carriedTorch.expectedSignature) return;
-    dropTorch(carriedTorch, 'dropped as you switched what you were holding');
-  }
-
-  function pollController(control) {
-    const raw = rawBindings()?.controller?.interact;
-    const down = !!raw && !!window.ControllerInput?.frame?.()?.isDown?.(raw); // Shared per-frame snapshot: honors the active pad and menu/title suspension instead of polling every pad directly.
-    if (down && !controllerInteractDown) control?.onPress?.();
-    controllerInteractDown = down;
+    return nearest ? igniteIgnitionTarget(nearest.target) : false;
   }
 
   function updatePromptAfterBase() {
-    if (!root || currentArea() !== MAP_ID) {
-      if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-      promptOwned = false;
-      controllerInteractDown = false;
-      return;
-    }
-    const pickup = nearestPickupControl();
-    if (pickup) {
-      window.ActionPromptUI?.showActionPrompt?.({ actionId:'interact', touchIcon:'🔥', verb:pickup.label, onPress:pickup.onPress, statusText:'DEV RUIN · temporary world torch', statusType:'' });
-      promptOwned = true;
-      pollController(pickup);
-      return;
-    }
-    if (carriedTorch && nearestLadderDistance() <= CONTROL_RANGE) {
-      const blocked = { onPress:() => devDeps?.showToast?.('You cannot climb a ladder while carrying the torch.', false) };
-      window.ActionPromptUI?.showActionPrompt?.({ actionId:'interact', touchIcon:'🚫', verb:'Cannot Climb With Torch', onPress:blocked.onPress, statusText:'DEV RUIN · torch carry route forbids ladders', statusType:'' });
-      promptOwned = true;
-      pollController(blocked);
-      return;
-    }
+    if (!root || currentArea() !== MAP_ID) return;
     const status = document.getElementById('apStatus')?.textContent || '';
     if (status === 'DEV RUIN · glyphObelisk' || status === 'DEV RUIN · brazier' || status === 'DEV RUIN · torch') {
-      window.ActionPromptUI?.hideActionPrompt?.();
+      window.ActionPromptUI?.hideActionPrompt?.(); // No legacy pickup, ladder prohibition, or controller Interact claim survives.
     }
-    promptOwned = false;
-    controllerInteractDown = false;
-  }
-
-  function updateCarryVisual() {
-    if (!carriedTorch) return;
-    const holder = resolvedToolHolder();
-    if (holder && carriedTorch.group.parent !== holder) holder.add(carriedTorch.group);
-    carriedTorch.group.position.set(0,0,0);
-    carriedTorch.group.rotation.set(0,0,0);
-    carriedTorch.group.scale.setScalar(1);
-    updateFlameVisual(carriedTorch);
   }
 
   function preBaseFrame() {
     const inRuin = currentArea() === MAP_ID;
     if (!inRuin) {
-      if (root) clearRuntimeObjects(true);
+      if (root) clearRuntimeObjects();
       return;
     }
     const activeRoot = activeGeneratedRoot();
@@ -901,10 +531,6 @@
     const now = performance.now();
     const dt = clamp((now-lastFrameMs)/1000, 0, .05);
     lastFrameMs = now;
-    updateCarrySwitchDetection(now);
-    updateTorchTimers(dt);
-    updateCarryVisual();
-    updateTorchSwing(now);
     updateSignalState(dt);
     updateInteractionSuppression();
   }
@@ -925,7 +551,6 @@
   // guard must exist before prototype-hooks starts polling controller Interact.
   installInputBindingGuard();
   installRangedProjectileHook();
-  installCombatAbility();
 
   // Some APIs finish loading after this parser-time module in unusual debug
   // pages. Retry briefly without ever blocking game boot.
@@ -934,8 +559,7 @@
     installAttempts++;
     installInputBindingGuard();
     installRangedProjectileHook();
-    installCombatAbility();
-    if ((!installedInputBindingGuard || !installedRangedHook || !installedCombatAbility) && installAttempts < 120) setTimeout(retryInstall, 25);
+    if ((!installedInputBindingGuard || !installedRangedHook) && installAttempts < 120) setTimeout(retryInstall, 25);
   };
   setTimeout(retryInstall, 0);
 
@@ -959,19 +583,23 @@
       return ticks;
     },
     debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
-    debugPickupTorch:()=>{
+    debugPickupTorch:()=>false, // Removed: puzzle sources no longer supply replacement torches.
+    debugLightAdventuringTorchAtSource:object=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
-      const pickup=nearestPickupControl();
-      return pickup?.kind==='torchSource'&&pickup.onPress()===true; // Use the production range-checked pickup callback, not a forced held-weapon state.
+      return torchSources.includes(object) && worldDistanceTo(object)<=CONTROL_RANGE
+        && window.AdventuringTools?.isHoldingTorch?.()===true && window.AdventuringTools.light()===true;
     },
     debugIgniteTarget:object=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
       const target=ignitionTargets.find(candidate=>candidate.object===object);
-      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE&&transferFire(target); // CI invokes the genuine fire-transfer callback within reach; weapon sweep/aiming is a separate browser test.
+      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE
+        && window.AdventuringTools?.isHoldingTorch?.()===true && window.AdventuringTools?.isLit?.()===true
+        && igniteIgnitionTarget(target); // CI uses the same target transition as physical swing/throw collision.
     },
+    isIgnitionSourceAlongSegment, contactAdventuringTorchSegment, // Ruin-owned source detection and actual V50 puzzle fire transfer.
     distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
-    isCarryingTorch:() => !!carriedTorch,
-    dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
+    isCarryingTorch:() => false, // Compatibility for older mobile diagnostics and tests; the permanent torch is AdventuringTools.
+    dropTorch:() => false,
     debugActivateGlyph(object = null) {
       const target = glyphTargets.find(entry => object ? entry.object === object : !entry.active) || null; // Used by browser/mobile diagnostics to exercise the authoritative projectile-hit state transition without synthesizing a weapon shot.
       return target ? activateGlyph(target) : false;
@@ -989,17 +617,19 @@
       glyphs:{ total:glyphTargets.length, active:glyphTargets.filter(target => target.active).length },
       ignitionTargets:ignitionTargets.map(target => ({ id:target.id, kind:target.kind, mechanismId:target.mechanismId, lit:target.lit })),
       torchSources:torchSources.length,
-      temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnRemainingMs||0)):0 })),
-      carryingTorch:carriedTorch?.id || null,
-      activeSwing:!!activeSwing,
+      torchSourceFireHazards:torchSources.filter(source=>source.userData?.fireHazard===true).length,
+      temporaryTorchPickupsDisabled:true, // Exposed to mobile Pixel Probe and V50 browser tests.
+      temporaryTorches:[], // Retained as read-only legacy diagnostics; the old pickup/12-second burn implementation is gone.
+      carryingTorch:null,
+      activeSwing:false,
       signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, commandTarget:state.commandTarget, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })), // Includes ON/OFF bridge midpoint state for mobile puzzle diagnostics.
       suppressedBaseInteract,
       proximity:{playerGroundY:currentSupportY(),nearestPickup:nearestPickupControl()?.kind||null,
         nearestLadder:nearestLadderDistance(),nearestHitDriven:nearestHitDrivenDistance(),
         registeredNativeRoots:extraNativeRoots.size}, // In-game/mobile diagnostics for stacked-floor reach and cross-floor input suppression.
       hitSerial,
-      hooks:{ inputBindingGuard:installedInputBindingGuard, rangedProjectile:installedRangedHook, combatAbility:installedCombatAbility },
+      hooks:{ inputBindingGuard:installedInputBindingGuard, rangedProjectile:installedRangedHook, combatAbility:false },
     }),
-    clear:() => clearRuntimeObjects(true),
+    clear:clearRuntimeObjects,
   });
 })();

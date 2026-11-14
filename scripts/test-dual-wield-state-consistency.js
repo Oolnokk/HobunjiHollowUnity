@@ -305,7 +305,7 @@ const presets = vm.runInNewContext(html.slice(presetStart, presetEnd) + '\nTOOL_
   sharedAttackPoses: id => templateWindow.AttackPoseTemplates.poseFor(id),
 });
 const meleePresets = presets.filter(preset => preset.id.endsWith('_swing'));
-assert.equal(meleePresets.length, 5);
+assert.equal(meleePresets.length, 6); // Torch swing adds an authored melee-sweep preset.
 for (const preset of meleePresets) assertAuthoredFlags(preset, preset.id);
 for (const preset of presets.filter(preset => preset.style === 'ranged')) assert.equal(preset.windup.dualWield, undefined, 'ranged preset flags are unchanged');
 console.log('Independent hand flags, round-trip data, weapon selection, fishing-mace exclusion, and explicitly authored attack poses PASS');
