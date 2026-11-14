@@ -169,6 +169,42 @@ for(const axis of ['x','z']){
   assert.equal(original.disposed,true,'disposing a stretched mesh also releases its hidden rest geometry');
   assert.notEqual(stretched.disposed,true,'the ordinary mesh disposer retains ownership of the active geometry');
 }
+// Vertical support follows the same exact root solver as the bridge while leaving the floor attached.
+{
+  const base=new Mesh(), top=new Mesh(), rail=new Mesh(), rung=new Mesh();
+  base.position.y=0; top.position.y=2.75; rail.position.y=1.5; rung.position.y=2;
+  const sourceRung=rung.geometry, sourceRail=rail.geometry;
+  const parts=[
+    {id:'floor',tileSpanRole:'start'},
+    {id:'ceiling',tileSpanRole:'end'},
+    {id:'stile',kind:'box',tileSpanRole:'stretch',tileSpanRoots:{
+      start:{partId:'floor',face:'max'},end:{partId:'ceiling',face:'min'}
+    }},
+    {id:'rung',kind:'box',tileSpanRole:'follow',tileSpanRoots:{
+      start:{partId:'floor',face:'max'},end:{partId:'ceiling',face:'min'}
+    }},
+  ];
+  const group={userData:{meshById:new Map([['floor',base],['ceiling',top],['stile',rail],['rung',rung]])}};
+  const data={parts,tileSpan:{enabled:true,axis:'y',baseHeight:1.75,targetHeight:2.75,verticalTarget:'ceiling',
+    startTiles:1,endTiles:1,middleTiles:1,totalTiles:3,tileSize:1}};
+  let result=stretch.apply(group,data);
+  assert.equal(result.errors.length,0,'ceiling ladder uses valid base/end surface roots');
+  near(result.delta,1,'vertical extension is measured in actual height units');
+  near(base.position.y,0,'vertical span never shifts floor end');
+  near(top.position.y,3.75,'ceiling end follows the target height without stretching');
+  near(rung.position.y,2+(1/1.75),'rigid rung follows interpolated height');
+  assert.equal(rung.geometry,sourceRung,'rung geometry remains rigid');
+  assert.notEqual(rail.geometry,sourceRail,'side stile geometry stretches');
+  assert.equal(group.userData.activeHeightSpan,2.75);
+  result=stretch.apply(group,data,1.75);
+  near(result.delta,0,'revert to original room height');
+  near(top.position.y,2.75,'ceiling cap restores its original height');
+  near(rung.position.y,2,'rung restores without accumulating transforms');
+  assert.equal(rail.geometry,sourceRail,'rest span uses original surface geometry');
+  data.tileSpan.enabled=false;
+  stretch.apply(group,data);
+  assert.equal(group.userData.activeHeightSpan,undefined,'disabled vertical stretching clears cached target');
+}
 // Execute the real preset author, not only a test-made replica of its bridge geometry.
 {
   const inputs=new Map(); // Fake editor controls capture configured tile counts without needing a browser.
