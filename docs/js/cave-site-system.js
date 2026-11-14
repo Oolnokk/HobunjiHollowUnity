@@ -200,9 +200,9 @@
     };
   }
 
-  function outdoorPuzzleSeclusion(zoneId, shelves) {
-    const layout = zoneLayout(zoneId); // WildlifeSpawn's current Tothal terrain grid, never a second map authority.
-    const grid = layout?.grid;
+  function outdoorPuzzleSeclusion(zoneId, shelves, sourceGrid = null) {
+    const layout = zoneLayout(zoneId); // Retained as a fallback for headless tools.
+    const grid = sourceGrid || wildlifeDeps?.zoneScenes?.get?.(zoneId)?.grid || layout?.grid; // Prefer the current cliff network's real grid even before the zone scene is registered.
     const scorer = window.WildernessSeclusion; // Shared with generated ruin/shrine sites; loaded before the cave system.
     if (!Array.isArray(grid) || !grid.length || !scorer?.sampleVisibility) return null;
     const rows = grid.length, cols = grid[0]?.length || 0; // Grid bounds for the bounded 16-direction LOS probe.
@@ -221,7 +221,7 @@
     }));
   }
 
-  function registerOutdoorPuzzleSites(zoneId, balconies = []) {
+  function registerOutdoorPuzzleSites(zoneId, balconies = [], terrainGrid = null) {
     const key = String(zoneId || ''); // Separate zone key avoids ever replacing an ordinary den/cave profile.
     const candidates = (balconies || []).filter(shelf =>
       shelf?.base?.footprint?.length && shelf?.footprint?.length >= 2
@@ -239,7 +239,7 @@
       if(rolled.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
       if(!rolled.includes(shelf)) rolled.push(shelf);
     }
-    const ranked = outdoorPuzzleSeclusion(key, candidates); // Re-rank valid real balcony positions, never invent unwalkable entrances.
+    const ranked = outdoorPuzzleSeclusion(key, candidates, terrainGrid); // Re-rank valid real balcony positions, never invent unwalkable entrances.
     const rankedById = new Map(); // Selected profiles carry the measured seclusion for mobile debugging.
     let selected = rolled; // No runtime grid (e.g. unit tests): retain the existing deterministic roll.
     if(ranked?.length) {
