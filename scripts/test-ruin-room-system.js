@@ -38,6 +38,13 @@ const pit={contains:(x,z)=>x>=15&&x<17};
 const voidRoom={...layout.rooms[0],pit};
 assert.equal(Rooms.floorAudit(voidRoom,floorCells).deliberateVoidTiles,22,'an authored rope pit stays open');
 assert.equal(Rooms.floorAudit(voidRoom,floorCells).missingFloorTiles,1,'an unrelated accidental floor hole is still detected');
+const west=[],north=[],all=new Set();
+for(let z=10;z<21;z++)for(let x=10;x<21;x++)all.add(x+','+z);
+for(let z=10;z<21;z++){west.push([10,z+.5,1],[21,z+.5,-1]);}
+for(let x=10;x<21;x++){north.push([x+.5,10,1],[x+.5,21,-1]);}
+assert.equal(Rooms.wallAudit(layout.rooms[0],all,north,west).missingWallEdges,0);
+north.pop();
+assert.equal(Rooms.wallAudit(layout.rooms[0],all,north,west).missingWallEdges,1,'one missing wall face fails enclosure validation');
 const malformed=Rooms.planRooms({options:{},floors:[{floor:0,y:0,
   doorways:[{to:room1.id,from:'shaft-f0',point:{x:11,z:15}}],
   wings:[{id:'east',side:'E',rooms:[room1]}]}]});
