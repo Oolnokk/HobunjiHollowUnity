@@ -59,7 +59,7 @@ const buff = name => entries().find(item => item.id === name); // Looks up a nam
 
 assert.equal(rest.isRested(), false, 'new or legacy saves begin without either rest tier');
 assert.equal(rest.isWellRested(), false);
-assert.equal(restProvider instanceof Function, true, 'Rested is exposed to the existing EffectBuffBar');
+assert.equal(typeof restProvider, 'function', 'Rested is exposed to the existing EffectBuffBar across Node VM realms');
 send('wait', 1);
 assert.equal(rest.isRested(), false, 'waiting without a chair provides no rest buff');
 send('dev', 10);
