@@ -18,7 +18,7 @@ new Function(interiorSyncSource);
 assert.match(runtimeSource, /FURNITURE_METADATA_KEY = 'walkableElevation'/, 'runtime uses stable instance metadata');
 assert.match(runtimeSource, /new THREE\.Box3\(\)\.setFromObject\(object\)/, 'furniture collider is derived from complete rendered geometry');
 assert.match(runtimeSource, /registerPiecePorches/, 'porches register authored support surfaces');
-assert.match(gameSource, /function npcSurfaceY\(area, c, r\)[\s\S]{0,1400}HobunjiWalkableElevation\?\.surfaceLiftAt\?\.\(c \+ 0\.5, r \+ 0\.5, area\)/, 'NPC walkers share the support registry after farm subtle-surface resolution');
+assert.match(gameSource, /function npcSurfaceY\(area, c, r\)[\s\S]{0,1400}HobunjiWalkableElevation\?\.worldSurfaceTopAt\?\.\(x, z, base, area\)/, 'NPC walkers use the same absolute physical support as the player');
 assert.match(runtimeSource, /walkElevDebug=1/, 'mobile runtime diagnostics are available without devtools');
 
 assert.match(interiorEditorSource, /WALKABLE_ELEVATION_KEY = 'walkableElevation'/, 'Interior Author persists the same metadata');
@@ -108,5 +108,26 @@ assert.equal(api.surfaceLiftAt(2.5,3.5,'farm'),0,
   'the town bridge never adds a raised surface in other areas');
 assert.equal(api.unregister(bridgeId),true,'bridge support unregisters cleanly after replacement');
 assert.equal(api.surfaceLiftAt(2.5,3.5,'town'),0,'no ghost walkable surface survives teardown');
+
+assert.equal(api.worldSurfaceTopAt(0.5,0.5,0.73,'town'),0.73,
+  "no active support means terrain's actual world Y remains authoritative");
+const registeredRailProviders = []; // Captures the narrow physical guard registered through the game's existing footprint provider.
+context.window.THREE = { Box3: class {
+  setFromObject(mesh) { this.min = mesh.testMin; this.max = mesh.testMax; return this; }
+  isEmpty() { return false; }
+} }; // Only the Box3 interface needed by the railing regression fixture.
+context.window.AreaFootprintBlockers = { register(id, provider) { registeredRailProviders.push({ id, provider }); } };
+const rail = { isMesh: true, userData: { housePieceFaceTag: 'railing' },
+  testMin: { x: 10.05, y: 0.18, z: 20.05 },
+  testMax: { x: 10.18, y: 0.88, z: 20.85 } }; // Physically narrow railing, not its 1x1 authored footprint tile.
+const railGroup = { parent: scene, traverse(visitor) { visitor(rail); } };
+assert.equal(api.registerPieceRails(railGroup, { id: 'test-porch-rails' }, 10, 20), 1);
+assert.equal(registeredRailProviders.length, 1, 'rail collider reuses one shared movement-provider registration');
+assert.equal(api.railBlocksBox(10.1,20.5,0.12), true, 'a character cannot pass through modeled railing geometry');
+assert.equal(api.railBlocksBox(10.65,20.5,0.12), false, 'the clear interior of the same rail tile stays walkable');
+assert.equal(api.railBlocksBox(10.1,20.5,0.12,1.3), false, 'airborne feet above the rail are not blocked by its 2D footprint');
+assert.equal(api.registerPieceRails(railGroup, { id: 'test-porch-rails' }, 10, 20), 1);
+assert.equal(registeredRailProviders.length, 1, 'replacing a piece does not duplicate the provider');
+
 
 console.log('walkable elevation regression checks passed');

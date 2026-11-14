@@ -944,7 +944,7 @@ const building = { gridX: 10, gridZ: 20, rotationDeg: 0 };
 const piece = {
   footprint: {
     cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
-    extensions: { porches: [{ x: 0, y: 1 }], railings: [] },
+    extensions: { porches: [{ x: 0, y: 1 }], railings: [{ x: 0, y: 1 }] },
   },
 };
 context.window.GridTileAccessors.init({
@@ -960,7 +960,7 @@ assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(10, 20
 assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(11, 20), true,
   'a second query reuses the rotated-cell index');
 assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(10, 21), false,
-  'walkable footprint extensions remain excluded from collision');
+  'a railing mounted on a walkable porch is not a full-tile blocker; the narrow face collider handles it');
 let gridDebug = context.window.GridTileAccessors.debugSnapshot();
 assert.deepEqual(JSON.parse(JSON.stringify(gridDebug)), { buildingFootprintCacheBuilds: 1, buildingFootprintCacheHits: 2 },
   'unchanged building collision queries build once and hit thereafter');

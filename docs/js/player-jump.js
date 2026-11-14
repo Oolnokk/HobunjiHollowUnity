@@ -30,8 +30,11 @@
     if (['void', 'pit'].includes(String(tile.type).toLowerCase()) || window.DynamicSurfaces?.pointInPit?.(x, z)) return null; // An authored death pit is never a jump landing floor.
     const area = deps.getCurrentArea();
     const surface = window.AreaFootprintBlockers?.surfaceYAt?.(area, x, z);
-    const y = Number.isFinite(surface) ? surface : deps.tileSurfaceYInArea?.(tile, area);
-    return Number.isFinite(y) ? y : null;
+    const continuous = deps.worldSurfaceY?.(x * deps.TILE, z * deps.TILE); // The same smooth farm/town/zone ground used by ordinary physical walking.
+    const baseY = Number.isFinite(surface) ? surface
+      : Number.isFinite(continuous) ? continuous : deps.tileSurfaceYInArea?.(tile, area);
+    if (!Number.isFinite(baseY)) return null;
+    return window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, baseY, area) ?? baseY; // Jump launch, airborne landing and raised-support walking agree on real deck tops.
   }
 
   function coverAtTile(tile, col, row) {
@@ -525,7 +528,7 @@
     reset: () => reset(deps?.player),
     get debug() {
       const s = deps?.player?._freeJump;
-      return { ...debug, latestChange: 'Shared free-jump, rope-flight and rope-ride elevation; momentum steering and midair rope catches', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
+      return { ...debug, latestChange: 'Free-jump and rope elevation now land on the same physical town/porch/bridge supports as ordinary walking', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
         vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null,
         baseAirMotion:Motion?.BASE||null,airMultipliers:Motion?{...Motion.multipliers}:null };
