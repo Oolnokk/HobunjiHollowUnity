@@ -40,7 +40,7 @@
       pose = {
         geometry: mesh.geometry, position: mesh.position.clone(),
         quaternion: mesh.quaternion.clone(), scale: mesh.scale.clone(),
-        matrix: mesh.matrix.clone(), stretchedGeometry: null,
+        matrix: mesh.matrix.clone(), stretchedGeometry: null, deformation: null,
       }; // Original mesh shape and rest pose for repeated preview/runtime resizing.
       sourcePoses.set(mesh, pose);
     }
@@ -54,6 +54,7 @@
       pose.stretchedGeometry.dispose?.();
       pose.stretchedGeometry = null;
     }
+    pose.deformation = null;
     mesh.position.copy(pose.position);
     mesh.quaternion.copy(pose.quaternion);
     mesh.scale.copy(pose.scale);
@@ -129,6 +130,7 @@
           geometry.applyMatrix4(local);
           mesh.geometry = geometry;
           pose.stretchedGeometry = geometry; // Dispose only per-instance deformation; never the shared authored source.
+          pose.deformation = local; // Shared local-coordinate mapping for children rooted to a stretched surface.
         }
       } else {
         mapping = transformFor(role, 0, 0, delta);
@@ -142,5 +144,19 @@
     return { enabled: true, totalTiles, delta, errors };
   }
 
-  global.FurnitureTileSpan = { normalize, roleOf, transformFor, apply };
+  function mapLocalPoint(mesh, point) {
+    const deformation = sourcePoses.get(mesh)?.deformation;
+    return deformation ? point.applyMatrix4(deformation) : point; // Maps a recognized surface point onto the actual stretched mesh.
+  }
+
+  function mapLocalDirection(mesh, direction, isNormal = false) {
+    const deformation = sourcePoses.get(mesh)?.deformation;
+    if (!deformation) return direction;
+    if (isNormal && global.THREE.Matrix3) {
+      return direction.applyMatrix3(new global.THREE.Matrix3().getNormalMatrix(deformation)).normalize();
+    }
+    return direction.transformDirection(deformation);
+  }
+
+  global.FurnitureTileSpan = { normalize, roleOf, transformFor, mapLocalPoint, mapLocalDirection, apply };
 })(typeof window !== 'undefined' ? window : globalThis);
