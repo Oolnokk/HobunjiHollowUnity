@@ -764,7 +764,7 @@
 
   const STANCE_FRACTION = 0.62;
   const STRIDE_REFERENCE_LEG_FRACTION = 0.30; // Legacy reference retained in diagnostics; live gait uses measured anatomical leg length directly.
-  const MAX_STRIDE_LEG_RATIO = 1.8; // Keep step-half reach at most 90% of the physical resting leg while tall, narrow characters take longer strides.
+  const MAX_STRIDE_LEG_RATIO = 1.8; // Limit both local two-bone IK and world-space half-stride to 90% of anatomical standing leg reach.
 
   // ── Debug leg-bone visualization ────────────────────────────────────
   // Same colored capsule-and-joint guides the furniture-avatar-author tool
@@ -1511,8 +1511,14 @@
       const footYRatio = (state.bodyScaleX + state.bodyScaleY) / (2 * state.bodyScaleY); // Body Y times this ratio equals the uniform arithmetic mean.
       if (Math.abs(footYRatio - state.extremityYRatio) > 1e-9) {
         state.extremityYRatio = footYRatio;
-        state.leftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio;
-        state.rightContactY = (Number(state.right?.userData?.contactRadiusY) || 0) * footYRatio;
+        const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.
+        const nextRightContactY = (Number(state.right?.userData?.contactRadiusY) || 0) * footYRatio; // Matching right-foot correction without changing step lift.
+        if (!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne) {
+          state.leftTarget.y += nextLeftContactY - state.leftContactY;
+          state.rightTarget.y += nextRightContactY - state.rightContactY;
+        }
+        state.leftContactY = nextLeftContactY;
+        state.rightContactY = nextRightContactY;
       }
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
@@ -1613,11 +1619,13 @@
         : isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Existing torso lean composer consumes this for both players and NPCs.
       const stanceFraction = lurch ? lurch.stance : STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Lurching feet keep one planted longer than an ordinary runner.
       const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
-      const fullStride = Math.min(gaitLegLength * MAX_STRIDE_LEG_RATIO,
-        gaitLegLength * (state.bodyScaleY / state.bodyScaleX) * strideCurve * spineStride * (lurch ? 0.82 : 1 + state.runBlend * 0.5)); // Standing leg length is vertical under body Y; forward travel follows body X/Z. Stay inside leg reach.
+      const worldToLocalStride = state.bodyScaleY / state.bodyScaleX; // Convert rendered vertical leg length into the body's X/Z walking-travel frame.
+      const naturalStride = strideCurve * spineStride * (lurch ? 0.82 : 1 + state.runBlend * 0.5); // Existing animation proportions; measured anatomy determines absolute size.
+      const fullStride = gaitLegLength * Math.min(MAX_STRIDE_LEG_RATIO, worldToLocalStride * Math.min(MAX_STRIDE_LEG_RATIO, naturalStride)); // Respect both local two-bone IK reach and the scaled world's leg reach.
       const strideLength = fullStride * state.gaitStrength;
-      const baseCadenceHz = isGaiting && fullStride > 0.001
-        ? Math.max(0.55, Math.min(3.2, (speed * stanceFraction) / Math.max(0.001, strideLength)))
+      const worldStrideLength = strideLength * state.bodyScaleX; // Cadence measures travel in world units, matching the speed argument (not local foot travel).
+      const baseCadenceHz = isGaiting && worldStrideLength > 0.001
+        ? Math.max(0.55, Math.min(3.2, (speed * stanceFraction) / Math.max(0.001, worldStrideLength)))
         : 0;
       const cadenceHz = lurch ? baseCadenceHz * lurch.cadence : baseCadenceHz; // Uneven gait cadence, tuned per troop without changing physical movement speed.
       state.gaitLegLength = gaitLegLength;
@@ -1695,7 +1703,7 @@
           legLength: currentLegLength,
           legLengthFractionOfModel: currentLegLength / Math.max(0.001, modelHeight),
           bodyScaleX: state.bodyScaleX, bodyScaleY: state.bodyScaleY, uniformFootSize: (state.bodyScaleX + state.bodyScaleY) * 0.5,
-          worldLegLength: currentLegLength * state.bodyScaleY, worldStrideLength: state.gaitStrideLength * state.bodyScaleX, // Mobile-readable comparison of actual gait and body proportions.
+          worldLegLength: currentLegLength * state.bodyScaleY, worldStrideLength: state.gaitStrideLength * state.bodyScaleX, // Diagnostic compares cadence and reach in consistent world units.
           fullStride: state.gaitFullStride,
           strideLength: state.gaitStrideLength,
           cadenceHz: state.gaitCadenceHz,

@@ -86,6 +86,23 @@ assert(Math.abs(tallerGait.gait.worldStrideLength - tallerGait.gait.strideLength
 assert(Math.abs(tallerGait.gait.worldLegLength - tallerGait.gait.legLength * 1.5) < 1e-9);
 assert(Math.abs(tallerGait.left.contactY - .04 * .75) < 1e-9, 'tall narrow feet retain floor contact after mean-scaling');
 assert(Math.abs(widerGait.left.contactY - .04 * 1.5) < 1e-9, 'wide feet retain floor contact after mean-scaling');
+const measureWorldStride = gait => gait.gait.worldStrideLength / gait.gait.worldLegLength; // World reach bound cannot be tested by comparing two local distances.
+assert(measureWorldStride(tallerGait) <= 1.8 + 1e-9 && measureWorldStride(widerGait) <= 1.8 + 1e-9, 'no stride overextends the scaled world leg');
+const aspectChanged = rig(); // Starts with square body scale, then changes width/height in-place while standing still.
+tick(aspectChanged.legs, 0, {}, 1);
+aspectChanged.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+const resizedPose = tick(aspectChanged.legs, 0, {}, 1);
+assert(Math.abs(resizedPose.left.targetY - resizedPose.left.contactY) < 1e-9, 'editing the body's aspect ratio never makes planted feet sink between frames');
+assert(Math.abs(resizedPose.right.targetY - resizedPose.right.contactY) < 1e-9, 'both standing soles stay anchored after rescaling');
+for (const actor of [tallNarrow, shortWide]) {
+  const pose = tick(actor.legs, .5, {}, 180); // Low speed avoids the cadence clamp, exposing unit-mismatch foot sliding.
+  const expectedCadence = Math.max(.55, Math.min(3.2, (.5 * .62) / pose.gait.worldStrideLength));
+  assert(Math.abs(pose.gait.cadenceHz - expectedCadence) < 1e-9, 'planted travel and cadence must share world-unit distances');
+}
+const extreme = rig(1, null, { x: 4, y: .1 }); // Very wide characters must respect the *world* leg reach too, not only local IK.
+const extremePose = tick(extreme.legs, 4.3, { combat: true });
+assert(measureWorldStride(extremePose) <= 1.8 + 1e-9, 'extreme wide/tiny anatomy cannot overextend a world-space leg');
+assert(extremePose.gait.fullStride <= extremePose.gait.legLength * 1.8 + 1e-9, 'shared local IK reach remains bounded');
 const falling = tick(run.legs, 9, { combat: true, airborne: true }); // High horizontal speed must not resume running in the air.
 assert.strictEqual(falling.motionMode, 'airborne');
 assert.strictEqual(run.legs.getRunLean(), 0, 'airborne pose replaces the running lean');
