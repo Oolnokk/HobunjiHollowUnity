@@ -102,7 +102,7 @@ const alchemyGetters = { // Existing potion getter paths used by Combat, movemen
   staminaSpend: 'getStaminaSpendMultiplier', incomingDamageAffliction: 'getIncomingDamageAfflictionMultiplier',
   positiveFavor: 'getPositiveFavorMultiplier', perception: 'getPerceptionMultiplier',
 };
-for (const key of Object.keys(alchemy.REAGENT_DEFS)) inventory[key] = 8;
+for (const key of Object.keys(alchemy.REAGENT_DEFS)) inventory[key] = 64; // Every perfume shares botanicals; the integration fixture must not run out of ingredients mid-catalog.
 romance.completeWedding('spouse');
 assert.equal(statProviders.length, 1, 'kiss bonus composes through one shared ResourceSystem provider');
 assert.equal(romance.currentKissEffect().stat, 'staminaRegen', 'no perfume preserves the existing blessing');
