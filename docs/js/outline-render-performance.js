@@ -782,6 +782,7 @@
         for (const object of hidden) object.visible = true;
       }
     }
+    let auxiliaryCameraHidden = null; // Pending popup/glyph meshes temporarily withheld from a same-scene auxiliary camera draw.
     let pass = classifyPass(renderer, scene, camera);
     if (pass === 'base') {
       const pending = pendingWorldTextOverlayByRenderer.get(renderer); // Existing frame must reach the post composite even if a separate world preview renders meanwhile.
@@ -806,17 +807,16 @@
         if (auxiliaryScene || auxiliaryCamera) {
           auxiliaryWorldBasePassesPreserved++;
           if (auxiliaryCamera) {
-            // The auxiliary camera traverses the same scene and may have every
-            // layer enabled. Without this transaction, previously reserved
-            // popup/glyph meshes would leak into its offscreen preview draw.
-            const hidden = []; // Visible pending meshes restored even if the nested render throws.
+            // The auxiliary camera traverses this same scene with every layer
+            // enabled. Keep pending text out of its render, but still take the
+            // ordinary 'other' pass below to advance scene matrix epochs and
+            // invalidate stale shadow/matrix reuse after the extra traversal.
+            auxiliaryCameraHidden = [];
             for (const { object } of pending.entries) {
               if (!object.visible) continue;
-              hidden.push(object);
+              auxiliaryCameraHidden.push(object);
               object.visible = false;
             }
-            try { return originalRender.call(renderer, scene, camera); }
-            finally { for (const object of hidden) object.visible = true; }
           }
           pass = 'other';
         }
@@ -920,6 +920,7 @@
       // renderer.render(), and auxiliary passes must not be able to delete popup
       // text before the real _postScene/_postCamera composite arrives.
     } finally {
+      if (auxiliaryCameraHidden) for (const object of auxiliaryCameraHidden) object.visible = true;
       restoreTargetAlphaFillLayers(targetAlphaFillEntries);
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
