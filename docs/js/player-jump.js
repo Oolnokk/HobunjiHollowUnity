@@ -124,7 +124,7 @@
     if (window.InteriorDoorTiles?.blocksBox?.(area, x, z, CONFIG.radius)) return 'closed interior door';
     for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
       if (area === 'farm' && (access?.isHouseFootprint?.(col, row) || access?.isFarmBuildingCollisionTile?.(col, row))) return 'farm building';
-      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area)) return 'town building';
+      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area, feetY)) return 'town building';
     }
     // Clearing one low piece of cover does not exempt any other blocker.
     if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05))
@@ -133,7 +133,8 @@
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,
     })) return 'dynamic blocker';
     if (deps.canPlayerOccupyAtHeight) {
-      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY))
+      const onBalcony=window.HobunjiWalkableElevation?.isBalconyAt?.(x,z,feetY,area); // Building's ground-level block cannot veto its rooftop support.
+      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY) && !onBalcony)
         return 'world collision';
     } else {
       // Non-game test owners fail closed, rather than granting global passage
