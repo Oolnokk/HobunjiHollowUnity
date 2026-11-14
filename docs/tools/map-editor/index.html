@@ -1127,6 +1127,9 @@ function loadWorkspace() {
         w.maps.forEach(m => {
           m.tiles = normalizeWorkspaceTiles(m.tiles);
           m.visualHeights = normalizeVisualHeights(m.visualHeights, m.cols, m.rows);
+          if (m.visualHeightBase && typeof m.visualHeightBase === 'object' && !Array.isArray(m.visualHeightBase)) {
+            m.visualHeightBase = normalizeVisualHeights(m.visualHeightBase, m.cols, m.rows); // Retain the hand-painted base beneath movable building stamps.
+          }
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.rivers = Array.isArray(m.rivers) ? m.rivers : [];
           m.farmPlots = Array.isArray(m.farmPlots) ? m.farmPlots : [];
@@ -4895,8 +4898,11 @@ function importAny(obj) {
   if (obj && obj.schema === 'hobunji_map.v1') {
     const m = makeMap(obj.name || 'Imported', obj.category === 'interior' ? 'interior' : 'exterior',
       clamp(Math.round(obj.cols||36),2,400), clamp(Math.round(obj.rows||26),2,400));
-    if (Array.isArray(obj.tiles)) obj.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type || 'grass', crop: t.crop || '' }; });
-    else if (obj.tiles && typeof obj.tiles === 'object') m.tiles = obj.tiles;
+    m.tiles = normalizeWorkspaceTiles(obj.tiles); // Preserve per-tile extras such as ramps and plateau metadata in standalone imports.
+    m.visualHeights = normalizeVisualHeights(obj.visualHeights, m.cols, m.rows); // Standalone maps carry authored terrain heights.
+    if (obj.visualHeightBase && typeof obj.visualHeightBase === 'object' && !Array.isArray(obj.visualHeightBase)) {
+      m.visualHeightBase = normalizeVisualHeights(obj.visualHeightBase, m.cols, m.rows); // Avoid retaining moved building foundation stamps.
+    }
     m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
@@ -4925,6 +4931,10 @@ function importAny(obj) {
         clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
       m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
       m.tiles = normalizeWorkspaceTiles(src.tiles);
+      m.visualHeights = normalizeVisualHeights(src.visualHeights, m.cols, m.rows); // Workspace imports must preserve terrain heights alongside tiles.
+      if (src.visualHeightBase && typeof src.visualHeightBase === 'object' && !Array.isArray(src.visualHeightBase)) {
+        m.visualHeightBase = normalizeVisualHeights(src.visualHeightBase, m.cols, m.rows); // Preserve the empty/painted foundation base separately.
+      }
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
