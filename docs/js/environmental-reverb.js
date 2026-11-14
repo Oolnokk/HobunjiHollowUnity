@@ -62,7 +62,7 @@
   }
   function presetForArea(area) {
     const id = String(area || '').toLowerCase();
-    if (/cavern|cave|dungeon|mine|crypt|sewer|tunnel/.test(id)) return 'cavern';
+    if (/cavern|cave|dungeon|ruin|mine|crypt|sewer|tunnel/.test(id)) return 'cavern'; // Generated ruins must use the same long-decay acoustic space as their chambers/caverns.
     if (/temple[_-]?basement|basement|cellar/.test(id)) return 'basement';
     if (/map_i_temple|life[_-]?temple/.test(id)) return 'temple';
     if (/stable|barn/.test(id)) return 'stable';
