@@ -70,6 +70,31 @@ targetContext.enabled=true;targetContext.isDesktop=true;
 assert.equal(targetContext.computeAutoTarget(),null,'desktop ranged stays manual');
 assert.equal(targetContext.swapAutoTarget(0),false,'desktop cannot swap an assisted target');
 
+targetContext.isDesktop=false;targetContext.enabled=true;targetContext.activeTool='ranged';
+const leftTarget={id:'left-cycle',health:10,x:-20,y:20,areaId:'farm',state:'idle'}; // Screen-left wraparound candidate.
+const middleTarget={id:'middle-cycle',health:10,x:0,y:20,areaId:'farm',state:'idle'}; // Current target for left/right cycling checks.
+const rightTarget={id:'right-cycle',health:10,x:20,y:20,areaId:'farm',state:'chase'}; // Hostile successor when a target dies.
+targetContext.activeCameraAzimuthRad=()=>0;
+targetContext.hostileObjects=[leftTarget,middleTarget,rightTarget];
+targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.cycleAutoTarget(1),true,'right cycles toward screen-right');
+assert.equal(targetContext.manualAutoTarget,rightTarget);
+assert.equal(targetContext.cycleAutoTarget(1),true,'rightmost target wraps to screen-left');
+assert.equal(targetContext.manualAutoTarget,leftTarget);
+assert.equal(targetContext.cycleAutoTarget(-1),true,'leftmost target wraps to screen-right');
+assert.equal(targetContext.manualAutoTarget,rightTarget);
+targetContext.manualAutoTarget=middleTarget;middleTarget.health=0;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'the active hostile inherits a killed target ahead of idle prey');
+targetContext.isDesktop=true;
+vm.runInContext('desktopLockOnActive = true',targetContext);
+targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'desktop lock-on reacquires hostile targets');
+rightTarget.state='idle';targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),null,'desktop lock-on does not succeed to passive prey');
+vm.runInContext('desktopLockOnActive = false',targetContext);
+targetContext.isDesktop=false;targetContext.manualAutoTarget=null;
+assert.equal(targetContext.cycleAutoTarget(0),false,'neutral target stick does not cycle');
+
 const handlers = {}; // Captures handlers attached by the real target-stick installation.
 const timers = new Map(); // Deterministic hold timer callbacks without sleeping.
 let timerId = 0, selectedAngle = null, enabled = true, transitions = 0, buttonHidden = false; // Shared observable gesture results.

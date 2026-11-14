@@ -58,7 +58,7 @@
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <!-- Shared semantic input arbiter: resolves keyboard, controller, mouse and touch to one press-to-release owner before gameplay and combat can act. -->
-  <script src="js/gameplay-input-router.js?v=20261113sharedInput1"></script>
+  <script src="js/gameplay-input-router.js?v=20261113sharedInput1678fix2"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
@@ -3102,7 +3102,7 @@
   <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261113sharedInputMain1677"></script>
+  <script src="game.js?v=20261113targetCycle1678fix2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

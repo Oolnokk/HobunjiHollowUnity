@@ -8,6 +8,7 @@
   const HELD_WORLD_ACTIONS = new Set(['nest_take', 'bandit_tent_interact', 'corpse_hold_loot']); // World loot/harvest holds disabled during combat, unlike combat abilities and held-item tools.
   const active = new Map(); // Physical source + semantic input -> winning owner for the entire press/release cycle.
   const providers = new Map(); // Optional priority-sorted noncombat input handlers; new systems can register without adding branches to game.js.
+  const worldClaimPressCounts = new Map(); // The legacy world-claim registry is action-keyed; only the last physical source releases its press.
   let host = {}; // Game-specific context/action executors supplied once by game.js.
   let lastDecision = null; // Mobile-readable diagnostics for arbitration and suppressed inputs.
 
@@ -40,7 +41,14 @@
     return winner;
   }
   function finish(actionId, phase, source, owned) {
-    if (owned.kind === 'world-claim') window.WorldActionInputClaims?.dispatch?.(actionId, phase, { source });
+    if (owned.kind === 'world-claim') {
+      const remaining = (worldClaimPressCounts.get(actionId) || 1) - 1; // Keep the shared legacy hold alive while another physical device owns it.
+      if (remaining > 0) worldClaimPressCounts.set(actionId, remaining);
+      else {
+        worldClaimPressCounts.delete(actionId);
+        window.WorldActionInputClaims?.dispatch?.(actionId, phase, { source });
+      }
+    }
     else {
       const handler = phase === 'cancel' ? (owned.onCancel || owned.onRelease) : owned.onRelease;
       try { handler?.({ actionId, source, canceled: phase === 'cancel' }); }
@@ -58,6 +66,7 @@
     if (phase === 'release' || phase === 'cancel') {
       if (owned) { active.delete(key); return finish(actionId, phase, source, owned); }
       // Legacy press owners may have used WorldActionInputClaims directly before this module initialized.
+      if (worldClaimPressCounts.has(actionId)) return false; // A stray release may not end another physical source's hold.
       const consumed = !!window.WorldActionInputClaims?.dispatch?.(actionId, phase, { source });
       if (consumed) record(actionId, phase, source, 'world-claim');
       return consumed;
@@ -65,8 +74,10 @@
     if (owned) return owned.kind !== 'gameplay'; // Never dispatch auto-repeat as a second input.
     const world = window.WorldActionInputClaims?.claimFor?.(actionId);
     if (world && !holdBlocked(world.action)) {
+      const count = worldClaimPressCounts.get(actionId) || 0; // One legacy world press is shared by all simultaneous physical-source owners.
+      if (!count && window.WorldActionInputClaims.dispatch(actionId, 'press', { source }) !== true) return false;
+      worldClaimPressCounts.set(actionId, count + 1);
       active.set(key, { kind: 'world-claim', ownerId: world.ownerId });
-      window.WorldActionInputClaims.dispatch(actionId, 'press', { source });
       if (CONTEXT_ACTIONS.has(actionId)) window.Combat?.input?.abortAllPresses?.();
       record(actionId, phase, source, 'world-claim');
       return true;
@@ -118,6 +129,6 @@
   window.addEventListener?.('blur', cancelAll);
   window.GameplayInputRouter = Object.freeze({
     init, register, route, owns, blocksAttacks, holdBlocked, isHeldWorldAction, cancelAll,
-    snapshot: () => ({ lastDecision, inCombat: isInCombat(), active: [...active.entries()].map(([key, owner]) => ({ key, owner: owner.ownerId || owner.kind, action: owner.action || null })), registered: [...providers.keys()] }),
+    snapshot: () => ({ lastDecision, inCombat: isInCombat(), active: [...active.entries()].map(([key, owner]) => ({ key, owner: owner.ownerId || owner.kind, action: owner.action || null })), worldClaimPressCounts: [...worldClaimPressCounts.entries()], registered: [...providers.keys()] }),
   });
 })();

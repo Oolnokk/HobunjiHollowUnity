@@ -6030,7 +6030,7 @@
 
       function updateMobileAutoTargetCamera(dt) {
         const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
-        if (desktopLockOnActive && !target) releaseLockOn(); // Target died, escaped retention range, or the weapon was put away.
+        if (desktopLockOnActive && !target) releaseLockOn(); // findAutoTarget first attempts hostile succession; release only when none qualifies.
         const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
           || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
@@ -6152,6 +6152,18 @@
           if (!preview) manualAutoTarget = null;
           return null;
         }
+        if (!preview && manualAutoTarget && manualAutoTarget.health <= 0) {
+          const threatRange = desktopLockOnActive ? Math.max(autoTargetRange(), TILE * LOCK_ON_ACQUIRE_TILES) : autoTargetRange(); // A desktop lock can reacquire across its original 10-tile radius.
+          let closestThreat = null, closestDistance = Infinity; // Only enemies pursuing the player inherit a fallen target's lock.
+          for (const c of hostileObjects) {
+            if (!autoTargetCandidateValid(c, threatRange) || c.denDisplacedPrey || c._porakanekiPlannerControlled === true
+              || (c.state !== 'chase' && c.state !== 'searching') || (c._chunkCombatTarget?.health > 0)) continue;
+            const distance = Math.hypot(c.x - player.x, c.y - player.y);
+            if (distance < closestDistance && autoTargetVisible(c)) { closestThreat = c; closestDistance = distance; }
+          }
+          if (closestThreat) { manualAutoTarget = closestThreat; return closestThreat; }
+          if (desktopLockOnActive) { manualAutoTarget = null; return null; } // No active attacker: disengage instead of jumping to passive prey.
+        }
         if (meleeWeaponOut()) {
           const target = meleeAttackTargetCandidate(preview); // The same selection serves attacks and the read-only prey availability preview.
           if (!preview) manualAutoTarget = target;
@@ -6176,6 +6188,7 @@
       }
 
       function findAutoTarget() {
+        if (autoTargetCacheFrame === gameFrameSerial && autoTargetCacheValue?.health <= 0) invalidateAutoTargetCache(); // Death during a frame invalidates a previously selected target immediately.
         if (autoTargetCacheFrame === gameFrameSerial) return autoTargetCacheValue;
         autoTargetCacheValue = computeAutoTarget();
         autoTargetCacheFrame = gameFrameSerial;
@@ -6268,6 +6281,29 @@
         }
         if (!best) return false;
         manualAutoTarget = best;
+        invalidateAutoTargetCache();
+        return true;
+      }
+
+      function cycleAutoTarget(direction) {
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Shares both combat tools' existing target lock.
+        if (!mobileAutoTargetEnabled() || (!meleeWeaponOut() && !rangedActive) || !Number.isFinite(direction) || !direction) return false;
+        const selected = findAutoTarget(); // Keep the current live selection as the origin for left/right cycles.
+        const maxDist = desktopLockOnActive ? Math.max(autoTargetRange(), TILE * LOCK_ON_ACQUIRE_TILES) : autoTargetRange(); // Desktop lock-on uses its own acquisition radius.
+        const azimuth = activeCameraAzimuthRad(); // Project candidate positions onto camera-right, not fixed world east/west.
+        const rightX = Math.cos(azimuth), rightY = -Math.sin(azimuth); // Same camera-relative axes as the existing target stick.
+        const screenX = c => (c.x - player.x) * rightX + (c.y - player.y) * rightY; // Horizontal visual sorting for target cycling.
+        const candidates = hostileObjects.filter(c => (c === selected && autoTargetCandidateValid(c, autoTargetRetentionRange()))
+          || (autoTargetCandidateValid(c, maxDist) && autoTargetVisible(c))); // A retained lock remains in the cycle beyond fresh acquisition range.
+        if (candidates.length < 2) return false;
+        candidates.sort((a, b) => screenX(a) - screenX(b)
+          || Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y)
+          || hostileObjects.indexOf(a) - hostileObjects.indexOf(b)); // Stable tie-breakers for overlapping actors.
+        const index = candidates.indexOf(selected);
+        const next = index < 0 ? candidates[direction > 0 ? 0 : candidates.length - 1]
+          : candidates[(index + (direction > 0 ? 1 : -1) + candidates.length) % candidates.length];
+        if (next === selected) return false;
+        manualAutoTarget = next;
         invalidateAutoTargetCache();
         return true;
       }
@@ -29550,6 +29586,7 @@
         const statusEl = document.getElementById('controllerInputStatus'); // Used to diagnose browser mappings without a developer console.
         if (statusEl) statusEl.textContent = nextText;
       }
+      let controllerTargetHorizontalLatch = 0; // One target change per intentional horizontal right-stick deflection.
       function releaseControllerGameplayInput(reason = 'released') {
         for (const button of gamepadState.previous) {
           const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
@@ -29558,6 +29595,7 @@
         gamepadState.previous.clear();
         gamepadState.actionByButton.clear();
         gamepadState.activeShift = null;
+        controllerTargetHorizontalLatch = 0; // Blur, disconnect and modal transitions clear the horizontal-flick latch.
         input.x = 0; input.y = 0;
         controllerCameraX = 0; controllerCameraY = 0;
         controllerLookActive = false;
@@ -29626,6 +29664,7 @@
         }
         if (window.__mapEditorGizmoActive) {
           input.x = 0; input.y = 0; controllerLookActive = false;
+          controllerTargetHorizontalLatch = 0;
           gamepadState.previous.clear(); gamepadState.activeShift = null;
           return;
         }
@@ -29704,6 +29743,16 @@
         if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
+        const horizontalTargetIntent = rightStickOwner === 'camera' && mobileAutoTargetEnabled()
+          && Math.abs(rx) >= 0.6 && Math.abs(rx) > Math.abs(ry) * 1.2
+          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.entryMenuOpen?.()
+          && !window._desktopSelectionArc?.toolMenuOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
+        if (horizontalTargetIntent) {
+          const direction = Math.sign(rx); // Right selects screen-right; left selects screen-left.
+          if (!gamepadState.primeButtonsOnResume && controllerTargetHorizontalLatch !== direction) cycleAutoTarget(direction);
+          controllerTargetHorizontalLatch = direction;
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target selection'; // Camera follows the newly selected target rather than fighting the stick.
+        } else controllerTargetHorizontalLatch = 0; // Vertical/neutral input rearms the next horizontal flick.
         if (gamepadState.primeButtonsOnResume) {
           // A menu-closing B/View press must not become a fresh gameplay
           // Dodge/action press on the very next frame. Seed edge state from
@@ -30075,6 +30124,13 @@
           return true;
         }
         if (heldOnly) return false;
+        if (mobileAutoTargetEnabled() && e.deltaY && !cutscenePreviewActive && !dialogueZoomActive()
+          && !window._desktopSelectionArc?.entryMenuOpen?.() && !window._desktopSelectionArc?.toolMenuOpen?.()
+          && !window.FurniturePlacer?.isOpen?.() && !window.AuthoredCutsceneRuntime?.isActive?.()) {
+          e.preventDefault();
+          cycleAutoTarget(dir); // Wheel down selects screen-right, up selects screen-left; no camera zoom in lock-on.
+          return true;
+        }
         e.preventDefault();
         // The Director authors every camera beat of a cutscene (including
         // Zoom cards, cutscenePreviewZoomPercent) — manual wheel-zoom would
@@ -30682,6 +30738,7 @@
               return rect ? { id, width: rect.width, height: rect.height, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2 } : { id, missing: true };
             }),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
+            cycling: { controllerLatch: controllerTargetHorizontalLatch, desktopLockOnActive }, // Mobile-friendly targeting diagnostics.
             availableTarget: availableTarget?.id ?? availableTarget?.def?.label ?? null,
             active: mobileAutoCameraActive,
             targetLocked: !!manualAutoTarget,
