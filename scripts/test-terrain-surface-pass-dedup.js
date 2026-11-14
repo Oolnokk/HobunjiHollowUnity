@@ -92,13 +92,18 @@ const geometry = { userData: {
   hobunjiSurfaceStretch: { version: 3, mapping: 'edge-preserving-nine-slice' },
 }, attributes: { position: { count: 6 }, uv: { count: 6, itemSize: 2 } },
 getAttribute(name) { return this.attributes[name]; } }; // Used to model complete rock UVs and deliberately corrupted UVs.
-const rock = { isMesh: true, name: 'rock', userData: { naturalSurface: 'rocks' },
+const rock = { isMesh: true, name: 'rock', userData: { naturalSurface: 'rocks', terrainJigsawIgnore: true,
+  naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV', facetedSurfaceTextureOutline: true },
   material: { userData: { naturalSurface: 'rocks' } }, geometry }; // Used as the runtime natural-surface repair target.
 assert.equal(reassert(rock), false);
-assert.equal(remaps, 0, 'valid rock UVs do not rerun the mapper');
+assert.equal(remaps, 0, 'valid rock UVs with completed Jigsaw/outline decisions do not rerun the mapper');
+rock.userData.terrainJigsawIgnore = false;
+reassert(rock);
+assert.equal(remaps, 1, 'valid UVs missing ownership markers still invoke the wrappers that establish Jigsaw and outline policy');
+rock.userData.terrainJigsawIgnore = true;
 delete geometry.attributes.uv;
 reassert(rock);
-assert.equal(remaps, 1, 'lost UVs still force recovery');
+assert.equal(remaps, 2, 'lost UVs still force recovery');
 assert.equal(uvStats.missingUvSurfaceMarkersFound, 1);
 
 let now = 100; // Used to simulate several render passes in one frame.
