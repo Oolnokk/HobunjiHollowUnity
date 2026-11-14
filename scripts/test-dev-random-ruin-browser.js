@@ -830,13 +830,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           if(pressIndex>=0)window.DevRandomRuinInteractions.invoke(pressIndex);
           await sleep(4);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
-          const liveRope=beforePump.ropes[0];
-          const dx=Math.abs(liveRope.grabPoint.x-liveRope.anchor.x);
-          const dz=Math.abs(liveRope.grabPoint.z-liveRope.anchor.z);
-          deps.player.inputX=dx>=dz?1:0;
-          deps.player.inputY=dz>dx?1:0;
-          deps.player.inputStrength=1;
-          await sleep(12);
+          const pumpSamples=[]; // Verify the pendulum across frames, not at a coincident endpoint.
+          for(let frame=0;frame<20;frame++){
+            const liveRope=window.DevRandomRuinSimplePuzzles.snapshot().ropes[0];
+            const forward=liveRope.omega<0?-1:1; // RopeCore pumps in the current swing direction only.
+            deps.player.inputX=Math.cos(liveRope.yaw)*forward;
+            deps.player.inputY=Math.sin(liveRope.yaw)*forward;
+            deps.player.inputStrength=1;
+            await sleep(1);
+            pumpSamples.push(window.DevRandomRuinSimplePuzzles.snapshot().ropes[0]?.omega||0);
+          }
           const afterPump=window.DevRandomRuinSimplePuzzles.snapshot();
           deps.player.inputX=0;deps.player.inputY=0;deps.player.inputStrength=0;
           const interaction=window.DevRandomRuinInteractions.snapshot();
@@ -863,7 +866,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             startTopY:beforePump.ropes[0]?.startTopY??null,
             endTopY:beforePump.ropes[0]?.endTopY??null,
             weaponStowed:beforePump.ropeEquipment?.currentlyStowed===true && beforePump.ropeEquipment?.holstered>(beforeAttachEquipment?.holstered||0),
-            pumpChangedOmega:Math.abs((afterPump.ropes[0]?.omega||0)-(beforePump.ropes[0]?.omega||0))>.02,
+            pumpChangedOmega:pumpSamples.some(omega=>Math.abs(omega-(beforePump.ropes[0]?.omega||0))>.02), // Compare samples of actual input-driven momentum.
             releaseRow:releaseIndex>=0?interaction.rows[releaseIndex]:null,
             brakeRow:brakeIndex>=0?interaction.rows[brakeIndex]:null,
             worldPopupVisible:interaction.worldPopupVisible,

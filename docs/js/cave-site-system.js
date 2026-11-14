@@ -200,7 +200,28 @@
     };
   }
 
-  function registerOutdoorPuzzleSites(zoneId, balconies = []) {
+  function outdoorPuzzleSeclusion(zoneId, shelves, sourceGrid = null) {
+    const layout = zoneLayout(zoneId); // Retained as a fallback for headless tools.
+    const grid = sourceGrid || wildlifeDeps?.zoneScenes?.get?.(zoneId)?.grid || layout?.grid; // Prefer the current cliff network's real grid even before the zone scene is registered.
+    const scorer = window.WildernessSeclusion; // Shared with generated ruin/shrine sites; loaded before the cave system.
+    if (!Array.isArray(grid) || !grid.length || !scorer?.sampleVisibility) return null;
+    const rows = grid.length, cols = grid[0]?.length || 0; // Grid bounds for the bounded 16-direction LOS probe.
+    if (!cols) return null;
+    const options = {
+      cols, rows, getTile: (c, r) => grid[r]?.[c] || null,
+      canStand: tile => !!tile && !tile.incline && !tile.borderEscarpment && !tile.distantBoundaryLandscape
+        && !['rock', 'wall', 'river', 'stream', 'waterfall'].includes(tile.type),
+      blocksSight: tile => !!tile && (tile.incline || tile.borderEscarpment || tile.distantBoundaryLandscape
+        || ['rock', 'wall'].includes(tile.type)),
+      elevation: tile => Number(tile?.elevTier) || 0,
+    }; // Ground observers and steep cliff masses are identified by the already-built route grid.
+    return shelves.map(shelf => ({
+      shelf,
+      visibility: scorer.sampleVisibility(options, Math.floor(shelf.x), Math.floor(shelf.z)),
+    }));
+  }
+
+  function registerOutdoorPuzzleSites(zoneId, balconies = [], terrainGrid = null) {
     const key = String(zoneId || ''); // Separate zone key avoids ever replacing an ordinary den/cave profile.
     const candidates = (balconies || []).filter(shelf =>
       shelf?.base?.footprint?.length && shelf?.footprint?.length >= 2
@@ -213,19 +234,57 @@
       const other=Math.floor(rng()*(index+1)); // Stable Fisher-Yates scatter, so the 24-door cap does not cluster in the first grid row.
       [candidates[index],candidates[other]]=[candidates[other],candidates[index]];
     }
-    const selected = candidates.filter(() => rng() < OUTDOOR_PUZZLE_DENSITY).slice(0, MAX_OUTDOOR_PUZZLE_CAVES);
+    const rolled = candidates.filter(() => rng() < OUTDOOR_PUZZLE_DENSITY).slice(0, MAX_OUTDOOR_PUZZLE_CAVES);
     for(const shelf of candidates) {
-      if(selected.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
-      if(!selected.includes(shelf)) selected.push(shelf);
+      if(rolled.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
+      if(!rolled.includes(shelf)) rolled.push(shelf);
     }
+    ensureStateLoaded(); // Read this cycle's pre-upgrade solved cave records before choosing new cave ids.
+    const legacySignatureFor = shelf => key + ':puzzle-cliff:' + String(shelf.id); // Original identity must survive a code update within the same Shift.
+    const retainedLegacy = candidates.filter(shelf => runtimeStateBySignature.has(legacySignatureFor(shelf))); // Existing player progress wins over a new concealment preference.
+    const ranked = outdoorPuzzleSeclusion(key, candidates, terrainGrid); // Re-rank valid real balcony positions, never invent unwalkable entrances.
+    const rankedById = new Map(); // Selected profiles carry the measured seclusion for mobile debugging.
+    let selected = rolled; // No runtime grid (e.g. unit tests): retain the existing deterministic roll.
+    if(ranked?.length) {
+      const rankRng = makeRng(key + ':concealed-cliffs:' + currentStateIdentity()); // Dedicated stream preserves existing density rolls.
+      for(const entry of ranked) {
+        entry.priority = entry.visibility.concealmentScore * 5 + rankRng() * 1.2;
+        rankedById.set(entry.shelf.id, entry.visibility);
+      }
+      ranked.sort((a,b) => b.priority-a.priority || String(a.shelf.id).localeCompare(String(b.shelf.id)));
+      const chosen = []; // Keep secret entrances spatially scattered instead of filling one extremely secluded ledge cluster.
+      for (const entry of ranked) {
+        if (chosen.length >= rolled.length) break;
+        if (chosen.some(previous => Math.hypot(previous.shelf.x-entry.shelf.x, previous.shelf.z-entry.shelf.z) < 7)) continue;
+        chosen.push(entry);
+      }
+      for (const entry of ranked) {
+        if (chosen.length >= rolled.length) break;
+        if (!chosen.includes(entry)) chosen.push(entry); // Keep the established density when terrain has too few separated shelves.
+      }
+      selected = chosen.map(entry => entry.shelf);
+    }
+    if (retainedLegacy.length) {
+      const saved = new Set(retainedLegacy.map(shelf => shelf.id)); // Earlier cave solves must not disappear just because visibility ranking was upgraded.
+      selected = [...retainedLegacy, ...selected.filter(shelf => !saved.has(shelf.id))].slice(0, rolled.length);
+    }
+    const cycleIdentity = currentStateIdentity(); // New Shift incarnation owns fresh cave map IDs and unopened treasure.
     const sites = selected.map(shelf => {
-      const denId = 'puzzle_cliff_' + hashSeed(key + ':' + shelf.id).toString(36); // Stable synthetic cavern id, not an animal-den id.
-      return puzzleProfile(key, denId, key + ':puzzle-cliff:' + String(shelf.id),
-        'independent_cliff', { shelfId:shelf.id, mouthAnchor:{x:Math.floor(shelf.x),y:Math.floor(shelf.z)} });
+      const oldSignature = legacySignatureFor(shelf); // Pre-upgrade save key is already isolated by the world|cycle cave-state payload.
+      const existing = runtimeStateBySignature.has(oldSignature); // Preserve its map id and opened gate in this current Shift only.
+      const denId = 'puzzle_cliff_' + hashSeed(existing ? key + ':' + shelf.id : cycleIdentity + ':' + key + ':' + shelf.id).toString(36);
+      return puzzleProfile(key, denId, existing ? oldSignature : cycleIdentity + ':' + key + ':puzzle-cliff:' + String(shelf.id),
+        'independent_cliff', { shelfId:shelf.id, mouthAnchor:{x:Math.floor(shelf.x),y:Math.floor(shelf.z)},
+          seclusion: rankedById.get(shelf.id) || null });
     });
+    const newIds = new Set(sites.map(site => site.mapId)); // All previous-cycle cave interiors not in this set must be retired.
+    let retired = 0; // Coalesce world-save writes when many old puzzle caves disappear in one Shift.
     for(const old of outdoorPuzzleSitesByZone.get(key) || []) {
-      if(!sites.some(site => site.mapId === old.mapId)) sitesByMapId.delete(old.mapId);
+      if(newIds.has(old.mapId)) continue;
+      resetCave(old.mapId, { skipSave: true }); // Remove entrance, challenges and cached interiors, not just the cliff doorway.
+      retired++;
     }
+    if(retired) persistState();
     outdoorPuzzleSitesByZone.set(key, sites);
     for(const site of sites) sitesByMapId.set(site.mapId,site);
     return clone(sites);
@@ -1338,7 +1397,7 @@
     return ruinParentZone === zoneId && wildlifeDeps?.getCurrentArea?.() === window.DevRandomRuin?.getState?.()?.mapId;
   }
 
-  function resetCave(mapId) {
+  function resetCave(mapId, options = {}) {
     ensureStateLoaded();
     const profile = sitesByMapId.get(mapId); // Old signature's discovery/loot state must not follow the relocated cave slot.
     if (profile) runtimeStateBySignature.delete(profile.signature);
@@ -1373,7 +1432,7 @@
     mushroomVisualDayByMapId.delete(mapId);
     ruinTransitionMaps.delete(mapId);
     sitesByMapId.delete(mapId);
-    persistState();
+    if (!options.skipSave) persistState(); // Bulk Tothal retirement writes once after the whole set is replaced.
   }
 
   function markDiscovered(profile, state) {
@@ -1834,6 +1893,7 @@
       caveCount: sites.length, // Ordinary caves only.
       puzzleCaveCount: cliffSites.length + rockSites.length, // Separate from the ordinary cave count.
       outdoorPuzzleCaveCount:cliffSites.length,
+      outdoorSiteVisibility:cliffSites.map(site => ({ mapId:site.mapId, shelfId:site.shelfId, seclusion:site.seclusion || null })), // Phone-readable Shift sightline diagnostics.
       rockPuzzleCaveCount:rockSites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
