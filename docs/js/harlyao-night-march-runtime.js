@@ -513,7 +513,9 @@
 
   function commanderTarget() {
     const leader = commander(); // Cheap target accessor used by the beacon, without allocating a whole debug snapshot.
-    if (!leader || !routeState().active) return null;
+    if (!leader) return null;
+    const hour = gameHour(); // The installed route already owns the day; the per-frame beacon needs only the active-hour gate.
+    if (hour < num(cfg?.activeHours?.start, 0) || hour >= num(cfg?.activeHours?.end, 6)) return null;
     const c = leader.entity; // Native movement may have advanced since the last planner tick.
     const live = c?.health > 0 && c.areaId === state.zoneId;
     const x = live ? c.x / deps.TILE : leader.x, z = live ? c.y / deps.TILE : leader.y; // Target always points at this actor.
