@@ -120,7 +120,18 @@ assert.equal(api.surfaceLiftAt(2.5,3.5,'town'),0,'no ghost walkable surface surv
 assert.equal(api.worldSurfaceTopAt(0.5,0.5,0.73,'town'),0.73,
   "no active support means terrain's actual world Y remains authoritative");
 const registeredRailProviders = []; // Captures the narrow physical guard registered through the game's existing footprint provider.
-context.window.THREE = { Box3: class {
+context.window.THREE = {
+  Vector3: class {
+    constructor(x=0,y=0,z=0) { this.x=x; this.y=y; this.z=z; }
+    applyMatrix4(matrix) {
+      const e=matrix.elements,x=this.x,y=this.y,z=this.z; // Mirror THREE world-transform for one-time rail orientation baking.
+      this.x=e[0]*x+e[4]*y+e[8]*z+e[12];
+      this.y=e[1]*x+e[5]*y+e[9]*z+e[13];
+      this.z=e[2]*x+e[6]*y+e[10]*z+e[14];
+      return this;
+    }
+  },
+  Box3: class {
   setFromObject(mesh) { this.min = mesh.testMin; this.max = mesh.testMax; return this; }
   isEmpty() { return false; }
 } }; // Only the Box3 interface needed by the railing regression fixture.
@@ -137,5 +148,28 @@ assert.equal(api.railBlocksBox(10.1,20.5,0.12,1.3), false, 'airborne feet above 
 assert.equal(api.registerPieceRails(railGroup, { id: 'test-porch-rails' }, 10, 20), 1);
 assert.equal(registeredRailProviders.length, 1, 'replacing a piece does not duplicate the provider');
 
+// Authored bridge rails use the same provider but a cached oriented rectangle;
+// no full bridge tile or vast diagonal AABB becomes an invisible solid wall.
+const rotation=Math.PI/4, cosine=Math.cos(rotation), sine=Math.sin(rotation); // Rotates the representative long bridge railing.
+const railMesh={
+  isMesh:true,
+  userData:{authoredPart:{railingCollision:true}},
+  geometry:{boundingBox:{min:{x:-2,y:.55,z:-.09},max:{x:2,y:.88,z:.09}}},
+  matrixWorld:{elements:[cosine,0,-sine,0,0,1,0,0,sine,0,cosine,0,30,0,35,1]},
+  testMin:{x:28.4,y:.55,z:33.4},testMax:{x:31.6,y:.88,z:36.6},
+}; // A rotated rail deliberately has a much larger AABB than its slender visible geometry.
+const deckMesh={isMesh:true,userData:{authoredPart:{walkableElevation:true}}}; // Deck must never block its own walkable center.
+const bridgeGroup={parent:scene,userData:{meshById:new Map([['rail',railMesh],['deck',deckMesh]])},
+  updateWorldMatrix(){}};
+assert.equal(api.registerFurnitureRails(bridgeGroup),1,'Only the authored beam is a rail collider');
+assert.equal(registeredRailProviders.length,1,'Existing house and bridge rails share one collision provider');
+assert.equal(api.debugSnapshot().bridgeRailColliders,1,'Mobile debug reports the precise bridge colliders');
+assert(api.railBlocksBox(30,35,.12),'Physical rail midpoint blocks actor movement');
+assert(!api.railBlocksBox(30,36,.12),'Far empty corner of rotated rail AABB remains walkable');
+assert(!api.railBlocksBox(30,35,.12,1.6),'Projectiles above the rail are not stopped by its footprint');
+assert.equal(api.registerFurnitureRails(bridgeGroup),1,'Re-registering a bridge replaces its old exact rail shapes');
+assert.equal(api.unregisterFurnitureRails(bridgeGroup),1,'Town furniture teardown removes cached rail shapes');
+assert(!api.railBlocksBox(30,35,.12),'Removed bridges do not leave ghost rail blockers');
+assert(api.railBlocksBox(10.1,20.5,.12),'Removing a bridge preserves unrelated porch collision');
 
 console.log('walkable elevation regression checks passed');
