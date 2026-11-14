@@ -15,6 +15,7 @@ async function main() {
   let ceremonies = 0; // Counts Slagothim Koma events without rendering Three.js.
   let interruptions = 0; // Counts aborted ceremonial drinks after combat begins.
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
+  const audioCalls = []; // Records each yawn playback to separate real recordings from fallback composition.
   let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
@@ -89,7 +90,7 @@ async function main() {
       combatAudioSpatial: actor => { audioActor = actor; return { gain: 1 }; },
     },
     AnimalVoiceIndependentPlayback: {
-      playIndependent: (_url, opts) => { audioOptions = opts; return { stop() {} }; },
+      playIndependent: (url, opts) => { audioOptions = opts; audioCalls.push({ url, opts }); return { stop() {} }; },
     },
     CharacterVoiceOwner: { request: () => ({}), bindStop() {}, release() {} },
     __farmLog() {}, addEventListener(name, callback) { listeners[name] = callback; },
@@ -139,7 +140,8 @@ async function main() {
   assert.ok(audioOptions, 'the first yawn must actually play a voice, not merely return a playback plan');
   assert.equal(audioOptions.pitchSemitones, 6);
   assert.equal(audioOptions.tempo, 0.8);
-  assert.equal(audioOptions.preservePitchOnFallback, true, 'a male-borrowed or stretched yawn must never lower its pitch on native media');
+  assert.equal(audioOptions.preservePitchOnFallback, true, 'a borrowed yawn must preserve pitch on native media');
+  assert.equal(audioOptions.breathYawnDurationS, undefined, 'existing male yawn recordings must not be synthesized');
   assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
   assert.equal(audioActor?.x, 128);
   walker.root.position.x = 6;
@@ -193,8 +195,9 @@ async function main() {
   assert.equal(ceremonies, 2, 'first eligible yawn after 24 rolling in-game hours repeats Koma');
 
   const noYawnClip = await runtime._test.voiceFor('kenkari', 'female');
-  assert.equal(noYawnClip.source, 'breathing x4 duration');
-  assert.equal(noYawnClip.tempo, 0.2, 'female tempo 0.8/4 is a genuine fourfold duration');
+  assert.equal(noYawnClip.source, 'reconstructed breathing');
+  assert.equal(noYawnClip.tempo, 1, 'fallback breathing must not run the old robotic quarter-speed WSOLA');
+  assert.equal(noYawnClip.cadence, 0.8, 'species-relative tempo becomes grain cadence without stretching the actual breath');
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
   assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/breath.m4a');
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
@@ -306,7 +309,19 @@ async function main() {
   window.Fishing = { state: { active: true } };
   hour += 2; ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'active fishing animation owns the body and defers yawns');
-  console.log('Player/NPC hourly yawns, 75% slow, guarded stand/prone/tool poses, short Rested and eight-hour Well Rested: OK');
+  window.Fishing.state.active = false;
+  window.__hobunjiPlayerProfile.appearance.speciesId = 'mao-ao';
+  playerRested = false;
+  hour += 2; ms += 600; frame({ timestamp: ms }); // Start an audible un-rested fallback yawn before its five-second cleanup.
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
+  for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
+  assert.ok(audioCalls.some(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
+    && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
+    && call.opts.tempo === 1 && call.opts.pitchSemitones === 7),
+    'missing yawn recordings use a five-second composition with species pitch/cadence');
+  assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
+    && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
+  console.log('Player/NPC fatigue, reconstructed breathing fallback, voice ownership, and rested buffs: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

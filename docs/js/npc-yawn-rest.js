@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 3; // Player fatigue and separate Rested / Well Rested change this shared runtime contract.
+  const VERSION = 4; // Fallback yawns now reconstruct a five-second breath instead of running WSOLA at quarter-speed.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -185,9 +185,10 @@
       return {
         url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['1'] || BREATH_FALLBACK,
         pitch: Number(mod.pitchSemitones) || 0,
-        tempo: (Number(mod.tempo) || 1) / 4,
+        tempo: 1, // The source breath's natural pitch/time contours stay intact; the composer owns its five-second duration.
+        cadence: Number(mod.tempo) || 1, // Reuses each species/gender's combat voice tempo as the grain pacing.
         gain: Number(mod.gain) || 1,
-        source: 'breathing x4 duration',
+        source: 'reconstructed breathing',
       };
     })());
     return voicePlans.get(key);
@@ -230,6 +231,8 @@
     entry.voiceClaim = claim;
     entry.voice = renderer(plan.url, {
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
+      breathYawnDurationS: plan.cadence ? YAWN_DURATION_S : undefined, // Only breathing fallbacks are composed; authentic yawns never enter this path.
+      breathYawnCadence: plan.cadence || undefined, // Keeps species-relative speaking/breathing cadence without stretching a transient 4x.
       preservePitchOnFallback: true, // A locked/unsupported Web Audio device must not turn a fourfold breath stretch into a low-pitched recording.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
@@ -240,7 +243,8 @@
     });
     owner?.bindStop?.(claim, seconds => entry.voice?.stop?.(seconds));
     lastVoice = { npcId: walker.rec?.id, species: identity.species, gender: identity.gender,
-      source: plan.source, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume };
+      source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
+      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume };
   }
 
   function restorePose(entry) {
@@ -471,7 +475,7 @@
 
   window.RuntimeFrameScheduler?.register?.('npc-yawn-rest', frame, {
     phase: 'pre-render', owner: 'NpcYawnRest',
-    description: 'NPC rested timers, five-second yawns, pitch-preserving voice fallback and daily Koma drink',
+    description: 'NPC rested timers, five-second yawns, natural reconstructed breathing fallback and daily Koma drink',
   });
   window.addEventListener?.('hobunji-time-passage', event => {
     if (event?.detail?.kind === 'sleep' && Number(event.detail.hours) > 0) playerWakePending = true; // Only actual completed player Sleep, never Wait or dev time skips.
