@@ -63,8 +63,8 @@ assert.deepEqual(
   'Carpenter and mine retain approved positions while the complete IKMC porch relocates to the southwest edge'
 );
 assert.deepEqual(map.rivers[0].nodes[1], [12, 15], 'River must follow the screenshot-approved bend');
-assert.equal(Object.values(map.tiles).filter(tile => tile.type === 'path').length, 601, 'Screenshot-approved road coverage');
-assert.equal(Object.values(map.tiles).filter(tile => tile.type === 'stream').length, 237, 'Screenshot-approved stream coverage');
+assert.equal(Object.values(map.tiles).filter(tile => tile.type === 'path').length, 594, 'Screenshot-approved road coverage');
+assert.equal(Object.values(map.tiles).filter(tile => tile.type === 'stream').length, 244, 'Screenshot-approved stream coverage');
 
 
 const { tiles: runtimeTiles, ...runtimeOther } = map; // Runtime data excluding its storage-specific tile representation.

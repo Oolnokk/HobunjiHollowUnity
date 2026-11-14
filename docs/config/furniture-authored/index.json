@@ -358,6 +358,10 @@
       "file": "config/furniture-authored/tothalWitchBomb.json"
     },
     {
+      "key": "townStairBridge",
+      "file": "config/furniture-authored/townStairBridge.json"
+    },
+    {
       "key": "trough",
       "file": "config/furniture-authored/trough.json"
     },

@@ -1,0 +1,42 @@
+name: Town stream bridge regression
+on:
+  pull_request:
+    paths:
+      - 'docs/config/maps/hobunji_hollow_town.map.json'
+      - 'docs/config/town-workspace-v1.json'
+      - 'docs/config/furniture-authored/townStairBridge.json'
+      - 'docs/config/furniture-authored/index.json'
+      - 'docs/js/town-zone-buildings.js'
+      - 'docs/js/npc-pathfinding.js'
+      - 'docs/js/town-player-body-elevation-bridge.js'
+      - 'docs/tools/map-editor/index.html'
+      - 'scripts/test-town-map-authority.js'
+      - 'scripts/test-town-stream-bridge.js'
+      - 'scripts/test-walkable-elevation-surfaces.js'
+      - '.github/workflows/town-stream-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate bridge runtime syntax
+        run: |
+          node --check docs/js/town-zone-buildings.js
+          node --check docs/js/npc-pathfinding.js
+          node --check docs/js/town-player-body-elevation-bridge.js
+          node --check scripts/test-town-stream-bridge.js
+      - name: Check town map authority and latest elevation
+        run: node scripts/test-town-map-authority.js
+      - name: Check the path, water and bridge end-to-end
+        run: node scripts/test-town-stream-bridge.js
+      - name: Check exact rotated walkable stair and deck support
+        run: node scripts/test-walkable-elevation-surfaces.js

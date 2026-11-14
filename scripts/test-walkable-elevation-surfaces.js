@@ -90,4 +90,23 @@ const porch = api.supportAt(11.5, 20.5, 'town');
 assert.equal(porch.kind, 'porch');
 assert.equal(Math.round(porch.bounds.topY * 1000), 380, 'porch support top includes building elevation');
 
+// An angled bridge must not turn its much larger axis-aligned bounding box into invisible walkable water.
+const bridgeId=api.registerBox({
+  minX:-1,maxX:7,minZ:0,maxZ:8,baseY:0,topY:.55
+}, {id:'test-angled-bridge',kind:'furniture',area:'town',bridgeBaseY:0,bridgeFootprints:[
+  {ax:0,az:0,ux:6,uz:6,vx:-1,vz:1,det:12,topY:.55},
+  {ax:6,az:6,ux:.7,uz:.7,vx:-1,vz:1,det:1.4,topY:.12}
+]});
+assert.equal(bridgeId,'test-angled-bridge','bridge support must register without creating duplicate regions');
+assert.equal(Math.round(api.surfaceLiftAt(2.5,3.5,'town')*1000),550,
+  'a player in the diagonal bridge deck rises to its surface');
+assert.equal(api.surfaceLiftAt(5,1,'town'),0,
+  'a player in the bounding rectangle but outside the actual bridge remains at water level');
+assert.equal(Math.round(api.surfaceLiftAt(5.85,6.85,'town')*1000),120,
+  'one-tile stair flights use the actual tread top, not the deck height');
+assert.equal(api.surfaceLiftAt(2.5,3.5,'farm'),0,
+  'the town bridge never adds a raised surface in other areas');
+assert.equal(api.unregister(bridgeId),true,'bridge support unregisters cleanly after replacement');
+assert.equal(api.surfaceLiftAt(2.5,3.5,'town'),0,'no ghost walkable surface survives teardown');
+
 console.log('walkable elevation regression checks passed');

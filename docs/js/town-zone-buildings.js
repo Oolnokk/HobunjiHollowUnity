@@ -165,6 +165,7 @@
   // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
   let _townSpawnGeneration = 0; // Invalidates async piece loads when live reflection replaces the town scene.
   let _townDecorFurnitureGroups = []; // Meshes/groups from the town map's own decor+furniture arrays; disposed and rebuilt on every call, same as _townBuildingGroups.
+  let _townDecorFurnitureGeneration = 0; // Cancels outdated authored bridge loads after a town-map refresh.
 
   // Mirrors spawnZoneDecorFurniture for the town map's own decor/furniture
   // arrays (map_hobunji_town's `decor`/`furniture`, authored via the Map
@@ -174,6 +175,7 @@
   // Unlike the zone version, this always disposes and rebuilds (no "already
   // spawned" guard) so it's safe to call again after a live reflection.
   function spawnTownDecorFurniture() {
+    const generation = ++_townDecorFurnitureGeneration; // Identifies the current town furniture render request.
     const townScene = deps.getTownScene();
     const townMap = deps.getTownZone();
     for (const mesh of _townDecorFurnitureGroups) {
@@ -240,6 +242,34 @@
       _townDecorFurnitureGroups.push(result.mesh);
     }
     for (const f of furnitureDefs) {
+      if (f.authoredFurnitureKey) {
+        // Static authored bridges are not processing stations or craftable furniture; load their exact authored geometry.
+        const key = f.authoredFurnitureKey; // Maps this placement to docs/config/furniture-authored/<key>.json.
+        if (!window.AuthoredFurniture?.load) {
+          deps.debugLog('Town authored furniture runtime not loaded: ' + key, 'warn');
+          continue;
+        }
+        window.AuthoredFurniture.load(key).then(data => {
+          if (generation !== _townDecorFurnitureGeneration || townScene !== deps.getTownScene()) return;
+          if (!data?.parts?.length) { deps.debugLog('Town authored furniture missing: ' + key, 'warn'); return; }
+          const group = window.AuthoredFurniture.buildGroup(data, f.color || 0x96714b);
+          if (f.tileSpanTiles != null) window.AuthoredFurniture.setTileSpan?.(group, f.tileSpanTiles);
+          const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, f.col, f.row);
+          group.position.set(f.col + .5, y, f.row + .5);
+          applyPlacementTransform(group, f, y);
+          group.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'furniture', id: f.id || null,
+            key: f.key || key, col: f.col, row: f.row, postX: f.postX || 0, postY: f.postY || 0,
+            postZ: f.postZ || 0, rotY: f.rotY || 0, tileSpanTiles: f.tileSpanTiles || data.tileSpan?.totalTiles,
+            authoredFurnitureKey: key };
+          group.userData.townBridgeCrossing = !!f.bridgeCrossing; // Inspectable in the mobile Pixel Probe and dev furniture tools.
+          deps.markOutline(group); deps.markFurnitureEdgeId(group);
+          townScene.add(group);
+          _townDecorFurnitureGroups.push(group);
+          window.HobunjiWalkableElevation?.refreshFurniture?.(); // Update the walkable bridge support after async authored geometry arrives.
+          window.BuildingGrassSuppression?.refreshTown?.();
+        }).catch(error => deps.debugLog('Town authored furniture ' + key + ': ' + String(error?.message || error), 'warn'));
+        continue;
+      }
       const def = deps.PROCESSING_FURNITURE_DEFS[f.key];
       if (!def) continue;
       const group = deps.buildFurnitureVisual(f.key, def.color || 0x888888);
