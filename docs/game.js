@@ -5695,6 +5695,13 @@
           return;
         }
         if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
+        const retaliatingPet = dmgOpts?.attacker; // An actual enemy of the player can recognize which ground companion just wounded it.
+        if (window.EnemyPetTargeting?.shouldRetaliateToPetHit?.(c, retaliatingPet, players, currentArea) &&
+            hostileObjects.has(c) && companionObjects.has(retaliatingPet)) {
+          c.targetPlayer = retaliatingPet; // Redirect the next existing chase/attack tick without replacing a committed strike or another faction's target.
+          window.__farmLog?.('[enemy-aggro] ' + (c.id || c.creatureKey || 'enemy') + ' retaliates against ' +
+            (retaliatingPet.id || retaliatingPet.creatureKey || 'pet'), 'combat');
+        }
         // Every attack staggers its target — outright cancels whatever the
         // creature was mid-attack on (a telegraphed bite, a named attack
         // like Pounce) rather than just pausing it through the knockback
