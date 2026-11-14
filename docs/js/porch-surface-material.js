@@ -17,7 +17,8 @@
   const SURFACE_SPLIT_ANGLE_DEG = 24; // Same smooth-edge split threshold used by the furniture surface workflow.
   const DEBUG_ENABLED = new URLSearchParams(location.search).get('porchMatDebug') === '1';
 
-  const materialCache = new Map(); // Texture path -> shared tinted material used by every matching porch face.
+  const materialCache = new Map(); // Texture path -> shared tinted material used by solid entrance and porch faces.
+  const walkableTopMaterials = new Map(); // Texture path -> identical wood finish, but an isolated shader for porch/stair walking surfaces.
   const textureStatus = new Map(); // Texture path -> diagnostic load state.
   let lastBuild = null;
   let totalConvertedFaces = 0;
@@ -73,12 +74,31 @@
       finalTexture.needsUpdate = true;
       material.map = finalTexture;
       material.needsUpdate = true;
+      const walkable = walkableTopMaterials.get(texturePath); // Keeps walkable decks synchronized with the one asynchronous wood texture/tint load.
+      if (walkable) {
+        walkable.color.copy(material.color);
+        walkable.map = finalTexture;
+        walkable.needsUpdate = true;
+      }
       log(`loaded ${texturePath} with ${WOOD_TINT} (${textureStatus.get(texturePath)})`);
     }, undefined, error => {
       textureStatus.set(texturePath, 'load-failed');
       log(`texture load failed: ${error?.message || error || texturePath}`, 'warn');
     });
 
+    return material;
+  }
+
+  function materialForWalkableTop() {
+    const original = materialForTag('porch'); // Shares the existing wood finish and texture request with rails, frames, and doors.
+    const texturePath = WOOD_TEXTURE_PATH;
+    let material = walkableTopMaterials.get(texturePath);
+    if (!material) {
+      material = typeof original.clone === 'function' ? original.clone()
+        : new THREE.MeshLambertMaterial({ color: WOOD_TINT_HEX, side: THREE.DoubleSide }); // Supports the minimal no-clone editor/test Three stub.
+      material.map = original.map || null;
+      walkableTopMaterials.set(texturePath, material);
+    }
     return material;
   }
 
@@ -277,8 +297,11 @@
         uv[index * 2 + 1] = (p.dot(basis.v) - minV) / spanV;
       }
       geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-      record.mesh.material = materialForTag(record.tag);
+      const walkableTop = (record.tag === 'porch' || record.tag === 'porchStair')
+        && record.face?.extensionFace === 'top'; // Only actual deck/tread upper quads may be invisible to held gear; porch ceilings, sides and railings remain solid.
+      record.mesh.material = walkableTop ? materialForWalkableTop() : materialForTag(record.tag);
       record.mesh.userData = record.mesh.userData || {};
+      if (walkableTop) record.mesh.userData.hobunjiGroundTopFacesOnly = true; // Shared with cavern top-face x-ray; never uses the solid entrance-wood material.
       record.mesh.userData.hobunjiPorchSurfaceMaterial = {
         tag: record.tag,
         surfaceClass: record.surfaceClass,
