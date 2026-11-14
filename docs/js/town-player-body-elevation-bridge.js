@@ -382,7 +382,7 @@
       const topY=elevationY+(balcony.heightMode==='wall'
         ? groundLocalY+finite(piece.base?.height,1.4) : finite(balcony.height,groundLocalY+1.4));
       const id=piece.id+':'+gridX+','+gridZ+':'+balcony.id;
-      roofHatches.set(id,{col,row,topY,owner:group,area:options.area||'town',mapId:balcony.access.mapId});
+      roofHatches.set(id,{col,row,topY,owner:group,area:options.area||'town',mapId:balcony.access.mapId,balconyId:balcony.id}); // Explicit interior exit must match both this room and its exact balcony.
     }
     return ids;
   }
