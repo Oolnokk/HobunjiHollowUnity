@@ -149,6 +149,53 @@ for (const [tier, spec] of Object.entries(SPEC)) {
     else globalThis.DevRandomRuinLichThemes=previousThemes;
   }
 }
+// If the theme runtime becomes available in stages, already mounted hazards
+// cannot be duplicated on the next frame's retry.
+{
+  class Node {
+    constructor(){this.children=[];this.userData={};this.position={set(){}};this.rotation={};}
+    add(child){this.children.push(child);child.parent=this;}
+    remove(child){this.children=this.children.filter(item=>item!==child);}
+  }
+  class Geometry{dispose(){}}
+  class Material{dispose(){}}
+  class Mesh extends Node{constructor(geo,mat){super();this.geometry=geo;this.material=mat;}}
+  const THREE={Group:Node,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,MeshBasicMaterial:Material};
+  const DS={registerSurface(){},registerPit(){},clearScope(){}};
+  const previous=globalThis.DevRandomRuinLichThemes;
+  try {
+    for (const theme of ['hronal','kanthic']) {
+      const plan=Jump.compose({shaft:37,spacing:10,floors:2,theme});
+      const made=[]; // The first retry deliberately fails after one physical hazard has mounted.
+      let failed=false;
+      globalThis.DevRandomRuinLichThemes={
+        activeTheme:()=>theme,
+        addPlatformPillar:props=>{
+          if(!failed&&made.length===1){failed=true;return null;}
+          made.push(props.id);return props;
+        },
+        createPlasmPatch:(_tiles,opts)=>{
+          if(!failed&&opts?.label!=='shaft-pit'){failed=true;return null;}
+          made.push(opts?.label||'platform');return {dispose(){}};
+        },
+      };
+      const runtime=Jump.mount(plan,{THREE,DynamicSurfaces:DS,parent:new Node(),tradition:theme});
+      runtime.tick();
+      assert.equal(runtime.getState().hazardsAttached,false,`${theme}: partial build is retryable`);
+      runtime.tick();
+      assert.equal(runtime.getState().hazardsAttached,true,`${theme}: second attempt finishes`);
+      const expected=plan.platforms.filter(p=>p.kind===(theme==='hronal'?'pillar':'plasm')).length
+        +(theme==='kanthic'?1:0);
+      assert.equal(made.length,expected,`${theme}: no duplicate on retry`);
+      if(theme==='hronal')assert.equal(new Set(made).size,made.length,'one record per Hronal pillar');
+      if(theme==='kanthic')assert.equal(made.filter(id=>id==='shaft-pit').length,1,'Kanthic pit created only once');
+      runtime.dispose();
+    }
+  } finally {
+    if(previous===undefined)delete globalThis.DevRandomRuinLichThemes;
+    else globalThis.DevRandomRuinLichThemes=previous;
+  }
+}
 // Invalid geometry must roll back both the slot and hazard, not leave a broken plan.
 {
   const plan=Jump.compose({shaft:37,spacing:10,floors:2,theme:'hronal'});
