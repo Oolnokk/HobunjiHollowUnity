@@ -113,7 +113,7 @@
     }
     const existing = pressed.get(actionId);
     const claim = claimFor(actionId);
-    if (claim || existing) {
+    if (claim) { // New device presses must not inherit a vanished prompt merely because another device still owns its earlier press.
       const count = routedClaimCounts.get(actionId) || 0; // Repeat/parallel presses share one world onPress event.
       const claimed = count > 0 || dispatch(actionId, phase, detail);
       if (claimed) {

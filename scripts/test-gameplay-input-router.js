@@ -89,6 +89,16 @@ assert.equal(router.route('action1', 'release', { source: 'controller:RT' }), tr
 assert.equal(releases, parallelReleasesBefore + 1);
 router.clearClaims('parallel-source');
 assert.equal(router.isAttackBlocked(), false);
+
+router.setClaims('vanishing-claim', [{ actionId: 'action1', onPress() { claimsFired++; }, onRelease() { releases++; } }]);
+const releasesBeforeVanishing = releases; // A vanished prompt still releases the original owner but does not recruit new devices.
+assert.equal(router.route('action1', 'press', { source: 'keyboard:Space' }), true);
+router.clearClaims('vanishing-claim');
+assert.equal(router.route('action1', 'press', { source: 'controller:RT' }), false, 'new controller press cannot inherit a vanished keyboard claim');
+assert.equal(router.snapshot().routedPresses.length, 1);
+assert.equal(router.route('action1', 'release', { source: 'keyboard:Space' }), true);
+assert.equal(releases, releasesBeforeVanishing + 1, 'original owner still receives its eventual release');
+assert.equal(router.isAttackBlocked(), false);
 visibleOverride = 'action2';
 assert.equal(router.isAttackBlocked(), true, 'a visible Action 2 non-combat replacement also blocks all attacks');
 visibleOverride = 'action3';
