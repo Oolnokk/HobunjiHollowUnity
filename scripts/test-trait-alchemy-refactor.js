@@ -45,7 +45,7 @@ for (const [key, definition] of reagentEntries) {
   assert.ok(A.nativeRecipeForReagent(key), `${key}'s native trio must be authored`);
   assert.ok(['waterEdge','treeRoots','cliffBase','rockEdge','shrubEdge'].includes(definition.habitat), `${key} must declare a terrain sub-habitat`);
 }
-assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 40, '36 existing reactions plus four persistent spouse perfumes must exist');
+assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 49, '36 existing reactions plus thirteen persistent spouse perfumes must exist');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.afflict.fire']?.id, 'fireFlask', 'Fire Flask must be brewable from the standard three-trait reaction system');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.lighten.fire'], undefined, 'undefined permutations must remain invalid');
 
