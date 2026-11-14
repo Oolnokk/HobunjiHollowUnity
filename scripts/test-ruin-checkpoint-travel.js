@@ -3,6 +3,7 @@
 // progress restore and exact Action 2 fallback destinations.
 const assert=require('node:assert/strict');
 const Travel=require('../docs/js/ruin-checkpoint-travel.js');
+const Jump=require('../docs/js/ruin-jump-shaft.js'); // Real fixture reservation API used by the Tothal checkpoint integration.
 class Node {
   constructor(){this.children=[];this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
     this.scale={setScalar(n){this.x=this.y=this.z=n;}};this.visible=true;this.userData={};}
@@ -17,28 +18,33 @@ let clock=1000; // Synthetic monotonic time tests Action 1 holds without waiting
 const previousPerformance=globalThis.performance;
 globalThis.performance={now:()=>clock};
 const old={};
-for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio']){
+for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio','RuinJumpShaft','RangedWeapons','DungeonFire']){
   old[key]=globalThis[key];
 }
-let lightRefreshes=0,ignitions=0; // Confirms activation is a state transition, not repeated every frame.
+let lightRefreshes=0,ignitions=0,fireArms=0; // Confirms activation is a state transition, not repeated every frame.
 const destinations=[];
 let location={x:24,z:12,y:0}; // Actor world position used by proximity and teleport tests.
 let currentScene=null; // The active generated ruin scene distinguishes live white checkpoints from disposed/foreign ones.
 globalThis.RuinMultifloorV50Style={chooseHubBrazierCell:()=>[10,10]};
 globalThis.RuinV50NativeFloors={nativeRoom:()=>({x:60,z:10,w:8,d:8})}; // Native rooms can sit on fractional raised V50 plateaus.
 globalThis.PersistentGroundFire={attachCampfireFlame:(_anchor,opts)=>{
-  assert.equal(opts.colorA,'#ffffff','the authored particle emitter requires hex strings');
-  assert.equal(opts.colorB,'#d9edff');return {update(){},dispose(){}};
+  assert(['#ffffff','#ffb25a'].includes(opts.colorA),'only white checkpoint or orange fire-source emitters');
+  assert(['#d9edff','#ff5f1d'].includes(opts.colorB),'all fire particle colors are valid hex strings');
+  return {update(){},dispose(){}};
 }};
 globalThis.ProceduralFurniture={makePartMaterial:()=>new Material()};
 globalThis.DevRandomRuin={setPlayerWorldPoint:at=>{location={...at};destinations.push({...at});return true;},
   getRuntimeContext:()=>({scene:currentScene})};
 globalThis.CloudForestFog={refreshLightingOverlay:()=>lightRefreshes++};
 globalThis.RuinInteractionAudio={igniteTorch:()=>ignitions++};
-function spawn(withNative=false){
+globalThis.RuinJumpShaft=Jump;
+let rangedEquipped=true; // Fire prompts are available only with a ranged weapon.
+globalThis.RangedWeapons={equippedRangedKey:()=>rangedEquipped?'test-bow':null};
+globalThis.DungeonFire={armNextProjectile:()=>{if(!rangedEquipped)return false;fireArms++;return true;}};
+function spawn(withNative=false,withTothal=false,withHachutu=false){
   const scene=new Node(),controls=[]; // The actual ruin interaction list is injected, not replaced.
   currentScene=scene;
-  const ruin={controls,seed:77,spawn:{x:2,z:3},shaftGrids:new Map([
+  const ruin={controls,seed:77,theme:withTothal?'tothal':'hronal',hachutu:withHachutu,spawn:{x:2,z:3},shaftGrids:new Map([
     ['wing',{grid:{xToCol:n=>Math.floor(n),zToRow:n=>Math.floor(n),yToLevel:n=>n,inBounds:()=>true,canStand:()=>true},contains:()=>true}]
   ])};
   const manual={kind:'layerBrazier',object:new Node(),floorY:0,range:1.7,lit:()=>true};
@@ -50,6 +56,16 @@ function spawn(withNative=false){
     {id:'west',side:'W',rooms:[{x:40,z:10,w:8,d:8}]}
   ]}]};
   const hub={grid:{colToX:n=>n,rowToZ:n=>n,levelToY:n=>n}};
+  if(withTothal){
+    const jumpPlan=Jump.compose({shaft:23,spacing:6,floors:2,theme:'tothal',seed:77});
+    assert(jumpPlan.ok,'Tothal jump route is solvable');
+    const columns=new Map(jumpPlan.platforms.map(p=>{
+      const holder=new Node();holder.position.set(p.x,p.y,p.z);
+      scene.add(holder);
+      return [p.id,{...p,holder}];
+    }));
+    ruin.shaftObeliskRuntime={method:'jumpPlatforms',plan:jumpPlan,columns};
+  }
   const notifications=[];
   const writes=[]; // World metadata integration invokes onProgressChange only when a checkpoint changes.
   const owner=Travel.mount({rec:{scene},ruin,plan,hub,THREE,getPlayerPosition:()=>location,
@@ -120,6 +136,32 @@ try{
   const plateau=raised.owner.getState().checkpoints.find(c=>c.id==='native:0');
   assert(plateau&&plateau.y===7.5,'native V50 checkpoints stand on the actual plateau, not floor.y');
   raised.owner.dispose();
+  const frozen=spawn(false,true);
+  const sources=frozen.controls.filter(control=>control.kind==='dungeonFireSource');
+  assert.equal(sources.length,2,'shaft and first story platform both provide repeatable ignition');
+  assert.equal(frozen.owner.getState().ignitionSources.length,1,'mobile debug reports the platform source');
+  assert.equal(frozen.owner.getState().shaftIgnitionAvailable,true);
+  const platform=frozen.ruin.shaftObeliskRuntime.plan.platforms[0];
+  assert.equal(platform.fixtureSlot.occupiedBy,'ignitionBrazier','source inhabits the shared slot');
+  location={x:platform.x,z:platform.z,y:platform.y};
+  assert.equal(sources[1].available(),true);
+  sources[1].onPress();
+  assert.equal(fireArms,1,'platform gives new fire after a one-use explosive has detonated');
+  location={x:10.5,z:10.5,y:0};
+  sources[0].onPress();
+  assert.equal(fireArms,2,'shaft source also arms a projectile without a Shattercask');
+  rangedEquipped=false;
+  assert.equal(sources[0].available(),false);
+  assert.equal(sources[1].available(),false);
+  frozen.owner.dispose();
+  assert.equal(frozen.ruin.shaftObeliskRuntime.columns.get(platform.id).holder.children.length,0,
+    'platform fixture is detached on teardown');
+  rangedEquipped=true;
+  const temple=spawn(false,true,true); // Hachutu uses the shaft but never borrows Tothal fire puzzles.
+  assert.equal(temple.controls.some(c=>c.kind==='dungeonFireSource'),false,
+    'exclusive Hachutu temples must not acquire Tothal fire controls');
+  assert.equal(temple.owner.getState().shaftIgnitionAvailable,false);
+  temple.owner.dispose();
   assert(lightRefreshes>=4);
   console.log('Ruin shaft / small braziers, Action 1 holds, Action 2, world restore: PASS');
 }finally{

@@ -131,7 +131,12 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(await page.evaluate(()=>window.DevHachutuRuin.debugSever(2)),false,'wave-cleared weed stays bare-proof until resonance');
     await page.evaluate(()=>{window.DevHachutuRuin.debugStrikeBulb(0);window.DevHachutuRuin.debugStrikeBulb(1);});
     assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,false,'two bulbs are not enough');
-    await page.evaluate(()=>window.DevHachutuRuin.debugStrikeBulb(2));
+    // Browser IPC + software rendering can take longer than the eight-second
+    // bulb lifetime. Refresh all three in one page task: the assertion above
+    // still proves two bulbs alone do not resonate.
+    await page.evaluate(()=>{
+      for(let i=0;i<3;i++)window.DevHachutuRuin.debugStrikeBulb(i);
+    });
     assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,true,'three lit bulbs resonate');
     await page.evaluate(()=>{for(let i=0;i<3;i++){window.DevHachutuRuin.debugSever(1);window.DevHachutuRuin.debugSever(2);}});
     const solved=await page.evaluate(()=>window.DevHachutuRuin.debug());
