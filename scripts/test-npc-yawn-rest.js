@@ -18,6 +18,7 @@ async function main() {
   let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
+  const pendingChews = new Map(); // Models the drink-strike callback being withheld until a leaf is actually chewed.
   const storage = new Map(); // Mimics per-character localStorage persistence.
   const hostiles = new Set(); // The actual Combat.deps hostile set gates NPC yawns.
   const walker = {
@@ -37,8 +38,16 @@ async function main() {
     RuntimeFrameScheduler: { register: (id, cb, options) => { assert.equal(id, 'npc-yawn-rest'); assert.equal(options.phase, 'pre-render'); frame = cb; } },
     Combat: { deps: { TILE: 64, hostileObjects: hostiles, getCurrentArea: () => 'farm' } },
     NpcDrinkInteraction: {
-      playDailyKoma: (_walker, onDrink, durationS) => { ceremonies++; assert.equal(durationS, 5); onDrink(); return 5000; },
-      stopAutonomous: (_walker, itemKey) => { assert.equal(itemKey, '__daily_koma_leaf__'); interruptions++; },
+      playDailyKoma: (actor, onDrink, durationS) => {
+        ceremonies++; assert.equal(durationS, 5);
+        if (actor.rec.id === 'longoran-retry') pendingChews.set(actor.rec.id, onDrink);
+        else onDrink();
+        return 5000;
+      },
+      stopAutonomous: (actor, itemKey) => {
+        assert.equal(itemKey, '__daily_koma_leaf__');
+        pendingChews.delete(actor.rec.id); interruptions++;
+      },
     },
     ToastNotifications: { showToast: text => toasts.push(text) },
     DialogueContent: { dialogueSeatId: walker => walker.rec.id, npcRestingExpression: () => 'neutral' },
@@ -163,7 +172,29 @@ async function main() {
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
   assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/breath.m4a');
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
-  console.log('NPC yawn, wake, hourly rest, combat suppression, female voice and daily Koma: OK');
+
+  const retryNpc = {
+    rec: { id: 'longoran-retry', appearance: { speciesId: 'longoran', gender: 'male' } },
+    root: { parent: {}, position: { x: 4, z: 2 } }, area: 'farm', state: 'idle',
+    neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
+    currentScheduleTarget: { pose: 'stand' }, _bedLieActive: false,
+  }; // Second independent NPC whose first Koma ceremony is interrupted before the drink's strike.
+  window._npcWalkers.push(retryNpc);
+  hour = 38; ms = 27000; frame({ timestamp: ms }); // Initializes its first yawn in a different game hour.
+  hour = 39; ms = 27500; frame({ timestamp: ms });
+  assert.equal(ceremonies, 3, 'the Longoran begins its first daily ceremony');
+  assert.ok(pendingChews.has('longoran-retry'));
+  hostiles.add({ health: 5, areaId: 'farm', state: 'chase' });
+  ms = 28000; frame({ timestamp: ms });
+  assert.equal(interruptions, 1, 'combat cancels the unfinished daily Koma ceremony');
+  assert.equal(pendingChews.has('longoran-retry'), false, 'cancellation must not invoke the drink strike');
+  hostiles.clear();
+  hour = 40; ms = 33000; frame({ timestamp: ms });
+  assert.equal(ceremonies, 4, 'interrupted Koma is retried at the next yawn, not suppressed for 24 hours');
+  assert.ok(pendingChews.has('longoran-retry'));
+  pendingChews.get('longoran-retry')();
+  assert.equal(toasts.at(-1), 'You chew your daily koma leaves so that you may run and jump as the outlanders do.');
+  console.log('NPC yawns, absolute-hour rest, voice playback, combat, handoff and Koma retries: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
