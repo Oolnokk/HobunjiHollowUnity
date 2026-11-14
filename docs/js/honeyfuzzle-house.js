@@ -28,9 +28,9 @@
 
   function registerQueenItem(itemDefs) {
     if (!itemDefs) return;
-    const legacy = itemDefs[LEGACY_EGG_ITEM] || {}; // Preserve any authored trade value.
+    const base = { ...(itemDefs[LEGACY_EGG_ITEM] || {}), ...(itemDefs[QUEEN_ITEM] || {}) }; // Honor explicit queen tuning, else inherit old trade value.
     itemDefs[QUEEN_ITEM] = {
-      ...legacy, label: 'Honeyfuzzle Queen', icon: '👑', cat: 'livestock',
+      ...base, label: 'Honeyfuzzle Queen', icon: '👑', cat: 'livestock',
       tags: ['Livestock', 'Queen'], desc: 'A wild queen that can establish a swarm in a Honeyfuzzle House.',
     }; // Shared item registry, used by both the farm and wilderness initializers.
   }
