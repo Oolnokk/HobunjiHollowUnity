@@ -15,6 +15,7 @@ async function main() {
   let ceremonies = 0; // Counts Slagothim Koma events without rendering Three.js.
   let interruptions = 0; // Counts aborted ceremonial drinks after combat begins.
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
+  let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
   const storage = new Map(); // Mimics per-character localStorage persistence.
@@ -55,7 +56,7 @@ async function main() {
     },
     AudioSystem: {
       gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }),
-      combatAudioSpatial: () => ({ gain: 1 }),
+      combatAudioSpatial: actor => { audioActor = actor; return { gain: 1 }; },
     },
     AnimalVoiceIndependentPlayback: {
       playIndependent: (_url, opts) => { audioOptions = opts; return { stop() {} }; },
@@ -76,6 +77,10 @@ async function main() {
   frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().active.length, 0, 'new awake NPC begins with one full game-hour grace');
   assert.equal(runtime._test.nowGameHour(), 12, 'the yawn timer uses actual game hours, not 24 * normalized time01');
+  const initial = runtime._test.stateFor(walker, hour).nextHour;
+  const another = runtime._test.stateFor({ rec: { id: 'another-npc' } }, hour).nextHour;
+  assert.notEqual(initial, another, 'villagers must not all yawn simultaneously when spawned on the same hour');
+  assert.ok(initial > 12 && initial <= 13 && another > 12 && another <= 13);
   const authoritativeHour = window.CalendarSystem.getAbsoluteGameHour;
   window.CalendarSystem.getAbsoluteGameHour = null;
   window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .5 });
@@ -101,6 +106,10 @@ async function main() {
   assert.equal(audioOptions.pitchSemitones, 6);
   assert.equal(audioOptions.tempo, 0.8);
   assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
+  assert.equal(audioActor?.x, 128);
+  walker.root.position.x = 6;
+  assert.equal(audioActor?.x, 384, 'the playing voice must follow a moving walker instead of freezing its starting position');
+  walker.root.position.x = 2;
 
   ms = 3000; frame({ timestamp: ms });
   assert.ok(walker.neckJoint.rotation.x < -0.20, 'head must stretch during the yawn');
@@ -120,6 +129,14 @@ async function main() {
   hour = 15; ms = 7000; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().active.length, 0, 'combat prevents new hourly yawns');
   hostiles.clear();
+  walker.state = 'alcohol-blackout';
+  ms = 7250; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'a blacked-out NPC cannot yawn');
+  walker.state = 'idle';
+  window.FestivalWheelDanceRuntime = { isPartner: () => true };
+  ms = 7350; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'partner dances must own their body pose');
+  window.FestivalWheelDanceRuntime = null;
 
   walker.currentScheduleTarget = { pose: 'lie' };
   walker._bedLieActive = true;
