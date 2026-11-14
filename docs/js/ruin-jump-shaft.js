@@ -188,24 +188,38 @@
 
 
   function assignFixture(plan, platformId, fixtureKind) {
-    // Call during generation, before the theme mounts hazards; replaces a pillar/plasm
-    // instead of putting a second collider or lethal floor under the new fixture.
+    // Hazard fixtures must be reserved before mount. Once a Hronal pillar or
+    // Kanthic plasm slab exists, changing only the plan would leave the live
+    // hazard behind. Harmless props on ice/plain slabs can be reserved later.
     const kind = String(fixtureKind || '').trim();
     if (!/^[a-z][a-z0-9-]{0,40}$/i.test(kind)) return null;
-    const platform = plan?.platforms?.find(p => p.id === platformId);
+    const platform = plan?.platforms?.find?.(p => p.id === platformId);
     const slot = platform?.fixtureSlot;
     if (!slot || (slot.occupiedBy && !['explodingPillar', 'plasm', kind].includes(slot.occupiedBy))) return null;
-    if (plan.hazardsMounted && (platform.kind === 'pillar' || platform.kind === 'plasm')) return null;
+    const replacesHazard = platform.kind === 'pillar' || platform.kind === 'plasm';
+    if (replacesHazard && (plan.mounted || plan.hazardsMounted)) return null;
     if (slot.occupiedBy === kind) return slot;
-    if (platform.kind === 'pillar' || platform.kind === 'plasm') {
-      platform.originalKind = platform.kind; // Retained for diagnostics: the hazard was intentionally swapped out.
-      platform.kind = 'plain'; // Existing dimensions, position and verified jump route are unchanged.
-      delete platform.tiles; delete platform.clearTiles; // Do not build plasm under a fixture.
+    const old = {kind:platform.kind, originalKind:platform.originalKind, tiles:platform.tiles,
+      clearTiles:platform.clearTiles, occupiedBy:slot.occupiedBy, checks:plan.checks, ok:plan.ok}; // Undo an invalid assignment atomically.
+    if (replacesHazard) {
+      platform.originalKind = platform.kind; // Debugging records whether a pillar or plasm patch was swapped.
+      platform.kind = 'plain'; // Preserve every dimension and the already verified jump route.
+      delete platform.tiles; delete platform.clearTiles;
     }
     slot.occupiedBy = kind;
-    plan.checks = verify(plan);
-    plan.ok = plan.checks.every(check => check.ok);
-    return plan.ok ? slot : null;
+    const checks = verify(plan);
+    if (!checks.every(check => check.ok)) {
+      platform.kind = old.kind;
+      if (old.originalKind === undefined) delete platform.originalKind;
+      else platform.originalKind = old.originalKind;
+      if (old.tiles === undefined) delete platform.tiles; else platform.tiles = old.tiles;
+      if (old.clearTiles === undefined) delete platform.clearTiles; else platform.clearTiles = old.clearTiles;
+      slot.occupiedBy = old.occupiedBy;
+      plan.checks = old.checks; plan.ok = old.ok;
+      return null;
+    }
+    plan.checks = checks; plan.ok = true;
+    return slot;
   }
 
   function verify(plan) {
@@ -349,6 +363,7 @@
     const isVoidAt = (x, z) => Math.abs(x - cx) < half && Math.abs(z - cz) < half;
     const dispose = () => {
       if (disposed) return; disposed = true;
+      plan.mounted = false; // The live scene no longer owns the slots, but hazardsMounted remains an explicit historical guard.
       DS.clearScope(scope);
       for (const handle of plasmHandles) handle?.dispose?.();
       plasmHandles = [];
@@ -357,9 +372,14 @@
       for (const m of materials) m.dispose?.();
       columns.clear();
     };
-    const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0, // `active` stays false: the ambient-music silencer keys on the obelisk beat clock. platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
+    const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0,
+      // 'active' stays false: the ambient-music silencer keys on the obelisk beat clock.
+      platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
+      fixtures: plan.platforms.filter(p => p.fixtureSlot?.occupiedBy
+        && !['explodingPillar','plasm'].includes(p.fixtureSlot.occupiedBy)).map(p => [p.id, p.fixtureSlot.occupiedBy, p.originalKind || null]),
       route0: plan.platforms.filter(p => p.floor === 0).map(p => [p.kind, +p.x.toFixed(2), +p.z.toFixed(2), +p.y.toFixed(2), +p.w.toFixed(2), +p.d.toFixed(2)]), // Compact layout for on-device checks and headless drivers.
       pillars: pillarRecords.length, plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'death-pit' });
+    plan.mounted = true; // Future Hronal/Kanthic requests cannot swap out already-rendered hazards.
     return {
       plan, method: TRAVERSAL, tick, dispose, columns, supportAt, isVoidAt, isIceAt, tradition, pitY: plan.pit.bottomY, softLanding: true,
       noteFall: () => { fallEvents++; }, getState: state,
