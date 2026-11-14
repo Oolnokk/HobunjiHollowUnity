@@ -84,11 +84,15 @@
 
   function liveSwarmIndex() {
     const active = new Map(); // Hive key -> living defender, built once per spawn scan or diagnostic census.
+    const fallen = new Map(); // Hive key -> corpse, used only if no living replacement protects that hive.
     for (const c of deps.hostileObjects) {
       if (!c?.hiveKey) continue;
       if (c.health > 0 && !c._deathTransitionStarted) {
         if (!active.has(c.hiveKey)) active.set(c.hiveKey, c);
-      } else recordDefeat(c); // A corpse can remain in the set; preserve its original defeat timestamp.
+      } else if (!fallen.has(c.hiveKey)) fallen.set(c.hiveKey, c);
+    }
+    for (const [key, corpse] of fallen) {
+      if (!active.has(key)) recordDefeat(corpse); // A stale corpse must never reset the living replacement's respawn clock.
     }
     return active;
   }
