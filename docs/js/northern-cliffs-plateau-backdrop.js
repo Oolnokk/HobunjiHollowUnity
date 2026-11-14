@@ -153,6 +153,37 @@
     return { geometry, capVertices, capTriangles, maxRockY }; // One rock owns every flat-top triangle and faceted cliff shoulder.
   }
 
+  function disposeBackdropMaterials(materials) {
+    const slots = Array.isArray(materials) ? materials : [materials]; // Tracks both ridge top and cliff-side slots while allowing a shared material clone.
+    for (const material of new Set(slots)) {
+      if (material?.userData?.northernCliffsDistantPlateau) material.dispose?.(); // Only backdrop-owned clones may be freed; the farm's shared rock material is never ours.
+    }
+  }
+
+  function makeBackdropMaterials(materials, T) {
+    const slots = Array.isArray(materials) ? materials : [materials]; // Keeps the ridge isolator's top/side grouping intact.
+    const clones = new Map(); // Reuses one backdrop-owned clone where the top and cliff slots reference the same canonical farm material.
+    try {
+      for (const source of slots) {
+        if (!source?.clone) throw new Error('Farm rock material could not be cloned');
+        if (clones.has(source)) continue;
+        const clone = source.clone(); // A unique depth-shader material is required without mutating the shared farm cliff shader.
+        clones.set(source, clone);
+        clone.userData = Object.assign({}, clone.userData, { northernCliffsDistantPlateau: true, visualOnly: true });
+        clone.side = T.DoubleSide;
+        clone.depthTest = true;
+        clone.depthWrite = true;
+        clone.fog = false;
+        window.WesternSlopeMountainBackdrops?.keepInFrontOfSky?.(clone); // The same background depth treatment applies to both material slots.
+      }
+    } catch (error) {
+      disposeBackdropMaterials([...clones.values()]); // A partial failed clone must never leak resources or dispose the source surface.
+      throw error;
+    }
+    const owned = slots.map(source => clones.get(source)); // Preserves the original material slot count and order.
+    return Array.isArray(materials) ? owned : owned[0];
+  }
+
   function createStoneMesh(T, layout) {
     const shaped = makeMeshGeometry(layout); // Creates one giant version of the normal scattered boulder with a flat top.
     const sourceMaterial = new T.MeshBasicMaterial({ color: 0xffffff, side: T.DoubleSide }); // A temporary carrier for the exact farm-rock material factory.
@@ -160,24 +191,16 @@
     try {
       const natural = window.NaturalSurfaceMaterials; // FarmCliffRockOutline uses this same API to apply the authored rock PNG and sprite-style tint.
       const mapper = window.HobunjiSurfaceStretchUV; // Detects connected face islands and stretches one full PNG per surface with protected edge bands.
-      if (typeof natural?.naturalizeMesh !== 'function' || typeof mapper?.mapMesh !== 'function') {
+      if (typeof natural?.naturalizeMesh !== 'function' || typeof mapper?.remapNaturalTerrainMesh !== 'function') {
         throw new Error('Farm cliff rock material or connected-surface mapper is not ready');
       }
       natural.naturalizeMesh(mesh, 'rocks');
       if (mesh.geometry !== shaped.geometry) shaped.geometry.dispose(); // Natural-surface wrappers can replace geometry to make independent UV seams.
       const beforeFinalUv = mesh.geometry; // Tracks the geometry returned by the farm material wrapper before the explicit giant-rock surface solve.
-      const surfaceReport = mapper.mapMesh(mesh, { label: 'northern-cliffs-giant-rock' }); // Uses real stretched world-space vertices, not a per-facet or repeating ore texture.
+      const surfaceReport = mapper.remapNaturalTerrainMesh(mesh, 'northern-cliffs-giant-rock'); // Preserves the ridge isolator's cliff-only UV slot and its separate flat-top texture coordinates.
       if (mesh.geometry !== beforeFinalUv) beforeFinalUv.dispose(); // The old UV buffer is never needed again once the final mapper adopts its clone.
       if (!surfaceReport?.patchCount) throw new Error('Giant plateau rock has no detected texture surfaces');
-      const material = mesh.material?.clone?.(); // Clones the shared farm material so the backdrop depth shader cannot alter regular farm cliffs.
-      if (!material) throw new Error('Farm rock material could not be cloned');
-      material.userData = Object.assign({}, material.userData, { northernCliffsDistantPlateau: true, visualOnly: true });
-      material.side = T.DoubleSide;
-      material.depthTest = true;
-      material.depthWrite = true;
-      material.fog = false;
-      window.WesternSlopeMountainBackdrops?.keepInFrontOfSky?.(material); // Retains the existing distant mountain depth treatment.
-      mesh.material = material;
+      mesh.material = makeBackdropMaterials(mesh.material, T); // Preserves top/cliff material slots while applying the distant shader to owned clones only.
       mesh.userData = Object.assign({}, mesh.userData, {
         naturalSurface: 'rocks', backgroundScenery: true, skipOcclusionFade: true,
         visualOnly: true, nonTraversable: true, terrainJigsawIgnore: true,
@@ -189,7 +212,7 @@
     } catch (error) {
       if (mesh.geometry !== shaped.geometry) mesh.geometry?.dispose?.();
       shaped.geometry.dispose();
-      if (mesh.material !== sourceMaterial && mesh.material?.userData?.northernCliffsDistantPlateau) mesh.material.dispose?.();
+      if (mesh.material !== sourceMaterial) disposeBackdropMaterials(mesh.material); // Shared natural-surface source materials remain owned by the global material cache.
       sourceMaterial.dispose();
       throw error;
     }
@@ -204,7 +227,7 @@
       if (i !== -1) record.scene.items.splice(i, 1);
     }
     record.mesh.geometry?.dispose?.();
-    record.mesh.material?.dispose?.();
+    disposeBackdropMaterials(record.mesh.material); // Array slots can share one owned material; dispose it only once.
     active.delete(mapId);
     diagnostics.disposals++;
     return true;
@@ -249,6 +272,7 @@
         flatCapStartFraction: TOP_FLATTEN_START, sourceRockHeight: rock.sourceRockHeight,
         materialPath: 'NaturalSurfaceMaterials:rocks', uvPath: 'HobunjiSurfaceStretchUV',
         detectedSurfaceIslands: rock.surfaceReport.patchCount, uvFallbackIslands: rock.surfaceReport.fallbackCount,
+        cliffMaterialSlot: mesh.userData.naturalSurfaceCliffSlot ?? null, materialSlotCount: Array.isArray(mesh.material) ? mesh.material.length : 1,
       };
       return root;
     } catch (error) {
