@@ -72,6 +72,12 @@ voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('stone-test.m4a', {
   tempo: 1, pitchSemitones: -7, preserveDurationOnFallback: true,
 });
 assert.equal(audioCalls.at(-1).playbackRate, 1, 'native fallback may lose pitch variation but never original duration');
+const nativeYawn = voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('breath-test.m4a', {
+  tempo: 0.2, pitchSemitones: 7, preservePitchOnFallback: true,
+}); // No AudioContext: the breath becomes five times as long (female 0.8 / 4), without being pitched down.
+assert.equal(audioCalls.at(-1).playbackRate, 0.2, 'native fallback keeps the authored yawn duration stretch');
+assert.equal(audioCalls.at(-1).preservesPitch, true, 'native fallback must not lower the yawn pitch');
+assert.equal(nativeYawn.independentPitch, false, 'mobile diagnostics correctly disclose that native media cannot apply separate species pitch modulation');
 
 (async () => {
   const samples = Float32Array.from({ length: 48000 }, (_, index) => Math.sin(index * 0.12) * 0.3); // One second of test sound for actual DSP duration measurements.

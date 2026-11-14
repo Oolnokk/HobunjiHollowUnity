@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  if (Number(window.DevotionRestBuffs?.version) >= 5) return;
+  if (Number(window.DevotionRestBuffs?.version) >= 6) return;
 
-  const CHANGE_SUMMARY = 'Prayer remains anchored in world space with action-slot-safe input hints, and temple benches now permit prayer throughout Anan, including Spirit Communion; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
-  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261027ha2bea94'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
+  const CHANGE_SUMMARY = 'Rested prevents hourly player yawns for 3h, Well Rested needs 8h of sleep, and yawning quarters native walking speed using the existing combat locomotion hook.'; // Used by mobile diagnostics to identify the latest integration layer.
+  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261113restedFloat2'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 
@@ -103,7 +103,8 @@
     const original = combat.getMovementSpeedMul.bind(combat); // Used to layer the small Well Rested speed bonus after every existing combat/equipment movement modifier.
     const wrapped = function restedMovementMultiplier(...args) {
       const restMultiplier = window.TemplePrayerRestBlessings?.movementSpeedMultiplier?.() || 1;
-      return original(...args) * restMultiplier;
+      const yawnMultiplier = window.NpcYawnRest?.playerMovementMultiplier?.() ?? 1; // The original native movement multiplier already feeds the player's target velocity; no secondary movement pass.
+      return original(...args) * restMultiplier * yawnMultiplier;
     };
     wrapped.__templeRestWrapped = true;
     combat.getMovementSpeedMul = wrapped;
@@ -156,7 +157,7 @@
   const installTimer = window.setInterval(installAll, 250); // Used to catch game-owned debug/combat/alchemy objects that initialize after this parser-time compatibility bridge.
 
   window.DevotionRestBuffs = Object.freeze({
-    version: 5,
+    version: 6,
     debugSnapshot,
     potionStackScale,
     _installTimer: installTimer,

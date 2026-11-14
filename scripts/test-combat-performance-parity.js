@@ -157,6 +157,19 @@ const aliasedSpacingPoint = { x: 100, y: 0 }; // Models the queue-ring path, whi
 assert.strictEqual(spaceContext.adjust(self, aliasedSpacingPoint, aliasedSpacingPoint), aliasedSpacingPoint);
 assert.equal(aliasedSpacingPoint.x, originalSpacing.x, 'aliased avoidance retains the original ordered x displacement');
 assert.equal(aliasedSpacingPoint.y, originalSpacing.y, 'aliased avoidance retains the original ordered y displacement');
+
+// The arena and wilderness share tile coordinates while keeping separate combatants.
+const arenaSelf = { ...self, areaId: 'map_dev_arena' }; // Test subject in the active arena.
+const offAreaBandit = { ...neighbor, areaId: 'map_wilderness_a' }; // Unloaded wilderness actor overlapping this arena tile.
+const arenaNeighbor = { ...neighbor, areaId: 'map_dev_arena' }; // Only same-area neighbors should repel our subject.
+spaceContext.deps.hostileObjects = [arenaSelf, offAreaBandit];
+pushed = spaceContext.adjust(arenaSelf, { x: 0, y: 0 });
+assert.equal(pushed.x, 0, 'a bandit from another zone must not repel the arena fighter');
+assert.equal(pushed.y, 0, 'cross-zone avoidance must not displace the arena fighter vertically');
+spaceContext.deps.hostileObjects = [arenaSelf, offAreaBandit, arenaNeighbor];
+pushed = spaceContext.adjust(arenaSelf, { x: 0, y: 0 });
+assert(pushed.x < 0, 'a same-area bandit still pushes the arena fighter despite an off-area neighbor');
+
 const ringStart = banditSource.indexOf('  function banditRingPoint(');
 const ringEnd = banditSource.indexOf('  // Bandits frequently request', ringStart);
 assert(ringStart > 0 && ringEnd > ringStart, 'the enemy queue-ring helper is found');
