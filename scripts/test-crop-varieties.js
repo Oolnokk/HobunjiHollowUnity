@@ -67,6 +67,9 @@ assert.equal(Object.keys(offspring.effects).length, 2);
 assert.equal(Object.keys(game.CropVarieties.effectsOf(offspring.id)).length, 2, 'harvested crossbreed retains two edible buffs');
 assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, west.id).length, 1, 'pure regional parents have one ordinary two-buff outcome');
 assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, west.id)[0].probability, 1, 'pure effect alleles predict the ordinary result with certainty');
+const mixedOdds = game.CropVarieties.possibleOffspringEffects(offspring.id, east.id); // One mixed parent yields multiple possible buff outcomes next generation.
+assert.equal(mixedOdds.length, 2, 'second generation previews distinct possible outcomes');
+assert.equal(mixedOdds.reduce((sum, outcome) => sum + outcome.probability, 0), 1, 'distinct buff possibilities account for every ordinary offspring');
 assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, 'heftroot').length, 0, 'incompatible species cannot preview a cross');
 assert.ok(itemDefs[offspring.id].desc.includes('Food buffs:'), 'harvested cultivars explain their multiple food effects');
 assert.ok(itemDefs[offspring.seedKey].desc.includes('Harvest buffs:'), 'seed tooltips expose their reason to crossbreed');
@@ -184,6 +187,7 @@ assert.equal(duplicate.ok, false);
 assert.equal(inventory.needlegrain, 1);
 const crossing = game.FarmProduction.enqueueSeeds(maker.id, { source: 'bag', itemKey: 'needlegrain' }, { source: 'storage', itemKey: 'needlegrain' });
 assert.equal(crossing.ok, true);
+assert.ok(crossing.message.includes('Buffs: farming +2'), 'single-native harvest seed extraction reports its actual cooking buff');
 assert.equal(inventory.needlegrain, 0);
 assert.equal(storage.needlegrain, 0);
 calendar.day = 2; game.FarmProduction.tick(); assert.equal(maker.ready.length, 0);
@@ -197,6 +201,7 @@ assert.ok(inventory.needlegrainSeeds >= 2);
 inventory[east.id] = 1; inventory[west.id] = 1; // Parent harvests are standard bag stacks.
 const hybridBatch = game.FarmProduction.enqueueSeeds(restored.id, { source: 'bag', itemKey: east.id }, { source: 'bag', itemKey: west.id });
 assert.equal(hybridBatch.ok, true, 'seed maker accepts two regional crops of one species');
+assert.ok(hybridBatch.message.includes('fortitude +1') && hybridBatch.message.includes('vigor +1'), 'crossbreed result reports both inherited cooking buffs');
 calendar.day = 4; game.FarmProduction.tick(); assert.equal(restored.ready.length, 0, 'hybrid seeds must take two game days');
 calendar.day = 5; game.FarmProduction.tick();
 assert.equal(restored.ready[0].key, offspring.seedKey, 'actual machine breeding produces the same mixed-pigment genotype as the genetics module');
