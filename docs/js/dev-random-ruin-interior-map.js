@@ -571,6 +571,7 @@
       state.crossingAxis=size.x<=size.z?'x':'z'; // Thin world axis is the direction a player crosses through the doorway.
       state.center={x:center.x,z:center.z}; // Exposed in mobile/browser diagnostics so closed-door collision and popup range can be verified without devtools.
       state.floorY=Number(box?.min?.y)||0; // Vertical gate proximity uses the real stone-slab base, never another stacked story.
+      state.proximityDoor={x:state.center.x,z:state.center.z,y:state.floorY}; // Reused across frame ticks; no per-door temporary objects.
       ruin.transitDoorStates.push(state);
       // No separate DynamicSurfaces blocker here: DevRandomRuinTileOccupancy reads state.open and folds this panel into the ruin's one aggregate gameplay blocker.
       ruin.controls.push({
@@ -2034,9 +2035,7 @@
     for(const state of ruin.transitDoorStates||[]){
       const automatic=window.RuinRoomSystem?.mounted?.()===true;
       if(automatic){
-        const near=window.RuinRoomSystem.doorNear(player&&{...player,y:Number(ruin.supportY)},{
-          x:state.center.x,z:state.center.z,y:state.floorY,
-        },state.target>.5);
+        const near=window.RuinRoomSystem.doorNear(player,state.proximityDoor,state.target>.5,Number(ruin.supportY));
         state.target=near?1:0; // Existing occupancy and rooted stone animation retain sole ownership of closed-door blocking.
         state.openingSide=0;
       }
