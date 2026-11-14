@@ -137,15 +137,20 @@
       const worldZ = layout.frontZ - ((pos.getZ(i) - bounds.min.z) / spanZ) * layout.depth;
       pos.setXYZ(i, worldX, worldY, worldZ);
     }
-    if (capVertices < 3) {
+    const capTolerance = Math.max(1e-4, layout.topY * 1e-6); // Float32 world-height tolerance for identifying genuinely flat top triangles.
+    let capTriangles = 0; // Detects real horizontal plateau area, not just several duplicated peak vertices.
+    for (let i = 0; i + 2 < pos.count; i += 3) {
+      if ([i, i + 1, i + 2].every(vertex => Math.abs(pos.getY(vertex) - layout.topY) <= capTolerance)) capTriangles++;
+    }
+    if (capVertices < 3 || capTriangles < 1) {
       geometry.dispose();
-      throw new Error('Loose-rock source did not produce a flat plateau crown');
+      throw new Error('Loose-rock source did not produce an actual flat plateau surface');
     }
     pos.needsUpdate = true;
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    return { geometry, capVertices, maxRockY }; // The single geometry remains the owner of all mountain-sized stone triangles.
+    return { geometry, capVertices, capTriangles, maxRockY }; // One rock owns every flat-top triangle and faceted cliff shoulder.
   }
 
   function createStoneMesh(T, layout) {
@@ -180,7 +185,7 @@
       });
       window.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh, 'rocks'); // Farm's faceted cliffs use the PNG edge, not an inverted 3D outline shell.
       sourceMaterial.dispose(); // The temporary carrier was replaced with the farm's shared material; only the backdrop clone belongs to this root.
-      return { mesh, surfaceReport, capVertices: shaped.capVertices, sourceRockHeight: shaped.maxRockY };
+      return { mesh, surfaceReport, capVertices: shaped.capVertices, capTriangles: shaped.capTriangles, sourceRockHeight: shaped.maxRockY };
     } catch (error) {
       if (mesh.geometry !== shaped.geometry) mesh.geometry?.dispose?.();
       shaped.geometry.dispose();
@@ -240,6 +245,7 @@
         heightRatio: HEIGHT_RATIO, referenceMountainChainWidth: layout.mountain.width,
         triangleCount: (mesh.geometry.index?.count || mesh.geometry.getAttribute('position').count) / 3,
         sourceShape: 'TerrainGeometry.buildRockTileGeo:stoneGeo', flatCapVertices: rock.capVertices,
+        flatCapTriangles: rock.capTriangles, // Mobile diagnostics verify a real continuous tabletop rather than a single high peak.
         flatCapStartFraction: TOP_FLATTEN_START, sourceRockHeight: rock.sourceRockHeight,
         materialPath: 'NaturalSurfaceMaterials:rocks', uvPath: 'HobunjiSurfaceStretchUV',
         detectedSurfaceIslands: rock.surfaceReport.patchCount, uvFallbackIslands: rock.surfaceReport.fallbackCount,
