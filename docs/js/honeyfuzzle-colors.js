@@ -153,7 +153,7 @@
     try { return JSON.parse(localStorage.getItem(EGG_QUEUE_KEY) || '{}') || {}; } catch (_) { return {}; }
   }
   function writeQueues(queues) {
-    try { localStorage.setItem(EGG_QUEUE_KEY, JSON.stringify(queues)); } catch (_) { /* storage unavailable: eggs just roll a fresh color */ }
+    try { localStorage.setItem(EGG_QUEUE_KEY, JSON.stringify(queues)); } catch (_) { /* storage unavailable: queens just roll a fresh color */ }
   }
   function queueEggAppearances(worldId, entries) {
     const queues = readQueues(), id = String(worldId || 'local');
