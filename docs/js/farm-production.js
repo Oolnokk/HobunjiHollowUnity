@@ -401,7 +401,9 @@
       outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
     deps.saveMemberWorldData(); deps.saveFarmLayout();
-    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.' : 'Extracting ' + offspring.label + ' seeds.' };
+    const inheritedBuffs = crops.effectsOf?.(offspring.id); // Confirm the actual inherited buff roll after producing seeds.
+    const buffLabel = Object.entries(inheritedBuffs || {}).map(([effect, stacks]) => effect + ' +' + stacks).join(', ');
+    return { ok: true, message: (second ? 'Crossbreeding ' : 'Extracting ') + offspring.label + ' seeds.' + (buffLabel ? ' Buffs: ' + buffLabel + '.' : '') };
   }
 
   function openSeedMaker(entry) {
@@ -439,7 +441,9 @@
     }
     const first = selector('First harvested crop', false); // Input one is always required.
     const second = selector('Second harvested crop (optional)', true); // Crossing is opt-in, not accidental.
-    const preview = document.createElement('div'); // Live parent/offspring color swatches work without a desktop console.
+    const formatBuffs = effects => Object.entries(effects || {}).map(([effect, stacks]) =>
+      effect[0].toUpperCase() + effect.slice(1) + ' +' + stacks).join(', ') || 'None'; // Parent and offspring share readable buff names.
+    const preview = document.createElement('div'); // Preview inherited buffs as well as color on mobile without devtools.
     preview.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:9px 0 12px;font-size:12px';
     preview.setAttribute('aria-live', 'polite');
     panel.append(preview);
@@ -467,6 +471,22 @@
       if (secondItem) swatch('Parent 2', secondColor);
       if (mixed != null) swatch(secondItem ? 'Blended offspring' : 'Resulting seeds', mixed);
       else if (secondItem) preview.append(document.createTextNode('These crop species cannot be crossed.'));
+      const parentBuffs = document.createElement('div'); // Show the traits that make imported crops desirable, alongside existing color chips.
+      parentBuffs.style.cssText = 'flex-basis:100%;font-size:13px';
+      parentBuffs.textContent = secondItem
+        ? 'Parent buffs: ' + formatBuffs(crops?.effectsOf?.(firstItem)) + ' × ' + formatBuffs(crops?.effectsOf?.(secondItem))
+        : 'Harvest buffs: ' + formatBuffs(crops?.effectsOf?.(firstItem));
+      preview.append(parentBuffs);
+      if (secondItem) {
+        const outcomes = crops?.possibleOffspringEffects?.(firstItem, secondItem) || []; // Same 50/50 effect-gene selection as the real breeder, without RNG consumption.
+        if (outcomes.length) {
+          const possibilities = document.createElement('div'); // Preserve the two-effect limit of the existing six-gene model.
+          possibilities.style.cssText = 'flex-basis:100%;font-size:13px;line-height:1.5';
+          possibilities.textContent = 'Possible offspring buffs (excluding rare mutation): ' +
+            outcomes.map(outcome => formatBuffs(outcome.effects) + ' (' + Math.round(outcome.probability * 100) + '%)').join(' · ');
+          preview.append(possibilities);
+        }
+      }
     }
     first.addEventListener('change', renderColorPreview);
     second.addEventListener('change', renderColorPreview);
