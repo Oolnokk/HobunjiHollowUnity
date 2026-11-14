@@ -69,7 +69,7 @@ vm.runInNewContext(source, {
 const hint = windowObject.HobunjiLiveLoadingStatus;
 assert(hint?.installed, 'live loading runtime is installed');
 assert(output.hidden, 'idle HUD stays free of loading text');
-requests.push('assets/textures/stone.png?v=4');
+requests.push('assets/textures/stone.png?cache=sample');
 networkChanged();
 advance(399);
 assert(output.hidden, 'short network fetch does not flash the label');
