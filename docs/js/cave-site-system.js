@@ -625,10 +625,10 @@
     return true;
   }
 
-  function addCacheLayer(mapData, rng, candidates, blockedKeys, plan, chestOnly = false) {
+  function addCacheLayer(mapData, rng, candidates, blockedKeys, plan, chestOnly = false, allowNearSide = false) {
     // When there is a real sealed extension, the cache must be on the far side.
     // Caves lacking a safe separator preserve the existing accessible deep-cache fallback.
-    if (plan.separator) candidates = extensionTiles(candidates, plan);
+    if (plan.separator && !allowNearSide) candidates = extensionTiles(candidates, plan); // A secondary cache may move to the entrance side if a valid hidden Puzzle Cave door already occupies the annex.
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
     const cacheTile = distant.find(tile => hasFeatureClearance(tile, blockedKeys, 2));
     if (!cacheTile) return false;
@@ -1058,8 +1058,14 @@
     if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.TRAPPED_CACHE) {
       if (!addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan) && plan.separator) {
-        discardUnrewardedSeparator(mapData, blockedKeys, plan); // If a full cache cannot fit, keep the ordinary reachable chest instead.
-        addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+        if (plan.puzzleDoor) {
+          // The secret door is already the guaranteed discovery. Do not erase its wall
+          // merely because this cave history's *extra* cache cannot fit behind it.
+          addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan, false, true);
+        } else {
+          discardUnrewardedSeparator(mapData, blockedKeys, plan); // Without any destination, retract the wall and keep an accessible cache.
+          addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+        }
       }
     }
     else if (contents === TYPES.CATACOMB) addCatacombLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
