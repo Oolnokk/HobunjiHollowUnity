@@ -559,7 +559,7 @@
     const old=areas.get(key);
     if(old?.network===network&&old.scene===scene)return old.portals;
     if(old)clear(key);
-    const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||root.CaveSiteSystem?.sitesForZone?.(key)||[]; // Independent roll, not the ordinary cave/animal-den pool.
+    const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[],network?.grid||null)||root.CaveSiteSystem?.sitesForZone?.(key)||[]; // Independent roll, not the ordinary cave/animal-den pool.
     const musicReady=typeof root.PuzzleCaveMelody?.generate==='function'&&typeof root.PuzzleCaveMelody?.createSession==='function'; // Missing music runtime falls back to the one-step plate instead of silently auto-opening.
     const portals=plan(network,profiles).map(p=>({
       ...p,requiresSong:p.requiresSong&&musicReady,area:key,disposed:false,solved:false,justSolved:false,
