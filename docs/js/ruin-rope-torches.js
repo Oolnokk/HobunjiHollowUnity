@@ -110,10 +110,15 @@
         const imageWidth = image.naturalWidth || image.width, imageHeight = image.naturalHeight || image.height;
         const map = original.clone(); // Fuel recolor must never overwrite the shared cached source texture.
         map.needsUpdate = true;
-        const material = new THREE.MeshBasicMaterial({
-          map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide,
-          depthWrite: false, depthTest: true, toneMapped: false,
-        });
+        const surface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same authored cutout/colour policy as the held Torch-Flail artwork.
+        const material = surface?.makeMaterial
+          ? surface.makeMaterial(THREE, map, 'ruin-rope-torch-' + layer.id, {
+              side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
+            })
+          : new THREE.MeshBasicMaterial({
+              map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide,
+              depthWrite: false, depthTest: true, toneMapped: false,
+            }); // Defensive fallback for isolated test/tool runtimes without the PNG pipeline.
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(imageWidth * HEAD_UNIT, imageHeight * HEAD_UNIT), material);
         mesh.position.set((Number(layer.offsetPx?.x) || 0) * HEAD_UNIT,
           -(Number(layer.offsetPx?.y) || 0) * HEAD_UNIT, 0);
