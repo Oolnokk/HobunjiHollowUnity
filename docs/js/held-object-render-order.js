@@ -135,6 +135,8 @@
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
+  let lastWaterClipScopes = 0; // Active owner tiles applied to merged-water fragment clipping in the latest replay.
+  let lastWaterClipOverflow = 0; // Number of owners when a crowded frame exceeds the conservative shader capacity.
   let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
   let fullscreenReplayCount = 0; // Replays that fell back to full-framebuffer passes (see replayScissorRect).
   let lastReplayScissorCoverage = 1; // Fraction of the framebuffer the last replay's passes touched.
@@ -1311,6 +1313,59 @@
     return false;
   }
 
+
+  const WATER_REPLAY_MAX_SCOPES = 12; // Six vec4 uniforms keep the additional water shader cost low on WebGL1 mobile.
+
+  function beginWaterReplayClip(covers, scopes, hasUnknownOwner) {
+    const states = new Map(); // Shared water uniforms restored in the outer replay finally block.
+    lastWaterClipScopes = 0;
+    lastWaterClipOverflow = 0;
+    if (hasUnknownOwner || !covers.length) return states; // Unknown world positions must not erase legitimate submersion.
+    const tiles = new Map(); // One clip tile per distinct wet actor, not one per hand, foot, or weapon.
+    for (const scope of scopes) {
+      if (!Number.isFinite(scope?.col) || !Number.isFinite(scope?.row)) continue;
+      if (!covers.some(cover => tintCoverNearActor(cover, [scope]))) continue;
+      const col = Math.floor(scope.col), row = Math.floor(scope.row); // The same owner tile used by ground-x-ray neighborhoods.
+      tiles.set(col + ',' + row, { col, row });
+    }
+    if (!tiles.size) return states;
+    if (tiles.size > WATER_REPLAY_MAX_SCOPES) {
+      lastWaterClipOverflow = tiles.size; // Preserve all wet actors rather than truncate and erase their water tint.
+      return states;
+    }
+    for (const cover of covers) {
+      forEachMaterial(cover.material, material => {
+        if (states.has(material)) return; // Merged rivers/floods often share one animated ShaderMaterial.
+        const uniforms = material?.uniforms;
+        const count = uniforms?.uHobunjiWaterReplayClipScopeCount;
+        const radius = uniforms?.uHobunjiWaterReplayClipRadius;
+        const packed = uniforms?.uHobunjiWaterReplayClipScopes;
+        if (!count || !radius || !(packed?.value instanceof Float32Array) || packed.value.length < 24) return;
+        states.set(material, { count: count.value, radius: radius.value, packed: packed.value.slice() });
+        packed.value.fill(0);
+        let i = 0;
+        for (const tile of tiles.values()) {
+          packed.value[i * 2] = tile.col;
+          packed.value[i * 2 + 1] = tile.row;
+          i++;
+        }
+        radius.value = WATER_TINT_TILE_RADIUS + 0.5;
+        count.value = tiles.size;
+      });
+    }
+    if (states.size) lastWaterClipScopes = tiles.size;
+    return states;
+  }
+
+  function endWaterReplayClip(states) {
+    for (const [material, previous] of states) {
+      const uniforms = material.uniforms;
+      uniforms.uHobunjiWaterReplayClipScopeCount.value = previous.count;
+      uniforms.uHobunjiWaterReplayClipRadius.value = previous.radius;
+      uniforms.uHobunjiWaterReplayClipScopes.value.set(previous.packed);
+    }
+  }
+
   const footTintScreenRect = new THREE.Vector4(); // Reused scratch: no per-frame allocation.
   function hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers) {
     if (!overlayMeshes.length || !tintCovers.length) return false;
@@ -1864,6 +1919,8 @@
     const groupCullCandidates = groups.length > 1 ? [] : null; // Reuse the union cull traversal for tighter group depth draws.
     let replayCulled = null;
     let overlayHidden = null;
+    let distantTintHidden = null; // Far water is excluded before every depth rebuild, not only the last tint pass.
+    let waterReplayClipStates = null; // Restores clipped water shader uniforms even after a failed render.
     const colorBuffer = renderer.state?.buffers?.color;
     const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
     const nearReplay = groups.some(group => group.regions.length) ? nearReplaySupport(canLockColorMask) : null; // Only depth-clearing x-ray groups benefit.
@@ -1871,6 +1928,8 @@
     let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
     let nearSnapshotFailed = false;
     try {
+      distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
+      waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, scopes, hasUnknownOwner);
       if (scissored) {
         glState.scissor(scissorRect);
         glState.setScissorTest(true);
@@ -1896,7 +1955,7 @@
       // Keep ground in the depth replay. A compatible ground material discards
       // only fragments at this actor's actual standing elevation. Unknown actor
       // ownership and unsupported shaders deliberately retain full occlusion.
-      overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? tintCovers : [])]);
+      overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? nearbyTintCovers : [])]);
       // Multiple actor-elevation groups use the same depth-occluder registries.
       // Resolve visible entries once after hiding overlay participants; their
       // visibility is restored between groups, but membership does not change.
@@ -2020,31 +2079,26 @@
       }
 
       if (tintOverlay) {
-        // A shared water material and replay camera layer would otherwise
-        // draw excluded distant meshes even when only nearby materials changed.
-        const distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
+        // Distant meshes remain hidden from ALL replay stages, and the merged
+        // shader rejects distant fragments of any nearby mesh as well.
+        const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
         try {
-          const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
-          try {
-            camera.layers.mask = WATER_REPLAY_MASK;
-            const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
-            rawRender.call(renderer, scene, camera);
-            window.PerfProfiler?.end(tintPerf);
-            waterReplayCount++;
-          } finally {
-            restoreMaterialStates(tintStates);
-          }
-          const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
-          try {
-            camera.layers.mask = WATER_REPLAY_MASK;
-            const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
-            rawRender.call(renderer, scene, camera);
-            window.PerfProfiler?.end(depthPerf);
-          } finally {
-            restoreMaterialStates(coverDepthStates);
-          }
+          camera.layers.mask = WATER_REPLAY_MASK;
+          const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(tintPerf);
+          waterReplayCount++;
         } finally {
-          restoreVisibility(distantTintHidden);
+          restoreMaterialStates(tintStates);
+        }
+        const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
+        try {
+          camera.layers.mask = WATER_REPLAY_MASK;
+          const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(depthPerf);
+        } finally {
+          restoreMaterialStates(coverDepthStates);
         }
       }
 
@@ -2054,6 +2108,8 @@
       if (groundMaterials) setGroundElevationFilter(groundMaterials, null);
       if (overlayHidden) restoreVisibility(overlayHidden);
       if (replayCulled) restoreVisibility(replayCulled);
+      if (waterReplayClipStates) endWaterReplayClip(waterReplayClipStates);
+      if (distantTintHidden) restoreVisibility(distantTintHidden);
       if (scissored) restoreRendererScissor(renderer);
       camera.layers.mask = originalCameraMask;
       if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
@@ -2401,6 +2457,8 @@
       waterReplays: waterReplayCount,
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
+      waterClipScopes: lastWaterClipScopes,
+      waterClipOverflow: lastWaterClipOverflow,
       stencilBits: lastBaseStencilBits,
       missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
       scissoredReplays: scissoredReplayCount,

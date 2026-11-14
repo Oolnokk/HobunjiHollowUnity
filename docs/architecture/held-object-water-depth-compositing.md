@@ -163,6 +163,17 @@ continues to receive a single color draw, and normal water shader/color passes
 are unchanged. A three-tile neighborhood conservatively includes long gear
 near a bank without allowing arbitrarily distant streams to trigger tint.
 
+The previous proximity guard excluded remote water only from the last tint
+pass. Earlier depth reconstruction still forced remote translucent water to
+write an irregular alpha mask, causing patchy visual gaps. Distant water
+meshes are now excluded before *every* held/foot depth reconstruction. A
+merged river with near and remote tiles is also clipped per fragment against
+owner world tiles inside the selective replay, rather than trusting a whole
+river's giant bounding volume. The normal animated water color shader is
+unmodified outside the replay, and clip/visibility state is restored after
+every render. The twelve-owner clip budget conservatively falls back in
+crowds and is visible in Pixel Probe as `clipOverflow`.
+
 Pixel Probe reports `nearWater` and `farWaterSkipped` under `Held x-ray`;
 these counters count eligible/excluded cover **meshes**, not individual water
 fragments. Verify both a dry actor with a distant river and an underwater actor
