@@ -27,6 +27,8 @@ async function main() {
   let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
   let playerRested = true; // Starts protected while isolated NPC tests run, then exercises player hourly yawns explicitly.
   const playerChestChannels = new Map(); // Verifies the shared player body compositor receives and clears its yawn contribution.
+  const stretchCalls = []; // Records begin, pose update and completion from the player-only final-render presentation.
+  let stretchActionBlocked = false; // Simulates another action taking ownership before the next hourly yawn.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
@@ -44,6 +46,13 @@ async function main() {
       clearChannel: name => playerChestChannels.delete(name),
     },
     TemplePrayerRestBlessings: { isRested: () => playerRested, isWellRested: () => false },
+    PlayerYawnStretchPresentation: {
+      start: entry => { stretchCalls.push({ kind: 'start', entry }); return true; },
+      update: (entry, progress) => { stretchCalls.push({ kind: 'update', entry, progress }); return true; },
+      end: entry => { stretchCalls.push({ kind: 'end', entry }); },
+      actionBlocked: () => stretchActionBlocked,
+      debugSnapshot: () => ({ test: true }),
+    },
     BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
@@ -239,10 +248,13 @@ async function main() {
   assert.equal(runtime.playerMovementMultiplier(), .25, 'player waking yawn slows walking to 25% like NPC fatigue');
   ms = 43000; frame({ timestamp: ms });
   assert.ok(playerChestChannels.has('player-yawn-rest'), 'player torso uses the shared body transform compositor');
+  assert.ok(stretchCalls.some(call => call.kind === 'start' && call.entry.isPlayer), 'player yawn invokes the dedicated stretch presentation');
+  assert.ok(stretchCalls.some(call => call.kind === 'update' && call.progress > 0), 'player yawn supplies live animation progress to the stretch');
   ms = 46000; frame({ timestamp: ms });
   assert.equal(expressions.has('player'), false, 'player mouth expression clears after the yawn');
   assert.equal(runtime.playerMovementMultiplier(), 1, 'the player speed returns to normal after five seconds');
   assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'the torso channel is cleared after yawning');
+  assert.ok(stretchCalls.some(call => call.kind === 'end' && call.entry.isPlayer), 'all player yawn visuals release after completion');
 
   for (const species of ['tletingan', 'nuhongan', 'longoran']) {
     window.__hobunjiPlayerProfile.appearance.speciesId = species; // Simulates each playable subspecies in turn without rebuilding the harness.
@@ -295,6 +307,10 @@ async function main() {
   hour = 180; ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'the final stand-up transition must suppress a new yawn');
   window.__hobunjiFurnitureDebug.sitState = null;
+  stretchActionBlocked = true; // A busy player must not begin yawning even though the fatigue timer elapsed.
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'an unrelated ongoing action postpones the player yawn');
+  stretchActionBlocked = false;
   window.Combat.deps.player.prone = true; // Native impact poses are not compatible with yawn chest/neck animation.
   ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'a prone player must not begin an hourly yawn');
