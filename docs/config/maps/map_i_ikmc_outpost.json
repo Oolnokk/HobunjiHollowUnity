@@ -477,5 +477,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "wallHeight": 1.75
 }
