@@ -844,7 +844,9 @@
     const nest = focused?.nest || null;
     const content = focused?.record || null;
     const contentId = content?.id || null;
-    const taking = nest && content && deps.getActiveAction() === 'nest_take' && deps.getActionHeldDown();
+    const holdDown = deps.getActionHeldDown(); // Physical input state used by the common combat-interrupted hold contract.
+    const holdAllowed = window.GameplayInputRouter?.canContinueHold?.('nest_take', holdDown) ?? holdDown; // A nest hold may not start or resume during the same press once combat begins.
+    const taking = nest && content && deps.getActiveAction() === 'nest_take' && holdAllowed;
     deps.player._nestTakeActive = !!taking;
 
     if (!taking || (_activeNestContentHoldId && _activeNestContentHoldId !== contentId)) {

@@ -12,7 +12,7 @@ assert(
   'tent holds require the selected tent interaction, like nest holds',
 );
 assert(
-  banditCamps.includes('&& actionHeldDown'),
+  banditCamps.includes('&& holdAllowed') && banditCamps.includes("canContinueHold?.('bandit_tent_interact', actionHeldDown)"),
   'tent holds require a continuously held input',
 );
 assert(
