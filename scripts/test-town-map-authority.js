@@ -63,7 +63,7 @@ const vm = require('node:vm');
 const editor = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8');
 const normalizationStart = editor.indexOf('function normalizeWorkspaceTileRecord(t)');
 const normalizationEnd = editor.indexOf('function loadWorkspace()', normalizationStart);
-const importStart = editor.indexOf('function importAny(obj)');
+const importStart = editor.indexOf('function importAny(obj');
 const importEnd = editor.indexOf('// ── Wire up', importStart);
 assert(normalizationStart >= 0 && normalizationEnd > normalizationStart && importStart >= 0 && importEnd > importStart, 'Map Editor import sources must be available');
 const testWorkspace = { maps: [], activeId: '' }; // Mutable simulated Map Editor workspace used by the real importAny().
