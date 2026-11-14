@@ -142,7 +142,9 @@
   }
 
   function localeIsDiscovered(instance, discovered) {
-    const record = discovered[localeDiscoveryKey(instance)]; // Existing proximity-only discoveries cannot reveal an enter-only cave.
+    const current = discovered[localeDiscoveryKey(instance)]; // New secret discoveries belong to a single Tothal cycle.
+    const legacy = instance?.shiftSecret ? discovered[instance.localeId] : null; // Older saves used a non-year-qualified shrine id.
+    const record = current || (legacy && Number(legacy.firstDiscoveredYear) === Number(deps.currentTothalYear()) ? legacy : null); // Keep a discovery from this very cycle after upgrading, but never reveal it in later Shifts.
     return ENTER_ONLY_LOCALE_IDS.has(instance.localeId) ? record?.entered === true : !!record;
   }
 
@@ -176,7 +178,7 @@
     let changed = false;
     for (const inst of _allLocaleInstances()) {
       const discoveryKey = localeDiscoveryKey(inst); // Rerolled shrine map pins expire naturally with the previous Tothal year.
-      if (inst.zoneId !== zoneId || discovered[discoveryKey] || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
+      if (inst.zoneId !== zoneId || localeIsDiscovered(inst, discovered) || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
       const dist = Math.hypot(inst.col - pc, inst.row - pr);
       if (dist > FOG_REVEAL_RADIUS) continue;
       discovered[discoveryKey] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
