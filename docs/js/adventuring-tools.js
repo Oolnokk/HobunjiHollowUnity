@@ -32,10 +32,13 @@
     if (!isHoldingTorch()) return {ok:false,message:'No torch equipped.'};
     const ray=deps?.getAimRay?.(), THREE=deps?.THREE, holder=deps?.getToolHolder?.();
     let start=null, end=null; // Shared physical strike segment drives all ruin/fire contacts and prevents remote lighting.
-    if (THREE && ray?.direction && holder) {
+    if (THREE && holder) {
       start=holder.getWorldPosition(new THREE.Vector3());
-      const direction=new THREE.Vector3(ray.direction.x,ray.direction.y,ray.direction.z);
-      if (direction.lengthSq()>1e-8) end=start.clone().addScaledVector(direction.normalize(),2.4);
+      const aimedDirection=deps?.getPerspectiveDirection?.(start) || ray?.direction; // Melee-style hand-to-reticle convergence, falling back to the raw camera ray in isolated scenes.
+      if (aimedDirection) {
+        const direction=new THREE.Vector3(aimedDirection.x,aimedDirection.y,aimedDirection.z); // Shared segment checks source ignition, target contact and solid cover.
+        if (direction.lengthSq()>1e-8) end=start.clone().addScaledVector(direction.normalize(),2.4);
+      }
     }
     const block = start && end ? window.NearbyVolumeCollision?.segmentHit?.(start,end,.12) : null;
     const maxT = Number.isFinite(block?.t) ? Math.min(1,Math.max(0,block.t)) : 1; // Keep melee fire on the visible side of solid ruin cover.
