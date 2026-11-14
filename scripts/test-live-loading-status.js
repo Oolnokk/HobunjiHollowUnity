@@ -38,8 +38,15 @@ const advance = ms => {
   }
   throw new Error('loading status timer loop did not settle');
 };
-const output = { hidden: true, textContent: '' }; // The actual bare output element, with no panel props.
+let textWrites = 0; // Measures actual DOM text mutations during large asynchronous resource bursts.
+const output = {
+  hidden: true,
+  _text: '',
+  get textContent() { return this._text; },
+  set textContent(value) { textWrites++; this._text = value; },
+}; // The actual bare output element, with no panel props.
 let requests = []; // Existing LoadingScreenRuntime pending-network snapshot; mutable only from simulated fetch edges.
+let fullNetworkScans = 0; // The indicator must not copy the entire outstanding fetch map on every asset event.
 let networkChanged = () => {}; // Registered through the existing loading-screen request hook.
 let screenHidden = () => {}; // Registered once for fullscreen-to-gameplay handoff.
 let fullscreenVisible = false; // Simulates lore loader that must own the foreground.
@@ -53,7 +60,8 @@ const windowObject = {
   __hobunjiGameRenderer: {},
   THREE: { DefaultLoadingManager: manager },
   LoadingScreenRuntime: {
-    pendingRequestNames: () => requests.slice(),
+    pendingRequestCount: () => requests.length,
+    pendingRequestNames: () => { fullNetworkScans++; return requests.slice(); },
     onPendingRequestsChanged(callback) { networkChanged = callback; return () => { networkChanged = () => {}; }; },
     onHidden(callback) { screenHidden = callback; return () => { screenHidden = () => {}; }; },
     getDebug: () => ({ visible: fullscreenVisible }),
@@ -113,6 +121,26 @@ assert.equal(output.hidden, false, 'pending work becomes visible once the playab
 manager.itemEnd('assets/textures/portrait.png');
 assert(output.hidden);
 
+manager.itemStart('assets/models/anchor.glb');
+advance(400);
+assert.equal(output.hidden, false, 'initial prolonged asset appears before the burst begins');
+const beforeBurstWrites = textWrites; // Baseline for grouped message writes; 500 asset edges must not each rewrite DOM.
+const beforeBurstScans = fullNetworkScans; // Baseline for full fetch-name enumeration in pending().
+for (let i = 0; i < 500; i++) manager.itemStart('assets/models/batch-' + i + '.glb');
+assert.equal(fullNetworkScans, beforeBurstScans, 'resource edges use constant-time pending counts rather than rescanning fetch URLs');
+assert.equal(textWrites, beforeBurstWrites, 'resource starts within the coalescing window do not rewrite the status');
+assert.equal(timers.size, 1, 'a burst keeps a single scheduled update instead of rescheduling 500 timers');
+advance(100);
+assert.equal(textWrites, beforeBurstWrites + 1, 'a single batched text update includes the whole concurrent batch');
+assert.match(output.textContent, /3D models ×501/, 'all 501 genuinely pending models are reported after the batched update');
+const beforeEndWrites = textWrites; // Ensure a completion burst does not trigger one text write per individual mesh.
+for (let i = 0; i < 500; i++) manager.itemEnd('assets/models/batch-' + i + '.glb');
+assert.equal(textWrites, beforeEndWrites, 'resource finishes are coalesced as well');
+manager.itemEnd('assets/models/anchor.glb');
+assert(output.hidden, 'the last completion hides the status immediately instead of waiting for the batch timer');
+assert.equal(hint.snapshot().text, '', 'Pixel Probe no longer reports stale loading text when all work has finished');
+assert.equal(timers.size, 0, 'the completion cancels the pending category refresh');
+
 (async () => {
   const release = hint.begin('Preparing wilderness'); // Exposed integration hook for later yielding zone loaders.
   advance(400);
@@ -126,6 +154,6 @@ assert(output.hidden);
   assert.equal(hint.snapshot().pending, 0, 'success and failure settle the same async task');
   assert(output.hidden);
   assert.equal(timers.size, 0, 'idle hint leaves no recurring timers');
-  assert.equal(hint.snapshot().completedAssets, 3, 'all completed Three.js assets are counted');
+  assert.equal(hint.snapshot().completedAssets, 504, 'all completed Three.js assets including a 501-model burst are counted');
   console.log('live loading status: delayed show, network/assets, loading screen, startup renderer, transitions and cleanup passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
