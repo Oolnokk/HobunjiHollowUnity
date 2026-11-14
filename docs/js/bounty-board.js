@@ -6,7 +6,7 @@
 // Used after a bandit's actual species/gender are known.
 const FIRST=['Ash','Bitter','Black','Bog','Bronze','Broken','Copper','Crooked','Dagger','Dead','Flat','Grim','Long','Mangrove','Marsh','Mud','Night','Quick','Ragged','Red','River','Rot','Salt','Short','Soot','Split','Stone','Storm','Thorn'];
 const SECOND=['Crook','Cutter','Dagger','Drench','Gash','Hook','Hound','Knife','Lash','Murk','Notch','Prowler','Rat','Rend','Ripper','Scratcher','Slinker','Snap','Snarl','Squall','Thorn','Wood'];
-const SPECIES={mashtzarr:'mashtzarr','mao-ao':'mao_ao',kenkari:'kenkari',tletingan:'slagothim',slagothim:'slagothim','engh-sho':'engh_sho'};
+const SPECIES={mashtzarr:'mashtzarr','mao-ao':'mao_ao',kenkari:'kenkari',tletingan:'slagothim',nuhongan:'slagothim',longoran:'slagothim',slagothim:'slagothim','engh-sho':'engh_sho'}; // Both derived Slagothim are rolled by bandits, so their naming culture must be available even before optional species-inheritance wrappers install.
 const SYL={crooked:2,ragged:2,bitter:2,broken:2,dagger:2,mangrove:2,river:2,cutter:2,prowler:2,ripper:2,scratcher:2,slinker:2};
 const ANATOMY=new Set(['finger','fingers','thumb','thumbs','knuckle','knuckles','hand','hands','palm','palms','fist','fists','beak','beaks','blood','bone','bones','bristle','bristles','claw','claws','crest','crests','ear','ears','eye','eyes','fang','fangs','feather','feathers','foot','feet','fur','gut','guts','hide','hides','hoof','hooves','horn','horns','jaw','jaws','muzzle','muzzles','paw','paws','scale','scales','skull','skulls','snout','snouts','tail','tails','talon','talons','tooth','teeth','trunk','trunks','tusk','tusks','whisker','whiskers','wing','wings']);
 

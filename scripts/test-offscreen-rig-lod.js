@@ -21,6 +21,20 @@ assert.equal(lod.shouldAnimate(near, 0, 0, 2, 1, 2), true, 'close actors never p
 cam.lookAt(0, 0, 20); cam.updateMatrixWorld(); cam.matrixWorldInverse.copy(cam.matrixWorld).invert(); lod.beginFrame(cam);
 assert.equal(lod.shouldAnimate(back, 0, 0, 20, 0.016, 20), true, 'resumes the same frame it re-enters view');
 assert.equal(lod.getStats().skipped, 0);
+// Off-camera AI cadence: only calm, unseen, not-close BanditCombat humanoids drop to the coarse tick.
+const humanoid = (z, extra = {}) => ({ isBandit: true, state: 'return', avatarRef: { group: { position: new THREE.Vector3(0, 0, z) } }, ...extra });
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30), 30), true, 'a calm hunter behind the camera ticks coarsely');
+assert.equal(lod.shouldCoarseTickAi(humanoid(20), 20), false, 'in view stays full rate');
+assert.equal(lod.shouldCoarseTickAi(humanoid(-3), 3), false, 'close to the player stays full rate');
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30, { state: 'chase' }), 30), false, 'a fighter stays full rate');
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30, { _chunkCombatTarget: {} }), 30), false, 'an ecology fighter stays full rate');
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30, { knockbackT: 0.2 }), 30), false, 'a hit reaction stays full rate');
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30, { isBandit: false }), 30), false, 'wildlife keeps its own distance LOD');
+assert.equal(lod.getStats().aiCoarse, 1);
+lod.setCoarseAiEnabled(false);
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30), 30), false, 'the A/B switch turns it off');
+lod.setCoarseAiEnabled(true);
 lod.setEnabled(false); lod.beginFrame(cam);
+assert.equal(lod.shouldCoarseTickAi(humanoid(-30), 30), false, 'no frustum means full rate');
 assert.equal(lod.shouldAnimate(actor(), 0, 0, -50, 5, 50), true, 'disabled means always animate');
 console.log('offscreen-rig-lod: ok');

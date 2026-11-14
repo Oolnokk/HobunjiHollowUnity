@@ -76,7 +76,7 @@
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/item-acquisition-rarity.js?v=20261110he8e05f5"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
-  <script src="js/crop-varieties.js?v=20261114foreignSeedPlant1"></script>
+  <script src="js/crop-varieties.js?v=20261114foreignSeedLifecycle2"></script>
   <script src="js/crop-planting.js?v=20261110tzkFortune1"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
@@ -200,12 +200,12 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261114waterclip2"></script>
+  <script src="js/held-action-animations.js?v=20261114h1794934"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261112kurrayaMerge1"></script>
+  <script src="js/character-action-locks.js?v=20261114haf657ee"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -366,7 +366,7 @@
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
        calls window.BountyBoard.init(...) during its own setup. -->
-  <script src="js/bounty-board.js?v=20261008h416634c"></script>
+  <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20261114packbooks1"></script>
@@ -457,7 +457,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261114hbd38170&surfaceUv=20261113terrainpass2"></script>
+  <script src="js/house-pieces.js?v=20261114h9fb75fd&surfaceUv=20261113terrainpass2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -564,7 +564,7 @@
   <script src="js/player-jump.js?v=20261109ropeBase1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
+  <script src="js/creature-cliff-climb.js?v=20261114h0137b40"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
@@ -746,7 +746,7 @@
        system in environment-surface-runtime.js (rain-planes.js loads that
        above on demand, now an inert stub kept only so that bootstrap check
        and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1"></script>
+  <script src="js/environment-surface-micro-plateau.js?v=20261114hc81c49e"></script>
   <!-- Feeds the surface overlay's build progress into the Pixel Probe
        report line (window.EnvironmentSurfacePixelProbe) — intercepts
        window.PixelProbe assignment if pixel-probe.js below hasn't loaded
@@ -844,8 +844,8 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
-  <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
-  <script src="js/cavern-generator.js?v=20261108hdenreview2"></script>
+  <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
+  <script src="js/cavern-generator.js?v=20261114puzzleCaveVaultAudit2"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
@@ -881,9 +881,9 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261114melodyTempoPer1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261114puzzleCaveVaultAudit2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
+  <script src="js/cave-site-system.js?v=20261114puzzleCaveVaultAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -2979,7 +2979,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114foreignSeedPlant1"></script>
+  <script src="game.js?v=20261114ha8e4819"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

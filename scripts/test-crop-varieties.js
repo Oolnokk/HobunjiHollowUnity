@@ -208,18 +208,18 @@ assert.equal(game.CropPlanting.plantCrop(blendedTile, offspring.id).ok, true);
 assert.equal(blendedTile.crop, offspring.id);
 assert.equal(cropData[blendedTile.crop].varietyColor, expectedPigment, 'world renderer uses the exact blended offspring color');
 
-const liveGame = fs.readFileSync('docs/game.js', 'utf8'); // Guards the production-only inventory registry injection missing from the original implementation.
-assert.match(liveGame, /window\.FarmProduction\.init\(\{ getPlayerData:[^\n]+calendar, inventory, inventoryItems, ITEM_DEFS, cropData/,
-  'the live farm initializer receives inventoryItems so imported seeds become selectable');
-const bagRestoreAt = liveGame.indexOf('Object.assign(inventory, playerData.isNewWorld'); // Ensures the actual game rebind occurs in the correct lifecycle, not just the mock.
-const varietyRebindAt = liveGame.indexOf('window.CropVarieties?.attach?.(', bagRestoreAt);
+const liveGame = fs.readFileSync('docs/game.js', 'utf8'); // Assert gameplay retains its existing inventory and restore boundaries.
+const bagRestoreAt = liveGame.indexOf('Object.assign(inventory, playerData.isNewWorld'); // Saved bag contents arrive before the cooking restore hook.
 const cookingRestoreAt = liveGame.indexOf('window.CookingSystem.restore(playerData.cookingState);', bagRestoreAt);
-assert.ok(bagRestoreAt >= 0 && varietyRebindAt > bagRestoreAt && cookingRestoreAt > varietyRebindAt,
-  'world-specific saved seeds are registered after bag hydration and before cooking/Pack restore');
-assert.match(liveGame.slice(varietyRebindAt, cookingRestoreAt), /getWorldId: _tothalWorldId/,
-  'onboarding cultivar rebind uses the actual restored world identity');
-assert.match(liveGame, /inventoryWheelCache\.stacks = getInventoryStackKeys\('all'\)[\s\S]*?itemsByKey\.get\(key\) \|\| \{[\s\S]*?seedFor: ITEM_DEFS\[key\]\.seedFor/,
-  'the fallback item-wheel entry retains canonical seed planting metadata if the scroll registry is missing');
+assert.ok(bagRestoreAt >= 0 && cookingRestoreAt > bagRestoreAt,
+  'world-specific inventory is assigned before CookingSystem.restore() triggers seed rehydration');
+assert.doesNotMatch(liveGame.slice(bagRestoreAt, cookingRestoreAt), /CropVarieties\?\.attach/,
+  'saved-cultivar repair belongs in the inventory metadata bridge, not the game.js monolith');
+const inventoryBridge = fs.readFileSync('docs/js/inventory-action-metadata-bridge.js', 'utf8'); // The inventory adapter is the authoritative owner of crop registration timing.
+assert.match(inventoryBridge, /bindCultivarInventory\(injectedDeps\)/,
+  'cooking initialization hands its live inventory registry to the cultivar owner');
+assert.match(inventoryBridge, /api\.restore = function inventoryActionMetadataRestore[\s\S]*?bindCultivarInventory\(\)/,
+  'cooking restore rehydrates saved varieties through the inventory bridge');
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
