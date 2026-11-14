@@ -52,10 +52,10 @@
     deps = injectedDeps;
     installCombatGestureUnlock(); // Warm audio unlock happens on a trusted gesture, before the next wilderness attack.
     installCombatDirectionalUpdates(); // Turn the camera mid-grunt without leaving an enemy pinned to an old ear.
+    preloadConfiguredCombatSfx();
+    preloadSpecialCombatSfx(); // Keep attack readiness ahead of the newly predecoded object SFX queue.
     preloadConfiguredObjectSfx();
     preloadStoneBeatBuffers(); // Decode all four real recordings before a player steps onto a timed melody plate.
-    preloadConfiguredCombatSfx();
-    preloadSpecialCombatSfx(); // Drenkirra projectile sounds are authored separately from the shared combat manifest.
     preloadAnimalVoices();
     preloadConfiguredFootstepSfx();
     installFootstepAudioUnlock();
