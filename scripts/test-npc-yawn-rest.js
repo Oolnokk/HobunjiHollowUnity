@@ -309,7 +309,12 @@ async function main() {
   window.Fishing = { state: { active: true } };
   hour += 2; ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'active fishing animation owns the body and defers yawns');
-  for (let index = 0; index < 16; index++) await Promise.resolve(); // Flush player fallback plans after triggering real sleep/yawn paths.
+  window.Fishing.state.active = false;
+  window.__hobunjiPlayerProfile.appearance.speciesId = 'mao-ao';
+  playerRested = false;
+  hour += 2; ms += 600; frame({ timestamp: ms }); // Start an audible un-rested fallback yawn before its five-second cleanup.
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
+  for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
   assert.ok(audioCalls.some(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
     && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
     && call.opts.tempo === 1 && call.opts.pitchSemitones === 7),
