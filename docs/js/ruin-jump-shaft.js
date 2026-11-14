@@ -37,6 +37,7 @@
   const MIN_SIZE = 1.1, MAX_SIZE = 6; // Big chambers get big, forgiving slabs rather than long gaps.
   const PILLAR_RADIUS = 3.1; // js/dev-random-ruin-lich-themes.js PILLAR_RADIUS.
   const PILLAR_HEIGHT = 2.4;
+  const FIXTURE_MARGIN = .12; // Keeps central fixtures inside each slab's walkable perimeter, including the smallest ice pads.
   const SAFE_GAP_FRACTION = 0.85;
   const FALL_SAFE_DROP = 3, FALL_DAMAGE_PER_UNIT = 3.2;
   const DEATH_DEPTH = 8; // Pit bottom sits this far below the ground gallery.
@@ -152,6 +153,9 @@
       }
       for (const record of chosen.records) {
         if (record.kind === 'plasm') record.tiles = plasmTiles(record, record.axis, record.side === 'N' || record.side === 'E'); // N and E sides run toward +x/+z.
+        const fixtureSize = Math.min(1.05, record.w - FIXTURE_MARGIN * 2, record.d - FIXTURE_MARGIN * 2); // Size shared by props on Tothal, Hronal and Kanthic platforms.
+        record.fixtureSlot = { x: record.x, y: record.y, z: record.z, w: fixtureSize, d: fixtureSize,
+          occupiedBy: record.kind === 'pillar' ? 'explodingPillar' : record.kind === 'plasm' ? 'plasm' : null }; // A pillar/plasm occupies the slot by default but can be replaced while composing.
         platforms.push(record);
         ids.push(record.id);
       }
@@ -183,6 +187,27 @@
   }
 
 
+  function assignFixture(plan, platformId, fixtureKind) {
+    // Call during generation, before the theme mounts hazards; replaces a pillar/plasm
+    // instead of putting a second collider or lethal floor under the new fixture.
+    const kind = String(fixtureKind || '').trim();
+    if (!/^[a-z][a-z0-9-]{0,40}$/i.test(kind)) return null;
+    const platform = plan?.platforms?.find(p => p.id === platformId);
+    const slot = platform?.fixtureSlot;
+    if (!slot || (slot.occupiedBy && !['explodingPillar', 'plasm', kind].includes(slot.occupiedBy))) return null;
+    if (plan.hazardsMounted && (platform.kind === 'pillar' || platform.kind === 'plasm')) return null;
+    if (slot.occupiedBy === kind) return slot;
+    if (platform.kind === 'pillar' || platform.kind === 'plasm') {
+      platform.originalKind = platform.kind; // Retained for diagnostics: the hazard was intentionally swapped out.
+      platform.kind = 'plain'; // Existing dimensions, position and verified jump route are unchanged.
+      delete platform.tiles; delete platform.clearTiles; // Do not build plasm under a fixture.
+    }
+    slot.occupiedBy = kind;
+    plan.checks = verify(plan);
+    plan.ok = plan.checks.every(check => check.ok);
+    return plan.ok ? slot : null;
+  }
+
   function verify(plan) {
     const checks = [], add = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail || '' });
     const limit = plan.physics.reach * SAFE_GAP_FRACTION;
@@ -209,6 +234,9 @@
         add(`story${route.story}-${p.id}-steppingTiles`, hasIsland);
       }
     }
+    add('fixtureSlots', plan.platforms.every(p => p.fixtureSlot && p.fixtureSlot.w >= .8 && p.fixtureSlot.d >= .8 &&
+      p.fixtureSlot.x === p.x && p.fixtureSlot.y === p.y && p.fixtureSlot.z === p.z &&
+      p.fixtureSlot.w <= p.w - FIXTURE_MARGIN * 2 + 1e-6 && p.fixtureSlot.d <= p.d - FIXTURE_MARGIN * 2 + 1e-6));
     add('uniqueIds', new Set(plan.platforms.map(p => p.id)).size === plan.platforms.length);
     return checks;
   }
@@ -301,6 +329,7 @@
           plasmHandles.push(handle);
         }
       }
+      plan.hazardsMounted = true; // Subsequent fixture assignments must not silently orphan mounted hazards.
       return true;
     };
     const playerOn = (p, x, z, y) => Math.abs(x - p.x) <= p.w / 2 + .05 && Math.abs(z - p.z) <= p.d / 2 + .05 && Math.abs(y - p.y) <= .35;
@@ -343,7 +372,7 @@
   let active = null;
   const mountTracked = (plan, deps) => { active?.dispose?.(); const runtime = mount(plan, deps); const dispose = runtime.dispose; active = runtime; runtime.dispose = () => { if (active === runtime) active = null; dispose(); }; return runtime; };
   return Object.freeze({
-    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, mount: mountTracked, plasmTiles,
+    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles,
     isIceAt: (x, z, y) => !!active?.isIceAt?.(x, z, y),
     senseTargets: () => [],
   });
