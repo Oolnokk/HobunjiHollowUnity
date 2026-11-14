@@ -3086,13 +3086,26 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <!-- Parser-ordered feature groups; edit their manifests rather than this shared entrypoint.
-       See architecture/classic-script-groups.md. -->
+  <!-- Toast/zone-banner + message history, and the keyboard QoL layer (menu hotkeys, F1 cheat sheet, H message log); game.js inits both. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="qol"></script>
+  <!-- Shared location arrival titles and musical stings after loading. -->
+  
+  
+  
+  <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
+  <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="guild"></script>
-  <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Player sleep presentation; before game.js. -->
+   <!-- Spearhead and Oddclaw exterior gate check, legal item registration and Garanki's persistent custody. -->
+  
+  <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
+  <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="render"></script>
+  
+  
+  
+  <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
+  
   <script src="game.js?v=20261113inputrouter2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
