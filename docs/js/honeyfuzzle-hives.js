@@ -100,7 +100,7 @@
   // ---- A. swarm lifecycle ---------------------------------------------------
 
   function hiveGenotype(zoneId, key, primaryColor) {
-    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(SPECIES) || null; // One canonical allele shape for wild swarms and their harvested eggs.
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(SPECIES) || null; // One canonical allele shape for wild swarms and their captured queens.
     if (!genotype?.base) return genotype;
     genotype.base.color = primaryColor || genotype.base.color;
     const seed = window.HoneyfuzzleSwarm?.seedFromString?.(key) || 0; // Same deterministic markings even if the defender is not currently spawned.
@@ -121,7 +121,7 @@
     const hx = (hive.col + 0.5) * T, hy = (hive.row + 0.5) * T;
     const angle = deps.rnd() * Math.PI * 2;
     const swarmColor = window.HoneyfuzzleColors?.pickForKey(zoneId, hive.key) || undefined;
-    const genotype = hiveGenotype(zoneId, hive.key, swarmColor); // One source of truth shared with hive egg genotype persistence.
+    const genotype = hiveGenotype(zoneId, hive.key, swarmColor); // One source of truth shared with hive queen genotype persistence.
     const c = deps.makeCreatureEntity(SPECIES, hx + Math.cos(angle) * T * 0.9, hy + Math.sin(angle) * T * 0.9, {
       homeX: hx, homeY: hy, state: 'idle', hiveKey: hive.key, wildlifeRole: 'prey',
       swarmColor, genotype, // The ordinary wildlife entity carries the same cosmetic genes as farm and companion swarms.
