@@ -89,6 +89,23 @@ reloadedWindow.CropVarieties.attach({ cropData: reloadedCrops, ITEM_DEFS: reload
 assert.equal(reloadedWindow.CropVarieties.colorOf(grandchild.seedKey), grandchild.color, 'fresh runtime restores second-generation pigment solely from saved seed ID');
 assert.equal(reloadedCrops[grandchild.id].varietyColor, grandchild.color, 'restored farm crop mesh uses exactly the saved hybrid color');
 assert.equal(reloadedItemDefs[grandchild.seedKey].seedFor, grandchild.id, 'reloaded seeds regain their planting target from their saved item key');
+
+const lateWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Real boot attaches crops before restoring the world's saved bag.
+vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { window: lateWindow });
+const lateCrops = { needlegrain: { ...cropData.needlegrain } }; // Fresh runtime has only the native crop and no restored hybrid definitions.
+const lateDefs = { needlegrain: { ...itemDefs.needlegrain }, needlegrainSeeds: { ...itemDefs.needlegrainSeeds } };
+const lateBag = {}; // Restored world data arrives only after the initial farm startup attachment.
+lateWindow.CropVarieties.attach({ cropData: lateCrops, ITEM_DEFS: lateDefs, inventory: lateBag });
+assert.equal(lateDefs[grandchild.seedKey], undefined, 'late-loaded hybrid does not exist in definitions before save restore');
+lateBag[grandchild.seedKey] = 2;
+const lateCatalog = []; // Also reproduces an inventory scroll first supplied on the second attachment.
+lateWindow.CropVarieties.attach({ cropData: lateCrops, ITEM_DEFS: lateDefs, inventory: lateBag, inventoryItems: lateCatalog });
+assert.equal(lateDefs[grandchild.seedKey].seedFor, grandchild.id, 'save restore registers a late-loaded hybrid in the canonical item table');
+assert.equal(lateCatalog.find(entry => entry.key === grandchild.seedKey)?.seedFor, grandchild.id, 'save restore makes the owned hybrid selectable and plantable');
+assert.equal(lateCatalog.filter(entry => entry.key === grandchild.seedKey).length, 1, 'late-bound catalog is registered only once');
+assert.equal(lateCrops[grandchild.id].varietyColor, grandchild.color, 'late restore also preserves multi-generation pigment');
+lateWindow.CropVarieties.attach({ cropData: lateCrops, ITEM_DEFS: lateDefs, inventory: lateBag, inventoryItems: lateCatalog });
+assert.equal(lateCatalog.filter(entry => entry.key === grandchild.seedKey).length, 1, 'subsequent world reattachment does not duplicate saved cultivar entries');
 const storageOnlyWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Separate restored farm stores the seed outside the bag.
 vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { window: storageOnlyWindow });
 storageOnlyWindow.CropVarieties.attach({ cropData: { needlegrain: { ...cropData.needlegrain }, heftroot: { ...cropData.heftroot }, redberries: { ...cropData.redberries } },
@@ -194,6 +211,13 @@ assert.equal(cropData[blendedTile.crop].varietyColor, expectedPigment, 'world re
 const liveGame = fs.readFileSync('docs/game.js', 'utf8'); // Guards the production-only inventory registry injection missing from the original implementation.
 assert.match(liveGame, /window\.FarmProduction\.init\(\{ getPlayerData:[^\n]+calendar, inventory, inventoryItems, ITEM_DEFS, cropData/,
   'the live farm initializer receives inventoryItems so imported seeds become selectable');
+const bagRestoreAt = liveGame.indexOf('Object.assign(inventory, playerData.isNewWorld'); // Ensures the actual game rebind occurs in the correct lifecycle, not just the mock.
+const varietyRebindAt = liveGame.indexOf('window.CropVarieties?.attach?.(', bagRestoreAt);
+const cookingRestoreAt = liveGame.indexOf('window.CookingSystem.restore(playerData.cookingState);', bagRestoreAt);
+assert.ok(bagRestoreAt >= 0 && varietyRebindAt > bagRestoreAt && cookingRestoreAt > varietyRebindAt,
+  'world-specific saved seeds are registered after bag hydration and before cooking/Pack restore');
+assert.match(liveGame.slice(varietyRebindAt, cookingRestoreAt), /getWorldId: _tothalWorldId/,
+  'onboarding cultivar rebind uses the actual restored world identity');
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
