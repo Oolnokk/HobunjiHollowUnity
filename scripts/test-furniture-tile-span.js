@@ -213,11 +213,12 @@ for(const axis of ['x','z']){
   const deck=moving.find(part=>part.name.includes('deck'));
   assert.equal(steps.length,8,'preset has four rigid steps on each end');
   assert.equal(moving.length,3,'only the walkway and two rails stretch');
-  assert.equal(state.tileSpan.startTiles,2);
-  assert.equal(state.tileSpan.endTiles,2);
+  assert.equal(state.tileSpan.startTiles,1);
+  assert.equal(state.tileSpan.endTiles,1);
   assert.equal(state.tileSpan.middleTiles,2);
   assert.equal(state.tileSpan.totalTiles,8);
   assert.equal(state.tileBase.footprintW,8,'footprint matches preview tile count');
+  assert.equal(state.tileBase.footprintD,2,'stairs and deck are two tiles wide');
   const left=state.parts.find(part=>part.id===deck.tileSpanRoots.start.partId);
   const right=state.parts.find(part=>part.id===deck.tileSpanRoots.end.partId);
   near(left.transform.x+left.transform.sx/2,-deck.transform.sx/2,'preset deck joins start landing');
@@ -225,6 +226,31 @@ for(const axis of ['x','z']){
   near(left.transform.y+left.transform.sy/2,deck.transform.y+deck.transform.sy/2,'stairs end flush with flat walkway');
   near(right.transform.y+right.transform.sy/2,deck.transform.y+deck.transform.sy/2,'opposite stair is level');
   assert.ok(steps.every(part=>part.tileSpanRole==='start'||part.tileSpanRole==='end'),'steps remain rigid');
+  for (const side of ['start','end']) {
+    const flight=steps.filter(part=>part.tileSpanRole===side);
+    const min=Math.min(...flight.map(part=>part.transform.x-part.transform.sx/2));
+    const max=Math.max(...flight.map(part=>part.transform.x+part.transform.sx/2));
+    near(max-min,1,side+' full four-step stair flight is only one tile long');
+    assert.ok(flight.every(part=>Math.abs(part.transform.sz-1.8)<1e-8),'each rigid stair spans two tiles across Z');
+    assert.ok(flight.every(part=>Math.abs(part.transform.sx-.25)<1e-8),'all four steps are scaled, not removed');
+    near(side==='start'?max:min,side==='start'?-1:1,'rigid stairs remain flush with deck in authored base pose');
+  }
+  const meshes=new Map(state.parts.map(part=>{
+    const mesh=new Mesh(part.transform.x,part.transform.z,part.transform.sx);
+    mesh.geometry=new Geometry(part.transform.sx,part.transform.sz);
+    mesh.position.y=part.transform.y;
+    return [part.id,mesh];
+  }));
+  const scene={userData:{meshById:meshes}};
+  const result=stretch.apply(scene,{parts:state.parts,tileSpan:state.tileSpan},8);
+  assert.equal(result.errors.length,0,'actual stair bridge preset has valid roots at eight tiles');
+  near(result.delta,4,'four extra middle tiles stretch the eight-tile bridge');
+  near(meshes.get(left.id).position.x+left.transform.sx/2,-3,'extended start landing meets deck at -3');
+  near(meshes.get(right.id).position.x-right.transform.sx/2,3,'extended end landing meets deck at +3');
+  near(extrema(meshes.get(deck.id).geometry,'x')[0],-3,'extended deck reaches left landing');
+  near(extrema(meshes.get(deck.id).geometry,'x')[1],3,'extended deck reaches right landing');
+  assert.ok(steps.every(part=>meshes.get(part.id).geometry.vertices.every(vertex=>vertex.x>=-.126&&vertex.x<=.126)),
+    'all stair geometries stay a quarter-tile step and are never stretched');
 }
 const html=fs.readFileSync('docs/tools/furniture-avatar-author/index.html','utf8');
 const author=fs.readFileSync('docs/tools/furniture-avatar-author/tile-span-author.js','utf8');
