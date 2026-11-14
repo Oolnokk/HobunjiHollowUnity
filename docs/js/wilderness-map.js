@@ -125,8 +125,9 @@
       const layout = deps._zoneLayouts.get(zoneId);
       for (const inst of (layout?.localeInstances || [])) {
         out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false,
-          shiftSecret: !!inst.shiftGeneratedSecret || inst.category === 'ruin_entrance'
-            || (inst.category === 'great_fey_shrine' && inst.localeId !== 'locale_banubu_shrine'), // Old cached layouts also obey Shift turnover.
+          shiftSecret: !inst.alwaysVisible && (inst.shiftGeneratedSecret === true
+            || (inst.shiftGeneratedSecret == null && (inst.category === 'ruin_entrance'
+              || (inst.category === 'great_fey_shrine' && inst.localeId !== 'locale_banubu_shrine')))), // Older caches need category fallback; explicit authored opt-outs and always-visible locations stay persistent.
           alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
       }
     }
