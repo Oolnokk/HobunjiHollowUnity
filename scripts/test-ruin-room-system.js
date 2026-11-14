@@ -26,7 +26,7 @@ assert.equal(Rooms.roomAt([
   {...room2,y:6,id:'upper'}, {...room2,y:0,id:'lower'},
 ],34,14,4).id,'lower','jumping under another floor cannot switch rooms');
 assert.equal(Rooms.roomAt([{...room2,y:6}],34,14,4),null,'a floor above the player must not activate from below');
-assert.equal(Rooms.roomAt([room2,{...room2,id:'nested',x:33,z:13,w:3,d:3}],34,14,0).id,
+assert.equal(Rooms.roomAt([layout.rooms[1],{...layout.rooms[1],id:'nested',x:33,z:13,w:3,d:3}],34,14,0).id,
   'nested','smaller nested authored V50 puzzle rooms take precedence');
 assert.equal(Rooms.doorNear({x:30,z:15},{x:30,z:15,y:0},false,4),true,
   'an upward jump through a doorway cannot close the door');
