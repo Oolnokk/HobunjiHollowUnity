@@ -24,6 +24,8 @@ async function main() {
   const listeners = {}; // Captures the real sleep-completion event listener added by NpcYawnRest.
   let playerKomaOptions = null; // Records action-lock and facing ownership on the player ceremony.
   let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
+  let playerRested = true; // Starts protected while isolated NPC tests run, then exercises player hourly yawns explicitly.
+  const playerChestChannels = new Map(); // Verifies the shared player body compositor receives and clears its yawn contribution.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
@@ -36,6 +38,11 @@ async function main() {
     _npcWalkers: [walker],
     __hobunjiPlayerProfile: { characterId: 'character-a', appearance: { speciesId: 'mao-ao', gender: 'female' } },
     WorldPortraitLife: { getPlayerAvatar: () => ({ group: playerAvatar }) },
+    PlayerBodyTransformComposer: {
+      setChannel: (name, channel) => playerChestChannels.set(name, channel),
+      clearChannel: name => playerChestChannels.delete(name),
+    },
+    TemplePrayerRestBlessings: { isRested: () => playerRested, isWellRested: () => false },
     BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
@@ -52,7 +59,7 @@ async function main() {
           playerKomaOptions = options;
           assert.equal(options.participantId, 'player', 'the real player actions must be locked, never npc:player');
           assert.equal(options.preserveFacing, true);
-          assert.equal(options.allowWalking, false);
+          assert.equal(options.allowWalking, true, 'player Koma still allows the quarter-speed yawn walk');
         }
         if (actor.rec.id === 'longoran-retry') pendingChews.set(actor.rec.id, onDrink);
         else onDrink();
@@ -175,9 +182,9 @@ async function main() {
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'waking');
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   ms = 14000; frame({ timestamp: ms });
-  hour = 33; ms = 14500; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().active.length, 0, '16-hour post-sleep rest buff suppresses fatigue');
-  hour = 35; ms = 15000; frame({ timestamp: ms });
+  hour = 20; ms = 14500; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'a three-hour NPC sleep grants only the short Rested fatigue grace');
+  hour = 22; ms = 15000; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
   assert.equal(ceremonies, 1, 'Koma cannot refresh merely because midnight passed');
   ms = 20500; frame({ timestamp: ms });
@@ -225,8 +232,13 @@ async function main() {
   assert.equal(ceremonies, 4, 'Mao-ao players never chew ceremonial Koma');
   assert.equal(toasts.length, 0, 'Mao-ao player has no Koma toast');
   assert.equal(expressions.get('player'), 'yap', 'the player wakes with the existing mouth-open yawn expression');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'player waking yawn slows walking to 25% like NPC fatigue');
+  ms = 43000; frame({ timestamp: ms });
+  assert.ok(playerChestChannels.has('player-yawn-rest'), 'player torso uses the shared body transform compositor');
   ms = 46000; frame({ timestamp: ms });
   assert.equal(expressions.has('player'), false, 'player mouth expression clears after the yawn');
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'the player speed returns to normal after five seconds');
+  assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'the torso channel is cleared after yawning');
 
   for (const species of ['tletingan', 'nuhongan', 'longoran']) {
     window.__hobunjiPlayerProfile.appearance.speciesId = species; // Simulates each playable subspecies in turn without rebuilding the harness.
@@ -248,7 +260,31 @@ async function main() {
   assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
     'legacy bed wake animates the player even when other NPCs also yawn in the same frame');
   assert.equal(toasts.length, 4, 'legacy bed wake still lets an eligible player chew their daily Koma');
-  console.log('NPC yawns, full-day clock, both sleep paths, silent NPC Koma and player-only subspecies toast: OK');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'player Koma yawn still uses the quarter-speed movement multiplier');
+  ms += 6000; frame({ timestamp: ms });
+  playerRested = false;
+  hour += 2; ms += 600; frame({ timestamp: ms });
+  assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
+    'an un-rested player yawns hourly, even when they did not just wake from Sleep');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'hourly player yawns apply 75% slowdown too');
+  ms += 5200; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'hourly player yawn finishes after five seconds');
+  playerRested = true; // Rested and Well Rested both prevent new fatigue yawns.
+  hour += 2; ms += 500; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'Rested prevents the next hourly player fatigue event');
+
+  const longSleeper = {
+    rec: { id: 'full-night-sleeper', appearance: { speciesId: 'mao-ao', gender: 'male' } },
+    root: { parent: {}, position: { x: 4, z: 4 } }, area: 'farm', state: 'idle',
+    neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
+    currentScheduleTarget: { pose: 'lie' }, _bedLieActive: true,
+  }; // Deliberately observes an uninterrupted eight-hour sleep to earn full 16h NPC protection.
+  window._npcWalkers.push(longSleeper);
+  hour = 100; ms += 500; frame({ timestamp: ms });
+  hour = 108; longSleeper._bedLieActive = false; longSleeper.currentScheduleTarget = { pose: 'stand' };
+  ms += 500; frame({ timestamp: ms });
+  assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 124, 'eight hours of NPC sleep grants 16h protection');
+  console.log('Player/NPC hourly yawns, 75% slow, short Rested, eight-hour Well Rested and daily Koma: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
