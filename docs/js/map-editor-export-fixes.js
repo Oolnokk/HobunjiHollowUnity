@@ -11,11 +11,9 @@
   if (!/\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) return;
 
   const baselineById = new Map();
-  const baselineObjectById = new Map();
   let workspaceBaseline = null; // Used by buildWorkspaceDiffBundle() to include authored workspace-level changes such as plateau groups, ramps, and game links.
   let baselineMapIds = new Set(); // Used by buildWorkspaceDiffBundle() to report whole maps added or removed since the baseline was captured.
   let installed = false;
-  let mapListObserver = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -267,15 +265,14 @@
       tileChanges: tileChangeCount,
       changedFields: Object.keys(changes),
     };
-    if (!diff.summary.changed) diff._note = 'No changes since this map was loaded or created.';
+    if (!diff.summary.changed) diff._note = 'No edits relative to the captured baseline. Use Map JSON to export the complete current map.';
     return diff;
   }
 
-  function captureMapBaseline(map, force = false) {
+  function captureMapBaseline(map) {
     if (!map?.id) return;
-    if (!force && baselineObjectById.get(map.id) === map) return;
+    // Called only for an explicit baseline reset; imports must not silently redefine the comparison.
     baselineById.set(String(map.id), mapSnapshot(map));
-    baselineObjectById.set(String(map.id), map);
   }
 
   function workspaceAuthoringSnapshot(ws) {
@@ -334,21 +331,12 @@
     };
   }
 
-  function captureWorkspaceBaselines(force = false) {
+  function captureWorkspaceBaselines() {
     const ws = workspace();
     if (!ws || !Array.isArray(ws.maps)) return;
-    for (const map of ws.maps) captureMapBaseline(map, force);
-    if (force || !workspaceBaseline) {
-      workspaceBaseline = workspaceAuthoringSnapshot(ws);
-      baselineMapIds = new Set(ws.maps.filter(map => map?.id).map(map => String(map.id)));
-    }
-  }
-
-  function installMapListObserver() {
-    const list = $('mapList');
-    if (!list || mapListObserver) return;
-    mapListObserver = new MutationObserver(() => captureWorkspaceBaselines(false));
-    mapListObserver.observe(list, { childList: true, subtree: true });
+    for (const map of ws.maps) captureMapBaseline(map);
+    workspaceBaseline = workspaceAuthoringSnapshot(ws);
+    baselineMapIds = new Set(ws.maps.filter(map => map?.id).map(map => String(map.id)));
   }
 
   function stopOriginal(event) {
@@ -387,6 +375,7 @@
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
+      if (diff.summary && !diff.summary.changed) setStatus('No edits since baseline. Use Map JSON for the full map.');
       if ($('diffModal')) $('diffModal').style.display = 'block';
     } catch (error) {
       console.error('Map diff export failed:', error);
@@ -416,8 +405,7 @@
       return;
     }
     installed = true;
-    captureWorkspaceBaselines(true);
-    installMapListObserver();
+    captureWorkspaceBaselines();
     $('exportMapBtn')?.addEventListener('click', handleMapExport, { capture: true });
     $('exportDiffBtn')?.addEventListener('click', handleDiffExport, { capture: true });
     $('diffDownloadBtn')?.addEventListener('click', handleDiffDownload, { capture: true });
@@ -426,12 +414,14 @@
       buildStandaloneMapExport,
       buildDetailedDiff,
       buildWorkspaceDiffBundle,
-      captureWorkspaceBaselines: () => captureWorkspaceBaselines(true),
+      captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
         baselineIds: Array.from(baselineById.keys()),
         baselineMapIds: Array.from(baselineMapIds),
         activeMapId: activeMap()?.id || null,
+        activeHasBaseline: baselineById.has(String(activeMap()?.id || '')), // Mobile-friendly baseline diagnostic.
+        activeDiffSummary: activeMap() ? (buildDetailedDiff(activeMap()).summary || null) : null,
       }),
     };
   }
