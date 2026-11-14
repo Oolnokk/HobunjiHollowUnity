@@ -155,6 +155,16 @@
       : code === '000000' ? REGIONS[0].label : pureRegion ? REGIONS[genes[0]].label : 'Crossbred';
     return { family, genes: code, color, effects, idealMin: min, idealMax: max, growDays: Math.max(1, Math.round(Number(base.growDays || 3) * growth * 10) / 10), seasonGrowth, region };
   }
+  function syncSeedItem(id, label) {
+    const key = seedKey(id); // Canonical imported-seed key shared by the pack entry and planting action.
+    const definition = itemDefs?.[key]; // Reconciled on world reattachment, including legacy definitions created before the scroll existed.
+    if (!definition) return;
+    definition.seedFor = id;
+    if (!Array.isArray(inventoryItems)) return;
+    const entry = inventoryItems.find(item => item?.key === key); // Updates existing saved/early-boot entries without creating duplicates.
+    if (entry) entry.seedFor = id;
+    else inventoryItems.push({ key, icon: definition.icon, label: (label + ' Seeds').toUpperCase(), max: 999, seedFor: id });
+  }
   function register(family, code, colorHex = null) {
     if (!FAMILIES.includes(family) || !MAX_CODE.test(code) || (colorHex != null && !/^[0-9a-f]{6}$/.test(colorHex)) || !cropData?.[family]) return null;
     const id = idFor(family, code, colorHex);
@@ -183,15 +193,13 @@
         foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
         desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
-      itemDefs[seedKey(id)] = { ...baseSeed, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
+      itemDefs[seedKey(id)] = { ...baseSeed, seedFor: id, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
         rarityBaseSellPrice: Number(baseSeed.sellPrice) || 4, // Native seed baseline preserved for rarity inspection.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
           ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
         desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
-      if (Array.isArray(inventoryItems) && !inventoryItems.some(entry => entry.key === seedKey(id))) {
-        inventoryItems.push({ key: seedKey(id), icon: itemDefs[seedKey(id)].icon, label: (label + ' Seeds').toUpperCase(), max: 999 });
-      } // All seeds, including saved hybrids, remain regular inventory objects.
+      syncSeedItem(id, label); // Foreign and crossbred seeds use the same contextual planting action as native seeds.
     }
     const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
     known.add(id); variants.set(id, variant);
@@ -237,6 +245,7 @@
     for (const family of FAMILIES) if (cropData[family]) for (let region = 1; region < REGIONS.length; region++)
       register(family, String(region).repeat(6)); // Every seed offer has a definition before traders roll stock.
     hydrate(inventory);
+    for (const id of known) syncSeedItem(id, cropData[id]?.label || id); // An earlier attachment may have supplied definitions without the final inventory-scroll registry.
     if (itemDefs) for (const id of known) { // World rebinding can restore a different pedigree for a pre-existing genotype; fix its registered prices once, never per frame.
       for (const key of [id,seedKey(id)]) {
         const def = itemDefs[key];

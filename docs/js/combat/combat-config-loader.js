@@ -93,7 +93,7 @@
     ['js/crop-billboard-presentation.js?v=20260924perf1', () => !!window.HobunjiCropBillboardPresentation],
     ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/mastery-policy.js?v=20261112h0880222', () => !!window.HobunjiMasteryPolicy],
-    ['js/inventory-action-metadata-bridge.js?v=20261107h244dda5', () => !!window.HobunjiInventoryActionMetadataBridge],
+    ['js/inventory-action-metadata-bridge.js?v=20261114foreignSeedLifecycle2', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20261114perfumesAudit3', () => !!window.InventoryHeldOverride],
     ['js/clothing-weaving-system.js?v=20261104hPatternQuick1435a', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/fur-hood-leatherworking.js?v=20261107furPreview1', () => !!window.FurHoodLeatherworking],
