@@ -104,19 +104,29 @@
     document.body.appendChild(_arcBd);
     const activeTool = deps.getActiveTool();
     const backBurden=window.Shattercasks?.backCarriedInfo?.(); // Adds one virtual entry without modifying saved equipment slots.
-    const slots=backBurden?[...deps.WHEEL_SLOTS,'backBurden']:deps.WHEEL_SLOTS;
+    const slots=['adventuringGateway',...deps.WHEEL_SLOTS,...(backBurden?['backBurden']:[])]; // Non-default gateway sits counterclockwise of the first regular tool.
     const n=slots.length,step=n>1?(ARC_S-ARC_E)/(n-1):0;
     slots.forEach((slot, i) => {
       const deg = ARC_S - i * step;
+      const isGateway=slot==='adventuringGateway';
       const isBack=slot==='backBurden';
       const eq = !isBack?deps.equipmentSlots[slot]:null, def = eq ? deps.TOOL_ITEM_DEFS[eq] : null;
       const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
-      const icon  = isBack?'🎒':deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
-      const label = isBack?backBurden.displayName:({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot);
+      const icon  = isGateway?'🧭':isBack?'🎒':deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
+      const label = isGateway?'Adventuring Tools':isBack?backBurden.displayName:({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot);
       const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
       _arcSlots.push({ angle: deg, el, data: slot });
       if (activeTool === slot) _arcActive = i;
     });
+    if (_arcActive < 0) _setActive(1); // A selected adventuring tool does not make this non-default gateway the default.
+  }
+
+  function _openAdventuringArc() {
+    const available = window.AdventuringTools?.entries?.() || [];
+    _openEntries('adventuring', [
+      {id:'back',icon:'↩',label:'Back to Tools',onSelect:_openToolArc},
+      ...available.map(entry=>({...entry,initial:entry.active || available.length===1})),
+    ]); // Only unlocked tools appear; new tools register without modifying farm-wheel order.
   }
 
   function _openAmmoArc() {
@@ -419,6 +429,7 @@
     const selectedSpyglass = _arcOpen === 'entries:utilities' && slot?.data?.id === 'spyglass'; // Used to restore cursorless camera look only after the utility backdrop is gone.
     if (slot && slot.data?.id !== 'spyglass') window.Spyglass?.stow?.('other utility or equipment selected');
     if (_arcOpen === 'tool' && slot) {
+      if(slot.data==='adventuringGateway'){_openAdventuringArc();return;}
       if(slot.data==='backBurden')window.Shattercasks?.takeFromBack?.();
       else {
         deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
@@ -468,10 +479,12 @@
       },
       scrollTool(dir) {
         window.Spyglass?.stow?.('tool selected');
+        if (_arcOpen === 'entries:adventuring') { this.scrollEntries(dir); return; }
         if (_arcOpen !== 'tool') _openToolArc();
         const idx=_arcActive>=0?_arcActive:_arcSlots.findIndex(s=>s.data===deps.getActiveTool());
         const next=(idx+dir+_arcSlots.length)%_arcSlots.length;
         const chosen=_arcSlots[next]?.data;
+        if(chosen==='adventuringGateway'){_openAdventuringArc();return;}
         if(chosen!=='backBurden'){
           deps.setHeldMode('tool');
           deps.setLastHeldFarmTool(chosen);
