@@ -106,264 +106,30 @@
     ],
     "door": {
       "x": 13,
-      "y": 10
+      "y": 11
     },
     "connectors": [],
     "extensions": {
       "entryTunnels": [
         {
           "x": 13,
-          "y": 10
+          "y": 11
         }
       ],
       "tallEntryTunnels": [],
       "chimneys": [],
       "porches": [
         {
-          "x": 6,
-          "y": 7
-        },
-        {
-          "x": 7,
-          "y": 7
-        },
-        {
-          "x": 8,
-          "y": 7
-        },
-        {
-          "x": 9,
-          "y": 7
-        },
-        {
-          "x": 10,
-          "y": 7
-        },
-        {
-          "x": 6,
-          "y": 8
-        },
-        {
-          "x": 7,
-          "y": 8
-        },
-        {
-          "x": 8,
-          "y": 8
-        },
-        {
-          "x": 9,
-          "y": 8
-        },
-        {
-          "x": 10,
-          "y": 8
-        },
-        {
-          "x": 6,
-          "y": 9
-        },
-        {
-          "x": 7,
-          "y": 9
-        },
-        {
-          "x": 8,
-          "y": 9
-        },
-        {
-          "x": 9,
-          "y": 9
-        },
-        {
-          "x": 10,
-          "y": 9
-        },
-        {
-          "x": 6,
-          "y": 10
-        },
-        {
-          "x": 7,
-          "y": 10
-        },
-        {
-          "x": 8,
-          "y": 10
-        },
-        {
-          "x": 9,
-          "y": 10
-        },
-        {
-          "x": 10,
-          "y": 10
-        },
-        {
-          "x": 6,
-          "y": 11
-        },
-        {
-          "x": 7,
-          "y": 11
-        },
-        {
-          "x": 8,
-          "y": 11
-        },
-        {
-          "x": 9,
-          "y": 11
-        },
-        {
-          "x": 10,
-          "y": 11
-        },
-        {
-          "x": 11,
-          "y": 11
-        },
-        {
           "x": 12,
-          "y": 11
-        },
-        {
-          "x": 13,
           "y": 11
         },
         {
           "x": 14,
           "y": 11
-        },
-        {
-          "x": 15,
-          "y": 11
-        },
-        {
-          "x": 16,
-          "y": 11
-        },
-        {
-          "x": 6,
-          "y": 12
-        },
-        {
-          "x": 7,
-          "y": 12
-        },
-        {
-          "x": 8,
-          "y": 12
-        },
-        {
-          "x": 9,
-          "y": 12
-        },
-        {
-          "x": 10,
-          "y": 12
-        },
-        {
-          "x": 11,
-          "y": 12
-        },
-        {
-          "x": 12,
-          "y": 12
-        },
-        {
-          "x": 13,
-          "y": 12
-        },
-        {
-          "x": 14,
-          "y": 12
-        },
-        {
-          "x": 15,
-          "y": 12
-        },
-        {
-          "x": 16,
-          "y": 12
         }
       ],
       "porchStairs": [
         {
-          "x": 7,
-          "y": 13
-        },
-        {
-          "x": 8,
-          "y": 13
-        },
-        {
-          "x": 9,
-          "y": 13
-        }
-      ],
-      "railings": [
-        {
-          "x": 6,
-          "y": 7
-        },
-        {
-          "x": 7,
-          "y": 7
-        },
-        {
-          "x": 8,
-          "y": 7
-        },
-        {
-          "x": 9,
-          "y": 7
-        },
-        {
-          "x": 10,
-          "y": 7
-        },
-        {
-          "x": 11,
-          "y": 7
-        },
-        {
-          "x": 6,
-          "y": 8
-        },
-        {
-          "x": 6,
-          "y": 9
-        },
-        {
-          "x": 6,
-          "y": 10
-        },
-        {
-          "x": 16,
-          "y": 10
-        },
-        {
-          "x": 6,
-          "y": 11
-        },
-        {
-          "x": 16,
-          "y": 11
-        },
-        {
-          "x": 6,
-          "y": 12
-        },
-        {
-          "x": 10,
-          "y": 12
-        },
-        {
-          "x": 11,
-          "y": 12
-        },
-        {
           "x": 12,
           "y": 12
         },
@@ -374,16 +140,9 @@
         {
           "x": 14,
           "y": 12
-        },
-        {
-          "x": 15,
-          "y": 12
-        },
-        {
-          "x": 16,
-          "y": 12
         }
-      ]
+      ],
+      "railings": []
     }
   },
   "base": {
@@ -456,12 +215,12 @@
             2
           ],
           [
-            8,
+            4.09,
             0,
             2
           ],
           [
-            8,
+            4.09,
             1.4,
             2
           ],
@@ -473,7 +232,8 @@
         ],
         "tag": "wall",
         "color": null,
-        "outpostFace": "south"
+        "outpostFace": "south",
+        "entryPortalPart": "leftWall"
       },
       {
         "id": 57,
@@ -558,6 +318,3853 @@
         "tag": "wall",
         "color": null,
         "outpostFace": "east"
+      },
+      {
+        "id": 60,
+        "v": [
+          [
+            4.91,
+            0,
+            2
+          ],
+          [
+            8,
+            0,
+            2
+          ],
+          [
+            8,
+            1.4,
+            2
+          ],
+          [
+            4.91,
+            1.4,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "outpostFace": "south",
+        "entryPortalPart": "rightWall"
+      },
+      {
+        "id": 61,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2
+          ],
+          [
+            4.91,
+            1.058,
+            2
+          ],
+          [
+            4.91,
+            1.4,
+            2
+          ],
+          [
+            4.09,
+            1.4,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "outpostFace": "south",
+        "entryPortalCut": true,
+        "entryPortalPart": "lintel"
+      },
+      {
+        "id": 62,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "floor"
+      },
+      {
+        "id": 63,
+        "v": [
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0.18,
+            2
+          ],
+          [
+            4,
+            0.18,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "top"
+      },
+      {
+        "id": 64,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4,
+            0.18,
+            2
+          ],
+          [
+            5,
+            0.18,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "north"
+      },
+      {
+        "id": 65,
+        "v": [
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            0.18,
+            2
+          ],
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "east"
+      },
+      {
+        "id": 66,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "south"
+      },
+      {
+        "id": 67,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0.18,
+            2
+          ],
+          [
+            4,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "entryTunnelFloor",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "extensionFace": "west"
+      },
+      {
+        "id": 68,
+        "v": [
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionFace": "tunnelCeiling",
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true
+      },
+      {
+        "id": 69,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4.13,
+            0,
+            2
+          ],
+          [
+            4.13,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 70,
+        "v": [
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4,
+            1.148,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 71,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 72,
+        "v": [
+          [
+            4.13,
+            0,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 73,
+        "v": [
+          [
+            4.13,
+            0,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 74,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            4,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 75,
+        "v": [
+          [
+            4.87,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            4.87,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 76,
+        "v": [
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 77,
+        "v": [
+          [
+            4.87,
+            0,
+            2
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 78,
+        "v": [
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 79,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 80,
+        "v": [
+          [
+            4.87,
+            0,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ],
+          [
+            4.87,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 81,
+        "v": [
+          [
+            4,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 82,
+        "v": [
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 83,
+        "v": [
+          [
+            4,
+            0,
+            2.87
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 84,
+        "v": [
+          [
+            4.09,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 85,
+        "v": [
+          [
+            4.09,
+            0,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 86,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ],
+          [
+            4,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 87,
+        "v": [
+          [
+            4.91,
+            0,
+            2.87
+          ],
+          [
+            5,
+            0,
+            2.87
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            4.91,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 88,
+        "v": [
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 89,
+        "v": [
+          [
+            4.91,
+            0,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 90,
+        "v": [
+          [
+            5,
+            0,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 91,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 92,
+        "v": [
+          [
+            4.91,
+            0,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 93,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            3
+          ],
+          [
+            4.09,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 94,
+        "v": [
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 95,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 96,
+        "v": [
+          [
+            4.91,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 97,
+        "v": [
+          [
+            4.91,
+            1.058,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 98,
+        "v": [
+          [
+            4.09,
+            1.058,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.058,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 99,
+        "v": [
+          [
+            3,
+            0,
+            2
+          ],
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            3,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "floor"
+      },
+      {
+        "id": 100,
+        "v": [
+          [
+            3,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0.18,
+            2
+          ],
+          [
+            3,
+            0.18,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "top"
+      },
+      {
+        "id": 101,
+        "v": [
+          [
+            3,
+            0,
+            2
+          ],
+          [
+            3,
+            0.18,
+            2
+          ],
+          [
+            4,
+            0.18,
+            2
+          ],
+          [
+            4,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "north"
+      },
+      {
+        "id": 102,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4,
+            0.18,
+            2
+          ],
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "east"
+      },
+      {
+        "id": 103,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            0.18,
+            3
+          ],
+          [
+            3,
+            0.18,
+            3
+          ],
+          [
+            3,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "south"
+      },
+      {
+        "id": 104,
+        "v": [
+          [
+            3,
+            0,
+            3
+          ],
+          [
+            3,
+            0.18,
+            3
+          ],
+          [
+            3,
+            0.18,
+            2
+          ],
+          [
+            3,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 12,
+          "y": 11
+        },
+        "extensionFace": "west"
+      },
+      {
+        "id": 105,
+        "v": [
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            6,
+            0,
+            2
+          ],
+          [
+            6,
+            0,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "floor"
+      },
+      {
+        "id": 106,
+        "v": [
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            6,
+            0.18,
+            3
+          ],
+          [
+            6,
+            0.18,
+            2
+          ],
+          [
+            5,
+            0.18,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "top"
+      },
+      {
+        "id": 107,
+        "v": [
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            0.18,
+            2
+          ],
+          [
+            6,
+            0.18,
+            2
+          ],
+          [
+            6,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "north"
+      },
+      {
+        "id": 108,
+        "v": [
+          [
+            6,
+            0,
+            2
+          ],
+          [
+            6,
+            0.18,
+            2
+          ],
+          [
+            6,
+            0.18,
+            3
+          ],
+          [
+            6,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "east"
+      },
+      {
+        "id": 109,
+        "v": [
+          [
+            6,
+            0,
+            3
+          ],
+          [
+            6,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "south"
+      },
+      {
+        "id": 110,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            0.18,
+            3
+          ],
+          [
+            5,
+            0.18,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "sourceTile": {
+          "x": 14,
+          "y": 11
+        },
+        "extensionFace": "west"
+      },
+      {
+        "id": 111,
+        "v": [
+          [
+            3,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            4
+          ],
+          [
+            3,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 112,
+        "v": [
+          [
+            3,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0.06,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 113,
+        "v": [
+          [
+            3,
+            0,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 114,
+        "v": [
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 115,
+        "v": [
+          [
+            4,
+            0,
+            4
+          ],
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            3,
+            0.06,
+            4
+          ],
+          [
+            3,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 116,
+        "v": [
+          [
+            3,
+            0,
+            4
+          ],
+          [
+            3,
+            0.06,
+            4
+          ],
+          [
+            3,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 117,
+        "v": [
+          [
+            3,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 118,
+        "v": [
+          [
+            3,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0.12,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 119,
+        "v": [
+          [
+            3,
+            0,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 120,
+        "v": [
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 121,
+        "v": [
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 122,
+        "v": [
+          [
+            3,
+            0,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            3,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 123,
+        "v": [
+          [
+            3,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 124,
+        "v": [
+          [
+            3,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ],
+          [
+            3,
+            0.18000000000000002,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 125,
+        "v": [
+          [
+            3,
+            0,
+            3
+          ],
+          [
+            3,
+            0.18000000000000002,
+            3
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 126,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 127,
+        "v": [
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 128,
+        "v": [
+          [
+            3,
+            0,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            3,
+            0.18000000000000002,
+            3
+          ],
+          [
+            3,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 129,
+        "v": [
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            4
+          ],
+          [
+            4,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 130,
+        "v": [
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 131,
+        "v": [
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 132,
+        "v": [
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 133,
+        "v": [
+          [
+            5,
+            0,
+            4
+          ],
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 134,
+        "v": [
+          [
+            4,
+            0,
+            4
+          ],
+          [
+            4,
+            0.06,
+            4
+          ],
+          [
+            4,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 135,
+        "v": [
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 136,
+        "v": [
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 137,
+        "v": [
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 138,
+        "v": [
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 139,
+        "v": [
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 140,
+        "v": [
+          [
+            4,
+            0,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            4,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 141,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 142,
+        "v": [
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 143,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 144,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 145,
+        "v": [
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 146,
+        "v": [
+          [
+            4,
+            0,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            4,
+            0.18000000000000002,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 147,
+        "v": [
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0,
+            4
+          ],
+          [
+            5,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 148,
+        "v": [
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            6,
+            0.06,
+            4
+          ],
+          [
+            6,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 149,
+        "v": [
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 150,
+        "v": [
+          [
+            6,
+            0,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.06,
+            4
+          ],
+          [
+            6,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 151,
+        "v": [
+          [
+            6,
+            0,
+            4
+          ],
+          [
+            6,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 152,
+        "v": [
+          [
+            5,
+            0,
+            4
+          ],
+          [
+            5,
+            0.06,
+            4
+          ],
+          [
+            5,
+            0.06,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 153,
+        "v": [
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 154,
+        "v": [
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 155,
+        "v": [
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 156,
+        "v": [
+          [
+            6,
+            0,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 157,
+        "v": [
+          [
+            6,
+            0,
+            3.6666666666666665
+          ],
+          [
+            6,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0,
+            3.6666666666666665
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 158,
+        "v": [
+          [
+            5,
+            0,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.6666666666666665
+          ],
+          [
+            5,
+            0.12,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 159,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            6,
+            0,
+            3
+          ],
+          [
+            6,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 160,
+        "v": [
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "top"
+      },
+      {
+        "id": 161,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3
+          ],
+          [
+            6,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "north"
+      },
+      {
+        "id": 162,
+        "v": [
+          [
+            6,
+            0,
+            3
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "east"
+      },
+      {
+        "id": 163,
+        "v": [
+          [
+            6,
+            0,
+            3.3333333333333335
+          ],
+          [
+            6,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0,
+            3.3333333333333335
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "south"
+      },
+      {
+        "id": 164,
+        "v": [
+          [
+            5,
+            0,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3.3333333333333335
+          ],
+          [
+            5,
+            0.18000000000000002,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "extensionFace": "west"
+      },
+      {
+        "id": 165,
+        "v": [
+          [
+            1.82,
+            1.4,
+            -2.18
+          ],
+          [
+            1.82,
+            2.14,
+            0
+          ],
+          [
+            8.18,
+            2.14,
+            0
+          ],
+          [
+            8.18,
+            1.4,
+            -2.18
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofFace": "northSlope"
+      },
+      {
+        "id": 166,
+        "v": [
+          [
+            1.82,
+            2.14,
+            0
+          ],
+          [
+            1.82,
+            1.4,
+            2.18
+          ],
+          [
+            8.18,
+            1.4,
+            2.18
+          ],
+          [
+            8.18,
+            2.14,
+            0
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofFace": "southSlope"
       }
     ]
   },
@@ -595,24 +4202,7 @@
     "peakRotateFalloff": 0,
     "highlandInterlockOffset": 0.25,
     "shingleSource": "",
-    "crossGableSections": [
-      {
-        "axis": "x",
-        "x0": 6,
-        "x1": 12,
-        "y0": 7,
-        "y1": 11,
-        "role": "single_rectangle",
-        "roofSpan": 4,
-        "roofHeight": 1.19,
-        "highlandBodyTopScale": 0.85,
-        "roofBaseAlignedToCeiling": true,
-        "continuousFrustumSlope": true,
-        "triangularPrismRidge": true,
-        "clipToPrimaryRidge": false,
-        "clipSide": ""
-      }
-    ]
+    "crossGableSections": []
   },
   "assets": [],
   "wallStyle": "logs",
@@ -623,12 +4213,12 @@
     "courseGap": -0.03
   },
   "extensionGeneration": {
-    "entryTunnelGroups": 0,
+    "entryTunnelGroups": 1,
     "tallEntryTunnelGroups": 0,
     "chimneyGroups": 0,
-    "porches": 0,
-    "porchStairs": 0,
+    "porches": 2,
+    "porchStairs": 3,
     "railings": 0,
-    "generatedAt": "2026-10-15T02:53:53.621Z"
+    "generatedAt": "2026-11-14T00:00:00.000Z"
   }
 }
