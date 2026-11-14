@@ -117,6 +117,9 @@
   const _grassBillVert = `
     uniform float uTime;
     uniform float uStrength;
+    #ifdef HOBUNJI_GRASS_DISTANCE_LOD
+      uniform float uDensity;
+    #endif
     #ifdef USE_FOG
       #ifdef FOG_EXP2
         uniform float fogDensity;
@@ -128,6 +131,11 @@
     #endif
     varying vec2 vUv;
     varying float vRandom;
+    #ifdef HOBUNJI_GRASS_DISTANCE_LOD
+      // x = full-density radius, y = radius where thinning bottoms out,
+      // z = fraction of blades kept beyond y. y <= x disables the thinning.
+      uniform vec3 uGrassLod;
+    #endif
     void main() {
       vUv = uv;
       #ifdef USE_INSTANCING
@@ -140,6 +148,27 @@
       // Use the instance bottom origin for seasonal density so this value is
       // constant across the whole plane instead of becoming an interpolated mask.
       vRandom = fract(sin(dot(randomOrigin.xz, vec2(12.9898, 78.233))) * 43758.5453);
+      #ifdef HOBUNJI_GRASS_DISTANCE_LOD
+        // Blades the fragment shader would discard anyway (seasonal density)
+        // and a growing share of distant blades are pushed outside the clip
+        // volume here, so they cost no rasterisation, alpha-test or overdraw.
+        // The same per-blade random as the seasonal mask keeps the kept set
+        // stable while walking: a blade only appears/disappears as its own
+        // distance crosses its threshold, never flickers between frames.
+        float grassKeep = uDensity;
+        if (uGrassLod.y > uGrassLod.x) {
+          float grassLodDist = length(randomOrigin.xz - cameraPosition.xz);
+          grassKeep *= mix(1.0, uGrassLod.z, smoothstep(uGrassLod.x, uGrassLod.y, grassLodDist));
+        }
+        if (vRandom > grassKeep) {
+          vUv = vec2(0.0);
+          #ifdef USE_FOG
+            vGrassFogFactor = 0.0;
+          #endif
+          gl_Position = vec4(0.0, 0.0, 2.0, 1.0); // z/w = 2 lies beyond the far plane: clipped before rasterisation.
+          return;
+        }
+      #endif
       float topFactor = uv.y;
       float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
       float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
@@ -193,6 +222,26 @@
   `;
 
   const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
+  // Distance thinning for the one grass material shared by the farm, town,
+  // town border and every wilderness zone (the outdoor-only alpha-tested
+  // overdraw that interiors and caves never pay). Distances are world units
+  // from the camera: full density inside NEAR, tapering to MIN_KEEP of the
+  // blades at FAR and beyond. Fog already washes most of the far blades out.
+  const GRASS_LOD_DEFAULTS = Object.freeze({ near: 12, far: 34, minKeep: 0.35 });
+  const _grassLodUniformValue = new THREE.Vector3(GRASS_LOD_DEFAULTS.near, GRASS_LOD_DEFAULTS.far, GRASS_LOD_DEFAULTS.minKeep);
+  function setGrassDistanceLod(options = true) {
+    if (options === false) { _grassLodUniformValue.y = _grassLodUniformValue.x = 0; return getGrassDistanceLod(); } // A/B switch: full density everywhere.
+    const next = { ...GRASS_LOD_DEFAULTS, ...(options === true ? {} : options) };
+    const near = Math.max(0, Number(next.near) || 0);
+    const far = Math.max(near + 0.001, Number(next.far) || 0);
+    const minKeep = Math.max(0, Math.min(1, Number(next.minKeep)));
+    _grassLodUniformValue.set(near, far, Number.isFinite(minKeep) ? minKeep : GRASS_LOD_DEFAULTS.minKeep);
+    return getGrassDistanceLod();
+  }
+  function getGrassDistanceLod() {
+    const v = _grassLodUniformValue;
+    return { enabled: v.y > v.x, near: v.x, far: v.y, minKeep: v.z };
+  }
   let grassBillboardMat = null;
   let cuttableBillboardGlowMat = null;
   let cuttableBillboardGlowMesh = null;
@@ -224,9 +273,12 @@
         fogNear:     { value: 1 },
         fogFar:      { value: 1000 },
       });
+      const grassUniforms = sharedUniforms();
+      grassUniforms.uGrassLod = { value: _grassLodUniformValue }; // Shared vector: setGrassDistanceLod() retunes every outdoor map at once.
       grassBillboardMat = new THREE.ShaderMaterial({
         fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
-        uniforms:       sharedUniforms(),
+        defines: { HOBUNJI_GRASS_DISTANCE_LOD: 1 }, // Only this material: other users of _grassBillVert (glow, reagent plants) declare no uGrassLod.
+        uniforms:       grassUniforms,
         vertexShader:   _grassBillVert,
         fragmentShader: _grassBillFrag,
         alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
@@ -981,6 +1033,8 @@
     get cropMeshes() { return cropMeshes; },
     getMustardDebug: () => ({ texture: MUSHTARD_LEAF_ART.outer, textures: { ...MUSHTARD_LEAF_ART }, textureStates: Object.fromEntries([...mushtardTextures].map(([shape, record]) => [shape, record.state])), nativeMaterialCount: mushtardMaterials.size, matureLeaves: 15, maxDrawCallsPerPlant: 2 }), // Lightweight mushtard PNG and card diagnostics for mobile.
     getGrassBillboardMat: () => grassBillboardMat,
+    setGrassDistanceLod,
+    getGrassDistanceLod,
     getGrassLeafTex: () => _grassLeafTex,
     getFarmGrassBillMesh: () => farmGrassBillMesh,
     getTownGrassBillMesh: () => townGrassBillMesh,

@@ -5,7 +5,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/cave-site-system.js'), 'utf8');
-const indexHtml = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
+const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Parser order with group manifests expanded.
 
 function rngFactory(seedText) {
   let h = 2166136261 >>> 0;
