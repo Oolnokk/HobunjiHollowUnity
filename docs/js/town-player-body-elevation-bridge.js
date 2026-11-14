@@ -1,16 +1,15 @@
-// Renders authored subtle terrain lift plus opt-in walkable porch/furniture
-// support surfaces without handing permanent ownership of actor Y to a second
-// movement system.
+// Registers authored subtle terrain and walkable porch/furniture supports.
+// Normal walking, jumping and NPC footing consume these surfaces as physical
+// ground; the visual composer must NOT reapply that lift after movement.
 //
 // Porches are derived from House Piece Author extension geometry. Furniture
 // uses a THREE.Box3 calculated from the rendered object (or explicitly marked
 // authored support parts) and is enabled per placed instance with
 // `walkableElevation: true` in the map JSON.
 //
-// The player receives the support lift through the existing
-// PlayerBodyTransformComposer channel. Other systems can use
-// HobunjiWalkableElevation.surfaceLiftAt/worldSurfaceTopAt so the same support
-// registry remains the single source of truth.
+// HobunjiWalkableElevation.surfaceLiftAt/worldSurfaceTopAt are the shared
+// support authority; player and NPC movement use absolute worldSurfaceTopAt,
+// while the existing terrain sampler owns smooth town ground displacement.
 (() => {
   'use strict';
 
@@ -246,9 +245,10 @@
     return matches;
   }
 
-  function supportAt(worldX, worldZ, area = activeArea()) {
-    const matches = matchingSupports(worldX, worldZ, area);
-    return matches.sort((a, b) => (b.bounds.topY - b.bounds.baseY) - (a.bounds.topY - a.bounds.baseY))[0] || null;
+  function supportAt(worldX, worldZ, area = activeArea(), maxTopY = Infinity) {
+    const ceiling = Number.isFinite(maxTopY) ? maxTopY + SUPPORT_EDGE_EPSILON : Infinity; // Optional vertical reach prevents a lower-floor actor from standing on a bridge overhead.
+    const matches = matchingSupports(worldX, worldZ, area).filter(entry => entry.bounds.topY <= ceiling);
+    return matches.sort((a, b) => b.bounds.topY - a.bounds.topY)[0] || null; // Among reachable, staggered treads prefer the highest real walking surface.
   }
 
   function surfaceLiftAt(worldX, worldZ, area = activeArea()) {
@@ -256,9 +256,9 @@
     return entry ? Math.max(0, entry.bounds.topY - entry.bounds.baseY) : 0;
   }
 
-  function worldSurfaceTopAt(worldX, worldZ, fallbackY = 0, area = activeArea()) {
-    const entry = supportAt(worldX, worldZ, area);
-    return entry ? entry.bounds.topY : finite(fallbackY, 0);
+  function worldSurfaceTopAt(worldX, worldZ, fallbackY = 0, area = activeArea(), maxTopY = Infinity) {
+    const entry = supportAt(worldX, worldZ, area, maxTopY); // Normal walking and jump takeoff pass an approach ceiling; cameras can still inspect every overhead deck.
+    return entry ? Math.max(finite(fallbackY, 0), entry.bounds.topY) : finite(fallbackY, 0); // Never sink an actor below existing raised terrain.
   }
 
   function normalizePiece(pieceData) {
@@ -290,7 +290,8 @@
     const faces = piece?.base?.faces || [];
     let top = -Infinity;
     for (const face of faces) {
-      if (String(face?.extensionType || face?.tag || '') !== extensionType) continue;
+      if (String(face?.extensionType || face?.tag || '') !== extensionType
+          || face?.extensionFace !== 'top') continue; // Roofs/tunnel ceilings, railings and vertical skirting are NOT walkable porch treads.
       if (finite(face?.sourceTile?.x, NaN) !== finite(cell?.x, NaN)
           || finite(face?.sourceTile?.y, NaN) !== finite(cell?.y, NaN)) continue;
       for (const vertex of (face.v || [])) {
@@ -350,14 +351,89 @@
     return ids;
   }
 
+  const railCollisionCells = new Map(); // Grid cell -> railing face boxes, so normal walking/NPC collision does not scan every placed building.
+  const railCollidersByPiece = new Map(); // Stable piece placement -> live railing boxes; replacing a house does not leave ghost blockers.
+  let railCollisionProviderInstalled = false; // The shared AreaFootprintBlockers provider is registered once.
+  let railCollisionQuery = 0; // Deduplicates a face reached through multiple neighboring grid cells in a single query.
+
+  function indexRailCollider(collider, add) {
+    for (const key of cellsForBounds(collider.bounds)) {
+      let entries = railCollisionCells.get(key);
+      if (add) {
+        if (!entries) railCollisionCells.set(key, entries = new Set());
+        entries.add(collider);
+      } else if (entries) {
+        entries.delete(collider);
+        if (!entries.size) railCollisionCells.delete(key);
+      }
+    }
+  }
+
+  function railBlocksBox(x, z, half = 0, worldY = null) {
+    if (!railCollisionCells.size) return false;
+    const query = ++railCollisionQuery; // A wide actor box can overlap a rail's indexed cells more than once.
+    const edge = Math.max(0, Number(half) || 0);
+    for (let row = Math.floor(z - edge); row <= Math.floor(z + edge); row++) {
+      for (let col = Math.floor(x - edge); col <= Math.floor(x + edge); col++) {
+        const colliders = railCollisionCells.get(cellKey(col, row));
+        if (!colliders) continue;
+        for (const collider of colliders) {
+          if (collider.lastQuery === query) continue;
+          collider.lastQuery = query;
+          if (!objectInActiveScene(collider.owner)) continue;
+          const b = collider.bounds;
+          if (x + edge < b.minX || x - edge > b.maxX || z + edge < b.minZ || z - edge > b.maxZ) continue;
+          if (Number.isFinite(worldY) && (worldY < b.minY - 0.05 || worldY > b.maxY + 0.05)) continue;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function ensureRailCollisionProvider() {
+    if (railCollisionProviderInstalled || !window.AreaFootprintBlockers?.register) return;
+    window.AreaFootprintBlockers.register('hobunji-porch-railing-faces', {
+      blocksBox: railBlocksBox, // Thin modeled railings block movement without claiming an entire walkable porch tile.
+    });
+    railCollisionProviderInstalled = true;
+  }
+
+  function registerPieceRails(group, pieceData, gridX, gridZ, options = {}) {
+    if (!group?.traverse || !window.THREE?.Box3) return 0;
+    const piece = normalizePiece(pieceData);
+    const id = `${piece?.id || piece?.name || 'house'}:${gridX},${gridZ}:${options.rotationDeg || 0}`; // Same authored placement always replaces its old railing boxes.
+    const previous = railCollidersByPiece.get(id);
+    if (previous) for (const entry of previous) indexRailCollider(entry, false);
+    const next = [];
+    group.traverse(mesh => {
+      if (!mesh?.isMesh || mesh.userData?.housePieceFaceTag !== 'railing') return;
+      const box = new window.THREE.Box3().setFromObject(mesh); // Rendered authored face geometry has already applied the house rotation/placement.
+      if (box.isEmpty?.() || !Number.isFinite(box.min.x) || !Number.isFinite(box.max.z)) return;
+      const bounds = {
+        minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z,
+        minY: box.min.y, maxY: box.max.y,
+      }; // Narrow physical railing boundary, not the full 1x1 source tile.
+      const entry = { owner: group, bounds, lastQuery: 0 }; // Reused by every subsequent movement probe until the piece is rebuilt.
+      next.push(entry);
+      indexRailCollider(entry, true);
+    });
+    if (next.length) railCollidersByPiece.set(id, next);
+    else railCollidersByPiece.delete(id);
+    ensureRailCollisionProvider();
+    return next.length;
+  }
+
   function patchHousePieceGen() {
     const api = window.HousePieceGen;
     if (!api?.buildGroupFromPiece || api.buildGroupFromPiece.__walkableElevationPatched) return false;
     const originalBuild = api.buildGroupFromPiece;
     const wrappedBuild = function walkablePorchAwareBuild(THREEArg, piece, gridX, gridZ, options) {
       const group = originalBuild.apply(this, arguments);
-      try { registerPiecePorches(group, piece, gridX, gridZ, options || {}); }
-      catch (error) { console.warn('[walkable-elevation] porch registration failed:', error); }
+      try {
+        registerPiecePorches(group, piece, gridX, gridZ, options || {});
+        registerPieceRails(group, piece, gridX, gridZ, options || {});
+      } catch (error) { console.warn('[walkable-elevation] porch/railing registration failed:', error); }
       return group;
     };
     wrappedBuild.__walkableElevationPatched = true;
@@ -526,7 +602,8 @@
   }
 
   // NPCs no longer get their support lift stomped onto root.position.y here.
-  // game.js's npcSurfaceY() folds surfaceLiftAt() straight into the height
+  // game.js's npcSurfaceY() resolves an absolute worldSurfaceTopAt() floor
+  // rather than applying the support's relative lift to a second base height.
   // every NPC movement/idle branch already targets, so the existing
   // absolute-set and lerp-toward-ground code paths track furniture "stages"
   // correctly on their own — see npcSurfaceY's own comment. A separate
@@ -576,27 +653,22 @@
     const supportLift = support ? Math.max(0, support.bounds.topY - support.bounds.baseY) : 0;
     const lift = terrainLift + supportLift;
 
-    if (Math.abs(lift) > EPSILON) {
-      composer.setChannel(CHANNEL, {
-        priority: CHANNEL_PRIORITY,
-        mode: 'additive',
-        translationMode: 'additive',
-        translation: { x: 0, y: lift, z: 0 },
-      });
-      lastDebug = {
-        active: true,
-        lift,
-        terrainLift,
-        supportLift,
-        supportId: support?.id || null,
-        x,
-        z,
-        movementOwnedBaseY: baseY,
-        reason: support ? `${support.kind}-support` : 'town-subtle-height',
-      };
-    } else {
-      clearChannel('zero-lift', playerMesh);
-    }
+    // Movement now owns the player's actual world Y, including town visual
+    // ground and registered walkable surfaces. The old extra composer lift
+    // made the avatar appear raised while its standing physics remained on the
+    // flat tile, and would now double-apply the actual floor displacement.
+    composer.clearChannel(CHANNEL);
+    lastDebug = {
+      active: Math.abs(lift) > EPSILON,
+      lift,
+      terrainLift,
+      supportLift,
+      supportId: support?.id || null,
+      x,
+      z,
+      movementOwnedBaseY: baseY,
+      reason: support ? `${support.kind}-physical-ground` : 'terrain-physical-ground',
+    };
   }
 
   function patchPixelProbe(api) {
@@ -665,6 +737,7 @@
       ...lastDebug,
       area,
       supportCount: entries.length,
+      railingFaceColliders: [...railCollidersByPiece.values()].reduce((total, faces) => total + faces.length, 0), // Mobile elevation debug shows whether narrow railing blockers were registered.
       furnitureSyncArea: lastFurnitureSyncArea,
       furnitureSyncPending: !!activeFurnitureSync,
       supports: entries,
@@ -697,6 +770,8 @@
     registerBox,
     registerObject,
     registerPiecePorches,
+    registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
+    railBlocksBox, // Mobile diagnostics can compare a failed move with the visual railing geometry.
     unregister,
     clearKind,
     matchingSupports,

@@ -24,14 +24,17 @@
     return deps?.getActiveGrid?.()?.[Math.floor(z)]?.[Math.floor(x)] || null;
   }
 
-  function groundAt(x, z) {
+  function groundAt(x, z, maxSupportY = Infinity) {
     const tile = tileAt(x, z);
     if (!tile || tile.incline || tile.mapBoundary || deps.isSolid?.(tile.type) || window.MapBoundaryGuard?.isBoundaryTile?.(tile)) return null;
     if (['void', 'pit'].includes(String(tile.type).toLowerCase()) || window.DynamicSurfaces?.pointInPit?.(x, z)) return null; // An authored death pit is never a jump landing floor.
     const area = deps.getCurrentArea();
     const surface = window.AreaFootprintBlockers?.surfaceYAt?.(area, x, z);
-    const y = Number.isFinite(surface) ? surface : deps.tileSurfaceYInArea?.(tile, area);
-    return Number.isFinite(y) ? y : null;
+    const continuous = deps.worldSurfaceY?.(x * deps.TILE, z * deps.TILE); // The same smooth farm/town/zone ground used by ordinary physical walking.
+    const baseY = Number.isFinite(surface) ? surface
+      : Number.isFinite(continuous) ? continuous : deps.tileSurfaceYInArea?.(tile, area);
+    if (!Number.isFinite(baseY)) return null;
+    return window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, baseY, area, maxSupportY) ?? baseY; // Jump launch and descending feet ignore raised decks that are still overhead.
   }
 
   function coverAtTile(tile, col, row) {
@@ -63,7 +66,7 @@
   }
 
   function highestSupport(x, z, maxY) {
-    const floorY = groundAt(x, z);
+    const floorY = groundAt(x, z, maxY); // Landing cannot pick a higher porch/bridge surface until the descending feet actually reach it.
     let best = floorY != null && floorY <= maxY ? { y: floorY, kind: 'ground' } : null;
     const dynamic = window.DynamicSurfaces?.sampleSupport?.(x, z, { maxY, minY: -Infinity });
     if (dynamic && (!best || dynamic.y > best.y)) best = { y: dynamic.y, kind: 'dynamic', id: dynamic.id };
@@ -143,7 +146,7 @@
   }
 
   function setElevation(player, state) {
-    const ground = groundAt(player.x / deps.TILE, player.y / deps.TILE);
+    const ground = groundAt(player.x / deps.TILE, player.y / deps.TILE, state.feetY + CONFIG.landingTolerance); // Overhead decks are not ground beneath a jumping actor.
     player.physicalFeetY = state.feetY; // World-space physical foot height used by jumping and height-aware interactions.
     player.heightAboveGround = Math.max(0, state.feetY - (ground ?? state.launchGround)); // Includes jumping AND height gained by standing on raised cover.
     player.jumpHeightAboveGround = player.heightAboveGround; // Simple debug/consumer alias for the shared physical elevation.
@@ -192,7 +195,7 @@
     if (player._freeJump) reset(player, 'caught rope');
     const x = bob.x, z = bob.z;
     const state = { area: deps.getCurrentArea(), phase: 'rope', feetY: bob.y,
-      launchGround: groundAt(x, z) ?? bob.y, ropeId: rope.id, vy: 0, elapsed: 0 };
+      launchGround: groundAt(x, z, bob.y + CONFIG.landingTolerance) ?? bob.y, ropeId: rope.id, vy: 0, elapsed: 0 };
     player._freeJump = state; // The ordinary renderer and movement loop now respect an outdoor rope rider's physical feet.
     return setRopeRidePoint(bob);
   }
@@ -232,11 +235,16 @@
     // Never select the highest cover above the player as takeoff: a low
     // ceiling or table must not teleport a ground-level jumper onto its top.
     const ruinSupportY = window.DevRandomRuin?.getPlayerGroundSupportY?.(); // V50 supports can be above the plain 2D floor.
+    const priorFootY = old?.phase === 'supported' ? old.feetY
+      : Number.isFinite(player.physicalFeetY) ? player.physicalFeetY
+      : deps.worldSurfaceY?.(player.x, player.y); // Real previous footing limits climbable support at jump takeoff.
+    const launchSurfaceY = groundAt(x, z,
+      Number.isFinite(priorFootY) ? priorFootY + CONFIG.maxStepUp : Infinity); // Do not launch from a bridge's overhead deck.
     const baseY = old?.phase === 'supported' ? old.feetY
       : (Number.isFinite(ruinSupportY) ? ruinSupportY
-        : (groundAt(x, z) ?? deps.worldSurfaceY?.(player.x, player.y)));
+        : (launchSurfaceY ?? deps.worldSurfaceY?.(player.x, player.y)));
     if (!Number.isFinite(baseY)) return false;
-    const launchGround = groundAt(x, z) ?? baseY;
+    const launchGround = launchSurfaceY ?? baseY;
     const state = {
       area: deps.getCurrentArea(), phase: 'air', feetY: baseY,
       takeoffY: baseY, // Ruin wall catches compare with jump launch height, not the inflated midair feet height.
@@ -412,6 +420,7 @@
     if (support.kind === 'ground') {
       window.DevRandomRuin?.acceptFreeJumpLanding?.(support.y); // Prevent multi-story ruins from charging the same drop a second time.
       reset(player, 'landed on ground');
+      player.physicalFeetY = support.y; // Preserve the actual raised deck on landing so the next grounded render does not teleport back to the tile below it.
       return;
     }
     state.phase = 'supported'; // Own ground movement atop solid props until the player steps off or jumps again.
@@ -525,7 +534,7 @@
     reset: () => reset(deps?.player),
     get debug() {
       const s = deps?.player?._freeJump;
-      return { ...debug, latestChange: 'Shared free-jump, rope-flight and rope-ride elevation; momentum steering and midair rope catches', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
+      return { ...debug, latestChange: 'Free-jump and rope elevation now land on the same physical town/porch/bridge supports as ordinary walking', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
         vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null,
         baseAirMotion:Motion?.BASE||null,airMultipliers:Motion?{...Motion.multipliers}:null };

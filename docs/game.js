@@ -12749,17 +12749,16 @@
         // Zones have plateau/ramp heightfields; the farm additionally has the
         // live farmhouse/barn subtle hill. Other areas retain their flat local
         // tile surface.
+        const x = c + 0.5, z = r + 0.5; // NPC path nodes sample the same absolute support surface as the player.
         const base = area === 'farm'
-          ? farmSurfaceYAtWorld(c + 0.5, r + 0.5)
-          : (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area));
-        // Furniture/porch "stages" (walkableElevation:true) sit on top of the
-        // ordinary tile surface and aren't part of the terrain grid at all —
-        // folding that lift in here means every consumer of npcSurfaceY (the
-        // idle absolute-set assignment and the walking/holding lerp toward it
-        // alike) already targets the true stood-on height with no separate
-        // system fighting over root.position.y afterward.
-        const lift = window.HobunjiWalkableElevation?.surfaceLiftAt?.(c + 0.5, r + 0.5, area) || 0;
-        return base + lift;
+          ? farmSurfaceYAtWorld(x, z)
+          : (_isZoneArea(area) ? surfaceYAtWorld(area, x, z)
+            : tileSurfaceYInArea(tile, area)
+              + (area === 'town' ? (Number(window.HobunjiTownSubtleElevation?.sampleHeightAt?.(x, z)) || 0) : 0));
+        // Porches, stages and stair bridges are genuine standing floors, not a
+        // second render-space offset. Use their absolute top rather than adding
+        // a relative lift to a separately sampled terrain height.
+        return window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, base, area) ?? base;
       }
       function resolveNpcSpawnPosition(rec, target) {
         const legacy = target?.legacyPath || null;
@@ -20193,7 +20192,23 @@
         if (currentArea === 'farm') return farmSurfaceYAtWorld(worldX, worldZ);
         if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
         const tile = window.GridTileAccessors.getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
-        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+        if (!tile) return 0;
+        const base = tileSurfaceYInArea(tile, currentArea);
+        return currentArea === 'town'
+          ? base + (Number(window.HobunjiTownSubtleElevation?.sampleHeightAt?.(worldX, worldZ)) || 0)
+          : base; // Subtle town terrain is a continuous standing contour, not a gameplay tier.
+      }
+
+      // The player's last real foot height limits which porch/bridge deck can
+      // be entered in ordinary walking. High overhead supports remain real
+      // surfaces for cameras and airborne landings, but never teleport someone
+      // on the lower floor to their top.
+      function playerReachableWalkableSupportAt(worldX, worldZ, stepUp = 0.25) {
+        const terrainY = activeSurfaceYAtWorld(worldX, worldZ); // Current continuous ground at the prospective tile.
+        const lastFeetY = Number.isFinite(player.physicalFeetY) ? player.physicalFeetY
+          : activeSurfaceYAtWorld(player.x / TILE, player.y / TILE); // Uninitialized saves use actual ground, not Number(null)=0.
+        const maxTopY = Math.max(terrainY, lastFeetY) + stepUp; // A deck reachable by a small stair/step is eligible.
+        return window.HobunjiWalkableElevation?.supportAt?.(worldX, worldZ, currentArea, maxTopY) || null;
       }
 
       function drawWeaponTrailEffects() {
@@ -21491,7 +21506,12 @@
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
         // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
         // for the matching attack-lockout.
-        if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
+        if (type === TileType.RIVER || type === TileType.STREAM) {
+          // A character walking along a registered bridge deck stands above the
+          // stream; the water tile underneath must not impose swimming speed.
+          const onBridge = !projectile && !!playerReachableWalkableSupportAt(wx / TILE, wy / TILE, window.PlayerJump?.config?.maxStepUp ?? 0.25); // The deck must be reachable from the actor's actual feet, not overhead.
+          return onBridge ? 1 : SWIM_SPEED_MUL;
+        }
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && (window.GridTileAccessors.isHouseFootprint(col, row) || window.GridTileAccessors.isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return null;
@@ -25970,8 +25990,21 @@
           : player._freeJump ? player.physicalFeetY // Airborne and rope motion still use the independent physical elevation.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
-          : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
-        const standY = knockbackVisualSurfaceY(player, ordinaryStandY);
+          : activeSurfaceYAtWorld(wx, wz); // Exact farm/zone/town terrain contour replaces the old flat-tile approximation.
+        const physicalGroundOwnedByWalk = !player._freeJump && !player.climbing && !player.onBranch
+          && !player.onCliffBalcony && !player.onClimbSurface && !Number.isFinite(ruinStandY)
+          && !sitInteraction && mountRideState === 'none'; // Grounded prone and ordinary melee poses still stand on the same actual porch floor.
+        const reachableSupport = physicalGroundOwnedByWalk
+          ? playerReachableWalkableSupportAt(wx, wz, window.PlayerJump?.config?.maxStepUp ?? 0.25)
+          : null; // A high overhead bridge must not silently lift an actor walking below it.
+        const physicalSurfaceY = reachableSupport
+          ? Math.max(ordinaryStandY, reachableSupport.bounds.topY)
+          : ordinaryStandY; // Absolute porch, stair or stage top is the actual standing surface, not a render offset.
+        const stoodOnRaisedSupport = physicalSurfaceY > ordinaryStandY + 0.01; // Reused to suppress water wading above bridge decks.
+        if (physicalGroundOwnedByWalk && !Number.isFinite(player.lungeFlightWorldY)) {
+          player.physicalFeetY = physicalSurfaceY; // Grounded melee/prone actors and subsequent jumps inherit the real floor.
+        }
+        const standY = knockbackVisualSurfaceY(player, physicalSurfaceY);
         window.BurningAfflictionVfx?.syncEntity?.(player, playerMesh); // Burning Health uses the authored furniture flame emitter on the player's live avatar root.
 
         // Riding a mount lifts the rider up so their posterior anchor
@@ -26010,7 +26043,8 @@
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
-        const groundedTargetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
+        const groundedTargetY = standY + (!stoodOnRaisedSupport && tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0)
+          + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink; // Water beneath a bridge must not float its walker above the deck.
         if (Number.isFinite(player.lungeFlightWorldY) && !player.lunging) {
           // Once the strike's straight flight ends, gravity owns only the
           // remaining world-Y separation. A confirmed enemy hit creates a
@@ -26060,7 +26094,11 @@
         // independent lerps. Mounting/dismounting states intentionally keep
         // the transition positioning above.
         window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
-        playerGroundShadow.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        const shadowSurfaceY = player._freeJump && !supportedJump
+          ? (window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(wx, wz, activeSurfaceYAtWorld(wx, wz), currentArea,
+              Number.isFinite(player.physicalFeetY) ? player.physicalFeetY : Infinity) ?? activeSurfaceYAtWorld(wx, wz))
+          : physicalSurfaceY; // Shadows remain on the actual floor instead of following airborne feet or sinking beneath bridge decking.
+        playerGroundShadow.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
         // ground shadow, tracking the same smoothed XZ. Uses the actually
@@ -26072,7 +26110,7 @@
         // wasn't the one actually being rendered.
         if (window.ResourceRings) {
           const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
-          ringHud.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+          ringHud.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z); // Ground HUD and player shadow share the same true floor.
         }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
@@ -32884,7 +32922,8 @@
 
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
-        isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
+        isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid())
+          && !playerReachableWalkableSupportAt(player.x / TILE, player.y / TILE, 0.05), // Water still wets someone below an overhead walkway, but not someone standing on the deck.
         handlePlayerDeath: reason => { if (!window.PlayerDowned?.interceptDeath?.(reason)) respawnPlayer(reason); }, // Bleeding/burning/poison ticks put the player down instead of killing them.
       });
 
