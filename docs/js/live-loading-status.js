@@ -10,14 +10,18 @@
   const assetRequests = new Map(); // URL -> concurrent Three.js item count; itemStart/itemEnd preserve each original loader callback.
   const tasks = new Map(); // Token -> explicit async jobs for future CPU-bound/yielding zone loaders.
   const SHOW_DELAY_MS = 400; // Hide brief requests rather than flashing text between frames.
+  const LABEL_REFRESH_MS = 100; // Batch visual updates during bursts of texture/model requests, avoiding repeated DOM writes.
   const RETRY_DELAY_MS = 500; // Check for the first playable renderer only while work remains outstanding.
   let nextTaskId = 0; // Distinct tokens keep simultaneous jobs with the same label independent.
-  let firstPendingAt = 0; // The start of the current continuous loading period.
+  let firstPendingAt = null; // The start of continuous loading; null also handles a first request at performance.now() === 0.
   let timer = null; // Only active while pending work needs a delayed presentation.
+  let timerDueAt = null; // Retains the earliest scheduled refresh instead of rescheduling on every resource event.
+  let lastLabelUpdateAt = -Infinity; // Used to coalesce category text updates without delaying loading completion.
   let label = ''; // Last written text; unchanged HTML never invalidates layout.
   let visible = false; // Last applied visibility; avoids redundant DOM writes.
   let maxPending = 0; // Diagnostics for large batches, not a progress percentage.
   let completedAssets = 0; // Diagnostics: real Three.js asset completions.
+  let assetPending = 0; // O(1) total for Three.js requests; avoids expanding all active URLs on every itemStart/itemEnd.
   const now = () => window.performance?.now?.() ?? Date.now();
 
   function classify(name) {
@@ -31,12 +35,20 @@
     return 'resources';
   }
 
+  function pendingCount() {
+    const loading = window.LoadingScreenRuntime; // Existing fetch tracker is the sole authority for in-flight network requests.
+    const fetches = loading?.pendingRequestCount?.() ?? loading?.pendingRequestNames?.()?.length ?? 0;
+    return fetches + assetPending + tasks.size; // O(1) with the runtime's new count getter, even during large asset bursts.
+  }
+
   function pending() {
-    const requests = window.LoadingScreenRuntime?.pendingRequestNames?.() || []; // Existing shared fetch wrapper, not another global monkeypatch.
-    const names = requests.map(classify);
-    for (const [url, count] of assetRequests) for (let i = 0; i < count; i++) names.push(classify(url));
-    for (const name of tasks.values()) names.push(name);
-    return { names, fetches: requests.length, assets: [...assetRequests.values()].reduce((sum, count) => sum + count, 0), tasks: tasks.size };
+    const requests = window.LoadingScreenRuntime?.pendingRequestNames?.() || []; // Collect names only for a visible label or a manual Pixel Probe snapshot.
+    const groups = new Map(); // Group by category without expanding repeated Three.js URLs into thousands of array entries.
+    const add = (name, count = 1) => groups.set(name, (groups.get(name) || 0) + count);
+    for (const url of requests) add(classify(url));
+    for (const [url, count] of assetRequests) add(classify(url), count);
+    for (const name of tasks.values()) add(name);
+    return { groups, total: requests.length + assetPending + tasks.size, fetches: requests.length, assets: assetPending, tasks: tasks.size };
   }
 
   function toggle(show) {
@@ -50,23 +62,30 @@
     status.textContent = text;
   }
   function clearTimer() {
-    if (timer !== null) { clearTimeout(timer); timer = null; }
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    timerDueAt = null;
   }
   function schedule(ms) {
+    const delay = Math.max(1, Math.ceil(ms));
+    const dueAt = now() + delay; // Earliest requested display deadline wins during concurrent asset starts/finishes.
+    if (timer !== null && timerDueAt <= dueAt) return;
     clearTimer();
-    timer = setTimeout(() => { timer = null; refresh(); }, Math.max(1, Math.ceil(ms)));
+    timerDueAt = dueAt;
+    timer = setTimeout(() => { timer = null; timerDueAt = null; refresh(); }, delay);
   }
   function refresh() {
-    const activity = pending(); // Called on request edges and at the delayed visibility threshold, never every frame.
-    const count = activity.names.length;
+    const count = pendingCount(); // Constant-time fast path on every load edge; materialize names only for a visible update.
     if (!count) {
-      firstPendingAt = 0;
+      firstPendingAt = null;
+      lastLabelUpdateAt = -Infinity;
       clearTimer();
       toggle(false);
+      write(''); // Pixel Probe cannot report a stale "Loading..." message after the last request settles.
       return;
     }
     maxPending = Math.max(maxPending, count);
-    if (!firstPendingAt) firstPendingAt = now();
+    if (firstPendingAt === null) firstPendingAt = now();
     const elapsed = now() - firstPendingAt;
     if (elapsed < SHOW_DELAY_MS) {
       toggle(false);
@@ -79,12 +98,17 @@
       schedule(RETRY_DELAY_MS); // Wake rarely only during a real pending load; also refreshed when the full-screen screen hides.
       return;
     }
+    const sinceLastLabel = now() - lastLabelUpdateAt;
+    if (visible && sinceLastLabel < LABEL_REFRESH_MS) {
+      schedule(LABEL_REFRESH_MS - sinceLastLabel); // Batch many short model/texture arrivals into one DOM update.
+      return;
+    }
     clearTimer();
-    const groups = new Map(); // Small event-only grouping for a compact one-line status without raw filenames.
-    for (const name of activity.names) groups.set(name, (groups.get(name) || 0) + 1);
-    const parts = [...groups].slice(0, 2).map(([name, quantity]) => name + (quantity > 1 ? ' ×' + quantity : ''));
-    if (groups.size > 2) parts.push('+' + (groups.size - 2) + ' types');
+    const activity = pending(); // Only visible updates and explicit snapshots scan outstanding resource names.
+    const parts = [...activity.groups].slice(0, 2).map(([name, quantity]) => name + (quantity > 1 ? ' ×' + quantity : ''));
+    if (activity.groups.size > 2) parts.push('+' + (activity.groups.size - 2) + ' types');
     write('Loading ' + parts.join(' · ') + '…');
+    lastLabelUpdateAt = now();
     toggle(true);
   }
 
@@ -114,6 +138,7 @@
       const result = start.apply(this, arguments);
       const key = String(url || 'resource'); // Used to balance duplicate simultaneous requests to the same asset.
       assetRequests.set(key, (assetRequests.get(key) || 0) + 1);
+      assetPending++;
       refresh();
       return result;
     };
@@ -124,7 +149,11 @@
         const count = assetRequests.get(key) || 0;
         if (count === 1) assetRequests.delete(key);
         else if (count > 1) assetRequests.set(key, count - 1);
-        if (count) { completedAssets++; refresh(); }
+        if (count) {
+          assetPending--;
+          completedAssets++;
+          refresh();
+        }
       }
     };
     manager.__hobunjiLiveLoadingWrapped = true;
@@ -140,10 +169,10 @@
     snapshot() {
       const activity = pending(); // Copyable Pixel Probe diagnostics, never assembled in the game loop.
       return {
-        visible, text: label, pending: activity.names.length,
+        visible, text: label, pending: activity.total,
         fetches: activity.fetches, assets: activity.assets, tasks: activity.tasks,
-        categories: [...new Set(activity.names)],
-        maxPending, completedAssets, showDelayMs: SHOW_DELAY_MS,
+        categories: [...activity.groups.keys()],
+        maxPending, completedAssets, showDelayMs: SHOW_DELAY_MS, labelRefreshMs: LABEL_REFRESH_MS,
       };
     },
   });
