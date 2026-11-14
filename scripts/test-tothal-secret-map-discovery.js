@@ -43,4 +43,18 @@ assert(ctx.WildernessMap._test.visibleLandmarks(zone).some(item=>item.localeId==
 assert(JSON.parse(saved).worlds[0].discoveredLocales['locale_hikihiki_shrine:tothal:8'],
   'new Shift has a separate discovery record');
 
+// A saved discovery made in the current Shift must survive installing the
+// year-qualified map code; only the next genuine Shift should hide it.
+const migratedSave=JSON.parse(saved); // Existing world metadata from before this PR's map-marker upgrade.
+delete migratedSave.worlds[0].discoveredLocales['locale_hikihiki_shrine:tothal:8'];
+migratedSave.worlds[0].discoveredLocales['locale_hikihiki_shrine']={
+  name:"Hiki-hiki's Shrine",category:'great_fey_shrine',firstDiscoveredYear:8,
+};
+saved=JSON.stringify(migratedSave);
+assert.equal(ctx.WildernessMap._test.visibleLandmarks(zone).length,1,
+  'same-cycle legacy map discovery survives the upgrade');
+cycle=9;
+assert.equal(ctx.WildernessMap._test.visibleLandmarks(zone).length,0,
+  'legacy map discovery expires on the following Tothal Shift');
+
 console.log('Tothal secret map rediscovery tests passed');
