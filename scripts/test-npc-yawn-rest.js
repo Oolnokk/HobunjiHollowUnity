@@ -284,7 +284,27 @@ async function main() {
   hour = 108; longSleeper._bedLieActive = false; longSleeper.currentScheduleTarget = { pose: 'stand' };
   ms += 500; frame({ timestamp: ms });
   assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 124, 'eight hours of NPC sleep grants 16h protection');
-  console.log('Player/NPC hourly yawns, 75% slow, short Rested, eight-hour Well Rested and daily Koma: OK');
+
+  playerRested = false; // A fresh fatigue cycle lets the test cover excluded player poses.
+  window.__hobunjiFurnitureDebug = { sitState: { phase: 'out' } }; // Standing up still owns the body's rig until the seat state is removed.
+  hour = 180; ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'the final stand-up transition must suppress a new yawn');
+  window.__hobunjiFurnitureDebug.sitState = null;
+  window.Combat.deps.player.prone = true; // Native impact poses are not compatible with yawn chest/neck animation.
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'a prone player must not begin an hourly yawn');
+  window.Combat.deps.player.prone = false;
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'a player who has finished standing and recovering may yawn normally');
+  window.Combat.deps.player.prone = true;
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'becoming prone interrupts and fully restores the player yawn speed');
+  assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'prone interruption removes the additive player torso pose');
+  window.Combat.deps.player.prone = false;
+  window.Fishing = { state: { active: true } };
+  hour += 2; ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'active fishing animation owns the body and defers yawns');
+  console.log('Player/NPC hourly yawns, 75% slow, guarded stand/prone/tool poses, short Rested and eight-hour Well Rested: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
