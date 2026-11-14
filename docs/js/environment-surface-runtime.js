@@ -36,21 +36,26 @@
   });
 })();
 
+
 (() => {
   'use strict';
 
-  // This compatibility bootstrap already loads before game.js through
-  // rain-planes.js. Keep the Western Slope's static mine-rock ridge scenery in that
-  // environment boot slot so it can safely wrap BorderTerrain/WildernessChunks
-  // without adding scenery code back into the game.js monolith.
-  if (typeof window === 'undefined' || typeof document === 'undefined' || window.WesternSlopeMountainBackdrops) return;
-  const src = 'js/western-slope-mountain-backdrops.js?v=20261107depthSnow1'; // Used for both parser-time and late-load fallbacks so deployed caches receive this implementation together.
-  if (document.readyState === 'loading') {
-    document.write(`<script src="${src}"><\/script>`);
-    return;
+  // Shared scenery depth shaders must load before the Northern Cliffs plateau
+  // calculates the visible Western Slope mountains' actual world-space bounds.
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const modules = [
+    { global: 'WesternSlopeMountainBackdrops', src: 'js/western-slope-mountain-backdrops.js?v=20261114northernPlateau1' },
+    { global: 'NorthernCliffsPlateauBackdrop', src: 'js/northern-cliffs-plateau-backdrop.js?v=20261114northernPlateau1' },
+  ]; // One ordered boot slot for both visual-only background scenery systems.
+  for (const module of modules) {
+    if (window[module.global]) continue;
+    if (document.readyState === 'loading') {
+      document.write('<script src="' + module.src + '"><\/script>');
+    } else {
+      const script = document.createElement('script');
+      script.src = module.src;
+      script.async = false; // Dynamically inserted classic scripts execute in insertion order.
+      document.head?.appendChild(script);
+    }
   }
-  const script = document.createElement('script'); // Used only when rain-planes/environment bootstrap is evaluated after initial document parsing.
-  script.src = src;
-  script.async = false;
-  document.head?.appendChild(script);
 })();
