@@ -79,6 +79,17 @@ const api = window.SpriteRecolor; // Runtime public texture API called by both i
   const otherBottle = await api.getRecoloredCanvas(bottlePath, 0xcc7744, 'keyed');
   assert.notStrictEqual(otherBottle, bottle, 'changing the dominant ingredient tint creates distinct liquid art');
   assert.equal(images.filter(path => path === bottlePath).length, 1, 'both ingredient palettes share the decoded bottle PNG');
+  const overridePath = 'assets/objectsprites/keyed-mask-test.png'; // Isolated source to test simultaneous custom mask requests.
+  const defaultMask = api.getRecoloredCanvas(overridePath, 0x4477cc, 'keyed');
+  const customMask = api.getRecoloredCanvas(overridePath, 0x4477cc, 'keyed', { keyHue: 25 });
+  const sameCustomMask = api.getRecoloredCanvas(overridePath, 0x4477cc, 'keyed', { keyHue: 25 });
+  assert.notStrictEqual(defaultMask, customMask, 'different key masks must not share one pending tint');
+  assert.strictEqual(customMask, sameCustomMask, 'equivalent custom masks still share one pending tint');
+  const [defaultCanvas, customCanvas] = await Promise.all([defaultMask, customMask]);
+  assert.notStrictEqual(defaultCanvas, customCanvas, 'default and custom masks must have independent recolored pixels');
+  assert.strictEqual(await api.getRecoloredCanvas(overridePath, 0x4477cc, 'keyed', { keyHue: 25 }), customCanvas, 'custom mask result is reused after completion');
+  assert.notStrictEqual(await api.getRecoloredCanvas(overridePath, 0x4477cc, 'keyed', { keyHue: null }), defaultCanvas, 'explicit null key hue differs from an absent setting');
+  assert.equal(images.filter(path => path === overridePath).length, 1, 'different masks share one original PNG decode');
 
   const failedPath = 'assets/objectsprites/retry-potion.png'; // Simulates a temporarily unavailable on-device texture.
   brokenPaths.add(failedPath);
