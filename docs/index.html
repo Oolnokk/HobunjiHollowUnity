@@ -36,7 +36,7 @@
   <script src="js/HousePieceGen.js?v=20261102roofjoin1&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
-  <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
+  <script src="js/building-door.js?v=20261114singleexport1"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
@@ -158,7 +158,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261110he9a9f9a"></script>
+  <script src="js/item-processing.js?v=20261114perfumesAudit3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261112corpseAndSharedTint1"></script>
@@ -367,7 +367,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114wellRested24h1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114perfumesAudit3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -388,7 +388,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261109craftHours1"></script>
+  <script src="js/alchemy-system.js?v=20261114perfumes2"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
@@ -2963,7 +2963,7 @@
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261109fullrig7"></script>
-  <script src="js/romance-system.js?v=20261109ha7681fe"></script>
+  <script src="js/romance-system.js?v=20261114perfumes2"></script>
   <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must

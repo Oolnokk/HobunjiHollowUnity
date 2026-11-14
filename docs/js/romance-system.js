@@ -74,7 +74,7 @@
       lastDateRawDay: {}, // npcId → raw day of the most recent date
       lastDatedNpcId: null, // Last person the player actually started a date with; persists independently of the active date.
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
-      spouse: null, // { npcId, marriedRawDay, marriedHourStamp }
+      spouse: null, // { npcId, marriedRawDay, marriedHourStamp, perfume? }; a gifted perfume remains worn until replaced.
       kissBuff: null, // { npcId, startedAtHour, expiresAtHour }; serialized with this member's romance state.
       family: null, // owned by js/romance-family.js
     };
@@ -657,6 +657,30 @@
     return Number.isFinite(expires) ? Math.max(0, expires - hourStamp()) : 0;
   }
 
+  function currentKissEffect() {
+    const worn = state.spouse?.perfume; // One persisted perfume per marriage, not a stack of temporary effects.
+    const custom = worn && window.AlchemySystem?.getPerfumeEffect?.(worn.recipeId, worn.potencyTier); // The alchemy recipe remains the sole source of perfume stats.
+    return custom || { recipeId: null, label: 'Beloved', icon: '💗', stat: 'staminaRegen', multiplier: KISS_STAMINA_REGEN_MULTIPLIER, effectLabel: '+10% Stamina recovery' };
+  }
+
+  function activeKissPerfumeEffect() {
+    if (!state.spouse?.perfume || remainingKissHours() <= 0) return null; // Avoid clock snapshots for the common no-perfume case; only active kisses feed Alchemy.
+    const worn = state.spouse.perfume; // Permanent gift choice remains independent of the temporary 24-hour kiss window.
+    return window.AlchemySystem?.getPerfumeEffect?.(worn.recipeId, worn.potencyTier) || null;
+  }
+
+  function acceptSpousePerfumeGift(npcId, itemKey) {
+    if (!npcId || state.spouse?.npcId !== npcId) return false; // Other NPCs may receive perfume as ordinary gifts but cannot change this marriage.
+    const perfume = window.AlchemySystem?.perfumeFromItemKey?.(itemKey); // Reject unrelated gifts and unrecognized item keys.
+    if (!perfume) return false;
+    state.spouse.perfume = { recipeId: perfume.recipeId, potencyTier: perfume.potencyTier }; // Saved on the spouse, not the current kiss timer.
+    persist();
+    window.EffectBuffBar?.refresh?.(true); // A still-active kiss immediately adopts the new effect without refreshing its 24-hour lifetime.
+    window.InventoryCharacterEffects?.refresh?.();
+    toast(`${perfume.icon} ${npcName(npcId)} wears ${perfume.label}. Their kisses now grant ${perfume.effectLabel}.`, true);
+    return true;
+  }
+
   function completeSpouseKiss(npcId) {
     if (!npcId || state.spouse?.npcId !== npcId) return false;
     const startedAtHour = hourStamp();
@@ -664,7 +688,8 @@
     persist();
     window.EffectBuffBar?.refresh?.(true);
     window.InventoryCharacterEffects?.refresh?.();
-    toast('💗 Beloved — +10% Stamina recovery for 24 in-game hours.', true);
+    const effect = currentKissEffect(); // The most recently gifted perfume determines every subsequent kiss's single blessing.
+    toast(`${effect.icon} Beloved — ${effect.effectLabel} for 24 in-game hours.`, true);
     window.HobunjiActivityEvents?.emit?.('spouse_kissed', { npcId, durationHours: KISS_BUFF_HOURS });
     return true;
   }
@@ -687,17 +712,21 @@
     if (!kissBuffHudRegistered && window.EffectBuffBar?.registerProvider) {
       kissBuffHudRegistered = !!window.EffectBuffBar.registerProvider('romance-spouse-kiss', () => {
         const remaining = remainingKissHours();
+        const effect = currentKissEffect(); // Live perfume changes update HUD without changing the original expiry.
         return remaining > 0 ? [{
-          id: 'beloved', icon: '💗', label: 'Beloved (+10% Stamina recovery)',
-          sourceLabel: 'Spouse kiss', durationS: KISS_BUFF_HOURS * 3600,
+          id: 'beloved', icon: effect.icon, label: `Beloved (${effect.effectLabel})`,
+          sourceLabel: effect.recipeId ? `Spouse kiss · ${effect.label}` : 'Spouse kiss', durationS: KISS_BUFF_HOURS * 3600,
           remainingS: remaining * 3600,
         }] : [];
       });
     }
     if (!kissBuffStatsRegistered && window.ResourceSystem?.registerStatModifierProvider) {
-      window.ResourceSystem.registerStatModifierProvider((entity, key) =>
-        key === 'staminaRegen' && entity === window.Combat?.deps?.player && remainingKissHours() > 0
-          ? KISS_STAMINA_REGEN_MULTIPLIER : 1);
+      window.ResourceSystem.registerStatModifierProvider((entity, key) => {
+        if (entity !== window.Combat?.deps?.player || remainingKissHours() <= 0) return 1; // No spouse buffs for NPCs or after expiry.
+        const effect = currentKissEffect(); // Exactly one stat channel is active, even when a new perfume replaces an old one mid-kiss.
+        const resourceStat = !effect.recipeId || window.AlchemySystem?.isResourceKissStat?.(effect.stat); // Other potion buffs use Alchemy's existing gameplay getter instead.
+        return resourceStat && key === effect.stat ? effect.multiplier : 1;
+      });
       kissBuffStatsRegistered = true;
     }
   }
@@ -741,6 +770,12 @@
     window.NpcFollowing?.clear?.();
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
+    if (state.spouse?.perfume) {
+      const worn = state.spouse.perfume; // Validate saves against the alchemy catalog; legacy saves simply have no perfume.
+      const valid = window.AlchemySystem?.getPerfumeEffect?.(worn.recipeId, worn.potencyTier);
+      if (valid) state.spouse.perfume = { recipeId: valid.recipeId, potencyTier: valid.potencyTier };
+      else delete state.spouse.perfume;
+    }
     if (state.kissBuff && (!state.spouse || state.kissBuff.npcId !== state.spouse.npcId ||
       !Number.isFinite(Number(state.kissBuff.expiresAtHour)))) state.kissBuff = null;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
@@ -775,6 +810,7 @@
       spouse: state.spouse ? { ...state.spouse } : null,
       spouseKiss: {
         active: remainingKissHours() > 0,
+        effect: currentKissEffect(), // Mobile-friendly live readout of the selected perfume and its exact resource channel.
         remainingHours: Math.round(remainingKissHours() * 100) / 100,
         expiry: state.kissBuff?.expiresAtHour || null,
         motion: window.SpouseKissMotion?.diagnostics?.() || null,
@@ -812,6 +848,9 @@
     kissSpouse,
     remainingKissHours,
     completeSpouseKiss, // Exposed for deterministic gameplay/test contact assertions.
+    acceptSpousePerfumeGift, // Called only after the shared NPC gift transaction consumes an accepted bottle.
+    currentKissEffect, // UI/debug reads use the same formula as the ResourceSystem provider.
+    activeKissPerfumeEffect, // Alchemy getter integration excludes default and expired kiss buffs.
     getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.

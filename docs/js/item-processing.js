@@ -361,6 +361,7 @@
   function isWheelEligible(key) {
     const def = deps.ITEM_DEFS[key];
     if (!def) return false;
+    if (def.useMode === 'gift') return false; // Perfumes must be held with the Inventory Hold action for NPC gifting, not mistaken for edible wheel items.
     if (def.masteryUnlock) return false; // Mastery tablets/scrolls are readable lessons, never wheel ingredients; skip processor discovery on Pack selection.
     if (def.isCookedFood || def.isInstrument) return true;
     if (def.alchemyRecipeScrollId) return true;

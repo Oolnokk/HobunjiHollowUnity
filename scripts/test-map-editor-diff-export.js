@@ -8,6 +8,10 @@ const script = fs.readFileSync('docs/js/map-editor-export-fixes.js', 'utf8'); //
 const html = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8'); // Ensures the controller is loaded by the shipped editor.
 new vm.Script(script, { filename: 'map-editor-export-fixes.js' });
 assert(html.includes('<script src="../../js/map-editor-export-fixes.js?'), 'Map Editor must load the diff controller');
+const buildingDoor = fs.readFileSync('docs/js/building-door.js', 'utf8'); // Shared game/editor door module must not inject a second exporter.
+assert(!buildingDoor.includes('data-map-editor-export-fixes'), 'Building Door must not inject duplicate exporter handlers');
+assert.equal((html.match(/<script src="\.\.\/\.\.\/js\/map-editor-export-fixes\.js\?/g) || []).length, 1, 'Map Editor must load exactly one export controller');
+
 
 const original = {
   schema: 'hobunji_map.v1', id: 'map_hobunji_town', name: 'Town', category: 'exterior',
@@ -86,4 +90,31 @@ assert.equal(api.buildDetailedDiff(edited).summary.changed, false);
 assert.equal(api.buildDetailedDiff(edited).mode, 'unchanged-full-map');
 assert(api.buildDetailedDiff(edited).fullMap.layouts.length > 0);
 assert.equal(api.buildDetailedDiff(imported).summary.changed, false);
-console.log('Map diff baselines, imported maps, authored fields, and modal export passed.');
+imported.tiles['0,0'] = { type: 'trench', crop: '' }; // Independent map edit that must survive a confirmed Town reload.
+const updatedTown = JSON.parse(JSON.stringify(edited)); // Fresh Town object reloaded from the canonical indexed game map.
+updatedTown.tiles['0,0'] = { type: 'stream', crop: '' };
+workspace.maps[0] = updatedTown;
+api.captureMapBaseline(updatedTown); // Explicitly rebaseline only the Town map, never every workspace map.
+assert.equal(api.buildDetailedDiff(updatedTown).summary.changed, false, 'Town reload should establish its new baseline');
+assert.equal(api.buildDetailedDiff(imported).summary.tileChanges, 1, 'Town reload must not erase unrelated map edits');
+const afterTownReload = api.buildWorkspaceDiffBundle(); // Bundle reporting must retain pending non-Town changes.
+assert(afterTownReload.maps.some(entry => entry.mapId === imported.id), 'Pending unrelated map changes must stay in the workspace diff');
+assert(!afterTownReload.maps.some(entry => entry.mapId === updatedTown.id), 'Reloaded Town must not be reported as an uncommitted edit');
+const canonicalZone = { ...JSON.parse(JSON.stringify(original)), id: 'map_indexed_zone', name: 'Indexed zone' }; // Simulated additional map from bundled repo workspace.
+workspace.maps.push(canonicalZone);
+api.adoptBundledMapBaselines([canonicalZone.id]); // Server-authored maps loaded with Town are not newly authored in this session.
+const afterBundledMaps = api.buildWorkspaceDiffBundle();
+assert.equal(afterBundledMaps.summary.addedMaps, 0, 'Canonical indexed map imports must not appear as user-added maps');
+assert(afterBundledMaps.maps.some(entry => entry.mapId === imported.id), 'Baseline adoption must preserve the unrelated map edit');
+assert.equal(api.buildDetailedDiff(canonicalZone).summary.changed, false, 'Canonical map gets its own captured baseline');
+workspace.plateauGroups.push({ id: 'bundled_group', elevation: 2 }); // Bundled geometry should establish a baseline without hiding other edits.
+workspace.ramps.push({ id: 'bundled_ramp', fromMapId: canonicalZone.id, toMapId: updatedTown.id });
+api.adoptBundledWorkspaceBaselines({ plateauGroupIds: ['bundled_group'], rampIds: ['bundled_ramp'] });
+assert.equal(api.buildWorkspaceDiffBundle().workspaceChanges.fields, undefined, 'Bundled plateau geometry must not appear as user-authored changes');
+workspace.plateauGroups.push({ id: 'user_group', elevation: 3 }); // Locally authored plateau must still show in the diff.
+const ownWorkspaceEdit = api.buildWorkspaceDiffBundle().workspaceChanges.fields;
+assert(ownWorkspaceEdit.after.plateauGroups.some(group => group.id === 'user_group'), 'User plateau changes must remain visible');
+assert(!ownWorkspaceEdit.before.plateauGroups.some(group => group.id === 'user_group'), 'User plateau must not be absorbed into the bundled baseline');
+assert(ownWorkspaceEdit.before.plateauGroups.some(group => group.id === 'bundled_group'), 'Bundled plateau should be part of the accepted baseline');
+
+console.log('Map diff baselines, per-map Town reset, bundled indexed maps, unrelated edits, and modal export passed.');
