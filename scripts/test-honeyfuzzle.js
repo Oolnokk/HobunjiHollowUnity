@@ -473,6 +473,9 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(state.created.length, 2, 'replaced after exactly 15 seconds while stump stands');
   H.ensureCurrentZone();
   assert.equal(state.created.length, 2, 'one replacement, no duplicates');
+  assert.equal(H.debugSnapshot().activeRespawns, 0, 'old corpse cannot restart a timer while a living replacement exists');
+  state.nowMs = 20000; H.ensureCurrentZone();
+  assert.equal(H.debugSnapshot().activeRespawns, 0, 'stale corpse remains harmless across later spawn checks');
   state.created[1].health = 0; H.recordDefeat(state.created[1]);
   H.harvest('map_test', 5, 4); // Removes the hive permanently until regrowth.
   state.nowMs = 31000; H.ensureCurrentZone();
