@@ -34,7 +34,8 @@
     whiteberries: 0xffffff, blackberries: 0x17121f, blackMustard: 0x1f1812, greenMustard: 0x9bd66b,
   }); // Fallback ripe colors match VegetationCropRendering's existing native crop palette.
   const COLOR_FILTERS = Object.freeze([0xffffff, 0xd6ac72, 0xafc4aa, 0xb2c6ed, 0x72c7c8, 0xb98bce]); // Regional tint genes shared by renderer and seed catalog.
-  const REGIONAL_EFFECTS = Object.freeze([null, 'foraging', 'fortitude', 'vigor', 'fishing', 'perception']); // Imported food traits reflect climate-driven cultivation, not a new buff system.
+  const REGIONAL_EFFECTS = Object.freeze([null, 'foraging', 'fortitude', 'vigor', 'fishing', 'perception']); // Foreign climate origins carry distinct edible traits for crop breeding.
+  const COLLISION_EFFECT = 'strength'; // Used when one imported origin would duplicate the native effect; strength is absent from the five standard imports.
   const MAX_CODE = /^[0-5]{6}$/; // Prevents unbounded arbitrary keys from being installed as game items.
   const VARIANT_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
   let cropData = null; // Shared runtime cropData mutated in place; read by growth, planting and the farm.
@@ -134,14 +135,20 @@
     const channel = shift => Math.round(((base >>> shift) & 255) * (.42 + .58 * ((filter >>> shift) & 255) / 255)); // Keep recognisable colors while differentiating origins.
     return (channel(16) << 16) | (channel(8) << 8) | channel(0);
   }
+  function regionalEffectFor(family, regionIndex) {
+    const baseKey = cropData?.[family]?.cropKey; // Native crop ingredient identity supplies its authored cooking buff.
+    const nativeEffect = window.HobunjiCookingData?.items?.[baseKey]?.primaryEffect || 'farming'; // Compared with imported effects before deriving the phenotype.
+    if (regionIndex === 0) return nativeEffect;
+    const importedEffect = REGIONAL_EFFECTS[regionIndex];
+    return importedEffect === nativeEffect ? COLLISION_EFFECT : importedEffect; // No foreign variety duplicates the native effect of its own crop family.
+  }
   function phenotype(family, code, colorHex = null) {
     const base = cropData?.[family];
     if (!base || !MAX_CODE.test(code)) return null;
     const genes = [...code].map(Number); // Used to resolve two alleles in each of the three trait pairs.
     const color = colorHex == null ? mixHex(tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[0]]), tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[1]])) : Number.parseInt(colorHex, 16); // Save-compatible, exact parent-color midpoint.
-    const nativeEffect = window.HobunjiCookingData?.items?.[base.cropKey]?.primaryEffect || 'farming'; // Canonical local ingredient buff.
-    const effectA = REGIONAL_EFFECTS[genes[2]] || nativeEffect;
-    const effectB = REGIONAL_EFFECTS[genes[3]] || nativeEffect;
+    const effectA = regionalEffectFor(family, genes[2]);
+    const effectB = regionalEffectFor(family, genes[3]);
     const effects = effectA === effectB ? { [effectA]: 2 } : { [effectA]: 1, [effectB]: 1 }; // Mixed crops carry both effects, without doubling total buff power.
     const moisture = [genes[4], genes[5]].map(index => REGIONS[index].ideal || [base.idealMin, base.idealMax]);
     const min = clamp((moisture[0][0] + moisture[1][0]) / 2, 0, 1);
@@ -173,6 +180,8 @@
     if (!traits) return null;
     const base = cropData[family];
     const label = traits.region + ' ' + (base.label || family);
+    const buffSummary = Object.entries(traits.effects).map(([effect, stacks]) =>
+      effect[0].toUpperCase() + effect.slice(1) + ' +' + stacks).join(', '); // Tooltips make inherited culinary buffs visible before planting or eating.
     cropData[id] = { ...base, label, seedKey: seedKey(id), cropKey: id, baseCrop: family, idealMin: traits.idealMin,
       idealMax: traits.idealMax, growDays: traits.growDays, seasonGrowth: traits.seasonGrowth,
       varietyColor: traits.color, varietyGenes: code, varietyOrigin: traits.region };
@@ -192,13 +201,13 @@
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
         foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
-        desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
+        desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. Food buffs: ' + buffSummary + '.' };
       itemDefs[seedKey(id)] = { ...baseSeed, seedFor: id, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
         rarityBaseSellPrice: Number(baseSeed.sellPrice) || 4, // Native seed baseline preserved for rarity inspection.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
           ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
-        desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
+        desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water. Harvest buffs: ' + buffSummary + '.' };
       syncSeedItem(id, label); // Foreign and crossbred seeds use the same contextual planting action as native seeds.
     }
     const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
@@ -299,6 +308,28 @@
     const parsed = fromItemKey(key); // Reject seeds: processors consume harvested crops, never seed stacks.
     return !String(key).endsWith('Seeds') && parsed ? parsed.family : null;
   }
+  function effectsOf(key) {
+    const family = produceFamily(key); // Only harvested ingredients are parents, never seed stack IDs.
+    const parent = family ? genesFor(key) : null;
+    const traits = parent && phenotype(parent.family, parent.genes, parent.colorHex);
+    return traits ? { ...traits.effects } : null; // Display uses the same food phenotype registered for cooking.
+  }
+  function possibleOffspringEffects(firstKey, secondKey) {
+    const family = produceFamily(firstKey); // Prediction must reject cross-species pairs without using game RNG or changing crop inventory.
+    if (!family || family !== produceFamily(secondKey)) return [];
+    const first = genesFor(firstKey), second = genesFor(secondKey);
+    const combinations = new Map(); // Each parent's two effect alleles contributes one of four equally likely pairs.
+    for (const a of [2, 3]) for (const b of [2, 3]) {
+      const effectA = regionalEffectFor(family, Number(first.genes[a]));
+      const effectB = regionalEffectFor(family, Number(second.genes[b]));
+      const effects = effectA === effectB ? { [effectA]: 2 } : { [effectA]: 1, [effectB]: 1 };
+      const signature = Object.entries(effects).sort(([a], [b]) => a.localeCompare(b)).map(([effect, n]) => effect + ':' + n).join('|');
+      const entry = combinations.get(signature) || { effects, probability: 0 };
+      entry.probability += .25;
+      combinations.set(signature, entry);
+    }
+    return [...combinations.values()].sort((a, b) => b.probability - a.probability); // Rare existing mutations are deliberately excluded from these ordinary inheritance odds.
+  }
   function breed(firstKey, secondKey, rng = Math.random) {
     const a = produceFamily(firstKey), b = produceFamily(secondKey);
     if (!a || !b || a !== b) return null; // Same crop species only, equivalent in complexity to livestock breeding.
@@ -357,7 +388,7 @@
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, REGIONAL_SEED_STOCK, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, REGIONAL_SEED_STOCK, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, effectsOf, possibleOffspringEffects, details, colorOf, seedColorOf, blendedColor,
     provenanceFor, // World-scoped parent-pair evidence, safe to inspect on mobile; not tied to individual stacked items.
     get provenanceStatus() { syncProvenanceWorld(); return {worldId:provenanceWorldId,recordedCultivars:Object.keys(provenanceLedger.records).length}; },
     get lastChange() { return lastChange; }, get lastBreeding() { return lastBreeding && { ...lastBreeding }; } }); // Exposed for mobile production diagnostics and regression tests.

@@ -365,6 +365,17 @@
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: used > 0, message: used ? 'Fertilized ' + used + ' crops for this harvest.' : 'Withdraw compost fertilizer and plant unfertilized crops first.' };
   }
+  function inheritedBuffLabel(key, crops = window.CropVarieties) {
+    const effects = crops?.effectsOf?.(key); // Shared phenotype data drives actual hybrid cooking buff names and the seed-maker inspector.
+    const entries = Object.entries(effects || {}); // Fixed effect stacks are present on non-native cultivars, regardless of ingredient star quality.
+    if (!entries.length) return 'None';
+    const names = entries.map(([effect, stacks]) => effect[0].toUpperCase() + effect.slice(1) + ' +' + stacks);
+    if (key === crops?.produceFamily?.(key)) {
+      const traits = entries.map(([effect]) => effect[0].toUpperCase() + effect.slice(1)).join(', '); // Native produce uses cooking's quality multiplier rather than cultivar fixed stacks.
+      return traits + ' (native; cooking strength depends on quality)';
+    }
+    return names.join(', ');
+  }
   // Seed-making takes exactly one harvested crop; optionally a second of the same species.
   // Both parent stacks are checked before either is removed, including two from the same source.
   function enqueueSeeds(id, first, second = null) {
@@ -401,7 +412,9 @@
       outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
     deps.saveMemberWorldData(); deps.saveFarmLayout();
-    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.' : 'Extracting ' + offspring.label + ' seeds.' };
+    const seedCrop = offspring.id || first.itemKey; // Native seed extraction returns no new cultivar ID, so use its harvested parent.
+    const buffLabel = inheritedBuffLabel(seedCrop, crops); // Native ingredient power depends on quality; cultivar buffs use their fixed inherited stacks.
+    return { ok: true, message: (second ? 'Crossbreeding ' : 'Extracting ') + offspring.label + ' seeds. Cooking traits: ' + buffLabel + '.' };
   }
 
   function openSeedMaker(entry) {
@@ -439,7 +452,7 @@
     }
     const first = selector('First harvested crop', false); // Input one is always required.
     const second = selector('Second harvested crop (optional)', true); // Crossing is opt-in, not accidental.
-    const preview = document.createElement('div'); // Live parent/offspring color swatches work without a desktop console.
+    const preview = document.createElement('div'); // Preview inherited buffs as well as color on mobile without devtools.
     preview.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:9px 0 12px;font-size:12px';
     preview.setAttribute('aria-live', 'polite');
     panel.append(preview);
@@ -467,6 +480,26 @@
       if (secondItem) swatch('Parent 2', secondColor);
       if (mixed != null) swatch(secondItem ? 'Blended offspring' : 'Resulting seeds', mixed);
       else if (secondItem) preview.append(document.createTextNode('These crop species cannot be crossed.'));
+      const parentBuffs = document.createElement('div'); // Show the traits that make imported crops desirable, alongside existing color chips.
+      parentBuffs.style.cssText = 'flex-basis:100%;font-size:13px';
+      parentBuffs.textContent = secondItem
+        ? 'Parent cooking traits: ' + inheritedBuffLabel(firstItem, crops) + ' × ' + inheritedBuffLabel(secondItem, crops)
+        : 'Harvest cooking traits: ' + inheritedBuffLabel(firstItem, crops);
+      preview.append(parentBuffs);
+      if (secondItem) {
+        const outcomes = crops?.possibleOffspringEffects?.(firstItem, secondItem) || []; // Same 50/50 effect-gene selection as the real breeder, without RNG consumption.
+        if (outcomes.length) {
+          const possibilities = document.createElement('div'); // Preserve the two-effect limit of the existing six-gene model.
+          possibilities.style.cssText = 'flex-basis:100%;font-size:13px;line-height:1.5';
+          const nativePair = firstItem === secondItem && firstItem === crops?.produceFamily?.(firstItem); // Two unchanged native parents return a native ingredient, not a fixed-strength cultivar.
+          const outcomeLabel = outcome => nativePair
+            ? inheritedBuffLabel(firstItem, crops)
+            : Object.entries(outcome.effects).map(([effect, stacks]) => effect[0].toUpperCase() + effect.slice(1) + ' +' + stacks).join(', ');
+          possibilities.textContent = 'Possible offspring buffs (excluding rare mutation): ' +
+            outcomes.map(outcome => outcomeLabel(outcome) + ' (' + Math.round(outcome.probability * 100) + '%)').join(' · ');
+          preview.append(possibilities);
+        }
+      }
     }
     first.addEventListener('change', renderColorPreview);
     second.addEventListener('change', renderColorPreview);
