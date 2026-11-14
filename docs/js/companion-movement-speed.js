@@ -11,6 +11,7 @@
   const FOLLOW_CATCHUP_START_TILES = 1.1; // Build recovery speed before the 2.2-tile FOLLOW_FAR_PX activation distance.
   const FOLLOW_CATCHUP_FULL_TILES = 6; // Full recovery pace is available once the pet falls six tiles behind.
   const FOLLOW_CATCHUP_MAX_MUL = 1.65; // Bounded temporary advantage used only while closing distance to the owner.
+  const FALLBACK_TERRAIN_SPEED = Object.freeze({ tilled: 0.85, raised: 0.90, paddy: 0.70, trench: 0.30 }); // Isolated tools use the same fixed non-water terrain paces as game.js.
 
   let deps = null; // Combat.init supplies the live player, map, and companion collection.
   let mountDeps = null; // Mounts.init supplies the authoritative MOVE_SPEED, Alchemy, and global speed getters used by player locomotion.
@@ -50,7 +51,7 @@
     const tile = grid?.[row]?.[col];
     if (!tile || tile.incline || deps?.getCurrentArea?.() === 'farm') return 1;
     if (tile.type === 'river' || tile.type === 'stream') return 0.5;
-    return ({ tilled: 0.85, raised: 0.90, paddy: 0.70, trench: 0.30 })[tile.type] ?? 1;
+    return FALLBACK_TERRAIN_SPEED[tile.type] ?? 1;
   }
 
   function playerFootingMultiplier(player) {
@@ -280,8 +281,8 @@
     if (owner === deps?.player || !owner?.def || !!findNpcWalker(owner)) return true;
     // A non-walker owner may still publish an already-global live velocity.
     // Only purely authored species move/chase stats need their global applied.
-    return [owner.currentMovementSpeedPxS, owner.movementSpeedPxS,
-      owner.moveSpeedPxS, owner.currentSpeedPxS].some(value => Number(value) > 0);
+    return Number(owner.currentMovementSpeedPxS) > 0 || Number(owner.movementSpeedPxS) > 0
+      || Number(owner.moveSpeedPxS) > 0 || Number(owner.currentSpeedPxS) > 0;
   }
 
   function applyCompanionProxy(companion) {
