@@ -1,0 +1,404 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ikmcBalconyLadder",
+  "id": "ikmcBalconyLadder",
+  "name": "IKMC Ceiling Ladder",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Vertical ceiling-targeted ladder. Bottom feet and ceiling-black hatch are rigid ends, side stiles stretch, rungs follow at rigid dimensions. Roof access belongs to the interior exit interaction, not outdoor stairs.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileSpan": {
+    "version": 1,
+    "enabled": true,
+    "axis": "y",
+    "baseHeight": 1.75,
+    "targetHeight": 1.75,
+    "verticalTarget": "ceiling",
+    "startTiles": 1,
+    "middleTiles": 1,
+    "endTiles": 1,
+    "totalTiles": 3,
+    "tileSize": 1
+  },
+  "parts": [
+    {
+      "id": "ladder_floor",
+      "name": "Fixed bottom rail",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "start",
+      "transform": {
+        "x": 0,
+        "y": 0.035,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.8,
+        "sy": 0.07,
+        "sz": 0.22
+      }
+    },
+    {
+      "id": "ladder_ceiling_hatch",
+      "name": "Black ceiling access opening",
+      "kind": "box",
+      "color": "#050505",
+      "materialRole": "stone",
+      "tileSpanRole": "end",
+      "transform": {
+        "x": 0,
+        "y": 1.727,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.92,
+        "sy": 0.018,
+        "sz": 0.92
+      }
+    },
+    {
+      "id": "ladder_stile_0",
+      "name": "Left stretchable stile",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "stretch",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": -0.33,
+        "y": 0.86,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.095,
+        "sy": 1.64,
+        "sz": 0.095
+      }
+    },
+    {
+      "id": "ladder_stile_1",
+      "name": "Right stretchable stile",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "stretch",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0.33,
+        "y": 0.86,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.095,
+        "sy": 1.64,
+        "sz": 0.095
+      }
+    },
+    {
+      "id": "ladder_rung_0",
+      "name": "Rigid repositioning rung 1",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0.19,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_1",
+      "name": "Rigid repositioning rung 2",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0.359,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_2",
+      "name": "Rigid repositioning rung 3",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0.528,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_3",
+      "name": "Rigid repositioning rung 4",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0.6970000000000001,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_4",
+      "name": "Rigid repositioning rung 5",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0.8660000000000001,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_5",
+      "name": "Rigid repositioning rung 6",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 1.0350000000000001,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_6",
+      "name": "Rigid repositioning rung 7",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 1.204,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_7",
+      "name": "Rigid repositioning rung 8",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 1.373,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    },
+    {
+      "id": "ladder_rung_8",
+      "name": "Rigid repositioning rung 9",
+      "kind": "box",
+      "color": "#906c4b",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "tileSpanRole": "follow",
+      "tileSpanRoots": {
+        "start": {
+          "partId": "ladder_floor",
+          "face": "max"
+        },
+        "end": {
+          "partId": "ladder_ceiling_hatch",
+          "face": "min"
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 1.542,
+        "z": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.74,
+        "sy": 0.08,
+        "sz": 0.1
+      }
+    }
+  ],
+  "recognizedSurfaces": [],
+  "itemPlacements": [],
+  "ceilingOpening": {
+    "partId": "ladder_ceiling_hatch",
+    "tileWidth": 1,
+    "tileDepth": 1,
+    "render": "black-ceiling-patch"
+  }
+}
