@@ -268,7 +268,13 @@
   function isBalconyAt(worldX, worldZ, worldY, area = activeArea()) {
     if (!Number.isFinite(worldY)) return false;
     return matchingSupports(worldX,worldZ,area).some(entry=>entry.kind==='balcony' &&
-      Math.abs(entry.bounds.topY-worldY)<=.25); // A building blocks at ground level, but not when standing on its explicit rooftop deck.
+      Math.abs(entry.bounds.topY-worldY)<=.25); // Only actual rooftop footing authorizes hatch interaction and supported landings.
+  }
+
+  function isAboveBalconyAt(worldX, worldZ, worldY, area = activeArea()) {
+    if (!Number.isFinite(worldY)) return false;
+    return matchingSupports(worldX,worldZ,area).some(entry=>entry.kind==='balcony' &&
+      worldY>=entry.bounds.topY-.2); // Movement remains clear of the shell while airborne above the deck, but never authorizes the hatch.
   }
 
   function surfaceLiftAt(worldX, worldZ, area = activeArea()) {
@@ -869,7 +875,8 @@
     registerObject,
     registerPiecePorches,
     registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
-    isBalconyAt, // Height-aware structural-footprint exception; never grants ground-level access.
+    isBalconyAt, // Strict support-level permission for rooftop access and landing.
+    isAboveBalconyAt, // Airborne movement exemption, including upward jumps.
     roofHatchAt, // Lets the native upstairs/exit arrival transfer onto the actual roof support.
     registerFurnitureRails, // Authored town bridge reuses the existing railing collision grid.
     unregisterFurnitureRails, // Remove bridge blockers before town mesh teardown.

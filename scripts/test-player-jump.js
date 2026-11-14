@@ -140,6 +140,40 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
 }
 
 {
+  // Real PlayerJump runtime with a roof top and interior ladder handoff: first and second jumps must retain raised support.
+  const h = harness({ heightBlocked: () => true, start: { x: 2.5, z: 3.5 } }); // Simulates the native house-shell collision beneath the rooftop.
+  const roofY = 1.75; // This fixture uses zero terrain elevation; live IKMC adds its town ground offset.
+  h.setArea('town');
+  const overRoof = (x,z) => x >= 2 && x < 3 && z >= 3 && z < 4; // Only the one-tile test roof footprint grants elevated passage.
+  h.window.HobunjiWalkableElevation = {
+    worldSurfaceTopAt(x,z,base,area,maxY=Infinity) {
+      return area === 'town' && overRoof(x,z) && roofY <= maxY + .01 ? roofY : base;
+    },
+    isBalconyAt(x,z,y,area) { return area === 'town' && overRoof(x,z) && Math.abs(y-roofY) <= .25; },
+    isAboveBalconyAt(x,z,y,area) { return area === 'town' && overRoof(x,z) && y >= roofY - .2; },
+  }; // Shared physics API distinguishes the near-deck hatch predicate from air travel over the deck.
+  h.window.GridTileAccessors.isTownBuildingCollisionTile = (col,row,area,feetY) =>
+    area === 'town' && col === 2 && row === 3 &&
+      !h.window.HobunjiWalkableElevation.isAboveBalconyAt(col+.5,row+.5,feetY,area);
+  assert.equal(h.window.PlayerJump.enterRoofSupport({topY:roofY,col:2,row:3,balconyId:'ikmc_rooftop'}),true,
+    'only the explicit ladder transition grants the initial roof height');
+  assert.equal(h.player._freeJump?.phase,'supported');
+  assert.equal(h.window.PlayerJump.start(),true,'roof-supported player can initiate the first free jump');
+  h.input.x=.2; // Small input verifies collision while moving upward, without walking off the roof test tile.
+  h.advance(.2);
+  assert(h.player.physicalFeetY > roofY+.2,'jump actually lifts the player above the balcony deck');
+  assert.equal(h.window.PlayerJump.debug.blockedMoves,0,'the outpost shell does not collide with the rising jumper');
+  h.input.x=0;
+  h.advance(1.4);
+  assert.equal(h.player._freeJump?.phase,'supported','landing on rooftop retains raised-support ownership');
+  assert(Math.abs(h.player.physicalFeetY-roofY)<.01,'landing returns to the actual rooftop surface');
+  assert.equal(h.window.PlayerJump.start(),true,'a second jump from the same roof works');
+  assert.equal(h.window.PlayerJump.debug.starts,2,'two roof jumps really launched');
+  h.window.FurnitureTableSystem={blocksBox:()=>true}; // A separate table on the deck must not become intangible via the roof exception.
+  assert.equal(h.window.PlayerJump.canOccupyAir(2.5,3.5,roofY+.3),false,
+    'native roof-shell bypass still rejects independent furniture collisions');
+}
+{
   const h = harness();
   assert.equal(h.window.PlayerJump.start(), true, 'empty ground must be jumpable');
   const { launchSpeed, gravity } = h.window.PlayerJump.config; // Validate the configured half-height apex independent of frame stepping.
