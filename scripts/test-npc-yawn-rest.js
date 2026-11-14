@@ -15,19 +15,24 @@ async function main() {
   let ceremonies = 0; // Counts Slagothim Koma events without rendering Three.js.
   let interruptions = 0; // Counts aborted ceremonial drinks after combat begins.
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
+  const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
   const storage = new Map(); // Mimics per-character localStorage persistence.
   const hostiles = new Set(); // The actual Combat.deps hostile set gates NPC yawns.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
-    area: 'farm', neckJoint: { rotation: { x: 0 } },
+    area: 'farm', neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
     state: 'idle', currentScheduleTarget: { pose: 'stand' }, _bedLieActive: false,
   }; // Same public shape as game.js's makeNpcWalker.
   const window = {
     _npcWalkers: [walker],
     __hobunjiPlayerProfile: { characterId: 'character-a' },
-    CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: Math.floor(hour / 24), time01: (hour % 24) / 24 }) },
+    CalendarSystem: {
+      isInitialized: () => true,
+      getAbsoluteGameHour: () => hour, // Includes the 06:00–22:00 clock with its eight-hour overnight gap.
+      timeDebugSnapshot: () => ({ rawDay: Math.floor(hour / 24), time01: (hour % 24) / 24 }),
+    },
     RuntimeFrameScheduler: { register: (id, cb, options) => { assert.equal(id, 'npc-yawn-rest'); assert.equal(options.phase, 'pre-render'); frame = cb; } },
     Combat: { deps: { TILE: 64, hostileObjects: hostiles, getCurrentArea: () => 'farm' } },
     NpcDrinkInteraction: {
@@ -35,6 +40,12 @@ async function main() {
       stopAutonomous: (_walker, itemKey) => { assert.equal(itemKey, '__daily_koma_leaf__'); interruptions++; },
     },
     ToastNotifications: { showToast: text => toasts.push(text) },
+    DialogueContent: { dialogueSeatId: walker => walker.rec.id, npcRestingExpression: () => 'neutral' },
+    portraitBreathingComposer: {
+      getExpression: id => expressions.get(id) || 'neutral',
+      setExpression: (id, value) => expressions.set(id, value),
+      clearExpression: id => expressions.delete(id),
+    },
     CombatVocalizations: {
       getVoiceModulation: entity => entity.rec.appearance.gender === 'female'
         ? { pitchSemitones: 7, tempo: 0.8, gain: 1.25 }
@@ -64,11 +75,20 @@ async function main() {
 
   frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().active.length, 0, 'new awake NPC begins with one full game-hour grace');
+  assert.equal(runtime._test.nowGameHour(), 12, 'the yawn timer uses actual game hours, not 24 * normalized time01');
+  const authoritativeHour = window.CalendarSystem.getAbsoluteGameHour;
+  window.CalendarSystem.getAbsoluteGameHour = null;
+  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .5 });
+  assert.equal(runtime._test.nowGameHour(), 3 * 24 + 6 + 8, 'old calendar fallback must map normalized 12:00 to actual 14:00');
+  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: null, time01: null });
+  assert.ok(Number.isNaN(runtime._test.nowGameHour()), 'uninitialized calendar must not seed fake fatigue clocks');
+  window.CalendarSystem.getAbsoluteGameHour = authoritativeHour;
   hour = 13; ms = 500; frame({ timestamp: ms });
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   assert.equal(ceremonies, 1, 'first Slagothim yawn of day chews Koma');
   assert.deepEqual(toasts, ['You chew your daily koma leaves so that you may run and jump as the outlanders do.']);
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
+  assert.equal(expressions.get('test-npc'), 'yap', 'use the existing mouth-open sprite during a yawn');
   assert.ok(storage.has('hobunji_npc_yawn_rest_v1:character-a'));
 
   const femaleVoice = await runtime._test.voiceFor('tletingan', 'female');
@@ -76,9 +96,20 @@ async function main() {
   assert.equal(femaleVoice.pitch, 6, 'female pitch must be relative to the male source');
   assert.equal(femaleVoice.tempo, 0.8);
   assert.equal(femaleVoice.gain, 1.25);
+  for (let i = 0; i < 8 && !audioOptions; i++) await Promise.resolve();
+  assert.ok(audioOptions, 'the first yawn must actually play a voice, not merely return a playback plan');
+  assert.equal(audioOptions.pitchSemitones, 6);
+  assert.equal(audioOptions.tempo, 0.8);
+  assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
 
+  ms = 3000; frame({ timestamp: ms });
+  assert.ok(walker.neckJoint.rotation.x < -0.20, 'head must stretch during the yawn');
+  assert.ok(walker.alcoholPoseGroup.rotation.x < -0.05, 'torso should contribute visible chest extension');
   ms = 5500; frame({ timestamp: ms });
   assert.equal(runtime.movementMultiplier('test-npc'), 1, 'speed must restore after exactly five seconds');
+  assert.equal(walker.neckJoint.rotation.x, 0, 'head pose must restore without residual additive offsets');
+  assert.equal(walker.alcoholPoseGroup.rotation.x, 0, 'torso pose must restore without residual offsets');
+  assert.equal(expressions.has('test-npc'), false, 'resting mouth must return when yawn finishes');
   hour = 14; ms = 6000; frame({ timestamp: ms });
   assert.equal(ceremonies, 1, 'hourly yawns must not consume another Koma leaf on the same day');
 
