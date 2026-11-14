@@ -691,7 +691,14 @@ for(const side of ['north','east','south','west']){
   player={x:challenge.x,z:challenge.z,y:challenge.floorY};
   for(let i=0;i<17;i++)network.tick(.05);
   assert(challenge.solved,'standing on the stone plate for .8s opens its gate');
-  assert(!gateSolid(),'solving a plate removes the corresponding 3D gate obstruction');
+  assert(gateSolid(),'a solved chamber unlocks its auto door without leaving it permanently open');
+  const [gateC,gateR]=challenge.gate.tiles[1];
+  player={x:gateC+.5,z:gateR+.5,y:challenge.floorY}; // Close approach causes a solved door to retract without moving maps.
+  for(let i=0;i<10;i++)network.tick(.05);
+  assert(!gateSolid(),'approaching the unlocked room door opens the corresponding 3D gate obstruction');
+  player={x:challenge.x,z:challenge.z,y:challenge.floorY};
+  for(let i=0;i<28;i++)network.tick(.05);
+  assert(gateSolid(),'the door physically closes once the player has moved safely away');
   const first=network.states[0],brazierControl=ruin.controls.find(c=>c.kind==='layerBrazier');
   brazierControl.onPress();
   assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');
