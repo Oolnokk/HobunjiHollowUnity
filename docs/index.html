@@ -41,7 +41,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261111h05b7f02"></script>
+  <script src="js/format-utils.js?v=20261114entryhook1"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -266,7 +266,7 @@
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261113melodyLoud1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
-  <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
+  <script src="js/interior-door-tiles.js?v=20261114dblleaf1"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
@@ -523,7 +523,7 @@
   <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
   <script src="js/map-layout-system.js?v=20261111communion2"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
-  <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
+  <script src="js/interior-furniture-grid.js?v=20261114dbldim1"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
   <script src="js/seat-surface-placement-transform.js?v=20260915seat1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
