@@ -60,7 +60,7 @@ assert.equal(diff.summary.tileChanges, 1);
 for (const field of ['visualHeights', 'buildings', 'layouts', 'puzzleWiring']) {
   assert(diff.summary.changedFields.includes(field), `Missing changed field: ${field}`);
 }
-assert.equal(diff.tiles.modified[0].after.type, 'path');
+assert.equal(diff.tiles.added[0].type, 'path', 'Painting a default grass tile is an authored addition');
 
 const imported = { ...JSON.parse(JSON.stringify(original)), id: 'map_imported', name: 'Imported' }; // A new map has no pre-import baseline.
 workspace.maps.push(imported);
