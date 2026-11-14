@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 1; // Checked by reloads so only one scheduler owns these NPCs.
+  const VERSION = 2; // Clock-model migration: reject previous owner and stale 16-hour-day save timestamps.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -14,7 +14,7 @@
   const SLAGOTHIM = new Set(['slagothim', 'tletingan', 'nuhongan', 'longoran']); // NPC Slagothim identities eligible to chew daily Koma.
   const PLAYER_KOMA_SPECIES = new Set(['tletingan', 'nuhongan', 'longoran']); // Only these three player subspecies receive the Koma ritual and its second-person toast.
   const PLAYER_KOMA_ID = '__player_daily_koma__'; // Separate per-character cooldown key for the player's own daily Koma dose.
-  const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v1:'; // Character-scoped key for rested and daily-koma time stamps.
+  const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v2:'; // New per-character namespace avoids importing old, non-monotonic midnight timestamps.
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
   const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity1.m4a'; // Shared combat-breath recording if no yawn exists.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
