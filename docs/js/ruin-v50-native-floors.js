@@ -472,6 +472,7 @@
               tick:()=>{
                 if(challenge.disposed||challenge.solved||owner.disposed||record.solved!==i
                   ||!record.nativeMechanisms.isSolved(authored.id))return;
+                record.nativeMechanisms.acceptSolution(authored.id); // Latched exit mechanism keeps opening after room progression advances.
                 challenge.solved=true;record.solved++;options.onProgressChange?.();root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
                 options.showToast?.('A mechanism grinds — the next chamber unlocks.',true);
                 options.onStateChange?.();
@@ -572,7 +573,7 @@
         const currentId=currentStage?'v50-f'+record.floor+':'+currentStage.id:null;
         const active=!root.RuinRoomSystem?.isRoomActive||!currentId||root.RuinRoomSystem.isRoomActive(currentId);
         if(active)record.nativeMechanisms?.tick?.(dt); // Current room owns its authored puzzle mechanisms.
-        else record.nativeMechanisms?.tickDoors?.(dt); // Hallway doors must keep opening even while their adjacent puzzles sleep.
+        else record.nativeMechanisms?.tickDormant?.(dt); // Complete accepted exit motion and transit doors, without waking inactive puzzles.
         for(const challenge of record.challenges){
           const gate=challenge.gate;
           if(!gate?.unlocked||!player)continue;
@@ -599,7 +600,10 @@
         if(!data||!Number.isInteger(data.solved)||data.solved<0||data.solved>record.challenges.length)continue;
         for(let i=0;i<data.solved;i++){
           const challenge=record.challenges[i];
-          if(challenge?.kind==='v50Authored')challenge.solved=true;
+          if(challenge?.kind==='v50Authored'){
+            challenge.solved=true;
+            record.nativeMechanisms?.acceptSolution?.(challenge.nativeMechanism.id,true); // Restored authored exit starts at its completed physical pose.
+          }
           setGate(challenge,false,true); // Restore the collision grid as well as the visible door.
         }
         record.solved=data.solved;
