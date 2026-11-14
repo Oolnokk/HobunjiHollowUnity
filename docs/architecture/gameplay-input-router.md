@@ -17,8 +17,14 @@ buttons into semantic action IDs) or each gameplay system's action executor.
    the event to the current owner, and calls the optional fallback only when
    no active claim consumes the event.
 3. A claimed **press stays owned through release** even after its provider
-   clears the claim or the reticle leaves the object. Key repeats never fire
-   `onPress` a second time. `cancel` releases the owner with
+   clears the claim or the reticle leaves the object. Each adapter passes a
+   stable `detail.source` on both press and release (for example,
+   `keyboard:Space`, `controller:7`, `desktop-mouse:0`, `touch-arch:42`).
+   Ownership is keyed by **physical source plus semantic action**, so releasing
+   one device never releases a second device's claim. Legacy callbacks remain
+   active until the last physical owner releases. A new press from another
+   device cannot inherit an already-withdrawn claim. Repeats never fire
+   `onPress` again. `cancel` releases the original owner with
    `{ canceled: true }`.
 4. The *currently rendered* action arch remains authoritative for contextual
    replacements. `configure({ isContextOverride })` asks game.js whether
@@ -68,5 +74,6 @@ Pixel Probe includes the same summary.
 ## Checks
 
 `node scripts/run-tests.js gameplay-input-router` covers claimed presses,
-repeat/release, priority, contextual Action 1/2 versus Action 3, combat hold
+repeat/release, priority, simultaneous physical sources, withdrawn prompts,
+contextual Action 1/2 versus Action 3, combat hold
 latching and the actual combat tap/hold input machine.
