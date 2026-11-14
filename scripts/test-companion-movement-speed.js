@@ -11,7 +11,8 @@ const moduleScriptPattern = new RegExp('companion-movement-speed\\.js\\?v' + '=[
 assert.match(index, moduleScriptPattern, 'game index loads the owner-relative companion speed module with any valid cache token');
 
 let now = 1000; // Advances the deterministic clock used for position-only NPC owner sampling.
-let terrainType = 'grass'; // Changes the active player tile between grass and river for movement-speed parity.
+let terrainType = 'grass'; // Changes the active player tile between grass, raised terrain and river.
+let bridgeDeck = false; // Simulates the bridge-aware player movement predicate above a river tile.
 let combatMul = 0.9; // Represents the live Combat movement modifier.
 let alchemyMul = 1.2; // Represents the live Alchemy movement modifier.
 let cookingMul = 1.1; // Represents the live food movement modifier.
@@ -60,6 +61,7 @@ const deps = {
   TILE: 32,
   getActiveGrid: () => grid,
   getCurrentArea: () => 'town',
+  getPlayerTerrainSpeedMul: () => bridgeDeck ? 1 : ({ river: 0.5, raised: 0.9 })[terrainType] ?? 1, // Mirrors game.js's actual bridge-aware tileSpeedAt result.
 };
 const context = {
   window: windowStub,
@@ -147,6 +149,19 @@ terrainType = 'river';
 grid[2][2].type = terrainType;
 assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * 0.5 * cookingMul * combatMul * alchemyMul)) < 1e-9,
   'terrain slowdowns on the player are reflected by the companion');
+bridgeDeck = true;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'a bridge deck above river water has normal player and companion pace');
+bridgeDeck = false;
+terrainType = 'raised';
+grid[2][2].type = terrainType;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * 0.9 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'raised terrain shares the authoritative 0.9 player movement modifier');
+delete deps.getPlayerTerrainSpeedMul;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * 0.9 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'isolated callers retain a terrain lookup when game.js is unavailable');
+deps.getPlayerTerrainSpeedMul = () => bridgeDeck ? 1 : ({ river: 0.5, raised: 0.9 })[terrainType] ?? 1;
+terrainType = 'grass';
 grid[2][2].type = 'grass';
 
 player.footing = 50;
