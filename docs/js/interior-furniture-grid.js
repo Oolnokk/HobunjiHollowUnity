@@ -45,6 +45,7 @@
     agingVaseFurniture: [1, 1],
     doorFurniture: [1, 1],
     woodenDoorFurniture: [1, 1],
+    doubleWoodenDoorFurniture: [2, 1], // Used by the two-tile authored doorway's collision/placement footprint.
   });
 
   const state = { // Used by debugSnapshot() so mobile diagnostics can inspect the last runtime adaptation without developer tools.
