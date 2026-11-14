@@ -55,7 +55,28 @@ avatar.add(handGroup);
 const left = new Node('left_hand_socket'), right = new Node('right_hand_socket');
 left.position.x = -0.15; right.position.x = 0.15;
 handGroup.add(left); handGroup.add(right);
-const rig = { group: handGroup, armLengthForSide: () => 0.3 }; // Existing hand rig, never replaced by the yawn.
+let poseOwner = null; // Mirrors ProceduralHandAttachments' scoped hand-pose owner.
+let poseProvider = null; // Lets the native hand driver apply the active hand pose before the yawn's final-render layer.
+const rig = {
+  group: handGroup,
+  armLengthForSide: () => 0.3,
+  setPoseProvider(owner, provider) {
+    if (provider || poseOwner === owner) {
+      poseOwner = provider ? owner : null;
+      poseProvider = provider || null;
+    }
+  },
+  applyOwnedPose() { if (!poseProvider) return false; poseProvider(this); return true; },
+  getDebug: () => ({ poseOwner }),
+  useIdlePose() {
+    left.position.copy(new Vector(-0.15, 0, 0));
+    right.position.copy(new Vector(0.15, 0, 0));
+    left.quaternion.copy(new Quaternion());
+    right.quaternion.copy(new Quaternion());
+    left.visible = true;
+    right.visible = true;
+  },
+}; // Owns the existing procedural rig's neutral hand placement rather than removing the player's equipment.
 avatar.userData.proceduralHandRig = rig;
 const tool = new Node('weapon_holder'); // Independently parented external held-tool root.
 const bag = new Node(); // The unnamed PNG-held item group on playerMesh.
@@ -92,7 +113,12 @@ vm.runInNewContext(source, { window }, { filename: 'player-yawn-stretch-presenta
 const presentation = window.PlayerYawnStretchPresentation;
 const yawn = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } };
 assert.equal(presentation.actionBlocked(), false);
+left.position.y = 0.30; right.position.y = 0.34; // A held tool's native grip is not the free-hand resting position.
 assert.equal(presentation.start(yawn), true, 'player yawn takes presentation ownership');
+assert.equal(rig.getDebug().poseOwner, 'player-yawn-stretch', 'the yawn claims the real rig before the native hand frame runs');
+assert.equal(rig.applyOwnedPose(), true, 'the native hand frame invokes the scoped idle-pose provider');
+assert.equal(left.position.y, 0, 'hidden weapon grip is explicitly replaced with the neutral left-hand base');
+assert.equal(right.position.y, 0, 'hidden weapon grip is explicitly replaced with the neutral right-hand base');
 assert.equal(tool.visible, false, 'weapons and tools disappear without changing the selected equipment');
 assert.equal(bag.visible, false, 'ordinary inventory-held objects also disappear');
 assert.equal(burden.visible, false, 'hand-carried burdens also disappear, not back-stowed items');
@@ -124,6 +150,7 @@ assert.equal(burden.visible, true);
 assert.equal(left.position.y, 0, 'left hand returns to native animation without a residual stretch');
 assert.equal(right.position.y, 0, 'right hand also restores its previous pose');
 assert.equal(locks.length, 0, 'cancellation releases the action lock');
+assert.equal(rig.getDebug().poseOwner, null, 'completion releases hand pose ownership to the normal grip driver');
 assert.equal(presentation.debugSnapshot().hiddenHeldRoots, 0, 'visibility snapshots are cleared on finish');
 
 right.visible = false;
@@ -139,6 +166,7 @@ const komaLock = { owner: 'npc-autonomous-drink', participants: [{ id: 'player',
 locks.push(komaLock);
 const koma = { isPlayer: true, komaStarted: true, walker: { root: playerMesh, avatarGroup: avatar } };
 presentation.start(koma); presentation.update(koma, 0.5); sentinel.onBeforeRender();
+assert.equal(rig.getDebug().poseOwner, null, 'daily Koma keeps the natural right-hand chewing pose instead of claiming both hands');
 assert.ok(left.position.y > 0.48, 'the free arm still stretches during the Koma chewing yawn');
 assert.equal(right.position.y, 0, 'the Koma leaf retains its own right-hand chewing pose');
 assert.equal(presentation.actionBlocked(koma), false, 'the yawn and its Koma-owned action lock coexist');
