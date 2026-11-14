@@ -41,10 +41,10 @@ assert.deepEqual(omgurkuCfg.reputation.greetingLines, [
   "You're safe to walk here.",
 ], 'Omgurku friendly greetings use full, grammatical English without changing their meaning');
 assert.deepEqual(omgurkuCfg.reputation.initialWarnings, [
-  "Go away. We don't want trouble.",
-  'This is our territory, not yours. Leave.',
-  "We don't want to fight. Go away.",
-], 'Omgurku territorial warnings convey the same messages in grammatical English');
+  "Stay to your path, and we shall stay to ours, decieved one.",
+  "You intrude upon our territory, decieved one. Go back the way you came, or face the consequences.",
+  "Leave this place now and no blood shall be spilled. Stay, and it shall!",
+], 'Omgurku territorial warnings use the three authored lines, retaining the exact wording and punctuation');
 assert.deepEqual(omgurkuCfg.reputation.escalationWarnings, [
   "Leave, or we'll fight!",
   'We told you to go away. Leave. Now!',
