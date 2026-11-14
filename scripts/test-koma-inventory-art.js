@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict'); // Checks the shipped JS modules and actual game renderer branches.
 const fs = require('node:fs'); // Loads real sources/assets, so missing uploads fail before gameplay.
 const vm = require('node:vm'); // Executes the new browser modules without requiring WebGL or a console.
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Evaluates startup manifests in their original parser positions.
 
 const read = path => fs.readFileSync(path, 'utf8'); // Shared fixture loader for live source rather than duplicated algorithms.
 const loadModule = (path, window) => {
@@ -129,7 +130,7 @@ assert.ok(game.indexOf('komaCosmeticSites?.has(c +') < game.indexOf('if (tile.sk
 
 const reticle = read('docs/js/combat/melee-hud-reticle.js'); // Canonical slot palette remains the only color authority.
 for (const hex of ['#00D9FF', '#FFD23F', '#FF4FD8', '#7CFF4F']) assert.ok(reticle.includes(hex));
-const html = read('docs/index.html'); // Parser-time dependencies must appear ahead of game boot.
+const html = expandClassicScriptGroups(read('docs/index.html')); // Parser-time dependencies, including grouped item-art modules, must precede game boot.
 assert.ok(html.indexOf('object-sprite-catalog.js') < html.indexOf('game.js?v='));
 assert.ok(html.indexOf('roadside-koma-hedges.js') < html.indexOf('game.js?v='));
 const sourceRecolor = read('docs/js/sprite-recolor.js');
