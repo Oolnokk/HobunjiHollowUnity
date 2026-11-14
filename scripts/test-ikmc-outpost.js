@@ -62,11 +62,15 @@ const mineDoor = town.transitions.find(t => t.id === 'spot_town_mine');
 const outpost = town.buildings.find(b => b.id === 'bldg_ikmc_outpost');
 const outpostDoor = town.transitions.find(t => t.id === 'spot_ikmc_outpost');
 const carpenter = town.buildings.find(b => b.id === 'bldg_pb9bn');
-assert.deepEqual([mine.gridX, mine.gridZ], [9,3], 'mine building must move toward the river on the northern boundary');
-assert.deepEqual([mineDoor.col, mineDoor.row], [10,5], 'mine door transition must move with the building');
+assert.deepEqual([mine.gridX, mine.gridZ, mine.footprintW, mine.footprintD], [12,0,2,2], 'Mine must match the screenshot-approved northern town placement');
+assert.deepEqual([mineDoor.col, mineDoor.row], [13,2], 'Mine door transition must move with the approved building');
 assert(outpost && outpost.pieceFile === 'config/pieces/ikmc-outpost.json', 'town must place the authored IKMC Outpost piece');
-assert.equal(outpost.gridZ, mine.gridZ, 'mine and Outpost must share the same northern placement line');
-assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [15,7,'map_i_ikmc_outpost']);
+assert.deepEqual([outpost.gridX, outpost.gridZ, outpost.footprintW, outpost.footprintD], [15,18,11,7], 'IKMC Outpost must use the screenshot-approved southern placement and larger footprint');
+assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [17,22,'map_i_ikmc_outpost']);
+const mineConfig = read('docs/config/town-mine.json').townEntrance; // Runtime TownMine.decorateTownMap overrides the building/door from this config on every load.
+assert.deepEqual([mineConfig.gridX, mineConfig.gridZ, mineConfig.doorCol, mineConfig.doorRow, mineConfig.rotationDeg],
+  [mine.gridX, mine.gridZ, mineDoor.col, mineDoor.row, mine.rotationDeg],
+  'Town Mine runtime decorator must not move the screenshot-approved mine or its entrance');
 
 // Execute the shared runtime entrance resolver here so exterior extensions cannot silently move this authored door later.
 const doorContext = { window: {}, console };
@@ -79,16 +83,10 @@ const liveOutpostDoor = buildingDoor.doorWorldFromBuilding(
 );
 assert.deepEqual([liveOutpostDoor.col, liveOutpostDoor.row], [outpostDoor.col, outpostDoor.row],
   'live BuildingDoor resolution must preserve the authored Outpost transition even when porch extensions extend west of the shell');
-assert(mine.gridX + mine.footprintW <= outpost.gridX, 'mine and Outpost structural footprints must not overlap');
-assert(outpost.gridX + outpost.footprintW <= carpenter.gridX, 'Outpost and Carpenter structural footprints must not overlap');
+const rectanglesOverlap = (a,b) => a.gridX < b.gridX + b.footprintW && a.gridX + a.footprintW > b.gridX
+  && a.gridZ < b.gridZ + b.footprintD && a.gridZ + a.footprintD > b.gridZ; // Preserve meaningful collision protection without assuming the old northern lineup.
+assert(!rectanglesOverlap(mine, outpost), 'Mine and IKMC Outpost must not overlap');
+assert(!rectanglesOverlap(outpost, carpenter), 'IKMC Outpost and Carpenter must not overlap');
+assert(!rectanglesOverlap(mine, carpenter), 'Mine and Carpenter must not overlap');
 
-const stream = Object.entries(town.tiles || {}).filter(([,tile]) => tile?.type === 'stream').map(([key]) => key.split(',').map(Number));
-const riverDistance = Math.min(...stream.map(([c,r]) => Math.abs(c - mineDoor.col) + Math.abs(r - mineDoor.row)));
-assert(riverDistance <= 2, `mine entrance must be within two tiles of river; got ${riverDistance}`);
-const mineCenter = mine.gridX + mine.footprintW / 2;
-const outpostCenter = outpost.gridX + outpost.footprintW / 2;
-const carpenterCenter = carpenter.gridX + carpenter.footprintW / 2;
-assert(Math.abs(Math.abs(outpostCenter - mineCenter) - Math.abs(carpenterCenter - outpostCenter)) <= 1.5,
-  'Outpost should sit roughly equidistant between mine and carpenter along the northern boundary');
-
-console.log('IKMC Outpost regression passed: authored log building/interior, Harkhanash bed+counter schedule, and northern-town placement are wired.');
+console.log('IKMC Outpost regression passed: authored building/interior, NPC schedules, approved town placement and runtime mine config are wired.');

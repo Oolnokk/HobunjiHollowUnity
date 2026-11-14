@@ -291,7 +291,7 @@
       // A saved workspace can already contain the user's edits on reload. Never give an apparently empty export.
       diff.mode = 'unchanged-full-map';
       diff.fullMap = buildStandaloneMapExport(map);
-      diff._note = 'No changes relative to the session baseline; complete current map included instead.';
+      diff._note = 'No edits since this Map Editor session baseline. This does NOT compare against the bundled game Town or the running game; the current editor map is included instead.';
     }
     return diff;
   }
@@ -302,11 +302,43 @@
     baselineById.set(String(map.id), mapSnapshot(map));
   }
 
+  function adoptBundledMapBaselines(mapIds) {
+    const ws = workspace();
+    if (!ws || !Array.isArray(mapIds)) return;
+    for (const mapId of mapIds) {
+      const id = String(mapId || '');
+      if (!id || baselineMapIds.has(id)) continue;
+      const map = ws.maps.find(entry => String(entry?.id || '') === id);
+      if (!map) continue;
+      captureMapBaseline(map);
+      baselineMapIds.add(id); // Officially imported bundled maps are not new user-authored maps.
+    }
+  }
+
   function workspaceAuthoringSnapshot(ws) {
     const clone = jsonSafeClone(ws) || {}; // Used only for diffing persistent workspace-level authoring data, not editor navigation state.
     delete clone.maps;
     delete clone.activeId;
     return clone;
+  }
+
+  function adoptBundledWorkspaceBaselines(addedIds) {
+    const ws = workspace();
+    if (!ws || !workspaceBaseline || !addedIds) return;
+    for (const [field, ids] of [['plateauGroups', addedIds.plateauGroupIds], ['ramps', addedIds.rampIds]]) {
+      if (!Array.isArray(ids) || !ids.length) continue;
+      const baselineRecords = Array.isArray(workspaceBaseline[field]) ? workspaceBaseline[field] : [];
+      const baselineIds = new Set(baselineRecords.map(record => String(record?.id || '')));
+      for (const rawId of ids) {
+        const id = String(rawId || '');
+        if (!id || baselineIds.has(id)) continue;
+        const record = ws[field]?.find(entry => String(entry?.id || '') === id);
+        if (!record) continue;
+        baselineRecords.push(jsonSafeClone(record));
+        baselineIds.add(id);
+      }
+      workspaceBaseline[field] = baselineRecords; // Preserve other workspace edits while accepting repo-authored groups and ramps.
+    }
   }
 
   function buildWorkspaceDiffBundle() {
@@ -381,13 +413,13 @@
       if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
       if ($('diffSubtitle')) {
         if (diff.mode === 'full-map-fallback' || diff.mode === 'unchanged-full-map') {
-          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No changes vs session baseline' : 'No baseline available'}; complete map included · ${json.length.toLocaleString()} chars`;
+          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No edits since this editor tab opened' : 'No baseline available'}; local editor map included (not compared to game) · ${json.length.toLocaleString()} chars`;
         } else {
           $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
-      if (diff.mode === 'unchanged-full-map') setStatus('No differences since this session baseline; full map included.');
+      if (diff.mode === 'unchanged-full-map') setStatus('No edits since this editor tab opened; export contains the local editor map, not necessarily the game map.');
       if ($('diffModal')) $('diffModal').style.display = 'block';
     } catch (error) {
       console.error('Map diff export failed:', error);
@@ -426,6 +458,9 @@
       buildStandaloneMapExport,
       buildDetailedDiff,
       buildWorkspaceDiffBundle,
+      captureMapBaseline, // Used after confirmed Town reload; other map baselines must not be erased.
+      adoptBundledMapBaselines, // Accepts only newly imported indexed maps, without touching unrelated pending diffs.
+      adoptBundledWorkspaceBaselines, // Accepts only newly imported canonical plateau groups and ramps.
       captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
