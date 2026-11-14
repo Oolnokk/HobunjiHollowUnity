@@ -130,7 +130,8 @@
     const walkableDeckKeys = new Set(porchCells.concat(porchStairCells).map(cell => cell.x + ',' + cell.y)); // A rail mounted on a deck must not claim the entire walking tile.
     const collisionCells = structuralCells.concat(fencePostCells.filter(cell =>
       !walkableDeckKeys.has(cell.x + ',' + cell.y))); // Rail geometry on deck cells is handled by the precise AreaFootprintBlockers railing provider.
-    const allBuildingCells = structuralCells.concat(entryTunnelCells, chimneyCells, porchCells, porchStairCells, fencePostCells);
+    const balconies = piece.placementOrigin==='fullFootprint' ? (piece.balconies||[]).flatMap(b=>b.cells||[]) : []; // Roof footprints may extend beyond the shell while retaining the author's full-envelope pivot.
+    const allBuildingCells = structuralCells.concat(entryTunnelCells, chimneyCells, porchCells, porchStairCells, fencePostCells, balconies);
     if (!allBuildingCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
     const minX = Math.min(...allBuildingCells.map(cell => cell.x));
     const minY = Math.min(...allBuildingCells.map(cell => cell.y));
