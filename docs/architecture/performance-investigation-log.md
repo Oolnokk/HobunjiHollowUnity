@@ -2,6 +2,8 @@
 
 ## 14 Nov 2026: Harlyao night-march planner and avatar churn
 
+The commander beacon also called `CalendarSystem.timeDebugSnapshot()` through `civilDay()` every render frame. That diagnostics call formats dates and modal previews and scans UI state; `civilDay()` now reads the same live absolute `calendar.day` directly, retaining the diagnostics fallback only before the calendar is wired.
+
 The Harlyao army already simulates as twenty data-only agents outside its detailed bubble. A further unnecessary cost was found: while the active march zone was unloaded and no portraits were retained, the 0.2 s controller still replanned every soldier despite abstract positions only advancing every `offChunkTickSeconds` (1 s). The controller now skips those intermediate planning passes, retaining elapsed travel time, daily-route checks and the full 0.2 s wake/combat cadence when near.
 
 On obstructed arrival tiles, `makeEntity` could repeatedly construct, ghostify and dispose a full portrait without a valid spawn. Each failed agent now backs off 1/2/4/8/16 seconds while it remains in the same eight-tile search neighborhood; arriving in a new neighborhood or re-entering the zone permits an immediate retry. While the player briefly leaves the same-zone 24-tile release boundary, detached dormant rigs are retained for twelve seconds instead of three to avoid rapid reallocation. Leaving the march zone still retires them after three seconds. The existing avatar/weapon materials are restored on real disposal, and dormant roots remain detached from the scene.
