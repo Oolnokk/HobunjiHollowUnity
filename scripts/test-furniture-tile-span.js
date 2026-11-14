@@ -136,6 +136,63 @@ for(const axis of ['x','z']){
   data.parts[1].tileSpanRoots.end.surfaceId='landingEnd';
   assert.equal(stretch.apply(group,data).errors.length,0,'explicit named surface roots resolve');
 }
+// Execute the real preset author, not only a test-made replica of its bridge geometry.
+{
+  const inputs=new Map(); // Fake editor controls capture configured tile counts without needing a browser.
+  const node=id=>{
+    if(!inputs.has(id))inputs.set(id,{
+      value:'',checked:false,textContent:'',innerHTML:'',selectedIndex:0,
+      classList:{toggle(){}},addEventListener(){},appendChild(){},after(){},querySelector(){return this;}
+    });
+    return inputs.get(id);
+  };
+  const document={getElementById:node,querySelector:node,createElement:()=>({
+    appendChild(){},after(){},querySelector(){return this;}
+  })};
+  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/tile-span-author.js','utf8'),{window,document});
+  const state={parts:[],tileBase:{tileSize:1,footprintW:2,footprintD:1},tileSpan:{enabled:false}};
+  let partNumber=0; // Unique part IDs simulate authoring pushPart and let roots resolve by identity.
+  const context={
+    state,root:{userData:{}},meshes:new Map(),surfaceGroups:new Map(),selectedPart:()=>null,
+    pushPart:(kind,overrides)=>{
+      const part={kind,...overrides,id:'preset_part_'+ ++partNumber};
+      state.parts.push(part);
+      return part;
+    },
+    beginPreset:(width,depth)=>{
+      state.parts=[];
+      state.tileSpan={enabled:false};
+      state.tileBase.footprintW=width;
+      state.tileBase.footprintD=depth;
+    },
+    setPresetFootprint:(width,depth)=>{
+      state.tileBase.footprintW=width;
+      state.tileBase.footprintD=depth;
+    },
+    rebuildAll(){},rebuildTileBase(){},frameFurniture(){},selectObject(){},
+    recognizedSurfaceExport:()=>[],ensureSurfaceSetting:()=>({}),queueUndoHistory(){},
+    updateLists(){},log(){}
+  };
+  window.FurnitureTileSpanAuthor.init(context);
+  window.FurnitureTileSpanAuthor.stairBridge();
+  const steps=state.parts.filter(part=>part.name?.includes('staircase'));
+  const moving=state.parts.filter(part=>part.tileSpanRole==='stretch');
+  const deck=moving.find(part=>part.name.includes('deck'));
+  assert.equal(steps.length,8,'preset has four rigid steps on each end');
+  assert.equal(moving.length,3,'only the walkway and two rails stretch');
+  assert.equal(state.tileSpan.startTiles,2);
+  assert.equal(state.tileSpan.endTiles,2);
+  assert.equal(state.tileSpan.middleTiles,2);
+  assert.equal(state.tileSpan.totalTiles,8);
+  assert.equal(state.tileBase.footprintW,8,'footprint matches preview tile count');
+  const left=state.parts.find(part=>part.id===deck.tileSpanRoots.start.partId);
+  const right=state.parts.find(part=>part.id===deck.tileSpanRoots.end.partId);
+  near(left.transform.x+left.transform.sx/2,-deck.transform.sx/2,'preset deck joins start landing');
+  near(right.transform.x-right.transform.sx/2,deck.transform.sx/2,'preset deck joins end landing');
+  near(left.transform.y+left.transform.sy/2,deck.transform.y+deck.transform.sy/2,'stairs end flush with flat walkway');
+  near(right.transform.y+right.transform.sy/2,deck.transform.y+deck.transform.sy/2,'opposite stair is level');
+  assert.ok(steps.every(part=>part.tileSpanRole==='start'||part.tileSpanRole==='end'),'steps remain rigid');
+}
 const html=fs.readFileSync('docs/tools/furniture-avatar-author/index.html','utf8');
 const author=fs.readFileSync('docs/tools/furniture-avatar-author/tile-span-author.js','utf8');
 const runtime=fs.readFileSync('docs/js/authored-furniture-runtime.js','utf8');
