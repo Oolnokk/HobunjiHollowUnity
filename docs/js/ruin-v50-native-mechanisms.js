@@ -443,6 +443,8 @@
           id:state.door.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,
         })),
         solved:[...states.values()].filter(state=>state.solved).length,
+        acceptedExits:[...states.values()].filter(state=>state.accepted).length,
+        settlingExits:acceptedInMotion.size, // Mobile/CI diagnostics reveal whether a completed room door is still moving.
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
       })};
