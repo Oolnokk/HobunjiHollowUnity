@@ -42,33 +42,42 @@
   // Returns a restore closure (or null when nothing was hidden). The caller
   // MUST invoke it in a finally block around all world passes.
   function suspendForRender(activeScene, camera) {
-    let sceneryRestore = null; // Independent distant-scene scope: safe even when instancing is disabled.
-    try { sceneryRestore = window.DistantSceneryViewCull?.suspendForRender?.(activeScene, camera) || null; }
-    catch (_) { window.DistantSceneryViewCull?.reset?.(); } // Optional optimization must fail open.
+    if (hiddenScratch.length) restore(); // Interrupted prior passes must never leave instanced meshes hidden.
+    let sceneryRestore = null; // Scenery and instancing have independent visibility histories.
+    try {
+      sceneryRestore = window.DistantSceneryViewCull?.suspendForRender?.(activeScene, camera) || null;
+    } catch (_) {
+      window.DistantSceneryViewCull?.reset?.(); // A failed optional culler restores its own hidden scenery.
+    }
+    const restoreBoth = () => {
+      try { restore(); } finally { sceneryRestore?.(); }
+    }; // Shared finally callback, including all early returns and exceptions below.
     const bounds = window.InstancedMeshBounds;
     if (!enabled || !activeScene?.isScene || !camera?.isCamera || !bounds || !ensureThree()) return sceneryRestore;
-    if (hiddenScratch.length) restore(); // A previous call that was never restored must not leave meshes hidden.
-    camera.updateMatrixWorld?.(true); // Resolve the current view before Three's own render does.
-    if (!camera.projectionMatrix || !camera.matrixWorldInverse) return null;
-    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    frustum.setFromProjectionMatrix(viewProjection);
-    let tracked = 0, inScene = 0, hiddenInstances = 0;
-    bounds.forEachTracked((mesh) => {
-      tracked++;
-      if (drawnRoot(mesh) !== activeScene) return;
-      inScene++;
-      const world = bounds.worldSphere(mesh, sphere);
-      if (!world || frustum.intersectsSphere(world)) return;
-      mesh.visible = false;
-      hiddenScratch.push(mesh);
-      hiddenInstances += mesh.count;
-    });
-    stats.frames++; stats.tracked = tracked; stats.inScene = inScene;
-    stats.hidden = hiddenScratch.length; stats.hiddenInstances = hiddenInstances;
-    if (!sceneryRestore) return hiddenScratch.length ? restore : null;
-    return function restoreViewCulling() {
-      try { restore(); } finally { sceneryRestore(); }
-    }; // Both visibility scopes unwind in the caller's existing render finally.
+
+    try {
+      camera.updateMatrixWorld?.(true);
+      if (!camera.projectionMatrix || !camera.matrixWorldInverse) return sceneryRestore; // Previously discarded the scenery restore callback.
+      viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(viewProjection);
+      let tracked = 0, inScene = 0, hiddenInstances = 0;
+      bounds.forEachTracked((mesh) => {
+        tracked++;
+        if (drawnRoot(mesh) !== activeScene) return;
+        inScene++;
+        const world = bounds.worldSphere(mesh, sphere);
+        if (!world || frustum.intersectsSphere(world)) return;
+        mesh.visible = false;
+        hiddenScratch.push(mesh);
+        hiddenInstances += mesh.count;
+      });
+      stats.frames++; stats.tracked = tracked; stats.inScene = inScene;
+      stats.hidden = hiddenScratch.length; stats.hiddenInstances = hiddenInstances;
+      return sceneryRestore ? restoreBoth : (hiddenScratch.length ? restore : null);
+    } catch (_) {
+      restoreBoth(); // Fail open even if instanced bounds computation throws mid-iteration.
+      return null;
+    }
   }
 
   window.InstancedMeshViewCull = Object.freeze({
