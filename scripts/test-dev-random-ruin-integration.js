@@ -122,9 +122,9 @@ assert(game.includes("const actionId = button.inputAction ||"), 'normal WorldPop
 assert(interactions.includes('normalActionBarProvider:true') && interactions.includes('function syncWorldPopup(rows)') && interactions.includes('syncWorldPopup(rows)'), 'ruin interactions must keep the floating WorldPopupText list synchronized directly with proximity/claim updates while the normal action bar owns physical arch layout');
 assert(game.includes("!window.WorldActionInputClaims?.hasClaim?.('action3')") && game.includes("!window.WorldActionInputClaims?.hasClaim?.('action2')"), 'potion/ammo selectors must yield their physical buttons while a nearby world interaction claims those slots');
 assert(inputClaims.includes('hasClaim:isClaimed'), 'shared claim registry must expose the hasClaim semantic consumed by early potion/ammo selector arbitration');
-assert(game.includes("dispatchWorldInputClaim(actionId,'press','game-input')"), 'keyboard/controller gameplay dispatch must consult world-input claims before weapon actions');
-assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse')"), 'desktop mouse weapon input must consult the same contextual claim registry');
-assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')"), 'touch action-arch input must consult the same contextual claim registry');
+assert(game.includes("dispatchWorldInputClaim(actionId,'press',source)") && game.includes("runInputAction(boundDesktopAction, 'press', 'keyboard:' + event.code)") && game.includes("runInputAction(actionId, 'press', 'controller:' + button)"), 'keyboard/controller gameplay dispatch must consult world-input claims before weapon actions');
+assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse:' + e.button)"), 'desktop mouse weapon input must consult the same contextual claim registry');
+assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch:' + ev.pointerId)"), 'touch action-arch input must consult the same contextual claim registry');
 
 assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'") && interior.includes("if(gated)continue;\n        m.manualFallback=true;"), 'only puzzle-free moving daises get a manual Raise/Lower control; puzzle-linked ones move only through their puzzle');
 assert(solvability.includes('manual lift fallback reachable'), 'pre-entry audit must understand the simple-mode lift fallback');
