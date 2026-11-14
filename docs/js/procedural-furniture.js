@@ -1042,6 +1042,11 @@ function campfireRecipe() {
   CATALOG.mineLadder = [
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
+  CATALOG.ikmcBalconyLadder = [
+    box(-.33, .87, .08, .095, 1.65, .095, .85),
+    box(.33, .87, .08, .095, 1.65, .095, .85),
+    box(0, 1.727, 0, .92, .018, .92, .02), // Visible ceiling hatch while rich JSON loads; geometry upgrades automatically.
+  ];
 
   function hangingSignSupportPart(id = 'hanging_sign_post') {
     return {id,kind:'beam',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01}; // Shared by the animation-tab sign and banner preset, returning an independent recipe.
