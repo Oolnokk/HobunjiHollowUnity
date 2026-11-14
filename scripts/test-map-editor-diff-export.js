@@ -90,4 +90,14 @@ assert.equal(api.buildDetailedDiff(edited).summary.changed, false);
 assert.equal(api.buildDetailedDiff(edited).mode, 'unchanged-full-map');
 assert(api.buildDetailedDiff(edited).fullMap.layouts.length > 0);
 assert.equal(api.buildDetailedDiff(imported).summary.changed, false);
-console.log('Map diff baselines, imported maps, authored fields, and modal export passed.');
+imported.tiles['0,0'] = { type: 'trench', crop: '' }; // Independent map edit that must survive a confirmed Town reload.
+const updatedTown = JSON.parse(JSON.stringify(edited)); // Fresh Town object reloaded from the canonical indexed game map.
+updatedTown.tiles['0,0'] = { type: 'stream', crop: '' };
+workspace.maps[0] = updatedTown;
+api.captureMapBaseline(updatedTown); // Explicitly rebaseline only the Town map, never every workspace map.
+assert.equal(api.buildDetailedDiff(updatedTown).summary.changed, false, 'Town reload should establish its new baseline');
+assert.equal(api.buildDetailedDiff(imported).summary.tileChanges, 1, 'Town reload must not erase unrelated map edits');
+const afterTownReload = api.buildWorkspaceDiffBundle(); // Bundle reporting must retain pending non-Town changes.
+assert(afterTownReload.maps.some(entry => entry.mapId === imported.id), 'Pending unrelated map changes must stay in the workspace diff');
+assert(!afterTownReload.maps.some(entry => entry.mapId === updatedTown.id), 'Reloaded Town must not be reported as an uncommitted edit');
+console.log('Map diff baselines, per-map Town reset, unrelated edits, authored fields, and modal export passed.');
