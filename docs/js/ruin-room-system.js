@@ -161,7 +161,9 @@
       if(!inside(room,x,z))continue;
       const delta=Number.isFinite(y)?Math.abs(y-room.y):0;
       if(Number.isFinite(y)&&(y<room.y-.65||y>room.y+WALL_HEIGHT+1))continue; // Never treat an actor jumping below an upper deck as already inside its room.
-      if(delta<distance){best=room;distance=delta;}
+      if(delta<distance-1e-6||(Math.abs(delta-distance)<=1e-6&&(!best||room.w*room.d<best.w*best.d))){
+        best=room;distance=delta; // A nested V50 puzzle chamber wins over its containing hall at the same elevation.
+      }
     }
     return best;
   }
