@@ -210,6 +210,7 @@ assert.equal(api.__test.iconLayersForView(anuriPonchoLayers, 'front').length, an
 const anuriTrimSprite = anuriPonchoLayers.find(layer => layer.role === 'layer1'); // This real garment's trim image uses B but the palette map calls its role 'overlay'.
 assert.equal(anuriTrimSprite?.paletteKey, 'B', 'loom preview recognizes sprite-level Dye B trim metadata even when the palette role map is incomplete');
 assert.equal(api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig).get(anuriTrimSprite.url), 'B', 'equipped portrait lookup recovers the same trim dye from that authored sprite URL');
+assert.strictEqual(api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig), api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig), 'repeated portrait renders reuse the loaded cosmetic palette lookup rather than rescanning all species sprites');
 assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, anuriTrimSprite.role, anuriTrimSprite.paletteKey, '#123456', '#fedcba', '#111111'), '#123456', 'Anuri trim patterns use base dye A, not trim dye B');
 assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'base', image: { colors: ['B'] } }, { base: 'A' }), 'A', 'authoritative palette map overrides conflicting image hints');
 assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'unknown', image: { colors: ['A', 'B'] } }, {}), null, 'ambiguous multicolor images do not guess a trim dye');
