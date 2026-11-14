@@ -29,6 +29,15 @@ for (const [label, source] of [['melee', melee], ['ranged', ranged]]) {
   assert.equal(context.suppressed(),false,`${label} ambient NPC performances do not hide the player's combat reticle`);
   context.window.MusicMinigame.state={active:false};
   assert.equal(context.suppressed(),false,`${label} inactive music sessions restore the reticle`);
+  let plateActive=true; // Test the separate timed-score ownership before the instrument interface opens.
+  context.window.Combat={deps:{getCurrentArea:()=> 'puzzle-cave'}};
+  context.window.MelodyCameraFraming={isPlateActive:area=>area==='puzzle-cave'&&plateActive};
+  assert.equal(context.suppressed(),true,`${label} reticle hides on a timed melody plate before opening the instrument`);
+  plateActive=false;
+  assert.equal(context.suppressed(),false,`${label} reticle returns after stepping off the plate`);
+  plateActive=true;
+  context.window.Combat.deps.getCurrentArea=()=> 'farm';
+  assert.equal(context.suppressed(),false,`${label} other-area melodies do not suppress the reticle`);
 
   for (const [pattern, what] of [
     [/isDialogueOpen\?\.\(\)/, 'authoritative dialogue-open state'],
