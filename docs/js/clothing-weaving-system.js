@@ -58,6 +58,7 @@
   let cosmeticsIndexPromise = null; // Shared fetch for cosmetic id -> JSON path lookup.
   let clothingTrimConfigPromise = null; // Loads the repo-authored garment-trim manifest shared by the loom, runtime portrait renderer, and dev editor.
   const cosmeticConfigPromises = new Map(); // Reuses per-article cosmetic JSON fetches for pattern layer lookup.
+  const spritePaletteKeysCache = new WeakMap(); // Reuses each loaded cosmetic's resolved A/B sprite metadata across recurring player/NPC portrait renders.
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
@@ -698,8 +699,9 @@
     const crossPatternDyes = weavingHasAnyPattern(item?.weaving) && weavingUsesCrossDyePatterns(item?.weaving); // Redye must honor this garment's saved cross-dye routing.
     const hasSecondary = !item?.furHood && !item?.furTrimColorName && (crossPatternDyes || await hasSecondaryDyeForItem(item)); // B is editable even on a base-only sprite when it inks that base's pattern.
     const dyeCColorsAddedTrim = weavingHasOptionalTrim(item?.weaving) && normalizeTrimDyeSlot(item.weaving?.trim?.dyeSlot) === 'C'; // Fixed trim may still explicitly use C.
-    const thirdLabel = await hasPixelDyeForItem(item) ? 'Dye color 3 · Glow' : crossPatternDyes ? 'Added trim' : 'Pattern';
-    const showPatternDye = (!item?.furTrimColorName || weavingHasAnyPattern(item.weaving)) && (!crossPatternDyes || dyeCColorsAddedTrim); // No independent pattern ink in cross-dye mode.
+    const hasPixelDye = await hasPixelDyeForItem(item); // A glow/mask pixel channel remains editable even when woven pattern ink uses A/B.
+    const thirdLabel = hasPixelDye ? 'Dye color 3 · Glow' : crossPatternDyes ? 'Added trim' : 'Pattern';
+    const showPatternDye = (!item?.furTrimColorName || weavingHasAnyPattern(item.weaving)) && (!crossPatternDyes || dyeCColorsAddedTrim || hasPixelDye); // Cross dye hides only motif ink, never an independently authored glow or fixed trim.
     const original = { colorA: clone(item.colorA), colorB: clone(item.colorB), colorC: clone(item.colorC), label: item.label };
     let active = item?.furHood ? 'C' : 'A'; // Natural hides expose only dyed custom-pattern ink, never their inherited base coat.
     let pendingA = item.colorA?.dyeId || null;
@@ -1555,7 +1557,7 @@
     const safeWeaving = (item?.furHood || item?.furTrimColorName) && weaving?.trim ? { ...weaving, trim: null } : weaving; // Preserve natural fur trim from accidental optional cloth-trim toggles.
     item.weaving = weavingHasAnyDecoration(safeWeaving) ? clone(safeWeaving) : null;
     if (needsDyeB) item.colorB = window.DyeSystem.toClothingColor(secondaryDye);
-    item.colorC = needsDyeC ? window.DyeSystem.toClothingColor(patternDye) : null;
+    item.colorC = needsDyeC ? window.DyeSystem.toClothingColor(patternDye) : (crossPatternDyes ? item.colorC : null); // Keep previously chosen Dye C dormant so unchecking cross dyes on a later reweave can restore it.
     item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), primaryDye?.id, needsDyeB ? secondaryDye?.id : null, needsDyeC ? patternDye?.id : null].filter(Boolean))];
 
     const baseLabel = articleLabel(item);
@@ -1806,6 +1808,9 @@
   }
 
   function paletteKeysForCosmeticSprites(cfg) {
+    if (!cfg || typeof cfg !== 'object') return new Map();
+    const cached = spritePaletteKeysCache.get(cfg); // Config objects are stable because cosmeticConfigPromises caches their fetch.
+    if (cached) return cached;
     const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null; // Mirrors the preview's authored palette map.
     const paletteByUrl = new Map(); // Indexed by raster URL for the portrait compatibility path, which only knows a sprite URL and role.
     const allParts = [cfg?.parts, ...Object.values(cfg?.speciesVariants || {}).map(variant => variant?.parts)]; // Both default and species-specific art can supply different A/B metadata.
@@ -1814,6 +1819,7 @@
         if (layer.paletteKey === 'A' || layer.paletteKey === 'B') paletteByUrl.set(layer.url, layer.paletteKey);
       }
     }
+    spritePaletteKeysCache.set(cfg, paletteByUrl); // One config scan, not a repeat per portrait upload.
     return paletteByUrl;
   }
 
