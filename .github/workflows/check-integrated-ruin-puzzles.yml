@@ -30,6 +30,7 @@ jobs:
             docs/js/dev-random-ruin-bootstrap.js \
             docs/js/dev-random-ruin-interactions.js \
             docs/js/dev-random-ruin-simple-puzzles.js \
+            docs/js/ruin-rope-torches.js \
             docs/js/dev-ruin-find-blocks.js \
             docs/js/dev-ruin-single-room-trial.js \
             docs/js/ruin-composer-playable.js \
@@ -56,6 +57,7 @@ jobs:
           node scripts/test-find-the-blocks.js
           node scripts/test-ruin-composer-playable.js
           node scripts/test-kanthic-shaft-firelight.js
+          node scripts/test-ruin-rope-torches.js
           node scripts/test-shaft-hub.js
           node scripts/test-overlay-only-lighting.js
           node scripts/test-puzzle-cave-art.js
