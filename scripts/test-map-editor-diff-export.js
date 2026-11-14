@@ -25,7 +25,17 @@ vm.runInNewContext(script, { window, document, location: { pathname: '/tools/map
 const api = window.MapEditorExportFixes;
 assert(api, 'Diff controller failed to install');
 assert(!handlers['exportMapBtn:click'], 'Diff controller must not override the existing Map JSON exporter');
-assert.equal(api.buildDetailedDiff(original).summary.changed, false);
+const initiallyUnchanged = api.buildDetailedDiff(original);
+assert.equal(initiallyUnchanged.summary.changed, false);
+assert.equal(initiallyUnchanged.mode, 'unchanged-full-map', 'An unchanged map must never export a data-free diff');
+assert.equal(initiallyUnchanged.fullMap.id, original.id);
+assert.equal(initiallyUnchanged.fullMap.tiles[0].type, 'grass');
+workspace.activeId = original.id;
+const emptyBundle = api.buildWorkspaceDiffBundle();
+assert.equal(emptyBundle.maps.length, 0, 'Unchanged maps must not inflate the workspace diff bundle');
+const noChangesEvent = { preventDefault() {}, stopImmediatePropagation() {} };
+handlers['exportDiffBtn:click'](noChangesEvent);
+assert.equal(JSON.parse(elements.diffTextarea.value).fullMap.tiles[0].type, 'grass', 'The exported modal must contain map data');
 
 const edited = JSON.parse(JSON.stringify(original)); // Simulates replacing the same map ID after importing an edited workspace.
 edited.tiles['0,0'] = { type: 'path', crop: '' };
@@ -64,5 +74,7 @@ assert.equal(elements.diffModal.style.display, 'block');
 
 api.captureWorkspaceBaselines(); // Explicit reset is the only operation that may redefine the baseline.
 assert.equal(api.buildDetailedDiff(edited).summary.changed, false);
+assert.equal(api.buildDetailedDiff(edited).mode, 'unchanged-full-map');
+assert(api.buildDetailedDiff(edited).fullMap.layouts.length > 0);
 assert.equal(api.buildDetailedDiff(imported).summary.changed, false);
 console.log('Map diff baselines, imported maps, authored fields, and modal export passed.');
