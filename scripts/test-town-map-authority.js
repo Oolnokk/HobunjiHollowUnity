@@ -80,12 +80,13 @@ const importStart = editor.indexOf('function importAny(obj');
 const importEnd = editor.indexOf('// ── Wire up', importStart);
 assert(normalizationStart >= 0 && normalizationEnd > normalizationStart && importStart >= 0 && importEnd > importStart, 'Map Editor import sources must be available');
 const testWorkspace = { maps: [], activeId: '' }; // Mutable simulated Map Editor workspace used by the real importAny().
+const baselineCalls = []; // Tracks exactly which maps rebaseline during the authoritative Town replacement.
 const context = vm.createContext({
   ws: testWorkspace, window: { FurniturePuzzleProperties: { normalizeWiring: w => w || [] } },
   TerrainPreview: { VISUAL_HEIGHT_MIN: -1, VISUAL_HEIGHT_MAX: 1 },
   clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)),
   makeMap: (name, category, cols, rows) => ({ id: 'imported_id', name, category, cols, rows, tiles: {} }),
-  updateAll() {}, fitView() {}, captureBaseline() {}, migrateSubmapAnchors() {}, sanitizePlateauGaps() {}, setStatus() {},
+  updateAll() {}, fitView() {}, captureBaseline(map) { baselineCalls.push(map.id); }, migrateSubmapAnchors() {}, sanitizePlateauGaps() {}, setStatus() {},
   undoStack: [], redoStack: [], confirm: () => false,
   GAME: { layoutKey: 'unused' }, localStorage: { setItem() {} },
 });
@@ -107,7 +108,9 @@ const staleTown = testWorkspace.maps.find(map => map.id === town.id); // Simulat
 staleTown.name = 'Locally edited Town';
 const unrelatedMap = testWorkspace.maps.find(map => map.id !== town.id); // Must survive a bundled Town refresh unchanged.
 const replacementTown = { ...town, name: 'Reloaded bundled Town' }; // Represents the canonical Town fetched by the Load Town button.
+baselineCalls.length = 0; // Ignore earlier baseline setup; only confirmed reload calls matter here.
 context.importAny({ maps: [replacementTown], activeId: town.id }, { mergeIntoWorkspace: true, replaceMapIds: [town.id] });
+assert.deepEqual(baselineCalls, [town.id], 'Explicit Town reload must not rebaseline unrelated maps');
 assert.equal(testWorkspace.maps.length, 2, 'Reloading Town must not duplicate it or discard unrelated editor maps');
 assert.equal(testWorkspace.maps.find(map => map.id === town.id).name, 'Reloaded bundled Town', 'Explicitly reloaded Town must replace stale local state');
 assert.equal(testWorkspace.maps.find(map => map.id === unrelatedMap.id), unrelatedMap, 'Unrelated map must survive a Town refresh');
