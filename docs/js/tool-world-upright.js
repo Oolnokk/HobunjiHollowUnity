@@ -30,12 +30,14 @@
     const work = workspace(THREE);
     const imageUp = work.imageUp.set(0, 1, 0); // +Y is the physical wooden tip in torch.png, not the gripped end.
     let node = plane;
+    let reachedHolder = false; // Reject stale visuals that are no longer parented beneath the active tool holder.
     while (node && node !== holder.parent) {
+      if (node === holder) reachedHolder = true;
       if (!validNode(node)) return false;
       imageUp.multiply(node.scale).applyQuaternion(node.quaternion);
       node = node.parent;
     }
-    if (node !== holder.parent || imageUp.lengthSq() < 1e-12) return false; // Only correct the plane actually held by this holder.
+    if (!reachedHolder || node !== holder.parent || imageUp.lengthSq() < 1e-12) return false; // Only correct the plane actually held by this holder.
 
     // Express world up in the holder parent's coordinates. Invert both
     // rotations and signed scales so mirrored character rigs stay correct.
