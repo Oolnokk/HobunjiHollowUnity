@@ -77,7 +77,7 @@
     return {
       nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
       alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {}, npcDiscoveredGiftTraits: {},
-      alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
+      alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyPotionBatches: { version: 1, stacks: {} }, alchemyReagentState: {}, wildBerryState: {}, cookingState: {}, // Track potion color provenance per world member.
       // A brand-new member has no legacy favor to fix, so it starts
       // already "migrated" — see DialogueContent's loadNpcRelationships/
       // _applyLegacyFavorRescale. A member saved before this field

@@ -183,11 +183,12 @@ let disposedFlasks = 0; // Verifies projectile sprite ownership ends at impact.
 let impactCount = 0;
 let shoulderView = false; // Switches the harness between legacy cursor aim and centered shoulder-ray aim.
 const flaskSfxCues = []; // Captures semantic audio placeholders without requiring AudioSystem or media files.
+const projectileCreationCounts = []; // Confirms the thrown sprite captures the outgoing batch color before the bag majority changes.
 window.AlchemyFlasks.init({
   THREE: window.THREE, TILE:64, inventory, getPlayer:() => player, getCurrentArea:() => 'farm', getActiveScene:() => scene,
   getAimAngle:() => 0, getGroundY:() => 0, getGroundYAtWorld:(x) => x * terrainSlope, getSelectedItemKey:() => heldKey,
   isShoulderView:() => shoulderView,
-  makeFlaskProjectile:() => new Mesh(new Geometry(), new Material({ map: 'authored-flask-sprite' })),
+  makeFlaskProjectile:() => { projectileCreationCounts.push(inventory[flaskKey]); return new Mesh(new Geometry(), new Material({ map: 'authored-flask-sprite' })); },
   disposeFlaskProjectile:() => { disposedFlasks++; },
   getPlayerInteractionRay:() => ({ origin:{x:0,y:5,z:-2}, direction:{x:0,y:-0.2,z:1} }),
   getHeldWorldPosition:() => ({x:player.x / 64 || 0,y:1,z:player.y / 64 || 0}),
@@ -222,6 +223,7 @@ window.AlchemyFlasks.confirmThrow();
 window.AlchemyFlasks.update(.3);
 assert.deepEqual(window.AlchemyFlasks.diagnostics().projectileVisuals, ['authored-flask'], 'flight must show the flask sprite instead of a particle core');
 assert.strictEqual(inventory[flaskKey], 2, 'release must consume exactly one flask');
+assert.equal(projectileCreationCounts[0], 3, 'thrown flask sprite must capture the outgoing majority pigment before inventory consumption');
 window.AlchemyFlasks.update(.5);
 assert.strictEqual(impactCount, 1, 'impact presentation must occur once without owning gameplay resolution');
 assert.ok(R.getAffliction(player, 'poisonedHealth') > 0 && R.getAffliction(victim, 'poisonedHealth') > 0, 'splash must affect valid nearby entities including the thrower through ResourceSystem');

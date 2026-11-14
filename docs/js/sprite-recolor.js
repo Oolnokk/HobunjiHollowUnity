@@ -194,7 +194,7 @@
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fishing-events.js','fishing-events','20261018h19942c7');
+    parserOrderedScript('fishing-events.js','fishing-events','20261114potionStacks2');
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

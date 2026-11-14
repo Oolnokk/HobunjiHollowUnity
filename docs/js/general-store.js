@@ -143,6 +143,7 @@
     const nextAmount = Math.min(window.InventoryStacks.MAX_TOTAL, previousAmount + requestedAmount); // Used as the authoritative post-purchase stack count.
     const addedAmount = Math.max(0, nextAmount - previousAmount); // Used so quality buckets never record units rejected by the stack cap.
     deps.inventory[key] = nextAmount;
+    if (addedAmount > 0) window.AlchemySystem?.recordPotionAcquisition?.(key, addedAmount); // Found/shop potions contribute their canonical three-reagent recipe.
     if (qualityStars != null && addedAmount > 0) window.CookingSystem?.recordItemQuality?.(key, qualityStars, addedAmount);
   }
 
