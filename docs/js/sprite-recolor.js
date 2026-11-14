@@ -159,11 +159,18 @@
     return pending;
   }
 
+  function recolorOptionsKey(opts) {
+    if (!opts) return ''; // Common Pack/HUD calls use authored defaults and need no option serialization.
+    const fields = ['keyColors', 'secondaryKeyColors', 'keyHue', 'hueTolerance', 'secondaryTargetHex']; // Every current pixel-changing recolorImageData override.
+    const values = fields.map(name => Object.prototype.hasOwnProperty.call(opts, name) ? opts[name] : '__default__'); // Absent overrides must differ from explicit null (which Number() treats as zero).
+    return '|opts:' + JSON.stringify(values);
+  }
+
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
     const composite = getCompositeCanvas(spritePath, targetHex, mode); // Separate scroll paper/binding and iridescent powder modes.
     if (composite) return composite;
     if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
-    const cacheKey='shared-color-fill-v2|'+spritePath+'|'+mode+'|'+targetHex;
+    const cacheKey='shared-color-fill-v2|'+spritePath+'|'+mode+'|'+targetHex+recolorOptionsKey(opts); // Different keyed hues/secondary masks cannot reuse another request's pixels.
     const cached=_canvasCache.get(cacheKey);
     if(cached)return Promise.resolve(cached);
     const pending = loadImage(spritePath).then(img=>{
