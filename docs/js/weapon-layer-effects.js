@@ -319,6 +319,15 @@
     if (!state.fireEmitters?.length) return;
     const THREE = state.THREE;
     for (const fx of state.fireEmitters) {
+      if (fx.config.litOnly && !window.AdventuringTools?.isLit?.()) {
+        for (const particle of fx.particles) {
+          particle.sprite.visible=false;
+          particle.sprite.parent?.remove(particle.sprite);
+          fx.pool.push(particle.sprite);
+        }
+        fx.particles.length=0; fx.accumulation=0; // Extinguish immediately, including pooled motes from before a throw or stow.
+        continue;
+      }
       for (let p = fx.particles.length - 1; p >= 0; p--) {
         const particle = fx.particles[p];
         particle.age += dt;
