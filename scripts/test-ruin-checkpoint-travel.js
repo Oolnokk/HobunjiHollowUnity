@@ -143,7 +143,8 @@ try{
   const floorZero=hubControls.find(c=>c.floorY===0);
   assert(top&&middle&&floorZero);
   const arc={mode:null,entries:[],selectedId:'cancel',closeCalls:0,commitCalls:0,
-    openEntries(mode,entries){this.mode=mode;this.entries=entries;},
+    openEntries(mode,entries){this.mode='entries:'+mode;this.entries=entries;},
+    currentMode(){return this.mode;},
     releaseSelection(){this.commitCalls++;const entry=this.entries.find(e=>e.id===this.selectedId);this.mode=null;entry?.onSelect?.();},
     close(){this.closeCalls++;this.mode=null;}};
   globalThis._desktopSelectionArc=arc;
@@ -155,7 +156,7 @@ try{
   try {
     clock+=100;floorZero.onHoldStart();
     clock+=360;fireHeldTimers();
-    assert.equal(arc.mode,'ruin-shaft-travel','a held input opens the existing entry selector before release');
+    assert.equal(arc.mode,'entries:ruin-shaft-travel','a held input opens the existing entry selector before release');
     assert.equal(arc.entries.filter(e=>e.id.startsWith('shaft')).length,1,'undiscovered floors cannot appear as destinations');
     assert.equal(arc.entries.find(e=>e.id==='cancel').initial,true,'cancel is selected by default: holding alone cannot teleport');
     arc.selectedId='cancel';floorZero.onHoldEnd();
@@ -179,7 +180,7 @@ try{
     assert.equal(arc.commitCalls,2,'the held wheel commits through the ordinary selector release');
     location={x:10.5,z:10.5,y:0}; // Source proximity is independently revalidated before a destination is used.
     clock+=100;top.onHoldStart();clock+=360;fireHeldTimers();
-    assert.notEqual(arc.mode,'ruin-shaft-travel','upper-story brazier cannot open a wheel for a player on floor zero');
+    assert.notEqual(arc.mode,'entries:ruin-shaft-travel','upper-story brazier cannot open a wheel for a player on floor zero');
     top.onHoldEnd();assert.equal(destinations.at(-1).y,32,'wrong-story input cannot teleport the player');
     location={x:12.5,z:12.5,y:32}; // Cancel from the correct story is also honored.
     clock+=100;top.onHoldStart();clock+=360;fireHeldTimers();
