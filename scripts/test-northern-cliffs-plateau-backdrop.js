@@ -9,6 +9,12 @@ const mountains = fs.readFileSync('docs/js/western-slope-mountain-backdrops.js',
 const loader = fs.readFileSync('docs/js/environment-surface-runtime.js','utf8'); // Bootstrap order must preserve material/geometry dependencies.
 assert.match(mountains,/getDebugState:debug,keepInFrontOfSky/);
 assert(loader.indexOf("'WesternSlopeMountainBackdrops'") < loader.indexOf("'NorthernCliffsPlateauBackdrop'"));
+const weather = fs.readFileSync('docs/js/bootstrap/classic-groups/weather-surfaces.js','utf8'); // Manifest is uncached per navigation and owns rain-plane versioning.
+const rain = fs.readFileSync('docs/js/rain-planes.js','utf8'); // The rain bootstrap is the only parser-time loader of this backdrop's runtime.
+const manifestRainVersion = weather.match(/js\/rain-planes\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must agree with the revised weather module.
+const loadedRuntimeVersion = rain.match(/js\/environment-surface-runtime\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must bypass a previously cached parent loader.
+const plateauVersion = loader.match(/js\/northern-cliffs-plateau-backdrop\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must bypass a previously cached child backdrop.
+assert(manifestRainVersion?.includes('flatRockReview') && loadedRuntimeVersion?.includes('flatRockReview') && plateauVersion?.includes('giantRock'), 'all three boot layers must invalidate old mobile-cached plateau code');
 assert.match(source,/HobunjiSurfaceStretchUV/);
 assert.match(source,/NaturalSurfaceMaterials/);
 
