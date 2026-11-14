@@ -745,6 +745,7 @@
         // the shovel slot for terrain work instead.
         pick:    ['mine'],
         harpoon: ['fish'],
+        adventuring: ['torch_swing', 'torch_throw'], // Adventure tools do not enter the farm-tool cycle.
         weapon:  ['cut', 'slash', 'potion_select'],
         ranged:  ['shoot', 'ammo_select', 'potion_select'],
       };
@@ -766,6 +767,8 @@
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
         shoot:      ['🏹', 'Fire / Load'],
+        torch_swing: ['🔥', 'Swing Torch'],
+        torch_throw: ['🔥', 'Throw Lit Torch'],
       };
 
       const tileStyles = {
@@ -1819,6 +1822,7 @@
       // 'sharp' when absent (see currentWeaponDamageType() below), so only
       // the blunt outliers need to be called out.
       const TOOL_ITEM_DEFS = {
+        torch: { label:'Torch', icon:'🔥', sprite:'assets/toolsprites/torch.png', slots:['adventuring'], animStyle:'sweep', toolIdleStyle:'sweep' }, // Permanent starter adventuring tool.
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
         // `spinning` distinguishes the harpoon-slot sprite's in-hand behavior: mace-mode items
@@ -2321,6 +2325,7 @@
         ranged:  null,
         whistle: null,
         instrument: null, // Saved gear assignment used by Play instrument.
+        adventuring: 'torch', // Always available even with no inventory copy.
       };
 
       // equipmentSlots/TOOL_ITEM_DEFS/actionLabels/calendar are all declared
@@ -19862,6 +19867,7 @@
         // Combat and its selectors target actors/world space, including when
         // the centered camera reticle reaches a cave wall or leaves the grid.
         if (tool === 'weapon' || tool === 'ranged') return true;
+        if (tool === 'adventuring') return action === 'torch_swing' || (action === 'torch_throw' && window.AdventuringTools?.canThrow?.());
         // Mini-cliffs are real separate floor layers. Never let terrain
         // tools edit the ground tile beneath an elevated balcony.
         if (typeof player !== 'undefined' && player?.onCliffBalcony &&
@@ -20613,6 +20619,7 @@
       }
 
       function applyAction(tool, action, col, row) {
+        if (tool === 'adventuring') return action === 'torch_swing' ? window.AdventuringTools.swingAtAim(col,row) : window.AdventuringTools.throwLit();
         if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${window.FormatUtils.actionName(action)} cannot be used on that tile.` };
         const tile = window.GridTileAccessors.getActiveGrid()[row][col];
 
@@ -21133,6 +21140,12 @@
           return;
         }
 
+        if (tool === 'adventuring') {
+          const result = applyAction(tool, action, col, row); // World-space torch attacks also work with the reticle outside the tile grid.
+          if (result?.message) showToast(result.message, result.ok !== false);
+          refreshActionBar();
+          return;
+        }
         const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         let result;
         // place_campfire_kit is NOT handled here — it fires immediately from
@@ -27769,6 +27782,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        if (activeTool === 'adventuring' && tool !== 'adventuring') window.AdventuringTools?.stow?.();
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         heldMode = 'tool';
         activeTool = tool;
@@ -27832,6 +27846,7 @@
         cancelPlayerToolAnimationForInteraction();
         toolHolder.visible = false;
         heldItemHolder.visible = false;
+        window.AdventuringTools?.stow?.();
         window._desktopSelectionArc?.close?.();
         refreshActionBar();
         refreshWeaponSwitchBtn();
@@ -29001,6 +29016,7 @@
         // Reset equipment to defaults
         packClothing = [];
         Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
+        equipmentSlots.adventuring = 'torch'; // Starter torch survives equipment resets.
         if (gearInventory?.tools?.hoe_nativeCopper)      equipmentSlots.hoe    = 'hoe_nativeCopper';
         else if (gearInventory?.tools?.bronzehoe)        equipmentSlots.hoe    = 'bronzehoe';
         if (gearInventory?.tools?.pickshovel_nativeCopper) equipmentSlots.shovel = 'pickshovel_nativeCopper';
@@ -32628,6 +32644,23 @@
         itemPrev, itemNext,
       });
 
+      window.__adventuringToolDeps = {
+        THREE, getActiveTool: () => activeTool, getHeldMode: () => heldMode,
+        getEquippedTool: () => equipmentSlots.adventuring,
+        getUnlocked: () => window.__hobunjiPlayerProfile?.adventuringToolUnlocks || [],
+        getToolHolder: () => toolHolder, getAimRay: currentPlayerInteractionRay,
+        refreshActionBar,
+        selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
+        isAimedFireHazard: (col,row) => {
+          const target = window.FurnitureTableSystem?.objectAt?.(currentArea,col,row)
+            || getAimedFarmInteractionObject(col,row) || getWorldObjectAt(col,row);
+          if (!target) return false;
+          const key = target.furnitureKey || target.defKey || target.key || target.itemKey || target.type;
+          return target.fireHazard === true || target.def?.fireHazard === true || target.definition?.fireHazard === true
+            || DECORATIVE_FURNITURE_DEFS[key]?.fireHazard === true || PROCESSING_FURNITURE_DEFS[key]?.fireHazard === true;
+        },
+      };
+      window.AdventuringTools?.init?.(window.__adventuringToolDeps);
       window.ActionArcUI.init({
         toolBtn,
         WHEEL_SLOTS,
@@ -33833,6 +33866,7 @@
       window.__hobunjiGameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        window.AdventuringTools?.init?.({...window.__adventuringToolDeps, getUnlocked:()=>playerData?.adventuringToolUnlocks || []}); // Hydrate unlocked tools from the actual loaded character.
         // Restore this world's saved date/time/weather (see
         // _loadWorldCalendar/_saveWorldCalendar) before anything reads
         // calendar.day — checkTothalShift() below derives the current
@@ -34067,6 +34101,7 @@
           }
         }
         // Set default equipment slot assignments
+        equipmentSlots.adventuring = 'torch'; // All pre-existing characters receive the torch without buying one.
         if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
         else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
