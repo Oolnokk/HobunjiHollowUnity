@@ -32,8 +32,8 @@
   // Bit-packed per-tile fog-of-war, one Uint8Array per zone (year+dims
   // scoped -- discarded and rebuilt fresh whenever a Tothal Shift changes
   // either). Discovered locales are separate and persist forever (see
-  // below): finding a place is remembered even after a shift moves it or
-  // regenerates the terrain fog around it.
+  // below): fixed places retain discovery, while Shift-generated mysteries
+  // require rediscovery after the terrain and its hidden sites are replaced.
   const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
   const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
 
