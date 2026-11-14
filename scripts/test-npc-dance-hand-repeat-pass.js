@@ -85,6 +85,7 @@ walker.currentScheduleTarget = {}; // A dance may end without another ordinary h
 sentinel.onBeforeRender();
 assert.ok(Math.abs(left.position.y - restingY) < 1e-9, 'cancel restores dance-owned left socket');
 assert.ok(Math.abs(right.position.y - restingY) < 1e-9, 'cancel restores dance-owned right socket');
+assert.ok(Math.abs(left.quaternion.x) < 1e-8, 'cancel restores the neutral hand twist after a position-only driver refresh');
 
 walker.currentScheduleTarget = { socialDance: { stimulusId: 'return', style: 'loose-sway', armStyle: 'overhead-punch' } };
 sentinel.onBeforeRender();
