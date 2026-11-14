@@ -118,7 +118,7 @@
   }
 
   // All currently-placed locale instances this session, fixed + randomly
-  // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
+  // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible, shiftSecret }].
   function _allLocaleInstances() {
     const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
     for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
