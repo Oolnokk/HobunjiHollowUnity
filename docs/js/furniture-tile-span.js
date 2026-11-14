@@ -5,7 +5,7 @@
   if (global.FurnitureTileSpan) return;
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const tiles = (value, fallback) => Math.max(1, Math.min(256, Math.floor(finite(value, fallback))));
-  const roleOf = part => ['start', 'stretch', 'end'].includes(part?.tileSpanRole) ? part.tileSpanRole : 'none';
+  const roleOf = part => ['start', 'stretch', 'end', 'follow'].includes(part?.tileSpanRole) ? part.tileSpanRole : 'none';
   const sourcePoses = new WeakMap(); // Mesh-local rest shapes for reversible resizing, kept out of serialized Three.js userData.
 
   function normalize(value) {
@@ -114,7 +114,7 @@
       if (!mesh || role === 'none') continue;
       const pose = sourcePose(mesh);
       let mapping;
-      if (role === 'stretch') {
+      if (role === 'stretch' || role === 'follow') {
         const roots = part.tileSpanRoots || {};
         if (roleOf(partById.get(roots.start?.partId)) !== 'start'
           || roleOf(partById.get(roots.end?.partId)) !== 'end') {
@@ -123,9 +123,16 @@
         }
         const start = anchorPosition(data, roots.start, meshes, spec.axis, roots.start?.face === 'min' ? 'min' : 'max');
         const end = anchorPosition(data, roots.end, meshes, spec.axis, roots.end?.face === 'max' ? 'max' : 'min');
-        mapping = transformFor(role, start, end, delta, spec.axis);
-        if (part.kind === 'glb') { errors.push(part.id + ': GLB pieces must be rigid ends'); continue; }
-        if (!mapping) { errors.push(part.id + ': missing, invalid or reversed attachment surfaces'); continue; }
+        mapping = transformFor('stretch', start, end, delta, spec.axis);
+        if (!mapping || mapping.scale <= 0) { errors.push(part.id + ': missing, reversed or collapsed attachment surfaces'); continue; }
+        if (role === 'follow') {
+          const fraction = Math.max(0, Math.min(1, (pose.position[spec.axis] - start) / (end-start))); // A rung/decorative part moves without stretching its thickness.
+          mesh.position[spec.axis] = pose.position[spec.axis] + (vertical ? delta * fraction : delta * (fraction - .5));
+          mesh.updateMatrix();
+          if (mesh.userData.authoredMatrix) mesh.userData.authoredMatrix.compose(mesh.position,mesh.quaternion,mesh.scale);
+          continue;
+        }
+        if (part.kind === 'glb') { errors.push(part.id + ': GLB pieces cannot stretch their vertices (use Follow)'); continue; }
         if (delta !== 0 && !mesh.geometry?.clone) { errors.push(part.id + ': stretch geometry unavailable'); continue; }
         if (delta !== 0) {
           const three = global.THREE;
