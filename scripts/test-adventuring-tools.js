@@ -103,10 +103,14 @@ heldMode = 'item';
 assert.equal(torch.canThrow(), false);
 
 const game = read('docs/game.js');
-assert.match(game, /const torchVisual = activeTool === 'adventuring'[\\s\\S]*?triggerWeaponSwingVisual\\(torchVisual.durationS, torchVisual.options\\)/, 'the torch starts its authored swing at action press');
-assert.match(game, /triggerWeaponSwingVisual\\(torchVisual.durationS, torchVisual.options\\);[\\s\\S]*?pendingAction = \\{ col: reticle.col, row: reticle.row/, 'torch contact remains queued until the strike');
-assert.match(game, /\\(\\!\\!combatSwingPose \\|\\| activeTool === 'adventuring'\\)/, 'torch actions suppress upright correction for the full animation');
-assert.match(game, /opts.toolSlot === 'adventuring'/, 'the shared visual trigger only permits explicitly tagged adventuring poses');
+const torchActionStart = game.indexOf("const torchVisual = activeTool === 'adventuring'"); // The central action dispatch must start the forehand before queuing the physical contact.
+const torchActionQueued = game.indexOf('pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };', torchActionStart);
+assert(torchActionStart >= 0 && torchActionQueued > torchActionStart, 'torch action queues contact after selecting its visual');
+const torchDispatch = game.slice(torchActionStart, torchActionQueued);
+assert(torchDispatch.includes('synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options)'), 'torch uses the shared hand-grip/visual clock when available');
+assert(torchDispatch.includes('else triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options)'), 'fallback is present before combat hooks initialize');
+assert(game.includes("toolSwingT > 0 && (!!combatSwingPose || activeTool === 'adventuring')"), 'all torch actions suppress world-upright correction while active');
+assert(game.includes("opts.toolSlot === 'adventuring'"), 'visual trigger only permits explicitly tagged adventuring poses');
 const arc = read('docs/js/action-arc-ui.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
 const bandits = read('docs/js/bandit-camps.js');
