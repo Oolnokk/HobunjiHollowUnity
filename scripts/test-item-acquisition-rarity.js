@@ -203,7 +203,7 @@ const bootstrapSource = fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','
 const chestsSource = fs.readFileSync('docs/js/dev-random-ruin-dungeon-chests.js','utf8');
 assert(bootstrapSource.match(/dev-random-ruin-dungeon-chests\.js\?v=[A-Za-z0-9_-]+/) &&
   chestsSource.includes('culture:chest.culture'),'actual browser ruin chest loader and snapshot both include culture-aware rarity');
-const indexSource = fs.readFileSync('docs/index.html','utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 for (const name of ['item-acquisition-rarity','crop-varieties','cooking-system','festival-potluck-contest','festival-system','festival-ui'])
   assert(indexSource.includes('js/'+name+'.js?v='),'all modified critical browser scripts carry a versioned loader entry');
 const childPrice = rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs});

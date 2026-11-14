@@ -77,7 +77,7 @@ assert.equal(pyres[0].key,'campfire','the pyre reuses the authored campfire fire
 assert.equal(pyres[0].festivalWeatherFire,true,'even the large festival fire extinguishes naturally in rain');
 assert(pyres[0].postSY>=2 && pyres[0].postSX>2,'the communal pyre looks larger than path-side campfires');
 assert(tziz.decor.some(d=>d.activity?.type==='offering'),'ordinary shrine interaction still offers the ritual');
-const index=read('docs/index.html');
+const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
 assert(index.includes('js/festival-offering-ritual.js?v='),'browser loads the shared ritual appraisal');
 assert(index.indexOf('festival-offering-ritual.js')<index.indexOf('festival-system.js?v='),'appraisal loads before the festival controller');
 const rules=read('docs/js/festival-system.js');
