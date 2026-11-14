@@ -790,11 +790,20 @@
         // GridTileAccessors is the authority on which scene actually became active.
         // An auxiliary scene/camera is NOT a new base frame, however, and may not
         // invalidate the pending glyphs or floating text for the visible frame.
-        let activeScene = null; // Resolved only for an ambiguous scene switch, never on ordinary render calls.
+        let auxiliaryScene = false; // Only offscreen draws of a non-active scene may preserve an older scene's overlay.
+        let auxiliaryCamera = false; // A different cinematic/gameplay camera must instead replace its own old pending frame.
         if (pending.scene !== scene) {
+          let activeScene = null; // Resolve the gameplay owner only on a scene change, not every world render.
           try { activeScene = window.GridTileAccessors?.getActiveScene?.() || null; } catch (_) {}
+          auxiliaryScene = activeScene !== scene;
+        } else if (pending.camera !== camera) {
+          let activeCamera = null; // The combat dependency uses the live gameplay camera, including cinematic transitions.
+          try { activeCamera = window.Combat?.deps?.getActiveCamera?.() || null; } catch (_) {}
+          auxiliaryCamera = !!activeCamera && activeCamera !== camera;
+          // Without a camera authority, prefer accepting a new world camera rather than
+          // indefinitely presenting glyphs from a stale camera after a scene transition.
         }
-        if (pending.scene === scene || activeScene !== scene) {
+        if (auxiliaryScene || auxiliaryCamera) {
           pass = 'other';
           auxiliaryWorldBasePassesPreserved++;
         }
