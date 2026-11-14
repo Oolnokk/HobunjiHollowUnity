@@ -30,16 +30,22 @@
   }
   function swingAtAim(col,row) {
     if (!isHoldingTorch()) return {ok:false,message:'No torch equipped.'};
-    if (!lit && deps?.isAimedFireHazard?.(col,row)) light();
+    const ray=deps?.getAimRay?.(), THREE=deps?.THREE, holder=deps?.getToolHolder?.();
+    let start=null, end=null; // Shared physical strike segment drives all ruin/fire contacts and prevents remote lighting.
+    if (THREE && ray?.direction && holder) {
+      start=holder.getWorldPosition(new THREE.Vector3());
+      const direction=new THREE.Vector3(ray.direction.x,ray.direction.y,ray.direction.z);
+      if (direction.lengthSq()>1e-8) end=start.clone().addScaledVector(direction.normalize(),2.4);
+    }
+    const ruinSource=!lit && start && end
+      && window.DevRandomRuinHitPuzzles?.isIgnitionSourceAlongSegment?.(start,end,1,.18);
+    if (!lit && (ruinSource || deps?.isAimedFireHazard?.(col,row))) {
+      if (light() && ruinSource) window.RuinInteractionAudio?.igniteTorch?.();
+    }
     if (lit) {
-      const ray=deps?.getAimRay?.(), THREE=deps?.THREE, holder=deps?.getToolHolder?.();
-      if (THREE && ray?.direction && holder) {
-        const start=holder.getWorldPosition(new THREE.Vector3());
-        const direction=new THREE.Vector3(ray.direction.x,ray.direction.y,ray.direction.z);
-        if (direction.lengthSq()>1e-8) {
-          const end=start.clone().addScaledVector(direction.normalize(),2.4);
-          window.DungeonFire?.contactProjectile?.({team:'player',dungeonFire:true},start,end,1,.20);
-        }
+      if (start && end) {
+        window.DungeonFire?.contactProjectile?.({team:'player',dungeonFire:true},start,end,1,.20);
+        window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,1,.12);
       }
       window.BanditCamps?.igniteAimedTentWithTorch?.();
     }
