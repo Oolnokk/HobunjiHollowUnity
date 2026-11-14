@@ -251,6 +251,7 @@
         const next=p?lookup(p.x,p.z,y):null;
         if(next?.id!==active?.id){
           active=next;transitions++;
+          scanHostiles();clock=0; // Crossing a doorway breaks pursuit immediately; idle scans remain throttled.
           onRoomChange?.(active?.id||null);
           root.CloudForestFog?.refreshLightingOverlay?.();
         }
