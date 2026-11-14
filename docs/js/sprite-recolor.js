@@ -104,7 +104,7 @@
     let img = _imgCache.get(spritePath);
     if (img) return img.__loadPromise || Promise.resolve(img);
     img = new Image();
-    const p=new Promise((resolve,reject)=>{ img.onload=()=>resolve(img); img.onerror=()=>reject(new Error('Failed to load recolorable sprite '+spritePath)); });
+    const p=new Promise((resolve,reject)=>{ img.onload=()=>resolve(img); img.onerror=()=>{ if (_imgCache.get(spritePath) === img) _imgCache.delete(spritePath); reject(new Error('Failed to load recolorable sprite '+spritePath)); }; });
     img.crossOrigin='anonymous';
     img.__loadPromise=p;
     img.src=spritePath;
@@ -166,7 +166,7 @@
     const cacheKey='shared-color-fill-v2|'+spritePath+'|'+mode+'|'+targetHex;
     const cached=_canvasCache.get(cacheKey);
     if(cached)return Promise.resolve(cached);
-    return loadImage(spritePath).then(img=>{
+    const pending = loadImage(spritePath).then(img=>{
       const canvas=document.createElement('canvas'); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
       const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0);
       const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
@@ -174,7 +174,12 @@
       const fillLabel = String(mode || '').startsWith('dual-keyed') ? 'dual hue-key/value-fill' : mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'; // Used by mobile/debug logs to identify the active recolor path.
       window.__farmLog?.(`[sprite-recolor] ${fillLabel} ${spritePath} -> #${targetHex.toString(16).padStart(6,'0')}`,'items');
       _canvasCache.set(cacheKey,canvas); return canvas;
+    }).catch(error=>{
+      if (_canvasCache.get(cacheKey) === pending) _canvasCache.delete(cacheKey); // Retry a failed render on the next Pack/HUD request.
+      throw error;
     });
+    _canvasCache.set(cacheKey,pending); // Share one in-flight pixel pass across Pack, HUD, arch and held sprite requests.
+    return pending;
   }
 
   function parserOrderedScript(filename,datasetKey,version,alreadyLoaded){
