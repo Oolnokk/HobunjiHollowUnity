@@ -216,7 +216,7 @@
       const mesh=new THREE.Mesh(geometry,mat);mesh.name=name;mesh.position.set(x,y,z);
       mesh.userData.devRuinFootprintIgnore=true;parent.add(mesh);return mesh;
     }
-    function setGate(stage,blocked,silent=false){
+    function setGatePhysical(stage,blocked,silent=false){
       const {grid,tiles,object,surfaceY,height}=stage.gate;
       const lower=grid.yToLevel(surfaceY+.01),upper=grid.yToLevel(surfaceY+height-.01); // Cover the actual plateau doorway, not the story's nominal Y=0 slice.
       if(lower<0||upper>=grid.levels)throw new Error('Native V50 gate exceeds its height-aware voxel grid');
@@ -227,6 +227,14 @@
       if(blocked){root.GameFeel?.cancelSink?.(object);object.visible=true;}
       else if(object.visible){if(!silent)root.RuinInteractionAudio?.mechanism?.(object,{size:4});if(silent||!root.GameFeel?.sinkAway?.(object))object.visible=false;} // Restored doors skip the cinematic sink and audio.
       else object.visible=false;
+    }
+    function setGate(stage,blocked,silent=false){
+      if(stage?.gate){
+        stage.gate.unlocked=!blocked; // Puzzle progression is permanent; physical open/close is reversible.
+        stage.gate.seenApproach=silent; // Restored saves start with normal auto-closing doors; a newly solved gate stays open through its reveal.
+        stage.gate.openPhysical=!blocked;
+      }
+      setGatePhysical(stage,blocked,silent);
     }
     function updateGoals(){
       ruin.shaftLayerRuntime?.setNativeGoalState?.(owner.total,owner.lit);
@@ -557,8 +565,20 @@
       for(const {floor,root:group} of views)
         group.visible=plan.floors[floor].y<=y+.8;
       for(const fire of nativeFlames)fire.update?.(Math.max(0,Math.min(.05,dt))); // No second render clock.
+      const player=getPlayerPosition?.(); // Native V50 solved gates also close when traversed, without a map transition.
       for(const record of owner.records){
         record.nativeMechanisms?.tick?.(dt); // V50 solution signals and moving-support transforms are applied before gates test completion.
+        for(const challenge of record.challenges){
+          const gate=challenge.gate;
+          if(!gate?.unlocked||!player)continue;
+          const cx=gate.object.position.x,cz=gate.object.position.z;
+          const near=Math.abs(y-gate.surfaceY)<1.5&&Math.hypot(player.x-cx,player.z-cz)<2.7;
+          if(near)gate.seenApproach=true;
+          const open=near||!gate.seenApproach; // Newly solved gate stays open for its first crossing and reveal pan.
+          if(open!==gate.openPhysical){
+            setGatePhysical(challenge,!open,true);gate.openPhysical=open;
+          }
+        }
         record.challenges[record.solved]?.tick?.(dt);
         for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
