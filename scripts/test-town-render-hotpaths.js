@@ -592,6 +592,32 @@ assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActor
   'cloned material shader injection must not introduce duplicate GLSL declarations');
 assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
   'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
+let terrainUvHooks = 0; // Verifies existing Jigsaw/terrain material instrumentation still runs exactly once after an x-ray-aware clone.
+const terrainUvMaterial = {
+  userData: {},
+  onBeforeCompile(shader) { terrainUvHooks++; shader.uniforms.uTerrainUvOwner = { value: 7 }; },
+  customProgramCacheKey() { return 'terrain-uv'; },
+};
+const terrainUvState = installElevationShader(terrainUvMaterial);
+const clonedTerrainUvMaterial = {
+  userData: { hobunjiXrayElevationShader: { ...terrainUvState } },
+  onBeforeCompile: terrainUvMaterial.onBeforeCompile,
+  customProgramCacheKey: terrainUvMaterial.customProgramCacheKey,
+};
+const clonedTerrainUvState = installElevationShader(clonedTerrainUvMaterial);
+clonedTerrainUvState.geometryHasNormals = true;
+const terrainUvShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+clonedTerrainUvMaterial.onBeforeCompile(terrainUvShader, {});
+assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs once, not twice');
+assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
+assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
+  'the selective depth shader still binds the clone-specific elevation after running the prior hook');
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-tile-xray-v4',
+  'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
 basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
