@@ -138,4 +138,18 @@ assert.equal(api.registerPieceRails(railGroup, { id: 'test-porch-rails' }, 10, 2
 assert.equal(registeredRailProviders.length, 1, 'replacing a piece does not duplicate the provider');
 
 
+// Rooftops reuse the exact porch support registry, but cannot be reached from underneath.
+const ikmcRoof=JSON.parse(fs.readFileSync('docs/config/pieces/ikmc-outpost.json','utf8')); // Canonical approved outpost fixture at 180-degree rotation.
+context.window.HousePieceGen.buildGroupFromPiece(null,ikmcRoof,4,40,{elevationY:.5,rotationDeg:180});
+const roof=api.supportAt(7.5,45.5,'town');
+assert(roof && roof.kind==='balcony','roof support is registered at the rotated IKMC hatch');
+assert.equal(roof.bounds.topY,1.9,'balcony top inherits building terrain height and wall height');
+assert.equal(api.supportAt(7.5,45.5,'town',1.2),null,'ground-level actor cannot select an overhead roof support');
+assert.equal(api.worldSurfaceTopAt(7.5,45.5,.5,'town',1.2),.5,'underneath the roof remains ordinary ground');
+assert.equal(api.isBalconyAt(7.5,45.5,1.9,'town'),true,'height-aware collision allows walking on the roof');
+assert.equal(api.isBalconyAt(7.5,45.5,.5,'town'),false,'height-aware collision keeps the building solid below the roof');
+const roofHatch=api.roofHatchAt(7.5,45.5,'town');
+assert(roofHatch && roofHatch.mapId==='map_i_ikmc_outpost','roof transition is linked only to the correct interior');
+assert.equal(roofHatch.topY,1.9,'roof arrival must inherit current building elevation');
+assert.equal(api.roofHatchAt(7.5,45.5,'farm'),null,'outside of town the IKMC roof may not be climbed');
 console.log('walkable elevation regression checks passed');
