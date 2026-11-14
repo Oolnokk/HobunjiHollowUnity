@@ -157,6 +157,9 @@
         </div>
       </div>`).join('');
 
+    fieldsHost.insertAdjacentHTML('beforeend', '<label class="fieldRow"><input id="idle_worldUpright" type="checkbox" style="width:auto">World-up rotation (held sprite points vertically)</label>');
+    const uprightCheckbox = $('idle_worldUpright'); // Authorable world-space pose mode, persisted by normalizePose.
+
     function setStatus(message) {
       status.textContent = message;
     }
@@ -206,6 +209,7 @@
     function syncFieldsFromPose() {
       const pose = currentPose();
       if (selectedKey === 'dualWieldOffhand') pose.bodyYaw = workingConfig.stances.dualWieldMain.bodyYaw;
+      uprightCheckbox.checked = pose.worldUpright === true;
       for (const field of FIELD_DEFS) {
         const value = numberOr(pose[field.key]);
         const input = $(`idle_${field.key}`);
@@ -394,6 +398,11 @@
         if (selectedKey === 'dualWieldMain' || selectedKey === 'dualWieldOffhand') window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       });
     }
+
+    uprightCheckbox.addEventListener('change', () => {
+      currentPose().worldUpright = uprightCheckbox.checked; // Same JSON field the runtime uses to orient the torch vertically.
+      setStatus('World-up rotation ' + (uprightCheckbox.checked ? 'enabled' : 'disabled') + ' for ' + STANCE_LABELS[selectedKey] + '.');
+    });
 
     select.addEventListener('change', () => {
       selectedKey = select.value;
