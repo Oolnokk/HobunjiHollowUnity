@@ -33,12 +33,14 @@ class Attribute {
   setXYZ(i,x,y,z){this.array[i*3]=x;this.array[i*3+1]=y;this.array[i*3+2]=z;}
 }
 class Geometry {
-  constructor(values,indices=null){
+  constructor(values=[],indices=null){
     this.attributes={position:new Attribute(values,3)};
     this.index=indices?{array:indices,count:indices.length,getX:i=>indices[i]}:null;
     this.userData={};this.disposed=false;
   }
   getAttribute(name){return this.attributes[name];}
+  setAttribute(name,attribute){this.attributes[name]=attribute;return this;}
+  setIndex(index){this.index=index;return this;}
   toNonIndexed(){if(!this.index)return this;const out=[],pos=this.getAttribute('position');for(const i of this.index.array)out.push(pos.getX(i),pos.getY(i),pos.getZ(i));return new Geometry(out);}
   computeBoundingBox(){
     const min={x:Infinity,y:Infinity,z:Infinity},max={x:-Infinity,y:-Infinity,z:-Infinity},p=this.getAttribute('position');
@@ -57,7 +59,7 @@ class Material{
 class Mesh extends Node3D{
   constructor(geometry,material){super();this.isMesh=true;this.geometry=geometry;this.material=material;this.layers={disable(){}};}
 }
-const THREE={Mesh,Group,MeshBasicMaterial:Material,DoubleSide:2};
+const THREE={Mesh,Group,MeshBasicMaterial:Material,BufferGeometry:Geometry,BufferAttribute:Attribute,Float32BufferAttribute:Attribute,DoubleSide:2};
 const sources=[]; // Tracks all stone and grass source allocations across mountain measurements and scene rebuilds.
 const calls={natural:0,map:0,sky:0,shell:0}; // Ensures the farm cliff render pipeline actually runs.
 const canonicalFarmRock = new Material({ map: 'carved_smooth.png', userData: { naturalSurface: 'rocks' } }); // Must remain shared and undisposed after backdrop unload.
@@ -197,4 +199,36 @@ assert.equal(api.getDebugState().lastLayout.cliffMaterialSlot,null);
 window.WildernessChunks.destroyZone('map_northern_cliffs');
 assert(single.material.disposed,'single-material backdrop must clean up too');
 assert.equal(canonicalFarmRock.disposed,false,'shared farm rock material must survive both teardown paths');
-console.log('PASS Northern Cliffs giant flat rock: two-slot ridge, cliff-only UVs, farm material ownership, single-slot fallback, culling, clearance, lifecycle.');
+// Build again from the actual production rock generator, not just our fixture:
+// its winding and deterministic seed must produce a flat, upward-facing crown
+// plus side triangles after the backdrop's gigantic X/Z scaling.
+const terrainSource=fs.readFileSync('docs/js/terrain-geometry.js','utf8'); // Original generator used for real wilderness loose rocks.
+const rockStart=terrainSource.indexOf('  function buildRockTileGeo(col, row) {');
+const rockEnd=terrainSource.indexOf('  function buildTerrainTileGeo(',rockStart);
+assert(rockStart>=0&&rockEnd>rockStart,'production loose-rock generator must remain discoverable for the regression');
+const originalRockBuilder=new Function('THREE',terrainSource.slice(rockStart,rockEnd)+'\nreturn buildRockTileGeo;')(THREE); // Runs the real generator with the same minimal THREE buffer shim.
+window.TerrainGeometry.buildRockTileGeo=originalRockBuilder;
+splitRidge=true;
+window.BorderTerrain.buildZoneBorderTerrain(scene,200,200,'map_northern_cliffs');
+const realMesh=api.getActiveRoot()?.children[0],realLayout=api.getDebugState().lastLayout; // Inspects the actual chosen rock seed after the complete backdrop transform.
+assert(realMesh&&realLayout,'production loose-rock source must build the full northern backdrop');
+const actualPositions=realMesh.geometry.getAttribute('position'); // Counts true upward triangles from source index winding, not fixture assumptions.
+let actualCap=0,actualSteep=0; // Both groups are necessary for the real ridge-isolation pipeline.
+for(let i=0;i+2<actualPositions.count;i+=3){
+  const a=[actualPositions.getX(i),actualPositions.getY(i),actualPositions.getZ(i)];
+  const b=[actualPositions.getX(i+1),actualPositions.getY(i+1),actualPositions.getZ(i+1)];
+  const c=[actualPositions.getX(i+2),actualPositions.getY(i+2),actualPositions.getZ(i+2)];
+  const ab=b.map((x,j)=>x-a[j]),ac=c.map((x,j)=>x-a[j]);
+  const nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0],len=Math.hypot(nx,ny,nz);
+  if(len<=1e-9)continue;
+  const normalY=ny/len;
+  if(a[1]===realLayout.topWorldY&&b[1]===realLayout.topWorldY&&c[1]===realLayout.topWorldY){
+    assert(normalY>0.99,'the actual loose rock crown must face up after world-space transform');
+    actualCap++;
+  }else if(normalY<ridgeThreshold)actualSteep++;
+}
+assert(actualCap>0&&actualSteep>0,'the actual loose rock must contain both a flat tabletop and distinct steep cliff faces');
+assert.equal(realLayout.flatCapTriangles,actualCap,'debug cap count must match the real generator geometry');
+assert.equal(realLayout.sourceShape,'TerrainGeometry.buildRockTileGeo:stoneGeo');
+window.WildernessChunks.destroyZone('map_northern_cliffs');
+console.log('PASS Northern Cliffs giant flat rock: two-slot ridge, cliff-only UVs, farm material ownership, single-slot fallback, culling, clearance, lifecycle, actual rock seed.');
