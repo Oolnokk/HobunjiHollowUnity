@@ -26,7 +26,8 @@ To add or update a script in an existing group:
 2. Keep evaluation-time dependencies ahead of consumers; keep `game.js`
    outside these groups.
 3. Run `node scripts/test-classic-script-groups.js` and the normal regression
-   suite. Update the test's known members if deliberately adding to a group.
+   suite. The test discovers groups and allows new members without editing a shared
+   test file, while guarding the baseline dependency order.
 
 The manifests are fetched with `?load=<Date.now()>` per navigation so manifest
 edits do not require touching a common index cache token. Child modules retain
