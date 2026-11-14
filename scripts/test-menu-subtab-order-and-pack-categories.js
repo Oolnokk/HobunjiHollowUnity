@@ -57,6 +57,55 @@ for (const [category, key, expected] of [
   assert.equal(matches(category, key), expected, `${category} correctly filters ${key}`);
 }
 
+// Learnable literature is registered by its owning combat systems, so validate
+// the real generated definitions against the real Pack classifier. A synthetic
+// { cat: 'scroll' } alone misses the regression where actual tablets are materials.
+const masterySource = fs.readFileSync('docs/js/combat/combat-progression.js', 'utf8'); // Production mastery item registration under test.
+const techniqueSource = fs.readFileSync('docs/js/combat/technique-scrolls.js', 'utf8'); // Production technique scroll/manual registration under test.
+const archSource = fs.readFileSync('docs/js/item-arch-category-colors.js', 'utf8'); // Uses the item arch's own classifier, not a duplicate.
+const registeredItems = { ITEM_DEFS: itemDefs, inventoryItems: [], inventory: {} }; // Shared live-style item catalog exercises all three literature families.
+const masteryRegistration = between(masterySource, '  function itemKey(', '  function readMasteryItem(');
+const masteryAPI = vm.runInNewContext(masteryRegistration + '\n({ itemKey, registerItems })', {
+  itemDeps: {},
+  unlockKey: (type, rank, id) => `${type}:${rank}:${id}`, // Mimics only the canonical key serializer required by registerItems.
+  effectCatalog: new Map([['testLesson', { id: 'testLesson', label: 'Reach', desc: 'Increases reach.', types: ['sharp', 'blunt'] }]]),
+  window: { ObjectSpriteCatalog: { applyAll() {} } },
+});
+masteryAPI.registerItems(registeredItems);
+const techniqueRegistration = between(techniqueSource, '  function registerItems(deps) {', '  function captureItemDeps(deps) {');
+const techniqueAPI = vm.runInNewContext(techniqueRegistration + '\nregisterItems', {
+  SCROLLS: { 1: { key: 'techniqueScrollTier1', icon: '📜', label: 'Tier 1 Technique Scroll', desc: 'Learn a technique.' } },
+  allManuals: () => [{ key: 'combatManualQuick', icon: '📜', label: 'Quick Attack Manual', abilityId: 'quickAttack', desc: 'Learn an attack.' }],
+  window: {
+    CombatProgression: masteryAPI,
+    ObjectSpriteCatalog: { applyAll() {} },
+    HobunjiInventoryActionMetadataBridge: { refresh() {} },
+  },
+});
+techniqueAPI(registeredItems);
+const literatureKeys = Object.keys(itemDefs).filter(key => /^mastery(?:Tablet|Scroll):/.test(key)).concat('techniqueScrollTier1', 'combatManualQuick'); // Captures all generated ranks/types plus both secondary literature classes.
+assert.equal(literatureKeys.length, 22, 'five ranks, two forms and two damage types plus technique scroll and combat manual are registered');
+for (const key of literatureKeys) {
+  assert(matches('plans', key), `Pack Plans & Scrolls includes ${key}`);
+  assert(!matches('other', key), `learnable literature ${key} does not leak into Other`);
+  assert(!matches('material', key), `learnable literature ${key} is not sorted as raw materials`);
+}
+// Exercise the actual owned-stack list used by Pack; matching individual keys alone
+// does not catch a future regression in list filtering or catalog integration.
+const ownedLiterature = Object.fromEntries(literatureKeys.map(key => [key, 1])); // Every generated lesson is owned, like a save containing many unsold drops.
+ownedLiterature.log = 2; // Ordinary material control must remain outside Plans & Scrolls.
+const stackBuilderSource = between(gameSource, '      function matchesPackCategory(cat, key) {', '      const inventoryWheelCache ='); // Real game-owned filter and stack builder, not a reconstruction.
+const getInventoryStackKeys = vm.runInNewContext(stackBuilderSource + '\ngetInventoryStackKeys', { ITEM_DEFS: itemDefs, inventory: ownedLiterature, inventoryItems: registeredItems.inventoryItems });
+const planStackKeys = Array.from(getInventoryStackKeys('plans')); // Full Pack result for the user's Plans & Scrolls selection.
+assert.deepEqual(planStackKeys.slice().sort(), literatureKeys.slice().sort(), 'Pack Plans & Scrolls lists every owned mastery tablet, scroll, technique scroll, and combat manual');
+assert.equal(getInventoryStackKeys('material').includes('log'), true, 'ordinary material still appears under Materials');
+assert.equal(getInventoryStackKeys('material').some(key => literatureKeys.includes(key)), false, 'learnable literature never leaks into Materials');
+assert.equal(getInventoryStackKeys('other').some(key => literatureKeys.includes(key)), false, 'learnable literature never leaks into Other');
+
+const archClassifierSource = archSource.slice(archSource.indexOf('  const CATEGORY_STYLES ='), archSource.indexOf('  function injectStyles() {')); // Includes the real classification helpers and their constants.
+const archCategoryFor = vm.runInNewContext(archClassifierSource + '\ncategoryForDefinition');
+for (const key of literatureKeys) assert.equal(archCategoryFor(key, itemDefs[key]), 'technique', `item arch groups ${key} with Combat Lessons`);
+
 const mapSource = between(navSource, '  const MENU_SUBTAB_PRIORITY_BY_PANE = Object.freeze({', '  const subtabsByGroup = new Map();'); // Preserves the real per-pane configuration.
 const sorterSource = between(navSource, '  function prioritizeMenuSubtabs(group, sections) {', '  function prepareSubtabs(group, panel, selectedId = null, offset = 0) {'); // Uses the real LB/RB sequence sorter.
 const prioritize = vm.runInNewContext(mapSource + '\n' + sorterSource + '\n prioritizeMenuSubtabs'); // Tests navigation without mounting a browser.
