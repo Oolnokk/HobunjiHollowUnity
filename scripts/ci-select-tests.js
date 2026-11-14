@@ -92,7 +92,8 @@ function featureWorkflowDependencies(id) {
 function independentFeatureFile(file) {
   if (/^scripts\/(?:test-|smoke-|verify-)/.test(file)) return true; // Specific workflow tests are already included in its dependency set.
   if (/^docs\/js\/(?:clothing-|cosmetic-|appearance-|species-rig-|rig-editor-)/.test(file)) return true; // Cosmetic/weaving implementations cannot affect physical ruin/furniture/puzzle generation.
-  if (/^docs\/(?:config|assets)\/(?:cosmetics|clothing|patterns)\//.test(file)) return true; // Authored clothing art does not trigger the four environmental checks.
+  if (/^docs\/(?:config|assets)\/(?:cosmetics|clothing)\//.test(file)) return true; // Dedicated garment definitions and sprites are independent of ruin generation.
+  if (/^docs\/config\/patterns\/(?:clothing-trims|fur-hoods)\.json$/.test(file)) return true; // Only explicitly garment-owned motif manifests are safely excluded.
   if (file.startsWith('.github/workflows/')) return true; // Workflow-local changes match FEATURE_PATHS; other workflows do not affect these jobs.
   return false;
 }
