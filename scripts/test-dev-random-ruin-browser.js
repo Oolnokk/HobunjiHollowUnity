@@ -142,7 +142,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       for(let depth=0;depth<=wall;depth++){
         const x=x0-dx*depth,z=z0-dz*depth,k=x+','+z;
         const flat=ctx.grid[z]?.[x]?.type,covered=ctx.floorSet.has(k),voxel=open.has(k);
-        if(!covered||flat==='rock'||!voxel)failures.push({side,depth,x,z,flat,covered,voxel});
+        const surface=window.DynamicSurfaces?.sampleSupport?.(x+.5,z+.5,
+          {minY:section.y-.1,maxY:section.y+.12,pad:.02}); // Every passage cell must offer real walkable support to normal player physics, not only an open voxel.
+        const supported=Number.isFinite(surface?.y)&&Math.abs(surface.y-section.y)<.1;
+        if(!covered||flat==='rock'||!voxel||!supported)
+          failures.push({side,depth,x,z,flat,covered,voxel,supported,surfaceY:surface?.y??null});
       }
       // The inner and outer tunnel endpoints must also survive the actual
       // player's ruin reconciliation at F2 elevation, not just be clear on maps.
