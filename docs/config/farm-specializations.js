@@ -31,8 +31,8 @@
   // moved on the Farm map, managed from outside, never entered — whose one slot holds a
   // fertile egg waiting to hatch or the swarm that hatched from it.
   buildings.honeyfuzzleHouse = { label: 'Honeyfuzzle House', icon: '🍯', method: null, key: 'honeyfuzzleHouse', family: 'honeyfuzzleHouse', tier: 'single',
-    w: 1, h: 1, planItem: 'honeyfuzzleHousePlan', price: 450, yield: 1, daysPerInput: 1, waterCapacity: 0, minTownValue: 0, hatchDays: 2,
-    description: 'A hollow-log house for one honeyfuzzle swarm. Set a fertile egg inside and wait for it to hatch, or use a Growth Tonic to hatch it at once.' };
+    w: 1, h: 1, planItem: 'honeyfuzzleHousePlan', price: 450, yield: 1, daysPerInput: 1, waterCapacity: 0, minTownValue: 0, establishDays: 2,
+    description: 'A hollow-log house for one honeyfuzzle swarm. Set a wild queen inside to establish her colony, or use a Growth Tonic to speed its formation.' };
   const specializations = { // These supplies belong to shared world storage, granted once at creation.
     grower: { label: 'Farm', buildings: ['waterSiloSmall', 'compostBinSmall', 'windmillSmall', 'seedMakerSmall'], storage: {
       needlegrainSeeds: 48, heftrootSeeds: 48, garlinkSeeds: 48, ongyumsSeeds: 48, redberrySeeds: 24, blueberrySeeds: 24,
