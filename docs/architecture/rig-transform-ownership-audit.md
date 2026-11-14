@@ -43,7 +43,8 @@ switch, including interrupted actions, seated/mounted states and scene rebuilds.
 `window.RigTransformLayers` is loaded before NPC/character runtimes.
 It is a lightweight, allocation-conservative, per-node `WeakMap` of named
 axis offsets. It composes concurrent named owners from an unchanged axis
-baseline; `setAxis` and `setPosition` are idempotent.
+baseline; `setAxis` and `setPosition` are idempotent. Three-axis writes
+validate every coordinate before mutating the target, avoiding partial poses.
 `clear(node, owner)` and `clearAll(node)` release contributions on cancel
 and dispose. If another system assigns a different absolute value, the ledger
 drops prior owner claims **without subtracting a stale inverse**.

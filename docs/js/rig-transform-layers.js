@@ -73,13 +73,18 @@
   }
 
   function setPosition(node, owner, offset) {
-    if (!offset || !['x', 'y', 'z'].every(axis => Number.isFinite(Number(offset[axis] ?? 0)))) {
+    const x = Number(offset?.x ?? 0); // Local X contribution, committed only after checking all three writable axes.
+    const y = Number(offset?.y ?? 0); // Local Y contribution, validated together with X/Z to avoid partial poses.
+    const z = Number(offset?.z ?? 0); // Local Z contribution, validated together with X/Y to avoid partial poses.
+    if (!offset || typeof owner !== 'string' || !owner
+        || !valid(node, 'position', 'x') || !valid(node, 'position', 'y') || !valid(node, 'position', 'z')
+        || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
       stats.invalidInputs++;
       return false;
     }
-    for (const axis of ['x', 'y', 'z']) {
-      if (!setAxis(node, owner, 'position', axis, Number(offset[axis] ?? 0))) return false;
-    }
+    setAxis(node, owner, 'position', 'x', x);
+    setAxis(node, owner, 'position', 'y', y);
+    setAxis(node, owner, 'position', 'z', z);
     return true;
   }
 

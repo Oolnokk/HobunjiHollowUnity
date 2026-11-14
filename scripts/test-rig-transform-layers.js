@@ -72,6 +72,14 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
   near(node.position.z, 0);
   assert.equal(layers.getDebug().activeLayers, 0);
 }
+{
+  const node = rig();
+  node.position.y = Number.NaN; // A bad Y coordinate must never cause a partial X/Z mutation.
+  assert.equal(layers.setPosition(node, 'partial', { x: 1, y: 2, z: 3 }), false);
+  near(node.position.x, 0);
+  near(node.position.z, 0);
+  assert.equal(layers.getDebug().activeLayers, 0);
+}
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
