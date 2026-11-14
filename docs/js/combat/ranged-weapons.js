@@ -1650,8 +1650,10 @@
     }
     const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
     window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Enemy-held Dungeon Fire remains visual-only; the module rejects non-player projectiles.
-    if (p.itemKey === 'torch' && p.dungeonFire && p.team === 'player')
-      window.BanditCamps?.igniteTorchSegment?.(p.areaId,start,end,fireLimit,projectileRadius); // Ignite canvas tents along the same unobstructed segment.
+    if (p.itemKey === 'torch' && p.dungeonFire && p.team === 'player') {
+      window.BanditCamps?.igniteTorchSegment?.(p.areaId,start,end,fireLimit,projectileRadius); // Ignite canvas tents only before the first projectile blocker.
+      window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,fireLimit,projectileRadius); // The same live swept projectile can light real V50 puzzle targets.
+    }
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t, true);
       return { kind: 'cover', t: coverHit.t, coverHit };
