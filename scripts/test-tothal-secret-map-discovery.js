@@ -57,4 +57,31 @@ cycle=9;
 assert.equal(ctx.WildernessMap._test.visibleLandmarks(zone).length,0,
   'legacy map discovery expires on the following Tothal Shift');
 
+// Author-authored persistent/visible locales must not be forced into Shift turnover merely
+// because their category is a shrine or ruin entrance.
+const persistent={localeId:'locale_stable_altar',name:'Permanent Altar',category:'great_fey_shrine',
+  x:20,y:20,shiftGeneratedSecret:false,alwaysVisible:false}; // This authored opt-out is intentionally explicit.
+layout.localeInstances.push(persistent);
+player.x=20;player.y=20;
+ctx.WildernessMap.updateFogAroundPlayer();
+assert(ctx.WildernessMap._test.visibleLandmarks(zone).some(item=>item.localeId===persistent.localeId),
+  'persistent authored shrine can be discovered');
+cycle=10;
+assert(ctx.WildernessMap._test.visibleLandmarks(zone).some(item=>item.localeId===persistent.localeId),
+  'explicit permanent shrine discovery survives the next Shift');
+
+const publicShrine={localeId:'locale_public_shrine',name:'Public Shrine',category:'great_fey_shrine',
+  x:26,y:26,shiftGeneratedSecret:true,alwaysVisible:true}; // Always-visible setting takes precedence over incidental secret metadata.
+layout.localeInstances.push(publicShrine);
+const publicMarker=ctx.WildernessMap._test.visibleLandmarks(zone).find(item=>item.localeId===publicShrine.localeId);
+assert(publicMarker,'always-visible location must be on the map immediately');
+ctx.WildernessMap.setWaypoint(publicMarker);
+assert.equal(ctx.WildernessMap.getCompassWaypoint()?.localeId,publicShrine.localeId,
+  'always-visible waypoint must not require secret discovery');
+cycle=11;
+publicShrine.x=27;publicShrine.y=29;
+const publicWaypoint=ctx.WildernessMap.getCompassWaypoint();
+assert(publicWaypoint?.localeId===publicShrine.localeId && publicWaypoint.col===27.5 && publicWaypoint.row===29.5,
+  'always-visible authored waypoint follows its live location after a Shift');
+
 console.log('Tothal secret map rediscovery tests passed');
