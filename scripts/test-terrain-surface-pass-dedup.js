@@ -71,6 +71,7 @@ function checkCompleteBatchBeforeCommit() {
     setXY(i, u, v) { this.array[i * this.itemSize] = u; this.array[i * this.itemSize + 1] = v; }
     clone() { return new Attribute(this.array, this.itemSize); }
   }
+  let abandonedClonesDisposed = 0; // Used to verify rejected batches do not leak temporary geometry clones.
   class Geometry {
     constructor(position, groups) {
       this.attributes = { position: new Attribute(position, 3), uv: new Attribute(new Array(position.length / 3 * 2).fill(0.5), 2) };
@@ -86,7 +87,7 @@ function checkCompleteBatchBeforeCommit() {
       clone.userData = { ...this.userData };
       return clone;
     }
-    dispose() {}
+    dispose() { abandonedClonesDisposed++; }
   }
   class BufferGeometry {
     constructor() { this.attributes = {}; this.userData = {}; }
@@ -122,13 +123,19 @@ function checkCompleteBatchBeforeCommit() {
 
   const one = makeMesa(1, [{ start: 0, count: 6, materialIndex: 1 }]);
   const noCliff = makeMesa(2, []); // Material slot exists but this mesh contributes no cliff-face geometry.
+  const originalOne = one.geometry; // Used to confirm failed batch attempts cannot replace a mesh's visible ground or cliffs.
+  const originalNoCliff = noCliff.geometry; // Used to confirm the no-cliff participant remains unchanged.
   assert.equal(solve([one, noCliff], 'partial'), false,
     'partial solve cannot claim success and suppress the per-mesh fallback');
   assert.equal(solverCalls, 0, 'incomplete batch must not invoke the central mapper');
   assert.equal(stats.batches, 0);
+  assert.equal(one.geometry, originalOne, 'rejected batch retains the original textured geometry');
+  assert.equal(noCliff.geometry, originalNoCliff, 'rejected no-cliff mesh retains its original geometry');
+  assert.equal(abandonedClonesDisposed, 2, 'failed batch disposes every unused geometry clone');
   const two = makeMesa(3, [{ start: 0, count: 6, materialIndex: 1 }]);
   assert.equal(solve([one, two], 'complete'), true, 'complete two-mesa batch is still supported');
   assert.equal(stats.batches, 1);
+  assert.notEqual(one.geometry, originalOne, 'successful batch adopts its independent UV geometry');
   assert.equal(one.userData.terrainJigsawIgnore, true);
   assert.equal(two.userData.naturalSurfaceUvOwner, 'HobunjiSurfaceStretchUV');
   assert.equal(one.userData.wildernessCliffSurfaceParity, true, 'deferred cliff retains the completed parity marker');
