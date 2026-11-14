@@ -54,7 +54,7 @@ function crawlShippedScripts() {
   const visited = new Set();
   const queue = [];
 
-  const indexHtml = fs.readFileSync(path.join(DOCS_DIR, 'index.html'), 'utf8');
+  const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups();
   const seedRe = /<script[^>]+src=["']([A-Za-z0-9_.\/-]*\.js)(?:\?[^'"]*)?["']/g;
   let match;
   while ((match = seedRe.exec(indexHtml))) {

@@ -8,7 +8,7 @@ const assert = require('assert');
 const bountyBoard = fs.readFileSync(path.join(__dirname, '..', 'docs/js/bounty-board.js'), 'utf8');
 const proceduralTasks = fs.readFileSync(path.join(__dirname, '..', 'docs/js/procedural-tasks.js'), 'utf8');
 const dialogueContent = fs.readFileSync(path.join(__dirname, '..', 'docs/js/dialogue-content.js'), 'utf8');
-const index = fs.readFileSync(path.join(__dirname, '..', 'docs/index.html'), 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 assert.match(
   bountyBoard,

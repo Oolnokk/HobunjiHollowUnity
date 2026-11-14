@@ -340,43 +340,8 @@
   <script src="js/weapon-layer-effects.js?v=20261109flailFireGC2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
   <script src="js/weapon-sprite-assemblies.js?v=20261111fishFlailHead1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
-  <script src="js/combat/weapon-shape-stats.js?v=20261109grappledonor1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
-  <script src="js/combat/combat-core.js?v=20261112hbb5144a"></script>
-  <script src="js/combat/enemy-search-ai.js?v=20261110h608e181"></script>
-  <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
-       playback onto the player's procedural rig and quarter-turned body-only
-       animal planes. Must load after the procedural leg module and after
-       resource-system.js/combat-core.js. -->
-  <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261110attackFxInst1"></script>
-  <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261110attackFxInst1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
-  <script src="js/combat/combat-attach.js?v=20261101h47c5427"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
-  <script src="js/combat/combat-loadout.js?v=20261111modToolLoadout2"></script>
-  <script src="js/combat/combat-progression.js?v=20261105koma1"></script>
-  <!-- Shared player-attack event context (prepare/hit/defensive) published by every
-       ability module; Enchantments and future cross-cutting systems observe it. -->
-  <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
-  <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
-  <script src="js/combat/companion-offense.js?v=20261104scent1439c"></script>
-  <script src="js/companion-combat-response.js?v=20261110decf5f6ae3"></script>
-  <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439c"></script> <!-- Scent target priority for wild/enemy animals. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
-  <script src="js/combat/combat-input.js?v=20261113inputrouter1"></script>
-  <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
-  <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
-  <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261110quickreach2"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20261106trinkets20"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20261112afterimagepool1"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261106charge879"></script>
-  <script src="js/combat/combat-flurry.js?v=20261106trinkets20"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261110tzkFortune1"></script>
-  <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
-  <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261103particlesheld1"></script>
-  <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
-  <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
+  <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261107jump-rebased2"></script>
@@ -387,29 +352,8 @@
   <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261113inputrouter1"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20261114musicReticleMerge1"></script>
-  <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
-       load before game.js, which calls window.BanditCombat.init(...)
-       during its own setup. Reads window.Combat's comboData/quickAttackData/
-       chargedBreakerData/counterShieldData and window.ResourceSystem lazily
-       (at fight time, not load time), so exact ordering against those two
-       doesn't matter as long as both exist by the time bandits actually
-       spawn. -->
-  <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261114uniformRigAreaDuelMerge1"></script>
-  <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
-  <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
-  <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
-  <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1"></script>
-  <script src="js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6"></script>
-  <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
-  <script src="js/combat/combat-maskbound-headtaker.js?v=20261101h33d9d71"></script> <!-- Unarmed Skyfall Head Grip: leap, dodge-only attached struggle, reversible headless portrait and thrown head. -->
-  <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles and static Kanthic spell-plasm puddles, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261108harlyao2"></script>
-  <script src="js/combat/combat-special-liches.js?v=20261104azgarlu2"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
+  <!-- Ranged combat and HUD reticles, bandits, ghouls, minions, maskbound guardians and liches. Edit js/bootstrap/classic-groups/combat-enemies.js instead of this entrypoint. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-enemies"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -637,19 +581,8 @@
   <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
-  <script src="js/melody-camera-framing.js?v=20261114musicReticleMerge1"></script><!-- Plate-discovered, geometry-fitted camera framing; loaded before every score producer. -->
-  <script src="js/puzzle-cave-melody.js?v=20261114melodyTempoPer1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
-  <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261114melodyTempoPer1"></script>
-  <script src="js/ruin-layer-playable.js?v=20261110h8b3a4fc"></script>
-  <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261110h0efff27"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261110hcf0f1b0"></script>
-  <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
-  <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261109ruinTravel1"></script>
-  <script src="js/ruin-checkpoint-travel.js?v=20261109ropeCheckpoint1"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
+  <!-- Timed melodies, ruin challenges, V50 floors, shaft connections and checkpoint travel. Edit js/bootstrap/classic-groups/ruin-puzzles.js instead of this entrypoint. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="ruin-puzzles"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2904,14 +2837,8 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20261026hmaskalpha11"></script>
-  <script src="js/camera-tile-collision.js?v=20261023camtile1"></script>
-  <script src="js/camera-occlusion-chunks.js?v=20261101h7a6e930"></script>
-  <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
-  <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
-  <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/character-voice-owner.js?v=20261027releaseOverlap1"></script>
-  <script src="js/dialogue-content.js?v=20261109nicknameAudit1"></script>
+  <!-- Cinematic and dialogue cameras, authored dialogue content, rich text and voice ownership. Edit js/bootstrap/classic-groups/dialogue.js instead of this entrypoint. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="dialogue"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>

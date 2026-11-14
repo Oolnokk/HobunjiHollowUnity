@@ -12,7 +12,7 @@ const trustSource = fs.readFileSync('docs/js/weapon-trust-bandit-loadouts.js', '
 const colorsSource = fs.readFileSync('docs/config/colors/config.js', 'utf8');
 const gameConfigSource = fs.readFileSync('docs/config/config.js', 'utf8');
 const devSource = fs.readFileSync('docs/js/dev-spawner.js', 'utf8');
-const indexSource = fs.readFileSync('docs/index.html', 'utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 assert.match(resourceSource, /shamblingFooting:\s*\{[\s\S]*name: "Shambling Footing"[\s\S]*resource: "footing"[\s\S]*immutable: true/);
 assert.match(resourceSource, /function setImmutableAffliction\([\s\S]*_immutableAfflictions/);

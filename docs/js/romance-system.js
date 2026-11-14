@@ -664,7 +664,7 @@
   }
 
   function activeKissPerfumeEffect() {
-    if (remainingKissHours() <= 0 || !state.spouse?.perfume) return null; // Non-resource Alchemy getters apply perfume only during the player's active kiss blessing.
+    if (!state.spouse?.perfume || remainingKissHours() <= 0) return null; // Avoid clock snapshots for the common no-perfume case; only active kisses feed Alchemy.
     const worn = state.spouse.perfume; // Permanent gift choice remains independent of the temporary 24-hour kiss window.
     return window.AlchemySystem?.getPerfumeEffect?.(worn.recipeId, worn.potencyTier) || null;
   }

@@ -133,7 +133,7 @@ for(const side of Object.keys(orientation)){
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const bootstrap=fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
-const index=fs.readFileSync('docs/index.html','utf8');
+const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
 const map=fs.readFileSync('docs/js/dev-random-ruin-tile-occupancy.js','utf8');
 assert(runtime.includes('singleRoom:singleVestibule'),'V50 itself must generate only one room, not simply hide extra rooms');
 assert(runtime.includes('padX:entryPadX,padZ:entryPadZ'),'solvability reads the relocated V50 room');
