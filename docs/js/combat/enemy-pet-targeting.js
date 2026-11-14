@@ -57,8 +57,9 @@
     for (const person of players || []) consider(person);
     for (const companion of companions || []) if (groundPet(companion, areaId, players)) consider(companion);
     const current = enemyPet._beastmasterCombatTarget; // Stores committed target on the instance, not shared creature definitions.
+    const activeCompanion = companions?.has?.(current) || companions?.includes?.(current); // A saved target may have been despawned when the player switched pets.
     if (current && current !== best && viable(current, areaId) &&
-        (players?.includes?.(current) || groundPet(current, areaId, players))) {
+        (players?.includes?.(current) || (activeCompanion && groundPet(current, areaId, players)))) {
       const mdx = current.x - master.x, mdy = current.y - master.y;
       const dx = current.x - enemyPet.x, dy = current.y - enemyPet.y;
       const currentSq = dx * dx + dy * dy;
