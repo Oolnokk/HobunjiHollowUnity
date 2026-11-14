@@ -310,6 +310,7 @@
     // along with untagged rock props and cave walls.
     surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
       || data.hobunjiGroundXray === true // Explicit mesa terrain retains ground identity when Jigsaw replaces its grass material slot.
+      || (data.hobunjiGroundSurface === true && !walkableFloor) // A standalone tagged ground mesh may have a texture unrelated to the base-grass material; keep its walls solid via the face-normal filter.
       || (isTerrainSurface(object) && (
         (data.mapEditorTerrain != null && object.material?.userData?.terrainKey !== 'rock')
         || materialMarksBaseGrass(object?.material)
@@ -1618,11 +1619,17 @@
     if (!material) return null;
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
-    if (state) return state;
+    const inheritedCompile = material.onBeforeCompile; // Terrain texture/Jigsaw material clones copy userData and the callback separately; only the callback that closes over THIS state is reusable.
+    if (state && inheritedCompile?.__hobunjiXrayElevationState === state) return state;
     state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, tileCount: { value: 0 }, tiles: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
-    const previousCompile = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
-    const previousCacheKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey : null;
+    const previousCompile = typeof inheritedCompile === 'function'
+      ? (Object.prototype.hasOwnProperty.call(inheritedCompile, '__hobunjiXrayBaseCompile') ? inheritedCompile.__hobunjiXrayBaseCompile : inheritedCompile)
+      : null; // A clone must not run its source's elevation shader a second time (duplicate declarations and wrong uniforms).
+    const inheritedCacheKey = material.customProgramCacheKey;
+    const previousCacheKey = typeof inheritedCacheKey === 'function'
+      ? (Object.prototype.hasOwnProperty.call(inheritedCacheKey, '__hobunjiXrayBaseCacheKey') ? inheritedCacheKey.__hobunjiXrayBaseCacheKey : inheritedCacheKey)
+      : null;
     material.onBeforeCompile = function hobunjiElevationAwareGroundCompile(shader, renderer) {
       previousCompile?.call(this, shader, renderer);
       const vertex = shader.vertexShader || '';
@@ -1679,9 +1686,12 @@
       shader.uniforms.uHobunjiXrayTiles = state.uniforms.tiles;
       state.supported = true;
     };
+    material.onBeforeCompile.__hobunjiXrayElevationState = state; // Used to detect stale copied userData after a terrain material clone.
+    material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
       return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v4';
     };
+    material.customProgramCacheKey.__hobunjiXrayBaseCacheKey = previousCacheKey; // Keeps prior renderer/Jigsaw program features on clones.
     material.needsUpdate = true;
     return state;
   }
@@ -1694,6 +1704,7 @@
 
   function collectGroundElevationMaterials(groundMeshes) {
     const seen = new Set();
+    const liveNormals = new Map(); // Recomputes normal availability from this scene's drawable ground, not old geometry or another cached zone.
     let materialCount = 0;
     let fallbackCount = 0;
     for (const mesh of groundMeshes) {
@@ -1708,17 +1719,19 @@
         const state = installGroundElevationShader(material);
         if (!state) return;
         const geometryHasNormals = !!mesh.geometry.attributes.normal && !mesh.isBatchedMesh;
-        if (state.geometryHasNormals === null) state.geometryHasNormals = geometryHasNormals;
-        else if (!geometryHasNormals && state.geometryHasNormals !== false) {
-          state.geometryHasNormals = false;
-          material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
-        }
+        liveNormals.set(material, (liveNormals.get(material) ?? true) && geometryHasNormals); // Mixed normal/normal-less meshes still fail closed together.
         if (roadSurface || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
         if (seen.has(material)) return;
         seen.add(material);
         if (state.supported) materialCount++;
         else if (state.compileAttempted) fallbackCount++;
       });
+    }
+    for (const [material, hasNormals] of liveNormals) {
+      const state = material.userData.hobunjiXrayElevationShader;
+      if (state.geometryHasNormals === hasNormals) continue;
+      state.geometryHasNormals = hasNormals;
+      material.needsUpdate = true; // Geometry replacement or zone changes can restore normals: recompile the safe shader variant.
     }
     lastElevationShaderMaterials = materialCount;
     lastElevationShaderFallbacks = fallbackCount;
