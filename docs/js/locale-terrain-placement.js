@@ -720,7 +720,9 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
-      shiftGeneratedSecret: (locale.placement?.preferSeclusion === true || ['ruin_entrance','great_fey_shrine'].includes(locale.category)) && locale.id !== 'locale_banubu_shrine', // Shift discoveries do not inherit old-year map markers.
+      shiftGeneratedSecret: !locale.placement?.alwaysVisibleOnMap && locale.placement?.preferSeclusion !== false
+        && (locale.placement?.preferSeclusion === true || ['ruin_entrance','great_fey_shrine'].includes(locale.category))
+        && locale.id !== 'locale_banubu_shrine', // Authored permanent/visible locations retain their discovered map markers across Shifts.
       seclusion: selected.visibility || null, // Mobile map diagnostics can inspect the selected Shift site's measured exposure.
       floorTier: selected.floorTier,
       alwaysVisible: !!locale.placement?.alwaysVisibleOnMap,
