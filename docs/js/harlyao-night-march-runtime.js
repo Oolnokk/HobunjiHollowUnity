@@ -7,7 +7,10 @@
   const SPECIES_ID = 'harlyao'; // Forced army species.
   const DORMANT_AREA_PREFIX = '__harlyao_march_dormant__:'; // Skips parked rigs in hostile AI.
   const FALLBACK_CHUNK_TILES = 16; // Music/debug chunk coordinates only.
-  const TICK_INTERVAL_S = 0.2; // Planner cadence; native AI owns per-frame movement.
+  const TICK_INTERVAL_S = 0.2; // Nearby planner cadence; native AI owns per-frame movement.
+  const MIN_BLOCKED_RETRY_S = 1; // First cooldown after a failed emergence; prevents repeated avatar construction at blocked terrain.
+  const MAX_BLOCKED_RETRY_S = 16; // Maximum retry delay while a blocked emergence neighborhood remains unchanged.
+  const BLOCKED_NEIGHBORHOOD_TILES = 8; // Matches openPlacement's search extent, so a genuinely new neighborhood can retry immediately.
   const RESOURCE_FIELDS = ['health', 'maxHealth', 'stamina', 'maxStamina', 'footing', 'maxFooting', 'lastAttackAttemptAt', 'lastAttackReceivedAt']; // Logical resources retained across portrait retirement.
   const SCHEDULER_ID = 'harlyao-night-march'; // One shared frame subscription.
   let deps = null; // BanditCombat dependency seam.
@@ -22,6 +25,8 @@
     visible: false, provoked: false, liveChunk: null, regrouping: false,
     reason: 'boot', builds: 0, wakes: 0, sleeps: 0, coarseTicks: 0,
     updateTicks: 0, lastUpdateAt: 0, tickOwner: 'uninstalled',
+    simulationSeconds: 0, lastAreaId: null, abstractPlannerSkips: 0,
+    blockedPlacements: 0, blockedBuildSkips: 0,
   }; // Single authority for identities, simulated positions, lifecycle and diagnostics.
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -29,10 +34,13 @@
   const chunkCount = tiles => Math.max(1, Math.ceil(Math.max(1, num(tiles, 1)) / chunkTiles()));
   const expectedMemberCount = () => Math.max(1, Math.floor(num(cfg?.memberCount, 20)));
   function civilDay() {
-    const rawDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Absolute day survives the civil-midnight bridge.
-    if (Number.isFinite(rawDay)) return Math.max(1, Math.floor(rawDay));
-    const fallback = Number(deps?.calendar?.day ?? window.calendar?.day ?? 1); // Startup/test fallback.
-    return Math.max(1, Math.floor(Number.isFinite(fallback) ? fallback : 1));
+    // CalendarSystem.timeDebugSnapshot() formats dates, previews and checks UI; the beacon calls this accessor every render frame.
+    // Its rawDay is the same calendar.day value, so prefer the live source without running the diagnostics pipeline.
+    const liveDay = deps?.calendar?.day ?? window.calendar?.day; // Canonical absolute represented day, including the civil-midnight bridge.
+    const numericDay = Number(liveDay); // Avoid treating a missing/null calendar as raw day zero.
+    if (liveDay != null && Number.isFinite(numericDay)) return Math.max(1, Math.floor(numericDay));
+    const snapshotDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Parser-time/test fallback before combat dependencies exist.
+    return Math.max(1, Math.floor(Number.isFinite(snapshotDay) ? snapshotDay : 1));
   }
 
   function gameHour() {
@@ -234,6 +242,7 @@
     state.commanderIndex = 0;
     state.regrouping = false;
     coarseAccum = 0;
+    state.simulationSeconds = 0; // Per-route monotonic game-running seconds used for blocked-spawn retry delays.
     const dims = zoneDims(s.zoneId); // Actual generated dimensions.
     const { start } = routeEndpoints(s, dims); // New nights start at the entry, never at a clock-derived chunk.
     for (let index = 0; index < expectedMemberCount(); index++) {
@@ -241,7 +250,8 @@
       offset.longitudinal = index === 0 ? 0 : -Math.ceil(index / Math.max(1, num(cfg?.formation?.columns, 4))) * num(cfg?.formation?.longitudinalSpacingTiles, 1.2);
       if (index === 0) offset.lateral = 0;
       const tile = memberTile(start, offset, s, dims); // Clamped data-only spawn.
-      state.agents.push({ id: `harlyao:${s.day}:${index}`, index, x: tile.col, y: tile.row, offset, entity: null, dead: false, target: tile, dormantSeconds: 0 });
+      state.agents.push({ id: `harlyao:${s.day}:${index}`, index, x: tile.col, y: tile.row, offset, entity: null, dead: false, target: tile, dormantSeconds: 0,
+        placementRetryAt: 0, placementRetrySeconds: 0, failedPlacementTile: null }); // Retry fields belong to the logical member, not its short-lived visual rig.
     }
     state.reason = 'simulating';
   }
@@ -377,6 +387,12 @@
 
   async function materialize(agent, s) {
     if (buildPromise || !shouldRender(agent)) return;
+    const failed = agent.failedPlacementTile; // Last emergence neighborhood that had no walkable tile.
+    if (failed && state.simulationSeconds < agent.placementRetryAt
+      && Math.max(Math.abs(agent.x - failed.col), Math.abs(agent.y - failed.row)) < BLOCKED_NEIGHBORHOOD_TILES) {
+      state.blockedBuildSkips++;
+      return; // Do not build/ghostify/dispose a full humanoid rig again just to rediscover the same blocked terrain.
+    }
     const generation = buildGeneration; // Captured across asynchronous avatar construction.
     state.builds++;
     buildPromise = (async () => {
@@ -400,7 +416,17 @@
       agent.entity = c;
       state.members.push(c);
       ghostify(c);
-      if (!place(c, { col: agent.x, row: agent.y }, s.zoneId)) { releaseEntity(agent); return; }
+      if (!place(c, { col: agent.x, row: agent.y }, s.zoneId)) {
+        agent.failedPlacementTile = { col: agent.x, row: agent.y }; // Retry early only once this member reaches a genuinely different search neighborhood.
+        agent.placementRetrySeconds = Math.min(MAX_BLOCKED_RETRY_S, Math.max(MIN_BLOCKED_RETRY_S, agent.placementRetrySeconds * 2));
+        agent.placementRetryAt = state.simulationSeconds + agent.placementRetrySeconds;
+        state.blockedPlacements++;
+        releaseEntity(agent);
+        return;
+      }
+      agent.failedPlacementTile = null; // A valid wake resets the exponential retry penalty.
+      agent.placementRetrySeconds = 0;
+      agent.placementRetryAt = 0;
       agent.x = c.x / deps.TILE;
       agent.y = c.y / deps.TILE;
       neutral(c, agent);
@@ -424,18 +450,33 @@
     state.updateTicks++;
     state.lastUpdateAt = num(globalThis.performance?.now?.(), Date.now());
     if (!deps || !cfg) return;
+    state.simulationSeconds += step;
     const s = routeState(); // Clock only decides presence and daily zone.
     if (!s.active) {
       if (state.agents.length) teardown('daylight');
       return;
     }
     resetForRoute(s);
+    const currentAreaId = deps.getCurrentArea?.(); // One area lookup per planner pass, shared by retention and remote simulation.
+    if (state.lastAreaId !== currentAreaId) {
+      if (currentAreaId === s.zoneId) {
+        for (const agent of state.agents) agent.placementRetryAt = 0; // Re-entering the marching zone allows an immediate collision recheck.
+      }
+      state.lastAreaId = currentAreaId;
+    }
+    coarseAccum += step;
+    const interval = Math.max(0.2, num(cfg?.behavior?.offChunkTickSeconds, 1)); // Authored batch cadence for data-only marchers.
+    const coarseStep = coarseAccum >= interval ? coarseAccum : 0; // Retain exact elapsed travel time across skipped planner passes.
+    if (coarseStep) { coarseAccum = 0; state.coarseTicks++; }
+    if (currentAreaId !== s.zoneId && state.members.length === 0 && !coarseStep) {
+      state.abstractPlannerSkips++;
+      return; // No live enemies/rigs to maintain: one remote pass per abstract travel step is sufficient.
+    }
     syncAgents();
     planFormation(s);
-    coarseAccum += step;
-    const interval = Math.max(0.2, num(cfg?.behavior?.offChunkTickSeconds, 1)); // Cheap abstract steering cadence.
-    const coarseStep = coarseAccum >= interval ? coarseAccum : 0; // One shared batch for offscreen agents.
-    if (coarseStep) { coarseAccum = 0; state.coarseTicks++; }
+    const dormantRelease = Math.max(1, num(cfg?.behavior?.dormantEntityReleaseSeconds, 3)); // Short retirement when the zone itself is left.
+    const sameZoneRelease = Math.max(dormantRelease, num(cfg?.behavior?.sameZoneDormantEntityReleaseSeconds, 12)); // Keep detached rigs warm during brief radius crossings.
+    const releaseDelay = currentAreaId === s.zoneId ? sameZoneRelease : dormantRelease;
     state.visible = false;
     for (const agent of state.agents) {
       if (agent.dead) continue;
@@ -462,7 +503,7 @@
       } else {
         if (c?.areaId === s.zoneId) { hide(c); state.sleeps++; }
         agent.dormantSeconds += step;
-        if (c && agent.dormantSeconds >= Math.max(1, num(cfg?.behavior?.dormantEntityReleaseSeconds, 3))) releaseEntity(agent);
+        if (c && agent.dormantSeconds >= releaseDelay) releaseEntity(agent);
         if (coarseStep) advanceAbstract(agent, coarseStep);
       }
     }
@@ -472,7 +513,9 @@
 
   function commanderTarget() {
     const leader = commander(); // Cheap target accessor used by the beacon, without allocating a whole debug snapshot.
-    if (!leader || !routeState().active) return null;
+    if (!leader) return null;
+    const hour = gameHour(); // The installed route already owns the day; the per-frame beacon needs only the active-hour gate.
+    if (hour < num(cfg?.activeHours?.start, 0) || hour >= num(cfg?.activeHours?.end, 6)) return null;
     const c = leader.entity; // Native movement may have advanced since the last planner tick.
     const live = c?.health > 0 && c.areaId === state.zoneId;
     const x = live ? c.x / deps.TILE : leader.x, z = live ? c.y / deps.TILE : leader.y; // Target always points at this actor.
@@ -654,8 +697,10 @@
       visible: state.visible, provoked: state.provoked, regrouping: state.regrouping,
       builds: state.builds, wakes: state.wakes, sleeps: state.sleeps,
       coarseTicks: state.coarseTicks, updateTicks: state.updateTicks,
+      abstractPlannerSkips: state.abstractPlannerSkips, blockedPlacements: state.blockedPlacements,
+      blockedBuildSkips: state.blockedBuildSkips,
       lastUpdateAt: state.lastUpdateAt, tickOwner: state.tickOwner, reason: state.reason,
-      latestChange: 'Review: preserve wounded resources/appearance, respect external rig disposal and corpse ownership, clear stale wake paths, and separate entry ranks.',
+      latestChange: 'Off-zone planner sleeps between coarse steps; blocked spawns back off; detached same-zone rigs stay warm briefly.',
       agents: state.agents.map(agent => ({ id: agent.id, index: agent.index, x: agent.x, y: agent.y, dead: agent.dead, target: agent.target })),
     };
   }
@@ -665,7 +710,7 @@
     provoke: () => provoke('debug'), debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot(); // Copyable mobile report uses the existing Pixel Probe surface.
-      return `Harlyao march: ${d.latestChange} commander=${d.commander?.id || '-'} position=${d.commander ? `${d.commander.x.toFixed(2)},${d.commander.z.toFixed(2)}` : '-'} alive=${d.membersAlive} detailed=${d.detailedMembers} regrouping=${d.regrouping} ticks=${d.updateTicks}/${d.coarseTicks} owner=${d.tickOwner} reason=${d.reason}`;
+      return `Harlyao march: ${d.latestChange} commander=${d.commander?.id || '-'} position=${d.commander ? `${d.commander.x.toFixed(2)},${d.commander.z.toFixed(2)}` : '-'} alive=${d.membersAlive} detailed=${d.detailedMembers} regrouping=${d.regrouping} ticks=${d.updateTicks}/${d.coarseTicks} skipped=${d.abstractPlannerSkips} blocked=${d.blockedPlacements}/${d.blockedBuildSkips} owner=${d.tickOwner} reason=${d.reason}`;
     },
     __test: Object.freeze({ routeForDay, routeState, chunkCount, formationOffset }),
   });

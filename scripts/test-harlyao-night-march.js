@@ -108,6 +108,17 @@ assert.match(probeSource, /debugProbeResult/, 'march diagnostics append to the e
 assert.match(probeSource, /window\.HarlyaoNightMarch/, 'Pixel Probe adapter reads the controller instead of reimplementing march state');
 assert.match(probeSource, /window\.HarlyaoNightMarchMusic/, 'Pixel Probe also reports proximity music stage and live lerp volume');
 assert.match(probeSource, /MutationObserver/, 'Pixel Probe adapter follows asynchronous report publication on mobile');
+const probeWindow = { // Isolated mobile Pixel Probe host verifies that new runtime counters actually reach copyable text.
+  PixelProbe: { init() {} },
+  HarlyaoNightMarch: { debugSnapshot: () => ({
+    membersAlive: 20, membersCached: 0, expectedMembers: 20,
+    updateTicks: 54, coarseTicks: 11, abstractPlannerSkips: 43,
+    blockedPlacements: 2, blockedBuildSkips: 17, reason: 'simulating',
+  }) },
+};
+vm.runInNewContext(probeSource, { window: probeWindow, document: { getElementById: () => null } }, { filename: 'harlyao-night-march-pixel-probe.js' });
+const mobileReport = probeWindow.HarlyaoNightMarchPixelProbe.formatMarchLine(); // Real adapter output rather than source-token matching.
+assert.match(mobileReport, /ticks=54 coarseTicks=11 plannerSkips=43 blockedPlacements=2 blockedBuildSkips=17/, 'mobile report must include the actual optimization counters');
 assert.match(probeSource, /scheduled=.*playerChunk=.*liveChunk=.*members=.*visible=.*provoked=.*reason=/, 'copied line carries route, chunk, LOD, population, hostility, and lifecycle reason');
 
 const context = {
