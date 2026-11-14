@@ -560,6 +560,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         ropeCeilingBeams,
         transitDoorCount:window.DevRandomRuin.getState()?.transitDoors?.length || 0,
         shaftLayerPlan:window.DevRandomRuin.getState()?.shaftLayerPlan || null,
+        entranceRoomCount:window.DevRandomRuin.getState()?.rooms ?? null, // Distinguishes an intentional V50 vestibule from a missing mandatory hallway.
         nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
         runtimeWallPlanes:window.DevRandomRuin.getState()?.runtimeWallPlanes || null,
@@ -594,18 +595,26 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
     const hasSafeGrid = active.simple.safeGrids.length === 1; // Selects the matching generated traversal assertions below.
     const ropeChains = active.simple.ropeChains || []; // Whole-layer rope chains supersede the old safe-path pressure grid for some seeds.
+    const compactVestibule = active.entranceRoomCount === 1 &&
+      active.shaftLayerPlan?.floorCount >= 2 &&
+      active.shaftLayerPlan?.wings?.some(floor => floor.sides?.length > 0); // The V50 entry room has no hallway; its connected shaft wings provide mandatory traversal.
     if (hasSafeGrid) {
       assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
     } else {
       assert.equal(active.simple.safeGrids.length, 0, 'a pressure grid cannot be duplicated or partially placed: '+JSON.stringify(active.simple));
-      assert.ok(ropeChains.length > 0, 'a grid-free ruin needs a real rope-chain traversal: '+JSON.stringify(active.simple));
+      assert.ok(ropeChains.length > 0 || compactVestibule,
+        'a grid-free multiroom entrance needs a rope chain; a V50 vestibule must connect to actual shaft wings: '+JSON.stringify({entranceRoomCount:active.entranceRoomCount,shaftLayerPlan:active.shaftLayerPlan,simple:active.simple}));
       assert.ok(ropeChains.every(chain => chain.ropeCount >= 2 && chain.checkpoints?.start && chain.checkpoints?.end &&
-        active.simple.ropes.filter(rope => rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
-        'each rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
-      assert.ok(active.simple.modules.some(module => module.type === 'layerRopeChainAbyss'),
-        'rope-chain traversal must be registered as an authored layer module: '+JSON.stringify(active.simple.modules));
+        active.simple.ropes.filter(rope => rope.roomId === String(chain.hallId) ||
+          rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
+        'each hallway or layer rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
+      assert.ok(ropeChains.every(chain => active.simple.modules.some(module =>
+        String(module.slotId) === String(chain.hallId) &&
+        ((module.slotKind === 'hallway' && module.type === 'ropeChainAbyss') ||
+         (module.slotKind === 'layer' && module.type === 'layerRopeChainAbyss')))),
+        'every generated rope chain must be registered under its actual hallway or layer slot: '+JSON.stringify(active.simple.modules)); // Empty chain lists are valid only for the separately verified single-room V50 vestibule.
     }
-    if(!active.simple.ropes.length){
+    if(!active.simple.ropes.length && !compactVestibule){
       assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
         active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
         'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
@@ -613,8 +622,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const swappableHallwayModules=active.simple.modules.filter(module=>
       (module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','timedMelodyTrigger','hallwayGlyphGate'].includes(module.type)) ||
       (module.slotKind==='layer'&&module.type==='layerRopeChainAbyss')); // Layer puzzle modules serve the same mandatory traversal purpose.
-    assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill a hallway or reserved-layer traversal slot: '+JSON.stringify(active.simple));
-    assert.ok(active.simple.checkpoints.doorwayCount > 0 || ropeChains.length > 0,
+    assert.ok(swappableHallwayModules.length >= 1 || compactVestibule,
+      'multiroom simple mode must fill a hallway; a compact V50 vestibule must have authored shaft wings: '+JSON.stringify({modules:active.simple.modules,shaftLayerPlan:active.shaftLayerPlan}));
+    assert.ok(active.simple.checkpoints.doorwayCount > 0 || ropeChains.length > 0 || compactVestibule,
       'generated ruin must expose a doorway or rope-chain checkpoint route: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
@@ -907,6 +917,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
       } else {
+        assert.ok(simpleRuntime.initial.ropeChains?.length || compactVestibule,
+          'a grid-free multiroom entrance needs a traversable rope chain unless it is an authored single-room V50 vestibule');
         assert.equal(simpleRuntime.checkpointBefore?.activeId,'ruin-entry','the entry brazier remains the safe checkpoint before crossing a rope abyss');
         assert.equal(simpleRuntime.checkpointBefore?.whiteFireAuthority,true,'rope-chain layouts retain the white checkpoint authority');
         assert.ok(simpleRuntime.initial.ropeChains?.every(chain => chain.checkpoints?.start && chain.checkpoints?.end),

@@ -279,13 +279,18 @@
       const closed=Number(panel.position.y)||0;
       const crossingAxis=box?(box.max.x-box.min.x<=box.max.z-box.min.z?'x':'z')
         :(Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'); // The live slab's WORLD-space thin axis determines crossing, including nested and pre-rotated native V50 doors.
-      const state={door,panel,open:0,target:0,closed,height,openingSide:0,crossingAxis}; // The door may auto-close after a genuine crossing but must reopen from either side.
+      const threshold=center(panel); // Cached world X/Z avoids a per-frame Box3 allocation for every automatic doorway.
+      const state={door,panel,open:0,target:0,closed,height,openingSide:0,crossingAxis,
+        center:{x:threshold.x,z:threshold.z},floorY:levelAt(door)}; // One floor-height-aware source for visual motion and exact collision.
+      state.proximityDoor={x:state.center.x,z:state.center.z,y:state.floorY}; // The authored slab's cached threshold drives proximity without Box3 allocations.
       trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
       solids?.scan(panel,'door',{force:true,enabled:()=>state.open<.88});
       control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
-        priority:24,claimAction1:true,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
+        priority:24,claimAction1:true,touchIcon:'✋',
+        available:()=>!host.RuinRoomSystem?.mounted?.(), // Automatic doors need no action prompt, but standalone V50 retains its legacy manual control.
+        label:()=>state.target?'Close Stone Door':'Open Stone Door',
         onPress:()=>{
-          if(!nearFloor(door))return;
+          if(host.RuinRoomSystem?.mounted?.()||!nearFloor(door))return;
           state.target=state.target?0:1;
           const player=getPlayerPosition?.(),position=center(panel); // Use the moving slab's true threshold, not the full frame's decorative bounds.
           const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
@@ -299,6 +304,63 @@
     if(typeof api.registerDetachedCubeRoots!=='function'){unreg();throw new Error('Original V50 linked-cube solver is unavailable for this story');}
     const releaseCubes=api.registerDetachedCubeRoots(nativeRoot); // Restore source-owned solver actors lost during subsequent floor generations.
     let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
+    const acceptedInMotion=new Set(); // Only completed room objectives may keep moving while that chamber sleeps.
+    function advanceMechanism(state,step,desired){
+      state.solved=desired>.95;
+      state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
+      if(Math.abs(state.progress-desired)<.001)state.progress=desired;
+      const soundSource=state.motion==='stoneDoor'
+        ?(state.object.children||[]).find(child=>child.isMesh&&child.geometry)||state.object
+        :state.object;
+      host.RuinInteractionAudio?.watchMovement?.(soundSource,state.progress);
+      state.reapplyAfter-=step;
+      if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
+        api.applyProgress(state.object,state.progress);
+        state.lastApplied=state.progress;state.reapplyAfter=1;
+      }
+      if(state.accepted&&state.progress>=1)acceptedInMotion.delete(state);
+    }
+    function acceptSolution(id,restore=false){
+      if(disposed)return false;
+      const state=states.get(String(id));
+      if(!state)return false;
+      state.accepted=true;state.target=1;state.solved=true;
+      if(restore){
+        state.progress=1;state.reapplyAfter=1;state.lastApplied=1;
+        acceptedInMotion.delete(state);
+        api.applyProgress(state.object,1); // Persisted completed gates are already physically open when the world loads.
+      }else if(state.progress<1)acceptedInMotion.add(state);
+      return true;
+    }
+    function updateDormant(dt){
+      if(disposed)return;
+      const step=Math.max(0,Math.min(.05,Number(dt)||0));
+      for(const state of acceptedInMotion)advanceMechanism(state,step,1); // No off-room puzzle inputs, moving daises or AI are simulated.
+      updateTransitDoors(step); // Passage doors still react to approach outside the active puzzle chamber.
+    }
+    function updateTransitDoors(dt){
+      if(disposed)return;
+      const step=Math.max(0,Math.min(.05,Number(dt)||0));
+      const automatic=host.RuinRoomSystem?.mounted?.()===true;
+      const player=automatic?getPlayerPosition?.():null;
+      const playerY=Number(getPlayerY?.());
+      for(const state of inventory.transitDoors){
+        if(automatic){
+          state.target=host.RuinRoomSystem.doorNear(player,state.proximityDoor,state.target>.5,playerY)?1:0;
+          state.openingSide=0;
+        }
+        state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
+        host.RuinInteractionAudio?.watchMovement?.(state.panel,state.open);
+        state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
+        if(!automatic&&state.target>.5&&state.open>.9&&state.openingSide){
+          const position=center(state.panel),crossing=getPlayerPosition?.();
+          const signed=crossing?(state.crossingAxis==='x'?crossing.x-position.x:crossing.z-position.z):0;
+          if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
+            state.target=0;state.openingSide=0; // Legacy manual previews still close after traversing the doorway.
+          }
+        }
+      }
+    }
     function tick(dt){
       if(disposed)return;
       const step=Math.max(0,Math.min(.05,Number(dt)||0));
@@ -307,21 +369,11 @@
         const plateValue=Number(plate?.userData?.weightProgress),cubeValue=Number(cubes?.userData?.solveProgress);
         if(plate)host.RuinInteractionAudio?.watchPlate?.(plate,plateValue>.5); // Shared edge tracker avoids duplicate activation sounds from stacked-floor readers.
         let desired=state.target;
-        if(plate&&Number.isFinite(plateValue))desired=plateValue;
-        else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
-        state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
-        state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
-        if(Math.abs(state.progress-desired)<.001)state.progress=desired;
-        const soundSource=state.motion==='stoneDoor'
-          ?(state.object.children||[]).find(child=>child.isMesh&&child.geometry)||state.object
-          :state.object; // Size follows the physical moving door panel, not its decorative frame.
-        host.RuinInteractionAudio?.watchMovement?.(soundSource,state.progress);
-        state.reapplyAfter-=step;
-        if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
-          api.applyProgress(state.object,state.progress);
-          state.lastApplied=state.progress;
-          state.reapplyAfter=1; // Unchanged authored stone still gets a periodic restoration pass.
-        }
+        if(!state.accepted){
+          if(plate&&Number.isFinite(plateValue))desired=plateValue;
+          else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
+        }else desired=1; // An accepted room exit must not relock if the player leaves its pressure plate.
+        advanceMechanism(state,step,desired);
       }
       for(const lift of elevatorBlocks){
         if(lift.pushes()>0)continue; // After the first push the block owns its own V50 route position, not the elevator's current animation.
@@ -349,18 +401,7 @@
         drop.control.floorY=worldBox(drop.block)?.min.y??drop.control.floorY;
         if(progress>=1){drop.complete=true;drop.finish();showToast?.('The stone block settles onto the pressure plate.',true);}
       }
-      for(const state of inventory.transitDoors){
-        state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
-        host.RuinInteractionAudio?.watchMovement?.(state.panel,state.open); // Sound door travel rather than reapplying an unchanged pose.
-        state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
-        if(state.target>.5&&state.open>.9&&state.openingSide){
-          const player=getPlayerPosition?.(),position=center(state.panel); // Both sides of the same panel share one crossing plane.
-          const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
-          if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
-            state.target=0;state.openingSide=0; // Mirrors V50's authored hallway exit behavior; a closed transit door still has its own repeatable interact control.
-          }
-        }
-      }
+      updateTransitDoors(step);
     }
     function stageCandidate(room,preferredMechanismId=null){
       if(!room)return null;
@@ -389,7 +430,8 @@
       for(const record of controls)removeControl?.(record);
       for(const id of [...surfaceIds,...blockerIds])DS.remove?.(id);
     }
-    return {tick,dispose,inventory,states,stageCandidate,
+    return {tick,tickDoors:updateTransitDoors,tickDormant:updateDormant,
+      acceptSolution,dispose,inventory,states,stageCandidate,
       isSolved:id=>states.get(String(id))?.solved===true,
       getState:()=>({
         mechanisms:states.size,activators:inventory.activators.length,
@@ -401,6 +443,8 @@
           id:state.door.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,
         })),
         solved:[...states.values()].filter(state=>state.solved).length,
+        acceptedExits:[...states.values()].filter(state=>state.accepted).length,
+        settlingExits:acceptedInMotion.size, // Mobile/CI diagnostics reveal whether a completed room door is still moving.
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
       })};
