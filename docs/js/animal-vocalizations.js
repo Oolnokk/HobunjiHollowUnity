@@ -91,7 +91,7 @@
     ? new URL('environmental-reverb.js?v=20261002hadfec51', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-independent-playback.js?v=20261113yawnPitchFallback1', MODULE_BASE_SRC).href
+    ? new URL('animal-voice-independent-playback.js?v=20261114naturalBreath1', MODULE_BASE_SRC).href
     : null;
 
   function requestEnvironmentalReverbModule() {
