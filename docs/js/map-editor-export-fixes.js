@@ -291,7 +291,7 @@
       // A saved workspace can already contain the user's edits on reload. Never give an apparently empty export.
       diff.mode = 'unchanged-full-map';
       diff.fullMap = buildStandaloneMapExport(map);
-      diff._note = 'No changes relative to the session baseline; complete current map included instead.';
+      diff._note = 'No edits since this Map Editor session baseline. This does NOT compare against the bundled game Town or the running game; the current editor map is included instead.';
     }
     return diff;
   }
@@ -381,13 +381,13 @@
       if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
       if ($('diffSubtitle')) {
         if (diff.mode === 'full-map-fallback' || diff.mode === 'unchanged-full-map') {
-          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No changes vs session baseline' : 'No baseline available'}; complete map included · ${json.length.toLocaleString()} chars`;
+          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No edits since this editor tab opened' : 'No baseline available'}; local editor map included (not compared to game) · ${json.length.toLocaleString()} chars`;
         } else {
           $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
-      if (diff.mode === 'unchanged-full-map') setStatus('No differences since this session baseline; full map included.');
+      if (diff.mode === 'unchanged-full-map') setStatus('No edits since this editor tab opened; export contains the local editor map, not necessarily the game map.');
       if ($('diffModal')) $('diffModal').style.display = 'block';
     } catch (error) {
       console.error('Map diff export failed:', error);
