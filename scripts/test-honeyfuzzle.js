@@ -333,6 +333,16 @@ function fakeThree() {
   const storedEgg = C.takeEggAppearance('genetic');
   assert.equal(storedEgg.color, '#ffeedd'); assert.equal(storedEgg.genotype.tailfeathers.color, '#008899', 'inherited markings survive the save-backed egg queue');
   assert.equal(C.takeEggAppearance('genetic'), null, 'one appearance consumed per placed egg');
+  // A legacy egg and a newly captured queen can be in the same bag without swapping coats.
+  C.queueEggAppearances('mixed', [{ color: '#112233', genotype: { base: { color: '#112233' } } }]);
+  C.queueQueenAppearances('mixed', [{ color: '#aabbcc', genotype: { tailfeathers: { color: '#99bb33', enabled: true, copies: 1 } } }]);
+  assert.equal(C.takeQueenAppearance('mixed').color, '#aabbcc', 'queen consumes its own lineage, not the older egg queue');
+  assert.equal(C.takeEggAppearance('mixed').color, '#112233', 'the legacy egg retains its original saved lineage');
+  assert.equal(C.takeQueenAppearance('mixed'), null, 'one queen consumes exactly one queen appearance');
+  assert.equal(C.takeEggAppearance('mixed'), null, 'legacy egg queue is separately exhausted');
+  C.queueQueenAppearances('other-world', [{ color: '#997755' }]);
+  assert.equal(C.takeQueenAppearance('mixed'), null, 'queen lineage does not bleed across worlds');
+  assert.equal(C.takeQueenAppearance('other-world').color, '#997755');
 }
 
 // ---- hive stumps ----------------------------------------------------------------------------
@@ -522,6 +532,7 @@ function hiveWorld({ night = false } = {}) {
   load(context, 'docs/config/farm-specializations.js');
   load(context, 'docs/js/item-processing.js');
   load(context, 'docs/js/farm-production.js');
+  load(context, 'docs/js/honeyfuzzle-colors.js'); // Both old egg and new queen queues are available in the same save.
   load(context, 'docs/js/honeyfuzzle-house.js');
   const def = context.FARM_SPECIALIZATIONS_CONFIG.buildings.honeyfuzzleHouse;
   assert.equal(def.w, 1); assert.equal(def.h, 1, 'a 1x1 building');
@@ -563,6 +574,28 @@ function hiveWorld({ night = false } = {}) {
   inventory.fertileHoneyfuzzleEgg = 1;
   assert.equal(house.placeQueen(legacyBagHouse).ok, true, 'old bag eggs still found colonies');
   assert.equal(inventory.fertileHoneyfuzzleEgg, 0, 'the legacy item is consumed, not duplicated');
+  const colors = context.HoneyfuzzleColors;
+  colors.queueEggAppearances('local', [{ color: '#112233', genotype: { base: { color: '#112233' } } }]);
+  colors.queueQueenAppearances('local', [{ color: '#ccddee', genotype: { tailfeathers: { color: '#aa9922' } } }]);
+  inventory.honeyfuzzleQueen = 1; inventory.fertileHoneyfuzzleEgg = 1; // Both types in one bag.
+  const mixedQueenHouse = { id: 'queen-mixed', key: 'honeyfuzzleHouse' };
+  const mixedEggHouse = { id: 'egg-mixed', key: 'honeyfuzzleHouse' };
+  assert.equal(house.placeQueen(mixedQueenHouse).ok, true);
+  assert.equal(mixedQueenHouse.house.queen.color, '#ccddee', 'new queen receives the queen-only genetics');
+  assert.equal(mixedQueenHouse.house.queen.genotype.tailfeathers.color, '#aa9922');
+  assert.equal(house.placeQueen(mixedEggHouse).ok, true);
+  assert.equal(mixedEggHouse.house.queen.color, '#112233', 'old egg keeps its legacy genetics');
+  assert.equal(mixedEggHouse.house.queen.genotype.base.color, '#112233');
+  colors.queueEggAppearances('local', [{ color: '#334455' }]);
+  colors.queueQueenAppearances('local', [{ color: '#eecc99' }]);
+  inventory.honeyfuzzleQueen = 0; inventory.fertileHoneyfuzzleEgg = 1;
+  const eggFirst = { id: 'egg-first', key: 'honeyfuzzleHouse' };
+  const queenSecond = { id: 'queen-second', key: 'honeyfuzzleHouse' };
+  assert.equal(house.placeQueen(eggFirst).ok, true);
+  assert.equal(eggFirst.house.queen.color, '#334455', 'legacy item consumes only legacy lineage even when placed first');
+  inventory.honeyfuzzleQueen = 1;
+  assert.equal(house.placeQueen(queenSecond).ok, true);
+  assert.equal(queenSecond.house.queen.color, '#eecc99', 'queen lineage survives earlier legacy placement');
 }
 {
   const inventory = { honeyfuzzleQueen: 2, growthTonic: 1 };
