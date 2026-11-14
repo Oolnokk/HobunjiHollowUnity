@@ -2,7 +2,7 @@
   'use strict';
   // combat-enemies: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
-    "js/combat/ranged-weapons.js?v=20261114h7d2fc63",
+    "js/combat/ranged-weapons.js?v=20261114torch1747a",
     "js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/melee-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/enemy-loadout-rules.js?v=20261101playerhead3",
