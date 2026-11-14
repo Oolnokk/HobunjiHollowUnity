@@ -508,7 +508,8 @@
           const object=authoredGate?authoredGate.object:primitive(group,'v50-native-gate-'+item.floor+'-'+i,
             new THREE.BoxGeometry(door.axis==='x'?.8:span,gateHeight,door.axis==='x'?span:.8),
             gateMaterial,x,surfaceY+gateHeight/2,z);
-          challenge.gate={tiles,object,grid,surfaceY,height:gateHeight};
+          challenge.gate={tiles,object,grid,surfaceY,height:gateHeight,
+            proximityDoor:{x,y:surfaceY,z}}; // Reused by the shared room-door policy; never recomputed from a retracting slab every frame.
           setGate(challenge,true);
           record.challenges.push(challenge);
         }
@@ -575,8 +576,8 @@
         for(const challenge of record.challenges){
           const gate=challenge.gate;
           if(!gate?.unlocked||!player)continue;
-          const cx=gate.object.position.x,cz=gate.object.position.z;
-          const near=Math.abs(y-gate.surfaceY)<1.5&&Math.hypot(player.x-cx,player.z-cz)<2.7;
+          const near=root.RuinRoomSystem?.doorNear?.(player,gate.proximityDoor,gate.openPhysical,y)
+            ??(Math.abs(y-gate.surfaceY)<1.5&&Math.hypot(player.x-gate.proximityDoor.x,player.z-gate.proximityDoor.z)<2.7);
           if(near)gate.seenApproach=true;
           const open=near||!gate.seenApproach; // Newly solved gate stays open for its first crossing and reveal pan.
           if(open!==gate.openPhysical){
