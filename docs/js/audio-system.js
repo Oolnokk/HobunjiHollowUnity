@@ -1377,15 +1377,15 @@
     }
     const fallback = () => {
       if (gameAudioConfig().enabled === false || objectSfxConfig().enabled === false) return;
-      playObjectSfx(cfgEntry,volumeScale,pitchRate,3); // Native fallback preserves pitch, even if it cannot schedule overlapping tails.
+      playObjectSfx(cfgEntry,volumeScale,pitchRate,semitones===0?3:null); // The pitched percussion gets an independent native voice instead of cutting off the numbered metronome.
     };
     const remainingMs = targetMs - performance.now();
     if (remainingMs > 4) {
       const timer = setTimeout(() => {stoneBeatFallbackTimers.delete(timer);fallback();},remainingMs);
       stoneBeatFallbackTimers.add(timer);
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'queued'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:semitones===0,maxDurationSec:semitones===0?3:null,backend:'native-fallback',playbackState:'queued'};
     } else {
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'requested'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:semitones===0,maxDurationSec:semitones===0?3:null,backend:'native-fallback',playbackState:'requested'};
       fallback();
     }
     return true;
