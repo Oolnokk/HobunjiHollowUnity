@@ -68,6 +68,48 @@ assert(gameSource.includes('zGrid[r][c].boulderId = boulderId || null'), 'runtim
 assert(previewSource.includes("boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder'"), 'merged generated maps must preserve boulder IDs');
 
 
+assert(gameSource.includes('rockMesh.userData.retainNaturalSurfaceShellOutline = true'), 'mineable rock mounds must retain shell outlines');
+assert(gameSource.includes('mesh.userData.retainNaturalSurfaceShellOutline = true'), 'structural rock buckets must retain shell outlines');
+assert(gameSource.includes('markOutline: _markOutline,\n        markTerrainEdgeId: _markTerrainEdgeId'), 'streamed boulder meshes must receive the shared outline registrar');
+
+// Check the real mesh builder with Three.js when available (as in CI).
+const threePath = process.env.THREE_MIN_JS || 'three/build/three.min.js'; // Matches the runtime dependency used by the terrain batching tests.
+let THREE;
+try { THREE = require(threePath); } catch (error) {
+  if (error.code !== 'MODULE_NOT_FOUND' || process.env.THREE_MIN_JS) throw error;
+}
+if (THREE) {
+  const outlineSource = fs.readFileSync(path.join(repoRoot, 'docs/js/faceted-natural-surface-shell-reduction.js'), 'utf8'); // Live suppression hooks that run during chunk texturing.
+  const renderWindow = {
+    NaturalSurfaceMaterials: { naturalizeMesh(mesh, surface) { mesh.userData.naturalSurface = surface; return mesh; } },
+    HobunjiSurfaceStretchUV: { remapNaturalTerrainMesh() {} },
+  }; // Exercise policy and remapping without DOM-dependent PNG loading.
+  const renderContext = vm.createContext({ window: renderWindow, THREE, console }); // Shared runtime for the feature builder and natural surface hooks.
+  const markStart = gameSource.indexOf('      function _markOutline('); // Reuse the game's outline layer registration.
+  const markEnd = gameSource.indexOf('\n      }', markStart); // End of the game function.
+  vm.runInContext(gameSource.slice(markStart, markEnd + '\n      }'.length), renderContext);
+  vm.runInContext(outlineSource, renderContext);
+  vm.runInContext(featureSource, renderContext);
+  renderWindow.ZoneTerrainFeatures.init({
+    TileType: { ROCK: 'rock' }, NORMAL_TOP: 0, PLATEAU_UNIT: 0.5,
+    displaceZoneGeometry() {}, resolveTileMat: () => new THREE.MeshLambertMaterial(),
+    markOutline: renderContext._markOutline,
+    markTerrainEdgeId(mesh) { mesh.layers.enable(3); }, terrainCategoryFor: type => type,
+  });
+  const chunk = new THREE.Group(); // Streamed wilderness terrain host.
+  const [roundedRock] = renderWindow.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(chunk, grid, 6, 5, 'map:test'); // Real rounded geometry from the streamed builder.
+  const cliff = new THREE.Mesh(new THREE.BoxGeometry()); // A hard-edged face can share the same rock texture category.
+  renderContext._markOutline(cliff);
+  for (const mesh of [roundedRock, cliff]) {
+    renderWindow.NaturalSurfaceMaterials.naturalizeMesh(mesh, 'rocks');
+    renderWindow.HobunjiSurfaceStretchUV.remapNaturalTerrainMesh(mesh);
+  }
+  assert.equal(roundedRock.layers.mask, 0b1011, 'rounded boulder keeps its base, shell, and terrain-ID passes');
+  assert.equal(roundedRock.userData.noOutline, undefined, 'rock remapping must allow rounded outlines');
+  assert.equal(cliff.layers.mask, 0b0001, 'the faceted cliff skips the shell draw despite sharing the rock texture');
+  assert.equal(cliff.userData.noOutline, true, 'the cliff still uses the faceted outline policy');
+}
+
 const TerrainPreview = require('../docs/js/terrain-preview.js'); // Actual generator-to-game tile fold, exercised without a WebGL renderer.
 const rootId = 'map_test_wide_boulder'; // Shared parent identity for rock spanning root plateau rings and child interior tiles.
 const plateauId = 'test_raised_plateau'; // Generated plateau whose outer ring previously swallowed boulder rock tiles.

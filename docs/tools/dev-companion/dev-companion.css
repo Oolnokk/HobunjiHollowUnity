@@ -132,3 +132,11 @@ table.grid td:not(:first-child){white-space:nowrap}
 .tag.edited{border-color:rgba(106,167,255,.6);color:var(--acc)}
 .tag.removed{border-color:rgba(251,113,133,.6);color:var(--bad)}
 #furnitureSearch{flex:1;min-width:120px}
+
+/* Companion-local chime timer stays visible above every tab, including when the game is disconnected. */
+.cycle-timer{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin:8px 0 2px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel2)}
+.cycle-timer input[type=number]{width:66px;min-width:0}
+.cycle-timer select{max-width:92px}
+.cycle-timer .mini-check:first-child{font-weight:700;color:var(--text);margin-right:4px}
+.cycle-timer #cycleTimerStatus{flex:1 1 135px;text-align:right}
+@media(max-width:420px){.cycle-timer #cycleTimerStatus{text-align:left;flex-basis:100%}}

@@ -11380,7 +11380,10 @@
                 geometry.computeVertexNormals();
                 const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Metal-colored rock with optional verdigris markings, shared with caves and the town mine.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
-                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Preserve original continuous rock UVs after terrain displacement.
+                if (matKey === TileType.ROCK) {
+                  rockMesh.userData.retainNaturalSurfaceShellOutline = true; // Keep the individually removable stone's perimeter despite rock PNG texturing.
+                  window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`);
+                }
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -11552,6 +11555,10 @@
           mesh.receiveShadow = true;
           mesh.userData.mapEditorTerrain = { mapId };
           mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (matKey === TileType.ROCK) {
+            mesh.userData.retainNaturalSurfaceShellOutline = true; // Structural rounded stone mounds share this chunk-local render bucket.
+            _markOutline(mesh);
+          }
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
             mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
             mesh.userData.wildernessGlobalPathGround = true;
@@ -29745,8 +29752,7 @@
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
         const horizontalTargetIntent = rightStickOwner === 'camera' && mobileAutoTargetEnabled()
           && Math.abs(rx) >= 0.6 && Math.abs(rx) > Math.abs(ry) * 1.2
-          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.entryMenuOpen?.()
-          && !window._desktopSelectionArc?.toolMenuOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
+          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.isOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
         if (horizontalTargetIntent) {
           const direction = Math.sign(rx); // Right selects screen-right; left selects screen-left.
           if (!gamepadState.primeButtonsOnResume && controllerTargetHorizontalLatch !== direction) cycleAutoTarget(direction);
@@ -30125,7 +30131,7 @@
         }
         if (heldOnly) return false;
         if (mobileAutoTargetEnabled() && e.deltaY && !cutscenePreviewActive && !dialogueZoomActive()
-          && !window._desktopSelectionArc?.entryMenuOpen?.() && !window._desktopSelectionArc?.toolMenuOpen?.()
+          && !window._desktopSelectionArc?.isOpen?.()
           && !window.FurniturePlacer?.isOpen?.() && !window.AuthoredCutsceneRuntime?.isActive?.()) {
           e.preventDefault();
           cycleAutoTarget(dir); // Wheel down selects screen-right, up selects screen-left; no camera zoom in lock-on.
@@ -32849,6 +32855,7 @@
       window.ZoneTerrainFeatures?.init({
         TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
         displaceZoneGeometry, resolveTileMat,
+        markOutline: _markOutline,
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,

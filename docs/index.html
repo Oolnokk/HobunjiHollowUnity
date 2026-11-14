@@ -57,8 +57,8 @@
   <script src="js/input-bindings.js?v=20261108h170c5a5"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
-  <!-- Shared semantic input arbiter: resolves keyboard, controller, mouse and touch to one press-to-release owner before gameplay and combat can act. -->
-  <script src="js/gameplay-input-router.js?v=20261113sharedInput1678fix2"></script>
+  <!-- Shared contextual input arbitration across keyboard, controller, mouse, and touch. -->
+  <script src="js/gameplay-input-router.js?v=20261113inputIntegration1678v3"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
@@ -100,7 +100,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261109freecamp1"></script>
+  <script src="js/action-arc-ui.js?v=20261113inputIntegration1678v3"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -362,7 +362,7 @@
   <script src="js/combat/companion-offense.js?v=20261104scent1439c"></script>
   <script src="js/companion-combat-response.js?v=20261110decf5f6ae3"></script>
   <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439c"></script> <!-- Scent target priority for wild/enemy animals. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
-  <script src="js/combat/combat-input.js?v=20261113sharedInput1"></script>
+  <script src="js/combat/combat-input.js?v=20261113inputIntegration1678v3"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
@@ -511,7 +511,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261113ha8ba495&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261113hstoneReview1&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -935,7 +935,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20261031boulder-opt3"></script>
+  <script src="js/zone-terrain-features.js?v=20261113hstoneReview1"></script>
   <script src="js/character-ground-shadow.js?v=20261012cgs1"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
@@ -955,9 +955,9 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261112lootPickup2"></script>
+  <script src="js/shattercasks.js?v=20261113explosionAudit3"></script>
   <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261108hf7dc41b"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261113explosionAudit3"></script>
   <script src="js/pingdort-flocks.js?v=20261108hdenlineage4"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
@@ -1893,6 +1893,13 @@
       <!-- ── Settings pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpSettings">
         <div class="settings-pane">
+          <div data-dev-only class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Dev Companion Window</div>
+              <div class="settings-desc">Open session-linked quick saves, diagnostics, map editing, and a configurable repeating sound timer in a second window.</div>
+            </div>
+            <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
+          </div>
           <div data-ctrl-subtab id="settingsSection0" aria-label="Visual Effects">
           <div class="settings-section-title">Visual Effects</div>
           <label class="settings-row">
@@ -2427,13 +2434,7 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
           </label>
-          <div data-dev-only class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Dev Companion Window</div>
-              <div class="settings-desc">Opens a second window tied to this play session: quick save/load with exact position, one-click recovery-backup swapping, autosave pause, Map Edit controls, and a live list of the config/JSON (including the dialogue node on screen and the conditions that chose it) the game is using</div>
-            </div>
-            <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
-          </div>
+
           <a class="settings-row" href="tools/enemy-loadout-editor/index.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
             <div><div class="settings-name">Enemy Loadout Workshop ↗</div><div class="settings-desc">Roll fully equipped enemy previews and author species, wardrobe, dye, weapon and attack pools.</div></div>
           </a>
@@ -2893,7 +2894,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261113sharedInputMain1677"></script>
+  <script src="js/pixel-probe.js?v=20261113inputIntegration1678v3"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3048,7 +3049,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261112dynamicMelodyAudit2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261113explosionAudit2"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3102,7 +3103,7 @@
   <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261113targetCycle1678fix2"></script>
+  <script src="game.js?v=20261113inputIntegration1678v3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

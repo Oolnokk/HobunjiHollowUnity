@@ -1418,6 +1418,9 @@
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       const hitPointText = hit.point ? ` world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)})` : ''; // Used to compare exact foot and water intersections along this screen ray.
       lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)}${hitPointText} visible=${o.visible} renderOrder=${o.renderOrder}`);
+      if (o.userData?.retainNaturalSurfaceShellOutline || o.userData?.facetedSurfaceTextureOutline) {
+        lines.push(`     natural surface outline: shell=${(o.layers.mask & (1 << 1)) !== 0} policy=${o.userData.retainNaturalSurfaceShellOutline ? 'rounded stone' : 'faceted texture'}`);
+      }
       if (o.userData?.hobunjiGroundXray) {
         const xray = window.HeldObjectRenderOrder?.classify?.(o); // Diagnostic uses the same semantic classification as the actual replay.
         lines.push(`     mesa ground: batched=${!!o.userData?.plateauMesaRenderBatch} xray=${xray?.ground === true} registered=${o.userData?.hobunjiHeldGroundReplay === true} materialSlots=${mats.length}`);

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict'); // Verifies executed production ta
 const fs = require('node:fs'); // Reads the current production owners.
 const vm = require('node:vm'); // Runs browser-owned helpers with deterministic input fixtures.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Source of shared acquisition and target-stick handlers.
+const selectionArch = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // Confirms all selection arches protect target cycling.
 const input = fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'); // Source of the mobile preference gate.
 function preference(fine, saved = null, brokenStorage = false) {
   const context = { window: { matchMedia: () => ({matches:fine}), Combat:{loadout:{},update(){}},addEventListener(){},dispatchEvent(){} }, document:{readyState:'loading',addEventListener(){}}, localStorage:{getItem(){if(brokenStorage)throw Error('blocked');return saved;},setItem(){}},performance:{now:()=>0},CustomEvent:function(){},console }; // Minimal browser surface for the real combat-input module.
@@ -129,6 +130,8 @@ assert.equal(transitions,beforeCancel,'combat ending before the hold timer does 
 assert.equal(timers.size,0,'hidden hold gesture releases its timer');
 buttonHidden=false;
 
+assert.match(selectionArch, /isOpen\(\) \{ return !!_arcOpen; \}/, 'Item, Tool and entry arches expose shared open state');
+assert.equal((game.match(/!window\._desktopSelectionArc\?\.isOpen\?\.\(\)/g) || []).length, 2, 'controller and wheel target changes require every arch closed');
 console.log('mobile autotarget preference, acquisition, switching, and gesture checks passed');
 
 function injectedCss(file, nextFunction, extra = {}) {

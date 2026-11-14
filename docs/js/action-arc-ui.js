@@ -534,6 +534,7 @@
       endHeldSelection() { _heldEntrySelectorKind = null; },
       heldSelectionKind() { return _heldEntrySelectorKind; },
       close() { _clearArc(); },
+      isOpen() { return !!_arcOpen; }, // Also counts item arch; target cycling yields to every open selector.
       entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
       toolMenuOpen() { return _arcOpen === 'tool'; }
     };

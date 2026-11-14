@@ -53,6 +53,12 @@ jobs:
         if: steps.select.outputs.needs_deps == 'true'
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+      - name: Rounded wilderness stone shell layers against real Three.js r128
+        # The fast regression suite runs before optional dependencies install; recheck real mesh behavior now that Three.js is present.
+        if: steps.select.outputs.needs_deps == 'true'
+        env:
+          THREE_MIN_JS: three/build/three.min.js
+        run: node scripts/test-undiggable-boulder-shells.js
       - name: Substance Cover Shell against real Three.js r128
         if: steps.select.outputs.substance == 'true'
         run: node scripts/test-substance-cover-shell.js

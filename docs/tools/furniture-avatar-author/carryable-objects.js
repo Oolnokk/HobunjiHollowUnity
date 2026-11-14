@@ -404,6 +404,7 @@
     transform.setSpace?.('local'); // Rotation gizmo follows actual calibrated hand socket orientation.
     if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
     transform.attach(guides[id]);
+    configureTransformAxesForSelection(); // Uses the shared gizmo rules and updates the mobile-readable frame label for this carry guide.
     renderControls();
     syncHoldingPreview();
   }
