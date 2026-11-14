@@ -72,7 +72,7 @@
 
   function disposeAmbientCarry(carry) {
     if (!carry) return;
-    if (heldTargets.get(carry.root)?.holder === carry.holder) heldTargets.delete(carry.root);
+    clearHandTarget(carry.root, carry.holder);
     carry.holder?.parent?.remove?.(carry.holder);
     deps?.disposeBottlePlane?.(carry.bottlePlane, carry.holder);
   }
@@ -157,14 +157,24 @@
       poseQuaternion: makePoseQuaternion(THREE),
     };
     ambientCarries.set(key, carry);
-    publishHandTarget(root,holder,bottlePlane);
+    publishHandTarget(root, holder, bottlePlane, avatarGroup);
     applyHolderPose(carry, neutralPose);
     log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
     return true;
   }
 
-  function publishHandTarget(root, holder, plane) {
-    heldTargets.set(root,{holder,plane,mode:'bottle',width:.2,height:.2,neckFraction:.2}); // Same grip contract used by player held-item animation.
+  function publishHandTarget(root, holder, plane, avatarGroup) {
+    const handParent = avatarGroup?.userData?.proceduralHandRig?.parent
+      || avatarGroup?.userData?.proceduralHandParent || avatarGroup?.parent; // Direct hand driver queries the actual hand-rig parent, not the outer NPC world root.
+    const target = { holder, plane, mode: 'bottle', width: .2, height: .2, neckFraction: .2, handParent }; // One shared target holds both root-key aliases.
+    heldTargets.set(root, target);
+    if (handParent && handParent !== root) heldTargets.set(handParent, target); // O(1) hand lookup during every rig frame, no ancestor scan.
+  }
+  function clearHandTarget(root, holder) {
+    const target = heldTargets.get(root);
+    if (target?.holder !== holder) return; // A newer drink/carry may have legitimately replaced this hand target.
+    heldTargets.delete(root);
+    if (target.handParent && heldTargets.get(target.handParent) === target) heldTargets.delete(target.handParent);
   }
   function heldItemTarget(root) {
     const target = root && heldTargets.get(root); // Called by the existing hand driver; no allocations or scene searches.
@@ -190,7 +200,7 @@
     interaction.finished = true;
     if (reason === 'complete') applyDrinkEffect(interaction);
     interaction.walker.root.rotation.y = interaction.baseNpcFacing;
-    if (heldTargets.get(interaction.walker.root)?.holder === interaction.holder) heldTargets.delete(interaction.walker.root);
+    clearHandTarget(interaction.walker.root, interaction.holder);
     interaction.holder.parent?.remove(interaction.holder);
     deps?.disposeBottlePlane?.(interaction.bottlePlane, interaction.holder);
     interaction.lockHandle?.release?.();
@@ -291,7 +301,7 @@
       phase:'drink',elapsed:0,durationS:Math.max(.1,Number(options.durationS)||Number(animation.durationS)||.95),effectApplied:false,finished:false,
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
     applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
-    publishHandTarget(walker.root,holder,bottlePlane);
+    publishHandTarget(walker.root, holder, bottlePlane, walker.avatarGroup);
     return interaction.durationS*1000;
   }
   function stopAutonomous(walker, itemKey = null) {
@@ -340,7 +350,7 @@
           interaction.holder.parent?.remove(interaction.holder);
           (interaction.walker.avatarGroup?.userData?.proceduralHandParent || interaction.walker.root).add(interaction.holder);
           interaction.phase = 'drink';
-          publishHandTarget(interaction.walker.root,interaction.holder,interaction.bottlePlane);
+          publishHandTarget(interaction.walker.root, interaction.holder, interaction.bottlePlane, interaction.walker.avatarGroup);
           interaction.elapsed = 0;
           applyHolderPose(interaction, deps.poseAt(deps.getDrinkAnimation(), 0));
         }
