@@ -37,6 +37,13 @@
 
   function reconcile(node, slot) {
     const current = node[slot.property][slot.axis];
+    if (slot.owners.size === 0) {
+      // The previous additive owner already released this axis. Even a tiny
+      // subsequent IK/damped step is now the new clean baseline, not rounding.
+      slot.base = current;
+      slot.applied = current;
+      return;
+    }
     if (Math.abs(current - slot.applied) <= EPSILON) return;
     // A new pose writer already replaced this axis. Do not subtract our old
     // offset from its replacement and do not revive other stale owners.

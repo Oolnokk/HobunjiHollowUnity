@@ -83,6 +83,16 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
   near(node.position.z, 0);
   assert.equal(layers.getDebug().activeLayers, 0);
 }
+{
+  const node = rig();
+  layers.setAxis(node, 'tiny-handoff', 'position', 'y', 0.2);
+  layers.clear(node, 'tiny-handoff');
+  node.position.y += 5e-8; // Small external IK changes must refresh an already released baseline.
+  layers.setAxis(node, 'tiny-handoff', 'position', 'y', 0.2);
+  near(node.position.y, 2.20000005);
+  layers.clear(node, 'tiny-handoff');
+  near(node.position.y, 2.00000005);
+}
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
