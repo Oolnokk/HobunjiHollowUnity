@@ -52,4 +52,20 @@ assert(overlaps(4.5,4.5),'Brick centered over the stream is removed');
 assert(overlaps(3.75,4.5,Math.PI/4),'Rotated brick corner over water is removed');
 assert(!overlaps(3.5,3.5),'Brick safely on the upstream bank is retained');
 assert(!terrain.pathBrickTouchesPermanentWater(instance(4.5,4.5),brickBounds,()=>false),'Seasonal wetness without permanent water does not hide road bricks');
+// WallBuilder maps a vertical wall model's local XY face onto the flat
+// world XZ road; local Z becomes vertical thickness. The original regression
+// used local XZ only, missing the real production geometry's transverse edge.
+const wallBrickBounds={min:{x:-.3,y:-.3,z:-.02},max:{x:.3,y:.3,z:.02}}; // Horizontal half-width is local Y after WallBuilder's rotation.
+const laidFlat=(x,z,theta=0)=>{
+  const cosine=Math.cos(theta),sine=Math.sin(theta); // Optional planar brick-jitter rotation after laying the wall flat.
+  return {elements:[cosine,0,-sine,0,sine,0,cosine,0,0,-1,0,0,x,0,z,1]};
+}; // Basis vectors: local X -> road X, local Y -> road Z, local Z -> road vertical.
+const wallOverlaps=(x,z,theta=0)=>terrain.pathBrickTouchesPermanentWater(
+  laidFlat(x,z,theta),wallBrickBounds,spline.isPermanentWaterAt);
+assert(wallOverlaps(4.5,3.8),'A flattened WallBuilder brick must clip when its LOCAL Y edge crosses the stream');
+assert(!wallOverlaps(4.5,3.6),'A flat brick wholly north of the water is retained');
+assert(wallOverlaps(3.8,4.5),'A flat brick whose local X edge overlaps the stream is removed');
+assert(wallOverlaps(4.5,3.8,Math.PI/6),'A jitter-rotated flat brick still clips correctly');
+assert(!wallOverlaps(3.55,3.55,Math.PI/6),'A rotated brick fully on dry land remains');
+
 console.log('Path paving: intact spline, permanent-water tile mask and rotated brick edge clipping passed.');
