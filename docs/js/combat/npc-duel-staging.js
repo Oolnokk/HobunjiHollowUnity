@@ -30,9 +30,16 @@
   // player/companion recently hit either of them (PlayerDowned.noteTeamHit's
   // _teamHitAt). Staged swings already in flight finish normally.
   //
-  // Wired from combat-bandit.js's updateBanditCombatAI, after the special
-  // ranged/flask/witch AIs and the lunge/retreat/action holds, so only the
-  // ordinary melee decision step is replaced. setEnabled(false) is the A/B
+  // Ranged troops (ranged-weapons.js's updateBanditAI) and Flaskers
+  // (combat-bandit.js's updateBanditFlaskAI) use engage() too: real shots and
+  // throws while visible, but sight checks refresh on a slow timer instead of
+  // whenever either fighter moves, aim pitch comes from the ground heights,
+  // and a staged arrow only tests its intended target and the player instead
+  // of every hostile; offscreen, volleys and throws are abstract rolls.
+  //
+  // Melee is wired from combat-bandit.js's updateBanditCombatAI, after the
+  // special ranged/flask/witch AIs and the lunge/retreat/action holds, so only
+  // the ordinary melee decision step is replaced. setEnabled(false) is the A/B
   // switch; snapshot() exposes counters for Pixel Probe/headless checks.
 
   const VERSION = 1;
@@ -52,7 +59,7 @@
 
   let deps = null; // { TILE, player, rnd, now }
   let enabled = true;
-  const stats = { stagedFrames: 0, fullFrames: 0, stagedSwings: 0, abstractExchanges: 0, stagedHits: 0, stagedMisses: 0, stagedDodges: 0, promotions: 0 };
+  const stats = { stagedFrames: 0, fullFrames: 0, stagedSwings: 0, abstractExchanges: 0, stagedHits: 0, stagedMisses: 0, stagedDodges: 0, promotions: 0, stagedShots: 0 };
 
   function init(injectedDeps) { deps = injectedDeps || null; }
   function nowMs() { return deps?.now ? deps.now() : performance.now(); }
@@ -132,14 +139,34 @@
   // Called by combat-bandit.js once per frame for an ordinary melee fighter
   // that is free to make a decision. Returns null to fall through to the
   // full AI, or the frame's { aimAngle, moving } when the duel is staged.
-  function update(c, dt, target, distPx, towardAngle, api) {
+  // Shared per-frame gate for every staged AI (melee here, ranged in
+  // ranged-weapons.js, flask throws in combat-bandit.js): keeps the
+  // _npcDuel marker that drives the hysteresis, and the frame counters.
+  function engage(c, target) {
     if (!isStageable(c, target)) {
       if (c?._npcDuel) { c._npcDuel = null; stats.promotions++; }
       stats.fullFrames++;
       return null;
     }
     stats.stagedFrames++;
-    const s = c._npcDuel || (c._npcDuel = { reachPx: 0, reachAgeS: Infinity, phase: rnd() * Math.PI * 2 });
+    return c._npcDuel || (c._npcDuel = { reachPx: 0, reachAgeS: Infinity, phase: rnd() * Math.PI * 2 });
+  }
+
+  function bothHidden(c, target) { return isHidden(c) && isHidden(target); }
+
+  // Abstract exchanges outside melee (ranged volleys, flask throws) share the
+  // same hit roll and counters.
+  function rollAbstractHit(target) {
+    stats.abstractExchanges++;
+    const hit = rnd() < ABSTRACT_HIT_CHANCE && !target?.dodging;
+    if (hit) stats.stagedHits++; else stats.stagedMisses++;
+    return hit;
+  }
+  function noteStagedShot() { stats.stagedShots++; }
+
+  function update(c, dt, target, distPx, towardAngle, api) {
+    const s = engage(c, target);
+    if (!s) return null;
     s.reachAgeS += dt;
     if (s.reachAgeS >= REACH_REFRESH_S || !(s.reachPx > 0)) {
       s.reachPx = Math.max(deps.TILE * 0.5, Number(api.comboReachPx(c)) || 0);
@@ -201,6 +228,10 @@
     version: VERSION,
     init,
     update,
+    engage,
+    bothHidden,
+    rollAbstractHit,
+    noteStagedShot,
     isStaged,
     isStageable,
     maybeStageDodge,

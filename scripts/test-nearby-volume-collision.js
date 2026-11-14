@@ -57,8 +57,8 @@ assert(ranged.includes('friendlyFireHits++'), 'allied enemy impacts are counted 
 assert(ranged.includes('friendlyFire: true'), 'friendly-fire creature damage is explicitly tagged');
 assert(ranged.includes("lastEvent = `friendly-fire:"), 'mobile ranged diagnostics identify friendly-fire impacts');
 assert(ranged.includes('banditLosStatus(c, targetPlayer, def)'), 'loaded ranged AI checks LOS before firing');
-assert(ranged.includes('repositionBanditForLos(c, targetPlayer, def, dt, los)'), 'blocked loaded ranged AI strafes for LOS');
-assert(ranged.indexOf('if (!isLoaded(itemKey, c))') < ranged.indexOf('const los = banditLosStatus(c, targetPlayer, def)'), 'LOS seeking only occurs after the weapon is loaded');
+assert(/repositionBanditForLos\(c, targetPlayer, def, dt, los\b/.test(ranged), 'blocked loaded ranged AI strafes for LOS');
+assert(ranged.indexOf('if (!isLoaded(itemKey, c))') < ranged.indexOf('banditLosStatus(c, targetPlayer, def);'), 'LOS seeking only occurs after the weapon is loaded');
 assert(ranged.includes('BANDIT_LOS_CACHE_MS = 80'), 'bandit LOS work is throttled per actor');
 assert(ranged.includes('ACTOR_HITBOX_CACHE_MS = 16'), 'actor hitbox work is shared within a rendered frame');
 assert(ranged.includes('WOULD_HIT_CACHE_MS = 50'), 'HUD hit prediction is throttled to 20 Hz');

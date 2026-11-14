@@ -1110,6 +1110,7 @@
       knockbackMul: Number(ammoPayload?.knockbackMul) || 1,
       footingDamageMultiplier: Number(ammoPayload?.footingDamageMultiplier) || 0,
       damageScale: Number.isFinite(Number(shotOptions?.damageScale)) ? Math.max(0, Math.min(1, Number(shotOptions.damageScale))) : 1,
+      stagedTarget: shotOptions?.stagedTarget || null, // NPC-vs-NPC staged duel: only this actor (and the player) can be struck.
       trailPoints: [{ x: spawnX / deps.TILE, y: worldY, z: spawnY / deps.TILE }],
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
@@ -1506,6 +1507,14 @@
     }
   }
 
+  // A staged duel shot (js/combat/npc-duel-staging.js) tests its one intended
+  // target instead of sweeping every hostile in the area each flight frame.
+  function stagedTargetHit(target, start, end, projectileRadius, areaId) {
+    if (!target || target.health <= 0 || (target.areaId && target.areaId !== areaId) || target._denHidden) return null;
+    const interval = segmentHitboxInterval(start, end, actorHitbox(target), projectileRadius);
+    return interval ? { creature: target, interval } : null;
+  }
+
   function nearestHostileHit(start, end, projectileRadius, areaId, exclude = null) {
     let nearest = null;
     for (const c of deps.hostileObjects) {
@@ -1590,7 +1599,9 @@
 
     const rawPlayerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
     const playerInterval = rawPlayerInterval && rawPlayerInterval.enter <= segmentLimit + AIM_EPSILON ? rawPlayerInterval : null;
-    let friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    let friendly = p.stagedTarget
+      ? stagedTargetHit(p.stagedTarget, start, end, projectileRadius, p.areaId)
+      : nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
     if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
     let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
@@ -1756,12 +1767,58 @@
   // alone can't tell a level shot from one that needs to climb toward a
   // player up a tree. Mirrors playerAimSolution's own pitch derivation and
   // reuses the same muzzle-height convention as spawnProjectile's origin.
+  // Staged duels aim from the two fighters' ground heights instead of building
+  // both portrait hitboxes every frame; the arc reads the same at a distance.
+  function stagedAimPitch(c, target) {
+    const fromY = Number(deps.worldSurfaceY?.(c.x, c.y)) || 0;
+    const toY = Number(deps.worldSurfaceY?.(target.x, target.y)) || 0;
+    return Math.atan2(toY - fromY, Math.max(Math.hypot(target.x - c.x, target.y - c.y) / deps.TILE, AIM_EPSILON));
+  }
+
+  // Staged sight refreshes on a timer: in a duel both fighters keep moving, so
+  // the movement-invalidated cache in banditLosStatus missed nearly every frame.
+  const STAGED_LOS_REFRESH_MS = 900;
+  function stagedLosStatus(c, target, def) {
+    const now = performance.now();
+    const area = deps.getCurrentArea?.();
+    const cached = c._rangedStagedLos;
+    if (cached && cached.target === target && cached.area === area && now - cached.at < STAGED_LOS_REFRESH_MS) return cached.result;
+    const result = computeBanditLos(c, target, def);
+    c._rangedStagedLos = { at: now, area, target, result };
+    c._rangedLosDebug = { ...result, staged: true, at: now };
+    return result;
+  }
+
+  // Both fighters offscreen: no load/fire animation or projectile, only the
+  // same cadence, stamina and a damage roll.
+  function abstractBanditVolley(c, target, itemKey, def, staging) {
+    const aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
+    c.facing = aimAngle;
+    if (c._rangedCooldownT > 0) return { aimAngle, moving: false, handled: true };
+    if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
+      spendRangedLoadStamina(c, itemKey, def);
+      setLoaded(itemKey, true, c);
+      c._rangedCooldownT = Math.max(0.18, Number(def.reloadDurationS) || 0);
+      return { aimAngle, moving: false, handled: true };
+    }
+    if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c);
+    const chargeS = def.rangedType === 'thrown' ? Number(def.chargeWindupS) || 0 : 0;
+    c._rangedCooldownT = chargeS + Math.max(0.01, Number(def.fireDurationS) || 0.01) + 0.55; // Same cadence as a visible fire action plus its 0.55 s recovery.
+    if (staging.rollAbstractHit(target)) {
+      const count = Math.max(1, Math.round(def.projectileCount || 1));
+      deps.damageCreature(target, Math.max(1, def.damage * count), c.x, c.y, def.knockbackPxS, {
+        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12,
+      });
+    }
+    return { aimAngle, moving: false, handled: true };
+  }
+
   function banditAimPitch(c, targetPlayer) {
     const { start, end } = banditLosSegment(c, targetPlayer); // Shot pitch and NPC sight use the same world-space portrait centers.
     return Math.atan2(end.y - start.y, Math.max(Math.hypot(end.x - start.x, end.z - start.z), AIM_EPSILON));
   }
 
-  function beginBanditAction(c, kind, targetPlayer) {
+  function beginBanditAction(c, kind, targetPlayer, staged = false) {
     const itemKey = c.def.rangedWeaponKey;
     const def = defFor(itemKey);
     if (!def) return;
@@ -1777,7 +1834,7 @@
       setRangedLoadRegenBlocked(c, true);
     }
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
+    c._rangedAimPitch = staged ? stagedAimPitch(c, targetPlayer) : banditAimPitch(c, targetPlayer);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
     lastEvent = `${c.id}:${itemKey}:${kind}-start`;
   }
@@ -1900,7 +1957,7 @@
     return !!result.clear;
   }
 
-  function repositionBanditForLos(c, targetPlayer, def, dt, los) {
+  function repositionBanditForLos(c, targetPlayer, def, dt, los, staged = false) {
     const dx = targetPlayer.x - c.x, dy = targetPlayer.y - c.y;
     const distance = Math.hypot(dx, dy) || 1;
     const nx = dx / distance, ny = dy / distance;
@@ -1913,8 +1970,9 @@
     const moving = deps.moveCreatureToward(c, targetX, targetY, c.def.chaseSpeed, dt);
     if (Math.hypot(c.x - beforeX, c.y - beforeY) < 0.01) c._rangedLosSide = -side;
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
+    c._rangedAimPitch = staged ? stagedAimPitch(c, targetPlayer) : banditAimPitch(c, targetPlayer);
     c.facing = c._rangedAimAngle;
+    if (staged) { losRepositions++; return moving; } // Skip the per-frame debug object copy as well.
     c._rangedLosDebug = { ...(c._rangedLosDebug || los), repositioning: true, side: c._rangedLosSide, at: performance.now() };
     losRepositions++;
     return moving;
@@ -1944,11 +2002,14 @@
     const def = defFor(itemKey);
     if (!def || !targetPlayer) return null;
     c._rangedCooldownT = Math.max(0, (c._rangedCooldownT || 0) - dt);
+    // NPC-vs-NPC fight the player is not part of (js/combat/npc-duel-staging.js).
+    const staging = window.NpcDuelStaging;
+    const staged = !!staging?.engage?.(c, targetPlayer);
     const action = c._rangedAction;
     if (action) {
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-      c._rangedAimPitch = banditAimPitch(c, targetPlayer);
+      c._rangedAimPitch = staged ? stagedAimPitch(c, targetPlayer) : banditAimPitch(c, targetPlayer);
       if (action.kind === 'fire' && action.chargeDurationS > 0) {
         const chargePose = Math.max(0, Math.min(1, action.t / action.chargeDurationS)); // NPC thrown holds spend against the same pose-based cost curve as player Charged Breaker.
         const targetPaid = chargeStaminaCostForPose(chargePose);
@@ -1965,7 +2026,8 @@
         action.fired = true;
         if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c); // A thrown weapon never enters the reload state; a fresh throwable is available after recovery.
         playRangedActionSfx(itemKey, 'fire', c);
-        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0);
+        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0, staged ? { stagedTarget: targetPlayer } : null);
+        if (staged) staging.noteStagedShot();
       }
       if (action.t >= action.durationS) {
         if (action.kind === 'load') {
@@ -1983,27 +2045,29 @@
     // distToPlayer is horizontal-only, so a target hiding straight overhead
     // (up a tree) reads as "close" even though melee can't actually touch
     // them — only drop to melee once melee could really land the hit.
-    const ledgeSeparated = distToPlayer < minRange && ledgesBlockMeleeApproach(c, targetPlayer); // Don't switch to an impossible melee path just because two ledges are horizontally close.
+    const ledgeSeparated = !staged && distToPlayer < minRange && ledgesBlockMeleeApproach(c, targetPlayer); // Don't switch to an impossible melee path just because two ledges are horizontally close.
     c._rangedLedgeSeparation = ledgeSeparated; // Read by mobile NPC ranged diagnostics.
-    if (distToPlayer < minRange && canMeleeReach(c, targetPlayer) && !ledgeSeparated) { c._rangedMode = false; return null; }
+    if (distToPlayer < minRange && (staged || canMeleeReach(c, targetPlayer)) && !ledgeSeparated) { c._rangedMode = false; return null; } // A staged duel skips the ledge/reach probes.
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
       return { aimAngle, moving: false, handled: true, holdingRange: true }; // Keep ranged troops at their post instead of closing distance; their independent home leash still governs retreat/return behavior.
     }
 
+    if (staged && staging.bothHidden(c, targetPlayer)) return abstractBanditVolley(c, targetPlayer, itemKey, def, staging);
+
     if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
-      if (c._rangedCooldownT <= 0) beginBanditAction(c, 'load', targetPlayer);
+      if (c._rangedCooldownT <= 0) beginBanditAction(c, 'load', targetPlayer, staged);
       return { aimAngle, moving: false, handled: true };
     }
 
-    const los = banditLosStatus(c, targetPlayer, def);
+    const los = staged ? stagedLosStatus(c, targetPlayer, def) : banditLosStatus(c, targetPlayer, def);
     if (!los.clear) {
-      const moving = repositionBanditForLos(c, targetPlayer, def, dt, los);
+      const moving = repositionBanditForLos(c, targetPlayer, def, dt, los, staged);
       return { aimAngle: c._rangedAimAngle, moving, handled: true, seekingLos: true };
     }
-    c._rangedLosDebug = { ...los, repositioning: false, at: performance.now() };
-    if (c._rangedCooldownT <= 0) beginBanditAction(c, 'fire', targetPlayer);
+    if (!staged) c._rangedLosDebug = { ...los, repositioning: false, at: performance.now() };
+    if (c._rangedCooldownT <= 0) beginBanditAction(c, 'fire', targetPlayer, staged);
     return { aimAngle, moving: false, handled: true };
   }
 

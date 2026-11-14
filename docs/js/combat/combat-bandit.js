@@ -975,6 +975,21 @@
     const throwAnimation = window.HeldActionAnimations?.throwFlask || window.HeldActionAnimations?.weaponThrowSpin; // Exact player/Attack-Editor hatchet throw is both pose and timing authority.
     if (!throwAnimation?.poses || !window.Combat?.beginStagedAction) return null;
     const durationS = Math.max(0.2, Number(throwAnimation.durationS) || 1.04); // Used for the same total throw cadence authored in the Attack Editor.
+    // A staged NPC duel nobody can see (js/combat/npc-duel-staging.js): no throw
+    // animation, projectile or splash query -- the recipe is applied straight
+    // to the opponent on a hit roll, at the normal throw cadence. Visible staged
+    // throws stay real; one flask every few seconds is already cheap.
+    const staging = window.NpcDuelStaging;
+    if (staging?.engage?.(c, targetPlayer) && staging.bothHidden(c, targetPlayer)) {
+      c.facing = towardAngle;
+      c._banditFlaskCooldownT = tuning.throwCooldownSeconds + durationS;
+      if (staging.rollAbstractHit(targetPlayer)) {
+        const alchemy = window.AlchemySystem;
+        const tier = Math.max(0, Math.min(4, Math.floor(Number(c.def?.banditFlaskPotencyTier) || 0)));
+        alchemy?.applyRecipeToEntity?.(recipeId, alchemy.potencyMultiplier?.(tier) ?? 1, targetPlayer, { splash: true, potencyTier: tier, skipEmpower: true });
+      }
+      return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
+    }
     const windupS = Math.max(0.12, durationS * Math.max(0.05, Math.min(0.95, Number(throwAnimation.windupFrac) || 0.49))); // Projectile release begins where the shared hatchet animation enters its strike.
     const strikeS = Math.max(0.05, durationS - windupS); // Keeps the authored strike/follow-through visible after release.
     c._banditFlaskPendingRecipeId = recipeId;

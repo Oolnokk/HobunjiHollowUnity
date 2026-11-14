@@ -152,4 +152,123 @@ roll = 0.99;
 const defender2 = fighter('def2', 100, 0);
 assert.equal(staging.maybeStageDodge(defender2, attacker, 0.2), false, 'failed roll -> no dodge');
 
+
+// ── Ranged troops: real shots while visible (timer-cached sight, target-only
+// projectile), abstract volleys while both fighters are offscreen. Extracts the
+// real functions from ranged-weapons.js like test-npc-thrown-ranged-actions.js.
+const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8');
+function rangedFn(name, followingName) {
+  const start = rangedSource.indexOf('  function ' + name + '(');
+  const end = rangedSource.indexOf('\n  function ' + followingName + '(', start);
+  assert(start >= 0 && end > start, name + ' is extractable');
+  return rangedSource.slice(start, end);
+}
+let rangedNow = 1000;
+const rangedLog = { volleys: [], los: 0, fullLos: 0, damage: [], loads: 0, pitches: 0 };
+const rangedDefs = { crossbow: { label: 'Crossbow', fireDurationS: 1, reloadDurationS: 1, fireAtFrac: 0.1, damage: 9, knockbackPxS: 80, projectileCount: 1 } };
+const rangedSandbox = {
+  Math, console, performance: { now: () => rangedNow },
+  AIM_EPSILON: 1e-6, losRepositions: 0, MAX_FIRE_TRIGGER_TO_PROJECTILE_S: 0.012,
+  window: { NpcDuelStaging: staging, ResourceSystem: { spendStamina() { return { spent: 0 }; } } },
+  deps: {
+    TILE, getCurrentArea: () => 'zone', worldSurfaceY: () => 0, moveCreatureToward: () => true,
+    damageCreature(target, amount, _x, _y, _kb, opts) { rangedLog.damage.push({ target, amount, opts }); target.health -= amount; },
+  },
+  chargeStaminaCostForPose: () => 0, paymentTotal: () => 0,
+  spendRangedLoadStamina() { rangedLog.loads++; return { spent: 0 }; },
+  setRangedLoadRegenBlocked() {},
+  defFor: key => rangedDefs[key],
+  isLoaded: (_key, actor) => actor._rangedLoaded !== false,
+  setLoaded: (_key, value, actor) => { actor._rangedLoaded = value; },
+  playRangedActionSfx() {},
+  spawnVolley(key, _x, _y, _angle, team, owner, _ammo, _pitch, shotOptions) { rangedLog.volleys.push({ key, team, owner, shotOptions }); return []; },
+  banditAimPitch() { rangedLog.pitches++; return 0; },
+  banditLosStatus() { rangedLog.fullLos++; return { clear: true }; },
+  computeBanditLos() { rangedLog.los++; return { clear: true }; },
+  rangedAttackRadiusPx: () => TILE * 9,
+  canMeleeReach: () => true,
+  ledgesBlockMeleeApproach: () => false,
+  repositionBanditForLos: () => false,
+  segmentHitboxInterval: (_s, _e, box) => (box ? { enter: 0.5 } : null),
+  actorHitbox: actor => (actor.noBox ? null : { box: true }),
+};
+vm.createContext(rangedSandbox);
+vm.runInContext('let lastEvent = "idle";\n'
+  + rangedFn('fireReleaseFrac', 'isLoaded') + '\n'
+  + rangedFn('stagedTargetHit', 'nearestHostileHit') + '\n'
+  + rangedFn('stagedAimPitch', 'banditAimPitch').replace('const STAGED_LOS_REFRESH_MS', 'var STAGED_LOS_REFRESH_MS') + '\n'
+  + rangedFn('beginBanditAction', 'banditLosSegment') + '\n'
+  + rangedFn('updateBanditAI', 'updateBanditVisual') + '\n'
+  + 'globalThis.ranged = { updateBanditAI, stagedTargetHit };', rangedSandbox);
+const rangedUpdate = rangedSandbox.ranged.updateBanditAI;
+const archer = fighter('archer', far, 0, { def: { ...fighter('x', 0, 0).def, rangedWeaponKey: 'crossbow' }, _rangedCooldownT: 0, _rangedLoaded: true });
+const foe = fighter('foe', far + 5 * TILE, 0);
+rangedUpdate(archer, 0.016, foe, 5 * TILE);
+assert.equal(archer._rangedAction?.kind, 'fire', 'a staged archer still plays the real fire action');
+assert.equal(rangedLog.fullLos, 0, 'staged sight never uses the movement-invalidated LOS cache');
+assert.equal(rangedLog.los, 1);
+assert.equal(rangedLog.pitches, 0, 'staged aim pitch comes from ground heights, not portrait hitboxes');
+for (let n = 0; n < 20; n++) { foe.y += 3; rangedUpdate(archer, 0.06, foe, 5 * TILE); }
+assert.equal(rangedLog.volleys.length, 1, 'the arrow is released');
+assert.equal(rangedLog.volleys[0].shotOptions?.stagedTarget, foe, 'the arrow only tests its intended target');
+assert.equal(rangedLog.los, 1, 'sight is not recomputed while both keep moving inside the refresh window');
+rangedNow += 1000;
+archer._rangedCooldownT = 0; archer._rangedLoaded = true; archer._rangedAction = null;
+rangedUpdate(archer, 0.016, foe, 5 * TILE);
+assert.equal(rangedLog.los, 2, 'sight refreshes once the timer expires');
+assert.ok(rangedSandbox.ranged.stagedTargetHit(foe, {}, {}, 0.1, 'zone'), 'staged projectile hit test finds its target');
+assert.equal(rangedSandbox.ranged.stagedTargetHit({ ...foe, health: 0 }, {}, {}, 0.1, 'zone'), null, 'dead targets are not hit');
+
+// Offscreen: no action, no projectile, same cadence and a damage roll.
+const hiddenArcher = fighter('harcher', far, 0, { def: { ...fighter('x', 0, 0).def, rangedWeaponKey: 'crossbow' }, _rangedCooldownT: 0, _rangedLoaded: false, _rigOffscreenAsleep: true });
+const hiddenFoe = fighter('hfoe', far + 5 * TILE, 0, { _rigOffscreenAsleep: true });
+const volleysBefore = rangedLog.volleys.length;
+roll = 0;
+rangedUpdate(hiddenArcher, 0.016, hiddenFoe, 5 * TILE);
+assert.equal(hiddenArcher._rangedAction ?? null, null, 'no load animation offscreen');
+assert.equal(hiddenArcher._rangedLoaded, true, 'the abstract load still loads');
+assert.equal(rangedLog.loads, 1, 'and still pays its stamina');
+assert.equal(hiddenArcher._rangedCooldownT, 1, 'at the normal reload cadence');
+rangedUpdate(hiddenArcher, 1, hiddenFoe, 5 * TILE);
+assert.equal(rangedLog.damage.length, 1, 'the abstract volley deals damage on a hit roll');
+assert.equal(rangedLog.damage[0].amount, 9);
+assert.equal(rangedLog.damage[0].opts.attacker, hiddenArcher);
+assert.equal(rangedLog.volleys.length, volleysBefore, 'and spawns no projectile');
+assert.equal(hiddenArcher._rangedLoaded, false, 'the shot unloads the weapon');
+
+// Player involvement: the full ranged path (movement-cached LOS) is used.
+const nearArcher = fighter('narcher', 2 * TILE, 0, { def: { ...fighter('x', 0, 0).def, rangedWeaponKey: 'crossbow' }, _rangedCooldownT: 0, _rangedLoaded: true });
+rangedUpdate(nearArcher, 0.016, fighter('nfoe', 7 * TILE, 0), 5 * TILE);
+assert.equal(rangedLog.fullLos, 1, 'near the player the full LOS path runs');
+
+// ── Flaskers: offscreen throws apply the recipe directly, no projectile.
+const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
+const applied = [];
+let throws = 0, flaskStarts = 0;
+const flaskContext = vm.createContext({
+  Math, console,
+  window: {
+    NpcDuelStaging: staging,
+    AlchemyFlasks: { throwFromEntity() { throws++; return true; } },
+    AlchemySystem: { applyRecipeToEntity(id, mul, target, opts) { applied.push({ id, mul, target, opts }); return { ok: true }; }, potencyMultiplier: tier => 1 + tier },
+    HeldActionAnimations: { throwFlask: { poses: {}, durationS: 1 } },
+    Combat: { beginStagedAction() { flaskStarts++; return {}; } },
+  },
+  deps: { TILE }, finishBanditAction() {},
+});
+vm.runInContext(banditSource.slice(banditSource.indexOf('  function updateBanditFlaskAI('), banditSource.indexOf('  function makeBanditDef(')), flaskContext);
+const flaskDef = { banditFlaskLoadout: ['venom', 'fire'], banditFlaskPotencyTier: 2, banditFlaskerTuning: { minThrowRangeTiles: 2.25, maxThrowRangeTiles: 10, throwCooldownSeconds: 2 } };
+const hiddenFlasker = fighter('hflask', far, 0, { banditRank: 'flasker', _banditFlaskIndex: 0, def: { ...fighter('x', 0, 0).def, ...flaskDef }, _rigOffscreenAsleep: true });
+roll = 0;
+assert.ok(flaskContext.updateBanditFlaskAI(hiddenFlasker, 0.016, hiddenFoe, 5 * TILE).handled);
+assert.equal(flaskStarts, 0, 'no throw animation offscreen');
+assert.equal(throws, 0, 'and no flask projectile');
+assert.equal(applied.length, 1, 'the recipe lands on the opponent directly');
+assert.deepEqual([applied[0].id, applied[0].mul, applied[0].target], ['venom', 3, hiddenFoe]);
+assert.equal(applied[0].opts.skipEmpower, true, 'NPC throws never borrow player perks');
+assert.equal(hiddenFlasker._banditFlaskCooldownT, 3, 'normal throw cadence (cooldown + throw duration)');
+const visibleFlasker = fighter('vflask', far, 0, { banditRank: 'flasker', _banditFlaskIndex: 0, def: { ...fighter('x', 0, 0).def, ...flaskDef } });
+flaskContext.updateBanditFlaskAI(visibleFlasker, 0.016, foe, 5 * TILE);
+assert.equal(flaskStarts, 1, 'visible staged Flaskers still throw for real');
+
 console.log('npc duel staging: ok');

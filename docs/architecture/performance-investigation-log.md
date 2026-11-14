@@ -4,7 +4,9 @@
 
 Ecology fights (bandits vs tribe hunters vs predators) ran the same pipeline as a bandit fighting the player: slot/queue-ring spacing buckets, quick-attack condition builds, a per-frame 3D `meleeHit` probe through every lunge, a 3D strike cone and afflictions. `js/combat/npc-duel-staging.js` (`window.NpcDuelStaging`) now replaces the melee decision step for a fighter whose duel has no player involvement (player more than 6 tiles from both fighters, re-staging past 7.5; neither hit by the player/companion in the last 6 s). Swings are still real combo steps (pose, capped lunge, trail, audio), resolved with a 2D reach/cone test; defenders sometimes play a real `EnemyDodge` roll (`stageDodge`). When both rigs are offscreen-asleep, exchanges are resolved abstractly with no swing. `NpcDuelStaging.setEnabled(false)` is the A/B switch; `snapshot()` has the counters. Separately, `meleeHit` probes (`debug:false`: lunge halts, HUD reticle, targetable scans) no longer allocate solution vectors.
 
-**Not measured:** frame time on a device during a camp fight. Ranged, flask, witch, lich and headtaker AIs are not staged.
+Ranged troops and Flaskers are staged too. A staged archer's sight check refreshes every 900 ms instead of whenever either fighter moves (in a duel both move, so the 80 ms movement-invalidated cache recomputed scene raycasts and a scan over every hostile almost every frame). Aim pitch comes from ground heights instead of two portrait hitboxes per frame, and its arrows (`stagedTarget`) test only their target and the player instead of every hostile on every flight frame. Offscreen, volleys and flask throws are abstract rolls: the same load/throw cadence and stamina, with damage (or the flask recipe) applied directly.
+
+**Not measured:** frame time on a device during a camp fight. Witch, lich and headtaker AIs are not staged.
 
 ## 14 Nov 2026: failed cliff-entry searches have a retry delay
 
