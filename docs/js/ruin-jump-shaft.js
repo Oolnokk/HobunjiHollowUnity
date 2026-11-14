@@ -319,28 +319,31 @@
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
-    const pillarRecords = [];
+    const pillarRecords = [], attachedPillars = new Set(), attachedPlasm = new Set(); // Retry an incomplete theme mount without duplicating hazards.
+    let pitPlasmAttached = false; // Kanthic's permanent pit patch must be registered exactly once.
     // The theme composer (lich-themes) owns pillar/plasm behaviour; it may not
     // have built its world yet when the shaft mounts, so attach on first ticks.
     const attachHazards = () => {
       const themes = root.DevRandomRuinLichThemes;
       if (!themes || themes.activeTheme?.() !== tradition) return false;
       if (tradition === 'hronal') {
-        for (const p of plan.platforms) if (p.kind === 'pillar') {
+        for (const p of plan.platforms) if (p.kind === 'pillar' && !attachedPillars.has(p.id)) {
           const record = themes.addPlatformPillar?.({ x: p.x, z: p.z, y: p.y, height: PILLAR_HEIGHT, id: 'jump-' + p.id });
           if (!record) return false;
-          pillarRecords.push(record);
+          attachedPillars.add(p.id); pillarRecords.push(record);
         }
       } else if (tradition === 'kanthic') {
-        const pitTiles = []; // The old sinking Kanthic plasm fills the pit (it is deadly to reach in any case).
-        for (let tz = Math.floor(cz - half); tz < Math.ceil(cz + half); tz++) for (let tx = Math.floor(cx - half); tx < Math.ceil(cx + half); tx++) pitTiles.push({ x: tx, z: tz, y: plan.pit.bottomY });
-        const pitPlasm = themes.createPlasmPatch?.(pitTiles, { permanent: true, ignoreClear: true, label: 'shaft-pit' });
-        if (!pitPlasm) return false;
-        plasmHandles.push(pitPlasm);
-        for (const p of plan.platforms) if (p.kind === 'plasm') {
+        if (!pitPlasmAttached) {
+          const pitTiles = []; // The permanent pit patch persists across retry attempts, including partial failures.
+          for (let tz = Math.floor(cz - half); tz < Math.ceil(cz + half); tz++) for (let tx = Math.floor(cx - half); tx < Math.ceil(cx + half); tx++) pitTiles.push({ x: tx, z: tz, y: plan.pit.bottomY });
+          const pitPlasm = themes.createPlasmPatch?.(pitTiles, { permanent: true, ignoreClear: true, label: 'shaft-pit' });
+          if (!pitPlasm) return false;
+          pitPlasmAttached = true; plasmHandles.push(pitPlasm);
+        }
+        for (const p of plan.platforms) if (p.kind === 'plasm' && !attachedPlasm.has(p.id)) {
           const handle = themes.createPlasmPatch?.(p.tiles.map(t => ({ x: t.x, z: t.z, y: p.y })), { permanent: true, ignoreClear: true });
           if (!handle) return false;
-          plasmHandles.push(handle);
+          attachedPlasm.add(p.id); plasmHandles.push(handle);
         }
       }
       plan.hazardsMounted = true; // Subsequent fixture assignments must not silently orphan mounted hazards.
