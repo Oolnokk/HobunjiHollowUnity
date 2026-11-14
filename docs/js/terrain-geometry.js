@@ -611,6 +611,8 @@
     // underground/off in the air the moment the route crosses onto a
     // raised tier. Snapped per-instance in buildPathBrickChunkAt below.
     const elevTierAt = (x, z) => srcGrid[Math.floor(z)]?.[Math.floor(x)]?.elevTier || 0;
+    const isPermanentWaterAt = (x, z) => deps.WATERWAY_TYPES.has(srcGrid[Math.floor(z)]?.[Math.floor(x)]?.type);
+    // A static tile lookup for rivers, streams and waterfalls; rain/wetness and bridgeCrossing do not paint over permanent water.
     if (!pathTiles.size) {
       // Not necessarily a bug — plenty of zones legitimately have no
       // TileType.PATH tiles at all — but worth a trace-level note since
@@ -650,12 +652,13 @@
 
       const rr = (width / 2 + tol) * (width / 2 + tol);
       function containsPoint(x, z) {
+        if (isPermanentWaterAt(x, z)) return false; // Never pave water even when a road's centerline crosses the stream.
         for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
           if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
         return false;
       }
       deps.debugLog(`Path brick surface (${mapId}): spline mode, ${selected.length} route(s), ${pathTiles.size} PATH tile(s).`);
-      return { samples, containsPoint, elevTierAt, bounds: { minX, maxX, minZ, maxZ } };
+      return { samples, containsPoint, isPermanentWaterAt, elevTierAt, bounds: { minX, maxX, minZ, maxZ } };
     }
 
     // No authored route data overlaps this map's painted path tiles at
@@ -668,7 +671,8 @@
     deps.debugLog(`Path brick surface (${mapId}): no route matched ${pathTiles.size} painted PATH tile(s) (${candidates.length} candidate route(s) checked) — falling back to tile-locked mode.`, candidates.length ? 'warn' : 'info');
     return {
       samples: null,
-      containsPoint: (x, z) => pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
+      containsPoint: (x, z) => !isPermanentWaterAt(x, z) && pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
+      isPermanentWaterAt, // Tile-locked paving obeys the same permanent-water exclusion.
       elevTierAt,
       bounds: { minX: tileMinC, maxX: tileMaxC + 1, minZ: tileMinR, maxZ: tileMaxR + 1 },
     };
@@ -679,6 +683,54 @@
   // single-panel version did (see preparePathSplineData.containsPoint).
   // Returns null if that cell has no corridor overlap at all — the
   // caller uses that to skip empty cells rather than keep an empty group.
+
+  // Reject bricks that would partly overhang a water tile, not just those
+  // whose centers lie in one. Runs during chunk construction, never per frame.
+  function pathBrickTouchesPermanentWater(matrix, bounds, isPermanentWaterAt) {
+    if (!bounds || !matrix?.elements || typeof isPermanentWaterAt !== 'function') return false;
+    const e = matrix.elements; // WallBuilder projects its local XY brick face onto the world XZ road.
+    const localX = (bounds.min.x + bounds.max.x) * 0.5;
+    const localY = (bounds.min.y + bounds.max.y) * 0.5;
+    const localZ = (bounds.min.z + bounds.max.z) * 0.5; // The full 3D source box may rotate into the paving plane.
+    const hx = (bounds.max.x - bounds.min.x) * 0.5;
+    const hy = (bounds.max.y - bounds.min.y) * 0.5;
+    const hz = (bounds.max.z - bounds.min.z) * 0.5; // Three local half-extents supply the exact projected footprint.
+    const centerX = e[0] * localX + e[4] * localY + e[8] * localZ + e[12];
+    const centerZ = e[2] * localX + e[6] * localY + e[10] * localZ + e[14];
+    const ux = e[0] * hx, uz = e[2] * hx;
+    const vx = e[4] * hy, vz = e[6] * hy;
+    const wx = e[8] * hz, wz = e[10] * hz; // Three transformed half-edges; all can contribute to ground coverage.
+    const reachX = Math.abs(ux) + Math.abs(vx) + Math.abs(wx);
+    const reachZ = Math.abs(uz) + Math.abs(vz) + Math.abs(wz); // Exact projected axis-aligned envelope for cheap tile candidate lookup.
+    const minX = centerX - reachX, maxX = centerX + reachX;
+    const minZ = centerZ - reachZ, maxZ = centerZ + reachZ;
+
+    // The projected 3D bounding box is a convex zonotope. Besides world X/Z,
+    // its only possible separating axes are normals to these three projected
+    // edges. This handles flat WallBuilder bricks (local XY), ordinary horizontal
+    // local XZ furniture, rotated jitter, and the original model's thickness.
+    const separatedOn = (dx, dz, ex, ez) => {
+      const length = Math.hypot(ex, ez); // Degenerate projected edge adds no separating axis.
+      if (length < 1e-10) return false;
+      const nx = -ez / length, nz = ex / length; // Unit outward normal of this projected edge.
+      const brickRadius = Math.abs(nx * ux + nz * uz)
+        + Math.abs(nx * vx + nz * vz) + Math.abs(nx * wx + nz * wz);
+      const tileRadius = 0.5 * (Math.abs(nx) + Math.abs(nz)); // Permanent-water tile is a unit square.
+      return Math.abs(nx * dx + nz * dz) >= brickRadius + tileRadius - 1e-8;
+    };
+
+    for (let row = Math.floor(minZ); row <= Math.floor(maxZ); row++) {
+      for (let col = Math.floor(minX); col <= Math.floor(maxX); col++) {
+        if (!isPermanentWaterAt(col + 0.5, row + 0.5)) continue;
+        if (maxX <= col || minX >= col + 1 || maxZ <= row || minZ >= row + 1) continue;
+        const dx = centerX - (col + 0.5), dz = centerZ - (row + 0.5); // Relative projected centers for narrow-phase SAT.
+        if (separatedOn(dx, dz, ux, uz) || separatedOn(dx, dz, vx, vz) || separatedOn(dx, dz, wx, wz)) continue;
+        return true; // The complete transformed brick footprint actually overlaps permanent water.
+      }
+    }
+    return false;
+  }
+
   function buildPathBrickChunkAt(splineData, chunkMinX, chunkMinZ, size) {
     const minX = chunkMinX, maxX = chunkMinX + size, minZ = chunkMinZ, maxZ = chunkMinZ + size;
     const y = deps.NORMAL_TOP + 0.01; // small lift above the flat path/grass mesh beneath, avoids z-fighting
@@ -699,11 +751,14 @@
     group.traverse(o => {
       if (!o.isInstancedMesh) return;
       const n = o.count;
+      if (!o.geometry?.boundingBox) o.geometry?.computeBoundingBox?.(); // Built once for edge-aware water rejection, not per brick.
+      const brickBounds = o.geometry?.boundingBox; // Local authored brick shape shared by this instanced mesh.
       let kept = 0;
       for (let i = 0; i < n; i++) {
         o.getMatrixAt(i, m);
         m.decompose(p, q, s);
         if (!splineData.containsPoint(p.x, p.z)) continue;
+        if (pathBrickTouchesPermanentWater(m, brickBounds, splineData.isPermanentWaterAt)) continue; // Reject brick edges reaching river/stream/waterfall tiles.
         // Re-lift this one instance onto its own tile's elevation tier —
         // see elevTierAt's comment in preparePathSplineData. The panel
         // itself was built flat at the zone's base Y, so every brick
@@ -1073,6 +1128,6 @@
     init,
     makeFloorGeo, _mergeTileGeos, buildPathTileGeo, buildPathNetworkGeo,
     preparePathSplineData, buildAllPathBrickChunks, registerPathBrickChunks,
-    updatePathBrickCulling, buildRockTileGeo, buildTerrainTileGeo,
+    updatePathBrickCulling, pathBrickTouchesPermanentWater, buildRockTileGeo, buildTerrainTileGeo,
   };
 })();

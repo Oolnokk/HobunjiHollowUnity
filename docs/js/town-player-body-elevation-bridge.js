@@ -357,6 +357,7 @@
 
   const railCollisionCells = new Map(); // Grid cell -> railing face boxes, so normal walking/NPC collision does not scan every placed building.
   const railCollidersByPiece = new Map(); // Stable piece placement -> live railing boxes; replacing a house does not leave ghost blockers.
+  const furnitureRailCollidersByOwner = new Map(); // Registered authored bridge roots -> narrow rail colliders; cleared when town meshes rebuild.
   let railCollisionProviderInstalled = false; // The shared AreaFootprintBlockers provider is registered once.
   let railCollisionQuery = 0; // Deduplicates a face reached through multiple neighboring grid cells in a single query.
 
@@ -373,6 +374,29 @@
     }
   }
 
+
+  // Cached projected separating axes keep diagonal rail collision precise without mesh raycasts.
+  function orientedRailingFootprint(mesh) {
+    const geometry = mesh.geometry; // Final tile-span-deformed mesh geometry.
+    if (!geometry) return null;
+    if (!geometry.boundingBox) geometry.computeBoundingBox?.();
+    const b = geometry.boundingBox; // Mesh-local bounds, avoiding an overly broad rotated world AABB.
+    if (!b || !mesh.matrixWorld || !window.THREE?.Vector3) return null;
+    const y = (b.min.y + b.max.y) * 0.5; // Rail's representative horizontal cross-section.
+    const a = new window.THREE.Vector3(b.min.x, y, b.min.z).applyMatrix4(mesh.matrixWorld);
+    const endX = new window.THREE.Vector3(b.max.x, y, b.min.z).applyMatrix4(mesh.matrixWorld);
+    const endZ = new window.THREE.Vector3(b.min.x, y, b.max.z).applyMatrix4(mesh.matrixWorld);
+    const ux = endX.x - a.x, uz = endX.z - a.z, vx = endZ.x - a.x, vz = endZ.z - a.z;
+    const lenU = Math.hypot(ux, uz), lenV = Math.hypot(vx, vz); // One-time projected basis lengths.
+    if (lenU < 1e-6 || lenV < 1e-6) return null;
+    const n1x = -uz / lenU, n1z = ux / lenU, n2x = -vz / lenV, n2z = vx / lenV;
+    return {
+      cx: a.x + (ux + vx) * 0.5, cz: a.z + (uz + vz) * 0.5,
+      n1x, n1z, r1: Math.abs(vx * n1x + vz * n1z) * 0.5,
+      n2x, n2z, r2: Math.abs(ux * n2x + uz * n2z) * 0.5,
+    }; // SAT half-widths permit an actor-sized square to approach an angled rail accurately.
+  }
+
   function railBlocksBox(x, z, half = 0, worldY = null) {
     if (!railCollisionCells.size) return false;
     const query = ++railCollisionQuery; // A wide actor box can overlap a rail's indexed cells more than once.
@@ -387,6 +411,12 @@
           if (!objectInActiveScene(collider.owner)) continue;
           const b = collider.bounds;
           if (x + edge < b.minX || x - edge > b.maxX || z + edge < b.minZ || z - edge > b.maxZ) continue;
+          const oriented = collider.oriented; // Authored rails alone need a rotated narrow-phase after tile-index/AABB rejection.
+          if (oriented) {
+            const dx = x - oriented.cx, dz = z - oriented.cz; // Actor center relative to the cached rail shape.
+            if (Math.abs(dx * oriented.n1x + dz * oriented.n1z) > oriented.r1 + edge * (Math.abs(oriented.n1x) + Math.abs(oriented.n1z))) continue;
+            if (Math.abs(dx * oriented.n2x + dz * oriented.n2z) > oriented.r2 + edge * (Math.abs(oriented.n2x) + Math.abs(oriented.n2z))) continue;
+          }
           if (Number.isFinite(worldY) && (worldY < b.minY - 0.05 || worldY > b.maxY + 0.05)) continue;
           return true;
         }
@@ -424,6 +454,39 @@
     });
     if (next.length) railCollidersByPiece.set(id, next);
     else railCollidersByPiece.delete(id);
+    ensureRailCollisionProvider();
+    return next.length;
+  }
+
+
+  function unregisterFurnitureRails(group) {
+    const previous = furnitureRailCollidersByOwner.get(group); // Live group identity is also used on removal.
+    if (!previous) return 0;
+    for (const entry of previous) indexRailCollider(entry, false);
+    furnitureRailCollidersByOwner.delete(group);
+    return previous.length;
+  }
+
+  function registerFurnitureRails(group) {
+    unregisterFurnitureRails(group); // Replacing a bridge or changing its span cannot leave ghost collision.
+    if (!group?.userData?.meshById || !window.THREE?.Box3) return 0;
+    group.updateWorldMatrix?.(true, true);
+    const next = []; // Only authored rail posts/beams with explicit railingCollision, never deck/stairs.
+    for (const mesh of group.userData.meshById.values()) {
+      if (mesh?.userData?.authoredPart?.railingCollision !== true || !mesh.isMesh) continue;
+      const oriented = orientedRailingFootprint(mesh); // Precompute once for this final bridge rotation/length.
+      if (!oriented) continue;
+      const box = new window.THREE.Box3().setFromObject(mesh); // Broad-phase bounding box.
+      if (box.isEmpty?.() || !Number.isFinite(box.min.x) || !Number.isFinite(box.max.z)) continue;
+      const bounds = {
+        minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z,
+        minY: box.min.y, maxY: box.max.y,
+      };
+      const entry = { owner: group, bounds, oriented, lastQuery: 0 }; // Reused by every movement probe.
+      next.push(entry);
+      indexRailCollider(entry, true);
+    }
+    if (next.length) furnitureRailCollidersByOwner.set(group, next);
     ensureRailCollisionProvider();
     return next.length;
   }
@@ -735,6 +798,7 @@
       area,
       supportCount: entries.length,
       railingFaceColliders: [...railCollidersByPiece.values()].reduce((total, faces) => total + faces.length, 0), // Mobile elevation debug shows whether narrow railing blockers were registered.
+      bridgeRailColliders: [...furnitureRailCollidersByOwner.values()].reduce((total, rails) => total + rails.length, 0), // Mobile count verifies exact bridge blockers registered.
       furnitureSyncArea: lastFurnitureSyncArea,
       furnitureSyncPending: !!activeFurnitureSync,
       supports: entries,
@@ -768,6 +832,8 @@
     registerObject,
     registerPiecePorches,
     registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
+    registerFurnitureRails, // Authored town bridge reuses the existing railing collision grid.
+    unregisterFurnitureRails, // Remove bridge blockers before town mesh teardown.
     railBlocksBox, // Mobile diagnostics can compare a failed move with the visual railing geometry.
     unregister,
     clearKind,
