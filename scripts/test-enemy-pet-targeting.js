@@ -43,6 +43,24 @@ assert.equal(targeting.groundPet(elsewhere, 'zone'), false);
 assert.equal(targeting.groundPet(npcHound, 'zone', [player]), false,
   'NPC-owned companions cannot be mistaken for a player-owned pet');
 
+const defendingEnemy = { ...enemy, state: 'chase', targetPlayer: player, homeX: 0, homeY: 0,
+  def: { hostile: true, aggroRangePx: 100, leashRangePx: 120 } }; // A player-focused enemy hit by the pet.
+assert.equal(targeting.shouldRetaliateToPetHit(defendingEnemy, pet, [player], 'zone'), true,
+  'an engaged enemy may retaliate against the companion that just hit it');
+defendingEnemy._chunkCombatTarget = { id: 'tribe-opponent' };
+assert.equal(targeting.shouldRetaliateToPetHit(defendingEnemy, pet, [player], 'zone'), false,
+  'pet aggression must not take over an active faction-ecology fight');
+defendingEnemy._chunkCombatTarget = null; defendingEnemy.state = 'fleeing-low-health';
+assert.equal(targeting.shouldRetaliateToPetHit(defendingEnemy, pet, [player], 'zone'), false,
+  'retaliation must not break a deliberate retreat');
+defendingEnemy.state = 'chase'; defendingEnemy.def.hostile = false;
+assert.equal(targeting.shouldRetaliateToPetHit(defendingEnemy, pet, [player], 'zone'), false,
+  'passive wildlife keeps its existing flee/territory behavior');
+defendingEnemy.def.hostile = true; pet.x = 200;
+assert.equal(targeting.shouldRetaliateToPetHit(defendingEnemy, pet, [player], 'zone'), false,
+  'a distant pet cannot summon retaliation from outside ordinary aggro range');
+pet.x = 25;
+
 const master = { x: 0, y: 0 }; // Enemy pet's master-centered alert anchor.
 banditPet.x = 0;
 assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), pet,
@@ -99,6 +117,7 @@ const game = read('docs/game.js'); // Integration assertion guards the otherwise
 assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget/);
 assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget/);
 assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/);
+assert.match(game, /shouldRetaliateToPetHit/, 'enemy damage handling forwards the real pet attacker into retaliation checks');
 assert.match(game, /!companionObjects\.has\(c\.targetPlayer\)/,
   'ordinary enemy chases release a removed companion rather than chasing its stale entity');
 const expanded = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Loads the actual published bootstrap order.
