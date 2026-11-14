@@ -237,6 +237,12 @@
 
   function setTileSpan(group, totalTiles) {
     const data = group?.userData?.authoredFurnitureData;
+    const spec = window.FurnitureTileSpan?.normalize(data?.tileSpan);
+    if (spec?.enabled && group?.userData?.activeTileSpanTiles != null) {
+      const target = Math.max(spec.baseTiles, Math.min(512, Math.floor(Number.isFinite(Number(totalTiles)) ? Number(totalTiles) : spec.totalTiles)));
+      if (group.userData.activeTileSpanTiles === target && !(group.userData.tileSpanDiagnostics?.errors?.length))
+        return { enabled: true, totalTiles: target, delta: (target - spec.baseTiles) * spec.tileSize, errors: [] }; // Avoid rebuilding surface items on an unchanged placement size.
+    }
     const result = window.FurnitureTileSpan?.apply(group, data, totalTiles) || { enabled: false };
     if (group?.userData?.authoredItemPlacements && Array.isArray(data?.itemPlacements))
       setItemPlacements(group, data, data.itemPlacements); // Move displayed objects to their newly stretched surface positions.
