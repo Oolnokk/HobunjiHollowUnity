@@ -73,10 +73,15 @@ const fakeTransitionModule = {
   init(deps) { this.deps = deps; },
 }; // Used to verify pre-game init interception wraps captured transition dependencies.
 
+let resolvePendingFetch = null, rejectPendingFetch = null; // Controlled fetch outcomes exercise the shared in-flight request API.
 const windowStub = {
   document: documentStub,
   FakeTransitionModule: fakeTransitionModule,
-  fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ settings: { columnSpacing: -0.42 }, entries: [{ id: 'a', lore: '', script: '' }] }) }),
+  fetch: input => {
+    if (String(input).includes('delayed-model')) return new Promise(resolve => { resolvePendingFetch = resolve; });
+    if (String(input).includes('delayed-error')) return new Promise((_, reject) => { rejectPendingFetch = reject; });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ settings: { columnSpacing: -0.42 }, entries: [{ id: 'a', lore: '', script: '' }] }) });
+  },
   requestAnimationFrame(cb) { rafQueue.push(cb); return rafQueue.length; },
   cancelAnimationFrame() {},
   performance: { now: () => 0 },
@@ -160,6 +165,23 @@ async function settle(promise) {
   assert.ok(!rootEl.classList.contains('visible'), 'an explicit hide() must still win when it targets the current show()');
   assert.equal(runtime.coversWorld(), false, 'a hidden loading screen must not throttle the world render');
   assert.equal(runtime.getProgress(), 100, 'completion drives the displayed percentage to 100');
+
+  const beforePending = runtime.pendingRequestCount(); // End-of-load baseline isolates tracked gameplay requests.
+  let loadEvents = 0; // Each request should notify on start and settle without per-frame updates.
+  const unsubscribe = runtime.onPendingRequestsChanged(() => loadEvents++);
+  const pendingModel = windowStub.fetch('assets/models/delayed-model.glb');
+  assert.equal(runtime.pendingRequestCount(), beforePending + 1, 'a deferred fetch is counted while in flight');
+  assert(runtime.pendingRequestNames().some(url => url.includes('delayed-model.glb')), 'pending names describe the actual request');
+  resolvePendingFetch({ ok: true });
+  await pendingModel;
+  assert.equal(runtime.pendingRequestCount(), beforePending, 'a successful fetch releases its request token');
+  const failedModel = windowStub.fetch('assets/models/delayed-error.glb');
+  assert.equal(runtime.pendingRequestCount(), beforePending + 1, 'failed network requests are also tracked while unresolved');
+  rejectPendingFetch(new Error('offline'));
+  await assert.rejects(failedModel, /offline/);
+  assert.equal(runtime.pendingRequestCount(), beforePending, 'a rejected fetch releases its request token');
+  assert.equal(loadEvents, 4, 'start and completion each notify exactly once for success and failure');
+  unsubscribe();
 
   console.log('Loading screen map/building timing, Tankan spacing, race, and progress guard passed.');
 })().catch(err => { console.error(err); process.exit(1); });
