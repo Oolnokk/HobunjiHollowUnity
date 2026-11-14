@@ -573,7 +573,7 @@ assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
 const copiedGroundMaterial = {
-  userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Simulates Three.Material.clone(): metadata is copied but the old compile hook still closes over the source state.
+  userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.
   onBeforeCompile: groundMaterial.onBeforeCompile,
   customProgramCacheKey: groundMaterial.customProgramCacheKey,
   needsUpdate: false,
@@ -596,6 +596,29 @@ assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActor
   'cloned material shader injection must not introduce duplicate GLSL declarations');
 assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
   'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
+
+const shallowSharedGroundMaterial = {
+  userData: { hobunjiXrayElevationShader: groundShaderState }, // A custom clone may retain the SAME nested state and callback, unlike Three.Material.clone().
+  onBeforeCompile: groundMaterial.onBeforeCompile,
+  customProgramCacheKey: groundMaterial.customProgramCacheKey,
+  needsUpdate: false,
+};
+const shallowSharedState = installElevationShader(shallowSharedGroundMaterial);
+assert.notEqual(shallowSharedState, groundShaderState,
+  'a shallow material clone must not reuse the source material shader state or actor tile uniforms');
+assert.equal(installElevationShader(shallowSharedGroundMaterial), shallowSharedState,
+  'a shallow clone stabilizes its own shader hook without wrapping again every replay');
+shallowSharedState.geometryHasNormals = true;
+const shallowSharedShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+shallowSharedGroundMaterial.onBeforeCompile(shallowSharedShader, {});
+assert.equal(shallowSharedShader.uniforms.uHobunjiXrayActorElevation, shallowSharedState.uniforms.elevation,
+  'a shallow clone compiles with its own live actor elevation');
+assert.equal((shallowSharedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
+  'a shallow callback clone does not double-inject x-ray GLSL');
 
 const jigsawClone = {
   userData: { ...groundMaterial.userData, terrainJigsawMaterial: true }, // TerrainRenderChunks.cloneJigsawMaterial retains the source metadata but Three.js drops onBeforeCompile.
