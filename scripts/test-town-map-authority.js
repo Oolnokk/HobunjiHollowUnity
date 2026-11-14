@@ -58,4 +58,36 @@ const { tiles: runtimeTiles, ...runtimeOther } = map; // Runtime data excluding 
 const { tiles: editorTiles, ...editorOther } = town; // Editor data excluding its complete tile grid representation.
 assert.deepEqual(runtimeOther, editorOther, 'Runtime and editor town metadata must agree');
 assert.deepEqual(sparseTiles(runtimeTiles), sparseTiles(editorTiles), 'Runtime and editor tile paint must agree');
-console.log('Town runtime and editor workspace agree on authored map data.');
+// Exercise the existing Map Editor import functions directly, without booting WebGL.
+const vm = require('node:vm');
+const editor = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8');
+const normalizationStart = editor.indexOf('function normalizeWorkspaceTileRecord(t)');
+const normalizationEnd = editor.indexOf('function loadWorkspace()', normalizationStart);
+const importStart = editor.indexOf('function importAny(obj)');
+const importEnd = editor.indexOf('// ── Wire up', importStart);
+assert(normalizationStart >= 0 && normalizationEnd > normalizationStart && importStart >= 0 && importEnd > importStart, 'Map Editor import sources must be available');
+const testWorkspace = { maps: [], activeId: '' }; // Mutable simulated Map Editor workspace used by the real importAny().
+const context = vm.createContext({
+  ws: testWorkspace, window: { FurniturePuzzleProperties: { normalizeWiring: w => w || [] } },
+  TerrainPreview: { VISUAL_HEIGHT_MIN: -1, VISUAL_HEIGHT_MAX: 1 },
+  clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)),
+  makeMap: (name, category, cols, rows) => ({ id: 'imported_id', name, category, cols, rows, tiles: {} }),
+  updateAll() {}, fitView() {}, captureBaseline() {}, migrateSubmapAnchors() {}, sanitizePlateauGaps() {}, setStatus() {},
+  undoStack: [], redoStack: [], confirm: () => false,
+  GAME: { layoutKey: 'unused' }, localStorage: { setItem() {} },
+});
+vm.runInContext(editor.slice(normalizationStart, normalizationEnd) + '\n' + editor.slice(importStart, importEnd), context);
+context.importAny({ maps: [town], activeId: town.id });
+assert.equal(testWorkspace.maps.length, 1, 'Workspace import must produce one town');
+assert.equal(Object.keys(testWorkspace.maps[0].visualHeights).length, 609, 'Workspace import must not discard town height stamps');
+assert(Object.hasOwn(testWorkspace.maps[0], 'visualHeightBase'), 'Workspace import must preserve the authoring base height layer');
+assert.equal(Object.keys(testWorkspace.maps[0].visualHeightBase).length, 0);
+const extraTile = { c: 1, r: 1, type: 'grass', crop: '', plateau: 'authored' }; // Round-trip fixture for non-default tile metadata.
+const standalone = { ...town, tiles: [extraTile], visualHeights: { '1,1': 0.5 }, visualHeightBase: {} };
+context.importAny(standalone);
+assert.equal(testWorkspace.maps.length, 2, 'Standalone import must append the imported map');
+assert.equal(testWorkspace.maps[1].visualHeights['1,1'], 0.5, 'Standalone import must retain visual heights');
+assert.equal(testWorkspace.maps[1].tiles['1,1'].plateau, 'authored', 'Standalone import must retain authored tile properties');
+assert(Object.hasOwn(testWorkspace.maps[1], 'visualHeightBase'), 'Standalone import must preserve foundation base metadata');
+
+console.log('Town runtime/editor data and map-import elevation round trips passed.');
