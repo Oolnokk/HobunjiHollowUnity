@@ -4880,7 +4880,7 @@ function buildWorkspaceExport() {
     })),
   };
 }
-function importAny(obj) {
+function importAny(obj, options = {}) { // Options are used by explicit authoritative reloads; ordinary imports retain their existing behavior.
   if (obj && obj.version === 3 && Array.isArray(obj.tiles)) {
     // farm layout v3 → load into linked maps
     localStorage.setItem(GAME.layoutKey, JSON.stringify(obj));
@@ -4922,9 +4922,9 @@ function importAny(obj) {
   }
   // Workspace format {maps:[...], activeId, gameLink}
   if (obj && Array.isArray(obj.maps) && obj.maps.length) {
-    const merge = ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
-    const doMerge = merge && confirm(
-      `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`);
+    const merge = options.mergeIntoWorkspace === true || ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
+    const doMerge = options.mergeIntoWorkspace === true || (merge && confirm(
+      `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`));
     // Sanitise incoming maps
     const incoming = obj.maps.map(src => {
       const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
@@ -4957,9 +4957,15 @@ function importAny(obj) {
     const incomingGroups = Array.isArray(obj.plateauGroups) ? obj.plateauGroups : [];
     const incomingRamps = Array.isArray(obj.ramps) ? obj.ramps : [];
     if (doMerge) {
-      // Add only maps whose IDs aren't already present
+      // Merge normally preserves existing maps, but an explicitly confirmed Load Town must refresh its canonical town record.
       const existing = new Set(ws.maps.map(m => m.id));
-      incoming.forEach(m => { if (!existing.has(m.id)) ws.maps.push(m); });
+      const replaceMapIds = new Set(options.replaceMapIds || []); // Used only by Load Town to refresh its town record without losing unrelated editor maps.
+      incoming.forEach(m => {
+        const index = ws.maps.findIndex(current => current.id === m.id);
+        if (index < 0) ws.maps.push(m);
+        else if (replaceMapIds.has(m.id)) ws.maps[index] = m;
+      });
+      if (replaceMapIds.has('map_hobunji_town')) ws.activeId = 'map_hobunji_town';
       ws.plateauGroups = ws.plateauGroups || [];
       const existingGroups = new Set(ws.plateauGroups.map(g => g.id));
       incomingGroups.forEach(g => { if (!existingGroups.has(g.id)) ws.plateauGroups.push(g); });
@@ -5226,7 +5232,13 @@ $('loadTownBtn').addEventListener('click', async () => {
         }
       } catch(_) {}
     }
-    importAny(obj);
+    const existingTown = ws.maps.find(map => map.id === 'map_hobunji_town'); // Guards locally authored town changes before reloading the bundled game map.
+    const incomingTown = obj.maps?.find(map => map.id === 'map_hobunji_town'); // Authoritative town data already resolved through the map index above.
+    if (existingTown && incomingTown && !confirm('Replace your editor’s existing Town map with the bundled game Town map?\n\nUnsaved and locally saved Town edits will be replaced. Export Map JSON first if you want a backup.\n\nCancel keeps your existing Town unchanged.')) {
+      setStatus('Load Town cancelled; your local Town map is unchanged.');
+      return;
+    }
+    importAny(obj, { mergeIntoWorkspace: true, replaceMapIds: incomingTown ? ['map_hobunji_town'] : [] });
     // Auto-link: find the town map and set gameLink.townId
     const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
     if (townM && !ws.gameLink.townId) {
@@ -5253,6 +5265,13 @@ $('loadTownBtn').addEventListener('click', async () => {
       }
       updateAll();
       setStatus('Town workspace loaded and linked to farm.');
+    }
+    if (townM) {
+      ws.activeId = townM.id;
+      editingLayoutId = null;
+      updateAll(); fitView();
+      window.MapEditorExportFixes?.captureWorkspaceBaselines?.(); // The confirmed bundled reload establishes a new, explicit diff baseline.
+      setStatus('Bundled game Town loaded into the editor. Future diffs compare against this reloaded Town.');
     }
   } catch(e) { setStatus('Load Town failed: ' + e.message); }
 });
