@@ -66,6 +66,16 @@
   }
   window.AdventuringTools=Object.freeze({
     init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,swingAtAim,throwLit,
-    get debug(){return {lit,held:isHoldingTorch(),unlocked:[...unlocked],lastEvent};}
+    get debug() {
+      const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
+      const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
+      return {
+        lit, held, unlocked: [...unlocked], lastEvent,
+        torchStance: stance ? {
+          idleApplied: stance.stanceApplied, uprightApplied: stance.worldUprightApplied,
+          motionCooldownMs: stance.holderMotionBusyMs, configSource: stance.stanceConfigSource,
+        } : null,
+      };
+    }
   });
 })();
