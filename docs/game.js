@@ -18284,6 +18284,7 @@
               window.CookingSystem?.setHeldQuality?.(key, stack?.stars);
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
+              window.AdventuringTools?.stow?.();
               heldMode = 'item';
               window.HudUpdate.refreshItemScroll(); refreshActionBar(); closeMenu();
             });
@@ -21209,7 +21210,7 @@
       function currentPlayerAimRay() {
         const mobileAimAngle = mobileArchCombatAim?.angle; // Keeps held combat on the camera ray in every view mode, matching controller aiming.
         if (!mobileAutoCameraActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
-          && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
+          && (heldMode !== 'tool' || !((activeTool === 'ranged' && equipmentSlots.ranged) || (activeTool === 'adventuring' && equipmentSlots.adventuring)))) return null; // A held torch aims thrown projectiles through the same camera ray as ranged weapons.
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
@@ -31453,7 +31454,7 @@
         getThreeRect: () => _threeRect,
         setActiveItemIndex: (v) => { activeItemIndex = v; },
         setPlayerFacing: (v) => { playerFacing = v; },
-        setHeldMode: (v) => { heldMode = v; },
+        setHeldMode: (v) => { if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
         setActiveTool: (v) => { activeTool = v; },
         setLastActionMessage: (v) => { lastActionMessage = v; },
         getCameraMode: () => activeCameraMode,
@@ -32347,7 +32348,7 @@
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
           _heldItemPlane=null;_heldItemKey=null;_heldItemAppearanceSignature=null;heldItemHolder.visible=false;
         },
-        equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        equipFestivalBowl: () => { window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
           updateHeldItemHolder(0);
@@ -32644,7 +32645,7 @@
         itemPrev, itemNext,
       });
 
-      window.__adventuringToolDeps = {
+      const adventuringToolDeps = {
         THREE, getActiveTool: () => activeTool, getHeldMode: () => heldMode,
         getEquippedTool: () => equipmentSlots.adventuring,
         getUnlocked: () => window.__hobunjiPlayerProfile?.adventuringToolUnlocks || [],
@@ -32660,7 +32661,7 @@
             || DECORATIVE_FURNITURE_DEFS[key]?.fireHazard === true || PROCESSING_FURNITURE_DEFS[key]?.fireHazard === true;
         },
       };
-      window.AdventuringTools?.init?.(window.__adventuringToolDeps);
+      window.AdventuringTools?.init?.(adventuringToolDeps);
       window.ActionArcUI.init({
         toolBtn,
         WHEEL_SLOTS,
@@ -32686,7 +32687,7 @@
         applyItemSpriteIcon,
         clearItemSpriteIcon,
         getHeldMode: () => heldMode,
-        setHeldMode: (v) => { heldMode = v; },
+        setHeldMode: (v) => { if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
         getLastHeldFarmTool: () => lastHeldFarmTool,
         setLastHeldFarmTool: (v) => { lastHeldFarmTool = v; },
         setActiveTool,
@@ -33866,7 +33867,7 @@
       window.__hobunjiGameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
-        window.AdventuringTools?.init?.({...window.__adventuringToolDeps, getUnlocked:()=>playerData?.adventuringToolUnlocks || []}); // Hydrate unlocked tools from the actual loaded character.
+        window.AdventuringTools?.init?.({...adventuringToolDeps, getUnlocked:()=>playerData?.adventuringToolUnlocks || []}); // Hydrate unlocked tools from the actual loaded character.
         // Restore this world's saved date/time/weather (see
         // _loadWorldCalendar/_saveWorldCalendar) before anything reads
         // calendar.day — checkTothalShift() below derives the current
