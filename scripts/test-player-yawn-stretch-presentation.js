@@ -68,6 +68,12 @@ const rig = {
   },
   applyOwnedPose() { if (!poseProvider) return false; poseProvider(this); return true; },
   getDebug: () => ({ poseOwner }),
+  setSideIdle(side) {
+    const hand = side === 'left' ? left : right;
+    hand.position.copy(new Vector(side === 'left' ? -0.15 : 0.15, 0, 0));
+    hand.quaternion.copy(new Quaternion());
+    hand.visible = true;
+  },
   useIdlePose() {
     left.position.copy(new Vector(-0.15, 0, 0));
     right.position.copy(new Vector(0.15, 0, 0));
@@ -165,10 +171,13 @@ window.Combat.deps.toolHolder = invisibleTool;
 const komaLock = { owner: 'npc-autonomous-drink', participants: [{ id: 'player', channels: ['tools', 'actions'] }] };
 locks.push(komaLock);
 const koma = { isPlayer: true, komaStarted: true, walker: { root: playerMesh, avatarGroup: avatar } };
+left.position.y = 0.28; // A previously held two-hand weapon must not displace the free stretching hand.
+right.position.y = 0.20; // Preserve the authored chewing hand position while lifting the other.
 presentation.start(koma); presentation.update(koma, 0.5); sentinel.onBeforeRender();
 assert.equal(rig.getDebug().poseOwner, null, 'daily Koma keeps the natural right-hand chewing pose instead of claiming both hands');
-assert.ok(left.position.y > 0.48, 'the free arm still stretches during the Koma chewing yawn');
-assert.equal(right.position.y, 0, 'the Koma leaf retains its own right-hand chewing pose');
+assert.ok(left.position.y > 0.48 && left.position.y < 0.65,
+  'the free arm stretches from neutral, not a hidden two-hand weapon grip');
+assert.equal(right.position.y, 0.20, 'the Koma leaf retains its own right-hand chewing pose');
 assert.equal(presentation.actionBlocked(koma), false, 'the yawn and its Koma-owned action lock coexist');
 presentation.end(koma);
 assert.equal(invisibleTool.visible, false, 'previously hidden equipment stays hidden on cleanup');
