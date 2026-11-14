@@ -270,8 +270,12 @@
       obeliskRuntime=jump.mount(placed.jumpShaft,{scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,tradition:ruin.theme});
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
+    const initialRooms=root.RuinRoomSystem?.v50Rooms?.(meta,{
+      originX:Number(pad?.x??pad)||0,originZ:Number(pad?.z??pad)||0,
+      tileScale,y:Number(meta?.floorSurfaceY)||0,prefix:'v50-ground',theme:ruin.theme,
+    })||[]; // Ground-story authored V50 chambers share the same live room registry, without another scene.
     layerRuntime=RuinLayerPlayable.mount({
-      rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
+      rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,initialRooms,
       RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange,onProgressChange:saveProgress
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
