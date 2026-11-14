@@ -43,7 +43,19 @@ async function main(){
       &&!!window.DevRuinSingleRoomTrial&&!!window.RuinLayerChallenges,null,{timeout:120000});
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='interior',null,{timeout:120000});
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
-    await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:20000});
+    try {
+      // V50 world startup can saturate the CI browser event loop; the title's 320ms exit timer
+      // still requires a free main-thread turn after the large scene becomes playable.
+      await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:90000,polling:250});
+    } catch (error) {
+      const diagnostic=await page.evaluate(()=>({
+        title:window.HobunjiTitleScreen?.getDebug?.(),
+        gameStarted:window.__hobunjiGameStarted,
+        area:window.GridTileAccessors?.getCurrentArea?.(),
+        visibility:document.visibilityState,
+      })).catch(e=>({evaluationError:String(e)})); // On-device CI failures retain actionable title/gameplay state, not just a generic timeout.
+      throw new Error('Puzzle lab title exit stalled: '+JSON.stringify(diagnostic),{cause:error});
+    }
     const ui=await page.evaluate(()=>({
       button:!!document.getElementById('devRandomRuinSingleRoomBtn'),
       options:[...document.querySelector('#devRandomRuinSinglePuzzleType')?.options||[]].map(o=>o.value),
