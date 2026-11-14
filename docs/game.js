@@ -12057,7 +12057,7 @@
 
       function performTravel(t) {
         if (t.target === 'exit_building') {
-          exitBuilding();
+          exitBuilding(t); // Preserve the authored exit identity (roof hatch versus ground-level front door).
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
           enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
@@ -14826,6 +14826,7 @@
                 targetSpotId: exit.targetSpotId || '',
                 requiresKeyItem: exit.requiresKeyItem || '',
                 hiddenUntilKeyItem: exit.hiddenUntilKeyItem === true,
+                outdoorSpawn: exit.outdoorSpawn || null, // Optional explicit exterior arrival, including elevated rooftop ladders.
               };
               if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
               transitions.push(t);
@@ -14847,6 +14848,7 @@
                 targetSpotId: t.targetSpotId || '',
                 requiresKeyItem: t.requiresKeyItem || '',
                 hiddenUntilKeyItem: t.hiddenUntilKeyItem === true,
+                outdoorSpawn: t.outdoorSpawn || (mapData.exits || []).find(exit => exit.id === t.exitId)?.outdoorSpawn || null, // Workspace override keeps the interior's authored return routes.
               };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
@@ -15714,8 +15716,9 @@
 
       window.addEventListener('hobunji-time-passage', checkMapLayoutChanges);
 
-      function exitBuilding() {
+      function exitBuilding(exitTransition = null) {
         if (!_isBuildingArea(currentArea)) return;
+        const departingMapId = currentArea; // Explicit exits must be validated against their owning interior.
         startSceneTransition(() => {
           const fromScene = _buildingScenes.get(currentArea)?.scene || null;
           const returnArea = farmPlayerSave?.area ?? 'town';
@@ -15725,6 +15728,23 @@
           if (farmPlayerSave) {
             player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
             setPlayerFacingInstant(farmPlayerSave.angle + Math.PI, { clearLook: true, syncCamera: true });
+          }
+          const outdoorSpawn = exitTransition?.outdoorSpawn; // Only explicitly opted-in exits override the ordinary remembered doorway.
+          let rooftopArrival = null; // Matched roof support is handed to PlayerJump after reparenting into the exterior scene.
+          if (outdoorSpawn?.area === returnArea && returnArea === 'town'
+              && Number.isInteger(outdoorSpawn.col) && Number.isInteger(outdoorSpawn.row)
+              && outdoorSpawn.col >= 0 && outdoorSpawn.col < (_townZone?.cols || 60)
+              && outdoorSpawn.row >= 0 && outdoorSpawn.row < (_townZone?.rows || 50)) {
+            if (outdoorSpawn.balconyId) {
+              const candidate = window.HobunjiWalkableElevation?.roofHatchAt?.(
+                outdoorSpawn.col + 0.5, outdoorSpawn.row + 0.5, 'town');
+              if (candidate?.mapId === departingMapId && candidate.balconyId === outdoorSpawn.balconyId
+                  && Number.isFinite(candidate.topY)) rooftopArrival = candidate;
+            }
+            if (!outdoorSpawn.balconyId || rooftopArrival) {
+              player.x = (outdoorSpawn.col + 0.5) * TILE;
+              player.y = (outdoorSpawn.row + 0.5) * TILE;
+            } // If an asynchronously loading roof is unavailable, keep the known-good remembered doorway.
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
@@ -15741,6 +15761,7 @@
             toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
             toScene.add(reticleWavyGroup);
           }
+          if (rooftopArrival) window.PlayerJump?.enterRoofSupport?.(rooftopArrival); // Explicit ladder arrival uses the same physical support as plateau/mini-cliff landings.
           refreshActionBar();
           logMapSwap('exitBuilding', currentArea);
         });
