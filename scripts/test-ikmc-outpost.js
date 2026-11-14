@@ -21,7 +21,7 @@ assert.deepEqual(piece.footprint.extensions.entryTunnels, [{ x: 13, y: 11 }]);
 assert.equal(piece.placementOrigin, 'fullFootprint', 'the porch must determine the outpost placement envelope, not just the shell');
 const stockDoor = read('docs/config/furniture-authored/door.json'); // Ground-truth regular door geometry, shared by the town tunnel and other one-tile entries.
 const stockLeaf = stockDoor.parts.find(part => part.transform?.rx === 90 && part.transform?.sz > 0.8); // Its rotated Z dimension becomes the slab's vertical height.
-assert(stockLeaf, 'the regular door's upright leaf must exist in authored furniture');
+assert(stockLeaf, "the regular door's upright leaf must exist in authored furniture");
 const stockBottom = stockLeaf.transform.y - stockLeaf.transform.sz / 2; // Used to prove the root sits exactly on the porch surface, not 8 cm above it.
 const stockTop = stockLeaf.transform.y + stockLeaf.transform.sz / 2; // Used to ensure the visible leaf does not intersect its timber lintel.
 const porchTop = Math.max(...piece.base.faces.filter(face => face.tag === 'porch' && face.fusedPorchDeck && face.extensionFace === 'top').flatMap(face => face.v.map(vertex => vertex[1]))); // Actual serialized porch deck height.
