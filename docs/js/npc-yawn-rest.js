@@ -396,7 +396,7 @@
     const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
       || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
     const scriptedPose = window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
-      || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState?.phase === 'active'; // Authored dialogues/bed/sitting interrupt even an active Koma ritual.
+      || window.PlayerSocialPoses?.active || (() => { const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; return !!seat && seat.phase !== 'out'; })(); // Authored dialogues/bed/sitting interrupt even an active Koma ritual.
     if (state.active && (scriptedPose || (!playerCanYawn(globalCombat) && !state.active.komaStarted)))
       finish(state.active, 'player action interrupted');
     if (state.active || playerWakePending || rested || !playerCanYawn(globalCombat)) return;
