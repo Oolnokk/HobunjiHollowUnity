@@ -323,7 +323,7 @@
             }
           }
           door.update=(dt,player,py)=>{
-            const near=RoomSystem.doorNear(player&&{...player,y:py},door,door.opening);
+            const near=RoomSystem.doorNear(player,door,door.opening,py);
             const opening=!door.locked&&near;
             if(opening!==door.opening){
               door.opening=opening;
