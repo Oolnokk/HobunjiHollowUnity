@@ -429,19 +429,32 @@
     setElevation(player, state);
   }
 
+  let lastObservedArea = null; // Area-change edge used to admit only real building-ladder exits.
+  let pendingRoofArrival = null; // Short-lived source interior and timeout, never a standing-at-hatch teleport.
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
+    const area=deps?.getCurrentArea?.(); // The same authoritative area used by movement and the interior exit system.
+    if (area && area!==lastObservedArea) {
+      pendingRoofArrival=(lastObservedArea?.startsWith('map_i_') && area==='town')
+        ? {source: lastObservedArea,remaining:10} : null;
+      lastObservedArea=area;
+    }
+    if(pendingRoofArrival) {
+      pendingRoofArrival.remaining-=Math.max(0,Math.min(1,Number(dt)||0));
+      if(pendingRoofArrival.remaining<=0 || area!=='town')pendingRoofArrival=null;
+    }
     if (!state) {
       // A ladder-triggered building exit arrives on an upper roof without an airborne state.
-      // Adopt the exact authored support only on its dedicated hatch tile; never lift somebody under an arbitrary balcony.
-      if (player && deps?.getCurrentArea?.()==='town' && !player.climbing && !player.onBranch && player.health>0) {
-        const x=player.x/deps.TILE,z=player.y/deps.TILE; // Tile-space arrival used by both town transitions and mini-cliff supports.
-        const hatch=window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Indexed authored hatch, not a broad building-footprint match.
-        if(hatch && Number.isFinite(hatch.topY)) {
+      // Never grant access to someone standing beneath the hatch or arriving from an unrelated interior.
+      if (player && area==='town' && pendingRoofArrival && !player.climbing && !player.onBranch && player.health>0) {
+        const x=player.x/deps.TILE,z=player.y/deps.TILE; // Tile-space arrival shared with the rotated house and mini-cliff support.
+        const hatch=window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Exact authored hatch, not a broad building-footprint match.
+        if(hatch && hatch.mapId===pendingRoofArrival.source && Number.isFinite(hatch.topY)) {
           const roofState={area:'town',phase:'supported',feetY:hatch.topY,launchGround:hatch.topY,
             vy:0,elapsed:0,source:'roof ladder',safeX:x,safeZ:z,lastX:x,lastZ:z};
           player._freeJump=roofState;
-          setElevation(player,roofState); // Shares normal jump/ledge walk-off and fall physics.
+          setElevation(player,roofState); // Shares native jump, ledge walk-off and fall physics.
+          pendingRoofArrival=null;
           debug.lastEvent='entered rooftop via ceiling ladder';
           return true;
         }
