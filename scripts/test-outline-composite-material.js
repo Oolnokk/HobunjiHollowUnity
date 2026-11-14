@@ -28,9 +28,9 @@ const frag = a.fragmentShader;
 const early = frag.indexOf('if (uSeamOutlinesOn < 0.5)');
 assert.ok(early > 0 && early < frag.indexOf('texture2D(tEdgeId'), 'seams off returns before any edge/depth texture read');
 
-const index = read('docs/index.html');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Parser order, with the render group manifest expanded.
 const mod = index.search(/js\/outline-composite-material\.js\?v=[A-Za-z0-9_-]+/);
 const game = index.search(/src="game\.js\?v=/);
-assert.ok(mod > 0 && game > mod, 'module is loaded before game.js');
+assert.ok(mod > 0 && game > mod, 'module is loaded (via the render group) before game.js');
 assert.match(read('docs/game.js'), /const _postMat = window\.OutlineCompositeMaterial\.create\(THREE\);/, 'game.js builds its composite through the module');
 console.log('ok - outline composite material module is wired and skips seam reads when seams are off');

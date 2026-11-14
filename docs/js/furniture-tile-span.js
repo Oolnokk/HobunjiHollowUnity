@@ -5,7 +5,7 @@
   if (global.FurnitureTileSpan) return;
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const tiles = (value, fallback) => Math.max(1, Math.min(256, Math.floor(finite(value, fallback))));
-  const roleOf = part => ['start', 'stretch', 'end'].includes(part?.tileSpanRole) ? part.tileSpanRole : 'none';
+  const roleOf = part => ['start', 'stretch', 'end', 'follow'].includes(part?.tileSpanRole) ? part.tileSpanRole : 'none';
   const sourcePoses = new WeakMap(); // Mesh-local rest shapes for reversible resizing, kept out of serialized Three.js userData.
 
   function normalize(value) {
@@ -16,20 +16,24 @@
     const baseTiles = startTiles + endTiles + middleTiles; // Minimum overall footprint.
     return {
       version: 1, enabled: s.enabled === true,
-      axis: s.axis === 'z' ? 'z' : 'x',
+      axis: ['x','y','z'].includes(s.axis) ? s.axis : 'x',
+      baseHeight: Math.max(.1, Math.min(128, finite(s.baseHeight, 1.4))), // Rest-height between a floor end and a ceiling end.
+      targetHeight: Math.max(.1, Math.min(128, finite(s.targetHeight, finite(s.baseHeight, 1.4)))), // Requested ceiling height in local Y.
+      verticalTarget: s.verticalTarget === 'ceiling' ? 'ceiling' : null, // Runtime may supply the owning room's actual ceiling height.
       startTiles, endTiles, middleTiles, baseTiles,
       totalTiles: Math.max(baseTiles, Math.min(512, Math.floor(finite(s.totalTiles, baseTiles)))),
       tileSize: Math.max(.001, Math.min(100, finite(s.tileSize, 1))),
     };
   }
 
-  function transformFor(role, start, end, delta) {
-    if (role === 'start') return { scale: 1, offset: -delta / 2 };
-    if (role === 'end') return { scale: 1, offset: delta / 2 };
+  function transformFor(role, start, end, delta, axis = 'x') {
+    const vertical = axis === 'y'; // Unlike a centered bridge, the ladder's bottom never moves.
+    if (role === 'start') return { scale: 1, offset: vertical ? 0 : -delta / 2 };
+    if (role === 'end') return { scale: 1, offset: vertical ? delta : delta / 2 };
     if (role !== 'stretch') return { scale: 1, offset: 0 };
     if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < .0001) return null;
     const scale = 1 + delta / (end - start); // Stretch only along the chosen horizontal axis.
-    const offset = -delta / 2 + start * (1 - scale); // The start attachment stays on its rigid partner.
+    const offset = (vertical ? 0 : -delta / 2) + start * (1 - scale); // Preserve the floor anchor for Y; horizontal spans remain centered.
     return { scale, offset };
   }
 
@@ -91,12 +95,14 @@
     const spec = normalize(data?.tileSpan);
     if (!spec.enabled || !Array.isArray(data?.parts)) {
       for (const mesh of group?.userData?.meshById?.values?.() || []) if (sourcePoses.has(mesh)) resetMesh(mesh);
-      if (group?.userData) { delete group.userData.activeTileSpanTiles; delete group.userData.tileSpanDiagnostics; }
+      if (group?.userData) { delete group.userData.activeTileSpanTiles; delete group.userData.activeHeightSpan; delete group.userData.tileSpanDiagnostics; }
       return { enabled: false };
     }
     const meshes = group?.userData?.meshById || new Map();
-    const totalTiles = Math.max(spec.baseTiles, Math.min(512, Math.floor(finite(requestedTiles, spec.totalTiles))));
-    const delta = (totalTiles - spec.baseTiles) * spec.tileSize; // Only extra middle tiles add length.
+    const vertical = spec.axis === 'y'; // Ceiling-anchored furniture uses world-unit height, not horizontal footprint tiles.
+    const totalTiles = Math.max(spec.baseTiles, Math.min(512, Math.floor(finite(vertical ? null : requestedTiles, spec.totalTiles))));
+    const targetHeight = vertical ? Math.max(.1,Math.min(128,finite(requestedTiles,spec.targetHeight))) : null; // Used by dynamic room-height callers.
+    const delta = vertical ? targetHeight - spec.baseHeight : (totalTiles - spec.baseTiles) * spec.tileSize; // Vertical span leaves the bottom on the floor.
     const errors = [];
     const partById = new Map(data.parts.map(part => [part.id, part])); // Validate each root against the correct rigid end section.
     for (const part of data.parts) {
@@ -108,7 +114,7 @@
       if (!mesh || role === 'none') continue;
       const pose = sourcePose(mesh);
       let mapping;
-      if (role === 'stretch') {
+      if (role === 'stretch' || role === 'follow') {
         const roots = part.tileSpanRoots || {};
         if (roleOf(partById.get(roots.start?.partId)) !== 'start'
           || roleOf(partById.get(roots.end?.partId)) !== 'end') {
@@ -117,14 +123,21 @@
         }
         const start = anchorPosition(data, roots.start, meshes, spec.axis, roots.start?.face === 'min' ? 'min' : 'max');
         const end = anchorPosition(data, roots.end, meshes, spec.axis, roots.end?.face === 'max' ? 'max' : 'min');
-        mapping = transformFor(role, start, end, delta);
-        if (part.kind === 'glb') { errors.push(part.id + ': GLB pieces must be rigid ends'); continue; }
-        if (!mapping) { errors.push(part.id + ': missing, invalid or reversed attachment surfaces'); continue; }
+        mapping = transformFor('stretch', start, end, delta, spec.axis);
+        if (!mapping || mapping.scale <= 0) { errors.push(part.id + ': missing, reversed or collapsed attachment surfaces'); continue; }
+        if (role === 'follow') {
+          const fraction = Math.max(0, Math.min(1, (pose.position[spec.axis] - start) / (end-start))); // A rung/decorative part moves without stretching its thickness.
+          mesh.position[spec.axis] = pose.position[spec.axis] + (vertical ? delta * fraction : delta * (fraction - .5));
+          mesh.updateMatrix();
+          if (mesh.userData.authoredMatrix) mesh.userData.authoredMatrix.compose(mesh.position,mesh.quaternion,mesh.scale);
+          continue;
+        }
+        if (part.kind === 'glb') { errors.push(part.id + ': GLB pieces cannot stretch their vertices (use Follow)'); continue; }
         if (delta !== 0 && !mesh.geometry?.clone) { errors.push(part.id + ': stretch geometry unavailable'); continue; }
         if (delta !== 0) {
           const three = global.THREE;
-          const stretch = new three.Matrix4().makeScale(spec.axis === 'x' ? mapping.scale : 1, 1, spec.axis === 'z' ? mapping.scale : 1);
-          stretch.setPosition(spec.axis === 'x' ? mapping.offset : 0, 0, spec.axis === 'z' ? mapping.offset : 0);
+          const stretch = new three.Matrix4().makeScale(spec.axis === 'x' ? mapping.scale : 1, vertical ? mapping.scale : 1, spec.axis === 'z' ? mapping.scale : 1);
+          stretch.setPosition(spec.axis === 'x' ? mapping.offset : 0, vertical ? mapping.offset : 0, spec.axis === 'z' ? mapping.offset : 0);
           const local = pose.matrix.clone().invert().multiply(stretch).multiply(pose.matrix);
           const geometry = pose.geometry.clone();
           geometry.applyMatrix4(local);
@@ -133,15 +146,16 @@
           pose.deformation = local; // Shared local-coordinate mapping for children rooted to a stretched surface.
         }
       } else {
-        mapping = transformFor(role, 0, 0, delta);
+        mapping = transformFor(role, 0, 0, delta, spec.axis);
         mesh.position[spec.axis] = pose.position[spec.axis] + mapping.offset; // Stairs/caps retain original shape and UVs.
         mesh.updateMatrix();
         if (mesh.userData.authoredMatrix) mesh.userData.authoredMatrix.compose(mesh.position, mesh.quaternion, mesh.scale);
       }
     }
     group.userData.activeTileSpanTiles = totalTiles;
-    group.userData.tileSpanDiagnostics = { axis: spec.axis, startTiles: spec.startTiles, middleTiles: totalTiles - spec.startTiles - spec.endTiles, endTiles: spec.endTiles, errors };
-    return { enabled: true, totalTiles, delta, errors };
+    group.userData.activeHeightSpan = vertical ? targetHeight : null; // Tracks the exact ceiling target so repeat application is cheap.
+    group.userData.tileSpanDiagnostics = { axis: spec.axis, startTiles: spec.startTiles, middleTiles: totalTiles - spec.startTiles - spec.endTiles, endTiles: spec.endTiles, targetHeight, errors };
+    return { enabled: true, totalTiles, targetHeight, delta, errors };
   }
 
   function mapLocalPoint(mesh, point) {

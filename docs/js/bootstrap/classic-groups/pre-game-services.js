@@ -5,7 +5,7 @@
     "js/mount-system.js?v=20261016he27d4d6",
     "js/companion-movement-speed.js?v=20261114ownerpaceReview5",
     "js/audio-system.js?v=20261114melodyTempoPer1",
-    "js/honeyfuzzle-audio.js?v=20261026hivebuzz2",
+    "js/honeyfuzzle-audio.js?v=20261114queenPerf1",
     "js/scratchbones-emoji-reactions.js?v=20261109scaleglow1",
     "js/animal-vocalizations.js?v=20261114naturalBreath1",
     "js/music-system.js?v=20261108shaftfade1",

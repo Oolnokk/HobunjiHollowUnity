@@ -255,6 +255,22 @@
     return highest; // Among reachable, staggered treads prefer the highest real walking surface.
   }
 
+  function roofHatchAt(worldX, worldZ, area = activeArea()) {
+    const col=Math.floor(worldX),row=Math.floor(worldZ);
+    // This map is tiny (typically one per building); checking only on a player's first unsupported town tick avoids per-frame scans.
+    for(const hatch of roofHatches.values()){
+      if(hatch.area!==area || hatch.col!==col || hatch.row!==row || !objectInActiveScene(hatch.owner))continue;
+      return hatch;
+    }
+    return null;
+  }
+
+  function isBalconyAt(worldX, worldZ, worldY, area = activeArea()) {
+    if (!Number.isFinite(worldY)) return false;
+    return matchingSupports(worldX,worldZ,area).some(entry=>entry.kind==='balcony' &&
+      Math.abs(entry.bounds.topY-worldY)<=.25); // A building blocks at ground level, but not when standing on its explicit rooftop deck.
+  }
+
   function surfaceLiftAt(worldX, worldZ, area = activeArea()) {
     const entry = supportAt(worldX, worldZ, area);
     return entry ? Math.max(0, entry.bounds.topY - entry.bounds.baseY) : 0;
@@ -275,10 +291,12 @@
     return []
       .concat(piece?.footprint?.cells || [])
       .concat(piece?.footprint?.extensions?.entryTunnels || [])
+      .concat(piece?.footprint?.extensions?.tallEntryTunnels || [])
       .concat(piece?.footprint?.extensions?.chimneys || [])
       .concat(piece?.footprint?.extensions?.porches || [])
       .concat(piece?.footprint?.extensions?.porchStairs || [])
-      .concat(piece?.footprint?.extensions?.railings || []);
+      .concat(piece?.footprint?.extensions?.railings || [])
+      .concat((piece?.balconies || []).flatMap(b=>b.cells||[])); // Balcony cells share the building's unrotated full-footprint mapping.
   }
 
   function rotateCell(localX, localY, width, depth, rotationDeg) {
@@ -303,6 +321,7 @@
       }
     }
     if (Number.isFinite(top)) return top;
+    if (extensionType === 'balcony') return NaN; // A metadata-only rooftop is not a real walkable surface.
     const groundY = finite(piece?.base?.groundY, 0);
     if (extensionType === 'porch') {
       const tile = Math.max(0.001, finite(piece?.tileSize, 1));
@@ -315,8 +334,9 @@
     const piece = normalizePiece(pieceData);
     const porches = piece?.footprint?.extensions?.porches || [];
     const stairs = piece?.footprint?.extensions?.porchStairs || [];
-    if (!porches.length && !stairs.length) return [];
-    const allCells = allPieceCells(piece);
+    const balconies = (piece?.balconies || []).flatMap(b=>b.cells||[]); // Height-aware roof deck cells (never ground-level porches).
+    if (!porches.length && !stairs.length && !balconies.length) return [];
+    const allCells = piece?.placementOrigin === 'fullFootprint' ? allPieceCells(piece) : (piece?.footprint?.cells || []); // Keep support rotation rooted at precisely the same authored origin as HousePieceGen.
     if (!allCells.length) return [];
     const minX = Math.min(...allCells.map(cell => finite(cell.x, 0)));
     const minY = Math.min(...allCells.map(cell => finite(cell.y, 0)));
@@ -334,6 +354,7 @@
         const localY = finite(cell.y, 0) - minY;
         const rotated = rotateCell(localX, localY, width, depth, options.rotationDeg || 0);
         const topLocalY = topForExtensionCell(piece, cell, extensionType);
+        if (!Number.isFinite(topLocalY)) continue; // Never register an invisible balcony if its top faces were not exported.
         const id = registerBox({
           minX: finite(gridX, 0) + rotated.x,
           maxX: finite(gridX, 0) + rotated.x + 1,
@@ -352,9 +373,25 @@
     };
     addCells(porches, 'porch', 'porch');
     addCells(stairs, 'porchStair', 'porchStair');
+    addCells(balconies, 'balcony', 'balcony'); // Raised supports follow the existing approach-ceiling and fall/landing logic.
+    for(const balcony of piece?.balconies||[]){
+      const hatch=balcony?.access?.openingTile; // One interior ladder authorizes access without opening a ground-level route.
+      if(!hatch||balcony.access?.type!=='interiorFurniture')continue;
+      if(!balcony.cells?.some(c=>c.x===hatch.x&&c.y===hatch.y))continue; // The hatch must lie inside the authored deck.
+      const hatchDeckY=topForExtensionCell(piece,hatch,'balcony'); // Uses the actual serialized top face.
+      if(!Number.isFinite(hatchDeckY))continue;
+      const localX=finite(hatch.x,NaN)-minX, localY=finite(hatch.y,NaN)-minY;
+      if(!Number.isFinite(localX)||!Number.isFinite(localY))continue;
+      const rotated=rotateCell(localX,localY,width,depth,options.rotationDeg||0);
+      const col=finite(gridX,0)+rotated.x,row=finite(gridZ,0)+rotated.y;
+      const topY=elevationY+hatchDeckY; // Exact physical deck top; no inferred teleport height from metadata.
+      const id=piece.id+':'+gridX+','+gridZ+':'+balcony.id;
+      roofHatches.set(id,{col,row,topY,owner:group,area:options.area||'town',mapId:balcony.access.mapId,balconyId:balcony.id}); // Explicit interior exit must match both this room and its exact balcony.
+    }
     return ids;
   }
 
+  const roofHatches = new Map(); // Rotated interior-ladder roof spawn tiles, indexed independently of their non-walkable building shell.
   const railCollisionCells = new Map(); // Grid cell -> railing face boxes, so normal walking/NPC collision does not scan every placed building.
   const railCollidersByPiece = new Map(); // Stable piece placement -> live railing boxes; replacing a house does not leave ghost blockers.
   const furnitureRailCollidersByOwner = new Map(); // Registered authored bridge roots -> narrow rail colliders; cleared when town meshes rebuild.
@@ -832,6 +869,8 @@
     registerObject,
     registerPiecePorches,
     registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
+    isBalconyAt, // Height-aware structural-footprint exception; never grants ground-level access.
+    roofHatchAt, // Lets the native upstairs/exit arrival transfer onto the actual roof support.
     registerFurnitureRails, // Authored town bridge reuses the existing railing collision grid.
     unregisterFurnitureRails, // Remove bridge blockers before town mesh teardown.
     railBlocksBox, // Mobile diagnostics can compare a failed move with the visual railing geometry.

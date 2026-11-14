@@ -75,7 +75,7 @@ const arrivalPromise = vm.runInNewContext(game.slice(templeStart,templeEnd)+'\np
 // The normal transition picker must hide wilderness exits while retaining farm travel.
 const pickerStart = game.indexOf('        const t = pool.find(x =>');
 const pickerEnd = game.indexOf('        // Deliberately once per frame',pickerStart);
-const picker = {area:'town',pc:2,pr:3,pool:[{area:'town',col:2,row:3,target:'zone',targetMapId:'map_southern_cloud_forest'}],_isBuildingArea:()=>false,_isZoneArea:()=>false,_playerData:profile,window:context.window};
+const picker = {canUseRoofSpot:()=>true,area:'town',pc:2,pr:3,pool:[{area:'town',col:2,row:3,target:'zone',targetMapId:'map_southern_cloud_forest'}],_isBuildingArea:()=>false,_isZoneArea:()=>false,_playerData:profile,window:context.window};
 vm.runInNewContext(game.slice(pickerStart,pickerEnd),picker);
 assert.equal(picker._pendingSpotTransition,null,'locked wilderness exits offer no transition');
 picker.pool=[{area:'town',col:2,row:3,target:'farm',targetCol:2,targetRow:3}];

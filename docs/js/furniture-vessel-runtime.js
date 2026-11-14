@@ -456,6 +456,7 @@
     window.FestivalProps?.onAuthoredFurnitureReady?.(target); // Applies intrinsic arch span only after final authored mesh ownership is known.
     if (target.userData.instanceSurfacePlacements) authoredRuntime.setItemPlacements(target, data, target.userData.instanceSurfacePlacements); // Instance arrangements survive the same asynchronous upgrade as authored furniture.
     window.FurniturePatternSurfaces?.applyOverrides?.(target, target.userData?.patternOverrides); // Instance decorations survive asynchronous replacement of the procedural placeholder.
+    window.InteriorEnvironmentRuntime?.fitCeilingFurniture?.(target); // Asynchronously upgraded ladders reach the correct ceiling, even if the scene was already built.
     window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data, data.key || target.userData?.authoredFurnitureKey); // Reattaches part-bound ambient VFX only after the real authored mesh map exists.
     return true;
   }
@@ -512,7 +513,7 @@
     if (typeof document === 'undefined') return;
     const currentSrc = document.currentScript?.src || ''; // Resolves sibling scripts correctly in both docs/index.html and the nested Interior Editor bridge.
     const coreSrc = currentSrc ? new URL('interior-fire-floor-runtime.js?v=20261109htzizf1', currentSrc).href : 'js/interior-fire-floor-runtime.js?v=20261109htzizf1';
-    const integrationSrc = currentSrc ? new URL('interior-fire-floor-integration.js?v=20261027htemple-floors-a2', currentSrc).href : 'js/interior-fire-floor-integration.js?v=20261027htemple-floors-a2';
+    const integrationSrc = currentSrc ? new URL('interior-fire-floor-integration.js?v=20261114rooftopFire2', currentSrc).href : 'js/interior-fire-floor-integration.js?v=20261114rooftopFire2';
     const hasScript = fileName => [...document.scripts].some(script => script.src && script.src.includes('/' + fileName)); // Avoids duplicate requests if another dev surface explicitly loaded the companions.
     if (document.readyState === 'loading') {
       if (!window.InteriorFireFloorRuntime?.installed && !hasScript('interior-fire-floor-runtime.js')) document.write(`<script src="${coreSrc}"><\/script>`);

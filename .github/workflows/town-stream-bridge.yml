@@ -10,6 +10,14 @@ on:
       - 'docs/js/terrain-geometry.js'
       - 'docs/js/npc-pathfinding.js'
       - 'docs/js/town-player-body-elevation-bridge.js'
+      - 'docs/config/pieces/ikmc-outpost.json'
+      - 'docs/config/maps/map_i_ikmc_outpost.json'
+      - 'docs/config/furniture-authored/ikmcBalconyLadder.json'
+      - 'docs/js/house-balconies.js'
+      - 'docs/js/HousePieceGen.js'
+      - 'docs/game.js'
+      - 'scripts/test-ikmc-outpost.js'
+      - 'scripts/test-ikmc-rooftop-balconies.js'
       - 'docs/tools/map-editor/index.html'
       - 'scripts/test-town-map-authority.js'
       - 'scripts/test-town-stream-bridge.js'
@@ -38,6 +46,8 @@ jobs:
           node --check docs/js/terrain-geometry.js
           node --check scripts/test-path-bricks-permanent-water.js
           node --check scripts/test-town-stream-bridge.js
+          node --check docs/js/house-balconies.js
+          node --check scripts/test-ikmc-rooftop-balconies.js
       - name: Check town map authority and latest elevation
         run: node scripts/test-town-map-authority.js
       - name: Check the path, water and bridge end-to-end
@@ -46,3 +56,7 @@ jobs:
         run: node scripts/test-walkable-elevation-surfaces.js
       - name: Check water-aware path bricks without cutting the road spline
         run: node scripts/test-path-bricks-permanent-water.js
+      - name: Check IKMC rooftop and preserved log outpost with real height-gated travel
+        run: |
+          node scripts/test-ikmc-outpost.js
+          node scripts/test-ikmc-rooftop-balconies.js
