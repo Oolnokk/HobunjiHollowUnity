@@ -69,7 +69,7 @@
       if (ongoingEntry && (record.owner === OWNER
           || (ongoingEntry.komaStarted && record.owner === 'npc-autonomous-drink'))) return false;
       return record.participants?.some(actor => actor.id === 'player'
-        && actor.channels?.some(channel => channel === 'tools' || channel === 'actions' || channel === 'pose'));
+        && actor.channels?.some(channel => ['tools', 'actions', 'pose', 'movement', 'facing'].includes(channel))); // Movement/facing locks also signal authored traversal and choreography.
     });
   }
 
