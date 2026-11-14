@@ -1112,7 +1112,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const sleep=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     for(const side of floor.sides){
       const [dx,dz]=directions[side],x0=anchor.x+dx*radius+(dx?0:offset);
-      const z0=anchor.z+dz*radius+(dz?offset:0);
+      const z0=anchor.z+dz*radius+(dx?offset:0);
       for(let depth=0;depth<=wall;depth++){
         const x=x0-dx*depth,z=z0-dz*depth,k=x+','+z;
         const flat=ctx.grid[z]?.[x]?.type,covered=ctx.floorSet.has(k),voxel=open.has(k);
