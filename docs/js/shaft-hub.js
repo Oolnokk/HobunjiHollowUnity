@@ -366,14 +366,10 @@
   function registerGroupedSupport(result, DS, scope) {
     const {grid,options:o}=result;
     const exteriorCut=o.octagon?Math.floor(o.shaft*.19)+o.wall:0;
-    const portalFloors=new Set(result.wingPortals.flatMap(portal=>portal.tunnel.map(
-      tile=>portal.level+':'+tile.col+','+tile.row
-    ))); // Include the exact carved wing tunnels in DS ground supports at their own height; the octagonal shell clipping otherwise drops them.
     const levelRows=new Map(); // Level -> row -> sorted columns, shared by the rectangle sweep.
     for(const cell of grid.standingSurfaces({clearance:2})){
       if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
-      if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut)
-        &&!portalFloors.has(cell.level+':'+cell.col+','+cell.row))continue; // Outside stone gets support only where a real level-specific portal is carved.
+      if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
       if((result.obelisks||result.jumpShaft)&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
         &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2)continue; // No implicit support inside the fatal basin.
       let rows=levelRows.get(cell.level);
