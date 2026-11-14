@@ -101,6 +101,36 @@ for (const b of otherBuildings) {
   }
 }
 for (const key of occupied) assert(!['stream', 'tilled', 'trench', 'shrub', 'path'].includes(town.tiles[key]?.type), `IKMC must not cover existing stream, fields, or roadway at ${key}`);
+
+// Festival overlays spawn their own decoration and NPC records at runtime, outside
+// town.buildings/town.npcStations. Check all layouts, including festival-locale
+// dimensions and nested guest slots, before accepting a building relocation.
+const festivalOverlap = (col, row, width = 1, depth = 1) => {
+  const left = col + 0.5 - width / 2, right = col + 0.5 + width / 2; // Decor is centered on its tile; used against the outpost's rotated occupied cells.
+  const top = row + 0.5 - depth / 2, bottom = row + 0.5 + depth / 2; // Rotated outpost tile edges provide the overlap comparison.
+  return [...occupied].some(key => {
+    const [x, y] = key.split(',').map(Number); // One footprint tile; checks actual positive-area intersection, not harmless edge contact.
+    return left < x + 1 - 1e-6 && right > x + 1e-6 && top < y + 1 - 1e-6 && bottom > y + 1e-6;
+  });
+};
+for (const layout of town.layouts || []) {
+  if (!Array.isArray(layout.decor) && !Array.isArray(layout.npcStations)) continue;
+  for (const prop of layout.decor || []) {
+    const col = prop.col + (prop.postX || 0), row = prop.row + (prop.postZ || 0); // Actual festival decoration center, including post-placement offsets.
+    const width = Math.max(1, Number(prop.festivalLocale?.width) || 1) * Math.abs(Number(prop.postSX ?? prop.postScale ?? 1)); // Festival locale's authored activity footprint or one ordinary furniture tile.
+    const depth = Math.max(1, Number(prop.festivalLocale?.depth) || 1) * Math.abs(Number(prop.postSZ ?? prop.postScale ?? 1)); // Used for large stages and dance floors, not just their central tile.
+    assert(!festivalOverlap(col, row, width, depth), `${layout.id}: festival decor ${prop.id} overlaps relocated IKMC porch`);
+    for (const slot of prop.festivalLocale?.slots || []) {
+      const guestCol = col + (slot.dx || 0), guestRow = row + (slot.dz || 0); // Festival NPCs spawned as offsets from their activity root.
+      assert(!festivalOverlap(guestCol, guestRow), `${layout.id}: festival guest ${slot.id} overlaps relocated IKMC porch`);
+    }
+  }
+  for (const station of layout.npcStations || []) {
+    assert(!festivalOverlap(station.col, station.row), `${layout.id}: festival NPC station ${station.id} overlaps relocated IKMC porch`);
+  }
+}
+const candle = town.layouts.find(layout => layout.id === 'festival_tzizkhanash')?.decor?.find(prop => prop.id === 'tzizkhanash_candles_13'); // This one-tile candle sits immediately east of the rebuilt wraparound porch.
+assert(candle && candle.col === 15 && candle.row === 42 && !festivalOverlap(candle.col, candle.row), 'adjacent Tzizkhanash candles must remain clear of the actual porch');
 for (const stair of piece.footprint.extensions.porchStairs) {
   const x = outpost.gridX + (16 - stair.x), z = outpost.gridZ + (13 - stair.y);
   assert.equal(z, 40, 'relocated front stairs must point north');
