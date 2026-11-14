@@ -1065,7 +1065,7 @@
 
   function objectSfxSpatial(source, cfgEntry) {
     if (!deps?.player || !Number.isFinite(source?.x) || !Number.isFinite(source?.y)) return null;
-    return combatAudioSpatial(source, { earshotTiles: Math.max(1, Number(cfgEntry?.earshotTiles) || 12) });
+    return combatAudioSpatial(source, { earshotTiles: Math.max(1, Number(source?.earshotTiles || cfgEntry?.earshotTiles) || 12) }); // Heavy blasts can carry farther than quiet tool cues.
   }
 
   function reversedObjectBuffer(url) {
@@ -1246,10 +1246,10 @@
         if ('preservesPitch' in fallback) fallback.preservesPitch = false;
         if ('webkitPreservesPitch' in fallback) fallback.webkitPreservesPitch = false;
         if ('mozPreservesPitch' in fallback) fallback.mozPreservesPitch = false;
-        playSfxAudioElement(fallback, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
+        playSfxAudioElement(fallback, volume * (spatial?.gain ?? 1), gainBoost, Number(cfgEntry.lowpassHz) || 0);
       }, { once: true });
     }
-    playSfxAudioElement(snd, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
+    playSfxAudioElement(snd, volume * (spatial?.gain ?? 1), gainBoost, Number(cfgEntry.lowpassHz) || 0); // Native mobile fallback must still obey source distance.
   }
 
   function playObjectSfxKeyIndependentPitch(key, pitch = 1, volumeScale = 1, source = null) {
@@ -2055,6 +2055,7 @@
       const source = objectSfxSourceAt(worldX, worldZ, areaId, worldY); // Required: no source means the legacy non-positional call remains available.
       if (!source) return false;
       if (opts.reverse) source.reverse = true; // Only the Kanthic variant reverses the same recorded blast.
+      if (Number.isFinite(opts.earshotTiles)) source.earshotTiles = Math.max(1,opts.earshotTiles); // Blast-range override follows its emitter into the renderer.
       return playObjectSfxKey(key, opts.volumeScale ?? 1, opts.pitch ?? 1, source);
     },
     playObjectSfxKeyMetronome,
