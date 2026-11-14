@@ -199,7 +199,7 @@
     if (!interaction || interaction.finished) return;
     interaction.finished = true;
     if (reason === 'complete') applyDrinkEffect(interaction);
-    interaction.walker.root.rotation.y = interaction.baseNpcFacing;
+    if (!interaction.preserveFacing) interaction.walker.root.rotation.y = interaction.baseNpcFacing; // Player Koma never overwrites the player's live aim/facing.
     clearHandTarget(interaction.walker.root, interaction.holder);
     interaction.holder.parent?.remove(interaction.holder);
     deps?.disposeBottlePlane?.(interaction.bottlePlane, interaction.holder);
@@ -288,10 +288,11 @@
 
   function playAutonomous(walker, itemKey, onDrink, options = {}) {
     const animation = deps?.getDrinkAnimation?.(), itemDef = options.plane ? { key: itemKey } : deps?.getItemDef?.(itemKey); // A ceremonial PNG can share the authored drink clip without becoming an inventory item.
+    const participantId = options.participantId || npcParticipantId(walker); // Player ceremonies reuse the same drink clip with the real player action-lock owner.
     if (!animation || !itemDef || !walker?.root?.parent || walker.area !== deps.getCurrentArea?.()
-        || hasActiveInteractionForRoot(walker.root) || deps.actionLocks?.isLocked?.(npcParticipantId(walker), 'actions')) return 0;
+        || hasActiveInteractionForRoot(walker.root) || deps.actionLocks?.isLocked?.(participantId, 'actions')) return 0;
     const lockHandle = deps.actionLocks?.acquire?.({ owner:'npc-autonomous-drink', reason: options.reason || 'eating a meal',
-      participants:[npcParticipantId(walker)], channels: options.allowWalking ? ['tools','actions'] : ['movement','tools','actions'] }); // Koma follows the same drink pose but lets the shared yawn speed modifier handle movement.
+      participants:[participantId], channels: options.allowWalking ? ['tools','actions'] : ['movement','tools','actions'] }); // Koma follows the same drink pose but lets the shared yawn speed modifier handle movement.
     if (!lockHandle) return 0;
     clearAmbientCarryForRoot(walker.root);
     const holder = new deps.THREE.Group(), bottlePlane = options.plane || deps.makeBottlePlane?.({ ...itemDef, key:itemKey }); // Existing bottles and transient ceremonial PNGs use one pose/cleanup path.
@@ -299,7 +300,8 @@
     holder.add(bottlePlane); walker.root.add(holder);
     const interaction = { walker,itemKey,holder,bottlePlane,lockHandle,onDrink,autonomous:true,
       phase:'drink',elapsed:0,durationS:Math.max(.1,Number(options.durationS)||Number(animation.durationS)||.95),effectApplied:false,finished:false,
-      allowWalking: !!options.allowWalking, // Only the daily Koma ceremony permits moving during an otherwise stationary drink clip.
+      allowWalking: !!options.allowWalking, // Only NPC Koma ceremonies allow slow walking; the player stays still while chewing.
+      preserveFacing: !!options.preserveFacing, // Player aiming/facing remains owned by the normal player movement system.
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
     applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
     publishHandTarget(walker.root, holder, bottlePlane, walker.avatarGroup);
@@ -311,7 +313,7 @@
     }
   }
 
-  function playDailyKoma(walker, onChew, durationS = 5) {
+  function playDailyKoma(walker, onChew, durationS = 5, options = {}) {
     const THREE = deps?.THREE;
     if (!THREE || !walker?.root) return 0;
     if (!sharedKomaTexture) {
@@ -326,7 +328,8 @@
     window.PngPlaneOutlineOccluder?.markPngPlane?.(plane); // Use the same PNG outline/occlusion classification as authored held bottle sprites.
     plane.userData.ownsTexture = false; // The shared hedge PNG is retained across NPCs, unlike a per-item recolored texture.
     const started = playAutonomous(walker, '__daily_koma_leaf__', onChew, {
-      plane, durationS, allowWalking: true, reason: 'chewing daily Koma leaves',
+      plane, durationS, allowWalking: options.allowWalking !== false, participantId: options.participantId,
+      preserveFacing: options.preserveFacing === true, reason: 'chewing daily Koma leaves',
     });
     if (!started) deps?.disposeBottlePlane?.(plane);
     return started;
@@ -362,10 +365,12 @@
       const progress = deps.clamp(interaction.elapsed / interaction.durationS, 0, 1);
       const pose = deps.poseAt(animation, progress);
       applyHolderPose(interaction, pose);
-      if (interaction.allowWalking && interaction.walker._moveSpeedTiles > 0.05) {
-        interaction.baseNpcFacing = interaction.walker.root.rotation.y; // Follow real NPC movement facing; never restore the stale pre-Koma direction.
+      if (!interaction.preserveFacing) {
+        if (interaction.allowWalking && interaction.walker._moveSpeedTiles > 0.05) {
+          interaction.baseNpcFacing = interaction.walker.root.rotation.y; // Follow real NPC movement facing; never restore the stale pre-Koma direction.
+        }
+        interaction.walker.root.rotation.y = interaction.baseNpcFacing + deps.THREE.MathUtils.degToRad(pose.bodyYaw);
       }
-      interaction.walker.root.rotation.y = interaction.baseNpcFacing + deps.THREE.MathUtils.degToRad(pose.bodyYaw);
       if (progress >= (Number(animation.strikeFrac) || 0.62)) applyDrinkEffect(interaction);
       if (progress >= 1) finish(interaction);
     }
