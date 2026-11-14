@@ -146,16 +146,16 @@ const stickScope = {
   cycleAutoTarget: direction => stickTransitions.push(direction),
 }; // Executable fixture uses the real game.js decision code, including its physical button suppression.
 vm.createContext(stickScope);
-const pollStick = () => vm.runInContext('(() => {\n' + game.slice(stickStart, stickEnd) + '\n})()', stickScope); // The production const is function-scoped anew for each synthetic controller poll.
+const pollStick = (owner = 'camera') => { stickScope.rightStickOwner = owner; return vm.runInContext('(() => {\n' + game.slice(stickStart, stickEnd) + '\n})()', stickScope); }; // Each poll receives a newly resolved owner, just as the live controller loop does.
 pollStick();
 assert.deepEqual(stickTransitions, [1], 'first right flick changes target once');
 assert.equal(stickScope.down.size, 0, 'target flick must not invoke mapped right-stick gameplay actions');
 assert.equal(stickScope.controllerCameraX, 0, 'target flick does not rotate the camera');
 pollStick();
 assert.deepEqual(stickTransitions, [1], 'held right stick does not repeatedly cycle');
-stickArchOpen = true; stickScope.rightStickOwner = 'selection';
-pollStick(); assert.deepEqual(stickTransitions, [1], 'open arch owns the stick');
-stickArchOpen = false; stickScope.rightStickOwner = 'camera';
+stickArchOpen = true;
+pollStick('selection'); assert.deepEqual(stickTransitions, [1], 'open arch owns the stick');
+stickArchOpen = false;
 pollStick(); assert.deepEqual(stickTransitions, [1], 'closing an arch while still held cannot trigger a target swap');
 stickScope.rx = 0; pollStick();
 stickScope.rx = -0.85; stickScope.down = new Set(['RightStickLeft']); pollStick();
