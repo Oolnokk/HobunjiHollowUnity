@@ -855,6 +855,7 @@
     const room={x:puzzle.col+.5-4.5,z:puzzle.row+.5-4.5,w:9,d:9}; // One 9x9 carved cave chamber, centered on the actual floor tile.
     const exteriorMusic = exteriorPuzzleKind(profile) === 'timedMelody'; // Enforce different interior/exterior puzzle mechanics even on restored or legacy maps.
     const musicAvailable = typeof window.PuzzleCaveMelody?.generate === 'function' && typeof window.PuzzleCaveMelody?.createSession === 'function';
+    const fireAvailable = typeof window.PersistentGroundFire?.intersects === 'function'; // Use the existing active-area fire hit-test; absent fire support must fall back to the one-step plate before mounting a gate.
     let kind = puzzle.kind; // The available runtime may substitute another puzzle without changing the cave's persisted layout seed.
     if (kind === 'timedMelody' && (exteriorMusic || !musicAvailable)) kind = 'cavePressurePlate'; // Do not substitute fire: melody maps need not contain the two guaranteed flame charges.
     if (kind === 'fireSconces' && !fireAvailable) kind = 'cavePressurePlate'; // No working fire runtime must never make the cave reward unobtainable.

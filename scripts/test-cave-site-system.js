@@ -290,6 +290,46 @@ assert.equal(correspondingInterior.cavePuzzle?.kind,'fireSconces',
 const simpleCliff=outdoor.find(site=>Cave.exteriorPuzzleKind(site)==='cavePressurePlate');
 assert(simpleCliff,'the outdoor fixture also exercises its non-musical pressure-plate option');
 
+ 
+// Regression: an old, entered cliff cave can have a music interior in its stored
+// layout; the modern exterior-music rule selects fire or a safe plate instead.
+// The cave scene builder must finish even if the optional fire runtime is absent.
+{
+  const map=correspondingInterior; // Already generated from a musical exterior, so the new interior selects fire.
+  const plan=Cave.__test.plansByMapId.get(map.id); // Reuse the real deterministic placement and reward, not a synthetic map.
+  const composed=[]; // Captures the actual challenge-kind decision made on each scene build.
+  const scene={add(){}};
+  context.RuinLayerChallenges={compose(options){
+    const challenge={kind:options.kind,solved:false,doorRise:0,door:{position:{y:0}},
+      plateSignal:{setActive(){}},dispose(){challenge.disposed=true;}};
+    composed.push({options,challenge});
+    return challenge;
+  }};
+  context.PersistentGroundFire={intersects:()=>false}; // The live fire hit-test is enough for the authored two-sconce puzzle.
+  const loaded=Cave.buildInteriorProps(map.id,map,scene);
+  assert.equal(typeof loaded?.then,'function','fire-sconce cave scene construction returns the ordinary loading promise');
+  assert.equal(composed[0].options.kind,'fireSconces',
+    'the exterior-music cave can construct a fire-sconce interior without an undefined-variable crash');
+
+  delete context.PersistentGroundFire;
+  assert.doesNotThrow(()=>Cave.buildInteriorProps(map.id,map,scene),
+    'when persistent ground fire is missing, the cave loader must not throw or hang');
+  assert.equal(composed[1].options.kind,'cavePressurePlate',
+    'missing fire runtime uses the immediately playable plate instead of an unwinnable fire gate');
+
+  plan.puzzleCave.kind='timedMelody'; // Emulates a pre-update cave first entered with an interior music challenge.
+  context.PuzzleCaveMelody={generate(){},createSession(){}};
+  context.PersistentGroundFire={intersects:()=>false};
+  assert.doesNotThrow(()=>Cave.buildInteriorProps(map.id,map,scene),
+    'a pre-update interior melody must still load after the puzzle-selection rule changes');
+  assert.equal(composed[2].options.kind,'cavePressurePlate',
+    'an existing music interior behind an exterior music puzzle migrates to a safe non-music plate');
+  assert.equal(composed[0].challenge.disposed,true,'the old challenge is disposed before rebuilding the same cave scene');
+  delete context.RuinLayerChallenges;
+  delete context.PersistentGroundFire;
+  delete context.PuzzleCaveMelody;
+}
+
 const mineMap = decorate(profile('map_i_test_mine', 'ore_mine'));
 assert.equal(mineMap.denMotherKind, null, 'cave without an animal den strips Den-Mother');
 assert.equal(mineMap.nestCol, null, 'cave without an animal den strips nest');
