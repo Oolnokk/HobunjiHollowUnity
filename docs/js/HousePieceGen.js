@@ -1592,6 +1592,8 @@
       geom.computeVertexNormals();
       var mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = mesh.receiveShadow = true;
+      mesh.userData.housePieceFaceTag = f.tag; // Authored face identity drives narrow railing collision without relying on an out-of-scope material tag.
+      mesh.userData.housePieceExtensionFace = f.extensionFace || null; // Paired with the face tag for supporting the authored porch/stair physical boundaries.
       if (tag === 'wall' || tag === 'entryTunnel') mesh.userData.surfaceFoliageRole = 'walls';
       if (f.doorwayFrame === true) mesh.userData.housePieceDoorwayFrame = true; // Shared-finish identity for mobile mesh inspection.
       mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag] || f.doorwayFrame === true) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
