@@ -283,13 +283,11 @@
     if (SLAGOTHIM.has(identity.species) && hour - state.lastKomaHour >= 24
       && walker.area === window.Combat?.deps?.getCurrentArea?.()) {
       const duration = window.NpcDrinkInteraction?.playDailyKoma?.(walker, () => {
+        state.lastKomaHour = hour; // Claim the 24h dose only at the actual drink strike, not when the ceremony begins.
+        checkpoint(state); // A combat interruption before chewing must leave this NPC eligible at the next yawn.
         window.ToastNotifications?.showToast?.(KOMA_TOAST, true);
       }, YAWN_DURATION_S) || 0;
-      if (duration > 0) {
-        state.lastKomaHour = hour;
-        entry.komaStarted = true;
-        checkpoint(state);
-      }
+      if (duration > 0) entry.komaStarted = true; // Used by combat/area-change cleanup even before the leaf is chewed.
     }
     lastYawn = { npcId: state.id, reason, hour, koma: entry.komaStarted, durationS: YAWN_DURATION_S };
     window.__farmLog?.('[yawn] ' + state.id + ' (' + reason + ')' + (entry.komaStarted ? ' + daily koma' : ''), 'npc');
