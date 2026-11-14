@@ -416,7 +416,11 @@
     if (globalCombat || playerAttackInputBusy() || window.ClothingWeavingSystem?.combatActive?.(player) === true
         || (Number.isFinite(player?.health) && player.health <= 0)) return false; // Recent attack attempts/hits count as combat even without a currently chasing foe.
     if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
-      || player?.tzatzulCapturedBy || player?._knockbackLedgeFall) return false; // Never layer a yawn over forced combat/traversal body poses.
+      || player?.tzatzulCapturedBy || player?._knockbackLedgeFall
+      || (Number(player?.knockbackT) || 0) > 0 || window.PlayerDowned?.isDowned?.()
+      || window.PlayerCrawl?.isActive?.()) return false; // Combat impacts, downed crawl and recovery fully own the body.
+    if (player?._freeJump || player?.climbing || player?.onClimbSurface || player?.onCliffBalcony
+        || player?._cliffRouteSession || player?.onBranch) return false; // Airborne, rope, climbing and branch traversal have their own hand/leg poses.
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
     const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
     if (window.PlayerSocialPoses?.active || seat) return false;
