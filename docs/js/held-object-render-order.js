@@ -1075,10 +1075,40 @@
   // color draw inside a replay can show them either. The material is checked
   // live so a later change to the sky's depth policy keeps it in the replay.
   function isDepthReplayInert(object) {
-    if (!object.isMesh || object.userData?.hobunjiDepthReplayInert !== true || object.children.length) return false;
+    if (object.isMesh && object.userData?.hobunjiDepthReplayInert === true && !object.children.length) {
+      const material = object.material;
+      return !!material && !Array.isArray(material) && material.depthWrite === false
+        && !(Number(material.alphaTest) > 0) && object.layers.mask === 1;
+    }
+    return isAutoDepthReplayInert(object);
+  }
+
+  // The same reasoning applied to every untagged leaf that provably cannot
+  // change a colorless replay: layer 0 only (no layer-masked color draw shows
+  // it), every material leaves depth and stencil alone, and nothing in the
+  // replay forces depth on: meshes that are protected covers (water, snow,
+  // grass), PNG occluders or alpha-cutouts get depthWrite=true for the replay,
+  // so they stay. Sprites never get forced depth. Objects with their own
+  // onBeforeRender keep running in render order (pose-sync hooks rely on it).
+  // Outdoors this drops the sun/moon/glow sprites and additive fire/smoke
+  // emitters from every replay; they were resubmitted 5-6 times per frame.
+  let autoInertReplayCount = 0; // Lifetime count of submissions skipped by the rule above (snapshot()).
+  let autoInertReplayEnabled = true; // A/B switch: HeldObjectRenderOrder.setAutoInertReplayEnabled(false).
+  function materialLeavesDepthAndStencil(material) {
+    return !!material && material.depthWrite === false && material.stencilWrite !== true
+      && !(Number(material.alphaTest) > 0);
+  }
+  function isAutoDepthReplayInert(object) {
+    if (!autoInertReplayEnabled) return false;
+    if (!(object.isMesh || object.isSprite) || object.children?.length || object.layers?.mask !== 1) return false;
+    if (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender) return false;
+    if (object.isSprite && object.userData?.hobunjiHeldOverlayParticle === true) return false;
     const material = object.material;
-    return !!material && !Array.isArray(material) && material.depthWrite === false
-      && !(Number(material.alphaTest) > 0) && object.layers.mask === 1;
+    if (Array.isArray(material) ? !material.length || !material.every(materialLeavesDepthAndStencil) : !materialLeavesDepthAndStencil(material)) return false;
+    if (object.isMesh && (pngDepthRegistry.has(object) || protectedCoverRegistry.has(object) || tintCoverRegistry.has(object)
+      || hasLayer(object, PNG_OCCLUDER_LAYER) || isProtectedCover(object))) return false;
+    autoInertReplayCount++;
+    return true;
   }
 
   function replayFrustumIntersects(object, instanceSphere = undefined) {
@@ -2493,7 +2523,7 @@
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -2568,6 +2598,7 @@
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
+    setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.

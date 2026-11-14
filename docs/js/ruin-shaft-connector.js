@@ -204,6 +204,18 @@
     for(let r=0;r<placed.rows;r++)for(let c=0;c<placed.cols;c++)
       if(inOctagon(c,r,0,placed.cols-1,cut)&&placed.grid.canStand(c,r,0))
         mark(Math.floor(placed.grid.colToX(c+.5)),Math.floor(placed.grid.rowToZ(r+.5)));
+    // Upper-story wing portals are open in CellGrid3D, but the ordinary 2D
+    // movement grid was only projected from level 0. Its ROCK shell tiles
+    // therefore stopped the player before F2/F3/F4 doorways, despite visible
+    // and voxel-clear passages. Project only the actual carved portals, never
+    // the whole upper-story shell (which still needs level-specific collision).
+    for(const portal of placed.wingPortals){
+      for(const {col,row} of portal.tunnel){
+        if(!placed.grid.canStand(col,row,portal.level))
+          throw new Error('Upper-story shaft portal has no standing clearance: '+portal.id);
+        mark(Math.floor(placed.grid.colToX(col+.5)),Math.floor(placed.grid.rowToZ(row+.5)));
+      }
+    }
     for(let r=0;r<rows;r++){
       const row=rec.grid[r]||(rec.grid[r]=[]);
       while(row.length<cols)row.push(makeTile(false)); // New 2D cells remain solid unless explicitly part of the shaft or hallway.

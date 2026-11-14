@@ -811,7 +811,8 @@
       { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
       anchorWorld
     );
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishCast);
+    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishCast,1,1,null,
+      window.AudioSystem?.objectSfxSourceAt?.(playerMesh.position.x,playerMesh.position.z,deps.getCurrentArea(),playerMesh.position.y)); // Cast comes from the rod at the player.
     fishingOverlayEl.innerHTML = '';
     fishingEls = null;
     fishingOverlayEl.classList.add('open');
@@ -1141,7 +1142,8 @@
     // fishing the same cast indefinitely. Now a single escape just
     // ends the round and drops back to normal gameplay.
     fm.resolved = true;
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishMiss);
+    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishMiss,1,1,null,
+      window.AudioSystem?.objectSfxSourceAt?.(fm.anchorWorld.x,fm.anchorWorld.z,deps.getCurrentArea(),fm.anchorWorld.y)); // Escape splash comes from the fish's water tile.
     deps.showToast('The fish got away!', false);
     closeFishingMinigame();
   }
@@ -1353,7 +1355,8 @@
         fm.phaseTimer = 0;
       } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
         spawnFishingBiteSplash(fm.anchorWorld);
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishBite);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishBite,1,1,null,
+          window.AudioSystem?.objectSfxSourceAt?.(fm.anchorWorld.x,fm.anchorWorld.z,deps.getCurrentArea(),fm.anchorWorld.y)); // Bites are at the bobber, not the player.
         fm.phase = 'bite';
       }
       renderFishingOverlay();

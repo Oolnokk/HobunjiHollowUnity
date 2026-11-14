@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Group manifests expanded, as the parser sees the page.
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 const actionArc = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // The utilities wheel now lives here.
 
@@ -17,6 +17,6 @@ assert.match(game, /else if \(characterViewMode\.enabled\) \{[\s\S]*playerFacing
 assert.match(game, /playerNeckJoint\.rotation\.x = characterViewMode\.lockedNeckX;[\s\S]*playerNeckJoint\.rotation\.y = characterViewMode\.lockedNeckY;/, 'the neck remains pinned while viewing');
 assert.match(pixelProbe, /Character View: \$\{characterView\.enabled \? 'ON' : 'off'\}/, 'Pixel Probe includes mobile-copyable character-view state');
 assert.match(index, /game\.js\?v=[A-Za-z0-9_.-]+/, 'the game script cache is invalidated');
-assert.match(index, /pixel-probe\.js\?v=[A-Za-z0-9_.-]+/, 'the updated mobile diagnostic is cache-invalidated');
+assert.match(index, /js\/pixel-probe\.js\?v=[A-Za-z0-9_.-]+/, 'the updated mobile diagnostic is cache-invalidated');
 
 console.log('Character view mode checks passed.');

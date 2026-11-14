@@ -2311,7 +2311,6 @@
     cask.exploded=true;
     explosionBatchDepth++; // Includes recursive chain reactions until the outermost charge returns.
     try {
-    window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
     if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
@@ -2329,6 +2328,8 @@
     saveConsumed(cask.mapId+':'+cask.id);
     const x=impact.x,z=impact.z;
     const y=(cask.carried||cask.flying||cask.plinthAttached)?impact.y:baseHeight(cask.col,cask.row)+.30; // An attached charge explodes at its live surface position.
+    if (window.AudioSystem?.playObjectSfxKeyAt) window.AudioSystem.playObjectSfxKeyAt('shattercaskBlast',x,z,cask.mapId,y,{earshotTiles:18}); // Shared positional HRTF and environmental wet bus, with no extra echo copy.
+    else window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Mock/old-audio fallback keeps one blast cue.
     shatterVisual(rec?.scene||scene(),x,z,y);
     const isFlame=cask.kind==='flameShattercask'; // Same blast/throw/pickup lifecycle; only the payload changes.
     applyBlast(cask.mapId,x,z,{radius:RADIUS*flaskmasterRadius,damage:DAMAGE*flaskmasterPower,

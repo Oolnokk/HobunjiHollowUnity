@@ -151,9 +151,10 @@ assert(placementSource.includes('lowSideRelative'), 'density scaling must distin
 assert(zoneRenderer.includes('visual.scaleX') && zoneRenderer.includes('visual.scaleY') && zoneRenderer.includes('visual.scaleZ'), 'game cave renderer must support independent facade width/height/depth scaling');
 assert(fs.readFileSync(path.join(__dirname, '..', 'docs/js/tothal-zone-cache.js'), 'utf8').includes('localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || []'), 'zone cache must preserve stamped locale entrances across reloads');
 assert(gameSource.includes('const generatedLocaleTransitions = (workspaceRoot?.transitions || workspace.localeTransitions || [])') && gameSource.includes('...generatedLocaleTransitions,'), 'Tothal Shift must restore terrain-aware locale cave transitions into the live zone interaction pool');
-const generatorScriptIndex = gameIndex.indexOf('js/wilderness-map-generator.js?v=');
-const terrainPlacementScriptIndex = gameIndex.indexOf('js/locale-terrain-placement.js?v=');
-assert(generatorScriptIndex >= 0 && terrainPlacementScriptIndex > generatorScriptIndex,
+const generatorManifest = fs.readFileSync(path.join(repoRoot, 'docs/js/bootstrap/classic-groups/wilderness-generation.js'), 'utf8'); // The shipped classic-script manifest preserves blocking evaluation order.
+const generatorScriptIndex = generatorManifest.indexOf('js/wilderness-map-generator.js?v=');
+const terrainPlacementScriptIndex = generatorManifest.indexOf('js/locale-terrain-placement.js?v=');
+assert(gameIndex.includes('data-classic-group="wilderness-generation"') && generatorScriptIndex >= 0 && terrainPlacementScriptIndex > generatorScriptIndex,
   'the actual game page must load terrain-aware locale placement after the wilderness generator');
 
 console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');

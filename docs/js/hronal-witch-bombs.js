@@ -196,32 +196,6 @@
       }
     }
   }
-  // The detonation recording played backwards (Kanthic): decoded once, reversed in place.
-  let reversedBlast=null,reversedLoading=null,reverseContext=null;
-  function playReversedBlast() {
-    const audio=window.AudioSystem,cfg=audio?.objectSfxConfig?.()?.[BLAST_SFX_KEY],settings=audio?.gameAudioConfig?.()||{};
-    if (!cfg?.url || settings.enabled===false) return false;
-    const volume=clamp(Number(cfg.volume)||.95,0,1)*clamp(Number(settings.sfxVolume??1),0,1.5);
-    const Context=window.AudioContext||window.webkitAudioContext;
-    if (!Context || volume<=.002) return false;
-    try {
-      reverseContext||=new Context();
-      reverseContext.resume?.().catch?.(()=>{});
-      const play=()=>{
-        const source=reverseContext.createBufferSource(),gain=reverseContext.createGain();
-        source.buffer=reversedBlast;gain.gain.value=volume;
-        source.connect(gain).connect(reverseContext.destination);source.start();
-      };
-      if (reversedBlast) {play();return true;}
-      if (!reversedLoading) reversedLoading=window.fetch(cfg.url).then(r=>{if(!r.ok)throw new Error('blast sample unavailable');return r.arrayBuffer();})
-        .then(data=>reverseContext.decodeAudioData(data)).then(buffer=>{
-          for (let c=0;c<buffer.numberOfChannels;c++) buffer.getChannelData(c).reverse();
-          reversedBlast=buffer;
-        }).catch(()=>{reversedLoading=null;});
-      reversedLoading.then(()=>{if(reversedBlast)play();else audio.playObjectSfxKey?.(BLAST_SFX_KEY);}); // First blast waits for the decode; a failed decode falls back to the forward cue.
-      return true;
-    } catch(_) {return false;}
-  }
   let legacyScanScene=null,legacyScanEntries=null,explodeDepth=0; // Cache markers only while a nested blast call stack is active.
   let legacySceneScans=0,legacyScanReuses=0; // Debug evidence of avoided full-scene traversal on chain reactions.
   function markedBreakables(scene) {
@@ -338,7 +312,8 @@
     } else window.Shattercasks?.triggerBurdenBlastAt?.(mapId,x,z,BLAST_RADIUS,bomb.id);
     breakNearby(mapId,x,z,BLAST_RADIUS,variant);
     buildEffect(scene,x,y,z,variant);
-    if (!(variant.reverseSfx&&playReversedBlast())) window.AudioSystem?.playObjectSfxKey?.(BLAST_SFX_KEY); // Same recording for every variant; Kanthic plays it backwards.
+    if (window.AudioSystem?.playObjectSfxKeyAt) window.AudioSystem.playObjectSfxKeyAt(BLAST_SFX_KEY,x,z,mapId,y,{reverse:!!variant.reverseSfx,earshotTiles:18}); // Real 3D blast origin and the ruin's shared echo space; Kanthic retains reversed playback.
+    else window.AudioSystem?.playObjectSfxKey?.(BLAST_SFX_KEY); // Headless/legacy fallback preserves the semantic cue.
     clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target before its mesh is removed.
     window.Shattercasks?.discardBurden?.(bomb);
     window.__farmLog?.('[witch-bomb:'+variant.id+'] '+bomb.id+' exploded via '+cause,'world');
@@ -555,7 +530,7 @@
   }
   function debugSnapshot() {
     return {
-      latestChange:'Witch-bomb detonation uses the lowblast SFX; the spawn-time fuse, glyph acceleration and dispenser recycle behavior are unchanged.',
+      latestChange:'Every Witch-bomb blast uses the shared positional object-SFX renderer and area reverb; Kanthic reverses the same source in that renderer.',
       blastSfxKey:BLAST_SFX_KEY,
       dispensers:[...dispensers.values()].map(item=>({id:item.id,mapId:item.mapId,activeBombId:item.activeBombId,dispensing:item.dispensing,fuseSeconds:item.fuseSeconds})),
       variants:Object.keys(VARIANTS),ruinVariant:ruinVariantId(currentArea()),dissolving:dissolving.size,

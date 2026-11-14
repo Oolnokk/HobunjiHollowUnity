@@ -614,6 +614,30 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(boxes,[],'no instanced one-unit stone boxes remain in the shaft shell');
   assert.equal(connected.hub.grid.originX+Math.floor(connected.hub.cols/2),preplanned.shaft.anchor.x);
   assert.equal(connected.hub.grid.originZ+Math.floor(connected.hub.rows/2),preplanned.shaft.anchor.z);
+  // A voxel-clear F2 doorway was still impassable because the *flat* movement
+  // grid only marked the level-0 shaft floor. Verify the full stone-shell
+  // tunnel, not merely the three outer tiles already owned by the wing.
+  const upperPortals=connected.hub.wingPortals.filter(portal=>portal.floor>0); // Real upper openings, including both F2 and any higher floor.
+  let elevatedOnly=0; // Counts tunnel tiles that previously remained ROCK because no lower floor or wing claimed them.
+  assert(upperPortals.some(portal=>portal.floor===1),'F2 must expose a testable shaft opening');
+  for(const portal of upperPortals){
+    const floor=connected.plan.floors[portal.floor]; // The planned wing is the authority for which corridor touches this shaft side.
+    const wing=floor.wings.find(wing=>wing.side===portal.side);
+    assert(wing,'every non-native test portal must belong to an authored wing');
+    const wingTiles=Playable.collect(wing); // Distinguishes internal shaft-wall passage from the independently built wing floor.
+    for(const {col,row} of portal.tunnel){
+      const x=Math.floor(connected.hub.grid.colToX(col+.5));
+      const z=Math.floor(connected.hub.grid.rowToZ(row+.5));
+      const key=x+','+z;
+      assert(connected.hub.grid.canStand(col,row,portal.level),
+        'the F2+ voxel corridor has physical headroom at '+portal.id+'/'+key);
+      assert(rec.floorSet.has(key),'the F2+ shaft corridor must be projected into the ordinary movement floor: '+portal.id+'/'+key);
+      assert.equal(rec.grid[z]?.[x]?.type,'grass',
+        'the flat collision grid cannot retain ROCK beneath an open upper portal: '+portal.id+'/'+key);
+      if(!wingTiles.has(key)&&!connected.hub.grid.canStand(col,row,0))elevatedOnly++;
+    }
+  }
+  assert(elevatedOnly>=0,'all upper portals were checked against the shared flat grid');
   assert.equal(ruin.occupancy.cols,rec.cols,'occupancy must include all mounted wings');
   assert.equal(ruin.occupancy.rows,rec.rows,'occupancy must include all mounted wings');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
@@ -738,6 +762,49 @@ for(const side of ['north','east','south','west']){
   assert.equal(ruin.controls.filter(control=>control.kind==='layerBrazier'||control.kind==='dungeonFireSource').length,0,
     'reroll clears the authored wing brazier and fire-source interactions');
   assert.equal(liveChains.size,0,'leaving a generated ruin never leaks rope grabs and mid-air catch records');
+}
+// Reported seed: a cave has exactly two F2 wing entrances but only one
+// ground-floor wing. A doorway that exists ONLY upstairs must be present in
+// the legacy 2D movement map as well as the correct elevated voxel grid.
+{
+  const seed=3687055066; // The user's saved dungeon seed, used to reproduce the original F2 complaint.
+  const makeTile=walkable=>({type:walkable?'grass':'rock'});
+  const rec={cols:150,rows:140,grid:Array.from({length:140},()=>Array.from({length:150},()=>makeTile(false))),
+    floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group(),occlusionMeshes:[]};
+  const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[],theme:'tothal'};
+  const meta={cellSize:.5,worldWidth:54,worldDepth:49,entrance:{side:'west',axis:'x',boundary:0,center:48}};
+  const supportRects=[]; // Captures the real DynamicSurfaces spans registered for the shaft and wing floors, including all F2 passages.
+  const DS={registerSurface(spec){supportRects.push(spec);},clearScope(){}},climb={registerGrid:()=>3,clearScope(){}};
+  const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
+  const preplanned=Plan.compose({seed,anchorX:320,anchorZ:320,...Plan.tierOptions('cave'),shaftTraversal:'buttress'});
+  assert(preplanned.ok,'the reported cave seed must create the intended two-door F2 wing graph');
+  assert.equal(preplanned.floors[1].wings.length,2,'the regression must exercise BOTH second-floor doors');
+  const connected=Connector.connect({rec,ruin,seed,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
+    ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
+    getPlayerPosition:()=>({x:5,z:7}),getPlayerY:()=>0});
+  const upper=connected.hub.wingPortals.filter(portal=>portal.floor===1); // The exact F2 doorway list, rather than all generic multi-floor portals.
+  assert.equal(upper.length,2);
+  let previouslyBlocked=0; // At least one genuine upstairs-only rock tile must be exercised, or this test could silently pass the old bug.
+  for(const portal of upper){
+    const wing=preplanned.floors[1].wings.find(wing=>wing.side===portal.side);
+    const wingTiles=Playable.collect(wing);
+    for(const {col,row} of portal.tunnel){
+      const x=Math.floor(connected.hub.grid.colToX(col+.5)),z=Math.floor(connected.hub.grid.rowToZ(row+.5));
+      const k=x+','+z;
+      assert(connected.hub.grid.canStand(col,row,portal.level),'3D F2 passage blocked at '+portal.id+'/'+k);
+      assert(rec.floorSet.has(k),'2D movement floor missing at '+portal.id+'/'+k);
+      assert.equal(rec.grid[z]?.[x]?.type,'grass','2D movement still sees rock at '+portal.id+'/'+k);
+      const supportY=connected.hub.grid.levelToY(portal.level); // The physical story height, not the old projected level-zero floor.
+      assert(supportRects.some(surface=>surface.scope==='shaft-hub'&&Math.abs(surface.topY-supportY)<1e-6&&
+        surface.bounds.minX<=x+.5&&surface.bounds.maxX>=x+.5&&
+        surface.bounds.minZ<=z+.5&&surface.bounds.maxZ>=z+.5),
+        'F2 tunnel must retain native DynamicSurfaces footing through the shaft shell: '+portal.id+'/'+k);
+      if(!wingTiles.has(k)&&!connected.hub.grid.canStand(col,row,0))previouslyBlocked++;
+    }
+  }
+  assert(previouslyBlocked>0,'cave F2 must include previously unprojected shell tiles');
+  ruin.shaftConnectorCleanup();
 }
 // The special story vault has no V50 `meta.entrance`: its authored southern
 // doorway at (6,27) must still lead to the shared room on ordinary floor tiles.

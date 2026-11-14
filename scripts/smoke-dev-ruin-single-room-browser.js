@@ -5,6 +5,12 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {chromium}=require('playwright');
 const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIntro=1';
+// Each lab regenerates a whole ruin and plays its room transition, which advances by
+// frames (game dt is capped at 0.04 s). Software-rendered CI runs near 1 FPS, so a
+// 20 s budget failed intermittently on a slow runner while the same step took 1-3 s
+// unloaded and up to ~19 s when two browsers shared the CPU locally.
+// The first ruin entry above already allows 120 s for the same kind of work.
+const LAB_REGEN_TIMEOUT_MS=60000;
 
 async function main(){
   const browser=await chromium.launch({headless:true});
@@ -12,11 +18,11 @@ async function main(){
   const errors=[]; // Printed on a headless failure so mobile testers do not need a devtools console.
   const missingResources=[]; // Keeps the actual 404 URLs for startup troubleshooting instead of generic console text.
   async function waitForPuzzleFlag(flag,label) {
-    // Software WebGL can starve requestAnimationFrame: poll from a timer and
-    // allow the genuine first-in-map projectile/rope registry time to link.
+    // Software WebGL may starve animation-frame polling; use a timer but keep
+    // the actual runtime link/ready condition mandatory.
     try {
       await page.waitForFunction(key=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.[key]===true,
-        flag,{timeout:60000,polling:250});
+        flag,{timeout:LAB_REGEN_TIMEOUT_MS,polling:250});
     } catch(error) {
       const state=await page.evaluate(()=>({
         area:window.GridTileAccessors?.getCurrentArea?.(),

@@ -163,7 +163,8 @@
         const placement = persisted?.placements?.find(p => p.col === col && p.row === row);
         if (placement) placement.harvested = true;
         deps.refreshItemScroll();
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
+          window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,mapId)); // Reagent pickups use the plant's real world position.
         return { ok: true, message: `Picked ${amount} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
       },
     };

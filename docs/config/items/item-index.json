@@ -1283,6 +1283,18 @@
     "icon": "🥜",
     "cat": "ingredient"
   },
+  "skeeriHide": {
+    "key": "skeeriHide",
+    "label": "Skeeri Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "skeeriMeat": {
+    "key": "skeeriMeat",
+    "label": "Skeeri Meat",
+    "icon": "🥩",
+    "cat": "ingredient"
+  },
   "smokedMeat": {
     "key": "smokedMeat",
     "label": "Smoked Meat",

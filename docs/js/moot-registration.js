@@ -69,16 +69,22 @@
 
   function ensureNorthernCliffsPopulation(injectedDeps) {
     const zone = injectedDeps?.EXTERIOR_ZONES?.[ZONE_ID]; // Live zone record shared by WildlifeSpawn's roaming groups.
-    if (!zone) return { ready: false, foragers: [], zone: null };
-    const foragers = Array.isArray(zone.roamingForagerSpecies) ? zone.roamingForagerSpecies : (zone.roamingForagerSpecies = []); // Existing small surface-group slots.
-    if (!foragers.includes(KIND)) foragers.push(KIND);
-    zone.roamingForagerCount = Math.max(foragers.length, Math.floor(Number(zone.roamingForagerCount) || 0)); // One stable slot per named species; don't displace Nazgraku.
+    if (!zone) return { ready: false, herds: [], foragers: [], zone: null };
+    const herds = Array.isArray(zone.roamingHerdSpecies) ? zone.roamingHerdSpecies : (zone.roamingHerdSpecies = []); // Moots share the rotating grassland herd slots with Voorg-Asses.
+    if (!herds.includes(KIND)) herds.push(KIND);
+    zone.roamingHerdCount = Math.max(2, Math.floor(Number(zone.roamingHerdCount) || 2)); // Keep both independent Northern Cliffs herd slots.
+    const foragers = Array.isArray(zone.roamingForagerSpecies) ? zone.roamingForagerSpecies : (zone.roamingForagerSpecies = []); // Nazgraku retain their separate small foraging groups.
+    const previousForagerLength = foragers.length; // Used to detect and migrate older Moot-only forager slots without overwriting custom counts.
+    for (let i = foragers.length - 1; i >= 0; i--) if (foragers[i] === KIND) foragers.splice(i, 1);
+    const previousForagerCount = Math.floor(Number(zone.roamingForagerCount) || 0); // Retains any intentional excess slots while removing Moot's old reserved slot.
+    zone.roamingForagerCount = previousForagerLength !== foragers.length && previousForagerCount === previousForagerLength
+      ? foragers.length : Math.max(foragers.length, previousForagerCount);
     for (const key of ['herbivoreSpecies', 'denSpecies']) {
       const species = zone[key]; // Avoid accidentally assigning Moots to the zone's cave and den populations.
       if (Array.isArray(species)) for (let i = species.length - 1; i >= 0; i--) if (species[i] === KIND) species.splice(i, 1);
     }
     if (injectedDeps?.DEN_MOTHER_DEFS) delete injectedDeps.DEN_MOTHER_DEFS[KIND];
-    return { ready: foragers.includes(KIND) && zone.roamingForagerCount >= foragers.length, foragers, zone };
+    return { ready: herds.includes(KIND) && !foragers.includes(KIND) && zone.roamingHerdCount >= 2, herds, foragers, zone };
   }
 
   function registerBabyItem(itemDefs) {
@@ -120,7 +126,7 @@
     const babyReady = registerBabyItem(injectedDeps?.ITEM_DEFS);
     const lootReady = registerLootItems(injectedDeps);
     const ready = livestockReady && creatureReady && rendererReady && population.ready && babyReady && lootReady;
-    window.__farmLog?.(`[moot] northernCliffs=${population.ready ? 'ok' : 'missing'} foragers=[${population.foragers.join(',')}] slots=${population.zone?.roamingForagerCount || 0} creature=${creatureReady ? 'ok' : 'missing'} renderer=${rendererReady ? 'ok' : 'missing'} baby=${babyReady ? 'ok' : 'missing'} loot=${lootReady ? 'ok' : 'missing'}`, ready ? 'wildlife' : 'warn');
+    window.__farmLog?.(`[moot] northernCliffs=${population.ready ? 'ok' : 'missing'} herds=[${population.herds.join(',')}] herdSlots=${population.zone?.roamingHerdCount || 0} foragers=[${population.foragers.join(',')}] creature=${creatureReady ? 'ok' : 'missing'} renderer=${rendererReady ? 'ok' : 'missing'} baby=${babyReady ? 'ok' : 'missing'} loot=${lootReady ? 'ok' : 'missing'}`, ready ? 'wildlife' : 'warn');
     return ready;
   }
 

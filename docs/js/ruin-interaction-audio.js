@@ -37,14 +37,24 @@
     if(!span)return 1; // Missing geometry never invents object size.
     return clamp(Math.pow(REFERENCE_SPAN[kind]/span,.30),.67,1.6);
   }
-  function play(key,pitch=1,span=null){
+  function sourceFor(object,options={}) {
+    const T=root.THREE; // The authored object supplies its actual world-space origin, not a camera/player proxy.
+    let point=options.position||null; // Puzzle callbacks may provide a world point even when their visual is temporarily unavailable.
+    if(object?.getWorldPosition&&T?.Vector3) {
+      try {point=object.getWorldPosition(new T.Vector3());}catch(_){} // Detached editor visuals may lack an active scene.
+    } else if(!point) point=object?.position||null;
+    const area=root.GridTileAccessors?.getCurrentArea?.()||root.Combat?.deps?.getCurrentArea?.();
+    return point&&area?root.AudioSystem?.objectSfxSourceAt?.(point.x,point.z,area,point.y):null;
+  }
+  function play(key,pitch=1,span=null,object=null,options={}){
     const audio=root.AudioSystem;
     if(typeof audio?.playObjectSfxKey!=='function')return false;
     const stone=key==='stoneActivator'||key==='stoneMechanism'; // Only these size-based cues require independent pitch at original duration.
+    const source=sourceFor(object,options); // All world-positioned ruin mechanisms now share the 3D object-SFX pipeline.
     if(stone&&typeof audio.playObjectSfxKeyIndependentPitch==='function'){
-      if(!audio.playObjectSfxKeyIndependentPitch(key,pitch))return false;
+      if(!audio.playObjectSfxKeyIndependentPitch(key,pitch,1,source))return false;
     }else{
-      audio.playObjectSfxKey(key,1,1); // Legacy/ignition fallback stays at normal speed, never size-scaled playbackRate.
+      audio.playObjectSfxKey(key,1,1,source); // Ignition and other neutral-pitch cues retain the origin when supplied.
     }
     debug.lastCue=key;debug.lastPitch=pitch;debug.lastSpan=span;debug.lastTempo=1;
     debug.lastPitchMode=stone?(audio.objectSfxDebugSnapshot?.()?.last?.pitchMode||'neutral'):'neutral';
@@ -52,27 +62,27 @@
     return true;
   }
   function activator(object=null,options={}){
-    return play('stoneActivator',pitchFor('activator',object,options),spanFor(object,options.size));
+    return play('stoneActivator',pitchFor('activator',object,options),spanFor(object,options.size),object,options);
   }
   function mechanism(object=null,options={}){
     try{root.GameFeel?.mechanismMoved?.(object,options);}catch(_){} // Moving stone rumbles the camera and, right after a solve, earns the reveal shot.
-    return play('stoneMechanism',pitchFor('mechanism',object,options),spanFor(object,options.size));
+    return play('stoneMechanism',pitchFor('mechanism',object,options),spanFor(object,options.size),object,options);
   }
   function progress(step,total){ // Partial success on a multi-part puzzle: rising bell rung (the final step plays puzzleComplete instead).
     try{return !!root.GameFeel?.progressNote?.(step,total);}catch(_){return false;}
   }
   let lastPuzzleCompleteAt=-Infinity;
-  function puzzleComplete(){
+  function puzzleComplete(object=null,options={}){
     const now=Number(root.performance?.now?.()??Date.now());
     if(now-lastPuzzleCompleteAt<500)return true; // One solve reported by both a nested puzzle and its chamber plays once.
     lastPuzzleCompleteAt=now;
     try{root.GameFeel?.puzzleSolved?.();}catch(_){} // Original bell motif + reveal window for the mechanism this solve sets moving.
-    root.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    root.AudioSystem?.playObjectSfxKey?.('puzzleComplete',1,1,sourceFor(object,options));
     debug.lastCue='puzzleComplete';debug.plays++;
     return true;
   }
-  function igniteTorch(){return play('igniteLarge');}
-  function igniteAmmo(){return play('igniteSmall');}
+  function igniteTorch(object=null,options={}){return play('igniteLarge',1,null,object,options);}
+  function igniteAmmo(object=null,options={}){return play('igniteSmall',1,null,object,options);}
   function metronomeTick({downbeat=false,beatIndex=0,whenMs=null}={}){
     const audio=root.AudioSystem;
     const normalizedBeat=Number.isFinite(beatIndex)?((Math.trunc(beatIndex)%4+4)%4):0; // Stable 1-2-3-4 sequence regardless of score duration or replay.

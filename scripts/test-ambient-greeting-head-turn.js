@@ -8,7 +8,7 @@ const ambient = fs.readFileSync('docs/js/ambient-dialogue.js', 'utf8'); // Verif
 const composer = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Verifies NPC greeting yaw reads the player's physical head-turn cap.
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Verifies mobile diagnostics expose the rendered greeting yaw.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Verifies the changed composer is cache-busted.
-const index = fs.readFileSync('docs/index.html', 'utf8'); // Verifies changed ambient/probe assets are cache-busted.
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // The page as the parser sees it (group manifests expanded); verifies changed ambient/probe assets are cache-busted.
 
 assert.match(
   ambient,
@@ -77,6 +77,6 @@ assert.match(
 );
 assert.match(loader, /player-body-transform-composer\.js\?v=[A-Za-z0-9_-]+/, 'composer cache bust must ship');
 assert.match(index, /ambient-dialogue\.js\?v=[A-Za-z0-9_-]+/, 'ambient greeting cache bust must ship');
-assert.match(index, /pixel-probe\.js\?v=\w+/, 'combined greeting + lich Pixel Probe cache bust must ship');
+assert.match(index, /js\/pixel-probe\.js\?v=\w+/, 'combined greeting + lich Pixel Probe cache bust must ship');
 
 console.log('Ambient greeting head-turn checks passed.');

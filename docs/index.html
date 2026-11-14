@@ -77,7 +77,7 @@
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/item-acquisition-rarity.js?v=20261114queenPerf1"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
   <script src="js/crop-varieties.js?v=20261114regionalBuffs2"></script>
-  <script src="js/crop-planting.js?v=20261110tzkFortune1"></script>
+  <script src="js/crop-planting.js?v=20261114posobj1754"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
@@ -107,29 +107,7 @@
   <script src="js/farm-editor.js?v=20261102tablechild1"></script>
   <script src="js/farm-plot-editor.js?v=20261109family1"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
-  <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
-       load before game.js, which calls window.TerrainGeometry.init(...)
-       partway through its own setup (after camTargetX/pathWallBuilder/
-       VEG_CULL_* are declared, well before the first real terrain mesh
-       build). -->
-  <script src="js/terrain-geometry.js?v=20261114waterBrick1"></script>
-  <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
-       ground+vegetation mesh building, extracted out of game.js. Must load
-       before game.js, which calls window.VegetationCropRendering.init(...)
-       immediately before the farm's very first buildTileMeshes() call (same
-       forward-reference-safe ordering as WaterSystem/FarmEditor above) —
-       several other already-extracted modules (BorderTerrain,
-       ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
-       read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
-       from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261112hc490ca8"></script>
-  <!-- Active-area grid/scene/dimension accessors and building/den footprint
-       collision checks, extracted out of game.js. Must load before game.js,
-       which calls window.GridTileAccessors.init(...) alongside the other
-       window.*.init(...) calls — dozens of already-extracted modules also
-       read getActiveGrid/getActiveScene/etc. from their own init() calls
-       throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20261114balcony1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="world-surface"></script> <!-- Terrain geometry, grass/crop rendering and active-area accessors extracted from game.js -->
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -205,7 +183,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261114hd3b7ebf"></script>
+  <script src="js/character-action-locks.js?v=20261114herdAudit2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -237,9 +215,9 @@
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/pingdort-registration.js?v=20261107pingnelk2"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
-  <script src="js/moot-registration.js?v=20261107mootreview1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
+  <script src="js/moot-registration.js?v=20261114herdAudit2"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
   <script src="js/creature-genetics.js?v=20261108hdenlineage6"></script>
-  <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
+  <script src="js/animal-hides.js?v=20261114skeeri1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
   <script src="js/creature-genetics-render.js?v=20261104nelkRig1"></script>
@@ -264,7 +242,7 @@
   <script src="js/procedural-furniture.js?v=20261114ceilingladder1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
-  <script src="js/ruin-interaction-audio.js?v=20261113melodyLoud1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261114posobj1754"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261114dblleaf1"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -286,10 +264,8 @@
   <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-seclusion.js?v=20261114tothalSecretLos1"></script> <!-- Shared bounded LOS for post-Shift hidden locales and cliff Puzzle Caves. -->
-  <script src="js/wilderness-map-generator.js?v=20261114tothalSecretLos1"></script>
-  <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20261114tothalSecretLos1"></script>
+  <!-- Shared seclusion scorer, procedural generation and terrain-aware authored locales. Script versions live in the feature manifest, with parser-blocking ordering. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-generation"></script>
   <script src="js/foliage-furniture-renderer.js?v=20261107h509318a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20261110cloneaudit2"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -382,7 +358,7 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261107mushtardReview2"></script>
+  <script src="js/cooking-data.js?v=20261114skeeri1"></script>
   <script src="js/food-processing.js?v=20261109craftHours1"></script>
   <script src="js/cooking-system.js?v=20261110h1f7ed44"></script>
   <script src="js/key-item-system.js?v=20261112keyPack2"></script>
@@ -410,12 +386,12 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261109familyaudit2"></script>
+  <script src="js/dew-vats.js?v=20261114posobj1754"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261109provenance1"></script>
+  <script src="js/wild-berries.js?v=20261114posobj1754"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
@@ -489,7 +465,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20261109rarityaudit10"></script>
+  <script src="js/reagent-plants.js?v=20261114posobj1754"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -563,7 +539,7 @@
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
   <script src="js/player-jump.js?v=20261114rooftopaccess1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
-  <script src="js/climb-system.js?v=20261107releaseFall3"></script>
+  <script src="js/climb-system.js?v=20261114posobj1754"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
@@ -591,8 +567,7 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261114tothalSecretLos1"></script>
-  <script src="js/navigation-compass.js?v=20261114tothalSecretLos1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-navigation"></script> <!-- Fog/discovery maps must load before the navigation compass and game.js. -->
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -600,10 +575,10 @@
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
   <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
-  <script src="js/flying-animal-rig.js?v=20261108tzflightnest2"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
+  <script src="js/flying-animal-rig.js?v=20261114skeeri1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261108tzflightnest2"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261109hatchrange1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261111tzGripBaseline1"></script>
+  <script src="js/skeeri-ruins.js?v=20261114skeeri1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/tzatzul-live-visuals.js?v=20261114skeeriCorpse1"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261108tzflightnest2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -668,7 +643,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261114queenPerf1"></script>
+  <script src="js/wildlife-spawn.js?v=20261114herdAudit2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -737,22 +712,7 @@
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
-  <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20261114farCull1"></script>
-  <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
-       — owns both Western Slope's permanent snow and seasonal Coldmuck
-       slush on every other outdoor zone, reading tile height straight from
-       grid data (elevTier/rampElevation) instead of scanning rendered
-       terrain geometry. Fully replaced the old triangle-copy job-queue
-       system in environment-surface-runtime.js (rain-planes.js loads that
-       above on demand, now an inert stub kept only so that bootstrap check
-       and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1"></script>
-  <!-- Feeds the surface overlay's build progress into the Pixel Probe
-       report line (window.EnvironmentSurfacePixelProbe) — intercepts
-       window.PixelProbe assignment if pixel-probe.js below hasn't loaded
-       yet. -->
-  <script src="js/environment-surface-pixel-probe.js?v=20261106charge879"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="weather-surfaces"></script> <!-- Rain sheets (which load the sky dome) and outdoor snow/slush surfaces -->
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
@@ -779,7 +739,7 @@
   <script src="js/tasks-panel.js?v=20261029hguild2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261111tzGripBaseline1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261114herdAudit2"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -879,27 +839,23 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
-  <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261114tothalSecretLos1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261114tothalSecretLos1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cave-sites"></script> <!-- Wilderness cave sites, cliff-mounted puzzle cave entrances and cave traps -->
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261113explosionAudit3"></script>
+  <script src="js/shattercasks.js?v=20261114posobj1754"></script>
   <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261113explosionAudit3"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261114posobj1754"></script>
   <script src="js/pingdort-flocks.js?v=20261108hdenlineage4"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>
   <script src="js/ruin-rope-geometry.js?v=20261109actualMoveSpeed1"></script> <!-- Unbuffed new-player flight envelope sizes rope rooms and zigzags. -->
   <script src="js/dungeon-rope-art.js?v=20261105hfe97236"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
+  <script src="js/ruin-rope-torches.js?v=20261114heca9091"></script> <!-- Torch-Flail head/fire and lightweight fake light on ruin rope ends. -->
   <script src="js/hanging-ropes.js?v=20261107ropesAir1"></script>
   <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/rope-launch.js?v=1"></script>
@@ -2849,7 +2805,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261114rooftopTravel3"></script>
+  <script src="js/fishing-minigame.js?v=20261114posobj1754"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2912,7 +2868,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261114hd2f805e"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261114h8c7b695"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2953,7 +2909,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114rooftopTravel3"></script>
+  <script src="game.js?v=20261114hefe3c21"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
