@@ -3,14 +3,14 @@
 (() => {
   'use strict';
 
-  const VERSION = 4; // Fallback yawns now reconstruct a five-second breath instead of running WSOLA at quarter-speed.
+  const VERSION = 5; // Player yawns now own a final-render two-arm stretch and held-equipment presentation.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
   const RESTED_HOURS = 3; // Short NPC sleeps provide the same three-hour fatigue relief as the player's Rested buff.
   const WELL_RESTED_HOURS = 24; // Eight-hour NPC sleeps prevent fatigue for one complete in-game day.
   const FULL_SLEEP_HOURS = 8; // Required elapsed NPC sleep for the 24-hour Well Rested fatigue grace.
-  const PLAYER_YAWN_CHANNEL = 'player-yawn-rest'; // Scoped additive chest lean; cleaned through PlayerBodyTransformComposer.
+  const PLAYER_YAWN_CHANNEL = 'player-yawn-rest'; // Scoped player chest extension; presentation module owns hands and held visuals.
   const HOURLY_GAP = 1; // An un-rested NPC yawns once per in-game hour.
   const CHECK_INTERVAL_MS = 350; // Only sleep/combat/calendar decisions are polled; active poses still animate per frame.
   const KOMA_TOAST = 'You chew your daily koma leaves so that you may run and jump as the outlanders do.';
@@ -60,7 +60,22 @@
   }
   function syncCharacter() {
     const id = String(window.__hobunjiPlayerProfile?.characterId || '');
-    if (!id || saveCharacterId === id) return !!id;
+    if (!id) {
+      if (saveCharacterId) {
+        for (const entry of [...active]) finish(entry, 'character unloaded'); // Leaving a save must not strand hidden tools or a player action lock at the title screen.
+        flush(); // Persist the outgoing character's final rest state before clearing its namespace.
+        saveCharacterId = null;
+        saved = {};
+        dirty = false;
+        walkerStates = new WeakMap();
+        playerWalker = null;
+        voicePlans.clear();
+        playerWakePending = false;
+        lastBedSleepCount = null;
+      }
+      return false;
+    }
+    if (saveCharacterId === id) return true;
     for (const entry of [...active]) finish(entry, 'character changed');
     flush();
     saveCharacterId = id;
@@ -268,7 +283,10 @@
       composer.clearExpression?.(entry.seatId); // Do not clear dialogue or social expressions that replaced the yawn.
     }
     entry.ownsMouth = false;
-    if (entry.isPlayer) window.PlayerBodyTransformComposer?.clearChannel?.(PLAYER_YAWN_CHANNEL); // Player torso animation never leaks into later combat or social poses.
+    if (entry.isPlayer) {
+      window.PlayerYawnStretchPresentation?.end?.(entry); // Release item visibility, the action lock and stretch hands on every completion path.
+      window.PlayerBodyTransformComposer?.clearChannel?.(PLAYER_YAWN_CHANNEL);
+    }
   }
   function finish(entry, reason = 'complete') {
     if (!entry || entry.finished) return;
@@ -311,6 +329,7 @@
       }, YAWN_DURATION_S, entry.isPlayer ? { participantId: 'player', allowWalking: true, preserveFacing: true } : {}) || 0; // The player can walk slowly throughout their Koma yawn.
       if (duration > 0) entry.komaStarted = true; // Combat/area-change cleanup owns the transient leaf until drink completion.
     }
+    if (entry.isPlayer) window.PlayerYawnStretchPresentation?.start?.(entry); // Begin AFTER Koma requests its own action lock, so chewing remains eligible.
     lastYawn = { npcId: state.id, reason, hour, koma: entry.komaStarted, durationS: YAWN_DURATION_S };
     window.__farmLog?.('[yawn] ' + state.id + ' (' + reason + ')' + (entry.komaStarted ? ' + daily koma' : ''), 'npc');
     void startVoice(entry).catch(error => { lastError = 'audio: ' + String(error?.message || error); });
@@ -340,8 +359,9 @@
     }
     if (entry.isPlayer) {
       window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
-        priority: 400, rotation: { pitch: -0.085 * envelope }, includeExternal: false,
-      }); // Real player chest expansion uses the shared body compositor, never a direct playerMesh rotation.
+        priority: 400, rotation: { pitch: -0.16 * envelope }, includeExternal: false,
+      }); // The backward chest extension complements the arms-raised stretch without changing the player's world-facing orientation.
+      window.PlayerYawnStretchPresentation?.update?.(entry, progress);
     }
     const body = entry.walker.alcoholPoseGroup; // NPC chest lean uses the existing torso group, independent of the player compositor.
     if (body?.rotation) {
@@ -378,16 +398,44 @@
     }
     return playerWalker;
   }
-  function playerCanYawn(globalCombat) {
+  function playerAttackInputBusy() {
+    const input = window.Combat?.input; // The weapon input module exposes live held, queued, and alignment states before a swing actually starts.
+    for (const slot of [1, 2]) {
+      const press = input?.getState?.(slot);
+      if (press?.down || press?.holding || press?.holdStarted
+          || press?.alignmentPending || press?.releaseQueued || press?.attackQueued) return true;
+    }
+    if (input?.queueSnapshot?.()?.length) return true; // A buffered attack also owns the pending animation slot.
+    return (Number(window.CombatVocalizations?.attackStartDelayS?.()) || 0) > 0; // Still in the real windup/strike/hold timeline, even after button release.
+  }
+  function playerHeldActionBusy() {
+    const target = window.ProceduralHandAttachments?.gameDeps?.toolHolder
+      || window.Combat?.deps?.toolHolder; // Native pick/shovel/hoe and fishing work publishes its authored pose activity on this existing holder.
+    const holder = typeof target === 'function' ? target() : target; // Some combat adapters expose the same scene group as a getter.
+    if (holder?.userData?.authoredToolActionActive === true) return true;
+    return !!window.RangedWeapons?.playerActionState?.(); // Loading, aiming for release, and firing a ranged weapon must finish before stretching.
+  }
+  function playerMountTransitionActive() {
+    return ['mounted', 'mountingUp', 'mountingDown', 'climbLeap'].includes(window.Mounts?.rideState); // Preserve both mounting transitions as authored full-body actions.
+  }
+  function playerCanYawn(globalCombat, ongoingEntry = null) {
     const player = window.Combat?.deps?.player; // Shared live combat participant owns prone, dodge, lunge and capture states.
-    if (globalCombat || (Number.isFinite(player?.health) && player.health <= 0)) return false;
+    if (globalCombat || playerAttackInputBusy() || playerHeldActionBusy()
+        || window.ClothingWeavingSystem?.combatActive?.(player) === true
+        || (Number.isFinite(player?.health) && player.health <= 0)) return false; // Recent attack attempts/hits count as combat even without a currently chasing foe.
     if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
-      || player?.tzatzulCapturedBy || player?._knockbackLedgeFall) return false; // Never layer a yawn over forced combat/traversal body poses.
+      || player?.tzatzulCapturedBy || player?._knockbackLedgeFall
+      || (Number(player?.knockbackT) || 0) > 0 || window.PlayerDowned?.isDowned?.()
+      || window.PlayerCrawl?.isActive?.()) return false; // Combat impacts, downed crawl and recovery fully own the body.
+    if (player?._freeJump || player?.climbing || player?.onClimbSurface || player?.onCliffBalcony
+        || player?._cliffRouteSession || player?.onBranch) return false; // Airborne, rope, climbing and branch traversal have their own hand/leg poses.
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
     const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
     if (window.PlayerSocialPoses?.active || seat) return false;
-    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted') return false; // Tool modes and mounted rider poses own their own locomotion.
-    if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false;
+    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || playerMountTransitionActive()) return false; // Tool modes and mount/dismount transitions own the body and hands.
+    if (window.PlayerYawnStretchPresentation?.actionBlocked?.(ongoingEntry)
+        ?? window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false; // Ignore only our own active lock and the yawn's Koma lock, never unrelated actions.
+    if (window.CharacterActionLocks?.isLocked?.('player', 'pose')) return false;
     return true;
   }
   function playerWakingYawn(hour, area) {
@@ -408,10 +456,10 @@
     const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
       || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState
       || window.__hobunjiFurnitureDebug?.sitInteraction || window.Fishing?.state?.active
-      || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted'
+      || window.MusicMinigame?.state?.active || playerMountTransitionActive()
       || player?.prone || player?.dodging || player?.lunging || player?.tzatzulCapturedBy
       || player?._knockbackLedgeFall); // No lingering slow/pose over a completed seat or new combat/traversal animation.
-    if (state.active && (scriptedPose || (!playerCanYawn(globalCombat) && !state.active.komaStarted)))
+    if (state.active && (scriptedPose || !playerCanYawn(globalCombat, state.active)))
       finish(state.active, 'player action interrupted');
     if (state.active || playerWakePending || rested || !playerCanYawn(globalCombat)) return;
     if (hour >= state.nextHour) startYawn(walker, state, hour, 'hourly fatigue');
@@ -419,7 +467,10 @@
   function frame(context = {}) {
     if (!syncCharacter()) return;
     const now = Number.isFinite(context.timestamp) ? context.timestamp : performance.now();
-    for (const entry of active) poseFrame(entry, now); // Deleting the just-finished Set entry during iteration is safe; no per-frame array allocation.
+    for (const entry of active) {
+      if (entry.isPlayer && !playerCanYawn(false, entry)) finish(entry, 'player action interrupted');
+      else poseFrame(entry, now); // Real actions interrupt immediately; routine eligibility remains on the 350ms calendar poll.
+    }
     if (now - lastCheckMs < CHECK_INTERVAL_MS) return;
     lastCheckMs = now;
     const hour = nowGameHour();
@@ -489,8 +540,9 @@
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
       trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastError,
+      playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),
-    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow, resolvePlayerWalker, playerHourlyYawn }),
+    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow, resolvePlayerWalker, playerHourlyYawn, playerCanYawn, playerAttackInputBusy, syncCharacter }),
   });
 })();

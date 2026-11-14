@@ -27,6 +27,8 @@ async function main() {
   let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
   let playerRested = true; // Starts protected while isolated NPC tests run, then exercises player hourly yawns explicitly.
   const playerChestChannels = new Map(); // Verifies the shared player body compositor receives and clears its yawn contribution.
+  const stretchCalls = []; // Records begin, pose update and completion from the player-only final-render presentation.
+  let stretchActionBlocked = false; // Simulates another action taking ownership before the next hourly yawn.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
@@ -44,6 +46,13 @@ async function main() {
       clearChannel: name => playerChestChannels.delete(name),
     },
     TemplePrayerRestBlessings: { isRested: () => playerRested, isWellRested: () => false },
+    PlayerYawnStretchPresentation: {
+      start: entry => { stretchCalls.push({ kind: 'start', entry }); return true; },
+      update: (entry, progress) => { stretchCalls.push({ kind: 'update', entry, progress }); return true; },
+      end: entry => { stretchCalls.push({ kind: 'end', entry }); },
+      actionBlocked: () => stretchActionBlocked,
+      debugSnapshot: () => ({ test: true }),
+    },
     BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
@@ -239,10 +248,13 @@ async function main() {
   assert.equal(runtime.playerMovementMultiplier(), .25, 'player waking yawn slows walking to 25% like NPC fatigue');
   ms = 43000; frame({ timestamp: ms });
   assert.ok(playerChestChannels.has('player-yawn-rest'), 'player torso uses the shared body transform compositor');
+  assert.ok(stretchCalls.some(call => call.kind === 'start' && call.entry.isPlayer), 'player yawn invokes the dedicated stretch presentation');
+  assert.ok(stretchCalls.some(call => call.kind === 'update' && call.progress > 0), 'player yawn supplies live animation progress to the stretch');
   ms = 46000; frame({ timestamp: ms });
   assert.equal(expressions.has('player'), false, 'player mouth expression clears after the yawn');
   assert.equal(runtime.playerMovementMultiplier(), 1, 'the player speed returns to normal after five seconds');
   assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'the torso channel is cleared after yawning');
+  assert.ok(stretchCalls.some(call => call.kind === 'end' && call.entry.isPlayer), 'all player yawn visuals release after completion');
 
   for (const species of ['tletingan', 'nuhongan', 'longoran']) {
     window.__hobunjiPlayerProfile.appearance.speciesId = species; // Simulates each playable subspecies in turn without rebuilding the harness.
@@ -295,6 +307,10 @@ async function main() {
   hour = 180; ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'the final stand-up transition must suppress a new yawn');
   window.__hobunjiFurnitureDebug.sitState = null;
+  stretchActionBlocked = true; // A busy player must not begin yawning even though the fatigue timer elapsed.
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'an unrelated ongoing action postpones the player yawn');
+  stretchActionBlocked = false;
   window.Combat.deps.player.prone = true; // Native impact poses are not compatible with yawn chest/neck animation.
   ms += 600; frame({ timestamp: ms });
   assert.equal(runtime.playerMovementMultiplier(), 1, 'a prone player must not begin an hourly yawn');
@@ -321,6 +337,65 @@ async function main() {
     'missing yawn recordings use a five-second composition with species pitch/cadence');
   assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
     && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
+  // A weapon held but not yet fired has no lunge/stagger flags; yawn must not consume the input before release.
+  let weaponPress = null; // Injected public Combat.input state used by the guarded player yawn query.
+  let queuedAttacks = []; // Simulates attacks waiting on vocal/pose ownership.
+  let strikeDelay = 0; // Represents an attack still in its authored windup/strike/hold timeline.
+  window.Combat.input = {
+    getState: slot => slot === 1 ? weaponPress : null,
+    queueSnapshot: () => queuedAttacks,
+  };
+  window.CombatVocalizations.attackStartDelayS = () => strikeDelay;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'ordinary idle player is eligible when neither input is held nor a pose owns them');
+  weaponPress = { down: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a pressed attack input must prevent the yawn from stealing the held attack');
+  weaponPress = { alignmentPending: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'target alignment must finish before the player can yawn');
+  weaponPress = null;
+  queuedAttacks = [1];
+  assert.equal(runtime._test.playerCanYawn(false), false, 'buffered attack inputs take priority over the fatigue animation');
+  queuedAttacks = [];
+  strikeDelay = 0.25;
+  assert.equal(runtime._test.playerCanYawn(false), false, 'real attack animation hold/windup must finish before yawning');
+  strikeDelay = 0;
+  window.Combat.deps.toolHolder = () => ({ userData: { authoredToolActionActive: true } }); // Game tool-work pose flag may be exposed through a getter-backed holder.
+  assert.equal(runtime._test.playerCanYawn(false), false, 'active mining/hoeing or another tool-work animation overrides fatigue');
+  delete window.Combat.deps.toolHolder;
+  window.RangedWeapons = { playerActionState: () => ({ kind: 'load' }) };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'loading or firing a ranged weapon blocks the yawn');
+  window.RangedWeapons = null;
+  for (const transition of ['mountingUp', 'mounted', 'mountingDown', 'climbLeap']) {
+    window.Mounts = { rideState: transition };
+    assert.equal(runtime._test.playerCanYawn(false), false, 'mount transition ' + transition + ' must own the body');
+  }
+  window.Mounts = null;
+  for (const [stateName, stateValue] of [['_freeJump', { phase: 'air' }], ['climbing', true],
+    ['onClimbSurface', true], ['onCliffBalcony', true], ['_cliffRouteSession', {}], ['onBranch', true],
+    ['knockbackT', 0.3]]) {
+    window.Combat.deps.player[stateName] = stateValue;
+    assert.equal(runtime._test.playerCanYawn(false), false,
+      'active traversal or impact ' + stateName + ' prevents a yawn');
+    delete window.Combat.deps.player[stateName];
+  }
+  window.PlayerCrawl = { isActive: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'downed crawl retains hand pose ownership');
+  window.PlayerCrawl = null;
+  window.PlayerDowned = { isDowned: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a downed player must not yawn');
+  window.PlayerDowned = null;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'all temporary action conditions restore eligibility afterward');
+
+  // Deselecting the character previously stopped the scheduler while leaving a five-second yawn, hidden visuals and an action lock stranded.
+  const priorPresentationEnds = stretchCalls.filter(call => call.kind === 'end').length; // Confirms the unload path owns the final release.
+  window.__hobunjiPlayerProfile.characterId = null;
+  ms += 16; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().characterId, null, 'unloaded character resets the fatigue namespace');
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'all NPC and player yawn states end when leaving the character');
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'character unload cannot strand the player at quarter-speed');
+  assert.ok(stretchCalls.filter(call => call.kind === 'end').length > priorPresentationEnds,
+    'character unload releases the player stretch and action ownership');
+  assert.equal(runtime.debugSnapshot().playerWakePending, false, 'unloaded saves clear stale waking triggers');
+
   console.log('Player/NPC fatigue, reconstructed breathing fallback, voice ownership, and rested buffs: OK');
 }
 
