@@ -80,9 +80,29 @@ for(const part of roles.stretch.concat(roles.follow)){
 const game=fs.readFileSync('docs/js/town-zone-buildings.js','utf8'); // Runtime places and rotates the outgoing hatch.
 const movement=fs.readFileSync('docs/js/player-jump.js','utf8'); // Height-aware walking accepts only a real interior arrival.
 const support=fs.readFileSync('docs/js/town-player-body-elevation-bridge.js','utf8');
+const travelSource=fs.readFileSync('docs/game.js','utf8'); // Actual in-game roof transition permission.
 const editor=fs.readFileSync('docs/tools/house-piece-author/index.html','utf8');
 assert.match(game,/roofHatch|roofAccess|roofY/);
-assert.match(movement,/pendingRoofArrival/);
+assert.match(movement,/enterRoofSupport/, 'roof access must adopt supported footing only after a confirmed interior exit');
 assert.match(support,/isBalconyAt|roofHatchAt/);
 assert.match(editor,/toolBalconyHatch|balconyAccessFurniture|balconyHeightMode/);
+assert.match(game,/sourcePiece\?\.balconies/, 'town generation must tolerate unloaded building pieces');
+assert.match(game,/transition\?\.roofAccess === true/, 'roof interactions preserve their descend labels');
+assert.match(support,/extensionType === 'balcony'\) return NaN/, 'missing roof geometry cannot become an invisible support');
+const gateStart=travelSource.indexOf('function canUseRoofSpot(');
+const gateEnd=travelSource.indexOf('function checkTransitionSpots()',gateStart);
+assert(gateStart>=0 && gateEnd>gateStart, 'both roof action paths must use one permission helper');
+const actor={x:7.5,y:45.5,physicalFeetY:null,_freeJump:null}; // Simulated player below the IKMC roof hatch.
+const host={HobunjiWalkableElevation:{isBalconyAt:(x,z,y,area)=>x===7.5&&z===45.5&&y===1.9&&area==='town'}};
+const permitted=new Function('window','player','TILE',travelSource.slice(gateStart,gateEnd)+'return canUseRoofSpot;')(host,actor,1);
+const hatchTransition={roofAccess:true}; // Authored town-roof transition, rather than the front doorway.
+assert.equal(permitted(hatchTransition,'town'),false,'standing beneath the hatch must not activate it');
+actor._freeJump={phase:'supported'};actor.physicalFeetY=.5;
+assert.equal(permitted(hatchTransition,'town'),false,'a lower porch is not the rooftop');
+actor.physicalFeetY=1.9;
+assert.equal(permitted(hatchTransition,'town'),true,'standing on the actual roof enables the return ladder');
+assert.equal(permitted(hatchTransition,'farm'),false,'foreign areas cannot use the town roof hatch');
+assert.equal(permitted({roofAccess:false},'town'),true,'ordinary doors remain unchanged');
+assert.match(travelSource,/canUseRoofSpot\(x, area\)/,'spot discovery applies the height permission');
+assert.match(travelSource,/if \(!canUseRoofSpot\(t, currentArea\)\) return/,'action execution checks height again');
 console.log('IKMC roof balcony checks passed: shape, geometry, rails, ladder and rotated access.');
