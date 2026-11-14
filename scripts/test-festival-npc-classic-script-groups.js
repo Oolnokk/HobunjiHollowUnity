@@ -26,6 +26,15 @@ const baseline = { // Original order anchors inside the two feature-owned manife
 const indexes = {}; // Used to check the feature boundaries against neighbouring classic scripts.
 for (const [group, members] of Object.entries(baseline)) {
   assert(html.includes('data-classic-group="' + group + '"'), group + ' group must be present');
+  const manifest = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-groups', group + '.js'), 'utf8'); // Real feature-owned manifest.
+  const declaration = manifest.match(/const scriptUrls = (\[[\s\S]*?\]);/); // Versioned child URLs defined by this group.
+  assert(declaration, group + ' must provide an explicit scriptUrls array');
+  const ownedUrls = JSON.parse(declaration[1]); // Group ownership; a script elsewhere in the page does not count.
+  const ownedPaths = ownedUrls.map(url => url.split('?')[0]); // Normalized member paths for ownership checks.
+  assert.equal(new Set(ownedPaths).size, ownedPaths.length, group + ' must not duplicate its own scripts');
+  for (const modulePath of members) {
+    assert(ownedPaths.includes(modulePath), group + ' must own the required script ' + modulePath);
+  }
   let previous = -1; // Preserves original evaluation-time dependency order while allowing new members.
   for (const modulePath of members) {
     const found = scripts.map((url, i) => url.split('?')[0] === modulePath ? i : -1).filter(i => i !== -1);

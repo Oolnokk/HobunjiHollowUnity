@@ -53,3 +53,8 @@ boot handoff scripts in place. They have stronger parser/side-effect coupling.
 - Authored `config/npcs/social-relations.js` must load before the social seating bridge; both `NpcActivities.resolveDestination` and `NpcScheduling.findStationsByRole` must exist before that bridge executes. `npc-pathfinding.js`, `nohuknuk-wilderness.js` and the route graph load before the cutscene preview handoff and `game.js`.
 - The original long HTML explanations were moved here so no new registration edits are needed in the shared entrypoint. Add or update scripts in one manifest only.
 - `scripts/test-festival-npc-classic-script-groups.js` enforces the original 22-module subsequence. Future modules may be inserted but must not reorder the original required dependencies.
+
+
+## Startup load failures (mobile)
+
+The classic-script-group-loader installs one capture-phase error listener when the first group loads. If a manifest fails to download or evaluate, it records the name in window.HobunjiClassicScriptGroups.failedGroups and shows a single on-screen role=alert message. Normal startup adds no DOM elements, no polling, and no duplicate listeners. The new test-classic-script-group-failures.js exercises the actual loader with a simulated browser.
