@@ -96,15 +96,34 @@
       deliberateVoidTiles:room.w*room.d-expected,ok:missing===0};
   }
 
+  function wallAudit(room,walkable,wallsX,wallsZ){
+    const xEdges=new Set((wallsX||[]).map(([x,z])=>x+','+z));
+    const zEdges=new Set((wallsZ||[]).map(([x,z])=>x+','+z));
+    let exposed=0,missing=0; // Checks the wall faces emitted by the wing mesher, not an unrelated rectangle outline.
+    for(let z=room.z;z<room.z+room.d;z++)for(let x=room.x;x<room.x+room.w;x++){
+      for(const [dx,dz,edges,ex,ez] of [
+        [-1,0,zEdges,x,z+.5],[1,0,zEdges,x+1,z+.5],
+        [0,-1,xEdges,x+.5,z],[0,1,xEdges,x+.5,z+1],
+      ]){
+        if(walkable.has(key(x+dx,z+dz)))continue; // Adjoining corridors are intentional entrances, not missing masonry.
+        exposed++;
+        if(!edges.has(ex+','+ez))missing++;
+      }
+    }
+    return {roomId:room.id,exposedWallEdges:exposed,missingWallEdges:missing,ok:missing===0};
+  }
   function makeShell({room,THREE,Faces,parent,material,supportedCells,grid,CG}){
     const audit=floorAudit(room,supportedCells); // Published by the owner; missing walkable support is a hard generation error.
     if(!audit.ok)throw new Error('Ruin room '+room.id+' has '+audit.missingFloorTiles+' missing floor tiles');
     if(!THREE?.Mesh||!Faces?.buildQuads||!Faces?.toGeometry)return {audit,meshes:[]}; // Headless fixtures can audit without a renderer.
     const rects=[{axis:'y',side:-1,plane:0,a0:0,a1:room.w,b0:0,b1:room.d}];
-    const roof=new THREE.Mesh(Faces.toGeometry(THREE,Faces.buildQuads(rects,{
-      origin:{x:room.x,y:room.y+WALL_HEIGHT,z:room.z},size:{x:1,y:1,z:1},
-      patch:{h:6,v:6},
-    })),material);
+    const roofFaces=Faces.buildQuads(rects,{
+      origin:{x:room.x,y:room.y+WALL_HEIGHT,z:room.z},size:{x:1,y:1,z:1},patch:{h:6,v:6},
+    });
+    const covered=projectedFloorArea(roofFaces); // A ceiling advertised in the room manifest must also exist as actual triangles.
+    if(Math.abs(covered-room.w*room.d)>1e-3)throw new Error(
+      'Ruin room '+room.id+' has an incomplete ceiling: '+covered+' of '+room.w*room.d);
+    const roof=new THREE.Mesh(Faces.toGeometry(THREE,roofFaces),material);
     roof.name='ruin-room-ceiling-'+room.id;
     roof.userData.ruinRoomId=room.id;
     roof.userData.devRuinFootprintIgnore=true; // A ceiling never creates a fake collision floor or a ground-navigation tile.
@@ -270,7 +289,7 @@
     live=session;
     return session;
   }
-  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,makeShell,roomAt,mount,
+  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,wallAudit,makeShell,roomAt,mount,
     isRoomActive:id=>live?.isRoomActive(id)===true,
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
