@@ -92,7 +92,7 @@ const aspectChanged = rig(); // Starts with square body scale, then changes widt
 tick(aspectChanged.legs, 0, {}, 1);
 aspectChanged.parent.userData.testBodyScale = { x: 1.5, y: .75 };
 const resizedPose = tick(aspectChanged.legs, 0, {}, 1);
-assert(Math.abs(resizedPose.left.targetY - resizedPose.left.contactY) < 1e-9, 'editing the body's aspect ratio never makes planted feet sink between frames');
+assert(Math.abs(resizedPose.left.targetY - resizedPose.left.contactY) < 1e-9, 'editing the body aspect ratio never makes planted feet sink between frames');
 assert(Math.abs(resizedPose.right.targetY - resizedPose.right.contactY) < 1e-9, 'both standing soles stay anchored after rescaling');
 for (const actor of [tallNarrow, shortWide]) {
   const pose = tick(actor.legs, .5, {}, 180); // Low speed avoids the cadence clamp, exposing unit-mismatch foot sliding.
