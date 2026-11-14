@@ -111,10 +111,26 @@ runtime.tick(.05);
 assert.equal(runtime.isSolved(plateDoor.userData.mechanismId),false,'plate requires real V50 weight signal');
 plate.userData.weightProgress=1;runtime.tick(.05);
 assert.equal(runtime.isSolved(plateDoor.userData.mechanismId),true);
+const acceptedDoor=runtime.states.get(plateDoor.userData.mechanismId); // Proves the original door settles after a stage change, not merely its substitute puzzle gate.
+assert(acceptedDoor.progress>0&&acceptedDoor.progress<.88,'native V50 door is still physically obstructing when the puzzle first solves');
+assert.equal(runtime.acceptSolution(acceptedDoor.id),true,'an actual solved V50 exit is latched for off-room settling');
+plate.userData.weightProgress=0; // Leaving a pressure plate must not relock a room exit that has already been completed.
+const otherDoor=runtime.states.get(cubeDoor.userData.mechanismId);
+const otherProgress=otherDoor.progress;
+for(let i=0;i<15;i++)runtime.tickDormant(.05); // Player is now in a different room; only accepted mechanisms keep animating.
+assert.equal(acceptedDoor.progress,1,'accepted native V50 exit finishes opening while its source room sleeps');
+assert.equal(runtime.isSolved(acceptedDoor.id),true,'completion persists after the player leaves the input plate');
+assert.equal(otherDoor.progress,otherProgress,'unaccepted off-room puzzles remain suspended');
+const acceptedCollider=blockers.find(record=>record.id.includes('stone-door-'+acceptedDoor.id));
+assert.equal(acceptedCollider?.enabled?.(),false,'fully opened native door releases the original gameplay collision');
+assert(calls.some(entry=>entry.object===plateDoor&&entry.value===1),'the real V50 authored door mesh reaches its finished pose');
 controls.find(c=>c.kind==='v50NativeLinkedCube').onPress();
 runtime.tick(.05);
 assert.equal(cubes.userData.lastTurn,0);
 assert(runtime.isSolved(cubeDoor.userData.mechanismId),'linked cubes retain their original V50 solver');
+assert.equal(runtime.acceptSolution(cubeDoor.userData.mechanismId,true),true,'a saved completed exit can restore its accepted pose');
+assert.equal(otherDoor.progress,1,'saved native V50 door is immediately physically open, without replaying the puzzle');
+assert(calls.some(entry=>entry.object===cubeDoor&&entry.value===1),'save restoration reapplies the authored door transform');
 for(const control of controls.filter(c=>c.kind==='v50NativeObelisk'))for(let n=0;n<3;n++)control.onPress();
 runtime.tick(.05);
 assert.equal(runtime.isSolved(obeliskDais.userData.mechanismId),true);
