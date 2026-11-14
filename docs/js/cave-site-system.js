@@ -553,6 +553,14 @@
     return true;
   }
 
+  function discardUnrewardedSeparator(mapData, blockedKeys, plan) {
+    if (!plan.separator) return;
+    const wallKeys = new Set(plan.separator.cells.map(cell => tileKey(cell.col, cell.row))); // Exact new mineable tiles to retract when no meaningful far-side reward fits.
+    mapData.oreRocks = (mapData.oreRocks || []).filter(rock => !rock.caveSeparator || !wallKeys.has(tileKey(rock.col, rock.row)));
+    for (const key of wallKeys) blockedKeys.delete(key); // Restore floor eligibility without disturbing the ordinary cave's original ore/resource placements.
+    plan.separator = null; // Never leave a purposeless destructible partition in the generated map.
+  }
+
   function addMineLayer(mapData, rng, candidates, blockedKeys, plan) {
     const target = clamp(Math.round(candidates.length * 0.16), 7, 15); // Mineable extension walls don't count against the cave's normal ore reward budget.
     const naturalCount = (mapData.oreRocks || []).filter(rock => !rock.caveSeparator).length;
@@ -610,17 +618,18 @@
     return true;
   }
 
-  function addCacheLayer(mapData, rng, candidates, blockedKeys, plan) {
+  function addCacheLayer(mapData, rng, candidates, blockedKeys, plan, chestOnly = false) {
     // When there is a real sealed extension, the cache must be on the far side.
     // Caves lacking a safe separator preserve the existing accessible deep-cache fallback.
     if (plan.separator) candidates = extensionTiles(candidates, plan);
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
     const cacheTile = distant.find(tile => hasFeatureClearance(tile, blockedKeys, 2));
-    if (!cacheTile) return;
+    if (!cacheTile) return false;
     blockedKeys.add(tileKey(cacheTile.col, cacheTile.row));
     plan.cache = { id: `cave_cache_${mapData.id}`, col: cacheTile.col, row: cacheTile.row, tier: 2 };
     mapData.caveCache = clone(plan.cache);
     addProp(mapData, { id: plan.cache.id, key: 'ruinDungeonChestT2', col: cacheTile.col, row: cacheTile.row, rotY: Math.floor(rng() * 4) * 90 });
+    if (chestOnly) return true; // A surprise cache complements ore/crypt/mushrooms without filling the hidden room with ordinary cache traps/crates.
 
     const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row))); // Mineable partitions are still solid walls while intact.
     const walkableKeys = new Set(floorTiles(mapData).filter(tile => !rockKeys.has(tileKey(tile.col, tile.row)))
@@ -646,6 +655,7 @@
       const id=plan.cache.id+'_crate_'+(index+1);
       addProp(mapData,{id,key:'crateStack',col:tile.col,row:tile.row,rotY:Math.floor(rng()*4)*90});
     }
+    return true;
   }
 
   function addCatacombLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -994,8 +1004,53 @@
     if (contents !== TYPES.PUZZLE_CAVE && (wantsRockPuzzle || contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
       installMineableSeparator(mapData, extensionRng, blockedKeys, plan);
     }
+    // Reserve the secret destination BEFORE mushrooms, ore, bodies or bandits take its floor.
+    // Hidden Puzzle Caves are the existing 80% roll; every other mined partition earns
+    // a full chest rather than relying on mundane resource rolls beyond the rock wall.
+    if (wantsRockPuzzle && plan.separator) {
+      const far = new Set(plan.separator.farKeys); // Only the rock wall's hidden side can contain the secret doorway.
+      const rocks = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col,rock.row)));
+      const wall = plan.separator.cells; // Existing five-layer mining barrier protects the puzzle entrance.
+      const candidates = awayFromEntrance.filter(tile =>
+        far.has(tileKey(tile.col,tile.row)) && !rocks.has(tileKey(tile.col,tile.row))
+        && hasFeatureClearance(tile,blockedKeys,1.55)
+        && !(mapData.exits || []).some(exit => (exit.tiles || []).some(pair => tileKey(pair[0],pair[1]) === tileKey(tile.col,tile.row)))
+      ).sort((a,b) => {
+        const distanceToWall = tile => Math.min(...wall.map(c => (tile.col-c.col)**2+(tile.row-c.row)**2));
+        return distanceToWall(a)-distanceToWall(b) || a.col-b.col || a.row-b.row;
+      });
+      if(candidates.length) {
+        const tile = candidates[0]; // First safe supported far-side floor tile, adjacent to the mined-through chamber.
+        const child = registerRockPuzzleSite(profile,tile); // Dedicated puzzle map; ordinary cave loot and occupancy remain untouched.
+        const nearestRock = wall.slice().sort((a,b) =>
+          ((a.col-tile.col)**2+(a.row-tile.row)**2)-((b.col-tile.col)**2+(b.row-tile.row)**2))[0]; // Model faces the mineable barrier rather than an arbitrary compass direction.
+        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI+180 : 0; // Local +Z of cliffDoor faces the room, away from the mined rock face.
+        plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
+        mapData.exits.push({
+          id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
+          targetMap:child.mapId,targetSpotId:'den_exit',spawnCol:0,spawnRow:0,generateDoor:false, // Resolve the child's actual generated entrance instead of spawning at tile 0,0.
+        }); // Native building-to-building transitions, not NPC triggers or cave replacements.
+        const awayX=nearestRock?tile.col-nearestRock.col:0,awayZ=nearestRock?tile.row-nearestRock.row:0; // Normal from the mineable wall toward walkable cave floor.
+        const awayLength=Math.hypot(awayX,awayZ)||1; // Protect the degenerate case of a same-cell separator while offsetting the visual.
+        addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
+          rotY:facing,offsetX:awayX/awayLength*.22,offsetZ:awayZ/awayLength*.22,alwaysOpen:true}); // Keep normal door dimensions and stand it proud of the rock, matching outdoor entrances.
+        blockedKeys.add(tileKey(tile.col,tile.row));
+      }
+    }
+    if (plan.separator && contents !== TYPES.TRAPPED_CACHE && !plan.puzzleDoor) {
+      const rewardRng = makeRng(`${profile.signature}:hidden-separator-cache`); // Independent stream keeps original cave loot and encounter rolls reproducible.
+      if (!addCacheLayer(mapData, rewardRng, extensionTiles(allTiles, plan), blockedKeys, plan, true)) {
+        discardUnrewardedSeparator(mapData, blockedKeys, plan); // Prefer no wall at all over blasting through stone to an empty chamber.
+        window.__farmLog?.(`[cave-sites] ${mapId}: removed unrewarded partition.`, 'warn');
+      }
+    }
     if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
-    else if (contents === TYPES.TRAPPED_CACHE) addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    else if (contents === TYPES.TRAPPED_CACHE) {
+      if (!addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan) && plan.separator) {
+        discardUnrewardedSeparator(mapData, blockedKeys, plan); // If a full cache cannot fit, keep the ordinary reachable chest instead.
+        addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+      }
+    }
     else if (contents === TYPES.CATACOMB) addCatacombLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.MUSHROOM_CAVE) addMushroomLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.RUIN_ENTRANCE && plan.separator) {
@@ -1063,36 +1118,6 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
-    if (wantsRockPuzzle && plan.separator) {
-      const far = new Set(plan.separator.farKeys); // Only the rock wall's hidden side can contain the secret doorway.
-      const rocks = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col,rock.row)));
-      const wall = plan.separator.cells; // Existing five-layer mining barrier protects the puzzle entrance.
-      const candidates = awayFromEntrance.filter(tile =>
-        far.has(tileKey(tile.col,tile.row)) && !rocks.has(tileKey(tile.col,tile.row))
-        && hasFeatureClearance(tile,blockedKeys,1.55)
-        && !(mapData.exits || []).some(exit => (exit.tiles || []).some(pair => tileKey(pair[0],pair[1]) === tileKey(tile.col,tile.row)))
-      ).sort((a,b) => {
-        const distanceToWall = tile => Math.min(...wall.map(c => (tile.col-c.col)**2+(tile.row-c.row)**2));
-        return distanceToWall(a)-distanceToWall(b) || a.col-b.col || a.row-b.row;
-      });
-      if(candidates.length) {
-        const tile = candidates[0]; // First safe supported far-side floor tile, adjacent to the mined-through chamber.
-        const child = registerRockPuzzleSite(profile,tile); // Dedicated puzzle map; ordinary cave loot and occupancy remain untouched.
-        const nearestRock = wall.slice().sort((a,b) =>
-          ((a.col-tile.col)**2+(a.row-tile.row)**2)-((b.col-tile.col)**2+(b.row-tile.row)**2))[0]; // Model faces the mineable barrier rather than an arbitrary compass direction.
-        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI+180 : 0; // Local +Z of cliffDoor faces the room, away from the mined rock face.
-        plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
-        mapData.exits.push({
-          id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
-          targetMap:child.mapId,targetSpotId:'den_exit',spawnCol:0,spawnRow:0,generateDoor:false, // Resolve the child's actual generated entrance instead of spawning at tile 0,0.
-        }); // Native building-to-building transitions, not NPC triggers or cave replacements.
-        const awayX=nearestRock?tile.col-nearestRock.col:0,awayZ=nearestRock?tile.row-nearestRock.row:0; // Normal from the mineable wall toward walkable cave floor.
-        const awayLength=Math.hypot(awayX,awayZ)||1; // Protect the degenerate case of a same-cell separator while offsetting the visual.
-        addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
-          rotY:facing,offsetX:awayX/awayLength*.22,offsetZ:awayZ/awayLength*.22,alwaysOpen:true}); // Keep normal door dimensions and stand it proud of the rock, matching outdoor entrances.
-        blockedKeys.add(tileKey(tile.col,tile.row));
-      }
-    }
     if(profile.contents === TYPES.PUZZLE_CAVE && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)) {
       mapData.entrySpots = {
         ...(mapData.entrySpots || {}),
@@ -1117,7 +1142,7 @@
       shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
-      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
+      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:plan.puzzleDoor?'puzzle_cave':plan.cache?'cache':null } : null,
     };
     plansByMapId.set(String(mapId), plan);
     window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.contents}+${profile.inhabitant} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
