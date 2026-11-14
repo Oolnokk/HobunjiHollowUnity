@@ -56,7 +56,7 @@ assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treat
 // separated trusted rigs, rather than merely accepting a marker in isolation.
 const groupingCode=section('  function rectsOverlap(', '  function installGroundElevationShader(');
 const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCullable','objectProto',[
-  'const XRAY_TILE_RADIUS=1,XRAY_TILE_EDGE_EPSILON=.0001,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
+  'const XRAY_TILE_RADIUS=1,XRAY_TILE_EDGE_EPSILON=.0001,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18,XRAY_VISUAL_GROUND_TOLERANCE=1.26;',
   'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0;',
   'const xrayGearRect={},xrayGroundRect={};',
   'const pt=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;}});',
