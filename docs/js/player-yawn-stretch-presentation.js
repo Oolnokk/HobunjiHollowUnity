@@ -133,6 +133,7 @@
     const reachIn = smooth(progress / 0.22);
     const reachOut = 1 - smooth((progress - 0.76) / 0.24);
     const stretch = reachIn * reachOut; // Raise both arms, hold above the head through the yawn, then lower smoothly.
+    if (entry.komaStarted) handRig.setSideIdle?.('left'); // The chewing hand keeps its leaf grip; release only the free left hand from any hidden weapon.
     let applied = false;
     for (const side of ['left', 'right']) {
       if (entry.komaStarted && side === 'right') continue; // Keep the real Koma-chewing hand on its authored leaf grip; stretch the free arm.
