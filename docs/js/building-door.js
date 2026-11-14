@@ -89,12 +89,15 @@
       // Authored doors are coordinates on the structural footprint. HousePieceGen anchors its
       // rendered shell to footprint.cells, so porch/chimney extensions west or north of that
       // shell must not silently translate the door away from the visible building.
-      const structuralCells = pieceData?.footprint?.cells || []; // Structural shell cells define the building's gridX/gridZ origin.
-      if (!structuralCells.length) return derived;
-      const minX = Math.min(...structuralCells.map(c => c.x));
-      const minY = Math.min(...structuralCells.map(c => c.y));
-      const maxX = Math.max(...structuralCells.map(c => c.x));
-      const maxY = Math.max(...structuralCells.map(c => c.y));
+      const structuralCells = pieceData?.footprint?.cells || [];
+      const placementCells = pieceData.placementOrigin === 'fullFootprint'
+        ? footprintCells(pieceData)
+        : structuralCells; // Porch-bearing outposts use the visible full envelope; ordinary houses keep their structural anchor.
+      if (!placementCells.length) return derived;
+      const minX = Math.min(...placementCells.map(c => c.x));
+      const minY = Math.min(...placementCells.map(c => c.y));
+      const maxX = Math.max(...placementCells.map(c => c.x));
+      const maxY = Math.max(...placementCells.map(c => c.y));
       return {
         bboxW: maxX - minX + 1,
         bboxD: maxY - minY + 1,
