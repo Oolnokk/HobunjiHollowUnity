@@ -592,6 +592,28 @@ assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActor
   'cloned material shader injection must not introduce duplicate GLSL declarations');
 assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
   'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
+
+const jigsawClone = {
+  userData: { ...groundMaterial.userData, terrainJigsawMaterial: true }, // TerrainRenderChunks.cloneJigsawMaterial retains the source metadata but Three.js drops onBeforeCompile.
+  onBeforeCompile() {}, // Prototype default supplied to the clone, without the old ground shader injection.
+  needsUpdate: false,
+};
+const jigsawState = installElevationShader(jigsawClone);
+assert.notEqual(jigsawState, groundShaderState,
+  'a real Jigsaw-style material clone must not reuse its source material shader state');
+assert.equal(jigsawClone.userData.hobunjiXrayElevationShader, jigsawState,
+  'the cloned ground material owns the live shader state after registration');
+jigsawState.geometryHasNormals = true;
+const jigsawShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+jigsawClone.onBeforeCompile(jigsawShader, {});
+assert.equal(jigsawShader.uniforms.uHobunjiXrayActorElevation, jigsawState.uniforms.elevation,
+  'Jigsaw-style clones reinstall the selective depth fragment shader even after Three drops their old callback');
+assert.match(jigsawShader.fragmentShader, /if \(uHobunjiXrayElevationEnabled > 0\.5/,
+  'new Jigsaw material still discards only the actor-local floor fragments');
 let terrainUvHooks = 0; // Verifies existing Jigsaw/terrain material instrumentation still runs exactly once after an x-ray-aware clone.
 const terrainUvMaterial = {
   userData: {},
