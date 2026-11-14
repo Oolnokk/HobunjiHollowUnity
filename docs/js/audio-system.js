@@ -34,6 +34,7 @@
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
   let lastCombatSpatialDebug = null; // Retains source distance/elevation/gain for the mobile-copyable combat audio report.
   const combatDecodedByUrl = new Map(); // Cache shares decoded one-shot weapons, impacts and blocks without allocating a new media source per hit.
+  const reversedObjectBuffers = new Map(); // One decoded/reversed buffer per special object recording; Kanthic blasts reuse the combat HRTF context and ruin wet bus.
   const combatDecodeQueue = []; // Bounded preloads prevent large simultaneous decode spikes during wilderness startup.
   const activePositionalCombat = new Set(); // Stops positional Web Audio sources when the introduction takes sole ownership of the soundscape.
   const activeDirectionalRoutes = new Set(); // Retains HRTF routes only for the duration of their active audio source.
@@ -1046,7 +1047,49 @@
       snd.dataset.objectSfxKey = key;
       snd.load();
       objectSfxPreloads.set(cfgEntry.url, snd);
+      if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
+        prepareCombatPositionalClip(cfgEntry.url); // Pre-warm authored object one-shots so the first physical interaction is directional, not just later repeats.
+      }
     }
+  }
+
+  // World-space (Three.js tile units) -> gameplay pixels. Keeping this one conversion
+  // in AudioSystem lets puzzle furniture, burden explosions and foraging use one HRTF path.
+  function objectSfxSourceAt(worldX, worldZ, areaId, worldY = null) {
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) return null;
+    const tileSize = Math.max(1, Number(deps?.TILE) || 64); // The same world-unit conversion used by combatAudioSpatial.
+    const source = { x: worldX * tileSize, y: worldZ * tileSize, areaId: areaId || deps?.getCurrentArea?.() }; // A static emitter, retained while its one-shot finishes.
+    if (typeof worldY === 'number' && Number.isFinite(worldY)) source.worldY = worldY; // Shaft/floor height is independent of the ground tile.
+    return source;
+  }
+
+  function objectSfxSpatial(source, cfgEntry) {
+    if (!deps?.player || !Number.isFinite(source?.x) || !Number.isFinite(source?.y)) return null;
+    return combatAudioSpatial(source, { earshotTiles: Math.max(1, Number(cfgEntry?.earshotTiles) || 12) });
+  }
+
+  function reversedObjectBuffer(url) {
+    if (reversedObjectBuffers.has(url)) return reversedObjectBuffers.get(url);
+    const context = ensureCombatPositionalContext(); // Reverse playback uses the same HRTF listener and environmental wet bus as forward object sounds.
+    if (!context || typeof fetch !== 'function') return null;
+    const decoded = combatDecodedByUrl.get(url)?.buffer; // A preloaded original saves an extra network/decode request.
+    const promise = (decoded ? Promise.resolve(decoded) : fetch(url).then(response => {
+      if (!response.ok) throw new Error('reversed object audio HTTP ' + response.status);
+      return response.arrayBuffer();
+    }).then(bytes => context.decodeAudioData(bytes))).then(buffer => {
+      const reversed = context.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate); // Never reverse the shared forward source in place.
+      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        reversed.getChannelData(channel).set(buffer.getChannelData(channel));
+        reversed.getChannelData(channel).reverse();
+      }
+      return reversed;
+    }).catch(error => {
+      reversedObjectBuffers.delete(url); // Retry transient decoding errors at the next blast rather than permanently muting the cue.
+      combatSpatialLastError = 'reversed object SFX ' + url + ': ' + (error?.message || error);
+      return null;
+    });
+    reversedObjectBuffers.set(url, promise);
+    return promise;
   }
 
   function createObjectSfxAudio(url) {
@@ -1121,13 +1164,15 @@
     }
   }
 
-  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1, metronomeLimitSeconds = null) {
+  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1, metronomeLimitSeconds = null, source = null) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || !cfgEntry) return;
     if (objectSfxConfig().enabled === false) return;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
       * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, volumeScale);
     if (volume <= 0.002) return;
+    const spatial = objectSfxSpatial(source, cfgEntry); // World-owned object effects share combat's distance, elevation and camera-relative HRTF.
+    if (spatial && spatial.gain <= 0.002) return; // Do not decode/play distant or different-area world events.
     const gainBoost = Number(cfgEntry.gainBoost) || 1;
     const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
       ? cfgEntry.placeholderUrls[Math.floor(Math.random() * cfgEntry.placeholderUrls.length)]
@@ -1138,6 +1183,31 @@
     if (!url) return;
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
+    if (spatial?.position3d) {
+      if (source?.reverse) {
+        const reversed = reversedObjectBuffer(url); // Kanthic keeps its authored reverse waveform, including the first (possibly loading) blast.
+        if (reversed) {
+          reversed.then(buffer => {
+            if (introductionMix || gameAudioConfig().enabled === false || objectSfxConfig().enabled === false) return;
+            if (source.areaId && source.areaId !== deps?.getCurrentArea?.()) return; // Never play a delayed decode in a different map.
+            const currentSpatial = objectSfxSpatial(source, cfgEntry);
+            if (buffer && currentSpatial && currentSpatial.gain > 0.002) {
+              resumeCombatPositionalContext();
+              if (playDecodedCombatSfx({ ...cfgEntry, url }, volume * currentSpatial.gain, rate, currentSpatial, buffer)) return;
+            }
+            playObjectSfx(cfgEntry, volumeScale, pitch, null, { ...source, reverse: false }); // Audible forward/native fallback when Web Audio cannot decode or start.
+          });
+          return;
+        }
+      } else {
+        prepareCombatPositionalClip(url, true); // Uncached world cues become directional as soon as their waveform decodes.
+        resumeCombatPositionalContext();
+        const rendered = playDecodedCombatSfx({ ...cfgEntry, url }, volume * spatial.gain, rate, spatial);
+        if (rendered) return rendered; // One dry HRTF route + one environmental wet send; no duplicate media-element echo.
+      }
+      combatSpatialFallbacks++;
+      combatSpatialBackend = 'native-fallback'; // First-time decode and locked mobile browsers remain audible via the original object transport.
+    }
     const snd = createObjectSfxAudio(url);
     if (Number.isFinite(metronomeLimitSeconds) && metronomeLimitSeconds > 0) {
       const metronomeDebug = lastObjectSfxKeyDebug; // Pixel Probe reports actual media start/error rather than only a successful key lookup.
@@ -1182,13 +1252,15 @@
     playSfxAudioElement(snd, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
   }
 
-  function playObjectSfxKeyIndependentPitch(key, pitch = 1, volumeScale = 1) {
+  function playObjectSfxKeyIndependentPitch(key, pitch = 1, volumeScale = 1, source = null) {
     const cfgEntry = objectSfxConfig()[key]; // The same configured stone recording and mixer as ordinary object SFX.
     const audioCfg = gameAudioConfig();
     if (!cfgEntry || audioCfg.enabled === false || objectSfxConfig().enabled === false) return false;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
       * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0);
     if (volume <= 0.002) return false;
+    const spatial = objectSfxSpatial(source, cfgEntry); // Size-pitched stone mechanisms retain the same 3D object origin as neutral-speed cues.
+    if (spatial && spatial.gain <= 0.002) return true; // Out-of-earshot stone is valid but silent.
     const rate = Math.max(0.3, (Number.isFinite(Number(pitch)) ? Number(pitch) : 1) * (Number(cfgEntry.pitch) || 1));
     const semitones = Math.round(12 * Math.log2(rate) * 2) / 2; // Half-semitone bins reuse the independent-render cache across similarly sized stone pieces.
     const player = window.AnimalVoiceIndependentPlayback; // Reuses the game's WSOLA pitch/tempo-independent renderer; no bespoke audio engine.
@@ -1196,13 +1268,15 @@
     if (Math.abs(semitones) >= 0.05 && cfgEntry.url && !deps?.audioUrlFailed?.(cfgEntry.url) && typeof player?.playIndependent === 'function') {
       try {
         handle = player.playIndependent(cfgEntry.url, {
-          tempo: 1, pitchSemitones: semitones, volume: Math.min(1, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1)),
+          tempo: 1, pitchSemitones: semitones, volume: Math.min(1, volume * (spatial?.gain ?? 1) * Math.max(1, Number(cfgEntry.gainBoost) || 1)),
+          position3d: spatial?.position3d, panX: spatial?.panX, sourceActor: spatial?.sourceActor,
+          extraWetBoost: spatial?.extraWetBoost, area: spatial?.areaId,
           trimSilence: false, tailPadS: 0, edgeFadeS: 0, extraWetBase: 0,
           preserveDurationOnFallback: true, // If Web Audio is locked/unavailable, never translate size into faster/slower stone travel.
         });
       } catch (_) { handle = null; }
     }
-    if (!handle) playObjectSfxKey(key, volumeScale, 1); // Neutral recording is preferable to changing duration on an unsupported device.
+    if (!handle) playObjectSfxKey(key, volumeScale, 1, source); // Neutral fallback retains the object origin and ruin wet profile.
     const preloaded = cfgEntry.url ? objectSfxPreloads.get(cfgEntry.url) : null;
     lastObjectSfxKeyDebug = {
       key, found: true, url: cfgEntry.url || null, preloaded: !!preloaded,
@@ -1229,7 +1303,7 @@
     }catch(_){return false;}
   }
 
-  function playObjectSfxKey(key, volumeScale = 1, pitch = 1) {
+  function playObjectSfxKey(key, volumeScale = 1, pitch = 1, source = null) {
     const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
     const preloaded = cfgEntry?.url ? objectSfxPreloads.get(cfgEntry.url) : null; // Used by the mobile-readable debug snapshot below.
     lastObjectSfxKeyDebug = {
@@ -1239,8 +1313,9 @@
       preloaded: !!preloaded,
       readyState: preloaded?.readyState ?? null,
       atMs: Math.round(performance.now()),
+      source: source ? { x: source.x, y: source.y, areaId: source.areaId, worldY: source.worldY ?? null, reverse: !!source.reverse } : null, // Copyable mobile proof of a positional object cue.
     };
-    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
+    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch, null, source);
     if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
   }
 
@@ -1512,6 +1587,7 @@
   // The caller supplies world Y (Three.js units); map x/y remain pixels.
   function audioActorWorldY(actor) {
     if (!actor || !deps) return null;
+    if (typeof actor.worldY === 'number' && Number.isFinite(actor.worldY)) return actor.worldY; // Static furniture/explosions supply their exact floor or platform elevation.
     const explicitY = actor.avatarRef?.group?.position?.y ?? actor.root?.position?.y;
     if (typeof explicitY === 'number' && Number.isFinite(explicitY)) return explicitY;
     const sampled = deps.getActorWorldY?.(actor);
@@ -1974,6 +2050,13 @@
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,
+    objectSfxSourceAt, // Converts world objects to combat-compatible actor coordinates, including multi-story shaft height.
+    playObjectSfxKeyAt(key, worldX, worldZ, areaId, worldY = null, opts = {}) {
+      const source = objectSfxSourceAt(worldX, worldZ, areaId, worldY); // Required: no source means the legacy non-positional call remains available.
+      if (!source) return false;
+      if (opts.reverse) source.reverse = true; // Only the Kanthic variant reverses the same recorded blast.
+      return playObjectSfxKey(key, opts.volumeScale ?? 1, opts.pitch ?? 1, source);
+    },
     playObjectSfxKeyMetronome,
     cancelObjectSfxMetronome,
     stoneBeatDebugSnapshot,
