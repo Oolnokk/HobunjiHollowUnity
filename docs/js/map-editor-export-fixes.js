@@ -208,12 +208,27 @@
   }
 
   function stableJson(value) {
-    return JSON.stringify(value);
+    // Authored JSON objects are unordered; reordering keys is not a map edit.
+    return JSON.stringify(value, (_key, current) => {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return current;
+      return Object.fromEntries(Object.entries(current).sort(([a], [b]) => a.localeCompare(b)));
+    });
+  }
+
+  function meaningfulTiles(tiles) {
+    const records = tilesToDictionary(tiles);
+    // Sparse game maps omit default grass, while editor imports may materialize the full grid.
+    for (const [key, tile] of Object.entries(records)) {
+      if (tile.type === 'grass' && tile.crop === '' && Object.keys(tile).every(field => field === 'type' || field === 'crop')) {
+        delete records[key];
+      }
+    }
+    return records;
   }
 
   function tileDiff(beforeTiles, afterTiles) {
-    const before = tilesToDictionary(beforeTiles);
-    const after = tilesToDictionary(afterTiles);
+    const before = meaningfulTiles(beforeTiles);
+    const after = meaningfulTiles(afterTiles);
     const added = [];
     const removed = [];
     const modified = [];
