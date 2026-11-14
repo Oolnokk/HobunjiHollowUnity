@@ -278,7 +278,8 @@
       .concat(piece?.footprint?.extensions?.chimneys || [])
       .concat(piece?.footprint?.extensions?.porches || [])
       .concat(piece?.footprint?.extensions?.porchStairs || [])
-      .concat(piece?.footprint?.extensions?.railings || []);
+      .concat(piece?.footprint?.extensions?.railings || [])
+      .concat((piece?.balconies || []).flatMap(b=>b.cells||[])); // Balcony cells share the building's unrotated full-footprint mapping.
   }
 
   function rotateCell(localX, localY, width, depth, rotationDeg) {
@@ -315,7 +316,8 @@
     const piece = normalizePiece(pieceData);
     const porches = piece?.footprint?.extensions?.porches || [];
     const stairs = piece?.footprint?.extensions?.porchStairs || [];
-    if (!porches.length && !stairs.length) return [];
+    const balconies = (piece?.balconies || []).flatMap(b=>b.cells||[]); // Height-aware roof deck cells (never ground-level porches).
+    if (!porches.length && !stairs.length && !balconies.length) return [];
     const allCells = allPieceCells(piece);
     if (!allCells.length) return [];
     const minX = Math.min(...allCells.map(cell => finite(cell.x, 0)));
@@ -352,6 +354,7 @@
     };
     addCells(porches, 'porch', 'porch');
     addCells(stairs, 'porchStair', 'porchStair');
+    addCells(balconies, 'balcony', 'balcony'); // Raised supports follow the existing approach-ceiling and fall/landing logic.
     return ids;
   }
 
