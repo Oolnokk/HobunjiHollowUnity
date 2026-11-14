@@ -460,7 +460,7 @@
       const item = deps.getActiveInventoryItem(stacks);
       if (deps.spItem && item) {
         if (deps.spItem.style.display !== '') deps.spItem.style.display = '';
-        if (deps.spItemDiv?.style.display !== '') deps.spItemDiv.style.display = '';
+        if (deps.spItemDiv && deps.spItemDiv.style.display !== '') deps.spItemDiv.style.display = ''; // Optional status-pill divider may be absent in a condensed HUD.
         const itemText = '[Tab] ' + itemIcon(item) + ' ' + item.label + ' ×' + (deps.inventory[item.key] || 0);
         if (itemText !== _hud.item) { _hud.item = itemText; deps.spItem.textContent = itemText; }
       }
