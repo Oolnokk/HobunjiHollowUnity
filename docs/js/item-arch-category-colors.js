@@ -31,7 +31,7 @@
     furniture:       { order: 230, color: '#FF8A2A', rgb: '255,138,42',  label: 'Furniture' },
     tool:            { order: 240, color: '#70A1FF', rgb: '112,161,255', label: 'Tools' },
     recipe:          { order: 250, color: '#F5D98B', rgb: '245,217,139', label: 'Recipes & Blueprints' },
-    technique:       { order: 260, color: '#00F5D4', rgb: '0,245,212',   label: 'Technique Scrolls' },
+    technique:       { order: 260, color: '#00F5D4', rgb: '0,245,212',   label: 'Combat Lessons' },
     key:             { order: 270, color: '#F4F0FF', rgb: '244,240,255', label: 'Key & Quest Items' },
     special:         { order: 280, color: '#D7C6FF', rgb: '215,198,255', label: 'Special Items' },
     other:           { order: 999, color: '#A9B4C3', rgb: '169,180,195', label: 'Other' },
@@ -95,7 +95,7 @@
     const descriptor = descriptorFor(key, definition); // Used only as a final compatibility fallback for old/static definitions.
     const authored = authoredCategory(definition); // Broad Inventory cat remains the last-resort structural hint.
 
-    if (definition.masteryUnlock || definition.techniqueScrollTier || hasTag(tags, 'technique scroll')) return 'technique';
+    if (definition.masteryUnlock || definition.techniqueScrollTier || definition.combatManualAbilityId || hasTag(tags, 'technique scroll', 'combat manual')) return 'technique';
     if (definition.alchemyRecipeScrollId || hasTag(tags, 'recipe', 'blueprint') || RECIPE_RE.test(descriptor)) return 'recipe';
 
     if (definition.alchemyRecipeId || hasTag(tags, 'potion', 'flask', 'alchemy')) {
