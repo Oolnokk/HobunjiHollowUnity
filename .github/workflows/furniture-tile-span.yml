@@ -1,21 +1,30 @@
 name: Furniture tile-span regression
 on:
   pull_request:
-    paths:
-      - 'docs/js/furniture-tile-span.js'
-      - 'docs/js/authored-furniture-runtime.js'
-      - 'docs/tools/furniture-avatar-author/index.html'
-      - 'docs/tools/furniture-avatar-author/tile-span-author.js'
-      - 'docs/index.html'
-      - 'scripts/test-furniture-tile-span.js'
-      - '.github/workflows/furniture-tile-span.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Select furniture tile-span changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.select.outputs.furniture }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Select affected specialist tests
+        id: select
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci-select-tests.js --suite=feature
   tile-span:
+    needs: impact
+    if: ${{ !cancelled() && (needs.impact.result != 'success' || needs.impact.outputs.relevant == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

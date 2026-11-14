@@ -41,6 +41,89 @@ const TESTS = Object.freeze({
   },
 });
 const CHROMIUM = new Set(Object.keys(TESTS.regression).filter(id => !['substance', 'fire', 'camera'].includes(id)));
+// Existing specialist workflows share the PR diff selector instead of each
+// maintaining an overbroad "docs/**" event filter.
+const FEATURE_PATHS = Object.freeze({
+  integrated: Object.freeze([
+    /^docs\/js\/(?:climb-|cliff-|player-jump|dev-random-ruin-|dev-ruin-|ruin-|shaft-|dungeon-|puzzle-cave-|cloud-forest-fog)/,
+    /^scripts\/test-(?:climb-|cliff-|fall-system|player-jump|dev-random-ruin-|ruin-|find-the-blocks|kanthic-|shaft-|overlay-only-lighting|puzzle-cave-)/,
+    /^docs\/config\/(?:ruin|dungeon|puzzle-cave|cliff)/,
+    /^\.github\/workflows\/check-integrated-ruin-puzzles\.yml$/,
+  ]),
+  lighting: Object.freeze([
+    /^docs\/js\/(?:ruin-multifloor-v50-style|ruin-shaft-connector|ruin-layer-playable|ruin-v50-native-floors|cloud-forest-fog|ruin-rope-torches|dungeon-fire-[^/]+)\.js$/,
+    /^scripts\/test-(?:shaft-hub|kanthic-shaft-firelight|overlay-only-lighting|ruin-rope-torches)\.js$/,
+    /^\.github\/workflows\/check-kanthic-shaft-lighting\.yml$/,
+  ]),
+  furniture: Object.freeze([
+    /^docs\/js\/(?:furniture-|authored-furniture-)/,
+    /^docs\/tools\/furniture-avatar-author\//,
+    /^docs\/config\/furniture-authored\//,
+    /^scripts\/test-furniture-/,
+    /^\.github\/workflows\/furniture-tile-span\.yml$/,
+  ]),
+  puzzle_cave: Object.freeze([
+    /^docs\/js\/(?:puzzle-cave-|cave-site-system\.js$|ruin-layer-challenges\.js$|persistent-ground-fire\.js$|alchemy-flasks\.js$|shattercasks\.js$|cliff-route-network\.js$|climb-system\.js$|area-footprint-blockers\.js$|locale-cliff-wall-mounts\.js$)/,
+    /^scripts\/(?:test-puzzle-cave-|smoke-puzzle-caves-browser\.js$|test-cliff-startup-parse\.js$|test-game-shop-stock-startup-order\.js$)/,
+    /^docs\/config\/(?:puzzle-cave|cave-|ruin-.*puzzle)/,
+    /^\.github\/workflows\/smoke-puzzle-caves\.yml$/,
+  ]),
+});
+
+const FEATURE_WORKFLOWS = Object.freeze({
+  integrated: '.github/workflows/check-integrated-ruin-puzzles.yml',
+  lighting: '.github/workflows/check-kanthic-shaft-lighting.yml',
+  furniture: '.github/workflows/furniture-tile-span.yml',
+  puzzle_cave: '.github/workflows/smoke-puzzle-caves.yml',
+}); // The workflow's actual invoked tests are the source of truth for its static dependencies.
+
+function featureWorkflowDependencies(id) {
+  const workflow = FEATURE_WORKFLOWS[id]; // Owned workflow from which we discover direct regression-test files.
+  const source = fs.readFileSync(path.join(ROOT, workflow), 'utf8');
+  const testFiles = [...source.matchAll(/\bnode\s+(scripts\/[\w/-]+\.js)\b/g)].map(match => match[1]).filter(file => file !== 'scripts/ci-select-tests.js'); // Read the workflow's actual test commands, excluding its selector bootstrap.
+  if (!testFiles.length) throw new Error('Cannot discover tests for ' + workflow);
+  const dependencies = new Set([workflow]); // Editing the workflow itself always selects its check.
+  for (const file of testFiles) {
+    for (const dependency of sourceDependencies(file)) dependencies.add(dependency); // Reuses existing transitive source scanner, including literal read('docs/js/...') references.
+  }
+  return dependencies;
+}
+
+function independentFeatureFile(file) {
+  if (/^scripts\/(?:test-|smoke-|verify-)/.test(file)) return true; // Specific workflow tests are already included in its dependency set.
+  if (/^docs\/js\/(?:clothing-|cosmetic-|appearance-|species-rig-|rig-editor-)/.test(file)) return true; // Cosmetic/weaving implementations cannot affect physical ruin/furniture/puzzle generation.
+  if (/^docs\/(?:config|assets)\/(?:cosmetics|clothing)\//.test(file)) return true; // Dedicated garment definitions and sprites are independent of ruin generation.
+  if (/^docs\/config\/patterns\/(?:clothing-trims|fur-hoods)\.json$/.test(file)) return true; // Only explicitly garment-owned motif manifests are safely excluded.
+  if (file.startsWith('.github/workflows/')) return true; // Workflow-local changes match FEATURE_PATHS; other workflows do not affect these jobs.
+  return false;
+}
+
+function selectFeatureChecks(changedFiles, options = {}) {
+  const files = [...new Set(changedFiles.map(normalize))].sort(); // Deterministic PR reasons for specialist jobs.
+  const affected = Object.fromEntries(Object.keys(FEATURE_PATHS).map(id => [id, []])); // Only relevant tests earn a runner.
+  const dependencies = {}; // Contains the workflow's actual test-source edges so cross-system lighting, caves and furniture are not silently missed.
+  let dependencyScanFailed = false; // A missing/invalid workflow or test scan must run every specialist rather than skip an unexamined dependency.
+  for (const id of Object.keys(FEATURE_PATHS)) {
+    try { dependencies[id] = featureWorkflowDependencies(id); }
+    catch (error) { dependencyScanFailed = true; dependencies[id] = new Set(); }
+  }
+  const knownFeatureFile = file => Object.keys(FEATURE_PATHS).some(id =>
+    FEATURE_PATHS[id].some(pattern => pattern.test(file)) || dependencies[id].has(file)); // Includes both broad runtime categories and exact test imports.
+  const shared = files.filter(file =>
+    file === 'docs/index.html' || file === 'docs/game.js'
+    || file === 'scripts/ci-select-tests.js' || file === 'scripts/test-ci-select-tests.js'
+    || (file.startsWith('docs/') && !knownFeatureFile(file) && !independentFeatureFile(file))); // Unknown gameplay configs, art and runtime modules fail open, but known clothing edits stay isolated.
+  const full = !!options.full || shared.length > 0 || dependencyScanFailed; // Manual or unreadable graphs run all; cache-only files were excluded earlier.
+  for (const file of files) {
+    for (const [id, patterns] of Object.entries(FEATURE_PATHS)) {
+      if (patterns.some(pattern => pattern.test(file)) || dependencies[id].has(file)) affected[id].push(file);
+    }
+  }
+  const selected = Object.fromEntries(Object.keys(FEATURE_PATHS).map(id => [id, full || affected[id].length > 0])); // Used by GitHub job-level conditions.
+  const reasons = Object.fromEntries(Object.keys(FEATURE_PATHS).map(id => [id, full ? ['manual run or shared game dependency'] : affected[id]]));
+  return { suite: 'feature', files, full, tags: [], selected, output: { ...selected }, reasons };
+}
+
 
 function normalize(file) {
   return path.posix.normalize(String(file).replace(/\\/g, '/').replace(/^\.\//, ''));
@@ -122,9 +205,18 @@ function selectTests(suite, changedFiles, options = {}) {
 }
 
 function onlyCacheBustChanged(before, after) {
-  const strip = html => html.replace(/(?:src|href)\s*=\s*(['"])[^'"]+\1/g, attr =>
-    attr.replace(/\?v=[^'"&#\s]+/g, '?v=CI_CACHE_TOKEN'));
+  const strip = source => source.replace(/\?v=[A-Za-z0-9._-]+/g, '?v=CI_CACHE_TOKEN'); // Covers HTML attributes and JS loader URLs.
   return before !== after && strip(before) === strip(after);
+}
+
+function withoutCacheBusts(files, readVersions) {
+  return files.filter(file => {
+    if (file !== 'docs/index.html' && !/^docs\/(?:js\/.*\.js|game\.js)$/.test(file)) return true;
+    try {
+      const versions = readVersions(file); // Compare actual prior and updated source, not just the filename.
+      return !onlyCacheBustChanged(versions.before, versions.after);
+    } catch (_) { return true; } // Missing ref or unreadable file conservatively runs its tests.
+  });
 }
 
 function changedOnPR() {
@@ -134,14 +226,10 @@ function changedOnPR() {
   catch { execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', base], { cwd: ROOT, stdio: 'pipe' }); }
   const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '--diff-filter=ACDMRTU', '-z', base, 'HEAD'],
     { cwd: ROOT }).toString('utf8').split('\0').filter(Boolean);
-  if (files.includes('docs/index.html')) {
-    // Every JS cache-bust updates index.html; that should not force every
-    // unrelated browser check. Any other HTML edit still runs the full suite.
-    const before = execFileSync('git', ['show', `${base}:docs/index.html`], { cwd: ROOT }).toString('utf8');
-    const after = fs.readFileSync(path.join(ROOT, 'docs/index.html'), 'utf8');
-    if (onlyCacheBustChanged(before, after)) return files.filter(file => file !== 'docs/index.html');
-  }
-  return files;
+  return withoutCacheBusts(files, file => ({
+    before: execFileSync('git', ['show', base + ':' + file], { cwd: ROOT }).toString('utf8'),
+    after: fs.readFileSync(path.join(ROOT, file), 'utf8'),
+  })); // Ignore inert index and loader query-token bumps while honoring substantive changes.
 }
 
 function emit(result) {
@@ -164,7 +252,7 @@ function emit(result) {
 
 if (require.main === module) {
   const suite = process.argv.find(arg => arg.startsWith('--suite='))?.slice('--suite='.length);
-  if (!TESTS[suite]) { console.error('Expected --suite=regression or --suite=ruin'); process.exitCode = 2; }
+  if (!TESTS[suite] && suite !== 'feature') { console.error('Expected --suite=regression, --suite=ruin or --suite=feature'); process.exitCode = 2; }
   else {
     const isPR = process.env.GITHUB_EVENT_NAME === 'pull_request';
     let changedFiles = [], full = !isPR;
@@ -172,8 +260,8 @@ if (require.main === module) {
       try { changedFiles = changedOnPR(); }
       catch (error) { full = true; console.warn(`Cannot safely determine PR dependencies: ${error.message}. Running all.`); }
     }
-    emit(selectTests(suite, changedFiles, { full }));
+    emit(suite === 'feature' ? selectFeatureChecks(changedFiles, { full }) : selectTests(suite, changedFiles, { full }));
   }
 }
 
-module.exports = { TESTS, categories, sourceDependencies, selectTests, onlyCacheBustChanged };
+module.exports = { TESTS, FEATURE_PATHS, FEATURE_WORKFLOWS, categories, sourceDependencies, featureWorkflowDependencies, selectTests, selectFeatureChecks, onlyCacheBustChanged, withoutCacheBusts };
