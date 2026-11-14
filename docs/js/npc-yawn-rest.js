@@ -101,6 +101,10 @@
     return walker.state === 'wildlife-flight' || walker._npcRunMode === 'cover'
       || Number(walker._wildlifeThreatUntil) > performance.now();
   }
+  function unavailableForYawn(walker) {
+    return walker.pause === Infinity || walker.state === 'alcohol-blackout' || walker.combatTutorialSuspended
+      || !!walker._npcCliffClimb || !!window.FestivalWheelDanceRuntime?.isPartner?.(walker); // Do not run the yawn over blackout, authored scene control, cliff traversal, or partner dance poses.
+  }
   function combatNow() {
     const combat = window.Combat?.deps;
     const area = combat?.getCurrentArea?.();
@@ -350,12 +354,14 @@
         state.nextHour = hour + RESTED_HOURS + HOURLY_GAP;
         checkpoint(state);
       }
-      if (state.active && (globalCombat || inCombat(walker, false) || rising || !walker.root.parent)) {
+      const unavailable = unavailableForYawn(walker); // The only actively animated characters this system may safely affect.
+      const actionLocked = !!window.CharacterActionLocks?.isLocked?.('npc:' + state.id, 'actions'); // NPC Koma owns its own lock; unrelated actions should still interrupt ordinary yawns.
+      if (state.active && (globalCombat || inCombat(walker, false) || unavailable || rising || !walker.root.parent
+          || (actionLocked && !state.active.komaStarted))) {
         finish(state.active, 'interrupted');
       }
-      if (rising || state.active || !walker.root.parent || walker.area !== area) continue;
+      if (rising || state.active || !walker.root.parent || walker.area !== area || unavailable || actionLocked) continue;
       if (inCombat(walker, globalCombat)) continue;
-      if (window.CharacterActionLocks?.isLocked?.('npc:' + state.id, 'actions')) continue;
       if (state.wakePending) startYawn(walker, state, hour, 'waking');
       else if (hour >= state.restedUntil && hour >= state.nextHour) startYawn(walker, state, hour, 'hourly fatigue');
     }
