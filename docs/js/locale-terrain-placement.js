@@ -602,8 +602,8 @@
       let selected = null; // Highest visibility-adjusted score among valid authored-site candidates.
       for (const candidate of sightCandidates) {
         const connector = compiled.locale.connectors?.[0]; // Sample the discoverable entrance rather than an embedded cliff's solid center.
-        const c = candidate.anchorC + (Number(connector?.col) || (compiled.footprint.minC + compiled.footprint.maxC) * .5) * compiled.scale;
-        const r = candidate.anchorR + (Number(connector?.row) || (compiled.footprint.minR + compiled.footprint.maxR) * .5) * compiled.scale;
+        const c = candidate.anchorC + (connector?.col != null ? Number(connector.col) : (compiled.footprint.minC + compiled.footprint.maxC) * .5) * compiled.scale;
+        const r = candidate.anchorR + (connector?.row != null ? Number(connector.row) : (compiled.footprint.minR + compiled.footprint.maxR) * .5) * compiled.scale;
         candidate.visibility = scorer.sampleVisibility(sightOptions, c, r);
         candidate.discoveryScore = candidate.score + candidate.visibility.concealmentScore * 12
           + Math.min(candidate.visibility.nearbyObserverCount, 3) * .1 + candidate.tie * .15;
@@ -720,6 +720,7 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
+      shiftGeneratedSecret: ['ruin_entrance','great_fey_shrine'].includes(locale.category) && locale.id !== 'locale_banubu_shrine', // Shift discoveries do not inherit old-year map markers.
       seclusion: selected.visibility || null, // Mobile map diagnostics can inspect the selected Shift site's measured exposure.
       floorTier: selected.floorTier,
       alwaysVisible: !!locale.placement?.alwaysVisibleOnMap,
