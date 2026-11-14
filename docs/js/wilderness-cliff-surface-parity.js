@@ -8,6 +8,7 @@
   const PLATEAU_CLIFF_MATERIAL_SLOT = 1; // Used by ZonePlateauMesa: slot 0 is grass, slot 1 is the actual steep cliff-face group.
   const DEBUG_HISTORY_LIMIT = 16; // Used to keep mobile-visible final-pass history bounded.
   const pendingMeshes = new WeakSet(); // Used to avoid duplicate microtask remaps when nested plateau builders are both wrapped in the same call stack.
+  const farmMaterialCache = new WeakMap(); // Used to reuse the canonical farm-rock material when multiple cliffs share one unchanged source material.
   const stats = {
     scheduledPasses: 0,
     completedPasses: 0,
@@ -25,6 +26,8 @@
     townBorderBuildsCaptured: 0,
     borderMeshesFarmFinished: 0,
     errors: 0,
+    crossMeshUvsDeferred: 0,
+    farmMaterialCacheHits: 0,
     recent: [],
   }; // Used by snapshot() and the in-game render log to verify wilderness cliff parity without DevTools.
 
@@ -109,11 +112,29 @@
     // obtain that exact farm-rock material without ever remapping the plateau's
     // shared grass UV attribute. The proxy never enters a scene and its geometry
     // is disposed immediately; the returned cached material/texture remain shared.
+    const signature = [ // Used to invalidate a reused material when a shared source's appearance or render state changes.
+      sourceMaterial.color?.getHexString?.() || '', sourceMaterial.map?.uuid || '',
+      sourceMaterial.side, sourceMaterial.transparent, sourceMaterial.opacity, sourceMaterial.alphaTest,
+      sourceMaterial.depthTest, sourceMaterial.depthWrite, sourceMaterial.polygonOffset,
+      sourceMaterial.polygonOffsetFactor, sourceMaterial.polygonOffsetUnits,
+    ].join('|');
+    const cached = farmMaterialCache.get(sourceMaterial); // Used to avoid creating throwaway proxy geometry for every plateau in the same material family.
+    if (cached?.signature === signature) {
+      stats.farmMaterialCacheHits++;
+      return cached.material;
+    }
+
     const proxyGeometry = new THREE.PlaneGeometry(1, 1); // Used only to satisfy naturalizeMesh's geometry contract while the canonical rock material is created/resolved.
     const proxy = new THREE.Mesh(proxyGeometry, sourceMaterial); // Used only as a material-factory carrier; never rendered or added to a scene.
-    natural.naturalizeMesh(proxy, 'rocks', 'planar-stretch');
-    const material = proxy.material;
-    proxyGeometry.dispose?.();
+    let material;
+    try {
+      natural.naturalizeMesh(proxy, 'rocks', 'planar-stretch');
+      material = proxy.material;
+    } finally {
+      if (proxy.geometry !== proxyGeometry) proxy.geometry?.dispose?.(); // Dispose the non-rendered surface-island clone created by mapper wrappers.
+      proxyGeometry.dispose?.();
+    }
+    if (material) farmMaterialCache.set(sourceMaterial, { signature, material });
     return material || null;
   }
 
@@ -195,6 +216,16 @@
     const materialSlot = forcedSlot != null ? forcedSlot : (taggedSlot != null ? Number(taggedSlot) : null);
     makeMaterialMatchFarm(mesh, materialSlot);
     clearCachedSurfaceMapping(mesh);
+    if (mesh.userData?.naturalSurfaceCrossMeshUvOwner) {
+      // A changed or rejected batch cannot keep its former ownership claim:
+      // the central mapper would otherwise short-circuit a later repair.
+      delete mesh.userData.naturalSurfaceCrossMeshUvOwner;
+      delete mesh.userData.naturalSurfaceCrossMeshUvBatch;
+    }
+    if (options.deferUvToCrossMesh === true && materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT) {
+      stats.crossMeshUvsDeferred++;
+      return true; // The later touching-mesa solve owns these UVs; a failed solve explicitly falls back to this normal mapper.
+    }
 
     const mapper = window.HobunjiSurfaceStretchUV; // Used as the canonical Furniture + Avatar Author shared-edge surface detector and full-square UV mapper.
     if (typeof mapper?.mapMesh !== 'function') return false;
@@ -204,8 +235,16 @@
     }; // Used to give every wilderness cliff the same bounded stretch scale as the farm boundary.
     if (materialSlot != null) mappingOptions.materialIndex = materialSlot;
 
-    const report = mapper.mapMesh(mesh, mappingOptions); // Runs after every synchronous wilderness geometry modifier so this result is authoritative.
+    const report = materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT && typeof mapper.remapNaturalTerrainMesh === 'function'
+      ? mapper.remapNaturalTerrainMesh(mesh, label) // Retains the Jigsaw-exclusion and faceted-outline wrappers on a failed batch.
+      : mapper.mapMesh(mesh, mappingOptions); // Other cliff/rock paths retain their original 6u mapper options.
     if (!report) return false;
+    if (materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT) {
+      mesh.userData = Object.assign({}, mesh.userData || {}, {
+        terrainJigsawIgnore: true,
+        naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV',
+      }); // Explicit ownership is also safe when a test/editor loads the bare mapper without its exclusion adapter.
+    }
     const missingAfter = !hasValidUvs(mesh); // Used by snapshot() to expose any final mapper failure on mobile.
     if (missingAfter) stats.missingUvsAfter++;
     stats.remappedMeshes++;
@@ -224,16 +263,25 @@
     const scheduledAt = performance.now?.() ?? Date.now(); // Used only by recent diagnostics to distinguish successive zone rebuilds.
 
     const run = () => {
-      let remapped = 0; // Used to summarize one completed builder-level final pass.
+      let remapped = 0; // Used to summarize the meshes receiving a complete per-mesh UV solve.
+      let deferred = 0; // Used to count plateau meshes whose single cross-mesh UV solve will run in the following microtask.
       try {
+        const plateauCandidates = options.materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT
+          ? candidates.filter(mesh => Array.isArray(mesh.material) && mesh.material[PLATEAU_CLIFF_MATERIAL_SLOT])
+          : []; // Used to ensure deferral only occurs when the cross-mesh adapter will actually accept two or more cliffs.
+        const batchAvailable = plateauCandidates.length >= 2 && !!window.ZonePlateauMesa?.__hobunjiCrossMeshCliffUvWrapped; // Used to preserve per-mesh mapping when the later adapter is absent.
         for (let i = 0; i < candidates.length; i++) {
-          if (applyFinalSurfacePass(candidates[i], `${labelPrefix}:${candidates[i].name || i}`, options)) remapped++;
+          const deferUvToCrossMesh = batchAvailable && plateauCandidates.includes(candidates[i]); // Used only for matching material-slot cliffs in a multi-mesa batch.
+          if (applyFinalSurfacePass(candidates[i], labelPrefix + ':' + (candidates[i].name || i), { ...options, deferUvToCrossMesh })) {
+            if (deferUvToCrossMesh) deferred++;
+            else remapped++;
+          }
         }
         stats.completedPasses++;
-        const entry = { label: labelPrefix, meshes: candidates.length, remapped, materialSlot: options.materialSlot ?? null, scheduledAt }; // Used by snapshot() for mobile-visible recent history.
+        const entry = { label: labelPrefix, meshes: candidates.length, remapped, deferred, materialSlot: options.materialSlot ?? null, scheduledAt }; // Used by snapshot() for mobile-visible recent history.
         stats.recent.push(entry);
         while (stats.recent.length > DEBUG_HISTORY_LIMIT) stats.recent.shift();
-        debugLog(`${labelPrefix}: final farm-parity surface pass remapped ${remapped}/${candidates.length} cliff mesh(es) at ${WILDERNESS_CLIFF_UV_PATCH_WORLD_SIZE}u max UV islands${options.materialSlot != null ? `, material slot ${options.materialSlot}` : ''}.`);
+        debugLog(labelPrefix + ': farm-parity cliff pass mapped ' + remapped + '/' + candidates.length + ' mesh(es), deferred ' + deferred + ' to cross-mesh UV solve.');
       } catch (error) {
         stats.errors++;
         debugLog(`${labelPrefix}: final surface pass failed: ${error?.message || error}`, 'warn');

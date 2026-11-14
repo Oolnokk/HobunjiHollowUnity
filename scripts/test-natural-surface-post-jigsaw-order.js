@@ -29,7 +29,7 @@ assert(jigsawScanAt >= 0, 'post-Jigsaw guard must invoke the existing Jigsaw sca
 assert(naturalRepairAt > jigsawScanAt, 'natural-surface repair must happen after Jigsaw mutation');
 assert(chunkScanAt > naturalRepairAt, 'spatial chunking must happen after natural-surface repair');
 assert(renderAt > chunkScanAt, 'actual rendering must happen after Jigsaw -> natural repair -> chunking');
-assert(post.includes("const mapped = mapper.mapGeometry(combined, { label: \`${label}:touching-mesh-batch\` });"), 'cross-mesh plateau solve must delegate edge preservation to the central mapper without a stale local edge constant');
+assert(post.includes("mapper.mapGeometry(combined, { label: \`${label}:touching-mesh-batch\` });"), 'cross-mesh plateau solve must delegate edge preservation to the central mapper without a stale local edge constant');
 
 assert(/terrainGeometryReadyRevision/.test(post) && /onTerrainGeometryReady/.test(post), 'post-Jigsaw wrapper must preserve TerrainRenderChunks geometry-ready notifications');
 assert(/previousBakeMesh/.test(post) && /runtime\.inspectObject\(mesh\)/.test(post), 'manual TerrainJigsawUV.bakeMesh calls must also re-run natural-surface repair');
