@@ -83,7 +83,11 @@
 
   function apply(group, data, requestedTiles) {
     const spec = normalize(data?.tileSpan);
-    if (!spec.enabled || !Array.isArray(data?.parts)) return { enabled: false };
+    if (!spec.enabled || !Array.isArray(data?.parts)) {
+      for (const mesh of group?.userData?.meshById?.values?.() || []) if (mesh.userData.tileSpanSource) resetMesh(mesh);
+      if (group?.userData) { delete group.userData.activeTileSpanTiles; delete group.userData.tileSpanDiagnostics; }
+      return { enabled: false };
+    }
     const meshes = group?.userData?.meshById || new Map();
     const totalTiles = Math.max(spec.baseTiles, Math.min(512, Math.floor(finite(requestedTiles, spec.totalTiles))));
     const delta = (totalTiles - spec.baseTiles) * spec.tileSize; // Only extra middle tiles add length.
@@ -118,6 +122,7 @@
         mapping = transformFor(role, 0, 0, delta);
         mesh.position[spec.axis] = pose.position[spec.axis] + mapping.offset; // Stairs/caps retain original shape and UVs.
         mesh.updateMatrix();
+        if (mesh.userData.authoredMatrix) mesh.userData.authoredMatrix.compose(mesh.position, mesh.quaternion, mesh.scale);
       }
     }
     group.userData.activeTileSpanTiles = totalTiles;
