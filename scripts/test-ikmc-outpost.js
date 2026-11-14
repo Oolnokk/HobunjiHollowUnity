@@ -154,6 +154,24 @@ for (const stair of piece.footprint.extensions.porchStairs) {
   assert.equal(z, 40, 'relocated front stairs must point north');
   if (x === 12 || x === 13) assert.equal(town.tiles[`${x},${z - 1}`]?.type, 'path', 'steps must meet the existing town road');
 }
+// Verify the restored porch can actually be walked from its road-facing stairs to the
+// door without crossing an authored railing post or the solid log cabin footprint.
+const footMinX = Math.min(...fullCells.map(c => c.x)), footMinY = Math.min(...fullCells.map(c => c.y)); // Placement-origin bounds shared by HousePieceGen and collisions.
+const toWorldTile = cell => [outpost.gridX + outpost.footprintW - 1 - (cell.x - footMinX),
+  outpost.gridZ + outpost.footprintD - 1 - (cell.y - footMinY)]; // Rotates the full 11×7 authored envelope by 180°.
+const exterior = piece.footprint.extensions; // Original porch/stairs/tunnel data used to build a navigable approach.
+const walkablePorch = new Set([...exterior.porches, ...exterior.porchStairs, ...exterior.entryTunnels].map(cell => toWorldTile(cell).join(','))); // These finished platforms connect the stairs to the door.
+const blockedPorch = new Set([...piece.footprint.cells, ...exterior.railings].map(cell => toWorldTile(cell).join(','))); // Log walls and railing posts must not be walked through.
+const approach = exterior.porchStairs.map(toWorldTile); // Queue roots are the three road-facing stair tiles.
+const reachable = new Set(); // Tracks the horizontal flood fill across the real walkable porch.
+while (approach.length) {
+  const tile = approach.shift(), key = tile.join(',');
+  if (reachable.has(key) || !walkablePorch.has(key) || blockedPorch.has(key)) continue;
+  reachable.add(key);
+  for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) approach.push([tile[0]+dx, tile[1]+dz]);
+}
+assert(reachable.has(`${outpostDoor.col},${outpostDoor.row}`), 'there must be a walkable continuous porch route from the road-facing stairs to the IKMC door');
+
 assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [7,42,'map_i_ikmc_outpost']);
 const mineConfig = read('docs/config/town-mine.json').townEntrance; // Runtime TownMine.decorateTownMap overrides the building/door from this config on every load.
 assert.deepEqual([mineConfig.gridX, mineConfig.gridZ, mineConfig.doorCol, mineConfig.doorRow, mineConfig.rotationDeg],
