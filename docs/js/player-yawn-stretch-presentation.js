@@ -91,7 +91,8 @@
       && Math.abs(actual.quaternion.x - expected.quaternion.x) < 0.00001
       && Math.abs(actual.quaternion.y - expected.quaternion.y) < 0.00001
       && Math.abs(actual.quaternion.z - expected.quaternion.z) < 0.00001
-      && Math.abs(actual.quaternion.w - expected.quaternion.w) < 0.00001;
+      && Math.abs(actual.quaternion.w - expected.quaternion.w) < 0.00001
+      && actual.visible === expected.visible;
   }
 
   function restoreHandPose() {
@@ -99,6 +100,7 @@
       if (!samePose(record.socket, record.applied)) continue;
       record.socket.position.copy(record.base.position);
       record.socket.quaternion.copy(record.base.quaternion);
+      record.socket.visible = record.base.visible;
       record.socket.updateMatrixWorld?.(true);
     }
     handBase.clear();
@@ -122,12 +124,13 @@
       let record = handBase.get(side);
       if (!record || record.socket !== socket) {
         record = { socket,
-          base: { position: socket.position.clone(), quaternion: socket.quaternion.clone() },
-          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone() } };
+          base: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible },
+          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible } };
         handBase.set(side, record);
       } else if (!samePose(socket, record.applied)) {
         record.base.position.copy(socket.position);
         record.base.quaternion.copy(socket.quaternion); // The native gait/hand driver supplied a new neutral pose this pass.
+        record.base.visible = socket.visible;
       }
       socket.position.copy(record.base.position);
       socket.quaternion.copy(record.base.quaternion);
@@ -142,6 +145,7 @@
       socket.updateMatrixWorld?.(true);
       record.applied.position.copy(socket.position);
       record.applied.quaternion.copy(socket.quaternion);
+      record.applied.visible = socket.visible;
       applied = true;
     }
     if (applied) handApplications++;
