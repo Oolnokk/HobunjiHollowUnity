@@ -100,12 +100,29 @@
     const census = window.WildlifeSpawn.roamingHerdCensus?.(zoneId);
     if (!census?.configuredHerds) return '';
     const rows = census.herds.map(herd =>
-      `<div><b>${deps.esc(herd.herdKey)}</b>: ${herd.adults} adults · ${herd.mothers} Herd-Mother · ${herd.carriedBabies} carried babies · ${herd.sleeping} sleeping</div>`
+      `<div><b>${deps.esc(herd.herdKey)}</b>: ${deps.esc(herd.species || 'unknown')} · ${herd.adults} adults · ${herd.mothers} Herd-Mother · ${herd.carriedBabies} carried babies · ${herd.sleeping} sleeping${herd.pendingTurnover ? ' · <b>rotates on map exit</b>' : ''}</div>`
     ).join('');
     return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(133,190,120,.08);border:1px solid rgba(133,190,120,.28);border-radius:6px;font-size:12px">
       <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Roaming Herd Census — ${deps.esc(zoneId)}</div>
       <div>Configured: <b>${census.configuredHerds}</b> herd(s) · species: ${census.species.map(deps.esc).join(', ') || 'none'}</div>
       ${rows || '<div style="opacity:.72">No living herd members spawned yet.</div>'}
+    </div>`;
+  }
+
+  function renderCloudForestHummingbirdCensus() {
+    if (deps.getCurrentArea?.() !== 'map_southern_cloud_forest') return '';
+    const census = window.HoneyfuzzleHives?.census?.(); // Existing hive owner reports the actual generated stumps and active hummingbird-like Honeyfuzzle swarms.
+    const hives = census?.hives || []; // Each generated stump is a possible Honeyfuzzle colony, not an assumed guaranteed spawn.
+    const standing = hives.filter(hive => hive.standing).length; // Standing stump count lets mobile users tell absent habitat from sleeping/distant swarms.
+    const visible = hives.filter(hive => hive.swarm).length; // Active logical swarms, even when a GPU rig is streamed out.
+    const note = !census ? 'Hive runtime unavailable'
+      : !hives.length ? 'No hive stumps in this generated Cloud Forest layout — check wilderness generation.'
+      : census.night ? 'Honeyfuzzles normally tuck into stumps at night.'
+      : 'Daytime swarms emerge within ' + deps.esc(census.spawnRadiusTiles) + ' tiles of the player.';
+    return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">
+      <div style="font-weight:600">Cloud Forest Honeyfuzzles (little hummingbirds)</div>
+      <div>Hive stumps: <b>${hives.length}</b> · standing: <b>${standing}</b> · active swarms: <b>${visible}</b></div>
+      <div style="opacity:.8">${note}</div>
     </div>`;
   }
 
@@ -198,7 +215,7 @@
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderNestingSpeciesAudit() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
+    const censusHtml = renderDenNestCensus() + renderNestingSpeciesAudit() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCloudForestHummingbirdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
