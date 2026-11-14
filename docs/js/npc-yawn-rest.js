@@ -408,12 +408,19 @@
     if (input?.queueSnapshot?.()?.length) return true; // A buffered attack also owns the pending animation slot.
     return (Number(window.CombatVocalizations?.attackStartDelayS?.()) || 0) > 0; // Still in the real windup/strike/hold timeline, even after button release.
   }
+  function playerHeldActionBusy() {
+    const holder = window.ProceduralHandAttachments?.gameDeps?.toolHolder
+      || window.Combat?.deps?.toolHolder; // Native pick/shovel/hoe and fishing work publishes its authored pose activity on this existing holder.
+    if (holder?.userData?.authoredToolActionActive === true) return true;
+    return !!window.RangedWeapons?.playerActionState?.(); // Loading, aiming for release, and firing a ranged weapon must finish before stretching.
+  }
   function playerMountTransitionActive() {
     return ['mounted', 'mountingUp', 'mountingDown', 'climbLeap'].includes(window.Mounts?.rideState); // Preserve both mounting transitions as authored full-body actions.
   }
   function playerCanYawn(globalCombat, ongoingEntry = null) {
     const player = window.Combat?.deps?.player; // Shared live combat participant owns prone, dodge, lunge and capture states.
-    if (globalCombat || playerAttackInputBusy() || window.ClothingWeavingSystem?.combatActive?.(player) === true
+    if (globalCombat || playerAttackInputBusy() || playerHeldActionBusy()
+        || window.ClothingWeavingSystem?.combatActive?.(player) === true
         || (Number.isFinite(player?.health) && player.health <= 0)) return false; // Recent attack attempts/hits count as combat even without a currently chasing foe.
     if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
       || player?.tzatzulCapturedBy || player?._knockbackLedgeFall
