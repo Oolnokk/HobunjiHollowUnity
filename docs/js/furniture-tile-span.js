@@ -57,6 +57,7 @@
     mesh.quaternion.copy(pose.quaternion);
     mesh.scale.copy(pose.scale);
     mesh.updateMatrix();
+    if (mesh.userData.authoredMatrix?.compose) mesh.userData.authoredMatrix.compose(mesh.position, mesh.quaternion, mesh.scale);
     return pose;
   }
 
