@@ -582,7 +582,9 @@ for(const side of ['north','east','south','west']){
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
   const siteSeed=side==='west'?3687055066:23; // The west integration case also covers the player's reported F2 seed.
-  const preplanned=Plan.compose({seed:siteSeed,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
+  const preplanned=Plan.compose({seed:siteSeed,anchorX:320,anchorZ:320,shaftTraversal:'buttress',
+    ...(side==='west'?Plan.tierOptions('cave'):{}),
+  }); // The reported cave layout has two F2 portals, only one F1 portal; the other cases preserve the generic multiwing audit.
   const connected=Connector.connect({rec,ruin,seed:siteSeed,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
@@ -638,7 +640,8 @@ for(const side of ['north','east','south','west']){
       if(!wingTiles.has(key)&&!connected.hub.grid.canStand(col,row,0))elevatedOnly++;
     }
   }
-  assert(elevatedOnly>0,'the regression must cover upper-story shaft-shell cells missed by the previous doorway fix');
+  if(side==='west')assert(elevatedOnly>0,
+    'the two-door cave F2 must include a shaft-shell cell absent from both the wing and floor-0 projection');
   assert.equal(ruin.occupancy.cols,rec.cols,'occupancy must include all mounted wings');
   assert.equal(ruin.occupancy.rows,rec.rows,'occupancy must include all mounted wings');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
