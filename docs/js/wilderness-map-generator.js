@@ -3508,6 +3508,38 @@
     return best;
   }
 
+  function secretLocaleSite(bbox, paddedW, paddedH, clearance, locale, placementFilter) {
+    const scorer = typeof globalThis !== 'undefined' ? globalThis.WildernessSeclusion : null; // Browser generation shares the same LOS rule as cave entrances.
+    const fallback = typeof require === 'function' ? require('./wilderness-seclusion.js') : null; // Node headless generator uses that identical scorer.
+    const visibility = scorer || fallback;
+    if (!visibility?.sampleVisibility || !map.entry) return null;
+    const distances = distanceFieldFrom(map.entry).distances; // Prevent fully enclosed but unreachable locations from winning.
+    const options = {
+      cols:settings.width, rows:settings.height, getTile:tileAt,
+      canStand: tile => !!tile && isWalkableTile(tile) && !tile.water && !tile.cliffSkirt,
+      blocksSight: tile => !!tile && (tile.ramp || tile.distantBoundaryLandscape
+        || tile.borderEscarpment || (tile.cliffSkirt && tile.cliffSkirtKind === 'plateau')
+        || !!(tile.occupiedBy && objectBlocksSight(getObjectById(tile.occupiedBy)))),
+      elevation: tileHeight,
+    }; // Reuse current Shift's terrain and real sight-blocking obstacles.
+    let winner = null; // Best reachable legal clearing, without inventing new terrain or stamping a second locale.
+    let winnerScore = -Infinity;
+    for (let attempt = 0; attempt < 220; attempt++) {
+      const x = Math.floor(rng() * (settings.width - paddedW + 1));
+      const y = Math.floor(rng() * (settings.height - paddedH + 1));
+      if (!areaFree(x,y,paddedW,paddedH) || !placementFilter(x,y,paddedW,paddedH)) continue;
+      const connector = locale.connectors?.[0]; // Player-visible approach point, not the center of a shrine's building.
+      const cx = x + clearance - bbox.minC + (Number(connector?.col) || bbox.minC + bbox.w/2);
+      const cy = y + clearance - bbox.minR + (Number(connector?.row) || bbox.minR + bbox.h/2);
+      if (!distances.has(keyXY(Math.floor(cx), Math.floor(cy)))) continue;
+      const sight = visibility.sampleVisibility(options,cx,cy);
+      const entryDistance = Math.hypot(cx-map.entry.x,cy-map.entry.y);
+      const score = sight.concealmentScore*12 + Math.min(entryDistance,35)*.08 + rng()*.6; // Sightline hiding beats sheer remoteness.
+      if (score > winnerScore) { winnerScore=score; winner={x,y,seclusion:sight}; }
+    }
+    return winner;
+  }
+
   function stampLocale(locale) {
     const bbox = localeFootprintBBox(locale);
     if (!bbox) { warn(`locale ${locale.id}: no footprint tiles, skipped`); return null; }
@@ -3542,7 +3574,10 @@
       return true;
     };
 
-    let spot = null;
+    const shiftSecret = locale.category === 'great_fey_shrine'
+      && placement.preferSeclusion !== false && !placement.alwaysVisibleOnMap
+      && !placement.sameSectorAsEntry; // Fixed or introductory story spaces retain their authored placement contracts.
+    let spot = shiftSecret ? secretLocaleSite(bbox,paddedW,paddedH,clearance,locale,placementFilter) : null;
     // Some locales (the Researcher's Tent, thematically camped near the
     // trailhead) need to land in the same one of nine equal sectors as the
     // zone's entry gate, wherever that ends up this shift -- rather than
@@ -3664,12 +3699,13 @@
       w: carrierW,
       h: carrierH,
       blocksMovement: !!structureDef && (!structureDef.collision || structureDef.collision.mode === 'auto'),
-      pathAnchor: connectorWorld ? nearestFreeNeighbor(connectorWorld.x, connectorWorld.y) : null,
+      pathAnchor: shiftSecret ? null : (connectorWorld ? nearestFreeNeighbor(connectorWorld.x, connectorWorld.y) : null), // Do not lay a conspicuous generated road directly to a hidden shrine.
       localeMeta: {
         localeId: locale.id,
         name: locale.name,
         category: locale.category,
         alwaysVisible: !!placement.alwaysVisibleOnMap,
+        seclusion: spot.seclusion || null, // Shift map exports preserve mobile-visible concealment diagnostics.
         interior: locale.interior ? clonePlain(locale.interior) : null, // Used after Tothal shifting/scaling to export a walkable locale entrance transition without hard-coded world coordinates.
         anchorX, anchorY,
         w: bbox.w, h: bbox.h,
@@ -8892,6 +8928,7 @@
           name: meta.name,
           category: meta.category,
           alwaysVisible: !!meta.alwaysVisible,
+          seclusion: meta.seclusion || null, // Expose scored hidden-site placement without a runtime line-of-sight pass.
           x: Math.round(meta.anchorX * localeScale),
           y: Math.round(meta.anchorY * localeScale),
           w: meta.w * localeScale,
