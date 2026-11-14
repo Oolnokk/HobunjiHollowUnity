@@ -311,6 +311,8 @@
       || new THREE.MeshBasicMaterial({ map: sharedKomaTexture, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(0.20, 0.20), material); // One disposable sprite-card prop per ceremonial drink.
     plane.name = 'npc_daily_koma_leaf';
+    plane.renderOrder = 1.5; // Match the existing held-item render order so the leaf sits over the portrait rather than disappearing behind it.
+    window.PngPlaneOutlineOccluder?.markPngPlane?.(plane); // Use the same PNG outline/occlusion classification as authored held bottle sprites.
     plane.userData.ownsTexture = false; // The shared hedge PNG is retained across NPCs, unlike a per-item recolored texture.
     const started = playAutonomous(walker, '__daily_koma_leaf__', onChew, {
       plane, durationS, allowWalking: true, reason: 'chewing daily Koma leaves',
