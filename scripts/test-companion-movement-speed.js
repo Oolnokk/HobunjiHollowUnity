@@ -271,14 +271,16 @@ const moveEnd = gameSource.indexOf('\n      // Grid-walkability predicate', move
 assert(moveStart >= 0 && moveEnd > moveStart, 'the game still exposes one creature movement function for the integration fixture');
 let routeApproach = true; // Switches the real moveCreatureToward between cliff entry and ordinary ground motion.
 let cliffReceivedSpeed = null; // Captures the world speed passed to the cliff-route navigator.
+let creatureHeavyMul = 1; // Applies a creature-specific Heavy slowdown to both paths.
+let creatureStickyMul = 1; // Applies a creature-specific Sticky slowdown to both paths.
 const moveContext = {
   window: {
     CreatureCliffClimb: { navigate: (_actor, _x, _y, speed) => {
       cliffReceivedSpeed = speed;
       return routeApproach;
     } },
-    RangedWeapons: { movementDirectionMultiplier: () => 1, movementSpeedMultiplier: () => 1 },
-    ResourceSystem: { timedDebuffModifier: () => 1 },
+    RangedWeapons: { movementDirectionMultiplier: () => 1, movementSpeedMultiplier: () => creatureStickyMul },
+    ResourceSystem: { timedDebuffModifier: () => creatureHeavyMul },
     DevRandomRuin: { syncShaftCreatureFloor() {} },
     EnemyCollisionReposition: { MIN_MOVE_FRAC: 0.25, tryReposition: () => null },
   },
@@ -305,6 +307,17 @@ routeApproach = false;
 assert.equal(moveCreature(routeActor, 1000, 0, routeActor.def.chaseSpeed, 1 / 60), true);
 assert.ok(Math.abs(routeActor.x - expectedCatchupWorldSpeed / 60) < 1e-9,
   'ordinary ground movement achieves the same catch-up speed without double global application');
+creatureHeavyMul = 0.75;
+creatureStickyMul = 0.8;
+routeApproach = true;
+assert.equal(moveCreature(routeActor, 1000, 0, routeActor.def.chaseSpeed, 1 / 60), true);
+assert.ok(Math.abs(cliffReceivedSpeed - expectedCatchupWorldSpeed * creatureHeavyMul * creatureStickyMul) < 1e-9,
+  'cliff approach respects per-creature Heavy and Sticky penalties like the normal mover');
+routeApproach = false;
+const earlierX = routeActor.x; // Used to compare only this slowed ground-movement frame.
+assert.equal(moveCreature(routeActor, 1000, 0, routeActor.def.chaseSpeed, 1 / 60), true);
+assert.ok(Math.abs(routeActor.x - earlierX - expectedCatchupWorldSpeed * creatureHeavyMul * creatureStickyMul / 60) < 1e-9,
+  'ground movement remains numerically identical to the slowed cliff approach');
 player.vx = 0;
 player.vy = 0;
 devMul = 1;
