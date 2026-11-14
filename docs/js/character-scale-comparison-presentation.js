@@ -26,7 +26,8 @@
   let lastHeadSignature = ''; // Avoids overwriting an active mobile numeric edit every poll tick.
   let threePromise = null; // Shares the asynchronous Three.js module lookup.
   let cameraState = null; // Stores the original perspective-camera fields for exact restoration.
-  let lastFrameSignature = ''; // Avoids reframing unchanged lineups every poll tick.
+  let lastFrameSignature = ''; // Only explicit Focus/Frame can reframe after the initial view; model edits and mobile keyboard resize cannot.
+  let lastFramedRoot = null; // Prevents reusing a previous lineup's frame if its preview scene is rebuilt without a camera-mode change.
   let pinchSession = null; // Tracks Full Character Scale's two-finger camera zoom gesture.
   const activeTouchPointers = new Map(); // Current canvas touch pointers used by pinch zoom.
 
@@ -99,7 +100,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{
   bottom:auto!important;left:auto!important;transform:none!important;
   width:min(330px,calc(100vw - 20px))!important;
   max-height:calc(100vh - max(82px,env(safe-area-inset-top)) - 12px)!important;
-  overflow:auto!important;align-content:start;
+  max-height:calc(100dvh - max(82px,env(safe-area-inset-top)) - 12px)!important; /* Dynamic viewport keeps hunch inputs reachable when mobile browser chrome or keyboard changes height. */
+  min-height:0;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain;scroll-padding-top:8px;align-content:start;
 }
 body[data-animation-author-mode="${MODE}"] #${PANEL_ID} .scaleRow{
   grid-template-columns:88px minmax(110px,1fr) 68px!important;
@@ -315,7 +317,7 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
         if (event.target?.id === HEAD_NUMBER_ID && event.key === 'Enter') event.target.blur?.();
       }, true);
       panel.querySelector('#maaFullScaleReset')?.addEventListener('click', () => setTimeout(() => syncHeadUi(true), 0), true);
-      panel.querySelector('#maaFullScaleFrame')?.addEventListener('click', () => setTimeout(() => frameOrthographic(true, true), 0), true);
+      // Camera reset buttons are handled once by the comparison owner; never schedule a second reset.
     }
     return true;
   }
@@ -329,8 +331,11 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
 
   function saveCamera(camera) {
     if (cameraState?.camera === camera) return cameraState;
+    const controls = window.HobunjiGameplayBackdrop?.getCameraControls?.(); // Same OrbitControls instance that processes drag/orbit input in Animation Author.
     cameraState = {
       camera,
+      controls, // Restores the editor's original rotation pivot when leaving comparison mode.
+      controlTarget: controls?.target?.clone?.(),
       originalUpdateProjectionMatrix: camera.updateProjectionMatrix,
       isPerspectiveCamera: camera.isPerspectiveCamera,
       isOrthographicCamera: camera.isOrthographicCamera,
@@ -392,9 +397,26 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     if (state.bottom === undefined) delete camera.bottom; else camera.bottom = state.bottom;
     if (state.position && camera.position?.copy) camera.position.copy(state.position);
     if (state.quaternion && camera.quaternion?.copy) camera.quaternion.copy(state.quaternion);
+    if (state.controlTarget) state.controls?.target?.copy?.(state.controlTarget); // Restores original orbit pivot along with the camera pose.
+    state.controls?.update?.();
     camera.updateProjectionMatrix?.();
     camera.updateMatrixWorld?.(true);
     lastFrameSignature = '';
+    lastFramedRoot = null;
+  }
+
+  function preserveViewOnResize(camera, canvas) {
+    const state = cameraState; // Live orthographic view whose pan, orbit and zoom must survive on-screen keyboard and layout changes.
+    if (!state || state.camera !== camera || !state.orthoBounds || !canvas?.clientWidth || !canvas?.clientHeight) return;
+    if (state.viewportWidth === canvas.clientWidth && state.viewportHeight === canvas.clientHeight) return;
+    const bounds = state.orthoBounds;
+    const centerX = (bounds.left + bounds.right) / 2;
+    const height = bounds.top - bounds.bottom; // Keep the vertical world span fixed while correcting projection aspect ratio.
+    const width = height * canvas.clientWidth / canvas.clientHeight;
+    state.orthoBounds = { left: centerX - width / 2, right: centerX + width / 2, top: bounds.top, bottom: bounds.bottom };
+    state.viewportWidth = canvas.clientWidth;
+    state.viewportHeight = canvas.clientHeight;
+    applyOrthographicProjection(camera, state.orthoBounds); // Does not call camera.position.set or lookAt, so manual orbit is preserved.
   }
 
   async function frameOrthographic(force = false, resetZoom = false) {
@@ -404,20 +426,28 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const root = scene?.getObjectByName?.('FullCharacterScalePreviewRoot');
     const canvas = document.getElementById('view3d');
     if (!camera || !root || !canvas?.clientWidth || !canvas?.clientHeight) return;
+    const focusKey = window.HobunjiFullCharacterScaleComparison?.focusKey || null; // Explicit camera focus is independent of the character whose settings are being edited.
+    const focused = focusKey ? root.children.find(node => node.userData?.fullScalePreviewKey === focusKey) : null; // A tiny direct-child lookup; never traverse every animated avatar each poll.
+    const signature = `view:${focused ? focusKey : 'lineup'}`; // Only a user-issued focus/framing action changes camera pose.
+    if (!force && signature === lastFrameSignature && lastFramedRoot === root && cameraState?.camera === camera) {
+      preserveViewOnResize(camera, canvas); // Skip Three.js bounds traversal entirely on model edits and the 50ms polling pass.
+      return;
+    }
+
     const THREE = await threeModules();
     if (!THREE || document.body.dataset.animationAuthorMode !== MODE) return;
-
+    if ((window.HobunjiFullCharacterScaleComparison?.focusKey || null) !== focusKey
+      || window.HobunjiGameplayBackdrop?.getScene?.()?.getObjectByName?.('FullCharacterScalePreviewRoot') !== root) return; // A slower Three.js load must not apply a stale camera request after selecting another character or rebuilding the preview.
     const panel = document.getElementById(PANEL_ID); // Reserved screen width keeps the lineup out from under the right rail.
     const panelWidth = Math.min(canvas.clientWidth * 0.55, panel?.getBoundingClientRect?.().width || 0);
     const reservePx = panelWidth ? panelWidth + 18 : 0;
     const usableWidth = Math.max(canvas.clientWidth * 0.35, canvas.clientWidth - reservePx);
-    const box = new THREE.Box3().setFromObject(root);
+    const box = new THREE.Box3().setFromObject(focused || root); // Expensive SkinnedMesh bounds are needed only for explicit frame actions.
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    const signature = `${canvas.clientWidth}x${canvas.clientHeight}|${reservePx.toFixed(1)}|${size.x.toFixed(4)},${size.y.toFixed(4)},${size.z.toFixed(4)}`;
-    if (!force && signature === lastFrameSignature && cameraState?.camera === camera) return;
     lastFrameSignature = signature;
+    lastFramedRoot = root; // Commit the same preview scene identity whose skinned bounds were just calculated.
 
     const state = saveCamera(camera);
     if (resetZoom) camera.zoom = 1;
@@ -427,16 +457,22 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const viewHeight = Math.max(paddedHeight, paddedWidth / usableAspect);
     const viewWidth = viewHeight * (canvas.clientWidth / Math.max(1, canvas.clientHeight));
     const railShiftWorld = reservePx > 0 ? (reservePx / canvas.clientWidth) * viewWidth * 0.5 : 0; // Shifts the orthographic frustum right so the lineup appears centered in the unobstructed left region.
-    const cameraCenterX = center.x + railShiftWorld;
+    const cameraCenterX = center.x; // The actual character/lineup center is the orbit pivot; right-rail avoidance belongs in the orthographic frustum, not the 3D target.
     const targetY = center.y;
-    camera.position.set(cameraCenterX, targetY, center.z + Math.max(8, size.z + 6));
+    const distance = Math.max(8, size.z + 6); // Only affects viewing angle in orthographic mode, never the visible body size.
+    if (focused && focusKey.startsWith('longoran::')) camera.position.set(cameraCenterX + distance * 0.7, targetY + distance * 0.1, center.z + distance); // Explicit Longoran focus reveals positive-Z kyphosis.
+    else camera.position.set(cameraCenterX, targetY, center.z + distance); // Other species remain frontal when explicitly focused.
     camera.lookAt(cameraCenterX, targetY, center.z);
+    state.controls?.target?.set?.(cameraCenterX, targetY, center.z); // OrbitControls must rotate around the newly focused portrait, not the previous editor target.
+    state.controls?.update?.();
     state.orthoBounds = {
-      left: -viewWidth / 2,
-      right: viewWidth / 2,
+      left: -viewWidth / 2 + railShiftWorld,
+      right: viewWidth / 2 + railShiftWorld, // Shift only the image projection so the focus appears left of the controls without orbiting around empty space.
       top: viewHeight / 2,
       bottom: -viewHeight / 2,
     };
+    state.viewportWidth = canvas.clientWidth; // Tracks viewport changes separately from camera-pose framing.
+    state.viewportHeight = canvas.clientHeight;
     applyOrthographicProjection(camera, state.orthoBounds);
     camera.updateMatrixWorld?.(true);
   }
@@ -522,8 +558,8 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
 
   installPinchCapture();
   window.addEventListener('resize', () => {
-    lastFrameSignature = '';
-    if (document.body.dataset.animationAuthorMode === MODE) frameOrthographic(true, false);
+    if (document.body.dataset.animationAuthorMode !== MODE) return;
+    preserveViewOnResize(window.HobunjiGameplayBackdrop?.getCamera?.(), document.getElementById('view3d')); // Never recenter on mobile number-field keyboard changes.
   });
   setInterval(tick, 50);
   tick();
