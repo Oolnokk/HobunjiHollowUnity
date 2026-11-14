@@ -129,4 +129,33 @@ assert.equal(drink.getDebug().length, 0);
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
 assert.equal(disposals, 4, 'interruption disposes both transient per-actor resources');
 
-console.log('Daily Koma: nested hand grip, strike, interrupt, action lock and PNG cleanup OK');
+// Player Koma reuses the exact same leaf/drink, but must lock the REAL player participant
+// and never let the NPC body-yaw interpolation overwrite the player's camera-relative facing.
+const playerRoot = new Group(), playerAvatar = new Group(); // Mirrors playerMesh and its avatarGroup child.
+world.add(playerRoot); playerRoot.add(playerAvatar);
+playerAvatar.userData.proceduralHandRig = { parent: playerRoot };
+const playerWalker = {
+  rec: { id: '__player_daily_koma__' }, area: 'farm', root: playerRoot, avatarGroup: playerAvatar,
+};
+let playerChews = 0; // Only advances at the actual drink strike for this player-scoped ceremony.
+assert.equal(drink.playDailyKoma(playerWalker, () => { playerChews++; }, 5, {
+  participantId: 'player', allowWalking: false, preserveFacing: true,
+}), 5000);
+assert.equal(locks.isLocked('player', 'movement'), true, 'player Koma must lock player movement, not a dummy NPC key');
+assert.equal(locks.isLocked('player', 'tools'), true);
+assert.equal(locks.isLocked('player', 'actions'), true);
+assert.equal(locks.isLocked('npc:__player_daily_koma__', 'actions'), false);
+assert.ok(drink.heldItemTarget(playerRoot), 'player hand driver must see the Koma leaf as a held item');
+playerRoot.rotation.y = 2.2;
+drink.update(1);
+assert.equal(playerRoot.rotation.y, 2.2, 'the player keeps live facing even when the authored drink pose changes');
+assert.equal(playerChews, 0, 'player toast/effect cannot fire before the chew point');
+drink.update(2.2);
+assert.equal(playerChews, 1, 'the player completes one chew at the authored strike');
+drink.update(2);
+assert.equal(playerRoot.rotation.y, 2.2, 'finishing the drink does not restore an obsolete player facing');
+assert.equal(locks.isLocked('player', 'actions'), false, 'the player is never stranded in a locked control state');
+assert.equal(drink.heldItemTarget(playerRoot), null);
+assert.equal(disposals, 6, 'player ritual also disposes its own geometry/material');
+
+console.log('Daily Koma: NPC and player hand grips, true action locks, face direction, strike and cleanup OK');
