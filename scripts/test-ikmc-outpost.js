@@ -50,6 +50,11 @@ const framedHeader = outsideJambs.filter(face => face.v.some(v => Math.abs(v[1] 
 assert(framedHeader.length >= 5 && outsideJambs.length === 18, 'carved outer tunnel frame and inner shell opening must share their top edge');
 const frameTop = Math.max(...outsideJambs.flatMap(face => face.v.map(v => v[1]))); // Outer top of visible doorway posts and crossbar.
 assert(frameTop > portalBottom + 0.08 && frameTop < 1.4, 'visible outer frame must have a real lintel thickness under the cabin eave');
+const coveredTunnelCeiling = piece.base.faces.filter(face => face.tag === 'porch' && face.extensionFace === 'tunnelCeiling'); // Cross-check the actual covered tunnel ceiling, not just its outer visible jambs.
+assert.equal(coveredTunnelCeiling.length, 1, 'the entrance tunnel must have exactly one covered ceiling surface');
+assert(coveredTunnelCeiling[0].v.every(vertex => Math.abs(vertex[1] - frameTop) < 1e-7), 'tunnel ceiling must meet the tops of both the jambs and the outer lintel without a floating step');
+assert(coveredTunnelCeiling[0].v.every(vertex => vertex[0] >= 4 && vertex[0] <= 5 && vertex[2] >= 2 && vertex[2] <= 3), 'tunnel ceiling must cover precisely the one-tile corridor from log shell to doorway');
+
 const framedOpeningLeft = Math.max(...outsideJambs.filter(face => face.v.some(v => v[0] < 4.5)).flatMap(face => face.v.filter(v => v[0] < 4.5).map(v => v[0]))); // Left face's inner seam.
 const framedOpeningRight = Math.min(...outsideJambs.filter(face => face.v.some(v => v[0] > 4.5)).flatMap(face => face.v.filter(v => v[0] > 4.5).map(v => v[0]))); // Right face's inner seam.
 assert(Math.abs((framedOpeningRight - framedOpeningLeft) - entryGapWidth) < 1e-7, 'shell opening and outer frame must have the same passage width');
