@@ -2,29 +2,27 @@ name: Puzzle Cave browser gameplay smoke
 
 on:
   pull_request:
-    paths:
-      - 'docs/game.js'
-      - 'docs/index.html'
-      - 'docs/js/puzzle-cave-*.js'
-      - 'docs/js/cave-site-system.js'
-      - 'docs/js/ruin-layer-challenges.js'
-      - 'docs/js/persistent-ground-fire.js'
-      - 'docs/js/alchemy-flasks.js'
-      - 'docs/js/shattercasks.js'
-      - 'docs/js/cliff-route-network.js'
-      - 'docs/js/climb-system.js'
-      - 'docs/js/area-footprint-blockers.js'
-      - 'docs/js/locale-cliff-wall-mounts.js'
-      - 'scripts/test-puzzle-cave-*.js'
-      - 'scripts/smoke-puzzle-caves-browser.js'
-      - '.github/workflows/smoke-puzzle-caves.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Select puzzle cave changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.select.outputs.puzzle_cave }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select affected specialist tests
+        id: select
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci-select-tests.js --suite=feature
   puzzle-cave-browser:
+    needs: impact
+    if: ${{ !cancelled() && (needs.impact.result != 'success' || needs.impact.outputs.relevant == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
