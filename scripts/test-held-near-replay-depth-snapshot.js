@@ -149,6 +149,7 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
     buildXrayGroups: () => ({ groups: [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => false,
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
+    beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Snapshot tests stub the unrelated owner shader clipping transaction.
     hideObjects: objects => { const states = new Map(); for (const o of objects) { states.set(o, o.visible); o.visible = false; } return states; },
     restoreVisibility: states => { for (const [o, v] of states) o.visible = v; },
     collectVisible: () => [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',

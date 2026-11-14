@@ -676,8 +676,8 @@ assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
   'held gear and feet both participate in the selective overlay and screen scissor');
 assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
   'feet are absent from the original color pass so they cannot pop over transparent water');
-assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? tintCovers : \[\]\)\]\)/,
-  'the elevation rebuild retains ground while excluding held meshes and deferred translucent covers');
+assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? nearbyTintCovers : \[\]\)\]\)/,
+  'the elevation rebuild excludes held meshes and near translucent covers while distant water remains hidden across every replay');
 assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
   'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1\s*&& hasOverlappingHeldCover\(renderer, camera, overlayMeshes, nearbyTintCovers\)/,
