@@ -11,6 +11,7 @@ const removed = []; // Captures cleanup requests made to the game's despawnCreat
 const logs = []; // Collects mobile log output for midnight census assertions.
 let area = 'map_northern_cliffs'; // Simulates leaving/returning to the relevant game map.
 let randomValue = 0.99; // Force predictable Moot/Voorg lottery outcomes in each daily slot.
+let randomSequence = []; // Optional per-roll override to test a mixed-species day.
 let nextId = 0; // Distinguishes newly created actors from surviving ones.
 const zone = { roamingHerdSpecies:['voorg-ass','moot'], roamingHerdCount:2,
   roamingForagerSpecies:['nazgraku'], roamingForagerCount:1,
@@ -36,7 +37,7 @@ const deps = {CREATURE_DB:{nazgraku:{}},EXTERIOR_ZONES:{map_northern_cliffs:zone
   zoneLayouts:new Map([['map_northern_cliffs',layout]]),hostileObjects:hostiles,
   denNests:new Map(),buildingScenes:new Map(),DEN_MOTHER_DEFS:{},
   TILE:10,TileType:{RIVER:'river',STREAM:'stream'},player:{x:205,y:205},
-  rnd:()=>randomValue,getCurrentArea:()=>area,_isZoneArea:id=>id==='map_northern_cliffs',
+  rnd:()=>randomSequence.length ? randomSequence.shift() : randomValue,getCurrentArea:()=>area,_isZoneArea:id=>id==='map_northern_cliffs',
   getCutscenePreviewActive:()=>false,buildZoneScene:()=>true,
   makeCreatureEntity(kind,x,y,opts){return {id:++nextId,creatureKey:kind,health:50,x,y,...opts}},
   despawnCreature(creature){removed.push(creature)},
@@ -72,5 +73,8 @@ assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5);
 randomValue=0.99;deps.player.x=-9999;deps.player.y=-9999;
 w.WildlifeSpawn.advanceCaveMidnight(11);tick();
 assert.deepEqual(herds().map(h=>h.species),['moot','moot'],'all-Moot days remain possible');
+randomSequence=[0.01,0.01,0.01,0.01,0.99,0.99]; // First Voorg-Ass slot needs four rolls; the Moot slot needs two.
+w.WildlifeSpawn.advanceCaveMidnight(12);tick();
+assert.deepEqual(herds().map(h=>h.species),['voorg-ass','moot'],'different species can occupy different slots on the same day');
 assert(logs.some(line=>line.includes('deferredNearby=1')),'mobile debug log explains pending rotation');
 console.log('PASS rotating herd slots, real midnight distance gates, map-exit deferral, Nazgraku isolation');
