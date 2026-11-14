@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+'use strict';
+
+// The full-screen outline composite material lives in its own module and is
+// built by game.js through window.OutlineCompositeMaterial.create(THREE).
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const read = rel => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
+class ShaderMaterial { constructor(def) { Object.assign(this, def); } }
+const window = {};
+vm.runInContext(read('docs/js/outline-composite-material.js'), vm.createContext({ window }), { filename: 'outline-composite-material.js' });
+
+const THREE = { Vector2, ShaderMaterial };
+const a = window.OutlineCompositeMaterial.create(THREE);
+const b = window.OutlineCompositeMaterial.create(THREE);
+assert.ok(a instanceof ShaderMaterial && a !== b, 'create() builds a fresh material each call');
+assert.notEqual(a.uniforms.uTexel.value, b.uniforms.uTexel.value, 'uniform vectors are not shared between materials');
+for (const name of ['tColor', 'tEdgeId', 'tEdgeIdDepth', 'tSceneDepth', 'uTexel', 'uCameraNear', 'uCameraFar', 'uSeamOutlinesOn', 'uSeamColorDistThresh', 'uSeamOcclusionTolerance']) {
+  assert.ok(name in a.uniforms, `game.js writes uniform ${name}`);
+}
+assert.equal(a.uniforms.uSeamOutlinesOn.value, 0, 'seam outlines start off');
+assert.equal(a.depthTest, false); assert.equal(a.depthWrite, false);
+const frag = a.fragmentShader;
+const early = frag.indexOf('if (uSeamOutlinesOn < 0.5)');
+assert.ok(early > 0 && early < frag.indexOf('texture2D(tEdgeId'), 'seams off returns before any edge/depth texture read');
+
+const index = read('docs/index.html');
+const mod = index.search(/js\/outline-composite-material\.js\?v=[A-Za-z0-9_-]+/);
+const game = index.search(/src="game\.js\?v=/);
+assert.ok(mod > 0 && game > mod, 'module is loaded before game.js');
+assert.match(read('docs/game.js'), /const _postMat = window\.OutlineCompositeMaterial\.create\(THREE\);/, 'game.js builds its composite through the module');
+console.log('ok - outline composite material module is wired and skips seam reads when seams are off');

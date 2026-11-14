@@ -1,5 +1,83 @@
 # Performance investigation log
 
+## 14 Nov 2026: costs only outdoor maps pay (sky, grass, replays, cave entrances)
+
+Report: never above ~16 FPS outdoors, fine inside caves and buildings. So the target was work that (1) only
+exists or is large outside and (2) is shared by every outdoor map. Headless census, same build, 480x270:
+
+| View | Draw calls / frame | Triangles / frame | Scene renders / frame |
+| --- | --- | --- | --- |
+| Town (quiet, player + a few NPCs) | 1,655 | 3.27 M | 4.4 |
+| Western slope (player + one burrow NPC) | 299-598 | 0.37-0.71 M | 4.4-4.7 |
+
+The wilderness frame is small in geometry (hundreds of draws, well under a million triangles), so a real GPU stuck
+at 16 FPS there is most likely paying per *pixel* or per *draw call*, not per triangle. What every outdoor scene has
+and no interior has:
+
+- **Sky dome: 7 full-screen layers on every pixel.** The base sky, then three invisible cloud *depth masks*, each
+  eroding the cloud atlas with **9 texture reads per pixel**, drawn *before* any world geometry (render order -850),
+  so all 27 reads ran on every pixel, including pixels terrain was about to cover. Then three cloud shells.
+- **Grass:** one alpha-tested `ShaderMaterial` shared by farm, town, town border and every zone (28 blades per grass
+  tile in the wilderness), drawn at full density to the horizon.
+- **Hand/foot depth replays:** in the wilderness the main + shell passes were 383 + 250 draws in one frame; per object
+  the sun/moon/glow sprites were submitted 18 + 12 times and every campfire/bonfire flame and smoke emitter 6 + 4
+  times, though none of them can write depth.
+- **JS:** `PuzzleCaveEntrances.concealDenFacade` ran `scene.getObjectByName` over the whole zone every frame for
+  any puzzle cave whose den has no facade mesh (about 2 ms/frame headless).
+
+Changes:
+
+- `sky-dome.js`: the cloud atlas is eroded once on the CPU when it is built and the mask shader reads it once:
+  **27 -> 3 texture reads per sky pixel**. The bake (`HobunjiSkyDome.erodeCloudAlpha`) reproduces the old shader
+  exactly at texel centres: a linear tap 1.5 texels off a centre is the average of the two texels it straddles, so the
+  9-tap min is a min over three horizontal pair-averages, each at three vertical pair-averages
+  (`scripts/test-sky-cloud-mask-erosion.js` checks it against an emulation of the shader's taps). Costs ~45 ms of JS
+  per band when the weather bucket changes (the atlas rebuild that triggers it is already a hitch of that size) and a
+  2 MB luminance texture per band.
+  The masks now draw after the opaque world (render order 100000+band, still nearest band first and still before the
+  transparent shells), so GPUs with hierarchical depth reject terrain-covered pixels. The star hash is skipped while
+  `uStars` is 0 (daytime). `updateSkyColors` no longer allocates ten `Color`s per frame. If the atlas cannot be read
+  back, the original 9-tap mask is kept. `HobunjiSkyDome.setErodedCloudMasks(false)` is the A/B switch;
+  `getDebugState()` reports `erodedCloudMasks` and `cloudDepthMaskRenderOrder`.
+- `vegetation-crop-rendering.js`: the grass material (only that material, via the `HOBUNJI_GRASS_DISTANCE_LOD`
+  define) thins blades by distance in the vertex shader: full density within 12 units of the camera, tapering to 35%
+  at 34+ units (fog already washes most of that out). Dropped blades, and blades the season hides (`uDensity`), are
+  moved outside the clip volume so they are never rasterised or alpha-tested. Same per-blade random as the seasonal
+  mask, so the kept set is stable while walking. `VegetationCropRendering.setGrassDistanceLod(false | {near, far,
+  minKeep})` tunes or disables it for every outdoor map at once.
+- `held-object-render-order.js`: `isDepthReplayInert` now also drops untagged leaves that provably cannot change a
+  colorless depth replay: layer 0 only, every material `depthWrite:false` with no stencil write or alpha test, not a
+  protected cover / PNG occluder / tint cover, no custom `onBeforeRender` (the pose-sync meshes need their hooks).
+  Covers the celestial sprites and additive emitters above. `setAutoInertReplayEnabled(false)` is the A/B switch;
+  `snapshot().autoInertReplaySkips` counts skips.
+- `puzzle-cave-entrances.js`: the den-entrance group is cached per portal while it stays attached to the scene; a
+  missing group is searched for at most every 0.75 s (the existing late-mesh cadence).
+- Outline composite (now `js/outline-composite-material.js`, extracted from `game.js`): seam outlines are off by
+  default, and the full-screen composite read 7 textures per pixel regardless. It now returns after one read when
+  `uSeamOutlinesOn` is 0.
+
+Measured (headless SwiftShader: relative only, same session, same frozen frame):
+
+| Check | Result |
+| --- | --- |
+| Western slope 1280x720, sky alone, legacy vs eroded masks | 232 ms -> 160 ms (-31%) |
+| Western slope 1280x720, whole frame, everything old vs new | ~728 ms -> ~648 ms (-11%, median of 2x3 renders per config) |
+| Cloud masks old vs new, full frame (town and zone, first half-resolution bake) | 0 pixels differ |
+| Cloud masks old vs new, sky alone at 800x450 in rain (cloud bucket 2) | 217 of 360,000 pixels differ (cutoff-edge texels); the first half-resolution bake differed in 2,144 |
+| Replay auto-inert on vs off, base pass, three sessions | town 1,030 -> 987 and 1,366 -> 1,266 draws; western slope 559 -> 517; 0 pixels differ in each |
+| Grass LOD on vs off, town 480x270 | 656 of 129,600 pixels differ (distant blades) |
+| Grass LOD on vs off, western slope | 0 pixels differ in that view; no measurable time change |
+
+Software rasterisation has no hierarchical depth, so the render-order half of the sky change cannot show here, and
+480x270 hides fill cost behind geometry (town barely moved: 6.84 s -> 6.67 s). **Not measured:** real-device FPS.
+On a phone-sized drawing buffer (2-3 M pixels) the sky masks alone were ~70 M texture reads per frame before this.
+
+**Still the largest outdoor multipliers, not changed here:** the held/shell replays (in the wilderness the shell pass
+is ~40% of all draws, nearly all of it the x-ray replay, not shells), and town's 3 M triangles. Two universal (not
+outdoor-only) costs worth an A/B on a real device: the canvas is created with `antialias: true` although, with
+outlines on (the default), only the full-screen composite quad is drawn to it, and `preserveDrawingBuffer: true`
+(kept for Pixel Probe captures) forces a full-frame copy per frame on many mobile GPUs.
+
 ## 14 Nov 2026: Harlyao night-march planner and avatar churn
 
 The commander beacon also called `CalendarSystem.timeDebugSnapshot()` through `civilDay()` every render frame. That diagnostics call formats dates and modal previews and scans UI state; `civilDay()` now reads the same live absolute `calendar.day` directly, retaining the diagnostics fallback only before the calendar is wired. The actual per-frame `commanderTarget()` beacon path now uses only the active-hour check and never resolves the daily route or full calendar snapshot.

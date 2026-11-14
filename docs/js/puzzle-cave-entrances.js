@@ -116,7 +116,20 @@
   }
   function concealDenFacade(portal){
     const scene=deps?.zoneScenes?.get?.(portal.area)?.scene||areas.get(portal.area)?.scene;
-    const group=scene?.getObjectByName?.('animalDenEntrances');
+    // A den without a facade mesh never reports hidden, so update() calls this
+    // every frame; getObjectByName walks the whole zone scene. Reuse the group
+    // while it is still attached to this scene, and retry the scene-wide search
+    // for a missing group at most every 0.75 s (the late-mesh check cadence).
+    let group=portal.denFacadeGroup;
+    if(!group||portal.denFacadeScene!==scene||!isAttachedTo(group,scene)){
+      group=null;
+      const now=root.performance?.now?.() ?? Date.now();
+      if(portal.denFacadeScene!==scene||!(now-(portal.denFacadeSearchAt||-Infinity)<750)){
+        portal.denFacadeSearchAt=now;
+        group=scene?.getObjectByName?.('animalDenEntrances')||null;
+      }
+      portal.denFacadeGroup=group;portal.denFacadeScene=scene;
+    }
     let hidden=false;
     for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(portal.denId)){
       if(!portal.hiddenDenMeshes.has(mesh))portal.hiddenDenMeshes.set(mesh,mesh.visible); // Preserve each authored facade's original visibility for scene retirement.
@@ -124,6 +137,10 @@
     }
     portal.facadeHidden=hidden;
     return hidden;
+  }
+  function isAttachedTo(object,scene){
+    for(let node=object;node;node=node.parent)if(node===scene)return true;
+    return false;
   }
   function syncTransitionRing(portal,allowed){
     const scene=deps?.zoneScenes?.get?.(portal.area)?.scene;
