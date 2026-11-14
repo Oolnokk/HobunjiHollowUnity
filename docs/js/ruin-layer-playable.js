@@ -331,6 +331,23 @@
           };
           stampDoor(true);
         }
+        const corridorRoofCells=[...tiles].map(k=>k.split(',').map(Number)).filter(([x,z])=>
+          !wing.rooms.some(room=>x>=room.x&&x<room.x+room.w&&z>=room.z&&z<room.z+room.d)); // Passage ceilings join room caps without double faces at their shared boundary.
+        if(corridorRoofCells.length&&root.RuinWallFaces){
+          const Faces=root.RuinWallFaces,bounds=corridorRoofCells.reduce((out,[x,z])=>({
+            x0:Math.min(out.x0,x),z0:Math.min(out.z0,z),x1:Math.max(out.x1,x+1),z1:Math.max(out.z1,z+1),
+          }),{x0:Infinity,z0:Infinity,x1:-Infinity,z1:-Infinity});
+          const w=bounds.x1-bounds.x0,d=bounds.z1-bounds.z0,mask=new Uint8Array(w*d);
+          for(const [x,z] of corridorRoofCells)mask[(z-bounds.z0)*w+x-bounds.x0]=1;
+          const caps=Faces.mergeMask(mask,w,d).map(rect=>({
+            axis:'y',side:-1,plane:0,a0:rect.i0,a1:rect.i1,b0:rect.j0,b1:rect.j1,
+          }));
+          const roof=new THREE.Mesh(Faces.toGeometry(THREE,Faces.buildQuads(caps,{
+            origin:{x:bounds.x0,y:floor.y+WALL_HEIGHT,z:bounds.z0},size:{x:1,y:1,z:1},patch:PATCH,
+          })),material);
+          roof.name='ruin-wing-corridor-ceiling-'+wing.id;
+          roof.userData.devRuinFootprintIgnore=true;activeRoot.add(roof);owner.geometryCount++;
+        }
         const rectangles=Corridors.rectangles(supportedCells); // The abyss has NO physical floor and NO DynamicSurfaces standing rectangle.
         rectangles.forEach((r,i)=>{
           const spec={id:scope+'-'+wing.id+'-'+i,scope,priority:1,
