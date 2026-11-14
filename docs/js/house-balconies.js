@@ -67,6 +67,13 @@
           boundary.push({side,a,b});
         }
       }
+      const hatch=balcony.access?.openingTile; // Interior ladder's ceiling cap projects onto this exterior roof tile.
+      if(valid(hatch) && occupied.has(cellKey(hatch.x,hatch.y))){
+        const r=cellRect(hatch.x,hatch.y,balcony.tile),inset=balcony.tile*.08;
+        face('doorOpening',[[r.x0+inset,y+.006,r.z1-inset],[r.x1-inset,y+.006,r.z1-inset],
+          [r.x1-inset,y+.006,r.z0+inset],[r.x0+inset,y+.006,r.z0+inset]],
+          {extensionType:'balcony',balconyId:balcony.id,extensionFace:'hatch',sourceTile:{x:hatch.x,y:hatch.y}});
+      }
       if (!balcony.railings) continue;
       // Merge collinear neighboring exposed edges into one beam per straight run.
       const runs = [];
