@@ -240,6 +240,22 @@ function testTimedRuinMelodyWiring(){
     assert.equal(session.note(note.index),true,'correct timed note is accepted');
   }
   assert.equal(solved,1,'only the complete timed melody solves');
+  let clockMs=0; // A stalled score tick can run after a physical note event without changing that event's original time.
+  const delayed=composer.createSession(song,{clockMs:()=>clockMs});
+  delayed.step(0,true);
+  const first=song.notes[0],second=song.notes[1]; // Two consecutive real notes exercise the retained pre-stall progress.
+  assert.equal(delayed.note(first.index,(first.startTick+.1)*song.secondsPerTick*1000),true);
+  clockMs=(second.startTick+second.lengthTicks+1)*song.secondsPerTick*1000;
+  delayed.step(0,true); // Simulate one blocked render/frame that jumps beyond the second note's window.
+  assert.equal(delayed.snapshot().progress,0,'the displayed score may reset when its deadline passes');
+  assert.equal(delayed.note(second.index,(second.startTick+.1)*song.secondsPerTick*1000),true,
+    'late-delivered physical note recovers its original score slot rather than suffering render delay');
+  const musicHost=read('docs/js/music-minigame.js'); // The host, not the iframe audio loop, owns the note timestamp and scoring order.
+  const controller=read('docs/js/controller-input.js'); // Shared poll preserves an unclamped prior timestamp for optional hardware timing.
+  assert.match(musicHost,/pad\?\.timestamp/,'Gamepad API timestamps can recover a note edge after a stalled controller poll');
+  assert.match(musicHost,/controllerPuzzlePressMs\(frame\)/,'controller note dispatch keeps the measured hardware input time');
+  assert.match(musicHost,/lastPuzzleDisplaySignature/,'unchanged puzzle legends do not rerender on each note');
+  assert.match(controller,/frame\.previousNow = lastNow/,'controller input exposes the prior poll boundary');
 }
 
 (async()=>{
