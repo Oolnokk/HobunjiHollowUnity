@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Resolve parser-ordered manifests before verifying runtime module availability.
 
 const root = path.join(__dirname, '..'); // Resolved once so this test works from any current directory.
 const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8'); // Actual shipped modules are parsed, never copied snippets.
@@ -26,7 +27,7 @@ assert.equal(typeof context.window.Music?.isNightTime, 'function', 'Music must i
 assert.equal(context.window.Music.isNightTime(), undefined,
   'pre-game performance snapshots must not call getHour on null music dependencies');
 
-const index = fs.readFileSync(path.join(root,'docs/index.html'),'utf8'); // Production load order, not a test-only arrangement.
+const index = expandClassicScriptGroups(fs.readFileSync(path.join(root,'docs/index.html'),'utf8')); // Expand the actual parser-time manifest order, not only literal index tags.
 for(const module of ['climb-system','music-system'])
   assert(index.includes(module+'.js?v='), module+' needs a versioned browser loader');
 assert(index.indexOf('climb-system.js?v=') < index.indexOf('<script src="game.js?v='),
