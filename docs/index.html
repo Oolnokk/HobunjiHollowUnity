@@ -2799,9 +2799,12 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <!-- Versioned pre-game runtime services (surface/weapon x-ray, HUD/icons, audio, mounts and Pixel Probe).
-       Edit js/bootstrap/classic-groups/pre-game-services.js, not this shared page. -->
+  <!-- Feature-owned pre-game startup manifests, preserving the original parser order.
+       Each group owns its own module cache versions; keep individual URLs out of index.html. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-render"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-item-art"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-services"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-diagnostics"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

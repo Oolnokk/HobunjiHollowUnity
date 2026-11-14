@@ -3,49 +3,47 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const { expandClassicScriptGroups } = require('./classic-script-group-index.js');
 
-const root = path.resolve(__dirname, '..'); // Project root for real shipped HTML and manifest, without browser asset stubs.
-const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Canonical parser position for all pre-game services.
-const manifest = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-groups/pre-game-services.js'), 'utf8'); // Sole cache-version owner for this startup set.
-const expanded = expandClassicScriptGroups(html); // Parses group output, preserving the synchronous HTML script order.
-const toolIcon = fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8'); // HUD must not import scene depth/x-ray modules again.
+const root = path.resolve(__dirname, '..'); // Root of the actual shipped HTML and manifest sources.
+const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Parser insertion points are stable across feature changes.
+const expanded = expandClassicScriptGroups(html); // Expands every existing group with the production manifest code.
+const toolIcon = fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8'); // HUD module must never own weapon shader boot.
+const groups = {
+  'pre-game-render': ['surface-occlusion-composer', 'held-object-render-order'],
+  'pre-game-item-art': ['tool-icon-render', 'sprite-recolor', 'object-sprite-catalog'],
+  'pre-game-services': ['mount-system', 'companion-movement-speed', 'audio-system', 'honeyfuzzle-audio',
+    'scratchbones-emoji-reactions', 'animal-vocalizations', 'music-system', 'audio-track-gain-settings'],
+  'pre-game-diagnostics': ['transform-dump-utils', 'rig-transform-dump', 'pixel-probe'],
+}; // Four independent cache-token owners and the original required startup order.
 
-const required = [
-  'surface-occlusion-composer',
-  'held-object-render-order',
-  'tool-icon-render',
-  'sprite-recolor',
-  'object-sprite-catalog',
-  'mount-system',
-  'companion-movement-speed',
-  'audio-system',
-  'honeyfuzzle-audio',
-  'scratchbones-emoji-reactions',
-  'animal-vocalizations',
-  'music-system',
-  'audio-track-gain-settings',
-  'transform-dump-utils',
-  'rig-transform-dump',
-  'pixel-probe',
-]; // Frozen order of the migrated bootstrap's original dependencies and the newly separated depth policy.
-assert.equal((html.match(/data-classic-group="pre-game-services"/g) || []).length, 1,
-  'there is one stable parser-time pre-game service loader in index.html');
-assert.doesNotMatch(html, /<script src="js\/(?:tool-icon-render|sprite-recolor|held-object-render-order)\.js\?/,
-  'individual pre-game script versions no longer invite unrelated index.html merge conflicts');
-assert.doesNotMatch(toolIcon, /surface-occlusion-composer\.js|held-object-render-order\.js|hobunjiHeldRenderOrder/,
-  'the HUD icon adapter does not own 3D terrain and held overlay loading');
-let previous = -1; // Tracks execution order through the expanded manifest.
-for (const name of required) {
-  const url = 'js/' + name + '.js?';
-  const index = expanded.indexOf(url);
-  assert(index > previous, 'pre-game script is missing/duplicated/reordered: ' + name);
-  assert.equal(expanded.split(url).length - 1, 1, 'pre-game module loads once: ' + name);
-  previous = index;
+let previous = -1; // Detects invalid cross-group ordering, not merely intra-group order.
+for (const [group, required] of Object.entries(groups)) {
+  assert.equal(html.split('data-classic-group="' + group + '"').length - 1, 1,
+    group + ' has exactly one stable parser entry');
+  const source = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-groups', group + '.js'), 'utf8');
+  const writes = []; // Real parser-time HTML emitted by the module owner.
+  vm.runInNewContext(source, { document: { readyState: 'loading', write: text => writes.push(text) } },
+    { filename: group + '.js' });
+  assert.equal(writes.length, 1, group + ' emits one blocking parser write');
+  const urls = writes[0].split('<script src="').slice(1).map(tag => tag.split('"')[0]);
+  assert.deepEqual(urls.map(url => url.slice(3).split('.js?')[0]), required,
+    group + ' contains the exact required modules in the original dependency order');
+  assert(urls.every(url => url.includes('.js?v=') && url.split('.js?v=')[1].length > 0),
+    group + ' versions every shipped child');
+  for (const name of required) {
+    const url = 'js/' + name + '.js?';
+    const position = expanded.indexOf(url);
+    assert(position > previous, name + ' must follow previous dependencies');
+    assert.equal(expanded.split(url).length - 1, 1, name + ' loads exactly once');
+    assert(!html.includes('<script src="' + url), name + ' cache version belongs to its group, not index');
+    previous = position;
+  }
 }
-assert(previous < expanded.indexOf('src="game.js?v='), 'all services register before game initializes');
+assert(previous < expanded.indexOf('src="game.js?v='), 'all pre-game modules precede game boot');
 assert(expanded.indexOf('js/pixel-probe.js?') < expanded.indexOf('js/cinematic-camera-runtime.js?'),
-  'Pixel Probe remains before the dialogue group, not after it');
-assert.match(manifest, /document\.readyState !== 'loading'/,
-  'the manifest rejects async/late insertion that could reorder game startup');
-console.log('Pre-game services: 16 parser-ordered modules, isolated cache tokens, and standalone held x-ray bootstrap validated.');
+  'Pixel Probe remains before dialogue initialization');
+assert(!toolIcon.includes('surface-occlusion-composer.js') && !toolIcon.includes('held-object-render-order.js'),
+  'tool-icon-render must not reinstall held-overlay renderer or surface policy');
+console.log('Pre-game group ownership: 4 isolated manifests, 16 modules, stable parser order, no duplicated shader bootstrap.');
