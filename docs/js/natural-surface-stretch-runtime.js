@@ -276,16 +276,22 @@
     });
   }
 
+  const sceneAddsBeingInspected = new WeakSet(); // Used to identify Scene.add calls whose dedicated wrapper already owns the terrain inspection.
   // Direct Scene.add remains necessary because older natural-surface modules
   // installed their own Scene.prototype.add functions before this module.
   const sceneProto = THREE.Scene?.prototype;
   const previousSceneAdd = sceneProto?.add;
   if (sceneProto && typeof previousSceneAdd === 'function' && !previousSceneAdd.__hobunjiSurfaceStretchRuntimeWrapped) {
     function wrappedSceneAdd(...objects) {
-      const result = previousSceneAdd.apply(this, objects);
-      stats.sceneAddsInspected += objects.length;
-      for (const object of objects) inspectObject(object);
-      return result;
+      sceneAddsBeingInspected.add(this);
+      try {
+        const result = previousSceneAdd.apply(this, objects);
+        stats.sceneAddsInspected += objects.length;
+        for (const object of objects) inspectObject(object);
+        return result;
+      } finally {
+        sceneAddsBeingInspected.delete(this);
+      }
     }
     wrappedSceneAdd.__hobunjiSurfaceStretchRuntimeWrapped = true;
     wrappedSceneAdd.__hobunjiSurfaceStretchRuntimeOriginal = previousSceneAdd;
@@ -300,8 +306,8 @@
   if (objectProto && typeof previousObjectAdd === 'function' && !previousObjectAdd.__hobunjiSurfaceStretchNestedWrapped) {
     function wrappedObjectAdd(...objects) {
       const result = previousObjectAdd.apply(this, objects);
-      if (this.isScene) {
-        stats.sceneAddDuplicateInspectionsAvoided += objects.length; // Scene.add's own wrapper already inspects the same root after Object3D.add returns.
+      if (this.isScene && sceneAddsBeingInspected.has(this)) {
+        stats.sceneAddDuplicateInspectionsAvoided += objects.length; // Skip only when the Scene.add wrapper is proven to be handling this same scene.
       } else {
         stats.nestedAddsInspected += objects.length;
         for (const object of objects) inspectObject(object);
