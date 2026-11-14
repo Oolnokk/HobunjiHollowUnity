@@ -4,7 +4,7 @@
   if (Number(window.DevotionRestBuffs?.version) >= 6) return;
 
   const CHANGE_SUMMARY = 'Rested prevents hourly player yawns for 3h, Well Rested needs 8h of sleep, and yawning quarters native walking speed using the existing combat locomotion hook.'; // Used by mobile diagnostics to identify the latest integration layer.
-  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261113rested3h1'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
+  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261113restedFloat2'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 
