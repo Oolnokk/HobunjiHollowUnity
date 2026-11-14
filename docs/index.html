@@ -173,7 +173,7 @@
   <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
-  <link rel="stylesheet" href="style.css?v=20261112keyPack2">
+  <link rel="stylesheet" href="style.css?v=20261114h90f1ddf">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -1046,6 +1046,8 @@
     <div class="sb-div"></div>
     <span class="sb-gold" id="spGold"><span class="sb-gold-icon">💰</span> <span class="sb-gold-amount" id="spGoldAmount">0</span><span class="sb-gold-suffix">g</span></span>
   </div>
+  <!-- No visible container: only live outstanding work appears beneath the top HUD bar. -->
+  <output id="liveLoadingStatus" role="status" aria-live="polite" hidden></output>
 
   <div id="navigationCompass" role="navigation" aria-label="Navigation compass">
     <div id="navigationCompassLayer"></div>
@@ -2892,7 +2894,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261114hf6c2d99"></script>
+  <script src="js/pixel-probe.js?v=20261114h3f118bb"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2939,7 +2941,9 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20261030harrivalb"></script>
+  <script src="js/loading-screen-runtime.js?v=20261114h4fa5e67"></script>
+  <!-- Shows only real outstanding fetch/Three.js loads while playing; lives immediately beneath #statusBar. -->
+  <script src="js/live-loading-status.js?v=20261114hf4bb35e"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/name-nicknames.js?v=20261108relationship2"></script> <!-- Shared first-syllable forms for friendship, dates and marriage. -->
