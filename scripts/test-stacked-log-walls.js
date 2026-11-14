@@ -62,7 +62,8 @@ const outpostSource = houseEditorSource.slice(outpostStart, outpostEnd); // Outp
 assert.ok(outpostStart >= 0 && outpostEnd > outpostStart, 'Outpost owns a dedicated base-shape generator');
 assert.equal((outpostSource.match(/addFace\(/g) || []).length, 6, 'Outpost generates exactly six faces');
 assert.equal((outpostSource.match(/'wall', \{outpostFace:/g) || []).length, 6, 'all six Outpost faces are tagged as walls');
-assert.doesNotMatch(outpostSource, /addFootprintShellFaces|addHouseExtensionsToFaces/, 'Outpost stays a simple six-face bounding prism instead of subdividing the footprint');
+assert.doesNotMatch(outpostSource, /addFootprintShellFaces/, 'Outpost shell stays an exact six-face bounding prism, not a tiled/prismatic subdivision');
+assert.match(outpostSource, /addHouseExtensionsToFaces\(/, 'independent porch and balcony extensions are appended after the six fixed prism faces');
 assert.match(houseEditorSource, /preset==='outpost'[\s\S]{0,180}wallStyle'\)\.value='logs'[\s\S]{0,180}state\.piece\.wallStyle='logs'/, 'Outpost defaults its wall construction to stacked generated logs');
 assert.match(houseEditorSource, /state\.piece\.wallStyle=.*wallStyle/, 'House Editor serializes the wall construction choice');
 assert.match(houseEditorSource, /state\.piece\.logWall=/, 'House Editor serializes log diameter/wonk/gap settings');
