@@ -3,11 +3,14 @@
 (() => {
   'use strict';
 
-  const VERSION = 2; // Clock-model migration: reject previous owner and stale 16-hour-day save timestamps.
+  const VERSION = 3; // Player fatigue and separate Rested / Well Rested change this shared runtime contract.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
-  const RESTED_HOURS = 16; // Matches the existing player Well Rested sleep buff.
+  const RESTED_HOURS = 3; // Short NPC sleeps provide the same three-hour fatigue relief as the player's Rested buff.
+  const WELL_RESTED_HOURS = 16; // Eight-hour NPC sleeps restore the stronger existing sleep protection.
+  const FULL_SLEEP_HOURS = 8; // Required elapsed NPC sleep for the 16-hour Well Rested fatigue grace.
+  const PLAYER_YAWN_CHANNEL = 'player-yawn-rest'; // Scoped additive chest lean; cleaned through PlayerBodyTransformComposer.
   const HOURLY_GAP = 1; // An un-rested NPC yawns once per in-game hour.
   const CHECK_INTERVAL_MS = 350; // Only sleep/combat/calendar decisions are polled; active poses still animate per frame.
   const KOMA_TOAST = 'You chew your daily koma leaves so that you may run and jump as the outlanders do.';
@@ -31,6 +34,7 @@
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
   let playerWakePending = false; // Set by a real Sleep passage or finished bed lie; consumed when the player's avatar/actions become ready.
   let lastBedSleepCount = null; // Tracks completed legacy bed animations without touching BedLiePose's private sleep/rollover logic.
+  let playerWalker = null; // One stable adapter for the player's real avatar, allowing hourly yawns to reuse the NPC state machine.
 
   function nowGameHour() {
     const calendar = window.CalendarSystem; // The installed full-day sky clock advances continuously from 06:00 through midnight to 06:00.
@@ -65,6 +69,7 @@
       saved = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     } catch (error) { saved = {}; lastError = 'load: ' + String(error?.message || error); }
     walkerStates = new WeakMap();
+    playerWalker = null; // A different character never inherits this one's live yawn or Koma ritual.
     voicePlans.clear();
     playerWakePending = false; // A pending wake from another selected character must not animate the new one.
     lastBedSleepCount = null; // BedLiePose counters are runtime-global, not per save character.
@@ -88,6 +93,7 @@
       nextHour: typeof old.nextHour === 'number' && Number.isFinite(old.nextHour) ? old.nextHour : firstYawnHour(id, hour),
       lastKomaHour: typeof old.lastKomaHour === 'number' && Number.isFinite(old.lastKomaHour) ? old.lastKomaHour : -Infinity, // JSON encodes -Infinity as null; never mistake that for a Koma dose at hour zero.
       wasSleeping: !!walker._bedLieActive && walker.currentScheduleTarget?.pose === 'lie',
+      sleepStartedHour: !!walker._bedLieActive && walker.currentScheduleTarget?.pose === 'lie' ? hour : NaN, // Tracks NPC sleep length so only eight-hour sleeps grant Well Rested.
       wakePending: false, active: null, lastNeckOffset: 0, lastNeckApplied: null,
     };
     walkerStates.set(walker, state);
@@ -257,6 +263,7 @@
       composer.clearExpression?.(entry.seatId); // Do not clear dialogue or social expressions that replaced the yawn.
     }
     entry.ownsMouth = false;
+    if (entry.isPlayer) window.PlayerBodyTransformComposer?.clearChannel?.(PLAYER_YAWN_CHANNEL); // Player torso animation never leaks into later combat or social poses.
   }
   function finish(entry, reason = 'complete') {
     if (!entry || entry.finished) return;
@@ -275,7 +282,7 @@
       voice: null, voiceClaim: null, lastBodyApplied: null, lastBodyOffset: 0, ownsMouth: false, seatId: null }; // Tracks only yawn-owned pose deltas so other animations can safely take over.
     state.active = entry;
     state.wakePending = false;
-    state.nextHour = Math.max(hour, state.restedUntil) + HOURLY_GAP;
+    state.nextHour = Math.max(hour, state.restedUntil) + HOURLY_GAP; // Existing NPC grace composes with their remaining sleep buff.
     checkpoint(state);
     active.add(entry);
     activeById.set(state.id, entry);
@@ -296,7 +303,7 @@
         state.lastKomaHour = hour; // The rolling cooldown begins only at the successful chew strike.
         checkpoint(state); // An interrupted attempt stays eligible for the next yawn.
         if (entry.isPlayer) window.ToastNotifications?.showToast?.(KOMA_TOAST, true); // Never address the player for another NPC's Koma.
-      }, YAWN_DURATION_S, entry.isPlayer ? { participantId: 'player', allowWalking: false, preserveFacing: true } : {}) || 0;
+      }, YAWN_DURATION_S, entry.isPlayer ? { participantId: 'player', allowWalking: true, preserveFacing: true } : {}) || 0; // The player can walk slowly throughout their Koma yawn.
       if (duration > 0) entry.komaStarted = true; // Combat/area-change cleanup owns the transient leaf until drink completion.
     }
     lastYawn = { npcId: state.id, reason, hour, koma: entry.komaStarted, durationS: YAWN_DURATION_S };
@@ -307,6 +314,9 @@
 
   function movementMultiplier(npcId) {
     return activeById.has(String(npcId || '')) ? FATIGUE_SPEED_MULTIPLIER : 1;
+  }
+  function playerMovementMultiplier() {
+    return movementMultiplier(PLAYER_KOMA_ID); // DevotionRestBuffs composes the same quarter-speed into the native player movement choke point.
   }
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
@@ -323,7 +333,12 @@
       state.lastNeckOffset = offset;
       state.lastNeckApplied = neck.rotation.x;
     }
-    const body = entry.walker.alcoholPoseGroup; // Visible chest expansion and a slight backward lean distinguish a yawn from ordinary head tracking.
+    if (entry.isPlayer) {
+      window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
+        priority: 400, rotation: { pitch: -0.085 * envelope }, includeExternal: false,
+      }); // Real player chest expansion uses the shared body compositor, never a direct playerMesh rotation.
+    }
+    const body = entry.walker.alcoholPoseGroup; // NPC chest lean uses the existing torso group, independent of the player compositor.
     if (body?.rotation) {
       const offset = -0.085 * envelope;
       const base = entry.lastBodyApplied != null && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001
@@ -334,22 +349,54 @@
     }
   }
 
-  function playerWakingYawn(hour, area) {
-    if (!playerWakePending || window.CharacterActionLocks?.isLocked?.('player', 'actions')) return;
+  function resolvePlayerWalker(hour, area) {
     const profile = window.__hobunjiPlayerProfile;
-    const portrait = window.WorldPortraitLife?.getPlayerAvatar?.();
-    const avatarGroup = portrait?.group;
-    const root = avatarGroup?.parent; // Current playerMesh owns the same hand rig used by the authored held-item drink animation.
-    if (!profile?.appearance?.speciesId || !root?.parent || !area) return;
-    const walker = {
-      rec: { id: PLAYER_KOMA_ID, appearance: profile.appearance },
-      root, avatarGroup, area,
-      neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
-      _dailyKomaPlayer: true,
-    }; // Transient player adapter; reuses the NPC yawn/voice and authored Koma pose without treating the player as an NPC walker.
+    const avatarGroup = window.WorldPortraitLife?.getPlayerAvatar?.()?.group;
+    const root = avatarGroup?.parent; // Real playerMesh remains the holder and voice anchor; no separate mesh is spawned.
+    if (!profile?.appearance?.speciesId || !root?.parent || !area) return null;
+    if (playerWalker && (playerWalker.root !== root || playerWalker.avatarGroup !== avatarGroup)) {
+      const oldState = walkerStates.get(playerWalker);
+      if (oldState?.active) finish(oldState.active, 'player avatar replaced'); // Avoid leaving a stale neck/chest pose on an outgoing avatar.
+      playerWalker = null;
+    }
+    if (!playerWalker) {
+      playerWalker = {
+        rec: { id: PLAYER_KOMA_ID, appearance: profile.appearance }, root, avatarGroup, area,
+        neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null, _dailyKomaPlayer: true,
+      }; // Persistent player adapter, unlike the old waking-only temporary walker.
+      const state = stateFor(playerWalker, hour);
+      state.restedUntil = -Infinity; // Player's Rested / Well Rested state belongs solely to TemplePrayerRestBlessings, not obsolete NPC saved grace.
+    } else {
+      playerWalker.rec.appearance = profile.appearance;
+      playerWalker.neckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
+      playerWalker.area = area;
+    }
+    return playerWalker;
+  }
+  function playerCanYawn(globalCombat) {
+    if (globalCombat || window.Combat?.deps?.player?.health <= 0) return false;
+    if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
+    if (window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState) return false;
+    if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false;
+    return true;
+  }
+  function playerWakingYawn(hour, area) {
+    if (!playerWakePending || !playerCanYawn(false)) return;
+    const walker = resolvePlayerWalker(hour, area);
+    if (!walker) return;
     const state = stateFor(walker, hour);
-    state.restedUntil = hour + RESTED_HOURS; // A completed sleep refreshes the usual post-sleep rested timer.
+    state.restedUntil = -Infinity; // Strong/weak rest buff expiry is queried from the single saved blessing authority.
     if (startYawn(walker, state, hour, 'player waking')) playerWakePending = false;
+  }
+  function playerHourlyYawn(hour, area, globalCombat) {
+    const walker = resolvePlayerWalker(hour, area);
+    if (!walker) return;
+    const state = stateFor(walker, hour);
+    const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
+      || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
+    if (state.active && (!playerCanYawn(globalCombat) && !state.active.komaStarted)) finish(state.active, 'player action interrupted');
+    if (state.active || playerWakePending || rested || !playerCanYawn(globalCombat)) return;
+    if (hour >= state.nextHour) startYawn(walker, state, hour, 'hourly fatigue');
   }
   function frame(context = {}) {
     if (!syncCharacter()) return;
@@ -371,12 +418,14 @@
         finish(entry, 'interrupted'); // A real player encounter cancels the yawn and unfinished chewing immediately.
     }
     if (!globalCombat) playerWakingYawn(hour, area);
+    playerHourlyYawn(hour, area, globalCombat); // Same hourly five-second yawn and speed penalty as NPCs, not just on waking.
     for (const walker of window._npcWalkers || []) {
       if (!walker?.root || !walker.rec?.id || walker.animalDef) continue;
       if (sourceIdentity(walker).species.endsWith('-skeleton')) continue; // Undead skeletons have no breathing voice or sleep need in CombatVocalizations.
       const state = stateFor(walker, hour);
       const sleepingNow = asleep(walker);
       if (sleepingNow) {
+        if (!state.wasSleeping || !Number.isFinite(state.sleepStartedHour)) state.sleepStartedHour = hour; // Track only the actual, observed sleep time.
         state.wasSleeping = true;
         if (state.active) finish(state.active, 'sleep');
         continue;
@@ -385,8 +434,11 @@
       if (state.wasSleeping && !rising) {
         state.wasSleeping = false;
         state.wakePending = true;
-        state.restedUntil = hour + RESTED_HOURS;
-        state.nextHour = hour + RESTED_HOURS + HOURLY_GAP;
+        const sleptHours = Number.isFinite(state.sleepStartedHour) ? Math.max(0, hour - state.sleepStartedHour) : 0; // Rested for short sleep; Well Rested for a genuine eight-hour sleep.
+        const restHours = sleptHours >= FULL_SLEEP_HOURS ? WELL_RESTED_HOURS : RESTED_HOURS;
+        state.restedUntil = hour + restHours;
+        state.nextHour = hour + restHours + HOURLY_GAP;
+        state.sleepStartedHour = NaN;
         checkpoint(state);
       }
       const unavailable = unavailableForYawn(walker); // The only actively animated characters this system may safely affect.
@@ -414,12 +466,13 @@
   window.NpcYawnRest = Object.freeze({
     version: VERSION,
     movementMultiplier,
+    playerMovementMultiplier,
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, lastBedSleepCount, lastYawn, lastVoice, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastError,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),
-    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow }),
+    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow, resolvePlayerWalker, playerHourlyYawn }),
   });
 })();
