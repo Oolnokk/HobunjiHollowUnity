@@ -27,7 +27,7 @@ const NetworkChallenges={...Challenges,compose(options){ // Only the network-pro
 const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
-const index=fs.readFileSync('docs/index.html','utf8');
+const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
 const shaftSound=fs.readFileSync('docs/js/ruin-reaching-obelisks.js','utf8'); // Runtime event handlers are the only owners of shaft stone sounds.
 const rhythmSection=shaftSound.split('const applyBeat=()=>{')[1]?.split('const tick=dt=>{')[0]||'';
 assert(rhythmSection.includes('RuinInteractionAudio?.mechanism?.(first.holder')&&rhythmSection.includes('deps.onStateChange?.()'),

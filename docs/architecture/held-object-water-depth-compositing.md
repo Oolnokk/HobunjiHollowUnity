@@ -142,6 +142,45 @@ shared `WATER_DEPTH_ALPHA_THRESHOLD` (currently 0.12). The threshold affects
 depth coverage only; normal visible water alpha and tint are untouched. The
 uniform is restored with the material state after every replay.
 
+## Distant-water character tint guard
+
+Water surface meshes are often merged over many tiles or an entire river,
+so a mesh bounding sphere can overlap the character on screen even when the
+actual wet cells are nowhere near that character. `MergedWaterRenderer.createMesh`
+records a **wet-tile footprint** (sparse cells or one rectangular map-wide
+flood footprint). The held/foot compositor checks this footprint against the
+owning actor's tile neighborhood before considering the water for tint. Untagged
+scenery water/slush uses conservative world bounds, and unknown transforms
+remain eligible rather than incorrectly stripping valid submersion.
+
+This is **per owner**, not a scene-wide switch: when one NPC stands in a river,
+the dry player's held equipment and procedural feet clear the water-tint
+stencil instead of inheriting the NPC's tint. A depth batch mixing wet and dry
+owners is split into separate material transactions so shared sprite materials
+cannot carry another owner's stencil reference. The existing depth, ground
+restore, tint, then colorless water-depth order still applies. Each held mesh
+continues to receive a single color draw, and normal water shader/color passes
+are unchanged. A three-tile neighborhood conservatively includes long gear
+near a bank without allowing arbitrarily distant streams to trigger tint.
+
+The previous proximity guard excluded remote water only from the last tint
+pass. Earlier depth reconstruction still forced remote translucent water to
+write an irregular alpha mask, causing patchy visual gaps. Distant water
+meshes are now excluded before *every* held/foot depth reconstruction. A
+merged river with near and remote tiles is also clipped per fragment against
+owner world tiles inside the selective replay, rather than trusting a whole
+river's giant bounding volume. The normal animated water color shader is
+unmodified outside the replay, and clip/visibility state is restored after
+every render. The twelve-owner clip budget conservatively falls back in
+crowds and is visible in Pixel Probe as `clipOverflow`.
+
+Pixel Probe reports `nearWater` and `farWaterSkipped` under `Held x-ray`;
+these counters count eligible/excluded cover **meshes**, not individual water
+fragments. Verify both a dry actor with a distant river and an underwater actor
+while another dry NPC is on screen. Source-level regressions cover sparse merged
+water, broad floods, scenery bounds, and mixed wet/dry shared-material groups;
+a real GPU screenshot is still required to validate final pixels.
+
 ## Head-relative tools
 
 Head-relative (mouth-anchored) tools now draw alongside ordinary held equipment

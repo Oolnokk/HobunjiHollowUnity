@@ -1,0 +1,35 @@
+name: Furniture tile-span regression
+on:
+  pull_request:
+    paths:
+      - 'docs/js/furniture-tile-span.js'
+      - 'docs/js/authored-furniture-runtime.js'
+      - 'docs/tools/furniture-avatar-author/index.html'
+      - 'docs/tools/furniture-avatar-author/tile-span-author.js'
+      - 'docs/index.html'
+      - 'scripts/test-furniture-tile-span.js'
+      - '.github/workflows/furniture-tile-span.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tile-span:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate runtime, author and test syntax
+        run: |
+          node --check docs/js/furniture-tile-span.js
+          node --check docs/js/authored-furniture-runtime.js
+          node --check docs/tools/furniture-avatar-author/tile-span-author.js
+          node --check scripts/test-furniture-tile-span.js
+      - name: Check surface-rooted bridge length and authoring integration
+        run: node scripts/test-furniture-tile-span.js
+      - name: Check existing author gizmo behavior
+        run: node scripts/test-furniture-gizmo-orientation.js

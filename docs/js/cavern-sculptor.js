@@ -727,8 +727,9 @@
       // neighbouring facets fold by more than the mapper's split angle.
       const r = hash01(i, j, seed + 2);
       const rise = ((i + j) % 2 ? .55 + .45 * r : .03 + .27 * r) * (.55 + .45 * inward);
+      const minRise = vault.minFacetRiseAt?.(x, z) || 0; // Only designated high-clearance chambers suppress the lowest roof facet corners.
       const start = vault.startAt(x, z);
-      pts.push({ x, z, y: start + (vault.topAt(x, z) - start) * rise });
+      pts.push({ x, z, y: start + (vault.topAt(x, z) - start) * (minRise + (1 - minRise) * rise) });
     }
     const planes = [];
     const planeOf = (a, b, c) => {
@@ -1129,17 +1130,20 @@
     const points = Array.isArray(opts.vaultTallPoints) ? opts.vaultTallPoints.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z)) : [];
     const minFrac = points.length ? clampNum(Number(opts.vaultMinHeightFrac) || .6, .2, 1) : 1;
     const [r0, r1] = Array.isArray(opts.vaultTallRadius) ? opts.vaultTallRadius.map(Number) : [3, 8];
-    const heightFracAt = (x, z) => {
-      if (!points.length) return 1;
+    const tallWeightAt = (x, z) => { // Shared proximity fade used by both the tall roof and its high-clearance floor.
+      if (!points.length) return 0;
       let near = Infinity;
       for (const p of points) near = Math.min(near, Math.hypot(x - p.x, z - p.z));
       const t = clampNum((r1 - near) / Math.max(1e-6, r1 - r0), 0, 1);
-      return minFrac + (1 - minFrac) * t * t * (3 - 2 * t);
+      return t * t * (3 - 2 * t);
     };
+    const heightFracAt = (x, z) => minFrac + (1 - minFrac) * tallWeightAt(x, z);
+    const minFacetRise = clampNum(Number(opts.vaultTallMinFacetRise) || 0, 0, 1); // Puzzle-chamber-only lower bound on the carved roof's faceted low corners.
+    const minFacetRiseAt = minFacetRise && points.length ? (x, z) => minFacetRise * tallWeightAt(x, z) : null;
     const topAt = (x, z) => floorY + height * heightFracAt(x, z);
     const startAt = (x, z) => topAt(x, z) - (topAt(x, z) - floorY) * frac;
     return {
-      topY, startY: floorY + height * minFrac * (1 - frac), topAt, startAt,
+      topY, startY: floorY + height * minFrac * (1 - frac), topAt, startAt, minFacetRiseAt,
       // Facets shrink with a shallower roof band so their tilt (and the folds
       // the stretch mapper splits on) stays steep enough.
       facetSize: Number(opts.vaultFacetSize) || clampNum(height * minFrac * frac * 1.05, 1.4, 1.8),

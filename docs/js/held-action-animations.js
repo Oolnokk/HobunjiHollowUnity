@@ -373,12 +373,12 @@
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20261114h52ab9eb', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20261113uniformRigStride2', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261110xrayHandAudit1', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261113longoranscales5', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261113uniformRigStride2', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261107instrHand1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261114h6b07b1b', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261114h4649ba3', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -400,7 +400,7 @@
     handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261111kurraya2', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261108handperf1', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261114waterclip2', docsBase).href);
   }
 
   function loadSequentially(urls) {

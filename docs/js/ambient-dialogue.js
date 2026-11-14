@@ -459,25 +459,49 @@
     return texture;
   }
 
+  // Premeasure whole words once so syllable-by-syllable typewriter reveals
+  // keep their original layout instead of causing a reflow on every tick.
+  function wrappedTextRanges(context, text, maxWidthPx = 950) {
+    const words = [...String(text).matchAll(/\S+/g)]; // Word offsets are retained for drawing each partial line.
+    if (!words.length) return [{ start: 0, end: 0 }];
+    const lines = []; // Original-text spans used by the canvas renderer during each reveal.
+    let start = words[0].index; // Index of the first word on the current line.
+    let end = start + words[0][0].length; // Last character of the last word that fits.
+    for (let index = 1; index < words.length; index++) {
+      const nextEnd = words[index].index + words[index][0].length; // Candidate width including the next word.
+      if (context.measureText(text.slice(start, nextEnd)).width > maxWidthPx) {
+        lines.push({ start, end });
+        start = words[index].index;
+      }
+      end = nextEnd;
+    }
+    lines.push({ start, end });
+    return lines;
+  }
+
   function textPlane(text) {
     const THREE = state.deps.THREE;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     const fontPx = 58;
+    const singleLineHeight = 92; // Keeps existing text size unchanged for both short and wrapped dialogue.
+    const lineAdvance = 76; // Adds space for additional lines without shrinking the font.
     context.font = `400 ${fontPx}px ${FONT}`;
-    canvas.width = Math.max(128, Math.ceil(context.measureText(text).width + 30));
-    canvas.height = 92;
+    const lines = wrappedTextRanges(context, text); // Fixed wrap positions for the entire typewriter event.
+    const longest = Math.max(...lines.map(line => context.measureText(text.slice(line.start, line.end)).width)); // Canvas fits the longest wrapped line.
+    canvas.width = Math.max(128, Math.ceil(longest + 30));
+    canvas.height = singleLineHeight + (lines.length - 1) * lineAdvance;
     const texture = canvasTexture(canvas);
-    const geometry = new THREE.PlaneGeometry(canvas.width / canvas.height, 1);
+    const geometry = new THREE.PlaneGeometry(canvas.width / singleLineHeight, canvas.height / singleLineHeight);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
     plane.renderOrder = 1210;
     plane.frustumCulled = false;
-    return { canvas, context, texture, geometry, material, plane, fontPx };
+    return { canvas, context, texture, geometry, material, plane, fontPx, lines, lineAdvance };
   }
 
   function drawText(event, visibleText) {
-    const { canvas, context, fontPx, text } = event.textPart;
+    const { canvas, context, fontPx, text, lines, lineAdvance } = event.textPart;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.font = `400 ${fontPx}px ${FONT}`;
     context.textAlign = 'left';
@@ -485,9 +509,14 @@
     context.lineJoin = 'round';
     context.lineWidth = 8;
     context.strokeStyle = '#000';
-    context.strokeText(visibleText, 15, canvas.height / 2);
     context.fillStyle = event.tone === 'jeer' ? '#ffb4a8' : event.tone === 'cheer' ? '#ffe68b' : event.tone === 'quest' ? '#c9a0ff' : '#fff6be';
-    context.fillText(visibleText, 15, canvas.height / 2);
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index]; // Span into the original text, not a reflowed partial string.
+      const shown = visibleText.slice(line.start, line.end); // Empty until the corresponding syllables are revealed.
+      const y = canvas.height / 2 + (index - (lines.length - 1) / 2) * lineAdvance; // Vertical center for every wrapped line.
+      context.strokeText(shown, 15, y);
+      context.fillText(shown, 15, y);
+    }
     event.textPart.texture.needsUpdate = true;
     event.visibleChars = visibleText.length;
     event.textPart.plane.visible = visibleText.length > 0;
@@ -696,7 +725,7 @@
       headPart.plane.scale.setScalar(state.settings.chatheadWorldSize);
       group.add(headPart.plane);
     }
-    const textWidth = (textPart.canvas.width / textPart.canvas.height) * state.settings.textWorldHeight;
+    const textWidth = textPart.geometry.parameters.width * state.settings.textWorldHeight; // Wrapped geometry keeps the original font scale.
     const headWidth = headPart ? state.settings.chatheadWorldSize : 0;
     const gap = headPart ? state.settings.chatheadWorldSize * 0.14 : 0; // Used below to reproduce the demo's 7–14 px gap relative to its 60–90 px head.
     const totalWidth = headWidth + gap + textWidth;
@@ -704,6 +733,9 @@
     if (headPart) headPart.plane.position.x = -totalWidth / 2 + headWidth / 2;
     scene.add(group);
     const now = performance.now();
+    const speechSchedule = revealSchedule(message); // Shared syllable timeline reused by the text and the visible-duration calculation.
+    const lastSyllableAtMs = speechSchedule.length ? speechSchedule[speechSchedule.length - 1].revealAtMs : 0; // Do not fade before the last syllable appears.
+    const minimumReadableMs = Math.max(message.length * 42 + 1800, lastSyllableAtMs / 0.75 + 1000); // Long sentences get a readable hold after their final speech tick.
     const event = {
       root, group, textPart, headPart, profile: options.profile || null,
       chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
@@ -718,13 +750,13 @@
       // included), so the off-screen edge follow can inset by the bubble's
       // actual footprint instead of just its center pivot.
       bubbleHalfWidth: totalWidth / 2,
-      bubbleHalfHeight: Math.max(state.settings.textWorldHeight, headWidth) / 2,
+      bubbleHalfHeight: Math.max(textPart.geometry.parameters.height * state.settings.textWorldHeight, headWidth) / 2, // Clamp edge speech using the full wrapped height.
       displayPos: null,
       displayScale: 1,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
-      durationMs: Number(options.durationMs) || state.settings.durationMs,
-      revealSchedule: revealSchedule(message), // Shared syllable cadence keeps text and mouth pulses synchronized.
+      durationMs: Number(options.durationMs) || Math.max(state.settings.durationMs, minimumReadableMs), // Explicit scripted durations remain authoritative.
+      revealSchedule: speechSchedule, // Shared syllable cadence keeps text and mouth pulses synchronized.
       cadenceTimers: [],
       visibleChars: -1,
     };

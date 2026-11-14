@@ -7,7 +7,7 @@ const rangedSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/
 const archetypeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/ranged-weapon-archetypes.js'), 'utf8');
 const attackValues = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../docs/config/combat/attack-values.json'), 'utf8'));
 const loaderSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/combat-config-loader.js'), 'utf8');
-const indexSource = fs.readFileSync(path.resolve(__dirname, '../docs/index.html'), 'utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -134,8 +134,10 @@ assert.match(archetypeSource, /function updateThrownChargeStamina\(\)[\s\S]*payT
   'player thrown holds must spend stamina progressively while the input remains held');
 assert.match(archetypeSource, /getEnhancedResources\?\.\(player, 'stamina',[\s\S]*player\?\.stamina <= 0 && !hasEnhancedStamina[\s\S]*releaseThrownCharge\('stamina-depleted'\)/,
   'thrown holds must auto-release at zero ordinary Stamina only after enhanced Stamina is exhausted, matching Charged Breaker');
-assert.match(archetypeSource, /const result = baseUpdate\(dt\);\s*updateThrownChargeStamina\(\);/,
+assert.match(archetypeSource, /const result = baseUpdate\(dt\);[\s\S]{0,250}updateThrownChargeStamina\(\);/,
   'the held charge payment must tick through the normal ranged update loop');
+assert.match(archetypeSource, /isAttackBlocked\?\.\(\) && thrownCharge\) cancelThrownCharge\('contextual-input'\)/,
+  'contextual ownership must cancel an in-progress thrown charge before the next stamina payment');
 assert.match(archetypeSource, /payThrownChargeStamina\(charge, poseCharge, 'Thrown weapon charge \(release\)'\)/,
   'release must settle any final unprocessed pose delta exactly once');
 assert.match(archetypeSource, /actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon'/,

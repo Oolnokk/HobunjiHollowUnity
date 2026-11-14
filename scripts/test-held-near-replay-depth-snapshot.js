@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const snapshotSource = fs.readFileSync('docs/js/scissor-depth-snapshot.js', 'utf8');
 const heldSource = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 // ── ScissorDepthSnapshot ────────────────────────────────────────────────────
 function fakeGl() {
@@ -146,8 +146,10 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
     window: { ScissorDepthSnapshot: fake }, THREE: { Sphere, Vector3: Vec3, Matrix4 }, objectProto: { onBeforeRender: undefined }, internalReplay: false, Map, Set, Infinity, Number, Math,
     lastBaseStencilBits: 0, replayScissorEnabled: scissored, replayCullEnabled: false, scissorRect: { x: 1, y: 2, z: 3, w: 4 },
     replayScissorRect: () => scissored, setReplayCullFrustum: () => false, scissoredReplayCount: 0, applyElevationScissor: () => false, restoreRendererScissor() {},
-    buildXrayGroups: () => ({ groups: [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [] }),
+    buildXrayGroups: () => ({ groups: [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => false,
+    splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
+    beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Snapshot tests stub the unrelated owner shader clipping transaction.
     hideObjects: objects => { const states = new Map(); for (const o of objects) { states.set(o, o.visible); o.visible = false; } return states; },
     restoreVisibility: states => { for (const [o, v] of states) o.visible = v; },
     collectVisible: () => [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',

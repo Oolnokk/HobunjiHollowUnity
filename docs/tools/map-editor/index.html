@@ -87,7 +87,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:#9fb4cf;font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
-<script src="../../js/panel-ui.js?v=20261111mesaPanelLoader1"></script>
+<script src="../../js/panel-ui.js?v=20261114hspan1704"></script>
 <script src="../../js/furniture-puzzle-properties.js?v=20261103hb35528e"></script>
 <script src="../../js/table-chair-placement.js?v=20261102chairreview3"></script>
 <script src="../../js/map-live-preview.js?v=20261029maskSlots2"></script>
@@ -451,7 +451,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
-<script src="../../js/building-door.js"></script>
+<script src="../../js/building-door.js?v=20261114singleexport1"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
@@ -466,7 +466,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/HousePieceGen.js?v=20261027h2377f08"></script>
 <script src="../../js/terrain-preview.js?v=20261111mesaPreview1"></script>
 <script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/"; window.__hobunjiFurnitureAssetBase = "../../assets/";</script>
-<script src="../../js/authored-furniture-runtime.js?v=20261104hf23bb18"></script>
+<script src="../../js/furniture-tile-span.js?v=20261113span1"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261114hspan1704"></script>
 <script src="../../js/furniture-table-system.js?v=20261110cliffsideMerge1"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
@@ -1127,6 +1128,9 @@ function loadWorkspace() {
         w.maps.forEach(m => {
           m.tiles = normalizeWorkspaceTiles(m.tiles);
           m.visualHeights = normalizeVisualHeights(m.visualHeights, m.cols, m.rows);
+          if (m.visualHeightBase && typeof m.visualHeightBase === 'object' && !Array.isArray(m.visualHeightBase)) {
+            m.visualHeightBase = normalizeVisualHeights(m.visualHeightBase, m.cols, m.rows); // Retain the hand-painted base beneath movable building stamps.
+          }
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.rivers = Array.isArray(m.rivers) ? m.rivers : [];
           m.farmPlots = Array.isArray(m.farmPlots) ? m.farmPlots : [];
@@ -4877,7 +4881,7 @@ function buildWorkspaceExport() {
     })),
   };
 }
-function importAny(obj) {
+function importAny(obj, options = {}) { // Options are used by explicit authoritative reloads; ordinary imports retain their existing behavior.
   if (obj && obj.version === 3 && Array.isArray(obj.tiles)) {
     // farm layout v3 → load into linked maps
     localStorage.setItem(GAME.layoutKey, JSON.stringify(obj));
@@ -4895,8 +4899,11 @@ function importAny(obj) {
   if (obj && obj.schema === 'hobunji_map.v1') {
     const m = makeMap(obj.name || 'Imported', obj.category === 'interior' ? 'interior' : 'exterior',
       clamp(Math.round(obj.cols||36),2,400), clamp(Math.round(obj.rows||26),2,400));
-    if (Array.isArray(obj.tiles)) obj.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type || 'grass', crop: t.crop || '' }; });
-    else if (obj.tiles && typeof obj.tiles === 'object') m.tiles = obj.tiles;
+    m.tiles = normalizeWorkspaceTiles(obj.tiles); // Preserve per-tile extras such as ramps and plateau metadata in standalone imports.
+    m.visualHeights = normalizeVisualHeights(obj.visualHeights, m.cols, m.rows); // Standalone maps carry authored terrain heights.
+    if (obj.visualHeightBase && typeof obj.visualHeightBase === 'object' && !Array.isArray(obj.visualHeightBase)) {
+      m.visualHeightBase = normalizeVisualHeights(obj.visualHeightBase, m.cols, m.rows); // Avoid retaining moved building foundation stamps.
+    }
     m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
@@ -4916,15 +4923,20 @@ function importAny(obj) {
   }
   // Workspace format {maps:[...], activeId, gameLink}
   if (obj && Array.isArray(obj.maps) && obj.maps.length) {
-    const merge = ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
-    const doMerge = merge && confirm(
-      `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`);
+    const merge = options.mergeIntoWorkspace === true || ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
+    const doMerge = options.mergeIntoWorkspace === true || (merge && confirm(
+      `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`));
+    const previousMapIds = new Set(ws.maps.map(map => map.id)); // Keep pre-import IDs to baseline only new/reloaded maps during an explicit Town refresh.
     // Sanitise incoming maps
     const incoming = obj.maps.map(src => {
       const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
         clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
       m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
       m.tiles = normalizeWorkspaceTiles(src.tiles);
+      m.visualHeights = normalizeVisualHeights(src.visualHeights, m.cols, m.rows); // Workspace imports must preserve terrain heights alongside tiles.
+      if (src.visualHeightBase && typeof src.visualHeightBase === 'object' && !Array.isArray(src.visualHeightBase)) {
+        m.visualHeightBase = normalizeVisualHeights(src.visualHeightBase, m.cols, m.rows); // Preserve the empty/painted foundation base separately.
+      }
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
@@ -4947,9 +4959,15 @@ function importAny(obj) {
     const incomingGroups = Array.isArray(obj.plateauGroups) ? obj.plateauGroups : [];
     const incomingRamps = Array.isArray(obj.ramps) ? obj.ramps : [];
     if (doMerge) {
-      // Add only maps whose IDs aren't already present
+      // Merge normally preserves existing maps, but an explicitly confirmed Load Town must refresh its canonical town record.
       const existing = new Set(ws.maps.map(m => m.id));
-      incoming.forEach(m => { if (!existing.has(m.id)) ws.maps.push(m); });
+      const replaceMapIds = new Set(options.replaceMapIds || []); // Used only by Load Town to refresh its town record without losing unrelated editor maps.
+      incoming.forEach(m => {
+        const index = ws.maps.findIndex(current => current.id === m.id);
+        if (index < 0) ws.maps.push(m);
+        else if (replaceMapIds.has(m.id)) ws.maps[index] = m;
+      });
+      if (replaceMapIds.has('map_hobunji_town')) ws.activeId = 'map_hobunji_town';
       ws.plateauGroups = ws.plateauGroups || [];
       const existingGroups = new Set(ws.plateauGroups.map(g => g.id));
       incomingGroups.forEach(g => { if (!existingGroups.has(g.id)) ws.plateauGroups.push(g); });
@@ -4968,7 +4986,12 @@ function importAny(obj) {
     undoStack.length = 0; redoStack.length = 0;
     migrateSubmapAnchors();
     sanitizePlateauGaps();
-    ws.maps.forEach(captureBaseline);
+    if (options.replaceMapIds?.length) {
+      const replacedIds = new Set(options.replaceMapIds); // Only reloaded Town (plus newly imported maps) may establish new baselines.
+      for (const map of incoming) if (replacedIds.has(map.id) || !previousMapIds.has(map.id)) captureBaseline(map);
+    } else {
+      ws.maps.forEach(captureBaseline);
+    }
     updateAll(); fitView();
     return;
   }
@@ -5184,9 +5207,10 @@ $('importBtn').addEventListener('click', () => $('importFile').click());
 $('loadTownBtn').addEventListener('click', async () => {
   try {
     setStatus('Fetching town workspace…');
-    const res = await fetch('../../config/town-workspace-v1.json');
+    const res = await fetch('../../config/town-workspace-v1.json', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const obj = await res.json();
+    let canonicalTownLoaded = false; // Only a successfully fetched, indexed Town file can replace the user's locally saved Town.
     // Mirror game.js's _loadTownFromWorkspace: a per-map file registered in
     // config/maps/index.json takes priority over this map's inline data in
     // town-workspace-v1.json (e.g. buildings added straight to
@@ -5195,7 +5219,7 @@ $('loadTownBtn').addEventListener('click', async () => {
     // a stale/incomplete town that doesn't match what the game renders.
     if (Array.isArray(obj.maps)) {
       try {
-        const idxRes = await fetch('../../config/maps/index.json');
+        const idxRes = await fetch('../../config/maps/index.json', { cache: 'no-store' });
         if (idxRes.ok) {
           const idx = await idxRes.json();
           const mapFileIndex = {};
@@ -5204,9 +5228,10 @@ $('loadTownBtn').addEventListener('click', async () => {
             const file = mapFileIndex[m.id];
             if (!file) return m;
             try {
-              const r = await fetch('../../' + file);
+              const r = await fetch('../../' + file, { cache: 'no-store' });
               if (!r.ok) return m;
               const data = await r.json();
+              if (m.id === 'map_hobunji_town' && data?.id === m.id && data.schema === 'hobunji_map.v1') canonicalTownLoaded = true;
               if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
                 return { ...m, buildingInteriorBase: data };
               }
@@ -5216,7 +5241,23 @@ $('loadTownBtn').addEventListener('click', async () => {
         }
       } catch(_) {}
     }
-    importAny(obj);
+    if (!canonicalTownLoaded) throw new Error('Cannot verify the indexed game Town map; your local editor workspace was not changed.');
+    const existingTown = ws.maps.find(map => map.id === 'map_hobunji_town'); // Guards locally authored town changes before reloading the bundled game map.
+    const incomingTown = obj.maps?.find(map => map.id === 'map_hobunji_town'); // Authoritative town data already resolved through the map index above.
+    if (existingTown && incomingTown && !confirm('Replace your editor’s existing Town map with the bundled game Town map?\n\nUnsaved and locally saved Town edits will be replaced. Export Map JSON first if you want a backup.\n\nCancel keeps your existing Town unchanged.')) {
+      setStatus('Load Town cancelled; your local Town map is unchanged.');
+      return;
+    }
+    const preloadedMapIds = new Set(ws.maps.map(map => String(map?.id || ''))); // Identifies canonical map additions without changing other map baselines.
+    const preloadedPlateauGroupIds = new Set((ws.plateauGroups || []).map(group => String(group?.id || ''))); // Safeguards locally authored group baselines.
+    const preloadedRampIds = new Set((ws.ramps || []).map(ramp => String(ramp?.id || ''))); // Safeguards locally authored ramp baselines.
+    importAny(obj, { mergeIntoWorkspace: true, replaceMapIds: incomingTown ? ['map_hobunji_town'] : [] });
+    const loadedMapIds = (obj.maps || []).map(map => String(map?.id || '')).filter(id => id && !preloadedMapIds.has(id)); // Imported indexed maps become baseline data, not user-added maps.
+    window.MapEditorExportFixes?.adoptBundledMapBaselines?.(loadedMapIds);
+    window.MapEditorExportFixes?.adoptBundledWorkspaceBaselines?.({
+      plateauGroupIds: (obj.plateauGroups || []).map(group => String(group?.id || '')).filter(id => id && !preloadedPlateauGroupIds.has(id)),
+      rampIds: (obj.ramps || []).map(ramp => String(ramp?.id || '')).filter(id => id && !preloadedRampIds.has(id)),
+    }); // Imported canonical geometry is baseline data, but pre-existing workspace edits still count as changes.
     // Auto-link: find the town map and set gameLink.townId
     const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
     if (townM && !ws.gameLink.townId) {
@@ -5243,6 +5284,13 @@ $('loadTownBtn').addEventListener('click', async () => {
       }
       updateAll();
       setStatus('Town workspace loaded and linked to farm.');
+    }
+    if (townM) {
+      ws.activeId = townM.id;
+      editingLayoutId = null;
+      updateAll(); fitView();
+      window.MapEditorExportFixes?.captureMapBaseline?.(townM); // Only Town is rebaselined; unrelated editor edits must remain visible in workspace diffs.
+      setStatus('Bundled game Town loaded into the editor. Future diffs compare against this reloaded Town.');
     }
   } catch(e) { setStatus('Load Town failed: ' + e.message); }
 });
@@ -5648,5 +5696,6 @@ PanelUI.makeResizableBox(document.getElementById('diffBox'), {
   storageKey: 'hobunji_map_editor_diffbox_width_v1'
 });
 </script>
+<script src="../../js/map-editor-export-fixes.js?v=20261114townbaseline4"></script>
 </body>
 </html>

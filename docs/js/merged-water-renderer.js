@@ -389,6 +389,9 @@
       uOpacity: { value: Math.max(0, Math.min(1, options.opacity ?? 0.8)) },
       uHobunjiSurfaceOcclusionDepthOnly: { value: 0 },
       uHobunjiSurfaceOcclusionDepthAlphaThreshold: { value: depthAlphaThreshold },
+      uHobunjiWaterReplayClipScopeCount: { value: 0 }, // Zero disables physical clipping during normal water rendering.
+      uHobunjiWaterReplayClipRadius: { value: 0 }, // The held renderer supplies the same tile radius used by its CPU guard.
+      uHobunjiWaterReplayClipScopes: { value: new Float32Array(24) }, // Six vec4 pairs cover twelve owner tiles with modest WebGL1 uniforms.
     };
     const material = new THREE.ShaderMaterial({
       name: 'merged_textured_water_material',
@@ -401,7 +404,9 @@
         varying float vDepth;
         varying float vCoverage;
         varying vec2 vFlow;
+        varying vec2 vWaterWorldXZ;
         void main() {
+          vWaterWorldXZ = (modelMatrix * vec4(position, 1.0)).xz; // Per-fragment world position, never the merged river's huge bounds.
           vUv = uv;
           vDepth = aDepth;
           vCoverage = aCoverage;
@@ -417,11 +422,30 @@
         uniform float uOpacity;
         uniform float uHobunjiSurfaceOcclusionDepthOnly;
         uniform float uHobunjiSurfaceOcclusionDepthAlphaThreshold;
+        uniform float uHobunjiWaterReplayClipScopeCount;
+        uniform float uHobunjiWaterReplayClipRadius;
+        uniform vec4 uHobunjiWaterReplayClipScopes[6];
+        varying vec2 vWaterWorldXZ;
         varying vec2 vUv;
         varying float vDepth;
         varying float vCoverage;
         varying vec2 vFlow;
         void main() {
+          // The selective held/foot replay clips physical water fragments to
+          // nearby owner tiles, even when one merged river spans the whole zone.
+          // Scope count stays zero in the ordinary world color pass.
+          if (uHobunjiWaterReplayClipScopeCount > 0.5) {
+            bool nearOwner = false;
+            for (int i = 0; i < 6; i++) {
+              float first = float(i * 2);
+              vec4 pair = uHobunjiWaterReplayClipScopes[i];
+              if (first < uHobunjiWaterReplayClipScopeCount
+                  && all(lessThanEqual(abs(vWaterWorldXZ - (pair.xy + vec2(0.5))), vec2(uHobunjiWaterReplayClipRadius)))) nearOwner = true;
+              if (first + 1.0 < uHobunjiWaterReplayClipScopeCount
+                  && all(lessThanEqual(abs(vWaterWorldXZ - (pair.zw + vec2(0.5))), vec2(uHobunjiWaterReplayClipRadius)))) nearOwner = true;
+            }
+            if (!nearOwner) discard;
+          }
           vec2 textureOffset = vec2(uTime * ${TEXTURE_SCROLL_U.toFixed(3)}, uTime * ${TEXTURE_SCROLL_V.toFixed(3)});
           vec2 textureUv = fract(vUv + textureOffset);
           vec3 textureColor = texture2D(uWaterTexture, textureUv).rgb;
@@ -484,6 +508,26 @@
 
     const statKey = options.statKey || mesh.name; // Used to expose this area's representation cost to mobile/in-game diagnostics.
     mesh.userData.mergedWaterStatKey = statKey;
+    // The held/foot tint compositor must use actual wet tiles, not this merged
+    // mesh's often enormous projected bounding sphere (a distant river can
+    // cover the character on screen without touching the character's tiles).
+    // Full-map floods use one rectangle instead of allocating a tile Set.
+    const waterTileFootprint = options.mapWidePlane
+      ? { bounds: [0, 0, Number(options.cols) || 0, Number(options.rows) || 0], tiles: null }
+      : { bounds: [Infinity, Infinity, -Infinity, -Infinity], tiles: new Set() };
+    if (!options.mapWidePlane) {
+      for (const cell of cells || []) {
+        if (!cell || cell.visible === false || !Number.isFinite(cell.col)
+            || !Number.isFinite(cell.row) || !Number.isFinite(cell.surfaceY)) continue;
+        const col = Math.floor(cell.col), row = Math.floor(cell.row); // Exact tile identity used by the player's water-tint replay.
+        waterTileFootprint.tiles.add(col + ',' + row);
+        waterTileFootprint.bounds[0] = Math.min(waterTileFootprint.bounds[0], col);
+        waterTileFootprint.bounds[1] = Math.min(waterTileFootprint.bounds[1], row);
+        waterTileFootprint.bounds[2] = Math.max(waterTileFootprint.bounds[2], col + 1);
+        waterTileFootprint.bounds[3] = Math.max(waterTileFootprint.bounds[3], row + 1);
+      }
+    }
+    mesh.userData.hobunjiWaterTileFootprint = waterTileFootprint;
     stats[statKey] = {
       tiles: data.tileCount,
       vertices: data.positions.length / 3,

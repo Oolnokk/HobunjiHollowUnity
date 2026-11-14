@@ -54,13 +54,26 @@ async function main(){
       const countBefore=collision.providerIds().length; // Ensure the test frees only its own colliders, not cached game systems.
       const state={phase:'fire',solved:0,lit:0};
       const hot=new Set(); // Sconce contact is driven by actual authored coordinates, not a hard-coded gate location.
-      let fire=null,music=null;
+      let fire=null,music=null,simple=null; // Each real authored cave challenge is disposed independently after its collision test.
       const waitFor=async(check,label)=>{
         for(let count=0;count<120;count++){ // Asset/font availability remains bounded on mobile CI.
           if(check())return;
           await new Promise(resolve=>setTimeout(resolve,50));
         }
         throw Error('Timed out waiting for '+label);
+      };
+      const roofHeight=12; // Test a cave whose carved puzzle ceiling rises above the old nine-tile permanent wall.
+      const assertTallSideWalls=(challenge,label)=>{
+        const wall=challenge.rockSurround; // The actual fused rock shoulder geometry (not merely the collision proxy).
+        if(!wall?.geometry?.getAttribute?.('position'))throw Error(label+' has no sculpted gate side walls');
+        wall.geometry.computeBoundingBox();
+        if(wall.userData?.caveSeparatorHeight<roofHeight||wall.geometry.boundingBox?.max?.y<roofHeight-.5)
+          throw Error(label+' rock shoulders stop below the raised cavern roof');
+        if(!collision.blocksBox(area,room.x+.65,gateZ,.18,roofHeight-1.5)
+          ||!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18,roofHeight-1.5))
+          throw Error(label+' left/right stone flank collision stops below the raised roof');
+        if(collision.blocksBox(area,gateX,gateZ,.18,roofHeight-1.5))
+          throw Error(label+' elevated central passage is blocked by the permanent stone shoulders');
       };
       const assertAuthoredGate=async(challenge,kind)=>{
         await waitFor(()=>challenge.authoredGate || challenge.disposed,kind+' authored cliffGate model');
@@ -71,7 +84,7 @@ async function main(){
       };
       try{
         fire=window.RuinLayerChallenges.compose({
-          THREE,parent:group,room,id:'browser-fire-test',kind:'fireSconces',area,y:0,authoredCliffDoor:true,
+          THREE,parent:group,room,id:'browser-fire-test',kind:'fireSconces',area,y:0,authoredCliffDoor:true,caveRoofHeight:roofHeight,
           isActive:()=>state.phase==='fire',onSolved:()=>state.solved++,
           groundFire:{intersects:(map,x,z)=>map===area&&hot.has(x+','+z)},
           onSconceLit:()=>state.lit++,getPlayerY:()=>0,getPlayerPosition:()=>({x:0,z:0}),
@@ -91,15 +104,37 @@ async function main(){
         if(fire.rockSurround.userData.naturalSurfaceUvOwner==='legacy-continuous-rock-uv')
           throw Error('Cave wall was mislabeled as a legacy ore texture, overriding natural surface metadata');
         if(fire.backdrop!==null)throw Error('Fire gate should not construct any fake black passage');
+        assertTallSideWalls(fire,'fire gate');
         await assertAuthoredGate(fire,'fire'); // Verify the async authored asset contains no black backing geometry.
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
+
+        state.phase='simple';
+        const stepper={x:room.x,z:room.z}; // Live player position is moved onto the fallback plate only after checking the closed gate.
+        simple=window.RuinLayerChallenges.compose({
+          THREE,parent:group,room,id:'browser-simple-plate-test',kind:'cavePressurePlate',area,y:0,authoredCliffDoor:true,caveRoofHeight:roofHeight,
+          isActive:()=>state.phase==='simple',onSolved:()=>state.solved++,
+          getPlayerY:()=>0,getPlayerPosition:()=>stepper,
+        });
+        if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed fallback pressure-plate gate is not collidable');
+        simple.tick(.016);
+        if(simple.solved)throw Error('The fallback plate opened without a player standing on it');
+        stepper.x=room.x+room.w/2;stepper.z=room.z+room.d/2-1.6;
+        simple.tick(.016);
+        if(!simple.solved||state.solved!==2)throw Error('A single plate step did not latch the indoor cave gate open');
+        simple.animate(1);
+        if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Solved fallback plate still blocks the treasure alcove');
+        if(!collision.blocksBox(area,room.x+.65,gateZ,.18))throw Error('Fallback bypasses the permanent cave wall');
+        assertTallSideWalls(simple,'pressure-plate gate');
+        await assertAuthoredGate(simple,'pressure plate');
+        simple.dispose();simple=null;
+        if(collision.providerIds().length!==countBefore)throw Error('Fallback cave leaked collision providers');
 
         state.phase='music';
         let opened=0,closed=0,player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
         let scoreClockMs=performance.now(); // The browser smoke advances an authored score without waiting through its full real-time duration.
         music=window.RuinLayerChallenges.compose({
-          THREE,parent:group,room,id:'browser-music-test',kind:'timedMelody',area,y:0,authoredCliffDoor:true,
+          THREE,parent:group,room,id:'browser-music-test',kind:'timedMelody',area,y:0,authoredCliffDoor:true,caveRoofHeight:roofHeight,
           isActive:()=>state.phase==='music',onSolved:()=>state.solved++,
           music:{beginPlayerSession:()=>{opened++;return true;},close:()=>{closed++;}},
           puzzleCaveMelody:window.PuzzleCaveMelody,songOptions:{difficulty:5},
@@ -153,22 +188,23 @@ async function main(){
             detail:{area,noteIndex:note.index}
           }));
         }
-        if(!music.solved||state.solved!==2)throw Error('Written melody did not unlock the real stone door');
+        if(!music.solved||state.solved!==3)throw Error('Written melody did not unlock the real stone door');
         music.animate(1);
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised melody slab still blocks player');
         if(!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18))throw Error('Right rock flank bypasses melody puzzle');
+        assertTallSideWalls(music,'melody gate');
         await assertAuthoredGate(music,'melody'); // The actual loaded gate must still have no black plane after the solve.
         music.dispose();music=null;
         group.remove(caveShell);caveShell.geometry.dispose();caveShell.material.dispose();
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');
-        return {passed:true,automaticInstrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm,tankanPixels:visiblePixels};
+        return {passed:true,automaticInstrumentSessions:opened,gatesSolved:state.solved,sconces:state.lit,bpm:songBpm,tankanPixels:visiblePixels};
       }finally{
-        fire?.dispose?.();music?.dispose?.();
+        fire?.dispose?.();simple?.dispose?.();music?.dispose?.();
       }
     });
     assert.equal(result.passed,true);
-    assert.equal(result.songsSolved,2);
+    assert.equal(result.gatesSolved,3);
     assert.equal(result.sconces,2);
     assert(!errors.some(error=>/climb-system|BARN_TIERS|Cannot read properties of null \(reading 'getHour'\)|puzzle-cave-melody|ruin-layer-challenges/i.test(error)),
       'No startup errors from previously broken climbing, shop stock, music or Puzzle Cave modules: '+errors.slice(-20).join(' | '));

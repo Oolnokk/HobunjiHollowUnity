@@ -23,7 +23,7 @@ assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]
 assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'Sleep bridge cache-busts the prayer/rest integration');
 assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration cache-busts the prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');
-assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*16/, 'Well Rested lasts sixteen in-game hours');
+assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*24/, 'Well Rested lasts twenty-four in-game hours');
 assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,300}day:\s*'Anan'[\s\S]{0,300}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'formal Temple Service remains an Anan morning event rather than expanding to all day');
 const prayerDayBody = core.match(/function activeTemplePrayerDay\(\) \{([\s\S]*?)\n  \}\n\n  function seatedInTemplePew/)?.[1] || ''; // Isolates day gating so service-hour checks cannot silently return.
 assert.match(prayerDayBody, /currentWeekdayName\?\.\(\)/, 'prayer eligibility reads the public civil weekday');
@@ -66,7 +66,10 @@ assert.match(sleepBridge, /function armOwnedBedSleep\(\)[\s\S]{0,300}source:\s*'
 assert.match(sleepBridge, /function openSharedSleepPassage\(\)[\s\S]{0,300}armOwnedBedSleep\(\)[\s\S]{0,300}open\.call\(window\.CalendarSystem, 'sleep'\)/, 'all bed Sleep input paths arm the same token before opening the shared Sleep passage');
 assert.match(sleepBridge, /function onKeyDown\(event\)[\s\S]{0,1200}consumeEvent\(event\)[\s\S]{0,400}armedKeyCode = code/, 'parser-time Sleep bridge captures the displayed Sleep key before legacy game input');
 assert.match(core, /function consumeOwnedBedSleepToken\(\)[\s\S]{0,500}token\.source !== 'player-bed'/, 'blessing core consumes only the player-bed token');
-assert.match(core, /detail\?\.kind\s*!==\s*'sleep'[\s\S]{0,180}!consumeOwnedBedSleepToken\(\)/, 'generic/debug Sleep passages cannot grant Well Rested');
+assert.match(core, /kind\s*===\s*'sleep'[\s\S]{0,200}consumeOwnedBedSleepToken\(\)/, 'the existing bed token still gates Well Rested');
+assert.match(core, /duration\s*\+\s*SLEEP_HOUR_EPSILON\s*>=\s*WELL_RESTED_MIN_SLEEP_HOURS/, 'Well Rested requires eight hours, tolerant only of raw calendar floating-point noise');
+assert.match(core, /RESTED_DURATION_HOURS\s*=\s*3/, 'short sleep or a seated Wait earns three hours of ordinary Rested');
+assert.match(core, /function isRested\(\)[\s\S]{0,140}state\.rested\s*\|\|\s*state\.wellRested/, 'both tiers suppress yawns while only Well Rested grants stat bonuses');
 assert.match(core, /movementSpeedMultiplier\(\) \{ return isWellRested\(\) \? 1\.08 : 1; \}/, 'Well Rested defines a small movement-speed bonus');
 assert.match(integration, /getMovementSpeedMul[\s\S]{0,450}movementSpeedMultiplier/, 'Well Rested movement speed is connected to the actual Combat movement multiplier');
 assert.match(core, /staminaRegenPerSec[\s\S]{0,120}\* 1\.30/, 'Well Rested gives a substantial Stamina-recovery bonus');
@@ -154,7 +157,7 @@ const savedHudEntries = clockWindow.EffectBuffBar.getEntries(); // Verifies save
 const restedHudEntry = savedHudEntries.find(entry => entry.id === 'well-rested'); // Checks Well Rested's label and calendar-based countdown independently of prayer.
 assert.equal(restedHudEntry?.label, 'Well Rested');
 assert.equal(restedHudEntry?.sourceLabel, 'Sleep');
-assert.equal(restedHudEntry?.durationS, 16 * 3600);
+assert.equal(restedHudEntry?.durationS, 24 * 3600);
 assert.equal(restedHudEntry?.remainingS, 4 * 3600);
 assert.equal(savedHudEntries.find(entry => entry.id === 'temple-prayer-naoine')?.label, "Nao'ine Prayer");
 calendarTime = .375;
@@ -165,7 +168,7 @@ assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer(), null);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), false);
 assert.equal(clockWindow.EffectBuffBar.getEntries().length, 0, 'expired blessings leave the HUD');
 clockWindow.TemplePrayerRestBlessings._test.grantWellRested();
-assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === 'well-rested')?.remainingS, 16 * 3600, 'new bed-rest buff appears with a full countdown');
+assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === 'well-rested')?.remainingS, 24 * 3600, 'new bed-rest buff appears with a full countdown');
 assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer, null);
 
 assert.equal(clockWindow.TemplePrayerRestBlessings._test.choosePrayer('unknown'), false);

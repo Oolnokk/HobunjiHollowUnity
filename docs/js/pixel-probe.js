@@ -997,6 +997,8 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
+    const liveLoadingState = window.HobunjiLiveLoadingStatus?.snapshot?.(); // Reports outstanding assets/requests without DevTools.
+    if (liveLoadingState) lines.push('Background loading: ' + JSON.stringify(liveLoadingState));
     const caveOverlayState = window.PuzzleCaveEntrances?.debugSnapshot?.().areas?.find(zone => zone.area === currentArea); // One-shot mobile check for the active cliff-score glyph compositor, never a per-frame scan.
     if (caveOverlayState?.portals?.length) {
       const visibleScores = caveOverlayState.portals.filter(portal => portal.scoreVisible); // Plate-gated inscriptions whose note planes should appear after the cliff/outline composite.
@@ -1150,6 +1152,9 @@
       const claims=inputClaimDebug.claims?.map?.(claim=>`${claim.actionId}→${claim.label}@${claim.ownerId}`).join(', ')||'none';
       const pressed=inputClaimDebug.pressed?.map?.(claim=>`${claim.actionId}@${claim.ownerId}`).join(', ')||'none';
       lines.push(`World input claims: ${claims} · pressed=${pressed} · rev=${inputClaimDebug.revision}`);
+      const route = inputClaimDebug.lastRoute; // Latest device-neutral owner decision is included in the copyable mobile diagnostic report.
+      const contextualPresses = inputClaimDebug.contextPresses?.map?.(press => `${press.pressId}:${press.actionId}→${press.label}`).join(', ') || 'none'; // Physical device owners remain visible even after their prompt disappears.
+      lines.push(`Gameplay input: attackBlocked=${!!inputClaimDebug.attackBlocked} · contextPresses=${contextualPresses} · interruptedHolds=${inputClaimDebug.interruptedHolds?.join(', ') || 'none'} · last=${route ? `${route.actionId}/${route.phase}→${route.ownerId} (${route.source})` : 'none'}`);
     }
     const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
     if (boulderShellDebug) {

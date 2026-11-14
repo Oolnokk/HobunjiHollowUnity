@@ -552,7 +552,7 @@
   }
 
   function isFood(def) {
-    if (!def) return false;
+    if (!def || def.useMode === 'gift') return false; // Crafted perfumes are presents, not edible merely because Alchemy registers processed items.
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     if (['crop', 'processed', 'food', 'meal'].includes(String(def.cat || '').toLowerCase())) return true;
     return tags.some(tag => [

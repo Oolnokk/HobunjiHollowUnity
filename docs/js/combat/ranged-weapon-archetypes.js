@@ -466,6 +466,7 @@
   }
 
   function beginThrownCharge(itemKey, source = 'ranged-action', pointerId = null) {
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) return false; // Prevent held throws starting under a contextual override.
     window.BandageSystem?.cancel?.('attack');
     if (!isThrown(itemKey)) return false;
     if (thrownCharge?.itemKey === itemKey) return true;
@@ -537,6 +538,10 @@
   }
 
   function releaseThrownCharge(source = 'release') {
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) {
+      cancelThrownCharge('contextual-input'); // Cancellation must not commit a throw or carry charge into the next press.
+      return false;
+    }
     const charge = thrownCharge;
     if (!charge) {
       // Released before the previous throw reached Neutral: nothing to throw.
@@ -588,6 +593,7 @@
   function resumePendingThrownHold() {
     const pending = pendingThrownHold;
     if (!pending || window.RangedWeapons?.playerActionState?.()) return false;
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) { pendingThrownHold = null; return false; }
     pendingThrownHold = null;
     if (window.RangedWeapons?.equippedRangedKey?.() !== pending.itemKey) return false;
     return beginThrownCharge(pending.itemKey, `${pending.source}-held-repeat`, pending.pointerId);
@@ -612,7 +618,8 @@
       const baseUpdate = ranged.update.bind(ranged);
       ranged.update = function archetypeAwareUpdate(dt) {
         const result = baseUpdate(dt);
-        updateThrownChargeStamina();
+        if (window.GameplayInputRouter?.isAttackBlocked?.() && thrownCharge) cancelThrownCharge('contextual-input');
+        else updateThrownChargeStamina();
         if (pendingThrownHold) resumePendingThrownHold();
         return result;
       };

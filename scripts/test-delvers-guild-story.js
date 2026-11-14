@@ -12,7 +12,7 @@ const sites = fs.readFileSync('docs/js/ruin-sites.js', 'utf8');
 const cave = fs.readFileSync('docs/js/cave-site-system.js', 'utf8');
 const relics = fs.readFileSync('docs/js/harlyao-relics.js', 'utf8');
 const tasks = fs.readFileSync('docs/js/tasks-panel.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 for (const [name, content] of Object.entries({ source, keyItemSource, opening, artifact, sites, cave, relics, tasks })) {
   new vm.Script(content, { filename: name }); // Every modified JavaScript entrypoint must remain syntactically valid.

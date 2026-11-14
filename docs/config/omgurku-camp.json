@@ -71,9 +71,9 @@
     "greetingFavorThreshold": 1,
     "greetingRadiusTiles": 3,
     "greetingLines": [
-      "Good to see you, friend.",
-      "Welcome back to our camp.",
-      "You walk safe here."
+      "It's good to see you, friend.",
+      "Welcome back. We're glad to have you at our camp.",
+      "You're safe to walk here."
     ],
     "killPenalty": 0,
     "selfDefenseKillPenalty": -1,
@@ -85,13 +85,13 @@
     "warningRadiusTiles": 10,
     "warningStaySeconds": 10,
     "initialWarnings": [
-      "Go way. No want trouble",
-      "This our spot, not yours. Leave.",
-      "No want fight. Go way."
+      "Stay to your path, and we shall stay to ours, deceived one.",
+      "You intrude upon our territory, deceived one. Go back the way you came, or face the consequences.",
+      "Leave this place now and no blood shall be spilled. Stay, and it shall!"
     ],
     "escalationWarnings": [
-      "Leave or we fight!",
-      "We said go way. Go way. Now!"
+      "Leave, or we'll fight!",
+      "We told you to go away. Leave. Now!"
     ]
   }
 }

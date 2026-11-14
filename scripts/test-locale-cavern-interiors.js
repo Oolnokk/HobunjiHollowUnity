@@ -111,7 +111,7 @@ assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sle
 const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
 const gameSource = read('docs/game.js');
-const gameIndexSource = read('docs/index.html');
+const gameIndexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueStyleSource = read('docs/style.css');
 const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');

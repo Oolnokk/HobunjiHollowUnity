@@ -97,6 +97,13 @@ for(let beatIndex=0;beatIndex<8;beatIndex++){
 assert.equal(audioSystem.objectSfxDebugSnapshot().last.key,'stoneBeat4','mobile probe reports the actual fourth beat');
 assert.equal(audioSystem.objectSfxDebugSnapshot().last.maxDurationSec,3,
   'the recording may play to its natural end instead of being cut off at the old pick transient');
+assert.equal(audioSystem.playObjectSfxKeyMetronome(.36,1,null,9),true,
+  'native fallback can also play +9 semitone percussion on authored note attacks');
+const percussionVoice=FakeAudio.instances.at(-1);
+assert.equal(percussionVoice.src,'assets/audio/sfx/sfx_stonebeat-2.mp3');
+assert(Math.abs(percussionVoice.playbackRate-Math.pow(2,9/12))<1e-10,
+  'mobile fallback pitch-shifts the second stonebeat by nine semitones');
+assert.equal(previousVoice.paused,false,'pitched percussion must not cut off the concurrent meter voice');
 previousVoice.currentTime=3.01;
 previousVoice.emit('timeupdate');
 assert.equal(previousVoice.paused,true,'the safety cap retires an unusually long recording');

@@ -11,11 +11,9 @@
   if (!/\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) return;
 
   const baselineById = new Map();
-  const baselineObjectById = new Map();
   let workspaceBaseline = null; // Used by buildWorkspaceDiffBundle() to include authored workspace-level changes such as plateau groups, ramps, and game links.
   let baselineMapIds = new Set(); // Used by buildWorkspaceDiffBundle() to report whole maps added or removed since the baseline was captured.
   let installed = false;
-  let mapListObserver = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -176,7 +174,14 @@
   }
 
   function buildStandaloneMapExport(map) {
-    if (map?.category === 'building_interior') return buildBuildingInteriorExport(map);
+    if (map?.category === 'building_interior') {
+      // The editor's canonical interior serializer retains camera rigs, puzzle wiring, layouts and decorative furniture.
+      if (activeMap()?.id === map.id) {
+        const fromEditor = window._mapEditorBridge?.exportActiveBuildingInterior?.();
+        if (fromEditor?.id === map.id) return jsonSafeClone(fromEditor);
+      }
+      return buildBuildingInteriorExport(map);
+    }
     const clean = mapSnapshot(map);
     clean.tiles = tilesToArray(map?.tiles);
     return clean;
@@ -203,12 +208,27 @@
   }
 
   function stableJson(value) {
-    return JSON.stringify(value);
+    // Authored JSON objects are unordered; reordering keys is not a map edit.
+    return JSON.stringify(value, (_key, current) => {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return current;
+      return Object.fromEntries(Object.entries(current).sort(([a], [b]) => a.localeCompare(b)));
+    });
+  }
+
+  function meaningfulTiles(tiles) {
+    const records = tilesToDictionary(tiles);
+    // Sparse game maps omit default grass, while editor imports may materialize the full grid.
+    for (const [key, tile] of Object.entries(records)) {
+      if (tile.type === 'grass' && tile.crop === '' && Object.keys(tile).every(field => field === 'type' || field === 'crop')) {
+        delete records[key];
+      }
+    }
+    return records;
   }
 
   function tileDiff(beforeTiles, afterTiles) {
-    const before = tilesToDictionary(beforeTiles);
-    const after = tilesToDictionary(afterTiles);
+    const before = meaningfulTiles(beforeTiles);
+    const after = meaningfulTiles(afterTiles);
     const added = [];
     const removed = [];
     const modified = [];
@@ -267,15 +287,32 @@
       tileChanges: tileChangeCount,
       changedFields: Object.keys(changes),
     };
-    if (!diff.summary.changed) diff._note = 'No changes since this map was loaded or created.';
+    if (!diff.summary.changed) {
+      // A saved workspace can already contain the user's edits on reload. Never give an apparently empty export.
+      diff.mode = 'unchanged-full-map';
+      diff.fullMap = buildStandaloneMapExport(map);
+      diff._note = 'No edits since this Map Editor session baseline. This does NOT compare against the bundled game Town or the running game; the current editor map is included instead.';
+    }
     return diff;
   }
 
-  function captureMapBaseline(map, force = false) {
+  function captureMapBaseline(map) {
     if (!map?.id) return;
-    if (!force && baselineObjectById.get(map.id) === map) return;
+    // Called only for an explicit baseline reset; imports must not silently redefine the comparison.
     baselineById.set(String(map.id), mapSnapshot(map));
-    baselineObjectById.set(String(map.id), map);
+  }
+
+  function adoptBundledMapBaselines(mapIds) {
+    const ws = workspace();
+    if (!ws || !Array.isArray(mapIds)) return;
+    for (const mapId of mapIds) {
+      const id = String(mapId || '');
+      if (!id || baselineMapIds.has(id)) continue;
+      const map = ws.maps.find(entry => String(entry?.id || '') === id);
+      if (!map) continue;
+      captureMapBaseline(map);
+      baselineMapIds.add(id); // Officially imported bundled maps are not new user-authored maps.
+    }
   }
 
   function workspaceAuthoringSnapshot(ws) {
@@ -283,6 +320,25 @@
     delete clone.maps;
     delete clone.activeId;
     return clone;
+  }
+
+  function adoptBundledWorkspaceBaselines(addedIds) {
+    const ws = workspace();
+    if (!ws || !workspaceBaseline || !addedIds) return;
+    for (const [field, ids] of [['plateauGroups', addedIds.plateauGroupIds], ['ramps', addedIds.rampIds]]) {
+      if (!Array.isArray(ids) || !ids.length) continue;
+      const baselineRecords = Array.isArray(workspaceBaseline[field]) ? workspaceBaseline[field] : [];
+      const baselineIds = new Set(baselineRecords.map(record => String(record?.id || '')));
+      for (const rawId of ids) {
+        const id = String(rawId || '');
+        if (!id || baselineIds.has(id)) continue;
+        const record = ws[field]?.find(entry => String(entry?.id || '') === id);
+        if (!record) continue;
+        baselineRecords.push(jsonSafeClone(record));
+        baselineIds.add(id);
+      }
+      workspaceBaseline[field] = baselineRecords; // Preserve other workspace edits while accepting repo-authored groups and ramps.
+    }
   }
 
   function buildWorkspaceDiffBundle() {
@@ -293,7 +349,7 @@
     for (const [mapId, map] of currentById) {
       if (!baselineMapIds.has(mapId)) continue;
       const diff = buildDetailedDiff(map);
-      if (diff.mode === 'full-map-fallback' || diff.summary?.changed) mapDiffs.push(diff);
+      if (!diff.baselineAvailable || diff.summary?.changed) mapDiffs.push(diff);
     }
 
     const workspaceChanges = {};
@@ -334,41 +390,17 @@
     };
   }
 
-  function captureWorkspaceBaselines(force = false) {
+  function captureWorkspaceBaselines() {
     const ws = workspace();
     if (!ws || !Array.isArray(ws.maps)) return;
-    for (const map of ws.maps) captureMapBaseline(map, force);
-    if (force || !workspaceBaseline) {
-      workspaceBaseline = workspaceAuthoringSnapshot(ws);
-      baselineMapIds = new Set(ws.maps.filter(map => map?.id).map(map => String(map.id)));
-    }
-  }
-
-  function installMapListObserver() {
-    const list = $('mapList');
-    if (!list || mapListObserver) return;
-    mapListObserver = new MutationObserver(() => captureWorkspaceBaselines(false));
-    mapListObserver.observe(list, { childList: true, subtree: true });
+    for (const map of ws.maps) captureMapBaseline(map);
+    workspaceBaseline = workspaceAuthoringSnapshot(ws);
+    baselineMapIds = new Set(ws.maps.filter(map => map?.id).map(map => String(map.id)));
   }
 
   function stopOriginal(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
-  }
-
-  function handleMapExport(event) {
-    stopOriginal(event);
-    try {
-      const map = activeMap();
-      if (!map) throw new Error('No active map is available.');
-      const output = buildStandaloneMapExport(map);
-      const suffix = map.category === 'building_interior' ? '.json' : '.map.json';
-      downloadJson(`${fileStem(map.name)}${suffix}`, output);
-      setStatus(map.category === 'building_interior' ? 'Building interior JSON downloaded.' : 'Map JSON downloaded.');
-    } catch (error) {
-      console.error('Map JSON export failed:', error);
-      setStatus(`Map JSON export failed: ${error?.message || error}`);
-    }
   }
 
   function handleDiffExport(event) {
@@ -380,13 +412,14 @@
       const json = JSON.stringify(diff, null, 2);
       if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
       if ($('diffSubtitle')) {
-        if (diff.mode === 'full-map-fallback') {
-          $('diffSubtitle').textContent = `No baseline was available; complete current map included Â· ${json.length.toLocaleString()} chars`;
+        if (diff.mode === 'full-map-fallback' || diff.mode === 'unchanged-full-map') {
+          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No edits since this editor tab opened' : 'No baseline available'}; local editor map included (not compared to game) · ${json.length.toLocaleString()} chars`;
         } else {
           $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
+      if (diff.mode === 'unchanged-full-map') setStatus('No edits since this editor tab opened; export contains the local editor map, not necessarily the game map.');
       if ($('diffModal')) $('diffModal').style.display = 'block';
     } catch (error) {
       console.error('Map diff export failed:', error);
@@ -416,9 +449,8 @@
       return;
     }
     installed = true;
-    captureWorkspaceBaselines(true);
-    installMapListObserver();
-    $('exportMapBtn')?.addEventListener('click', handleMapExport, { capture: true });
+    captureWorkspaceBaselines();
+    // Keep the editor's own Map JSON handler for complete interior export semantics.
     $('exportDiffBtn')?.addEventListener('click', handleDiffExport, { capture: true });
     $('diffDownloadBtn')?.addEventListener('click', handleDiffDownload, { capture: true });
 
@@ -426,12 +458,17 @@
       buildStandaloneMapExport,
       buildDetailedDiff,
       buildWorkspaceDiffBundle,
-      captureWorkspaceBaselines: () => captureWorkspaceBaselines(true),
+      captureMapBaseline, // Used after confirmed Town reload; other map baselines must not be erased.
+      adoptBundledMapBaselines, // Accepts only newly imported indexed maps, without touching unrelated pending diffs.
+      adoptBundledWorkspaceBaselines, // Accepts only newly imported canonical plateau groups and ramps.
+      captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
         baselineIds: Array.from(baselineById.keys()),
         baselineMapIds: Array.from(baselineMapIds),
         activeMapId: activeMap()?.id || null,
+        activeHasBaseline: baselineById.has(String(activeMap()?.id || '')), // Mobile-friendly baseline diagnostic.
+        activeDiffSummary: activeMap() ? (buildDetailedDiff(activeMap()).summary || null) : null,
       }),
     };
   }

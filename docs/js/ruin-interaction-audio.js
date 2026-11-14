@@ -8,9 +8,10 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
+  const MELODY_PERCUSSION_VOLUME=1; // A scored +9-semitone hit is distinct and substantially louder than the numbered stonebeat meter.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
-  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,percussionHits:0,lastPercussionVolume:0,lastPercussionPitchSemitones:null,lastPercussionScheduledAtMs:null,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function spanFor(object,explicitSize){
     const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
@@ -99,6 +100,16 @@
     debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=normalizedBeat;debug.plays++;
     return !debug.metronomeError;
   }
+  function melodyPercussionTick({whenMs=null}={}){
+    const audio=root.AudioSystem;
+    const clip=audio?.objectSfxConfig?.()?.stoneBeat2; // Authored second-beat recording is also the tune's rhythm-only percussion sample.
+    if(!clip?.url||typeof audio?.playObjectSfxKeyMetronome!=='function')return false;
+    const hit=audio.playObjectSfxKeyMetronome(MELODY_PERCUSSION_VOLUME,1,whenMs,9); // +9 semitones; one loud independent strike per scored note onset.
+    if(hit===false){debug.metronomeError='stoneBeat2 percussion unavailable';return false;}
+    debug.percussionHits++;debug.lastPercussionVolume=MELODY_PERCUSSION_VOLUME;debug.lastPercussionPitchSemitones=9;
+    debug.lastPercussionScheduledAtMs=Number.isFinite(whenMs)?whenMs:null; // Visible in Pixel Probe without a browser console.
+    return true;
+  }
   function metronomeStop(){root.AudioSystem?.cancelObjectSfxMetronome?.();} // A released plate cancels future sounds without truncating past Web Audio tails.
   function watchMovement(object,progress,options={}){
     if(!object||!Number.isFinite(progress))return false;
@@ -130,6 +141,6 @@
     if(options.silent||previous===undefined&&!next)return false; // An initial unpressed plate is silent.
     return activator(object,options); // A newly seated or released stone plate clicks only on its state edge.
   }
-  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,metronomeStop,watchMovement,watchPlate,
+  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,melodyPercussionTick,metronomeStop,watchMovement,watchPlate,
     debugSnapshot:()=>({...debug,trackedMotion:'per-object',trackedPlates:'per-object'})});
 });

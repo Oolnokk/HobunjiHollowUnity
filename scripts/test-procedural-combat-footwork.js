@@ -44,6 +44,7 @@ const THREE = { Group, Vector3, Quaternion,
   Box3: class { makeEmpty() { return this; } isEmpty() { return true; } },
 }; // Geometry-free transforms keep this regression test independent of WebGL and network dependencies.
 const context = { URL, console, location: { href: 'https://example.test/docs/' }, document: {}, window: {}, THREE }; // Hosts the actual procedural leg module.
+context.window.HobunjiCharacterRigScale = { bodyScaleFactorsFor: parent => parent.userData?.testBodyScale || null }; // Exercise real world-leg-length stride and uniform foot contact rules.
 context.window.LegBones = { solveTwoBoneLeg(_three, options) {
   const length = options.foldMaxLength || Math.hypot(options.hip.x - options.foot.x, options.hip.y - options.foot.y, options.hip.z - options.foot.z); // Retains the real solver's output shape.
   return { thighQuaternion: new Quaternion(), calfLocalQuaternion: new Quaternion(), thighLength: length / 2, calfLength: length / 2 };
@@ -55,8 +56,9 @@ source = source.replace('  window.ProceduralLegAnimation = {', `
   makeBoneGuide = makeJointGuide = function () { return new THREE.Group(); };
   window.ProceduralLegAnimation = {`);
 vm.runInNewContext(source, context);
-function rig(height = 1, gaitProfile = null) {
-  const parent = new Group(); // Moves independently from the captured world-space foot contacts.
+function rig(height = 1, gaitProfile = null, bodyScale = null) {
+  const parent = new Group();
+  parent.userData.testBodyScale = bodyScale; // Source of species-scale X/Y when comparing wide and tall actors at identical anatomical leg lengths. // Moves independently from the captured world-space foot contacts.
   const legs = context.window.ProceduralLegAnimation.attach(THREE, parent, { speciesId: 'test', modelHeight: height, gaitProfile }); // Exercises the shipped attach entry point.
   return { parent, legs };
 }
@@ -76,6 +78,31 @@ tick(run.legs, 4.3, { combat: true });
 assert(Math.abs(run.legs.getRunLean() - Math.PI / 6) < 1e-9, 'full-speed running reaches thirty degrees');
 const tallDebug = tick(tall.legs, 2, { combat: true }); // Stride changes exactly with measured leg length.
 assert(Math.abs(tallDebug.gait.fullStride / runDebug.gait.fullStride - tallDebug.gait.legLength / runDebug.gait.legLength) < 1e-9);
+const tallNarrow = rig(1, null, { x: 0.75, y: 1.5 });
+const shortWide = rig(1, null, { x: 1.5, y: 0.75 });
+const tallerGait = tick(tallNarrow.legs, 2, {}), widerGait = tick(shortWide.legs, 2, {});
+assert(tallerGait.gait.fullStride > widerGait.gait.fullStride * 1.4, 'stride follows rendered standing leg length rather than X-only travel scale');
+assert(Math.abs(tallerGait.gait.worldStrideLength - tallerGait.gait.strideLength * 0.75) < 1e-9);
+assert(Math.abs(tallerGait.gait.worldLegLength - tallerGait.gait.legLength * 1.5) < 1e-9);
+assert(Math.abs(tallerGait.left.contactY - .04 * .75) < 1e-9, 'tall narrow feet retain floor contact after mean-scaling');
+assert(Math.abs(widerGait.left.contactY - .04 * 1.5) < 1e-9, 'wide feet retain floor contact after mean-scaling');
+const measureWorldStride = gait => gait.gait.worldStrideLength / gait.gait.worldLegLength; // World reach bound cannot be tested by comparing two local distances.
+assert(measureWorldStride(tallerGait) <= 1.8 + 1e-9 && measureWorldStride(widerGait) <= 1.8 + 1e-9, 'no stride overextends the scaled world leg');
+const aspectChanged = rig(); // Starts with square body scale, then changes width/height in-place while standing still.
+tick(aspectChanged.legs, 0, {}, 1);
+aspectChanged.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+const resizedPose = tick(aspectChanged.legs, 0, {}, 1);
+assert(Math.abs(resizedPose.left.targetY - resizedPose.left.contactY) < 1e-9, 'editing the body aspect ratio never makes planted feet sink between frames');
+assert(Math.abs(resizedPose.right.targetY - resizedPose.right.contactY) < 1e-9, 'both standing soles stay anchored after rescaling');
+for (const actor of [tallNarrow, shortWide]) {
+  const pose = tick(actor.legs, .5, {}, 180); // Low speed avoids the cadence clamp, exposing unit-mismatch foot sliding.
+  const expectedCadence = Math.max(.55, Math.min(3.2, (.5 * .62) / pose.gait.worldStrideLength));
+  assert(Math.abs(pose.gait.cadenceHz - expectedCadence) < 1e-9, 'planted travel and cadence must share world-unit distances');
+}
+const extreme = rig(1, null, { x: 4, y: .1 }); // Very wide characters must respect the *world* leg reach too, not only local IK.
+const extremePose = tick(extreme.legs, 4.3, { combat: true });
+assert(measureWorldStride(extremePose) <= 1.8 + 1e-9, 'extreme wide/tiny anatomy cannot overextend a world-space leg');
+assert(extremePose.gait.fullStride <= extremePose.gait.legLength * 1.8 + 1e-9, 'shared local IK reach remains bounded');
 const falling = tick(run.legs, 9, { combat: true, airborne: true }); // High horizontal speed must not resume running in the air.
 assert.strictEqual(falling.motionMode, 'airborne');
 assert.strictEqual(run.legs.getRunLean(), 0, 'airborne pose replaces the running lean');
@@ -145,6 +172,17 @@ assert.equal(lurchDebug.gait.style, 'maskbound-lurch');
 assert.equal(lurchDebug.gait.dragSide, 'left');
 assert(maxLift.right > maxLift.left * 1.4, 'supporting foot lifts much higher than the scraping foot');
 assert(lurch.legs.getRunLean() > 0.05, 'wooden puppet visually lurches forward even at ordinary walking speed');
+const longoranRoot = new Group(); // Real Longoran species is needed to select its non-oscillating torso branch.
+const longoranLegs = context.window.ProceduralLegAnimation.attach(THREE, longoranRoot, {
+  speciesId: 'longoran', modelHeight: 1,
+  gaitProfile: { style: 'maskbound-lurch', dragSide: 'right', cadence: .66, stance: .74, dragLift: .09, lurchDegrees: 19 }
+});
+const longoranAngles = [];
+for(let i=0;i<160;i++) {
+  longoranLegs.update(1/60, 4.3, false, undefined, {});
+  if(i>30) longoranAngles.push(longoranLegs.getRunLean());
+}
+assert(Math.max(...longoranAngles)-Math.min(...longoranAngles)<1e-9,'Longoran walks must never rotate the torso backward during the step cycle');
 assert(lurchDebug.gait.runBlend < 0.25, 'combat movement does not switch into normal humanoid sprinting');
 lurch.legs.update(1 / 60, 0, false);
 assert.equal(lurch.legs.getStandingPoseDebug().motionMode, 'idle', 'lurch stops without vibrating in place');

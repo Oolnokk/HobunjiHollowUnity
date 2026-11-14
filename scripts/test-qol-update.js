@@ -206,7 +206,7 @@ function load(file, window, extra = {}) {
 
 // ── Wiring ─────────────────────────────────────────────────────────────────
 {
-  const html = fs.readFileSync('docs/index.html', 'utf8');
+  const html = require('./classic-script-group-index.js').expandClassicScriptGroups();
   const game = fs.readFileSync('docs/game.js', 'utf8');
   for (const mod of ['audio-mix', 'toast-notifications', 'qol-hotkeys', 'inventory-search']) {
     assert.match(html, new RegExp(`js/${mod}\\.js\\?v=[A-Za-z0-9_-]+`), `${mod}.js is loaded`);

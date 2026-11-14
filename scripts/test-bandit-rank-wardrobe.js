@@ -109,7 +109,7 @@ assert.equal(untouched.clothingPatterns, undefined);
   assert.match(bandit, /if \(wearsRankMetal && !configuredWeaponMetalKey\(cfg\)\) cfg = \{ \.\.\.cfg, weaponMetalKey: rollBanditWeaponMetalKey\(cfg, rank, tier\) \}/, 'the weapon metal is fixed before the armor is baked');
   assert.match(bandit, /window\.BanditRankWardrobe\?\.style\?\.\(roster, \{ rank, rnd: deps\.rnd, rollDyeId: \(\) => _banditRollDyeId\(cfg\)/, 'the bandit roster is dressed for its rank with the ordinary clothing dye pool');
   assert.match(bandit, /rank === 'captain' && !Object\.values\(cosmeticSlots\)\.includes\('overwear'\)\) fillSlot\('overwear'\)/, 'captains always have overwear');
-  assert.match(fs.readFileSync('docs/index.html', 'utf8'), /js\/combat\/bandit-rank-wardrobe\.js\?v=/);
+  assert.match(require('./classic-script-group-index.js').expandClassicScriptGroups(), /js\/combat\/bandit-rank-wardrobe\.js\?v=/);
   assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/combat\/bandit-rank-wardrobe\.js\?v=/);
   console.log('Bandit rank wardrobe: pauldrons, circlets, patterned pants/overwear and mastery-matched metal verified');
 })().catch(error => { console.error(error); process.exit(1); });

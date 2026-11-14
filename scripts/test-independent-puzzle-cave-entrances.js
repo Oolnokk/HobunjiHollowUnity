@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const context = { console, setTimeout, clearTimeout, Promise, Map, Set, Math, __hobunjiPlayerProfile:{worldId:'session'} };
+const context = { console, setTimeout, clearTimeout, Promise, Map, Set, Math, __hobunjiPlayerProfile:{worldId:'puzzle-cave-regression-world'} };
 context.window = context;
 context.__farmLog = () => {};
 const expandFootprint = (floor, rooms=[]) => {
@@ -56,7 +56,8 @@ assert.equal(Cave.debugSnapshot(zone).outdoorPuzzleCaveCount,independent.length)
 
 const layout={dens:ordinaryDens,transitions:[]},scene={transitions:[]};
 const zoneLayouts=new Map([[zone,layout]]),zoneScenes=new Map([[zone,scene]]);
-Entrances.init({zoneLayouts,zoneScenes,TILE:1,getCurrentArea:()=>zone,player:{x:0,y:0}});
+const player={x:0,y:0}; // Same mobile/controller player coordinates drive the actual exterior plate and transition.
+Entrances.init({zoneLayouts,zoneScenes,TILE:1,getCurrentArea:()=>zone,player});
 const gates=Entrances.mount(zone,{balconies:shelves},{add(){},getObjectByName(){return null;}});
 assert.equal(gates.length,independent.length);
 assert.equal(layout.transitions.length,gates.length);
@@ -75,9 +76,48 @@ assert.equal(context.NpcPathfinding.areaLinksFrom(zone).length,0,
 assert.equal(npcPreloads,0,'NPC planning never preloads independently generated cave scenes');
 assert.equal(context.NpcPathfinding.areaLinksFrom('map_parent_cave',{warmBuildings:false}).length,0);
 assert.equal(layout.dens.length,ordinaryDens.length,'independent doors never become pack or barbarian home anchors');
+assert(gates.every(gate=>!gate.solved&&gate.rise===0),'music-unavailable entrances use a closed physical plate gate, never an automatic opening');
+const gate=gates[0]; // Real portal occupancy, save, collision and re-entry path for a single-step exterior puzzle.
+assert.equal(Entrances.debugSnapshot().areas[0].portals[0].challengeKind,'cavePressurePlate');
+player.onCliffBalcony=gate.shelf.id;
+player.x=gate.plate.x;player.y=gate.plate.z;
+Entrances.update(.016,zone);
+assert(gate.solved,'stepping on the fallback plate latches its door open');
+assert.equal(Cave.exteriorPuzzleState(gate.mapId).solved,true,'the exterior plate shares the world-save solution flag');
+player.x=gate.entry.c+.5;player.y=gate.entry.r+.5;
+Entrances.update(1,zone);
+assert(layout.transitions.find(transition=>transition.targetMapId===gate.mapId)?.target==='building',
+  'the gate transition is enabled only after its slab rises and the player approaches');
+const saved=Cave.serialize(); // Persisted world state should survive a complete cave/portal reconstruction.
+assert(saved?.sites?.[gate.site.signature]?.outdoorPuzzleSolved,'the one-step plate writes the standard exterior solved record');
 Entrances.clear(zone);
 assert.equal(layout.transitions.length,0);
 assert.equal(scene.transitions.length,0,'teardown removes the scene transition copies too');
+Cave.restore(saved);
+const restoredSites=Cave.registerOutdoorPuzzleSites(zone,shelves);
+const restored=Entrances.mount(zone,{balconies:shelves},{add(){},getObjectByName(){return null;}},restoredSites);
+const reopened=restored.find(portal=>portal.mapId===gate.mapId); // Must be the same authored stone door and raised slab after saved reload.
+assert(reopened?.solved&&reopened.rise===1,'completed exterior plate does not demand a new solve after re-entry or world restore');
+player.onCliffBalcony=reopened.shelf.id;
+player.x=reopened.entry.c+.5;player.y=reopened.entry.r+.5;
+Entrances.update(.016,zone);
+assert(layout.transitions.find(transition=>transition.targetMapId===gate.mapId)?.target==='building',
+  'restored solved gate is immediately traversable, without touching its plate');
+Entrances.clear(zone);
+
+// A module may advertise a melody factory yet return no usable clock/session.
+// It must not leave a forever-locked gate rather than supplying the plate fallback.
+context.PuzzleCaveMelody={
+  generate:()=>({notes:[{index:0}],rewardTier:2}),
+  createSession:()=>null,
+};
+const invalidSessionPortals=Entrances.mount(zone,{balconies:shelves},{add(){},getObjectByName(){return null;}},restoredSites);
+const invalidMusic=invalidSessionPortals.find(portal=>Cave.exteriorPuzzleKind(portal.site)==='timedMelody'&&!portal.solved);
+assert(invalidMusic,'an unopened exterior music gate is available for invalid-session fallback testing');
+assert.equal(invalidMusic.requiresSong,false,'invalid music session switches to the single pressure-plate fallback');
+assert.equal(invalidMusic.session,null,'failed music session is cleared rather than retaining a broken note handler');
+Entrances.clear(zone);
+delete context.PuzzleCaveMelody;
 
 function caveMap(id){
   const floor=[];
@@ -126,6 +166,15 @@ for(let index=0;index<8;index++){
 }
 assert(hidden>0,'at least one of eight eligible ordinary caves gets a rock-hidden separate Puzzle Cave');
 assert.equal(Cave.debugSnapshot(zone).rockPuzzleCaveCount,hidden);
+const songExterior=independent.find(site=>Cave.exteriorPuzzleKind(site)==='timedMelody'); // Both halves must honor the same deterministic exterior music assignment.
+assert(songExterior,'the generated cliff set includes a music puzzle');
+const songInterior=Cave.decorateCavernMapData(songExterior.mapId,caveMap(songExterior.mapId));
+assert.equal(songInterior.cavePuzzle?.kind,'fireSconces','a music puzzle outside never produces another music puzzle inside');
+assert(songInterior.cavernTallTiles?.some(([c,r])=>c===songInterior.cavePuzzle.col&&r===songInterior.cavePuzzle.row),
+  'the single puzzle room is also the high-ceiling vault center');
+assert(songInterior.cavernPuzzleCeilingScale>=context.CavernGenerator.caveShape().base*2,
+  'the puzzle chamber requests at least double the ordinary cave ceiling');
+
 const childMap=Cave.decorateCavernMapData(sampleChild.mapId,caveMap(sampleChild.mapId));
 assert(childMap.cavePuzzle,'the secret destination has its own actual one-room puzzle');
 assert.equal(childMap.entrySpots?.den_exit?.col,childMap.exitCol,'named entrance uses real generated cave column');

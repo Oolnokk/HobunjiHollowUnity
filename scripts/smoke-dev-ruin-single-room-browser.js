@@ -10,8 +10,10 @@ async function main(){
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:800,height:600}});
   const errors=[]; // Printed on a headless failure so mobile testers do not need a devtools console.
+  const missingResources=[]; // Keeps the actual 404 URLs for startup troubleshooting instead of generic console text.
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  page.on('response',r=>{if(r.status()===404&&missingResources.length<12)missingResources.push(r.url());});
   try{
     const deps={
       'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js':'three/build/three.min.js',
@@ -42,8 +44,26 @@ async function main(){
     await page.waitForFunction(()=>window.__hobunjiGameStarted===true&&!!window.DevRandomRuinSimplePuzzles
       &&!!window.DevRuinSingleRoomTrial&&!!window.RuinLayerChallenges,null,{timeout:120000});
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='interior',null,{timeout:120000});
-    await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
-    await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:20000});
+    const titleStart=await page.evaluate(()=>{ // Record whether title dismissal was accepted by the actual game runtime.
+      const title=window.HobunjiTitleScreen;
+      if(!title?.installed)throw new Error('Title screen runtime never installed');
+      return {accepted:title.start(),before:title.getDebug?.()};
+    });
+    if(!titleStart.accepted&&titleStart.before?.active&&!titleStart.before?.starting)
+      throw new Error('Title screen rejected startup: '+JSON.stringify(titleStart));
+    try{
+      // Poll by elapsed time rather than animation frame: software WebGL can starve requestAnimationFrame in CI.
+      // The game only needs 320ms to dismiss the title, but a saturated renderer may delay page timers.
+      await page.waitForFunction(()=>window.HobunjiTitleScreen?.isActive?.()===false,null,{timeout:60000,polling:250});
+    }catch(error){
+      const state=await page.evaluate(()=>({
+        title:window.HobunjiTitleScreen?.getDebug?.(),
+        gameStarted:window.__hobunjiGameStarted,
+        area:window.GridTileAccessors?.getCurrentArea?.(),
+        loading:window.HobunjiLiveLoadingStatus?.snapshot?.(),
+      })).catch(e=>({diagnosticError:String(e)}));
+      throw new Error('Puzzle lab title dismissal stalled: '+JSON.stringify({titleStart,state}),{cause:error});
+    }
     const ui=await page.evaluate(()=>({
       button:!!document.getElementById('devRandomRuinSingleRoomBtn'),
       options:[...document.querySelector('#devRandomRuinSinglePuzzleType')?.options||[]].map(o=>o.value),
@@ -149,6 +169,7 @@ async function main(){
   }catch(error){
     console.error('Standalone puzzle lab smoke failure:',error);
     console.error('Recent browser errors:',errors.slice(-25).join('\n'));
+    if(missingResources.length)console.error('Missing resource URLs:',missingResources.join('\n'));
     throw error;
   }finally{await browser.close();}
 }

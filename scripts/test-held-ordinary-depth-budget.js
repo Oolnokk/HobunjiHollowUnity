@@ -28,8 +28,10 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const scope = {
     window: {}, objectProto: { onBeforeRender: undefined }, internalReplay: false,
     lastBaseStencilBits: tint ? 1 : 0, replayScissorEnabled: false, replayCullEnabled: false,
-    buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [] }),
+    buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => tint,
+    splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
+    beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
     collectVisible: registry => registry === 'png' ? [cutout] : [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),

@@ -640,7 +640,7 @@
       socket.add(calibration);
       root.add(socket);
       const profileKey = `${speciesId}::${gender}`; // Stable lookup follows live editor anatomy replacement without altering the grip origin.
-      global.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, socket, parent, () => global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[profileKey]?.anatomy?.handScaleAxes);
+      global.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, socket, parent, () => global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[profileKey]?.anatomy?.handScaleAxes, true); // Apply the body X/Y mean through hand and wrist rotations for all species.
       sockets[side] = { socket, calibration, guide, visual: null, toolCalibrationEnabled: false };
     }
 

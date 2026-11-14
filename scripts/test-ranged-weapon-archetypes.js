@@ -216,7 +216,7 @@ assert.match(gameSource, /getHeldRangedTexture:[\s\S]*material\?\.map/, 'ranged 
 assert.match(gameSource, /setHeldRangedVisible:[\s\S]*toolMeshMap\.ranged\.visible/, 'game runtime must expose exact in-hand ranged visibility handoff.');
 assert.match(gameSource, /getHeldRangedWorldTransform:[\s\S]*getWorldPosition[\s\S]*getWorldQuaternion[\s\S]*planeWidth[\s\S]*planeHeight/, 'projectiles must sample the rendered held-plane transform and exact geometry at the current release frame.');
 assert.match(gameSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*releaseThrownCharge\?\.\('input-action-release'\)/, 'keyboard/controller Action 1 release must finish the active thrown charge through the shared input path.');
-assert.match(gameSource, /desktopHeldItemMousePresses\.delete\(e\.button\)[\s\S]*activeTool === 'ranged'[\s\S]*runInputAction\('action1', 'release'\)/, 'desktop mouse release must route a ranged thrown hold through the same shared release path.');
+assert.match(gameSource, /desktopHeldItemMousePresses\.delete\(e\.button\)[\s\S]*activeTool === 'ranged'[\s\S]*runInputAction\('action1', 'release', 'mouse:' \+ e\.button\)/, 'desktop mouse release must route a ranged thrown hold through the same shared release path.');
 assert.doesNotMatch(rangedArchetypeSource, /pollControllerRelease|controllerBindingFor\('action1'\)|desktopBindingFor\('action1'\)/, 'thrown charges must not have a private controller/keyboard release watcher.');
 assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window.RangedWeapons?.update(dt);'),
   'held tool animation must advance before ranged projectile spawning samples its world transform.');

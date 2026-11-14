@@ -53,28 +53,53 @@ vm.runInNewContext(fs.readFileSync('docs/config/character-rig-scale-defaults.js'
 const source=fs.readFileSync('docs/js/character-rig-scale.js','utf8'); // Actual owner function, including its per-node updateMatrix implementation.
 const context={window:windowObject};
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('  function installPartScaleAxes('),source.indexOf('  const api = Object.freeze(')),context);
-const axes=windowObject.HobunjiCharacterRigScaleDefaults.nuhonganPartScaleAxes; // Fixed authoring, shared by both genders.
+vm.runInContext(source.slice(source.indexOf('  function characterScaleOwnerFor('),source.indexOf('  const api = Object.freeze(')),context);
+const axes=windowObject.HobunjiCharacterRigScaleDefaults.nuhonganPartScaleAxes; // Nuhongan's donor-size offset is now one uniform factor.
+assert.equal(axes.x, axes.y);
+assert.equal(axes.y, axes.z);
 for(const gender of ['male','female']) for(const angle of [0,0.4,Math.PI/2,-1.8]) {
-  const donorScale=windowObject.HobunjiCharacterRigScaleDefaults.scaleFor('tletingan',gender); // Expected whole-rig dimensions.
-  const smallScale=windowObject.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan',gender); // Preserved Nuhongan dimensions.
-  const donor=node(null), small=node(null); // Floor parents have identical rotation, different body scales.
-  donor.pose=rotation('y',0.7).multiply(new Matrix4().makeScale(donorScale.x,donorScale.y,donorScale.x));
+  const smallScale=windowObject.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan',gender);
+  const expectedUniform=(smallScale.x+smallScale.y)*0.5*axes.x;
+  const donor=node(null), small=node(null);
+  donor.pose=rotation('y',0.7).multiply(new Matrix4().makeScale(expectedUniform,expectedUniform,expectedUniform));
   small.pose=rotation('y',0.7).multiply(new Matrix4().makeScale(smallScale.x,smallScale.y,smallScale.x));
-  const donorJoint=node(donor,angle,'x'), smallJoint=node(small,angle,'x'); // Moving leg or hand chain.
-  const donorPart=node(donorJoint,0.6,'z'), smallPart=node(smallJoint,0.6,'z'); // Rotated part with an unchanged local attachment origin.
-  const before=world(smallPart).elements; // Attachment position before size-only authoring.
-  assert.equal(context.installPartScaleAxes({Matrix4},smallPart,small,axes),true);
-  const expected=world(donorPart).elements, actual=world(smallPart).elements; // Geometry axes must match the donor through arbitrary joint rotations.
-  for(const index of [0,1,2,4,5,6,8,9,10]) assert.ok(Math.abs(actual[index]-expected[index])<1e-9, `${gender} joint ${angle}: geometry axis ${index}`);
+  small.userData={hobunjiCharacterRigScaleState:{factor:{x:smallScale.x,y:smallScale.y}}};
+  const donorJoint=node(donor,angle,'x'), smallJoint=node(small,angle,'x');
+  const donorPart=node(donorJoint,0.6,'z'), smallPart=node(smallJoint,0.6,'z');
+  const before=world(smallPart).elements;
+  assert.equal(context.installPartScaleAxes({Matrix4},smallPart,small,axes,true),true);
+  const expected=world(donorPart).elements, actual=world(smallPart).elements;
+  for(const index of [0,1,2,4,5,6,8,9,10]) assert.ok(Math.abs(actual[index]-expected[index])<1e-9,`${gender} joint ${angle}: geometry axis ${index}`);
   for(const index of [12,13,14]) assert.ok(Math.abs(actual[index]-before[index])<1e-9,'attachment origin/arm reach must not move');
-  assert.equal(smallScale.head,donorScale.head,'head world size already matches');
   windowObject.HobunjiAttackEditorHandCalibrationMode={active:true};
-  const neutral=world(smallPart).elements; // Neutral calibration does not inherit authored size compensation.
+  const neutral=world(smallPart).elements;
   for(let index=0;index<16;index++) assert.ok(Math.abs(neutral[index]-before[index])<1e-9);
   windowObject.HobunjiAttackEditorHandCalibrationMode=null;
 }
-console.log('Authored part axes match Tletingan world size through moving joints without moving attachment origins.');
+for(const species of ['longoran','mao-ao','mammakhbuur','engh-sho','kenkari']) for(const gender of ['male','female']) {
+  const body=windowObject.HobunjiCharacterRigScaleDefaults.scaleFor(species,gender);
+  const parent=node(null); parent.pose=rotation('y',0.37).multiply(new Matrix4().makeScale(body.x,body.y,body.x));
+  parent.userData={hobunjiCharacterRigScaleState:{factor:{x:body.x,y:body.y}}};
+  const joint=node(parent,-0.6,'x'), part=node(joint,0.7,'z');
+  const before=world(part).elements; // Record unchanged grip and ankle origins in the currently stretched body.
+  assert.equal(context.installPartScaleAxes({Matrix4},part,joint,()=>null,true),true, 'even species without authored per-part axes need mean-size compensation');
+  const actual=world(part).elements;
+  const mean=(body.x+body.y)*0.5;
+  const owner=node(null); owner.pose=rotation('y',0.37).multiply(new Matrix4().makeScale(mean,mean,mean));
+  const referencePart=node(node(owner,-0.6,'x'),0.7,'z');
+  const expected=world(referencePart).elements;
+  for(const index of [0,1,2,4,5,6,8,9,10]) assert.ok(Math.abs(actual[index]-expected[index])<1e-9,`${species}/${gender}: all-world-axis geometry must be uniform`);
+  for(const index of [12,13,14]) assert.ok(Math.abs(actual[index]-before[index])<1e-9,`${species}/${gender}: grip/ankle origin must be unchanged`);
+}
+const late=node(null), lateJoint=node(late,0.8,'x'), latePart=node(lateJoint,-0.3,'z');
+late.pose=new Matrix4().makeScale(0.75,1.5,0.75);
+assert.equal(context.installPartScaleAxes({Matrix4},latePart,lateJoint,()=>null,true),true);
+const beforeLate=world(latePart).elements;
+late.userData={hobunjiCharacterPartScaleFactors:{x:0.75,y:1.5}}; // Enemies receive authoritative scale after asynchronous rig construction.
+const afterLate=world(latePart).elements;
+assert.notDeepEqual(afterLate.slice(0,12),beforeLate.slice(0,12),'late-authored hostile scales activate on the next update');
+for(let i=12;i<=14;i++)assert.ok(Math.abs(afterLate[i]-beforeLate[i])<1e-9,'late hostile scale still keeps the ankle/grip origin fixed');
+console.log('Part scale averaging verified for all species, moving joints, original attachment coordinates and late hostile scales.');
 const editorSource=fs.readFileSync('docs/tools/animation-author/index.html','utf8'); // Executes the actual import/export anatomy normalizer.
 windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES={characters:{'nuhongan::male':{anatomy:{handScaleAxes:axes,footScaleAxes:axes,handScale:0.95,footScale:0.95,armLengthHeightPercentOffset:6}}}};
 const editorContext={window:windowObject,CHARACTER_ANATOMY_VERSION_V1530:1}; // Minimal dependencies of the editor owner.

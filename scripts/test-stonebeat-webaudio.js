@@ -50,6 +50,12 @@ window.AudioSystem.init({audioUrlFailed:()=>false,isRealMediaError:()=>false,mar
   assert(sources.every(source=>source.offset>0.015&&source.offset<0.03),'MP3 leading silence is trimmed uniformly without shortening decay');
   assert.equal(api.objectSfxDebugSnapshot().last.key,'stoneBeat4');
   assert.equal(api.objectSfxDebugSnapshot().last.backend,'web-audio');
+  assert.equal(api.playObjectSfxKeyMetronome(.36,1,1700,9),true,'scored note percussion reuses stonebeat 2');
+  assert.equal(sources.length,5,'the tuned rhythm strike gets its own overlapping buffer source');
+  assert.equal(sources[4].startedAt,100.7,'percussion respects an absolute future note deadline');
+  assert(Math.abs(sources[4].playbackRate.value-Math.pow(2,9/12))<1e-10,
+    '+9 semitone pitch change does not alter the other four metronome samples');
+  assert.equal(api.objectSfxDebugSnapshot().last.pitchSemitones,9,'mobile diagnostics show the percussion transposition');
   api.playObjectSfxKeyMetronome(.72,0,995);
   api.cancelObjectSfxMetronome();
   assert.equal(sources[0].stopped,true,'a plate release cancels a future already-queued strike');

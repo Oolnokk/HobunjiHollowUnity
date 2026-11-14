@@ -119,6 +119,30 @@
       box-shadow: 0 4px 18px rgba(0,0,0,0.32);
     }
 
+    /* Real pending network/asset work; text alone, directly below the top information bar.
+       No pill, backdrop or box is painted. Updated on load edges, not gameplay frames. */
+    #liveLoadingStatus {
+      position: fixed;
+      left: calc(var(--play-right) - 17 * var(--col));
+      top: calc(var(--oy) + 2 * var(--row) + 5px);
+      width: calc(17 * var(--col));
+      max-width: calc(100vw - 18px);
+      z-index: 19;
+      color: rgba(242, 234, 209, 0.87);
+      font: 11px/1.4 'DM Mono', monospace;
+      letter-spacing: 0.02em;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 7px rgba(0, 0, 0, 0.75);
+      pointer-events: none;
+      user-select: none;
+    }
+    #liveLoadingStatus[hidden],
+    body.authored-cutscene #liveLoadingStatus,
+    body.introduction-loading #liveLoadingStatus { display: none !important; }
+
     /* Skyrim-style bearing strip. Marker glyphs move with player heading;
        their font size is supplied by navigation-compass.js from distance. */
     #navigationCompass {

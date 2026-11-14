@@ -534,12 +534,18 @@
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
   function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
-    const key = `${renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones)}|${renderOpts?.minimumStretch ?? 0.25}`; // Distinct fast-compression results cannot alias the ordinary renderer cache.
+    const breathComposer = Number(renderOpts.breathYawnDurationS) > 0 ? window.YawnBreathComposer?.compose : null; // Only a missing yawn recording opts out of the generic WSOLA renderer.
+    const breathMode = typeof breathComposer === 'function'; // Cache separates composed yawns from unmodified voice rendering.
+    const key = `${renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones)}|${renderOpts?.minimumStretch ?? 0.25}|breath=${breathMode ? Number(renderOpts.breathYawnDurationS).toFixed(3) + ':' + Number(renderOpts.breathYawnCadence ?? 1).toFixed(3) : 'none'}`; // Distinct fast-compression results cannot alias the ordinary renderer cache.
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(async () => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = await processConstantAxesOffThread(decoded, clampTempoFor(tempo, maxTempo), clampPitchFor(pitchSemitones, maxPitchSemitones), renderOpts);
+      const channels = breathMode
+        ? breathComposer(Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index)),
+            decoded.sampleRate, Number(renderOpts.breathYawnDurationS),
+            Math.pow(2, clampPitchFor(pitchSemitones, maxPitchSemitones) / 12), renderOpts.breathYawnCadence)
+        : await processConstantAxesOffThread(decoded, clampTempoFor(tempo, maxTempo), clampPitchFor(pitchSemitones, maxPitchSemitones), renderOpts); // Yawn grains bypass the extreme 4x stretch; all ordinary voices retain WSOLA.
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -702,7 +708,8 @@
     startTimer = setTimeout(() => {
       if (stopped) return;
       lastPlaybackError = null;
-      lastBackend = 'full-source WSOLA + native pitch resample';
+      lastBackend = Number(opts.breathYawnDurationS) > 0 && window.YawnBreathComposer?.compose
+        ? 'breath-grain yawn + native pitch resample' : 'full-source WSOLA + native pitch resample';
       lastStartedAt = Date.now();
       opts.onStarted?.();
     }, Math.max(0, Math.round((startAt - context.currentTime) * 1000)));
@@ -727,9 +734,9 @@
     if (opts.preserveDurationOnFallback === true && Math.abs(tempo - 1) < 0.0001) {
       setPitchPreservation(audio, true);
       audio.playbackRate = 1; // Stone cues must keep original duration even if independent DSP is unavailable.
-    } else if (Math.abs(pitch) < 0.05) {
+    } else if (opts.preservePitchOnFallback === true || Math.abs(pitch) < 0.05) {
       setPitchPreservation(audio, true);
-      audio.playbackRate = tempo;
+      audio.playbackRate = tempo; // Yawns must preserve their source pitch at 1/4 tempo; native media cannot also apply an independent species transposition.
     } else {
       // Emergency fallback only. The normal Web Audio path keeps speed/pitch
       // independent; browsers without it necessarily couple them here.

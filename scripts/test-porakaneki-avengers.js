@@ -27,6 +27,38 @@ assert.equal(cfg.avengers.retreatHours, 1);
 assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
 assert.equal(omgurkuCfg.avengers, undefined, 'only the Porakaneki keep an Avenger band');
+
+const tribeReactionKeys = ['greetingLines', 'initialWarnings', 'escalationWarnings']; // Used to confirm both tribes retain distinct, parallel reaction pools.
+for (const key of tribeReactionKeys) {
+  const omgurkuLines = omgurkuCfg.reputation[key]; // Used to validate the Omgurku lines alongside the corresponding Porakaneki reactions.
+  const porakanekiLines = cfg.reputation[key]; // Used to guard each original broken-English Porakaneki reaction from accidental replacement.
+  assert.equal(omgurkuLines.length, porakanekiLines.length, `${key}: keep the same reaction choices for both tribes`);
+  omgurkuLines.forEach((line, index) => assert.notEqual(line, porakanekiLines[index], `${key}[${index}]: Omgurku reactions must have distinct text`));
+}
+assert.deepEqual(omgurkuCfg.reputation.greetingLines, [
+  "It's good to see you, friend.",
+  "Welcome back. We're glad to have you at our camp.",
+  "You're safe to walk here.",
+], 'Omgurku friendly greetings use full, grammatical English without changing their meaning');
+assert.deepEqual(omgurkuCfg.reputation.initialWarnings, [
+  "Stay to your path, and we shall stay to ours, deceived one.",
+  "You intrude upon our territory, deceived one. Go back the way you came, or face the consequences.",
+  "Leave this place now and no blood shall be spilled. Stay, and it shall!",
+], 'Omgurku territorial warnings use the three authored lines, retaining the exact wording and punctuation');
+assert.deepEqual(omgurkuCfg.reputation.escalationWarnings, [
+  "Leave, or we'll fight!",
+  'We told you to go away. Leave. Now!',
+], 'Omgurku escalation maintains the original threat and urgency');
+assert.deepEqual(cfg.reputation.initialWarnings, [
+  'Go way. No want trouble',
+  'This our spot, not yours. Leave.',
+  'No want fight. Go way.',
+], 'Porakaneki retain their authored broken-English territorial warnings');
+assert.deepEqual(cfg.reputation.escalationWarnings, [
+  'Leave or we fight!',
+  'We said go way. Go way. Now!',
+], 'Porakaneki escalation remains unchanged');
+
 assert.deepEqual([cfg.smallCamps.minResidents, cfg.smallCamps.maxResidents], [2, 4], 'Porakaneki former per-camp cohort retains its original 2–4 resident roll');
 assert.deepEqual([omgurkuCfg.smallCamps.minResidents, omgurkuCfg.smallCamps.maxResidents], [2, 4], 'Omgurku former per-camp cohort retains its original 2–4 resident roll');
 

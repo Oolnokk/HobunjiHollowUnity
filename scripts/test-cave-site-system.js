@@ -195,6 +195,13 @@ for(const map of puzzleCaves){
   const puzzle=map.cavePuzzle;
   assert(puzzle && puzzle.room.width===9 && puzzle.room.depth===9,
     'Puzzle Cave always receives its own nine-by-nine room');
+  const originalHeight=context.CavernGenerator.caveShape().base; // Every puzzle-room carve must be twice as high as ordinary tunnels.
+  assert(map.cavernTallTiles?.some(tile=>tile[0]===puzzle.col&&tile[1]===puzzle.row),
+    'the puzzle center is registered as a tall vault point for the real SDF carver');
+  assert(map.cavernPuzzleCeilingScale>=originalHeight*2,
+    'the puzzle vault is at least twice ordinary cave height');
+  assert(map.cavernCarvedHeightScale>=originalHeight*2,
+    'the actual clearance recarve uses the requested double-height sculpt volume');
   const floorKeys=new Set(map.floor.map(tile=>tile.join(','))); // Source-of-truth carved floor validates puzzle placement.
   for(let row=puzzle.room.row;row<puzzle.room.row+9;row++)
     for(let col=puzzle.room.col;col<puzzle.room.col+9;col++)
@@ -216,6 +223,72 @@ for(const map of puzzleCaves){
       'two charges do not overlap');
   }
 }
+
+// The real cave-site owner must not select an unplayable fire gate when a
+// melody is unavailable but the cave lacks guaranteed flame charges.
+{
+  const map=decorate(profile('map_i_test_plate_fallback','puzzle_cave')); // Independent fixture avoids modifying reward tests' cave states.
+  const plan=Cave.__test.plansByMapId.get(map.id);
+  assert(plan?.puzzleCave,'fallback fixture has a normal 9x9 playable chamber');
+  plan.puzzleCave.kind='timedMelody'; // Reproduces a saved music assignment when its runtime cannot be initialized.
+  map.caveShattercasks=[]; // A melody cave did not generate the fire puzzle's consumable charges.
+  const composed=[]; // Captures the same RuinLayerChallenges.compose arguments used by the actual cave scene loader.
+  context.PersistentGroundFire={intersects:()=>false}; // Fire support alone cannot conjure supplies missing from a melody cave.
+  context.RuinLayerChallenges={compose(options){
+    const challenge={kind:options.kind,solved:false,doorRise:0,door:{position:{y:0}},
+      plateSignal:{setActive(value){challenge.plateLit=!!value;}},
+      dispose(){challenge.disposed=true;}};
+    composed.push({options,challenge});
+    return challenge;
+  }};
+  const scene={add(){}};
+  Cave.buildInteriorProps(map.id,map,scene); // Real interior builder owns fallback choice and persisted completion restoration.
+  assert.equal(composed.length,1);
+  assert.equal(composed[0].options.kind,'cavePressurePlate',
+    'music failure uses the one-step plate, never an unsupplied fire-sconce gate');
+  composed[0].options.onSolved();
+  assert.equal(Cave.__test.runtimeStateBySignature.get(Cave.profileForMapId(map.id).signature)?.puzzleSolved,true,
+    'stepping on an interior fallback plate stores the canonical solved flag');
+  Cave.buildInteriorProps(map.id,map,scene);
+  assert.equal(composed.length,2);
+  assert.equal(composed[1].challenge.kind,'cavePressurePlate');
+  assert(composed[1].challenge.solved&&composed[1].challenge.plateLit&&composed[1].challenge.doorRise===1,
+    're-entering a solved interior cave restores both raised gate and illuminated plate without another puzzle');
+  assert.equal(composed[1].challenge.door.position.y,3.5,
+    'the fallback gate is already physically raised on scene rebuild');
+  assert.equal(composed[0].challenge.disposed,true,'old cave puzzle is disposed when its interior scene is rebuilt');
+  delete context.RuinLayerChallenges;
+  delete context.PersistentGroundFire;
+}
+
+// Small independent cave maps previously had no eligible room and silently
+// produced neither an interior challenge nor the reward it should guard.
+{
+  const p=profile('map_i_test_cramped_puzzle','puzzle_cave');
+  installProfile(p);
+  const cramped=baseMap(p.mapId);
+  cramped.floor=[[1,1],[1,2],[2,1],[2,2],[2,3]];
+  cramped.cols=5;cramped.rows=5;cramped.exitCol=1;cramped.exitRow=1;
+  cramped.exits[0].tiles=[[1,1]];
+  cramped.oreRocks=[];cramped.creatureSpawns=[];
+  Cave.decorateCavernMapData(cramped.id,cramped);
+  assert.equal(cramped.cavePuzzle?.kind,'cavePressurePlate',
+    'a floor too small to host a standard music/fire puzzle receives the single pressure-plate fallback');
+  const keys=new Set(cramped.floor.map(tile=>tile.join(',')));
+  for(let row=cramped.cavePuzzle.room.row;row<cramped.cavePuzzle.room.row+9;row++)
+    for(let col=cramped.cavePuzzle.room.col;col<cramped.cavePuzzle.room.col+9;col++)
+      assert(keys.has(col+','+row),'the fallback cave chamber is fully carved and walkable');
+  assert(keys.has(cramped.cavePuzzleTreasure.col+','+cramped.cavePuzzleTreasure.row),
+    'cramped fallback still has a reachable real chest beyond the plate-controlled stone gate');
+}
+
+const musicalCliff=outdoor.find(site=>Cave.exteriorPuzzleKind(site)==='timedMelody'); // Exterior and interior puzzle kinds share one deterministic seed.
+assert(musicalCliff,'the outdoor fixture has a musical entrance');
+const correspondingInterior=decorate(musicalCliff);
+assert.equal(correspondingInterior.cavePuzzle?.kind,'fireSconces',
+  'a musical exterior always selects a non-musical interior puzzle');
+const simpleCliff=outdoor.find(site=>Cave.exteriorPuzzleKind(site)==='cavePressurePlate');
+assert(simpleCliff,'the outdoor fixture also exercises its non-musical pressure-plate option');
 
 const mineMap = decorate(profile('map_i_test_mine', 'ore_mine'));
 assert.equal(mineMap.denMotherKind, null, 'cave without an animal den strips Den-Mother');

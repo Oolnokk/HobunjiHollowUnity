@@ -1966,7 +1966,7 @@
     candidates.sort(compareBanditSpacingOrder);
     for (let i = 0; i < candidates.length; i++) {
       const o = candidates[i];
-      if (o === c || o.health <= 0) continue;
+      if (o === c || o.health <= 0 || o.areaId !== c.areaId) continue; // Different zones share coordinates, not physical personal space.
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
       if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
@@ -2884,6 +2884,7 @@
     avatarRef.group.userData.portraitModelWidth = originalWidth; // Scene hitboxes apply matrixWorld scale themselves; metadata stays local.
     avatarRef.group.userData.portraitModelHeight = originalHeight;
     avatarRef.rigScale = { x, y, head, offsetY }; // Mobile-readable proof of the actual values applied.
+    avatarRef.group.userData.hobunjiCharacterPartScaleFactors = { x, y }; // Later-built hostile metadata enables uniform hands/feet without second-scaling its parent.
     return true;
   }
 

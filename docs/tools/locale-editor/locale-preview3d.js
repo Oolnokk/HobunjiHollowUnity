@@ -181,7 +181,8 @@
     }
     await loadScript('../../js/terrain-preview.js?v=20261111mesaPreview1', () => !!window.TerrainPreview?.buildRockMoundBumpField);
     await loadScript('../../js/procedural-furniture.js', () => !!window.ProceduralFurniture?.buildPartMesh);
-    await loadScript('../../js/authored-furniture-runtime.js?v=20261104hf23bb18', () => !!window.AuthoredFurniture?.buildGroup);
+    await loadScript('../../js/furniture-tile-span.js?v=20261113span1', () => !!window.FurnitureTileSpan?.apply);
+    await loadScript('../../js/authored-furniture-runtime.js?v=20261114hspan1704', () => !!window.AuthoredFurniture?.buildGroup);
     await loadScript('../../js/color-fill.js?v=20260923colorfill7', () => !!window.ColorFill?.shadeFillPixels);
     await loadScript('../../js/portrait-utils.js?v=20261112longoran1', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);

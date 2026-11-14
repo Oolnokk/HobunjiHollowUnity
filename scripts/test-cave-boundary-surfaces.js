@@ -153,4 +153,39 @@ assert(mappingCalls.every(call=>call.maxPatchWorldSize===6));
   assert.equal(CavernGenerator.caveShape().base,2,'configured minimum height is 0.8 of 2.5');
   delete global.HobunjiCaveShapeConfig;
 }
+// Full SDF carve regression: the original 2x sculpt volume was only 1.67x high
+// at the puzzle's center after irregular roof facets were applied.
+{
+  const footprint=[]; // One nine-by-nine challenge room joined to the ordinary-height entrance corridor.
+  for(let row=2;row<=14;row++)for(let col=5;col<=7;col++)footprint.push([col,row]);
+  for(let row=14;row<=22;row++)for(let col=2;col<=10;col++)footprint.push([col,row]);
+  const buildPuzzleShell=tall=>{
+    const cave={id:'double-vault-actual-geometry',floor:footprint,exitCol:6,exitRow:2,cols:12,rows:25,mesh:{}};
+    if(tall){
+      cave.cavernTallTiles=[[6,18]]; // Same height marker that CaveSiteSystem places at the center of a puzzle chamber.
+      cave.cavernPuzzleCeilingScale=CavernGenerator.caveShape().base*2.5; // Raised SDF volume supplies real twofold room after low facets.
+    }
+    return CavernGenerator.expandCavernMapData(cave,[],()=>.5);
+  };
+  const normal=buildPuzzleShell(false),tall=buildPuzzleShell(true);
+  assert.equal(tall.mesh.wallHeightScale,undefined,'the double-height puzzle ceiling is actually carved rather than visually stretched');
+  assert(tall.cavernCarvedHeightScale>=normal.cavernCarvedHeightScale*2,'the puzzle sculpt volume more than doubles');
+  const heightAt=(map,col,row)=>{
+    const hit=nearestAbove(map.mesh,col+.5,row+.5,1);
+    assert(hit&&!hit.up,`puzzle geometry ${col},${row} retains a solid vaulted ceiling above playable floor`);
+    return hit.y;
+  };
+  let minRatio=Infinity; // Worst actual roof-to-floor clearance ratio across every one of the 81 challenge tiles.
+  for(let row=14;row<=22;row++)for(let col=2;col<=10;col++){
+    const baseHeight=heightAt(normal,col,row),raisedHeight=heightAt(tall,col,row);
+    const ratio=raisedHeight/baseHeight;
+    minRatio=Math.min(minRatio,ratio);
+    assert(ratio>=2,`puzzle tile ${col},${row} has only ${ratio.toFixed(2)}x the true ordinary ceiling height`);
+  }
+  assert(heightAt(tall,6,3)<heightAt(normal,6,3)*1.8,
+    'the raised puzzle chamber ceiling tapers back toward ordinary headroom through the entrance tunnel');
+  assert.equal(tall.floor.length,normal.floor.length,'vault raising never deletes or adds puzzle floor collision tiles');
+  assertRoofed(tall,'double-height puzzle cave');
+  console.log('PASS puzzle cavern physical roof height >=2x over all 81 chamber tiles; minimum '+minRatio.toFixed(2)+'x');
+}
 console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth, faceted low-poly roofs and walls, ruin caves tall at the door, walls on tile edges');

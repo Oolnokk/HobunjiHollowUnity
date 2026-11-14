@@ -15,6 +15,7 @@ async function main() {
   let ceremonies = 0; // Counts Slagothim Koma events without rendering Three.js.
   let interruptions = 0; // Counts aborted ceremonial drinks after combat begins.
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
+  const audioCalls = []; // Records each yawn playback to separate real recordings from fallback composition.
   let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
@@ -24,6 +25,10 @@ async function main() {
   const listeners = {}; // Captures the real sleep-completion event listener added by NpcYawnRest.
   let playerKomaOptions = null; // Records action-lock and facing ownership on the player ceremony.
   let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
+  let playerRested = true; // Starts protected while isolated NPC tests run, then exercises player hourly yawns explicitly.
+  const playerChestChannels = new Map(); // Verifies the shared player body compositor receives and clears its yawn contribution.
+  const stretchCalls = []; // Records begin, pose update and completion from the player-only final-render presentation.
+  let stretchActionBlocked = false; // Simulates another action taking ownership before the next hourly yawn.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
@@ -36,6 +41,18 @@ async function main() {
     _npcWalkers: [walker],
     __hobunjiPlayerProfile: { characterId: 'character-a', appearance: { speciesId: 'mao-ao', gender: 'female' } },
     WorldPortraitLife: { getPlayerAvatar: () => ({ group: playerAvatar }) },
+    PlayerBodyTransformComposer: {
+      setChannel: (name, channel) => playerChestChannels.set(name, channel),
+      clearChannel: name => playerChestChannels.delete(name),
+    },
+    TemplePrayerRestBlessings: { isRested: () => playerRested, isWellRested: () => false },
+    PlayerYawnStretchPresentation: {
+      start: entry => { stretchCalls.push({ kind: 'start', entry }); return true; },
+      update: (entry, progress) => { stretchCalls.push({ kind: 'update', entry, progress }); return true; },
+      end: entry => { stretchCalls.push({ kind: 'end', entry }); },
+      actionBlocked: () => stretchActionBlocked,
+      debugSnapshot: () => ({ test: true }),
+    },
     BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
@@ -52,7 +69,7 @@ async function main() {
           playerKomaOptions = options;
           assert.equal(options.participantId, 'player', 'the real player actions must be locked, never npc:player');
           assert.equal(options.preserveFacing, true);
-          assert.equal(options.allowWalking, false);
+          assert.equal(options.allowWalking, true, 'player Koma still allows the quarter-speed yawn walk');
         }
         if (actor.rec.id === 'longoran-retry') pendingChews.set(actor.rec.id, onDrink);
         else onDrink();
@@ -82,7 +99,7 @@ async function main() {
       combatAudioSpatial: actor => { audioActor = actor; return { gain: 1 }; },
     },
     AnimalVoiceIndependentPlayback: {
-      playIndependent: (_url, opts) => { audioOptions = opts; return { stop() {} }; },
+      playIndependent: (url, opts) => { audioOptions = opts; audioCalls.push({ url, opts }); return { stop() {} }; },
     },
     CharacterVoiceOwner: { request: () => ({}), bindStop() {}, release() {} },
     __farmLog() {}, addEventListener(name, callback) { listeners[name] = callback; },
@@ -132,6 +149,8 @@ async function main() {
   assert.ok(audioOptions, 'the first yawn must actually play a voice, not merely return a playback plan');
   assert.equal(audioOptions.pitchSemitones, 6);
   assert.equal(audioOptions.tempo, 0.8);
+  assert.equal(audioOptions.preservePitchOnFallback, true, 'a borrowed yawn must preserve pitch on native media');
+  assert.equal(audioOptions.breathYawnDurationS, undefined, 'existing male yawn recordings must not be synthesized');
   assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
   assert.equal(audioActor?.x, 128);
   walker.root.position.x = 6;
@@ -175,18 +194,19 @@ async function main() {
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'waking');
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   ms = 14000; frame({ timestamp: ms });
-  hour = 33; ms = 14500; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().active.length, 0, '16-hour post-sleep rest buff suppresses fatigue');
-  hour = 35; ms = 15000; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
+  hour = 20.99; ms = 14900; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'three-hour NPC Rested protects until its actual expiry');
+  hour = 21; ms = 15400; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue', 'NPC yawns resume at the three-hour boundary, without a hidden extra hour');
   assert.equal(ceremonies, 1, 'Koma cannot refresh merely because midnight passed');
   ms = 20500; frame({ timestamp: ms });
   hour = 37; ms = 21000; frame({ timestamp: ms });
   assert.equal(ceremonies, 2, 'first eligible yawn after 24 rolling in-game hours repeats Koma');
 
   const noYawnClip = await runtime._test.voiceFor('kenkari', 'female');
-  assert.equal(noYawnClip.source, 'breathing x4 duration');
-  assert.equal(noYawnClip.tempo, 0.2, 'female tempo 0.8/4 is a genuine fourfold duration');
+  assert.equal(noYawnClip.source, 'reconstructed breathing');
+  assert.equal(noYawnClip.tempo, 1, 'fallback breathing must not run the old robotic quarter-speed WSOLA');
+  assert.equal(noYawnClip.cadence, 0.8, 'species-relative tempo becomes grain cadence without stretching the actual breath');
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
   assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/breath.m4a');
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
@@ -225,8 +245,16 @@ async function main() {
   assert.equal(ceremonies, 4, 'Mao-ao players never chew ceremonial Koma');
   assert.equal(toasts.length, 0, 'Mao-ao player has no Koma toast');
   assert.equal(expressions.get('player'), 'yap', 'the player wakes with the existing mouth-open yawn expression');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'player waking yawn slows walking to 25% like NPC fatigue');
+  ms = 43000; frame({ timestamp: ms });
+  assert.ok(playerChestChannels.has('player-yawn-rest'), 'player torso uses the shared body transform compositor');
+  assert.ok(stretchCalls.some(call => call.kind === 'start' && call.entry.isPlayer), 'player yawn invokes the dedicated stretch presentation');
+  assert.ok(stretchCalls.some(call => call.kind === 'update' && call.progress > 0), 'player yawn supplies live animation progress to the stretch');
   ms = 46000; frame({ timestamp: ms });
   assert.equal(expressions.has('player'), false, 'player mouth expression clears after the yawn');
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'the player speed returns to normal after five seconds');
+  assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'the torso channel is cleared after yawning');
+  assert.ok(stretchCalls.some(call => call.kind === 'end' && call.entry.isPlayer), 'all player yawn visuals release after completion');
 
   for (const species of ['tletingan', 'nuhongan', 'longoran']) {
     window.__hobunjiPlayerProfile.appearance.speciesId = species; // Simulates each playable subspecies in turn without rebuilding the harness.
@@ -248,7 +276,127 @@ async function main() {
   assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
     'legacy bed wake animates the player even when other NPCs also yawn in the same frame');
   assert.equal(toasts.length, 4, 'legacy bed wake still lets an eligible player chew their daily Koma');
-  console.log('NPC yawns, full-day clock, both sleep paths, silent NPC Koma and player-only subspecies toast: OK');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'player Koma yawn still uses the quarter-speed movement multiplier');
+  ms += 6000; frame({ timestamp: ms });
+  playerRested = false;
+  hour += 2; ms += 600; frame({ timestamp: ms });
+  assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
+    'an un-rested player yawns hourly, even when they did not just wake from Sleep');
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'hourly player yawns apply 75% slowdown too');
+  ms += 5200; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'hourly player yawn finishes after five seconds');
+  playerRested = true; // Rested and Well Rested both prevent new fatigue yawns.
+  hour += 2; ms += 500; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'Rested prevents the next hourly player fatigue event');
+
+  const longSleeper = {
+    rec: { id: 'full-night-sleeper', appearance: { speciesId: 'mao-ao', gender: 'male' } },
+    root: { parent: {}, position: { x: 4, z: 4 } }, area: 'farm', state: 'idle',
+    neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
+    currentScheduleTarget: { pose: 'lie' }, _bedLieActive: true,
+  }; // Deliberately observes an uninterrupted eight-hour sleep to earn full 24h NPC protection.
+  window._npcWalkers.push(longSleeper);
+  hour = 100; ms += 500; frame({ timestamp: ms });
+  hour = 108; longSleeper._bedLieActive = false; longSleeper.currentScheduleTarget = { pose: 'stand' };
+  ms += 500; frame({ timestamp: ms });
+  assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 132, 'eight hours of NPC sleep grants 24h protection');
+  assert.equal(runtime._test.stateFor(longSleeper, hour).nextHour, 132, 'full NPC Well Rested also resumes fatigue at 24h, not 25h');
+
+  playerRested = false; // A fresh fatigue cycle lets the test cover excluded player poses.
+  window.__hobunjiFurnitureDebug = { sitState: { phase: 'out' } }; // Standing up still owns the body's rig until the seat state is removed.
+  hour = 180; ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'the final stand-up transition must suppress a new yawn');
+  window.__hobunjiFurnitureDebug.sitState = null;
+  stretchActionBlocked = true; // A busy player must not begin yawning even though the fatigue timer elapsed.
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'an unrelated ongoing action postpones the player yawn');
+  stretchActionBlocked = false;
+  window.Combat.deps.player.prone = true; // Native impact poses are not compatible with yawn chest/neck animation.
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'a prone player must not begin an hourly yawn');
+  window.Combat.deps.player.prone = false;
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'a player who has finished standing and recovering may yawn normally');
+  window.Combat.deps.player.prone = true;
+  ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'becoming prone interrupts and fully restores the player yawn speed');
+  assert.equal(playerChestChannels.has('player-yawn-rest'), false, 'prone interruption removes the additive player torso pose');
+  window.Combat.deps.player.prone = false;
+  window.Fishing = { state: { active: true } };
+  hour += 2; ms += 600; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'active fishing animation owns the body and defers yawns');
+  window.Fishing.state.active = false;
+  window.__hobunjiPlayerProfile.appearance.speciesId = 'mao-ao';
+  playerRested = false;
+  hour += 2; ms += 600; frame({ timestamp: ms }); // Start an audible un-rested fallback yawn before its five-second cleanup.
+  assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
+  for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
+  assert.ok(audioCalls.some(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
+    && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
+    && call.opts.tempo === 1 && call.opts.pitchSemitones === 7),
+    'missing yawn recordings use a five-second composition with species pitch/cadence');
+  assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
+    && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
+  // A weapon held but not yet fired has no lunge/stagger flags; yawn must not consume the input before release.
+  let weaponPress = null; // Injected public Combat.input state used by the guarded player yawn query.
+  let queuedAttacks = []; // Simulates attacks waiting on vocal/pose ownership.
+  let strikeDelay = 0; // Represents an attack still in its authored windup/strike/hold timeline.
+  window.Combat.input = {
+    getState: slot => slot === 1 ? weaponPress : null,
+    queueSnapshot: () => queuedAttacks,
+  };
+  window.CombatVocalizations.attackStartDelayS = () => strikeDelay;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'ordinary idle player is eligible when neither input is held nor a pose owns them');
+  weaponPress = { down: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a pressed attack input must prevent the yawn from stealing the held attack');
+  weaponPress = { alignmentPending: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'target alignment must finish before the player can yawn');
+  weaponPress = null;
+  queuedAttacks = [1];
+  assert.equal(runtime._test.playerCanYawn(false), false, 'buffered attack inputs take priority over the fatigue animation');
+  queuedAttacks = [];
+  strikeDelay = 0.25;
+  assert.equal(runtime._test.playerCanYawn(false), false, 'real attack animation hold/windup must finish before yawning');
+  strikeDelay = 0;
+  window.Combat.deps.toolHolder = () => ({ userData: { authoredToolActionActive: true } }); // Game tool-work pose flag may be exposed through a getter-backed holder.
+  assert.equal(runtime._test.playerCanYawn(false), false, 'active mining/hoeing or another tool-work animation overrides fatigue');
+  delete window.Combat.deps.toolHolder;
+  window.RangedWeapons = { playerActionState: () => ({ kind: 'load' }) };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'loading or firing a ranged weapon blocks the yawn');
+  window.RangedWeapons = null;
+  for (const transition of ['mountingUp', 'mounted', 'mountingDown', 'climbLeap']) {
+    window.Mounts = { rideState: transition };
+    assert.equal(runtime._test.playerCanYawn(false), false, 'mount transition ' + transition + ' must own the body');
+  }
+  window.Mounts = null;
+  for (const [stateName, stateValue] of [['_freeJump', { phase: 'air' }], ['climbing', true],
+    ['onClimbSurface', true], ['onCliffBalcony', true], ['_cliffRouteSession', {}], ['onBranch', true],
+    ['knockbackT', 0.3]]) {
+    window.Combat.deps.player[stateName] = stateValue;
+    assert.equal(runtime._test.playerCanYawn(false), false,
+      'active traversal or impact ' + stateName + ' prevents a yawn');
+    delete window.Combat.deps.player[stateName];
+  }
+  window.PlayerCrawl = { isActive: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'downed crawl retains hand pose ownership');
+  window.PlayerCrawl = null;
+  window.PlayerDowned = { isDowned: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a downed player must not yawn');
+  window.PlayerDowned = null;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'all temporary action conditions restore eligibility afterward');
+
+  // Deselecting the character previously stopped the scheduler while leaving a five-second yawn, hidden visuals and an action lock stranded.
+  const priorPresentationEnds = stretchCalls.filter(call => call.kind === 'end').length; // Confirms the unload path owns the final release.
+  window.__hobunjiPlayerProfile.characterId = null;
+  ms += 16; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().characterId, null, 'unloaded character resets the fatigue namespace');
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'all NPC and player yawn states end when leaving the character');
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'character unload cannot strand the player at quarter-speed');
+  assert.ok(stretchCalls.filter(call => call.kind === 'end').length > priorPresentationEnds,
+    'character unload releases the player stretch and action ownership');
+  assert.equal(runtime.debugSnapshot().playerWakePending, false, 'unloaded saves clear stale waking triggers');
+
+  console.log('Player/NPC fatigue, reconstructed breathing fallback, voice ownership, and rested buffs: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

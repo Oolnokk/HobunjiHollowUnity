@@ -129,8 +129,8 @@ assert.equal(drink.getDebug().length, 0);
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
 assert.equal(disposals, 4, 'interruption disposes both transient per-actor resources');
 
-// Player Koma reuses the exact same leaf/drink, but must lock the REAL player participant
-// and never let the NPC body-yaw interpolation overwrite the player's camera-relative facing.
+// Player Koma reuses the same leaf/drink and may walk at 25% speed during a yawn.
+// Only tools/actions are locked; movement and the player's camera-relative facing stay authoritative.
 const playerRoot = new Group(), playerAvatar = new Group(); // Mirrors playerMesh and its avatarGroup child.
 world.add(playerRoot); playerRoot.add(playerAvatar);
 playerAvatar.userData.proceduralHandRig = { parent: playerRoot };
@@ -139,9 +139,9 @@ const playerWalker = {
 };
 let playerChews = 0; // Only advances at the actual drink strike for this player-scoped ceremony.
 assert.equal(drink.playDailyKoma(playerWalker, () => { playerChews++; }, 5, {
-  participantId: 'player', allowWalking: false, preserveFacing: true,
+  participantId: 'player', allowWalking: true, preserveFacing: true,
 }), 5000);
-assert.equal(locks.isLocked('player', 'movement'), true, 'player Koma must lock player movement, not a dummy NPC key');
+assert.equal(locks.isLocked('player', 'movement'), false, 'player Koma leaves movement available for the quarter-speed yawn');
 assert.equal(locks.isLocked('player', 'tools'), true);
 assert.equal(locks.isLocked('player', 'actions'), true);
 assert.equal(locks.isLocked('npc:__player_daily_koma__', 'actions'), false);
@@ -158,4 +158,4 @@ assert.equal(locks.isLocked('player', 'actions'), false, 'the player is never st
 assert.equal(drink.heldItemTarget(playerRoot), null);
 assert.equal(disposals, 6, 'player ritual also disposes its own geometry/material');
 
-console.log('Daily Koma: NPC and player hand grips, true action locks, face direction, strike and cleanup OK');
+console.log('Daily Koma: NPC and moving player hand grips, true action locks, facing, strike and cleanup OK');

@@ -279,12 +279,7 @@ if (typeof document !== 'undefined'
     entrancesScript.dataset.mapEditorBuildingEntrances = '1';
     document.head.appendChild(entrancesScript);
   }
-  if (!document.querySelector('script[data-map-editor-export-fixes]')) {
-    const exportScript = document.createElement('script');
-    exportScript.src = '../../js/map-editor-export-fixes.js?v=20260923mapeditdiff1';
-    exportScript.dataset.mapEditorExportFixes = '1';
-    document.head.appendChild(exportScript);
-  }
+  // The Map Editor loads map-editor-export-fixes.js once in its HTML; a second injection would attach duplicate export handlers.
   if (!document.querySelector('script[data-map-editor-interior-instance-sync]')) {
     const interiorSyncScript = document.createElement('script');
     interiorSyncScript.src = '../../js/map-editor-interior-instance-sync.js';

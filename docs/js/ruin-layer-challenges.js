@@ -8,7 +8,7 @@
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
   const MELODY_PLATE_RADIUS=0.46; // One-tile physical footprint, shared by the timed cave and ruin pressure-plate triggers.
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces','cavePressurePlate']);
   const ropeGeometry=()=>root.RuinRopeGeometry||(typeof require==='function'?require('./ruin-rope-geometry.js'):null); // Resolve at compose time: RopeCore loads later in the browser.
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function scratchboneMaterial(THREE,texture,options,name){
@@ -139,6 +139,7 @@
       throw new Error('Invalid layered ruin challenge '+id+' ('+kind+').');
     const cx=room.x+room.w/2,cz=room.z+room.d/2;
     const caveGateZ=room.z+room.d-2.8; // Leave a genuinely reachable treasure alcove behind the slab; the whole door remains inside the carved nine-tile room.
+    const caveWallHeight=Math.max(9,Number(options.caveRoofHeight)||0); // Shared roof-height boundary for the permanent stone and its collision, not recomputed on every movement probe.
     const owned=[],materials=[],targets=[],authoredVisuals=[]; // Each challenge owns its geometry, authored fixture instances and their per-room materials.
     const rec={id,kind,solved:false,elapsed:0,targetCount:0,hits:0,targets,plate:null,linked:false,disposed:false};
     const group=new THREE.Group(); // Visible mechanism geometry follows the wing floor's presentation culling.
@@ -193,6 +194,7 @@
       clockMs:typeof options.clockMs==='function'?options.clockMs:(root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null), // Deterministic trial harnesses inject their own monotonic clock; gameplay shares the audio clock.
       onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();}, // Keep flute note-off and stonebeat in one lifecycle.
       onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);},
+       onNote:note=>root.RuinInteractionAudio?.melodyPercussionTick?.(note), // The same note transport drives the high stonebeat percussion; no note pitches are demonstrated.
         onSolved:()=>complete(), // The instrument remains equipped; only the owning mechanism unlocks.
         onChanged:snapshot=>{
           if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){
@@ -395,15 +397,27 @@
         }
       };
       options.addControl?.(fireControl);
-    }else if(kind==='fireSconces'){
-      // Stone sconces must both be lit with real lingering world fire, not a
-      // generic projectile hit. A fire flask or a Flame Shattercask will work.
+    }else if(kind==='fireSconces'||kind==='cavePressurePlate'){
+      // Both indoor puzzle types own the same full-size authored cliff gate.
+      // The fallback plate avoids blocking progress if the music/fire runtime is unavailable.
       const gate=body('puzzle-cave-fire-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       gate.userData.puzzleCaveDoor=true;
       rec.door=gate;rec.backdrop=null;rec.sconces=[];rec.doorRise=0; // The reward alcove is rendered through the actual opening.
       const gateY=gate.position.y; // Only the physical slab rises; the sconces remain on the stone wall.
-      for(const [index,direction] of [-1,1].entries()){
+      if(kind==='cavePressurePlate'){
+        const plate=body('puzzle-cave-simple-plate-'+id,
+          new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,24),plateMat,cx,y+.08,cz-1.6);
+        rec.plate=plate; // Used by the runtime occupancy check and the shared stepped-on SFX.
+        rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
+          width:.11,height:.11,idleColor:'#e5aa55',activeColor:'#65ffaf',
+        });
+        if(rec.plateSignal?.glyph)rec.plateSignal.glyph.position.x=.31;
+        rec.plateArtStoneMesh=plate; // The authored Tankan surface owns its own material/dispose lifecycle.
+        rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+          radius:MELODY_PLATE_RADIUS,thickness:.15,toward:{x:0,z:1},
+        })||null;
+      }else for(const [index,direction] of [-1,1].entries()){
         const px=cx+direction*2.55,pz=caveGateZ-.15; // Lit sconce vessels sit just in front of the shifted door and remain reachable by ground fire.
         const bracket=body('stone-sconce-'+id+'-'+index,
           new THREE.CylinderGeometry(.27,.32,.32,10),stone,px,y+1.20,pz);
@@ -576,13 +590,14 @@
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
     }
-    if(options.authoredCliffDoor&&(kind==='timedMelody'||kind==='fireSconces')){
+    if(options.authoredCliffDoor&&(kind==='timedMelody'||kind==='fireSconces'||kind==='cavePressurePlate')){
       // The playable cave gate occupies a genuine rough-hewn hole in a single
       // roof-height rock wall. The slab rises independently; after opening the
       // exposed jambs/lintel remain stone, not clipped boulders or a black card.
       const surround=root.CavernOreRocks?.carveStoneGate?.(group,{
         x:cx,y,z:caveGateZ+.42,openingWidth:4.78,openingHeight:3.55,
-        sideThickness:Math.max(.6,room.w-4.78),roofHeight:9,wallDepth:.30, // The stone flanks seal the ENTIRE chamber width, not merely the doorframe.
+        sideThickness:Math.max(.6,room.w-4.78),
+        roofHeight:caveWallHeight,wallDepth:.30, // The permanent rock reaches the real puzzle vault, never stopping below its raised ceiling.
       }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
       if(surround){owned.push(surround);rec.rockSurround=surround;}
     }
@@ -653,7 +668,7 @@
         });
       }
     }
-    if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
+    if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces'||kind==='cavePressurePlate')){
       // Use the real authored, lightly rockified cliff gate (frame, stone slab,
       // and 0.95-second slab motion). No black backdrop or interactive puzzle metadata
       // is registered on this visual; only this encounter's judge can open it.
@@ -683,7 +698,7 @@
         updateAuthoredDoor(); // A solved save that loads the model late still shows a fully raised gate.
       }).catch(error=>root.__farmLog?.('[puzzle-cave] authored cliff gate unavailable: '+error.message,'warn'));
     }
-    if((kind==='timedMelody'||kind==='fireSconces')&&options.area){
+    if((kind==='timedMelody'||kind==='fireSconces'||kind==='cavePressurePlate')&&options.area){
       const DS=options.DynamicSurfaces||root.DynamicSurfaces;
       const footprint=options.AreaFootprintBlockers||root.AreaFootprintBlockers; // game.js player movement and NPC pathing actually query this registry.
       const gateZ=caveGateZ; // Collider follows the shifted visual exactly; no invisible wall where the old slab stood.
@@ -696,7 +711,7 @@
         const stoneBounds={minX:cx-stoneWidth/2,maxX:cx+stoneWidth/2,
           minZ:gateZ-.32,maxZ:gateZ+.75}; // Cover the sculpted wall at z=gateZ+.42, including its front/back rock faces.
         const flankAt=(px,pz,half,elevation)=>{
-          if(Number.isFinite(elevation)&&(elevation<y-.5||elevation>y+9))return false;
+          if(Number.isFinite(elevation)&&(elevation<y-.5||elevation>y+caveWallHeight))return false;
           if(px+half<stoneBounds.minX||px-half>stoneBounds.maxX
             ||pz+half<stoneBounds.minZ||pz-half>stoneBounds.maxZ)return false;
           return px-half<cx-passageHalfWidth||px+half>cx+passageHalfWidth;
@@ -753,6 +768,12 @@
         root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!standing); // Audible weight-on/weight-off without replaying during the hold timer.
         rec.elapsed=standing?rec.elapsed+Math.min(.05,Math.max(0,dt)):0;
         if(rec.elapsed>=rec.requiredSeconds){rec.plate.material=hit;complete();}
+      }
+      if(kind==='cavePressurePlate'&&!rec.solved&&isActive()){
+        const standing=player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
+          &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=MELODY_PLATE_RADIUS;
+        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!standing);
+        if(standing)complete(); // One step permanently solves this cave instead of requiring a held timer or a second interaction.
       }
       if(kind==='fireSconces'&&!rec.solved&&isActive()){
         const fireZones=options.groundFire||root.PersistentGroundFire;
