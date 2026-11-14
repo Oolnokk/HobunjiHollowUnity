@@ -5248,9 +5248,15 @@ $('loadTownBtn').addEventListener('click', async () => {
       return;
     }
     const preloadedMapIds = new Set(ws.maps.map(map => String(map?.id || ''))); // Identifies canonical map additions without changing other map baselines.
+    const preloadedPlateauGroupIds = new Set((ws.plateauGroups || []).map(group => String(group?.id || ''))); // Safeguards locally authored group baselines.
+    const preloadedRampIds = new Set((ws.ramps || []).map(ramp => String(ramp?.id || ''))); // Safeguards locally authored ramp baselines.
     importAny(obj, { mergeIntoWorkspace: true, replaceMapIds: incomingTown ? ['map_hobunji_town'] : [] });
     const loadedMapIds = (obj.maps || []).map(map => String(map?.id || '')).filter(id => id && !preloadedMapIds.has(id)); // Imported indexed maps become baseline data, not user-added maps.
     window.MapEditorExportFixes?.adoptBundledMapBaselines?.(loadedMapIds);
+    window.MapEditorExportFixes?.adoptBundledWorkspaceBaselines?.({
+      plateauGroupIds: (obj.plateauGroups || []).map(group => String(group?.id || '')).filter(id => id && !preloadedPlateauGroupIds.has(id)),
+      rampIds: (obj.ramps || []).map(ramp => String(ramp?.id || '')).filter(id => id && !preloadedRampIds.has(id)),
+    }); // Imported canonical geometry is baseline data, but pre-existing workspace edits still count as changes.
     // Auto-link: find the town map and set gameLink.townId
     const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
     if (townM && !ws.gameLink.townId) {
@@ -5689,6 +5695,6 @@ PanelUI.makeResizableBox(document.getElementById('diffBox'), {
   storageKey: 'hobunji_map_editor_diffbox_width_v1'
 });
 </script>
-<script src="../../js/map-editor-export-fixes.js?v=20261114townbaseline3"></script>
+<script src="../../js/map-editor-export-fixes.js?v=20261114townbaseline4"></script>
 </body>
 </html>
