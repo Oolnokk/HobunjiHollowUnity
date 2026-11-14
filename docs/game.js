@@ -28580,7 +28580,7 @@
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
                 _combatAimRelease = Boolean(_pressSlot || (activeTool === 'ranged' && act === 'shoot'));
-                if (_pressSlot) { window.Combat.input.pressStart(_pressSlot); }
+                if (_pressSlot) { window.Combat.input.pressStart(_pressSlot, ev); }
               }
             });
 
@@ -28694,7 +28694,7 @@
                       if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
                         commitMeleeAttackFacing(currentMeleeAimAngle());
                       }
-                      window.Combat.input.pressEnd(_pressSlot);
+                      window.Combat.input.pressEnd(_pressSlot, ev);
                     }
                   } else if (_heldItemPress) {
                     if (pointerCanceled) window.HeldItemActionInput?.abort();
@@ -29365,7 +29365,7 @@
           && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
-      function runInputAction(actionId, phase = 'press', source = 'game-input') {
+      function runInputAction(actionId, phase = 'press', source = 'game-input', physicalEvent = null) {
         if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
         if (actionId === 'dodge' && window.PlayerDowned?.isDowned?.()) {
           window.PlayerDowned.setGiveUpHeld(phase === 'press'); // Keyboard and controller share the same downed hold, respecting remapped physical inputs.
@@ -29514,7 +29514,7 @@
             return;
           }
           const releaseSlot = weaponActionSlot(actionId);
-          if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
+          if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot, physicalEvent); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
           if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
             const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used so controller/keyboard/mouse Action 1 releases the same active thrown charge through shared input ownership.
@@ -29547,7 +29547,7 @@
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
-          window.Combat.input.pressStart(weaponSlot);
+          window.Combat.input.pressStart(weaponSlot, physicalEvent);
           return;
         }
         const actionSlot = /^action(\d+)$/.exec(actionId);
@@ -29952,7 +29952,7 @@
         const reservedDesktopCodes = [inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu];
         if (boundDesktopAction && !reservedDesktopCodes.includes(event.code)) {
           event.preventDefault();
-          if (!event.repeat) runInputAction(boundDesktopAction, 'press', 'keyboard:' + event.code);
+          if (!event.repeat) runInputAction(boundDesktopAction, 'press', 'keyboard:' + event.code, event);
           return;
         }
         if (key === 'shift') {
@@ -30074,7 +30074,7 @@
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
         if (boundDesktopActionUp && ![inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu].includes(event.code)) {
-          runInputAction(boundDesktopActionUp, 'release', 'keyboard:' + event.code);
+          runInputAction(boundDesktopActionUp, 'release', 'keyboard:' + event.code, event);
         }
         if (key === 'shift') {
           _shiftDownAt = null;
@@ -30359,7 +30359,7 @@
             if (weaponSlot) {
               desktopWeaponPointerSlots.set(e.button, weaponSlot);
               if (weaponSlot === 1) actionHeldDown = true;
-              window.Combat.input.pressStart(weaponSlot);
+              window.Combat.input.pressStart(weaponSlot, e);
               return;
             }
           }
@@ -30393,7 +30393,7 @@
         if (ownedSlot) {
           desktopWeaponPointerSlots.delete(e.button);
           if (ownedSlot === 1) actionHeldDown = false;
-          window.Combat?.input?.pressEnd(ownedSlot);
+          window.Combat?.input?.pressEnd(ownedSlot, e);
           return;
         }
         const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
@@ -30410,7 +30410,7 @@
           const weaponSlot = weaponActionSlot(mouseAction);
           if (weaponSlot) {
             if (weaponSlot === 1) actionHeldDown = false;
-            window.Combat.input.pressEnd(weaponSlot);
+            window.Combat.input.pressEnd(weaponSlot, e);
             return;
           }
         }
