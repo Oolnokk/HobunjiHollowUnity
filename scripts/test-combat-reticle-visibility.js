@@ -21,6 +21,14 @@ for (const [label, source] of [['melee', melee], ['ranged', ranged]]) {
   assert.equal(context.suppressed(),true,`${label} introduction loading suppresses the reticle`);
   context.document.getElementById=()=>null;
   assert.equal(context.suppressed(),false,`${label} cleanup restores ordinary visibility`);
+  context.window.MusicMinigame={state:{active:true,instrumentMode:'puzzle'}}; // Music overlay's real state getter is authoritative, even if an instrument is still drawn.
+  assert.equal(context.suppressed(),true,`${label} reticle hides during the instrument's puzzle mode`);
+  context.window.MusicMinigame.state={active:true,instrumentMode:'performance'};
+  assert.equal(context.suppressed(),true,`${label} reticle stays hidden when switching to performance mode`);
+  context.window.MusicMinigame={state:null,ambientActive:true};
+  assert.equal(context.suppressed(),false,`${label} ambient NPC performances do not hide the player's combat reticle`);
+  context.window.MusicMinigame.state={active:false};
+  assert.equal(context.suppressed(),false,`${label} inactive music sessions restore the reticle`);
 
   for (const [pattern, what] of [
     [/isDialogueOpen\?\.\(\)/, 'authoritative dialogue-open state'],
