@@ -1326,9 +1326,11 @@
     };
   }
 
-  function playObjectSfxKeyMetronome(volumeScale = 1, beatIndex = 0, whenMs = null) {
+  function playObjectSfxKeyMetronome(volumeScale = 1, beatIndex = 0, whenMs = null, pitchSemitones = 0) {
     const beat = Number.isFinite(beatIndex) ? ((Math.trunc(beatIndex) % 4 + 4) % 4) + 1 : 1;
     const key = 'stoneBeat' + beat;
+    const semitones = Number.isFinite(pitchSemitones) ? Math.max(-24,Math.min(24,pitchSemitones)) : 0; // A separate +9-stonebeat percussion hit uses the same recorder and scheduler.
+    const pitchRate = Math.pow(2,semitones/12); // Web Audio adjusts pitch at onset; only this percussive hit has a shorter decay.
     const cfgEntry = objectSfxConfig()[key];
     const audioCfg = gameAudioConfig();
     if (!cfgEntry?.url || audioCfg.enabled === false || objectSfxConfig().enabled === false ||
@@ -1346,7 +1348,7 @@
     });
     const baseDebug = {
       key,found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
-      metronome:true,beat,scheduledAtMs:targetMs,lookaheadMs:STONEBEAT_LOOKAHEAD_MS,
+      metronome:true,beat,pitchSemitones:semitones,playbackRate:pitchRate,scheduledAtMs:targetMs,lookaheadMs:STONEBEAT_LOOKAHEAD_MS,
       decoded:!!clip,atMs:Math.round(performance.now()),
     };
     if (clip && context?.state === 'running') {
@@ -1357,7 +1359,7 @@
         const gain = context.createGain();
         const startAt = context.currentTime + Math.max(0,(targetMs-performance.now())/1000);
         source.buffer = clip.buffer;
-        source.playbackRate.value = 1; // Never accelerate the four authored recordings to fit a beat.
+        source.playbackRate.value = pitchRate; // Numbered metronome ticks remain untouched; the +9-st percussion retains its precise onset.
         gain.gain.setValueAtTime(Math.max(0,Math.min(1,volume)),startAt);
         source.connect(gain).connect(context.destination);
         const entry = { source, whenMs:targetMs }; // Used to cancel only not-yet-sounded events on plate release.
@@ -1375,15 +1377,15 @@
     }
     const fallback = () => {
       if (gameAudioConfig().enabled === false || objectSfxConfig().enabled === false) return;
-      playObjectSfx(cfgEntry,volumeScale,1,3); // Existing native HTML fallback still interrupts its previous voice.
+      playObjectSfx(cfgEntry,volumeScale,pitchRate,semitones===0?3:null); // The pitched percussion gets an independent native voice instead of cutting off the numbered metronome.
     };
     const remainingMs = targetMs - performance.now();
     if (remainingMs > 4) {
       const timer = setTimeout(() => {stoneBeatFallbackTimers.delete(timer);fallback();},remainingMs);
       stoneBeatFallbackTimers.add(timer);
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'queued'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:semitones===0,maxDurationSec:semitones===0?3:null,backend:'native-fallback',playbackState:'queued'};
     } else {
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'requested'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:semitones===0,maxDurationSec:semitones===0?3:null,backend:'native-fallback',playbackState:'requested'};
       fallback();
     }
     return true;

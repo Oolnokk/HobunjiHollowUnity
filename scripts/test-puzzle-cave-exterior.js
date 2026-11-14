@@ -59,7 +59,9 @@ context.AudioSystem={
   objectSfxConfig:()=>Object.fromEntries([1,2,3,4].map(beat=>['stoneBeat'+beat,
     {url:'assets/audio/sfx/sfx_stonebeat-'+beat+'.mp3',preload:true}])),
   objectSfxDebugSnapshot:()=>({last:{found:true,preloaded:true,readyState:4,oneVoice:true,maxDurationSec:3}}),
-  playObjectSfxKeyMetronome:(volume,beatIndex)=>{sounds.push({key:'stoneBeat'+(beatIndex+1),volume,pitch:1,shortVoice:true});return true;},
+  playObjectSfxKeyMetronome:(volume,beatIndex,whenMs,pitchSemitones=0)=>{
+    sounds.push({key:'stoneBeat'+(beatIndex+1),volume,pitch:Math.pow(2,pitchSemitones/12),pitchSemitones,whenMs,shortVoice:true});return true;
+  },
   playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch}),
 };
 function load(file) {
@@ -270,6 +272,10 @@ assert.match(read('docs/js/pixel-probe.js'), /Puzzle Cave note overlay:[^\n]*fin
   'the existing copyable mobile Pixel Probe reports active score overlay readiness');
 assert(sounds.some(event=>event.key==='stoneBeat1'&&event.volume===.72&&event.pitch===1),
   'stepping onto the plate immediately plays the real first stonebeat at its authored pitch');
+assert(sounds.some(event=>event.key==='stoneBeat2'&&event.pitchSemitones===9),
+  'stepping onto a song plate plays the score rhythm using the second stonebeat shifted up nine semitones');
+assert.equal(context.RuinInteractionAudio.debugSnapshot().percussionHits,1,
+  'percussion is independently counted in mobile diagnostics');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_stonebeat-1.mp3',
   'mobile audio diagnostics expose the correct numbered recording');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeShortVoice===true&&
@@ -290,9 +296,9 @@ assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
-const initialBeatCount=sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)).length;
+const initialBeatCount=sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)&&event.pitchSemitones===0).length;
 Exterior.update(gate.song.secondsPerTick*4.02,area);
-assert.equal(sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)).length,initialBeatCount+1,
+assert.equal(sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)&&event.pitchSemitones===0).length,initialBeatCount+1,
   'the next quarter-note boundary adds exactly one numbered stonebeat');
 assert(sounds.some(event=>event.key==='stoneBeat2'&&event.volume===.54&&event.pitch===1),
   'the second beat uses the second original-pitch recording at the existing softer volume');
