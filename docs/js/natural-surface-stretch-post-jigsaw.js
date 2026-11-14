@@ -87,7 +87,10 @@
       }
       if (ranges.length) touched.set(mesh, { geometry, uv });
     }
-    if (targets.length < 6 || targets.length % 3 !== 0) return false;
+    // A partial batch can produce a plausible combined UV buffer while silently
+    // leaving a second deferred mesa unmapped. Fall back for the whole batch
+    // unless every intended cliff contributes complete triangles.
+    if (touched.size !== candidates.length || touched.size < 2 || targets.length < 6 || targets.length % 3 !== 0) return false;
 
     const combined = new THREE.BufferGeometry(); // Used only as a temporary common-topology carrier; it never enters the scene.
     combined.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -124,6 +127,7 @@
       mesh.userData = Object.assign({}, mesh.userData || {}, {
         naturalSurfaceCrossMeshUvOwner: CROSS_MESH_UV_OWNER,
         naturalSurfaceCrossMeshUvBatch: batchSignature,
+        naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV', // Used by runtime repair to recognize a completed authoritative solve.
         terrainJigsawIgnore: true,
       });
     }
@@ -280,7 +284,7 @@
   if (typeof originalRender !== 'function' || !jigsawApi?.scanScene || !chunkApi?.scanScene || !runtime?.inspectObject) return;
 
   const lastGeometryNoticeAt = new WeakMap(); // Used to avoid rescanning all terrain owners on every outline/depth render pass.
-  const GEOMETRY_NOTICE_INTERVAL_MS = 500; // Used to discover late geometry-ready callbacks even when no jigsaw/chunk mutation occurred.
+  const GEOMETRY_NOTICE_INTERVAL_MS = 16; // Used to coalesce same-frame depth/outline passes without delaying terrain-owner updates for half a second.
   const stats = {
     renderPasses: 0,
     geometryNoticeScans: 0,
