@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Checks the actual parser order after independently owned startup manifests expand.
 
 const read = path => fs.readFileSync(path, 'utf8');
 const controller = read('docs/js/controller-ui-nav.js');
@@ -11,7 +12,7 @@ const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
 const surfaceComposerSource = read('docs/js/surface-occlusion-composer.js');
-const toolIconRender = read('docs/js/tool-icon-render.js'); // Existing synchronous bootstrap must load the shared policy before the renderer.
+const expandedStartup = expandClassicScriptGroups(read('docs/index.html')); // Surface compositor and held-overlay now load from the pre-game services manifest.
 const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
 const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
 const readme = read('README.md');
@@ -75,8 +76,11 @@ assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depth
   'translucent floodwater retains normal opaque-grass depth testing in its material');
 assert.match(mergedWater, /if \(uHobunjiSurfaceOcclusionDepthOnly > 0\.5\s*&& alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
   'the water depth-only shader discards fragments below its visible-alpha threshold without changing normal color rendering');
-assert.match(toolIconRender, /surface-occlusion-composer\.js[\s\S]{0,260}held-object-render-order\.js/,
-  'the shared policy script is loaded before the held renderer');
+assert(expandedStartup.indexOf('js/surface-occlusion-composer.js?') >= 0
+  && expandedStartup.indexOf('js/surface-occlusion-composer.js?') < expandedStartup.indexOf('js/held-object-render-order.js?')
+  && expandedStartup.indexOf('js/held-object-render-order.js?') < expandedStartup.indexOf('js/tool-icon-render.js?')
+  && expandedStartup.indexOf('js/tool-icon-render.js?') < expandedStartup.indexOf('src="game.js?v='),
+  'parser-ordered pre-game services load surface policy, held overlay and HUD adapter before game.js');
 assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', { actorElevation: 0.42 }).groundXrayMode,
   'same-elevation-upward-faces', 'known actor elevations retain selective ground x-ray');
 assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', {}).groundXrayMode,
