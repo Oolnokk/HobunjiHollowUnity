@@ -1938,7 +1938,7 @@ function applyPoseToRig(pose) {
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
   if (anim.worldUpright && previewT <= .00001)
-    window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE); // Preview uses the same world-space idle correction as gameplay.
+    window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE, currentToolKey === 'torch' ? -1 : 1); // Torch's -Y flame axis matches gameplay; other sprites retain +Y.
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 
