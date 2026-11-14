@@ -358,6 +358,12 @@ async function main() {
   strikeDelay = 0.25;
   assert.equal(runtime._test.playerCanYawn(false), false, 'real attack animation hold/windup must finish before yawning');
   strikeDelay = 0;
+  window.Combat.deps.toolHolder = () => ({ userData: { authoredToolActionActive: true } }); // Game tool-work pose flag may be exposed through a getter-backed holder.
+  assert.equal(runtime._test.playerCanYawn(false), false, 'active mining/hoeing or another tool-work animation overrides fatigue');
+  delete window.Combat.deps.toolHolder;
+  window.RangedWeapons = { playerActionState: () => ({ kind: 'load' }) };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'loading or firing a ranged weapon blocks the yawn');
+  window.RangedWeapons = null;
   for (const transition of ['mountingUp', 'mounted', 'mountingDown', 'climbLeap']) {
     window.Mounts = { rideState: transition };
     assert.equal(runtime._test.playerCanYawn(false), false, 'mount transition ' + transition + ' must own the body');
