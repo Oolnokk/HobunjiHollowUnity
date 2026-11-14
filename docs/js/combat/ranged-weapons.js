@@ -132,6 +132,14 @@
   }
 
   const CONFIG = {
+    torch: { // The adventuring throw uses the ordinary swept projectile/ruin-fire route, not separate physics.
+      label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
+      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'weapon', projectileVisualWidthWorld:.5, // Keep the full torch silhouette rather than arrow-sized default art.
+      projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
+      projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
+      projectileDropStartTiles:3,projectileGravityWorldS2:10,
+      projectileEmbedOnTerrain:false,toolEndFlip:false,
+    },
     crossbow: {
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
@@ -1120,6 +1128,17 @@
     return p;
   }
 
+  function throwAdventuringTorch() {
+    if (!deps?.player) return null;
+    const aim = playerAimSolution('torch'); // The same camera-to-projectile convergence as every thrown weapon.
+    if (!aim?.origin || !aim?.direction) return null;
+    const dir=aim.direction;
+    const angle=Math.atan2(dir.z,dir.x);
+    const pitch=Math.atan2(dir.y,Math.hypot(dir.x,dir.z));
+    return spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
+      angle,'player',deps.player,null,pitch,{dungeonFire:true});
+  }
+
   function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
     const def = defFor(itemKey);
     if (!def) return [];
@@ -1631,6 +1650,8 @@
     }
     const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
     window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Enemy-held Dungeon Fire remains visual-only; the module rejects non-player projectiles.
+    if (p.itemKey === 'torch' && p.dungeonFire && p.team === 'player')
+      window.BanditCamps?.igniteTorchSegment?.(p.areaId,start,end,fireLimit,projectileRadius); // Ignite canvas tents along the same unobstructed segment.
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t, true);
       return { kind: 'cover', t: coverHit.t, coverHit };
@@ -2259,7 +2280,7 @@
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
-    init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
+    init, applyConfig, throwAdventuringTorch, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
     isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.
