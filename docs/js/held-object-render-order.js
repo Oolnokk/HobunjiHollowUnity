@@ -1618,7 +1618,7 @@
     if (!material) return null;
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
-    const inheritedCompile = material.onBeforeCompile; // Terrain texture/Jigsaw material clones copy userData and the callback separately; only the callback that closes over THIS state is reusable.
+    const inheritedCompile = material.onBeforeCompile; // Three's Material.clone keeps userData but drops custom shader callbacks; explicit callback copies can instead close over an older material's state.
     if (state && inheritedCompile?.__hobunjiXrayElevationState === state) return state;
     state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, tileCount: { value: 0 }, tiles: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
