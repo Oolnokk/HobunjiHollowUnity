@@ -10,7 +10,7 @@
     "js/npc-farm-plots.js?v=20261109familyaudit2",
     "config/npcs/social-relations.js?v=20261111communion1",
     "js/npc-social-seating-bridge.js?v=20261111communion1",
-    "js/npc-pathfinding.js?v=20261110cliffsideMerge1",
+    "js/npc-pathfinding.js?v=20261114hbec40dc",
     "js/nohuknuk-wilderness.js?v=20261110nohukWaterCache1",
     "js/npc-route-graph.js?v=20261009h41465f3"
 ]; // Independently versioned modules loaded before game.js.
