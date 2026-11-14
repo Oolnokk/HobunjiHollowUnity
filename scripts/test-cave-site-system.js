@@ -476,6 +476,30 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   assert(surpriseCaches > 0, 'non-cache histories also generate the guaranteed secret cache outcome');
 }
 
+// A trapped-cache cave can have BOTH a sealed independent Puzzle Cave door and
+// its normal cache. The optional chest must fall back to reachable cave floor,
+// not remove the valid mined wall when the secret room is too crowded for both.
+{
+  const map = baseMap('bonus_cache_constrained_hidden_door');
+  const plan = { separator:null, cache:null, traps:[] }; // Real builder fields needed for an extra lockpickable chest.
+  const blocked = new Set(map.oreRocks.map(rock => rock.col + ',' + rock.row)); // Keep original ore out of chest footprints.
+  assert(Cave.__test.installMineableSeparator(map, rngFactory('constrained-hidden-door'), blocked, plan),
+    'fixture has a mineable wall separating substantial rooms');
+  const far = new Set(plan.separator.farKeys); // All hidden tiles intentionally reserved by the independent door's other fixtures.
+  for(const key of far) blocked.add(key);
+  const allFloor = Cave.__test.floorTiles(map);
+  assert.equal(Cave.__test.addCacheLayer(map, rngFactory('cache-behind-door'), allFloor, blocked, plan), false,
+    'extra cache is impossible in a fully reserved hidden room');
+  assert(Cave.__test.addCacheLayer(map, rngFactory('cache-near-side'), allFloor, blocked, plan, false, true),
+    'normal chest can be placed on the accessible side without erasing the sealed Puzzle Cave destination');
+  assert(plan.separator && map.oreRocks.some(rock => rock.caveSeparator),
+    'the reward-protecting destructible wall still exists after the chest fallback');
+  assert(plan.separator.nearKeys.includes(plan.cache.col + ',' + plan.cache.row),
+    'the bonus cache is reachable without requiring an extra secret-room slot');
+  assert(map.caveProps.some(prop => prop.id === plan.cache.id && prop.key === 'ruinDungeonChestT2'),
+    'the accessible fallback is a physical lockpickable chest, not invisible loot');
+}
+
 // Ruin-door caves are also eligible, provided the extension doesn't wall off the
 // mandatory doorway. Use an explicit near-side doorway fixture to isolate that
 // safety rule from the more restrictive full SDF ruin-door placement.
