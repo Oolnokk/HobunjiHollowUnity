@@ -1236,10 +1236,11 @@
           };
           row.appendChild(overpassSelect);
           const overpassInkLabel = document.createElement('label');
-          overpassInkLabel.textContent = 'Overpass ink';
+          overpassInkLabel.textContent = state.crossDyePatterns ? 'Overpass ink (uses opposite dye)' : 'Overpass ink';
+          overpassInkLabel.setAttribute('data-overpass-ink-label', ''); // Checkbox updates this explanation without remounting the authoring rows.
           row.appendChild(overpassInkLabel);
           overpassDyeSelect = document.createElement('select');
-          overpassDyeSelect.innerHTML = '<option value="">Same as Dye C</option>' + dyeOptionHtml(dyes, state.overpassPatterns[key]?.inkDyeId || '');
+          overpassDyeSelect.innerHTML = '<option value="">' + (state.crossDyePatterns ? 'Same as opposite dye' : 'Same as Dye C') + '</option>' + dyeOptionHtml(dyes, state.overpassPatterns[key]?.inkDyeId || '');
           overpassDyeSelect.dataset.patternRole = key; // Global cross-dye checkbox uses this to disable overpass-specific ink choices.
           overpassDyeSelect.setAttribute('data-overpass-ink', '');
           const savedInk = state.overpassPatterns[key]?.inkColorHex;
@@ -1427,7 +1428,11 @@
     crossDyeInput.onchange = () => {
       state.crossDyePatterns = !crossDyeInput.disabled && !!crossDyeInput.checked; // Route both motif inks from the existing garment dyes.
       for (const swap of patternLayersEl.querySelectorAll('[data-pattern-swap-role]')) swap.disabled = state.crossDyePatterns || !state.layerPatterns[swap.dataset.patternRole]; // Keep previous per-layer swaps for when mode is unchecked.
-      for (const ink of patternLayersEl.querySelectorAll('[data-overpass-ink]')) ink.disabled = state.crossDyePatterns || !state.overpassPatterns[ink.dataset.patternRole]; // Named overpass inks are retained but ignored while opposite dyes are active.
+      for (const ink of patternLayersEl.querySelectorAll('[data-overpass-ink]')) {
+        ink.disabled = state.crossDyePatterns || !state.overpassPatterns[ink.dataset.patternRole]; // Named overpass inks are retained but ignored while opposite dyes are active.
+        if (ink.options[0]) ink.options[0].textContent = state.crossDyePatterns ? 'Same as opposite dye' : 'Same as Dye C'; // The displayed default follows the active ink-routing policy.
+      }
+      for (const label of patternLayersEl.querySelectorAll('[data-overpass-ink-label]')) label.textContent = state.crossDyePatterns ? 'Overpass ink (uses opposite dye)' : 'Overpass ink';
       refreshPreview();
     };
     trimEnabledInput.onchange = () => { state.trimEnabled = state.trimAvailable && !!trimEnabledInput.checked; refreshPreview(); }; // Optional trim never appears on unsupported variants.
