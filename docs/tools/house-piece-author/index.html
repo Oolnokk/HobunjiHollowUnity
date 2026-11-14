@@ -138,7 +138,13 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
           <div class="field"><label>Custom deck Y (above local origin)</label><input id="balconyHeight" type="number" step="0.05" value="1.4"></div></div>
         <div class="row"><label><input id="balconyRails" type="checkbox" checked> Rail exposed edges</label>
           <label><input id="balconyFlatRoof" type="checkbox"> Replace gabled roof with rooftop balcony</label></div>
-        <p class="hint" id="balconyStatus">Add a balcony, then paint its exact tile footprint. Access is assigned to interior/furniture interactions, never to automatic outdoor stairs.</p>
+        <div class="grid2">
+          <div class="field"><label>Interior map ID</label><input id="balconyAccessMap" placeholder="map_i_building"></div>
+          <div class="field"><label>Entrance furniture ID</label><input id="balconyAccessFurniture" placeholder="f_roof_ladder"></div>
+          <div class="field"><label>Interior ladder column</label><input id="balconyAccessCol" type="number" min="0" step="1" value="0"></div>
+          <div class="field"><label>Interior ladder row</label><input id="balconyAccessRow" type="number" min="0" step="1" value="0"></div>
+        </div>
+        <p class="hint" id="balconyStatus">Add a balcony, paint its footprint, then paint a hatch tile within it. The linked interior furniture interaction provides access; no outdoor staircase is generated.</p>
       </div>
       <div class="row">
         <button id="toolFootprint" class="active" type="button">Paint footprint</button>
@@ -149,6 +155,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
         <button id="toolChimney" type="button">Chimney</button>
         <button id="toolPorch" type="button">Porch</button>
         <button id="toolBalcony" type="button">Balcony footprint</button>
+        <button id="toolBalconyHatch" type="button">Balcony hatch</button>
         <button id="toolPorchStair" type="button">Porch stair</button>
         <button id="toolRailing" type="button">Fence/railing</button>
         <button id="toolErase" type="button">Erase</button>
@@ -1033,6 +1040,10 @@ function drawGrid(){
     if(porchSet.has(k)){ gridCtx.fillStyle='rgba(139,91,49,.88)'; gridCtx.fillRect(px+cell*.08,py+cell*.08,cell*.84,cell*.84); }
     if(porchStairSet.has(k)){ gridCtx.fillStyle='rgba(218,184,128,.92)'; gridCtx.fillRect(px+cell*.12,py+cell*.12,cell*.76,cell*.76); }
     if(balconySet.has(k)){ gridCtx.fillStyle='rgba(197,128,248,.77)'; gridCtx.fillRect(px+cell*.12,py+cell*.12,cell*.76,cell*.76); }
+    if(activeBalcony()?.access?.openingTile?.x===x && activeBalcony()?.access?.openingTile?.y===y){
+      gridCtx.fillStyle='#060606';gridCtx.fillRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56);
+      gridCtx.strokeStyle='#ffffff';gridCtx.lineWidth=2;gridCtx.strokeRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56);
+    }
     if(railingSet.has(k)){ gridCtx.fillStyle='rgba(91,70,48,.96)'; gridCtx.beginPath(); gridCtx.arc(px+cell*.5, py+cell*.5, Math.max(3,cell*.16), 0, Math.PI*2); gridCtx.fill(); }
     if(doorCell && doorCell.x===x && doorCell.y===y){ gridCtx.fillStyle='rgba(255,184,77,.95)'; gridCtx.fillRect(px+cell*.2,py+cell*.2,cell*.6,cell*.6); }
     if(connectorSet.has(k)){ gridCtx.strokeStyle='rgba(139,255,166,.95)'; gridCtx.lineWidth=Math.max(2,cell*.10); gridCtx.strokeRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56); }
@@ -1055,10 +1066,16 @@ function paintCell(ev){
   if(state.tool==='chimney') chimneySet.add(k);
   if(state.tool==='porch') porchSet.add(k);
   if(state.tool==='balcony' && activeBalconyId) balconySet.add(k);
+  if(state.tool==='balconyHatch'){
+    const balcony=activeBalcony(); // Hatch must belong to that balcony's accessible walking footprint.
+    if(!balcony || !balconySet.has(k)) {log('Paint the balcony deck beneath the hatch first.','warn');return;}
+    balcony.access={...balcony.access,type:'interiorFurniture',openingTile:{x:c.x,y:c.y}};
+  }
   if(state.tool==='porchStair') porchStairSet.add(k);
   if(state.tool==='railing') railingSet.add(k);
-  if(state.tool==='erase'){ footprintSet.delete(k); if(doorCell && doorCell.x===c.x && doorCell.y===c.y) doorCell=null; connectorSet.delete(k); entryTunnelSet.delete(k); tallEntryTunnelSet.delete(k); chimneySet.delete(k); porchSet.delete(k); porchStairSet.delete(k); railingSet.delete(k); balconySet.delete(k); }
-  syncPieceFromSets(); if(state.tool==='balcony'||state.tool==='erase') refreshBalconyGeometry(); drawGrid(); rebuildFootprintOverlay(); refreshExport();
+  if(state.tool==='erase'){ footprintSet.delete(k); if(doorCell && doorCell.x===c.x && doorCell.y===c.y) doorCell=null; connectorSet.delete(k); entryTunnelSet.delete(k); tallEntryTunnelSet.delete(k); chimneySet.delete(k); porchSet.delete(k); porchStairSet.delete(k); railingSet.delete(k); balconySet.delete(k);if(activeBalcony()?.access?.openingTile?.x===c.x&&activeBalcony()?.access?.openingTile?.y===c.y)
+      delete activeBalcony().access.openingTile; }
+  syncPieceFromSets(); if(['balcony','balconyHatch','erase'].includes(state.tool)) refreshBalconyGeometry(); drawGrid(); rebuildFootprintOverlay(); refreshExport();
 }
 let painting=false; gridCanvas.addEventListener('pointerdown',ev=>{pushUndo('Paint grid footprint');painting=true;gridCanvas.setPointerCapture(ev.pointerId);paintCell(ev)}); gridCanvas.addEventListener('pointermove',ev=>{if(painting)paintCell(ev)}); gridCanvas.addEventListener('pointerup',()=>painting=false); gridCanvas.addEventListener('pointercancel',()=>painting=false);
 
@@ -2452,6 +2469,11 @@ function renderBalconyControls() {
   select.replaceChildren(new Option('No balcony selected',''));
   for(const balcony of state.piece.balconies||[]) select.add(new Option(balcony.id,balcony.id));
   select.value=activeBalconyId||'';
+  const access=current?.access||{}; // Authoring record for the linked interior ladder and its roof opening.
+  $('balconyAccessMap').value=access.mapId||'';
+  $('balconyAccessFurniture').value=access.furnitureId||'';
+  $('balconyAccessCol').value=access.interiorTile?.col??0;
+  $('balconyAccessRow').value=access.interiorTile?.row??0;
   $('balconyHeightMode').value=current?.heightMode==='custom'?'custom':'wall';
   $('balconyHeight').value=current?.height ?? state.piece.base.height;
   $('balconyHeight').disabled=!current || current.heightMode!=='custom';
@@ -2494,6 +2516,20 @@ for(const id of ['balconyHeightMode','balconyHeight','balconyRails']){
     refreshBalconyGeometry();refreshExport();
   });
 }
+for(const id of ['balconyAccessMap','balconyAccessFurniture','balconyAccessCol','balconyAccessRow']){
+  $(id).addEventListener('change',()=>{
+    const balcony=activeBalcony();if(!balcony)return;
+    pushUndo('Set balcony interior access');
+    balcony.access={...balcony.access,
+      type:'interiorFurniture',
+      mapId:$('balconyAccessMap').value.trim(),
+      furnitureId:$('balconyAccessFurniture').value.trim(),
+      interiorTile:{col:Math.max(0,Math.floor(finite($('balconyAccessCol').value,0))),
+                    row:Math.max(0,Math.floor(finite($('balconyAccessRow').value,0)))}
+    }; // Serialized with the house piece for the same native transition as the IKMC roof ladder.
+    refreshBalconyGeometry();refreshExport();
+  });
+}
 $('balconyFlatRoof').addEventListener('change',()=>{
   pushUndo('Change rooftop roof type');
   const roof=state.piece.roof; // Stores the original sloping faces for nondestructive roof-type toggles.
@@ -2508,8 +2544,8 @@ $('balconyFlatRoof').addEventListener('change',()=>{
   refreshBalconyGeometry();refreshExport(); // Preserve custom doors, IKMC log walls, wraparound porches and authored attachments.
 });
 
-function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',door:'toolDoor',connector:'toolConnector',entryTunnel:'toolEntryTunnel',tallEntryTunnel:'toolTallEntryTunnel',chimney:'toolChimney',porch:'toolPorch',balcony:'toolBalcony',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
-$('toolFootprint').onclick=()=>setTool('footprint'); $('toolDoor').onclick=()=>setTool('door'); $('toolConnector').onclick=()=>setTool('connector'); $('toolEntryTunnel').onclick=()=>setTool('entryTunnel'); $('toolTallEntryTunnel').onclick=()=>setTool('tallEntryTunnel'); $('toolChimney').onclick=()=>setTool('chimney'); $('toolPorch').onclick=()=>setTool('porch'); $('toolBalcony').onclick=()=>setTool('balcony'); $('toolPorchStair').onclick=()=>setTool('porchStair'); $('toolRailing').onclick=()=>setTool('railing'); $('toolErase').onclick=()=>setTool('erase');
+function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',door:'toolDoor',connector:'toolConnector',entryTunnel:'toolEntryTunnel',tallEntryTunnel:'toolTallEntryTunnel',chimney:'toolChimney',porch:'toolPorch',balcony:'toolBalcony',balconyHatch:'toolBalconyHatch',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
+$('toolFootprint').onclick=()=>setTool('footprint'); $('toolDoor').onclick=()=>setTool('door'); $('toolConnector').onclick=()=>setTool('connector'); $('toolEntryTunnel').onclick=()=>setTool('entryTunnel'); $('toolTallEntryTunnel').onclick=()=>setTool('tallEntryTunnel'); $('toolChimney').onclick=()=>setTool('chimney'); $('toolPorch').onclick=()=>setTool('porch'); $('toolBalcony').onclick=()=>setTool('balcony'); $('toolBalconyHatch').onclick=()=>setTool('balconyHatch'); $('toolPorchStair').onclick=()=>setTool('porchStair'); $('toolRailing').onclick=()=>setTool('railing'); $('toolErase').onclick=()=>setTool('erase');
 ['wallStyle','logWallSeed','logWallDiameter','logWallWonk','logWallGap'].forEach(function(id){ const el=$(id); if(el) el.addEventListener('change',function(){ pushUndo('Change wall construction'); syncPieceFromInputs(); rebuildFaceMeshes(); refreshExport(); }); });
 $('applyGridBtn').onclick=()=>{ pushUndo('Apply grid settings'); state.gridSize=THREE.MathUtils.clamp(Math.round(finite($('gridSize').value,18)),4,80); state.tileSize=Math.max(.05,finite($('tileSize').value,1)); state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Applied grid settings.'); };
 $('clearFootprintBtn').onclick=()=>{ pushUndo('Clear footprint markers'); footprintSet.clear(); doorCell=null; connectorSet.clear(); entryTunnelSet.clear(); tallEntryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); balconySet.clear(); syncPieceFromSets(); refreshBalconyGeometry(); drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Cleared all grid markers.'); };
