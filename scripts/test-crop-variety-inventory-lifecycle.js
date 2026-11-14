@@ -27,7 +27,7 @@ const window = {
   },
 };
 const listeners = new Map(); // The metadata bridge registers its existing immediate-input capture listeners here.
-const document = { addEventListener: (name, fn) => listeners.set(name, fn) }; // No browser renderer/devtools are required.
+const document = { addEventListener: (name, fn) => listeners.set(name, fn), getElementById: () => null }; // No browser renderer/devtools are required; the optional Farm Editor is absent.
 const ctx = { window, document, console, Event: class Event {} }; // Production scripts share one browser-like global scope.
 const run = path => vm.runInNewContext(read(path), ctx, { filename: path }); // Executes the actual modules, not copied helpers.
 run('docs/js/crop-varieties.js');
@@ -69,5 +69,5 @@ const restoreAt = game.indexOf('window.CookingSystem.restore(playerData.cookingS
 assert.ok(game.indexOf('Object.assign(inventory, playerData.isNewWorld') < restoreAt && restoreAt >= 0,
   'the real game restores bag contents before the cooking restore hook');
 const loader = read('docs/js/combat/combat-config-loader.js'); // Confirms the metadata hook is available before game.js runs.
-assert.match(loader, /inventory-action-metadata-bridge\.js\?v=20261114foreignSeedLifecycle2/);
+assert.match(loader, /inventory-action-metadata-bridge\.js\?v=[A-Za-z0-9_.-]+/); // Any valid cache version passes; do not pin test expectations to one release.
 console.log('cultivar inventory lifecycle: imported seeds, saved hybrid rehydration, planting, harvesting, no duplicates');
