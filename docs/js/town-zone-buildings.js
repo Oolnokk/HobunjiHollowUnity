@@ -457,7 +457,7 @@
             const roofId='bldg_roof_hatch_'+bldg.id+'_'+balcony.id;
             if(!worldTownTransitions.some(t=>t.id===roofId))worldTownTransitions.push({
               id:roofId,label:access.returnLabel||'Descend Ladder',col,row,area:'town',
-              target:'interior',targetMapId:access.mapId,targetSpotId:'',
+              target:'building',targetMapId:access.mapId,targetSpotId:'', // enterBuilding, never the unrelated farm 'interior' scene.
               targetCol:access.interiorTile?.col??Math.floor(deps.INTERIOR_COLS/2),
               targetRow:access.interiorTile?.row??Math.floor(deps.INTERIOR_ROWS/2),
               buildingId:bldg.id,roofAccess:true,balconyId:balcony.id,
