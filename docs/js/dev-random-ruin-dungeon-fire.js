@@ -65,6 +65,7 @@
     group.position.set(x,y,z);
     group.userData.interactive3D = kind==='source';
     group.userData.devRuinInteractionType = kind==='source'?'dungeonFireSource':'dungeonFireTarget';
+    group.userData.fireHazard = kind==='source'; // Only the permanently lit Dungeon Fire source may light an adventuring torch.
     const bronze = material(0x855326,{metalness:.78,roughness:.34});
     const darkBronze = material(0x4a2c19,{metalness:.7,roughness:.48});
     const coal = material(kind==='cleansing'?0x1b3432:0x241c18,{roughness:.92,emissive:kind==='cleansing'?0x174f47:0x842600,emissiveIntensity:.5});
@@ -568,6 +569,7 @@
   SP.registerComposer({id:'dungeonFire',buildRooms,fixtureKinds:FIXTURE_KINDS,buildFixture,update,controls,snapshot,clear});
   window.DevRandomRuinDungeonFire=Object.freeze({
     snapshot,clear,
+    litSourceObjects:()=>world?.source?.group?.parent ? [world.source.group] : [], // Live-only; cleared ruins never expose stale torch fuel.
     armNextProjectile:()=>window.DungeonFire?.armNextProjectile?.()===true,
     setPayloadKind:kind=>{const value=String(kind||'').trim();if(!value)return false;payloadKind=value;return true;}, // Applies to the next generated net/icicle set; custom kinds use Shattercasks.registerBurdenFactory/ImpactHandler.
     releaseBurden:recordId=>{
