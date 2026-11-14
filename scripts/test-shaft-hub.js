@@ -581,8 +581,9 @@ for(const side of ['north','east','south','west']){
   const climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
-  const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
-  const connected=Connector.connect({rec,ruin,seed:23,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
+  const siteSeed=side==='west'?3687055066:23; // The west integration case also covers the player's reported F2 seed.
+  const preplanned=Plan.compose({seed:siteSeed,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
+  const connected=Connector.connect({rec,ruin,seed:siteSeed,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
@@ -614,6 +615,30 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(boxes,[],'no instanced one-unit stone boxes remain in the shaft shell');
   assert.equal(connected.hub.grid.originX+Math.floor(connected.hub.cols/2),preplanned.shaft.anchor.x);
   assert.equal(connected.hub.grid.originZ+Math.floor(connected.hub.rows/2),preplanned.shaft.anchor.z);
+  // A voxel-clear F2 doorway was still impassable because the *flat* movement
+  // grid only marked the level-0 shaft floor. Verify the full stone-shell
+  // tunnel, not merely the three outer tiles already owned by the wing.
+  const upperPortals=connected.hub.wingPortals.filter(portal=>portal.floor>0); // Real upper openings, including both F2 and any higher floor.
+  let elevatedOnly=0; // Counts tunnel tiles that previously remained ROCK because no lower floor or wing claimed them.
+  assert(upperPortals.some(portal=>portal.floor===1),'F2 must expose a testable shaft opening');
+  for(const portal of upperPortals){
+    const floor=connected.plan.floors[portal.floor]; // The planned wing is the authority for which corridor touches this shaft side.
+    const wing=floor.wings.find(wing=>wing.side===portal.side);
+    assert(wing,'every non-native test portal must belong to an authored wing');
+    const wingTiles=Playable.collect(wing); // Distinguishes internal shaft-wall passage from the independently built wing floor.
+    for(const {col,row} of portal.tunnel){
+      const x=Math.floor(connected.hub.grid.colToX(col+.5));
+      const z=Math.floor(connected.hub.grid.rowToZ(row+.5));
+      const key=x+','+z;
+      assert(connected.hub.grid.canStand(col,row,portal.level),
+        'the F2+ voxel corridor has physical headroom at '+portal.id+'/'+key);
+      assert(rec.floorSet.has(key),'the F2+ shaft corridor must be projected into the ordinary movement floor: '+portal.id+'/'+key);
+      assert.equal(rec.grid[z]?.[x]?.type,'grass',
+        'the flat collision grid cannot retain ROCK beneath an open upper portal: '+portal.id+'/'+key);
+      if(!wingTiles.has(key)&&!connected.hub.grid.canStand(col,row,0))elevatedOnly++;
+    }
+  }
+  assert(elevatedOnly>0,'the regression must cover upper-story shaft-shell cells missed by the previous doorway fix');
   assert.equal(ruin.occupancy.cols,rec.cols,'occupancy must include all mounted wings');
   assert.equal(ruin.occupancy.rows,rec.rows,'occupancy must include all mounted wings');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
