@@ -182,10 +182,10 @@ async function main() {
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'waking');
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   ms = 14000; frame({ timestamp: ms });
-  hour = 20; ms = 14500; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().active.length, 0, 'a three-hour NPC sleep grants only the short Rested fatigue grace');
-  hour = 22; ms = 15000; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
+  hour = 20.99; ms = 14900; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'three-hour NPC Rested protects until its actual expiry');
+  hour = 21; ms = 15400; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue', 'NPC yawns resume at the three-hour boundary, without a hidden extra hour');
   assert.equal(ceremonies, 1, 'Koma cannot refresh merely because midnight passed');
   ms = 20500; frame({ timestamp: ms });
   hour = 37; ms = 21000; frame({ timestamp: ms });
@@ -284,6 +284,7 @@ async function main() {
   hour = 108; longSleeper._bedLieActive = false; longSleeper.currentScheduleTarget = { pose: 'stand' };
   ms += 500; frame({ timestamp: ms });
   assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 124, 'eight hours of NPC sleep grants 16h protection');
+  assert.equal(runtime._test.stateFor(longSleeper, hour).nextHour, 124, 'full NPC Well Rested also resumes fatigue at 16h, not 17h');
 
   playerRested = false; // A fresh fatigue cycle lets the test cover excluded player poses.
   window.__hobunjiFurnitureDebug = { sitState: { phase: 'out' } }; // Standing up still owns the body's rig until the seat state is removed.
