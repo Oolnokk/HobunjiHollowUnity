@@ -13,8 +13,8 @@ const pair = Doors.doubleDoorData(data); // Derived geometry registered as one m
 assert.equal(JSON.stringify(data), original);
 assert.equal(authoredPair.key, 'doubleWoodenDoor');
 assert.equal(authoredPair.parts.length, 7);
-assert.deepEqual(authoredPair.parts.map(part => part.transform), pair.parts.map(part => part.transform), 'shipped carved assembly preserves original hinge poses');
-assert.deepEqual(authoredPair.puzzle.motion.parts, pair.puzzle.motion.parts, 'shipped carved pair has the exact two-leaf swing animation');
+assert.equal(JSON.stringify(authoredPair.parts.map(part => part.transform)), JSON.stringify(pair.parts.map(part => part.transform)), 'shipped carved assembly preserves original hinge poses');
+assert.equal(JSON.stringify(authoredPair.puzzle.motion.parts), JSON.stringify(pair.puzzle.motion.parts), 'shipped carved pair has the exact two-leaf swing animation');
 assert.equal(pair.parts.length, 7, 'two panels, two latches, two outer posts, one header');
 assert.equal(new Set(pair.parts.map(part => part.id)).size, 7);
 for (const part of pair.parts) {
