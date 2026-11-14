@@ -149,5 +149,9 @@ const elevation = fs.readFileSync('docs/js/town-player-body-elevation-bridge.js'
 assert(elevation.includes('containsBridgeFootprint(surface, x, z)'), 'Players cannot stand on water outside the diagonally rotated deck');
 assert(elevation.includes('object.userData?.townBridgeCrossing'), 'Exact support is opt-in only for bridge furniture');
 assert(editor.includes("townStairBridge: { icon:'🌉'"),'Map Editor must preserve and select the mapped bridge');
+assert(editor.includes('ctx.fillRect(-4*z,-z,8*z,3*z)') && editor.includes('ctx.strokeRect(-4*z,-z,8*z,3*z)'),
+  'Map Editor 2D must show the widened 8×3 bridge with its eastern edge in the old location');
+assert(!editor.includes('ctx.fillRect(-4*z,-z,8*z,2*z)'),
+  'Map Editor cannot keep drawing the previous 8×2 bridge footprint');
 assert(editor.includes('window.AuthoredFurniture.load(record.authoredFurnitureKey)'),'Map Editor 3D must render actual authored geometry');
 console.log('Town stream bridge: continuous water, 8×3 rotated crossing, fixed east rail, rigid stairs, editor and NPC pathing passed.');
