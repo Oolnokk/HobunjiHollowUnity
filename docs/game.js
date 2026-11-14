@@ -6431,16 +6431,15 @@
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
         // One central navigation entry for herds, prey, companions and
         // returning wildlife. The route graph prevents shortcutting vertically.
-        const globallyScaledSpeed = speed * devGlobalSpeedMul; // Both direct motion and cliff-route approaches must receive the same global world pace.
-        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, globallyScaledSpeed, dt)) return true;
+        const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy affects both cliff-route approaches and ground motion.
+        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky also slows both paths.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for ordinary and cliff-route travel.
+        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
-        const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
-        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky scales native creature locomotion.
-        const baseSpeed = globallyScaledSpeed * heavyMoveMul * stickySpeedMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
