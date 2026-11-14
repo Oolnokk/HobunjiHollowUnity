@@ -64,6 +64,7 @@
     if (!marker?.add || !spec?.layers?.length || !effects?.activateHead) return null;
     const root = new THREE.Group(); // Owned by the invisible grip: it follows the same moving bob, including on layered floors.
     root.name = 'ruin_rope_torch_brazier';
+    root.visible = false; // A pending PNG load must not display a false, headless glow before the fuel can burn.
     root.userData.devRuinFootprintIgnore = true;
     marker.add(root);
     const aura = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -165,7 +166,7 @@
         }
       }
     }
-    torch.root.visible = visible; // Distance and story culling also applies to the cheap sprite aura.
+    torch.root.visible = visible && torch.ready; // Never show a floating halo until the authored brazier and its fire emitter are ready.
     if (!visible || !torch.ready) { torch.wasVisible = false; return; }
     if (!torch.wasVisible) window.HobunjiLayeredWeaponEffects?.stepFire?.(torch.state, 0.4); // Kill stale flames when a previously culled rope returns to view.
     torch.wasVisible = true;
