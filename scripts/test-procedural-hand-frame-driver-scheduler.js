@@ -31,7 +31,11 @@ class Vector3 {
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   copy(other) { return this.set(other.x, other.y, other.z); }
 }
-class BufferGeometry { setAttribute() {} dispose() {} }
+class BufferGeometry {
+  setAttribute() {}
+  setDrawRange(start, count) { this.drawRange = { start, count }; }
+  dispose() {}
+}
 class Float32BufferAttribute {}
 class MeshBasicMaterial { constructor() { this.colorWrite = true; } dispose() {} }
 class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; this.parent = null; } }
@@ -140,6 +144,7 @@ function buildFixture({ withScheduler }) {
   registered.get('procedural-hand-pose-sync').fn();
   const sentinel = parent.children.find(child => typeof child.onBeforeRender === 'function');
   assert(sentinel, 'poseAndSyncUpdate must create the render-time sync sentinel');
+  assert.deepEqual(sentinel.geometry.drawRange, { start: 0, count: 0 }, 'the sync sentinel submits no triangles');
   const callsAfterPoseSync = getUseIdlePoseCalls();
 
   frameIdBox.value = 7;

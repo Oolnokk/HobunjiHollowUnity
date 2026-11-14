@@ -167,82 +167,25 @@
     if (role === 'bandit' || role === 'predator') return true;
     return role === 'tribe' && !!tribeOf(entity) && tribeOf(other) !== tribeOf(entity);
   }
-  // An ecology fight is between two actors the player can actually watch: both
-  // must have a live, shown rig. Wildlife beyond its own wake radius is hidden
-  // (or data-only) while camp residents stay rigged out to the wider release
-  // radius, so without this every hunter in view locked onto prey nobody could
-  // see and stood "fighting" thin air.
-  function ecologyPresented(entity) {
-    return !!entity && !entity._wildlifeVisualLodHidden && !entity._wildlifeVisualsReleased && !entity._denHidden
-      && entity.avatarRef?.group?.visible !== false;
-  }
-  // A fight starts only between actors this close together and is dropped once
-  // they drift further apart than the (wider) disengage radius. Pursuit is a
-  // straight line with no pathfinding, so an opponent picked from anywhere in
-  // the 24-tile ecology bubble (up to 48 tiles away, across cliffs and rivers)
-  // left the pursuer pinned against terrain, turning on the spot.
-  let ecologyEngageRadiusTiles = 10; // Replaced from the first tribe's behavior.ecologyEngageRadiusTiles.
-  let ecologyDisengageRadiusTiles = 15; // Replaced from the first tribe's behavior.ecologyDisengageRadiusTiles.
-  const ECOLOGY_STALL_GIVE_UP_MS = 6000; // No ground gained and no damage dealt for this long: the opponent is unreachable.
-  const ECOLOGY_STALL_AVOID_MS = 30000; // How long a given-up opponent is ignored by that pursuer.
-  const ECOLOGY_STALL_PROGRESS_TILES = 0.5; // Closing by less than this does not count as progress.
-  function ecologyDistanceTiles(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y) / (combatDeps?.TILE || 1);
-  }
-  function ecologyAvoids(source, target) {
-    const avoid = source?._ecologyAvoid;
-    if (!avoid || avoid.target !== target) return false;
-    if (nowMs() < avoid.untilMs) return true;
-    source._ecologyAvoid = null;
-    return false;
-  }
-  function nearestEcologyTarget(source, candidates, maxTiles = ecologyEngageRadiusTiles) {
-    const maxPx = maxTiles * (combatDeps?.TILE || 1);
+  function nearestEcologyTarget(source, candidates) {
     let best = null, bestD = Infinity;
     for (const target of candidates) {
       if (!target || target === source || target.health <= 0) continue;
       const d = Math.hypot(target.x - source.x, target.y - source.y);
-      if (d <= maxPx && d < bestD && !ecologyAvoids(source, target)) { best = target; bestD = d; }
+      if (d < bestD) { best = target; bestD = d; }
     }
     return best;
   }
   function validChunkCombatTarget(entity, target) {
     return !!entity && !!target && target.health > 0
       && entity.areaId === currentArea() && target.areaId === currentArea()
-      && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target)
-      && ecologyPresented(target) && ecologyDistanceTiles(entity, target) <= ecologyDisengageRadiusTiles;
-  }
-  // Called at the ecology cadence for the opponent an actor is about to keep.
-  // Returns false once the pursuit has stalled (blocked by terrain, opponent
-  // out of reach); the opponent is then ignored for a while so the actor goes
-  // back to its ordinary routine instead of pressing against a cliff.
-  function ecologyPursuitAlive(entity, target) {
-    const now = nowMs();
-    const distance = ecologyDistanceTiles(entity, target);
-    const health = num(target.health, 0);
-    const track = entity._ecologyPursuit;
-    if (!track || track.target !== target) {
-      entity._ecologyPursuit = { target, bestTiles: distance, health, sinceMs: now };
-      return true;
-    }
-    const busy = !!entity._banditAction || !!entity._rangedAction || !!entity._banditLunging || !!entity.telegraphState;
-    if (busy || health < track.health || distance <= track.bestTiles - ECOLOGY_STALL_PROGRESS_TILES) {
-      track.bestTiles = Math.min(track.bestTiles, distance);
-      track.health = health;
-      track.sinceMs = now;
-      return true;
-    }
-    if (now - track.sinceMs < ECOLOGY_STALL_GIVE_UP_MS) return true;
-    entity._ecologyAvoid = { target, untilMs: now + ECOLOGY_STALL_AVOID_MS };
-    entity._ecologyPursuit = null;
-    return false;
+      && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target);
   }
   function committedEcologyTarget(entity, candidates, targetKey = '_chunkCombatTarget') {
     // A fight owns its target until that opponent dies, leaves the active area,
-    // stops being a valid enemy, gets further away than the disengage radius,
-    // or cannot be reached. Otherwise the nearest opponent in engage range.
+    // or stops being a valid enemy. Distance changes alone never restart the fight.
     const committed = entity?.[targetKey];
-    if (candidates.includes(committed) && validChunkCombatTarget(entity, committed) && ecologyPursuitAlive(entity, committed)) return committed;
+    if (candidates.includes(committed) && validChunkCombatTarget(entity, committed)) return committed;
     return nearestEcologyTarget(entity, candidates);
   }
   // The player outranks the ecology. An actor that is already fighting the
@@ -296,7 +239,6 @@
     const prior = entity._chunkCombatTarget;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
     if (!target) {
-      entity._ecologyPursuit = null; // Stall tracking belongs to one opponent; do not keep a finished fight's actor reachable.
       // A finished fight must not leave the actor in 'chase' with no target: that
       // reads as the player being in combat (music blip) and, past the leash,
       // trips a 'return' that looks like the bandit going passive.
@@ -319,7 +261,6 @@
       entity.targetCreature = target;
       entity.state = 'patrol-chase'; // Reuses the existing visible predator-vs-creature pursuit/attack path in game.js.
     } else if (prior && entity.targetCreature === prior) {
-      entity._ecologyPursuit = null;
       entity.targetCreature = null;
       if (entity.state === 'patrol-chase') entity.state = 'idle';
     }
@@ -327,7 +268,7 @@
   function activePlayerChunkEcology() {
     const groups = { tribe: [], bandit: [], predator: [], prey: [] };
     for (const entity of combatDeps?.hostileObjects || []) {
-      if (!entityInPlayerEcologyRange(entity) || entity.health <= 0 || !ecologyPresented(entity)) continue;
+      if (!entityInPlayerEcologyRange(entity) || entity.health <= 0) continue;
       const role = ecologyRole(entity);
       if (role && groups[role]) groups[role].push(entity);
     }
@@ -2194,10 +2135,6 @@
       chiefLocaleDef = await chiefResponse.json();
       tentPiece = await tentResponse.json();
       if (tribeRuntimes[0] === api) ecologyRadiusTiles = Math.max(1, num(cfg?.behavior?.ecologyRadiusTiles, num(cfg?.behavior?.fullSimulationReleaseRadiusTiles, 24)));
-      if (tribeRuntimes[0] === api) {
-        ecologyEngageRadiusTiles = Math.max(1, num(cfg?.behavior?.ecologyEngageRadiusTiles, 10));
-        ecologyDisengageRadiusTiles = Math.max(ecologyEngageRadiusTiles + 1, num(cfg?.behavior?.ecologyDisengageRadiusTiles, 15));
-      }
       state.lastReason = 'config-ready';
       return cfg;
     } catch (error) {

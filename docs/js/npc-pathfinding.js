@@ -534,19 +534,9 @@
         // inconvenient mountain. The collision wrapper still validates it.
         const key = this.area + ':' + edge.route.id + ':' + edge.entry;
         if (this._npcCliffApproachKey !== key || !this._npcCliffApproach?.length) {
-          // Same reasoning as the grid-path failure memo below: a search that
-          // found no way to this cliff entry from this tile finds none next
-          // frame either, and each attempt explores up to 7,500 nodes.
-          const failKey = key + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z);
-          const now = Date.now();
-          if (this._npcCliffApproachFailKey === failKey && now < this._npcCliffApproachFailUntil) { cliffDebug.replanFailures++; return false; }
           this._npcCliffApproachKey = key;
           this._npcCliffApproach = findNpcPath(this.area, this.root.position.x, this.root.position.z,
             Math.floor(node.x), Math.floor(node.z), { padding: 12, maxNodes: 7500 }) || [];
-          if (!this._npcCliffApproach.length) {
-            this._npcCliffApproachFailKey = failKey;
-            this._npcCliffApproachFailUntil = now + PATH_FAILURE_RETRY_MS;
-          }
         }
         const wp = this._npcCliffApproach[0];
         if (!wp) { cliffDebug.replanFailures++; return false; }

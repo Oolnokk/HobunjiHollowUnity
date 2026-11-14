@@ -60,6 +60,14 @@
     return { ...lastSync };
   }
 
+  function bindCultivarInventory(injectedDeps = lastDeps) {
+    if (!injectedDeps?.ITEM_DEFS || !Array.isArray(injectedDeps.inventoryItems)) return false;
+    window.CropVarieties?.attach?.({
+      ITEM_DEFS: injectedDeps.ITEM_DEFS, inventory: injectedDeps.inventory, inventoryItems: injectedDeps.inventoryItems,
+    }); // CropPlanting already supplied the shared cropData; this bridge owns the live inventory catalog.
+    return true;
+  }
+
   function patchCookingSystem(api) {
     if (!api?.init || api.__inventoryActionMetadataBridgePatched) return;
 
@@ -67,6 +75,7 @@
     api.init = function inventoryActionMetadataInit(injectedDeps = {}) {
       const result = originalInit(injectedDeps);
       syncInventoryEntries(injectedDeps);
+      bindCultivarInventory(injectedDeps); // Register foreign seeds after CookingSystem exposes its canonical item scroll.
       return result;
     };
 
@@ -74,6 +83,16 @@
       const originalRegisterIngredientItems = api.registerIngredientItems.bind(api); // Used to keep later ingredient-registration passes synchronized too.
       api.registerIngredientItems = function inventoryActionMetadataRegisterIngredients(...args) {
         const result = originalRegisterIngredientItems(...args);
+        syncInventoryEntries(lastDeps);
+        return result;
+      };
+    }
+
+    if (typeof api.restore === 'function') {
+      const originalRestore = api.restore.bind(api); // The saved world bag is assigned immediately before CookingSystem.restore().
+      api.restore = function inventoryActionMetadataRestore(...args) {
+        bindCultivarInventory(); // Rehydrate saved hybrid item keys before cooking restores quality and displays the pack.
+        const result = originalRestore(...args);
         syncInventoryEntries(lastDeps);
         return result;
       };

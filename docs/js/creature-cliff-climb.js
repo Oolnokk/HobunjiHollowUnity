@@ -23,7 +23,6 @@
 
   const HOP_ACTIVE_S = 0.34;
   const HOP_PAUSE_S = 0.22;
-  const ENTRY_PATH_RETRY_MS = 1200; // After a failed walk-to-entry search, the wait before the same creature searches again from the same tile.
   const HOP_BOUNCE_UNITS = 0.35;
   const DESCEND_ACTIVE_S = 0.42; // Going down is one leap, like the player's jump-down.
   const FALL_S = 0.38;
@@ -276,12 +275,6 @@
     if (c._cliffEntryKey !== entryKey || !c._cliffEntryPath?.length) {
       const startCol = Math.floor(c.x / deps.TILE), startRow = Math.floor(c.y / deps.TILE);
       const endCol = Math.floor(targetX / deps.TILE), endRow = Math.floor(targetY / deps.TILE);
-      // A search that just failed from this tile to this entry fails again
-      // next frame. Callers ask every frame while blocked, and each ask was a
-      // full (up to 6,500-node) search per stuck creature; wait before retrying.
-      const failKey = entryKey + '|' + startCol + ',' + startRow;
-      const now = performance.now();
-      if (c._cliffEntryFailKey === failKey && now < c._cliffEntryRetryAt) return false;
       const component = window.CliffRouteNetwork.componentAt(net, startCol, startRow);
       const path = window.TilePathfinding?.findPath?.(startCol, startRow, endCol, endRow, (col, row) => {
         const tile = grid()?.[row]?.[col];
@@ -296,13 +289,7 @@
       const sameTile = startCol === endCol && startRow === endRow;
       c._cliffEntryPath = path?.length ? path : (sameTile ? [{ col: endCol, row: endRow }] : []);
       c._cliffEntryKey = entryKey;
-      if (!c._cliffEntryPath.length) {
-        c._cliffEntryFailKey = failKey;
-        c._cliffEntryRetryAt = now + ENTRY_PATH_RETRY_MS;
-        entryDebug.failures++;
-        return false;
-      }
-      c._cliffEntryFailKey = null;
+      if (!c._cliffEntryPath.length) { entryDebug.failures++; return false; }
     }
     const waypoint = c._cliffEntryPath?.[0];
     if (!waypoint) return false;
@@ -313,8 +300,6 @@
     const x = c.x + dx / length * step, y = c.y + dy / length * step;
     if (!deps.creatureCanEnterTile(c.def, x, y, c.x, c.y, c)) {
       c._cliffEntryPath = null;
-      c._cliffEntryFailKey = entryKey + '|' + Math.floor(c.x / deps.TILE) + ',' + Math.floor(c.y / deps.TILE); // The path's next step is blocked: same wait before searching again from here.
-      c._cliffEntryRetryAt = performance.now() + ENTRY_PATH_RETRY_MS;
       entryDebug.failures++;
       c.vx = 0; c.vy = 0;
       return false;

@@ -34,15 +34,6 @@
   const EDGE_WIDTH = 0.22; // Horizontal run of a micro-plateau side; with 0.22 depth this is a clear ~45° incline.
   const EDGE_HEIGHT_EPS = 0.025; // Shared-edge height tolerance used to decide whether two covered tiles are one walkable surface.
   const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling), applied after the whole zone is stretch-mapped as one connected surface below — never affects texture continuity.
-  // Distance LOD. A cap tile is a 4x4 vertex grid (18 triangles) so its exposed
-  // sides can incline back down inside the tile. That shape is a fifth of a
-  // tile wide and unlit white, so past a couple of dozen tiles it is not
-  // visible, while a zone-wide view was drawing 60+ chunks of it (about 650k
-  // triangles a frame on the Western Slope). Each chunk therefore also carries
-  // a flat slab at full cap height, 2 triangles a tile with the same mapped
-  // UVs at the tile corners, and updateDistanceLod shows one or the other.
-  const LOD_FAR_ENTER_TILES = 28; // Camera to the chunk's nearest edge (ground plane): beyond this the slab is drawn.
-  const LOD_FAR_EXIT_TILES = 24; // Back inside this the full micro-plateau returns; the gap stops flicker at one distance.
   const LAND_TYPES = new Set(['grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp', 'weeds']);
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']);
   const LOGICAL_OFFSETS = Object.freeze({ trench: -0.5, raised: 0.5 });
@@ -70,10 +61,6 @@
   let grassHiddenScene = null;
   let lastGrassHideCheckAt = 0;
   let lastReason = 'waiting for an active outdoor scene';
-  let lodEnabled = true; // A/B switch for the distance LOD (setDistanceLodEnabled).
-  let lodChunks = []; // { near, far, minX, maxX, minZ, maxZ, isFar } for every chunk that has a slab.
-  let lodFarShown = 0;
-  let lodNearTriangles = 0, lodFarTriangles = 0; // Zone totals for the chunks that have a slab: full detail vs slab.
 
   const now = () => globalThis.performance?.now?.() ?? Date.now();
 
@@ -229,9 +216,6 @@
 
   function disposeRoot() {
     cameraSurfaceState = null;
-    lodChunks = [];
-    lodFarShown = 0;
-    lodNearTriangles = 0; lodFarTriangles = 0;
     if (!root) return;
     root.parent?.remove(root);
     root.traverse?.(node => node.geometry?.dispose?.());
@@ -423,8 +407,6 @@
           exposedEdges++;
         }
         addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed);
-        state.lodTiles.push(col, row, baseCorners[0] + SURFACE_DEPTH, baseCorners[1] + SURFACE_DEPTH, baseCorners[2] + SURFACE_DEPTH, baseCorners[3] + SURFACE_DEPTH,
-          (exposed.N ? 1 : 0) | (exposed.E ? 2 : 0) | (exposed.S ? 4 : 0) | (exposed.W ? 8 : 0)); // Far slab: this tile's corners at full cap height, and which sides end the snow.
         const heights = new Float32Array(16); // Mirrors the rendered tile vertices without retaining its full geometry buffers.
         for (let i = 0; i < 16; i++) heights[i] = pos[pos.length - 48 + i * 3 + 1];
         state.cameraHeights[row * state.cols + col] = heights;
@@ -467,172 +449,6 @@
     return mesh;
   }
 
-  // The far slab for one chunk. Every tile becomes a flat patch at full cap
-  // height; UVs are read from the already-mapped detailed vertices at the tile
-  // corners (found by position, so this does not depend on the mapper's vertex
-  // order), which keeps the texture where it was.
-  //
-  // Opaque snow goes one step broader: neighbouring flat tiles at the same
-  // height are merged into one rectangle (greedy, inside the chunk). A dug
-  // trench, a raised bed, a ramp or a different mesa tier has its own height
-  // or is not flat, so it never merges with its surroundings and stays its own
-  // patch. Merged rectangles of different sizes meet at T-junctions, which
-  // can leak single pixels of the ground below, so every snow patch is grown
-  // by LOD_PATCH_OVERLAP on each side; the overlap is coplanar and the same
-  // white. Translucent slush would blend twice where patches overlap, so it
-  // keeps exact one-tile patches that share their corners.
-  //
-  // Seen from below, a flat slab has no edge at all, so a far clifftop would
-  // lose the white rim its inclined side gives it. Opaque snow therefore keeps
-  // one quad per exposed tile side: the same incline, from the cap height an
-  // EDGE_WIDTH inside the tile down to the walkable surface at its boundary.
-  //
-  // lodTiles holds [col, row, y00, y10, y01, y11, exposedSides] per tile, in
-  // the same order the detailed triangles were appended (18 per tile).
-  const TILE_TRIANGLES = 18;
-  const LOD_TILE_STRIDE = 7;
-  const LOD_PATCH_OVERLAP = 0.02;
-  const LOD_MERGE_UV_TOLERANCE = 0.0012; // Largest texture-coordinate error a merged patch may introduce at any tile corner it replaces.
-  function makeFarSlabMesh(nearMesh, combinedPosition, combinedUv, triStart, triCount, lodTiles, tileStart, mode, chunkCol, chunkRow) {
-    const THREE = window.THREE;
-    const tileCount = triCount / TILE_TRIANGLES;
-    if (!Number.isInteger(tileCount) || tileCount < 1) return null;
-    const cells = new Array(CHUNK_TILES * CHUNK_TILES).fill(null); // Chunk-local tile -> { y: [4], uv: [8], flat }
-    for (let t = 0; t < tileCount; t++) {
-      const o = (tileStart + t) * LOD_TILE_STRIDE;
-      const col = lodTiles[o], row = lodTiles[o + 1];
-      const uv = new Float32Array(8);
-      let found = 0;
-      const vStart = (triStart + t * TILE_TRIANGLES) * 3;
-      for (let i = 0; i < TILE_TRIANGLES * 3 && found !== 15; i++) {
-        const x = combinedPosition.getX(vStart + i) - col, z = combinedPosition.getZ(vStart + i) - row;
-        if ((x !== 0 && x !== 1) || (z !== 0 && z !== 1)) continue;
-        const corner = x + z * 2; // 0: (0,0)  1: (1,0)  2: (0,1)  3: (1,1), matching y00, y10, y01, y11.
-        if (found & (1 << corner)) continue;
-        found |= 1 << corner;
-        uv[corner * 2] = combinedUv.getX(vStart + i);
-        uv[corner * 2 + 1] = combinedUv.getY(vStart + i);
-      }
-      if (found !== 15) return null; // Unexpected layout: this chunk simply keeps its full detail at every distance.
-      const y = [lodTiles[o + 2], lodTiles[o + 3], lodTiles[o + 4], lodTiles[o + 5]];
-      cells[(row - chunkRow) * CHUNK_TILES + (col - chunkCol)] = { y, uv, flat: y[0] === y[1] && y[0] === y[2] && y[0] === y[3], exposed: lodTiles[o + 6] };
-    }
-
-    const merge = MODE_PRESETS[mode]?.transparent !== true;
-    const grow = merge ? LOD_PATCH_OVERLAP : 0;
-    const positions = [], uvs = [];
-    const cellAt = (c, r) => (c < CHUNK_TILES && r < CHUNK_TILES ? cells[r * CHUNK_TILES + c] : null);
-    const used = new Uint8Array(CHUNK_TILES * CHUNK_TILES);
-    for (let r = 0; r < CHUNK_TILES; r++) for (let c = 0; c < CHUNK_TILES; c++) {
-      const cell = cellAt(c, r);
-      if (!cell || used[r * CHUNK_TILES + c]) continue;
-      let w = 1, h = 1;
-      if (merge && cell.flat) {
-        const same = (cc, rr) => { const other = cellAt(cc, rr); return !!other && !used[rr * CHUNK_TILES + cc] && other.flat && other.y[0] === cell.y[0]; };
-        // The snow UVs are one relaxed, zone-wide stretch map: smooth in the
-        // middle of a snowfield, strongly non-linear toward its outline. A
-        // rectangle only interpolates between its four corners, so it may
-        // cover a set of tiles only if every tile corner inside it lands
-        // where the two patch triangles would put it. Otherwise the patch
-        // samples the wrong part of the texture and far plateaus change shade.
-        const uvFits = (ww, hh) => {
-          const a = cell.uv, b = cellAt(c + ww - 1, r).uv, d = cellAt(c, r + hh - 1).uv, e = cellAt(c + ww - 1, r + hh - 1).uv;
-          const u00 = a[0], v00 = a[1], u10 = b[2], v10 = b[3], u01 = d[4], v01 = d[5], u11 = e[6], v11 = e[7];
-          for (let rr = 0; rr < hh; rr++) for (let cc = 0; cc < ww; cc++) {
-            const uv = cellAt(c + cc, r + rr).uv;
-            for (let k = 0; k < 4; k++) {
-              const sx = (cc + (k & 1)) / ww, tz = (rr + (k >> 1)) / hh;
-              const pu = sx <= tz ? u00 + (u01 - u00) * tz + (u11 - u01) * sx : u00 + (u10 - u00) * sx + (u11 - u10) * tz; // Triangle (v00, v01, v11) or (v00, v11, v10).
-              const pv = sx <= tz ? v00 + (v01 - v00) * tz + (v11 - v01) * sx : v00 + (v10 - v00) * sx + (v11 - v10) * tz;
-              if (Math.abs(pu - uv[k * 2]) > LOD_MERGE_UV_TOLERANCE || Math.abs(pv - uv[k * 2 + 1]) > LOD_MERGE_UV_TOLERANCE) return false;
-            }
-          }
-          return true;
-        };
-        while (same(c + w, r) && uvFits(w + 1, 1)) w++;
-        grow_rows: while (r + h < CHUNK_TILES) {
-          for (let cc = c; cc < c + w; cc++) if (!same(cc, r + h)) break grow_rows;
-          if (!uvFits(w, h + 1)) break;
-          h++;
-        }
-      }
-      for (let rr = r; rr < r + h; rr++) for (let cc = c; cc < c + w; cc++) used[rr * CHUNK_TILES + cc] = 1;
-      // Corner k of the patch comes from corner k of the tile sitting in that corner of the patch.
-      const tiles = [cell, cellAt(c + w - 1, r), cellAt(c, r + h - 1), cellAt(c + w - 1, r + h - 1)];
-      const x0 = chunkCol + c - grow, x1 = chunkCol + c + w + grow, z0 = chunkRow + r - grow, z1 = chunkRow + r + h + grow;
-      const put = corner => {
-        positions.push(corner & 1 ? x1 : x0, tiles[corner].y[corner], corner >> 1 ? z1 : z0);
-        uvs.push(tiles[corner].uv[corner * 2], tiles[corner].uv[corner * 2 + 1]);
-      };
-      put(0); put(2); put(3); // Same winding as the detailed quads: v00, v01, v11, then v00, v11, v10.
-      put(0); put(3); put(1);
-    }
-    const patchTriangles = positions.length / 9;
-    let rimTriangles = 0;
-    if (merge) {
-      // side bit -> [corner a, corner b, inward x, inward z]; corners as above (0: (0,0)  1: (1,0)  2: (0,1)  3: (1,1)).
-      const RIMS = [[1, 0, 1, 0, 1], [2, 1, 3, -1, 0], [4, 2, 3, 0, -1], [8, 0, 2, 1, 0]];
-      for (let r = 0; r < CHUNK_TILES; r++) for (let c = 0; c < CHUNK_TILES; c++) {
-        const cell = cellAt(c, r);
-        if (!cell?.exposed) continue;
-        for (const [bit, a, b, inX, inZ] of RIMS) {
-          if (!(cell.exposed & bit)) continue;
-          const vertex = (corner, top) => {
-            positions.push(chunkCol + c + (corner & 1) + (top ? inX * EDGE_WIDTH : 0), cell.y[corner] - (top ? 0 : SURFACE_DEPTH), chunkRow + r + (corner >> 1) + (top ? inZ * EDGE_WIDTH : 0));
-            uvs.push(cell.uv[corner * 2], cell.uv[corner * 2 + 1]);
-          };
-          vertex(a, false); vertex(b, false); vertex(b, true); // The material is double-sided, so winding does not matter here.
-          vertex(a, false); vertex(b, true); vertex(a, true);
-          rimTriangles += 2;
-        }
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geometry, material(mode));
-    mesh.name = nearMesh.name + '_far';
-    mesh.userData.environmentSurfaceRuntime = true;
-    mesh.userData.environmentSurfaceMicroPlateau = true;
-    mesh.userData.environmentSurfaceFarSlab = true;
-    mesh.userData.environmentSurfaceFarSlabTriangles = { patches: patchTriangles, rims: rimTriangles }; // Patches first, then rims.
-    mesh.renderOrder = nearMesh.renderOrder;
-    mesh.receiveShadow = false;
-    mesh.visible = false;
-    mesh.raycast = () => {}; // The detailed mesh stays the one surface raycasts and occlusion tests answer to.
-    root.add(mesh);
-    lodNearTriangles += triCount;
-    lodFarTriangles += positions.length / 9;
-    return mesh;
-  }
-
-  // Called by the game right before its world render, with that render's
-  // camera. Tool pages that never call it keep full detail everywhere.
-  function updateDistanceLod(camera) {
-    if (!lodChunks.length) return;
-    const e = camera?.matrixWorld?.elements;
-    const x = e ? e[12] : NaN, z = e ? e[14] : NaN;
-    const usable = lodEnabled && Number.isFinite(x) && Number.isFinite(z);
-    let shown = 0;
-    for (const chunk of lodChunks) {
-      let isFar = false;
-      if (usable) {
-        const dx = x < chunk.minX ? chunk.minX - x : x > chunk.maxX ? x - chunk.maxX : 0;
-        const dz = z < chunk.minZ ? chunk.minZ - z : z > chunk.maxZ ? z - chunk.maxZ : 0;
-        const threshold = chunk.isFar ? LOD_FAR_EXIT_TILES : LOD_FAR_ENTER_TILES;
-        isFar = dx * dx + dz * dz > threshold * threshold;
-      }
-      if (isFar) shown++;
-      if (isFar === chunk.isFar) continue;
-      chunk.isFar = isFar;
-      chunk.near.visible = !isFar;
-      chunk.far.visible = isFar;
-    }
-    lodFarShown = shown;
-  }
-
   // One synchronous pass over the whole zone — the same way
   // buildZoneMesaMeshes/the ordinary floor mesh already build on entry
   // without a performance problem, because this only happens once, on
@@ -643,7 +459,7 @@
   // skips straight to the cheap planar UV).
   function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
-    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows), lodTiles: [] };
+    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows) };
     root = new window.THREE.Group();
     root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
@@ -660,10 +476,9 @@
     for (let row = 0; row < rows; row += CHUNK_TILES) {
       for (let col = 0; col < cols; col += CHUNK_TILES) {
         const triStart = idx.length / 3;
-        const tileStart = state.lodTiles.length / LOD_TILE_STRIDE;
         appendChunkGeometry(state, { col, row }, pos, idx);
         const triCount = idx.length / 3 - triStart;
-        if (triCount > 0) chunkRanges.push({ col, row, triStart, triCount, tileStart });
+        if (triCount > 0) chunkRanges.push({ col, row, triStart, triCount });
         chunkCount++;
       }
     }
@@ -677,14 +492,10 @@
       const combinedPosition = combined.getAttribute('position');
       const combinedUv = combined.getAttribute('uv');
       for (const chunk of chunkRanges) {
-        const near = makeChunkMeshFromRange(combinedPosition, combinedUv, chunk.triStart, chunk.triCount, `environment_surface_micro_plateau_${mode}_${chunk.col}_${chunk.row}`, mode === 'snow' ? 2.2 : 22.1, mode);
-        const far = combinedPosition.count === idx.length // Triangle order survived the UV mapper, which the per-chunk slicing above already relies on.
-          ? makeFarSlabMesh(near, combinedPosition, combinedUv, chunk.triStart, chunk.triCount, state.lodTiles, chunk.tileStart, mode, chunk.col, chunk.row) : null;
-        if (far) lodChunks.push({ near, far, isFar: false, minX: chunk.col, maxX: Math.min(cols, chunk.col + CHUNK_TILES), minZ: chunk.row, maxZ: Math.min(rows, chunk.row + CHUNK_TILES) });
+        makeChunkMeshFromRange(combinedPosition, combinedUv, chunk.triStart, chunk.triCount, `environment_surface_micro_plateau_${mode}_${chunk.col}_${chunk.row}`, mode === 'snow' ? 2.2 : 22.1, mode);
       }
     }
 
-    state.lodTiles = null; // Only needed while the slabs were being cut.
     cameraSurfaceState = state;
     buildCount++;
     lastBuildMs = now() - started;
@@ -827,7 +638,6 @@
       builtTiles,
       exposedEdges,
       chunkCount,
-      distanceLod: { enabled: lodEnabled, chunksWithSlab: lodChunks.length, slabsShown: lodFarShown, fullTriangles: lodNearTriangles, slabTriangles: lodFarTriangles, enterTiles: LOD_FAR_ENTER_TILES, exitTiles: LOD_FAR_EXIT_TILES },
       buildCount,
       lastBuildMs: Number(lastBuildMs.toFixed(2)),
       textureState,
@@ -835,8 +645,7 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, updateDistanceLod,
-    setDistanceLodEnabled(value) { lodEnabled = value !== false; return lodEnabled; }, /* Takes effect at the next world render. */ getSnowMaterial: () => material('snow'), bindSnowTexture(target) { if (!target) return false; target.map = snowTexture; if (snowTexture) target.needsUpdate = true; else if (textureState === 'loading') snowMaterialConsumers.add(target); return true; }, unbindSnowTexture(target) { return snowMaterialConsumers.delete(target); }, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative Western Slope snow caps reuse this exact material and its asynchronously loaded canvas texture.
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, getSnowMaterial: () => material('snow'), bindSnowTexture(target) { if (!target) return false; target.map = snowTexture; if (snowTexture) target.needsUpdate = true; else if (textureState === 'loading') snowMaterialConsumers.add(target); return true; }, unbindSnowTexture(target) { return snowMaterialConsumers.delete(target); }, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative Western Slope snow caps reuse this exact material and its asynchronously loaded canvas texture.
   ensureTexture();
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone

@@ -44,8 +44,6 @@
     "fullSimulationChunkTiles": 10,
     "fullSimulationRadiusTiles": 18,
     "fullSimulationReleaseRadiusTiles": 24,
-    "ecologyEngageRadiusTiles": 10,
-    "ecologyDisengageRadiusTiles": 15,
     "offChunkTickSeconds": 4,
     "decisionMinSeconds": 4,
     "decisionMaxSeconds": 11,

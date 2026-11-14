@@ -33,15 +33,15 @@
   <script src="js/instanced-mesh-bounds.js?v=20261112meshbounds1"></script>
   <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
-  <script src="js/HousePieceGen.js?v=20261102roofjoin1&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
+  <script src="js/HousePieceGen.js?v=20261114fullporch2&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
-  <script src="js/building-door.js?v=20261114singleexport1"></script>
+  <script src="js/building-door.js?v=20261114fullentry2"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261111h05b7f02"></script>
+  <script src="js/format-utils.js?v=20261114porchload2"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -76,7 +76,7 @@
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/item-acquisition-rarity.js?v=20261110he8e05f5"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
-  <script src="js/crop-varieties.js?v=20261110hf9aee20"></script>
+  <script src="js/crop-varieties.js?v=20261114foreignSeedLifecycle2"></script>
   <script src="js/crop-planting.js?v=20261110tzkFortune1"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
@@ -200,12 +200,12 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261114h1794934"></script>
+  <script src="js/held-action-animations.js?v=20261114hc063e44"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261114haf657ee"></script>
+  <script src="js/character-action-locks.js?v=20261114hd3b7ebf"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -266,7 +266,7 @@
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261113melodyLoud1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
-  <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
+  <script src="js/interior-door-tiles.js?v=20261114dblleaf1"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
@@ -369,7 +369,7 @@
   <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114packbooks1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114foreignSeedLifecycle2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -457,7 +457,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261114h9fb75fd&surfaceUv=20261113terrainpass2"></script>
+  <script src="js/house-pieces.js?v=20261114hbd38170&surfaceUv=20261113terrainpass2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -523,7 +523,7 @@
   <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
   <script src="js/map-layout-system.js?v=20261111communion2"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
-  <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
+  <script src="js/interior-furniture-grid.js?v=20261114dbldim1"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
   <script src="js/seat-surface-placement-transform.js?v=20260915seat1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
@@ -564,7 +564,7 @@
   <script src="js/player-jump.js?v=20261109ropeBase1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261114h0137b40"></script>
+  <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
@@ -746,7 +746,7 @@
        system in environment-surface-runtime.js (rain-planes.js loads that
        above on demand, now an inert stub kept only so that bootstrap check
        and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20261114hc81c49e"></script>
+  <script src="js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1"></script>
   <!-- Feeds the surface overlay's build progress into the Pixel Probe
        report line (window.EnvironmentSurfacePixelProbe) — intercepts
        window.PixelProbe assignment if pixel-probe.js below hasn't loaded
@@ -2979,7 +2979,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114potionStacks3"></script>
+  <script src="game.js?v=20261114potionMerge1719a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

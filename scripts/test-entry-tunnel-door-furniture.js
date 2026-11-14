@@ -5,7 +5,8 @@ const fs = require('fs'); // Used to read the runtime module/config as the brows
 const vm = require('vm'); // Used to execute the browser module against lightweight Three.js/runtime stubs.
 
 const moduleSource = fs.readFileSync('docs/js/entry-tunnel-door-furniture.js', 'utf8'); // Used by the VM integration test.
-const doorData = JSON.parse(fs.readFileSync('docs/config/furniture-authored/door.json', 'utf8')); // Used to validate the converted authored-furniture payload.
+const doorData = JSON.parse(fs.readFileSync('docs/config/furniture-authored/door.json', 'utf8')); // Regular tunnel doors retain their original 1x1 slab.
+const doubleData = JSON.parse(fs.readFileSync('docs/config/furniture-authored/doubleWoodenDoor.json', 'utf8')); // Fused mouths receive one independent carved pair.
 const mineEntrancePiece = JSON.parse(fs.readFileSync('docs/config/pieces/mine_entrance.json', 'utf8')); // Used to cover the real authored mine entrance that exposed the missing wrapper path.
 const townHousePiece = JSON.parse(fs.readFileSync('docs/config/pieces/hobunjihouse1.json', 'utf8')); // Used to cover an ordinary wrapped town-house export as well as the mine.
 const formatSource = fs.readFileSync('docs/js/format-utils.js', 'utf8'); // Used to verify the synchronous boot hook remains installed.
@@ -14,6 +15,8 @@ assert.strictEqual(doorData.schema, 'hobunji_furniture_authored_runtime.v1');
 assert.strictEqual(doorData.key, 'door');
 assert.deepStrictEqual(doorData.footprint, { w: 1, d: 1 });
 assert.strictEqual(doorData.parts.length, 2);
+assert.strictEqual(doubleData.parts.length, 7, 'fused mouth uses two carved leaves with one shared frame');
+assert.deepStrictEqual(doubleData.footprint, { w: 2, d: 1 });
 assert(/entry-tunnel-door-furniture\.js\?v=[A-Za-z0-9_.-]+/.test(formatSource), 'format-utils must synchronously load the current entry-tunnel door bridge');
 
 const previousDoorTransforms = [ // Baseline is the user's prior 50%-of-original door asset.
@@ -38,6 +41,7 @@ function makeGroup() {
     name: '',
     position: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
     rotation: { y: 0 },
+    scale: { x: 1, y: 1, z: 1, setScalar(n) { this.x = this.y = this.z = n; } }, // One uniform scale must fit the entire carved pair to the fused mouth.
     add(child) { this.children.push(child); },
     getObjectByName(name) { return this.children.find(child => child.name === name) || null; },
   };
@@ -71,9 +75,9 @@ const windowStub = { // Used as the browser-global environment for the integrati
     },
   },
   AuthoredFurniture: {
-    peek(key) { return key === 'door' ? doorData : null; },
+    peek(key) { return key === 'door' ? doorData : key === 'doubleWoodenDoor' ? doubleData : null; },
     buildGroup(data) {
-      assert.strictEqual(data.key, 'door');
+      assert(['door', 'doubleWoodenDoor'].includes(data.key), 'only the shipped door assets may be attached');
       return makeGroup();
     },
   },
@@ -97,17 +101,21 @@ assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).attache
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).count, 1);
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).waitingForWoodMaterial, 1, 'pre-style door is queued without disrupting placement');
 
-const mineExpectedDoors = tunnelTileCount(mineEntrancePiece); // Used to prove every baked mine-entrance tunnel tile receives a real authored door.
+const mineExpectedDoors = new Set(mineEntrancePiece.base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening && ['north','south','east','west'].includes(face.extensionFace)).map(face => `${face.extensionFace}:${face.sourceTile?.x},${face.sourceTile?.y}`)).size; // Count actual outer mouths, never interior tunnel depth tiles.
 assert(mineExpectedDoors > 0, 'The real mine entrance fixture must contain authored entry-tunnel tiles for this regression test');
 const mineGroup = windowStub.HousePieceGen.buildGroupFromPiece({}, mineEntrancePiece, 15, -1, { rotationDeg: 180, elevationY: 0.5 });
 const mineDebug = windowStub.EntryTunnelDoorFurniture.debugInfo(mineGroup);
 assert.strictEqual(pieceCalls.length, 1);
 assert.strictEqual(mineDebug.expectedCount, mineExpectedDoors);
-assert.strictEqual(mineDebug.count, mineExpectedDoors, 'Every authored mine entry-tunnel tile should receive door furniture');
+assert.strictEqual(mineDebug.count, mineExpectedDoors, 'A fused mine mouth must receive one carved double door, not one overlapping door per tile');
+assert.strictEqual(mineExpectedDoors, 1, 'two-by-two mine tunnel has just one exterior opening');
+assert.strictEqual(mineDebug.doors[0].furnitureKey, 'doubleWoodenDoor');
+assert.strictEqual(mineDebug.doors[0].widthTiles, 2);
+assert(Math.abs(mineDebug.doors[0].uniformScale - 0.82) < 1e-10, 'one uniform scaling transform must fit its two-tile frame');
 assert(mineDebug.doors.every(door => door.localTile && Number.isFinite(door.position.x) && Number.isFinite(door.position.z)), 'Authored mine doors should expose mobile-readable local/world placement data');
 assert(mineGroup.children.every(child => child.userData.entryTunnelDoorFurniture === true), 'The authored wrapper should add only the expected door children to the stubbed mine building group');
 
-const houseExpectedDoors = tunnelTileCount(townHousePiece); // Used to cover the wrapped currentPiece export shape used by ordinary Hobunji houses.
+const houseExpectedDoors = new Set(normalizedPiece(townHousePiece).base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening && ['north','south','east','west'].includes(face.extensionFace)).map(face => `${face.extensionFace}:${face.sourceTile?.x},${face.sourceTile?.y}`)).size || tunnelTileCount(townHousePiece); // Count actual framed mouths in an ordinary wrapped town house.
 assert(houseExpectedDoors > 0, 'The real Hobunji house fixture must contain authored entry-tunnel tiles for this regression test');
 const houseGroup = windowStub.HousePieceGen.buildGroupFromPiece({}, townHousePiece, 33, 3, { rotationDeg: 0 });
 const houseDebug = windowStub.EntryTunnelDoorFurniture.debugInfo(houseGroup);
@@ -136,5 +144,16 @@ const mineGroup2 = windowStub.HousePieceGen.buildGroupFromPiece({}, mineEntrance
 assert.strictEqual(pieceCalls.length, 3, 'A second install must not nest another authored-piece wrapper');
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(mineGroup2).count, mineExpectedDoors);
 assert.strictEqual(styledDoors.length, beforeRestyle + 1 + mineExpectedDoors, 'doors attached after style initialization receive the shared finish immediately');
+
+const ikmcPiece = JSON.parse(fs.readFileSync('docs/config/pieces/ikmc-outpost.json', 'utf8')); // Full west/front porch relocation exercises fullFootprint placement and a rotated one-tile mouth.
+const ikmcGroup = windowStub.HousePieceGen.buildGroupFromPiece({}, ikmcPiece, 4, 40, { rotationDeg: 180, elevationY: 0.5 });
+const ikmcDebug = windowStub.EntryTunnelDoorFurniture.debugInfo(ikmcGroup);
+assert.strictEqual(ikmcDebug.count, 1, 'full wraparound porch must have exactly one physical entry door');
+assert.strictEqual(ikmcDebug.doors[0].furnitureKey, 'door', 'one-tile IKMC tunnel must retain the regular door');
+assert.strictEqual(ikmcDebug.doors[0].tile.col, 7);
+assert.strictEqual(ikmcDebug.doors[0].tile.row, 42);
+assert(Math.abs(ikmcDebug.doors[0].position.y - 0.68) < 1e-9, 'door sill must rise by the 0.18-tile porch height above the building elevation');
+assert(Math.abs(ikmcDebug.doors[0].rotationYDeg + 180) < 1e-9, 'south-facing authored entrance must rotate north toward the new town road');
+assert(ikmcGroup.children[0]?.userData?.entryTunnelDoorFurniture, 'visible authored IKMC door must actually attach to building group');
 
 console.log('entry-tunnel door furniture integration: ok');

@@ -106,14 +106,14 @@
     ],
     "door": {
       "x": 13,
-      "y": 10
+      "y": 11
     },
     "connectors": [],
     "extensions": {
       "entryTunnels": [
         {
           "x": 13,
-          "y": 10
+          "y": 11
         }
       ],
       "tallEntryTunnels": [],
@@ -456,12 +456,12 @@
             2
           ],
           [
-            8,
+            4.09,
             0,
             2
           ],
           [
-            8,
+            4.09,
             1.4,
             2
           ],
@@ -473,7 +473,8 @@
         ],
         "tag": "wall",
         "color": null,
-        "outpostFace": "south"
+        "outpostFace": "south",
+        "entryPortalPart": "leftWall"
       },
       {
         "id": 57,
@@ -558,6 +559,8377 @@
         "tag": "wall",
         "color": null,
         "outpostFace": "east"
+      },
+      {
+        "id": 60,
+        "v": [
+          [
+            4.91,
+            0,
+            2
+          ],
+          [
+            8,
+            0,
+            2
+          ],
+          [
+            8,
+            1.4,
+            2
+          ],
+          [
+            4.91,
+            1.4,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "outpostFace": "south",
+        "entryPortalPart": "rightWall"
+      },
+      {
+        "id": 61,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2
+          ],
+          [
+            4.91,
+            1.058,
+            2
+          ],
+          [
+            4.91,
+            1.4,
+            2
+          ],
+          [
+            4.09,
+            1.4,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "outpostFace": "south",
+        "entryPortalCut": true,
+        "entryPortalPart": "lintel"
+      },
+      {
+        "id": 68,
+        "v": [
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionFace": "tunnelCeiling",
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true
+      },
+      {
+        "id": 69,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4.13,
+            0,
+            2
+          ],
+          [
+            4.13,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 70,
+        "v": [
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4,
+            1.148,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 71,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 72,
+        "v": [
+          [
+            4.13,
+            0,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            2
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4.13,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 73,
+        "v": [
+          [
+            4.13,
+            0,
+            3
+          ],
+          [
+            4.13,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 74,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            2
+          ],
+          [
+            4,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "west",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 75,
+        "v": [
+          [
+            4.87,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            4.87,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 76,
+        "v": [
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 77,
+        "v": [
+          [
+            4.87,
+            0,
+            2
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 78,
+        "v": [
+          [
+            5,
+            0,
+            2
+          ],
+          [
+            5,
+            1.148,
+            2
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 79,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 80,
+        "v": [
+          [
+            4.87,
+            0,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            3
+          ],
+          [
+            4.87,
+            1.148,
+            2
+          ],
+          [
+            4.87,
+            0,
+            2
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "east",
+        "doorwayFrame": true,
+        "doorwayFramePart": "tunnelSide"
+      },
+      {
+        "id": 81,
+        "v": [
+          [
+            4,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 82,
+        "v": [
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 83,
+        "v": [
+          [
+            4,
+            0,
+            2.87
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 84,
+        "v": [
+          [
+            4.09,
+            0,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 85,
+        "v": [
+          [
+            4.09,
+            0,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 86,
+        "v": [
+          [
+            4,
+            0,
+            3
+          ],
+          [
+            4,
+            1.148,
+            3
+          ],
+          [
+            4,
+            1.148,
+            2.87
+          ],
+          [
+            4,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "leftJamb"
+      },
+      {
+        "id": 87,
+        "v": [
+          [
+            4.91,
+            0,
+            2.87
+          ],
+          [
+            5,
+            0,
+            2.87
+          ],
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            4.91,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 88,
+        "v": [
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 89,
+        "v": [
+          [
+            4.91,
+            0,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 90,
+        "v": [
+          [
+            5,
+            0,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            2.87
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            5,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 91,
+        "v": [
+          [
+            5,
+            0,
+            3
+          ],
+          [
+            5,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            0,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 92,
+        "v": [
+          [
+            4.91,
+            0,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            0,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "rightJamb"
+      },
+      {
+        "id": 93,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            3
+          ],
+          [
+            4.09,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 94,
+        "v": [
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 95,
+        "v": [
+          [
+            4.09,
+            1.058,
+            2.87
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.058,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 96,
+        "v": [
+          [
+            4.91,
+            1.058,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            2.87
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.91,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 97,
+        "v": [
+          [
+            4.91,
+            1.058,
+            3
+          ],
+          [
+            4.91,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.058,
+            3
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 98,
+        "v": [
+          [
+            4.09,
+            1.058,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            3
+          ],
+          [
+            4.09,
+            1.148,
+            2.87
+          ],
+          [
+            4.09,
+            1.058,
+            2.87
+          ]
+        ],
+        "tag": "entryTunnel",
+        "color": null,
+        "extensionType": "entryTunnel",
+        "sourceTile": {
+          "x": 13,
+          "y": 11
+        },
+        "fusedHollow": true,
+        "solidifiedWalls": true,
+        "continuousWhenAdjacent": true,
+        "extensionFace": "south",
+        "exteriorEntryOpening": true,
+        "continuousMultiTileOpening": false,
+        "openingRunTiles": 1,
+        "nearFullHeightOpening": true,
+        "doorwayFrame": true,
+        "doorwayFramePart": "lowLintel"
+      },
+      {
+        "id": 165,
+        "v": [
+          [
+            1.82,
+            1.4,
+            -2.18
+          ],
+          [
+            1.82,
+            2.14,
+            0
+          ],
+          [
+            8.18,
+            2.14,
+            0
+          ],
+          [
+            8.18,
+            1.4,
+            -2.18
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofFace": "northSlope"
+      },
+      {
+        "id": 166,
+        "v": [
+          [
+            1.82,
+            2.14,
+            0
+          ],
+          [
+            1.82,
+            1.4,
+            2.18
+          ],
+          [
+            8.18,
+            1.4,
+            2.18
+          ],
+          [
+            8.18,
+            2.14,
+            0
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofFace": "southSlope"
+      },
+      {
+        "id": 167,
+        "v": [
+          [
+            -3,
+            0,
+            -2
+          ],
+          [
+            2,
+            0,
+            -2
+          ],
+          [
+            2,
+            0,
+            2
+          ],
+          [
+            -3,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 168,
+        "v": [
+          [
+            -3,
+            0.18,
+            2
+          ],
+          [
+            2,
+            0.18,
+            2
+          ],
+          [
+            2,
+            0.18,
+            -2
+          ],
+          [
+            -3,
+            0.18,
+            -2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "top"
+      },
+      {
+        "id": 169,
+        "v": [
+          [
+            -3,
+            0,
+            -2
+          ],
+          [
+            -3,
+            0.18,
+            -2
+          ],
+          [
+            2,
+            0.18,
+            -2
+          ],
+          [
+            2,
+            0,
+            -2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "north"
+      },
+      {
+        "id": 170,
+        "v": [
+          [
+            2,
+            0,
+            -2
+          ],
+          [
+            2,
+            0.18,
+            -2
+          ],
+          [
+            2,
+            0.18,
+            2
+          ],
+          [
+            2,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "east"
+      },
+      {
+        "id": 171,
+        "v": [
+          [
+            2,
+            0,
+            2
+          ],
+          [
+            2,
+            0.18,
+            2
+          ],
+          [
+            -3,
+            0.18,
+            2
+          ],
+          [
+            -3,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "south"
+      },
+      {
+        "id": 172,
+        "v": [
+          [
+            -3,
+            0,
+            2
+          ],
+          [
+            -3,
+            0.18,
+            2
+          ],
+          [
+            -3,
+            0.18,
+            -2
+          ],
+          [
+            -3,
+            0,
+            -2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "deckRegion": "westWrap",
+        "extensionFace": "west"
+      },
+      {
+        "id": 173,
+        "v": [
+          [
+            -3,
+            0,
+            2
+          ],
+          [
+            8,
+            0,
+            2
+          ],
+          [
+            8,
+            0,
+            4
+          ],
+          [
+            -3,
+            0,
+            4
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "floor"
+      },
+      {
+        "id": 174,
+        "v": [
+          [
+            -3,
+            0.18,
+            4
+          ],
+          [
+            8,
+            0.18,
+            4
+          ],
+          [
+            8,
+            0.18,
+            2
+          ],
+          [
+            -3,
+            0.18,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "top"
+      },
+      {
+        "id": 175,
+        "v": [
+          [
+            -3,
+            0,
+            2
+          ],
+          [
+            -3,
+            0.18,
+            2
+          ],
+          [
+            8,
+            0.18,
+            2
+          ],
+          [
+            8,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "north"
+      },
+      {
+        "id": 176,
+        "v": [
+          [
+            8,
+            0,
+            2
+          ],
+          [
+            8,
+            0.18,
+            2
+          ],
+          [
+            8,
+            0.18,
+            4
+          ],
+          [
+            8,
+            0,
+            4
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "east"
+      },
+      {
+        "id": 177,
+        "v": [
+          [
+            8,
+            0,
+            4
+          ],
+          [
+            8,
+            0.18,
+            4
+          ],
+          [
+            -3,
+            0.18,
+            4
+          ],
+          [
+            -3,
+            0,
+            4
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "south"
+      },
+      {
+        "id": 178,
+        "v": [
+          [
+            -3,
+            0,
+            4
+          ],
+          [
+            -3,
+            0.18,
+            4
+          ],
+          [
+            -3,
+            0.18,
+            2
+          ],
+          [
+            -3,
+            0,
+            2
+          ]
+        ],
+        "tag": "porch",
+        "color": null,
+        "extensionType": "porch",
+        "fusedPorchDeck": true,
+        "continuousSurface": true,
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "deckRegion": "frontWrap",
+        "extensionFace": "west"
+      },
+      {
+        "id": 179,
+        "v": [
+          [
+            -2,
+            0,
+            4.666666666666667
+          ],
+          [
+            1,
+            0,
+            4.666666666666667
+          ],
+          [
+            1,
+            0,
+            5
+          ],
+          [
+            -2,
+            0,
+            5
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 180,
+        "v": [
+          [
+            -2,
+            0.06,
+            5
+          ],
+          [
+            1,
+            0.06,
+            5
+          ],
+          [
+            1,
+            0.06,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0.06,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "top"
+      },
+      {
+        "id": 181,
+        "v": [
+          [
+            -2,
+            0,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0.06,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.06,
+            4.666666666666667
+          ],
+          [
+            1,
+            0,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "north"
+      },
+      {
+        "id": 182,
+        "v": [
+          [
+            1,
+            0,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.06,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.06,
+            5
+          ],
+          [
+            1,
+            0,
+            5
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "east"
+      },
+      {
+        "id": 183,
+        "v": [
+          [
+            1,
+            0,
+            5
+          ],
+          [
+            1,
+            0.06,
+            5
+          ],
+          [
+            -2,
+            0.06,
+            5
+          ],
+          [
+            -2,
+            0,
+            5
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "south"
+      },
+      {
+        "id": 184,
+        "v": [
+          [
+            -2,
+            0,
+            5
+          ],
+          [
+            -2,
+            0.06,
+            5
+          ],
+          [
+            -2,
+            0.06,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 1,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "west"
+      },
+      {
+        "id": 185,
+        "v": [
+          [
+            -2,
+            0,
+            4.333333333333333
+          ],
+          [
+            1,
+            0,
+            4.333333333333333
+          ],
+          [
+            1,
+            0,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 186,
+        "v": [
+          [
+            -2,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.12,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0.12,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "top"
+      },
+      {
+        "id": 187,
+        "v": [
+          [
+            -2,
+            0,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0.12,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.12,
+            4.333333333333333
+          ],
+          [
+            1,
+            0,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "north"
+      },
+      {
+        "id": 188,
+        "v": [
+          [
+            1,
+            0,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.12,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            1,
+            0,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "east"
+      },
+      {
+        "id": 189,
+        "v": [
+          [
+            1,
+            0,
+            4.666666666666667
+          ],
+          [
+            1,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0,
+            4.666666666666667
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "south"
+      },
+      {
+        "id": 190,
+        "v": [
+          [
+            -2,
+            0,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0.12,
+            4.666666666666667
+          ],
+          [
+            -2,
+            0.12,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 2,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "west"
+      },
+      {
+        "id": 191,
+        "v": [
+          [
+            -2,
+            0,
+            4
+          ],
+          [
+            1,
+            0,
+            4
+          ],
+          [
+            1,
+            0,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 192,
+        "v": [
+          [
+            -2,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4
+          ],
+          [
+            -2,
+            0.18000000000000002,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "top"
+      },
+      {
+        "id": 193,
+        "v": [
+          [
+            -2,
+            0,
+            4
+          ],
+          [
+            -2,
+            0.18000000000000002,
+            4
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4
+          ],
+          [
+            1,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "north"
+      },
+      {
+        "id": 194,
+        "v": [
+          [
+            1,
+            0,
+            4
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            1,
+            0,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "east"
+      },
+      {
+        "id": 195,
+        "v": [
+          [
+            1,
+            0,
+            4.333333333333333
+          ],
+          [
+            1,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0,
+            4.333333333333333
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "south"
+      },
+      {
+        "id": 196,
+        "v": [
+          [
+            -2,
+            0,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0.18000000000000002,
+            4.333333333333333
+          ],
+          [
+            -2,
+            0.18000000000000002,
+            4
+          ],
+          [
+            -2,
+            0,
+            4
+          ]
+        ],
+        "tag": "porchStair",
+        "color": null,
+        "extensionType": "porchStair",
+        "sourceTile": {
+          "x": 7,
+          "y": 13
+        },
+        "stairStep": 3,
+        "stairFacesToward": "north",
+        "fusedStairRunTiles": 3,
+        "extensionFace": "west"
+      },
+      {
+        "id": 197,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -2.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 198,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -2.58,
+            0.98,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 199,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -2.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 200,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 201,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 202,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -1.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -2.58,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 203,
+        "v": [
+          [
+            -1.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -1.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 204,
+        "v": [
+          [
+            -1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -1.58,
+            0.98,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 205,
+        "v": [
+          [
+            -1.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -1.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 206,
+        "v": [
+          [
+            -1.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 207,
+        "v": [
+          [
+            -1.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 208,
+        "v": [
+          [
+            -1.58,
+            0.18,
+            -1.42
+          ],
+          [
+            -1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -1.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -1.58,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 7,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 209,
+        "v": [
+          [
+            -0.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -0.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 210,
+        "v": [
+          [
+            -0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -0.58,
+            0.98,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 211,
+        "v": [
+          [
+            -0.58,
+            0.18,
+            -1.58
+          ],
+          [
+            -0.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 212,
+        "v": [
+          [
+            -0.42,
+            0.18,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.58
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 213,
+        "v": [
+          [
+            -0.42,
+            0.18,
+            -1.42
+          ],
+          [
+            -0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 214,
+        "v": [
+          [
+            -0.58,
+            0.18,
+            -1.42
+          ],
+          [
+            -0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            -0.58,
+            0.98,
+            -1.58
+          ],
+          [
+            -0.58,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 8,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 215,
+        "v": [
+          [
+            0.42,
+            0.18,
+            -1.58
+          ],
+          [
+            0.58,
+            0.18,
+            -1.58
+          ],
+          [
+            0.58,
+            0.18,
+            -1.42
+          ],
+          [
+            0.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 216,
+        "v": [
+          [
+            0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            0.58,
+            0.98,
+            -1.58
+          ],
+          [
+            0.42,
+            0.98,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 217,
+        "v": [
+          [
+            0.42,
+            0.18,
+            -1.58
+          ],
+          [
+            0.42,
+            0.98,
+            -1.58
+          ],
+          [
+            0.58,
+            0.98,
+            -1.58
+          ],
+          [
+            0.58,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 218,
+        "v": [
+          [
+            0.58,
+            0.18,
+            -1.58
+          ],
+          [
+            0.58,
+            0.98,
+            -1.58
+          ],
+          [
+            0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            0.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 219,
+        "v": [
+          [
+            0.58,
+            0.18,
+            -1.42
+          ],
+          [
+            0.58,
+            0.98,
+            -1.42
+          ],
+          [
+            0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            0.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 220,
+        "v": [
+          [
+            0.42,
+            0.18,
+            -1.42
+          ],
+          [
+            0.42,
+            0.98,
+            -1.42
+          ],
+          [
+            0.42,
+            0.98,
+            -1.58
+          ],
+          [
+            0.42,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 9,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 221,
+        "v": [
+          [
+            1.42,
+            0.18,
+            -1.58
+          ],
+          [
+            1.58,
+            0.18,
+            -1.58
+          ],
+          [
+            1.58,
+            0.18,
+            -1.42
+          ],
+          [
+            1.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 222,
+        "v": [
+          [
+            1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            1.58,
+            0.98,
+            -1.58
+          ],
+          [
+            1.42,
+            0.98,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 223,
+        "v": [
+          [
+            1.42,
+            0.18,
+            -1.58
+          ],
+          [
+            1.42,
+            0.98,
+            -1.58
+          ],
+          [
+            1.58,
+            0.98,
+            -1.58
+          ],
+          [
+            1.58,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 224,
+        "v": [
+          [
+            1.58,
+            0.18,
+            -1.58
+          ],
+          [
+            1.58,
+            0.98,
+            -1.58
+          ],
+          [
+            1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            1.58,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 225,
+        "v": [
+          [
+            1.58,
+            0.18,
+            -1.42
+          ],
+          [
+            1.58,
+            0.98,
+            -1.42
+          ],
+          [
+            1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            1.42,
+            0.18,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 226,
+        "v": [
+          [
+            1.42,
+            0.18,
+            -1.42
+          ],
+          [
+            1.42,
+            0.98,
+            -1.42
+          ],
+          [
+            1.42,
+            0.98,
+            -1.58
+          ],
+          [
+            1.42,
+            0.18,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 227,
+        "v": [
+          [
+            2.42,
+            0,
+            -1.58
+          ],
+          [
+            2.58,
+            0,
+            -1.58
+          ],
+          [
+            2.58,
+            0,
+            -1.42
+          ],
+          [
+            2.42,
+            0,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 228,
+        "v": [
+          [
+            2.42,
+            0.8,
+            -1.42
+          ],
+          [
+            2.58,
+            0.8,
+            -1.42
+          ],
+          [
+            2.58,
+            0.8,
+            -1.58
+          ],
+          [
+            2.42,
+            0.8,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "top"
+      },
+      {
+        "id": 229,
+        "v": [
+          [
+            2.42,
+            0,
+            -1.58
+          ],
+          [
+            2.42,
+            0.8,
+            -1.58
+          ],
+          [
+            2.58,
+            0.8,
+            -1.58
+          ],
+          [
+            2.58,
+            0,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "north"
+      },
+      {
+        "id": 230,
+        "v": [
+          [
+            2.58,
+            0,
+            -1.58
+          ],
+          [
+            2.58,
+            0.8,
+            -1.58
+          ],
+          [
+            2.58,
+            0.8,
+            -1.42
+          ],
+          [
+            2.58,
+            0,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "east"
+      },
+      {
+        "id": 231,
+        "v": [
+          [
+            2.58,
+            0,
+            -1.42
+          ],
+          [
+            2.58,
+            0.8,
+            -1.42
+          ],
+          [
+            2.42,
+            0.8,
+            -1.42
+          ],
+          [
+            2.42,
+            0,
+            -1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "south"
+      },
+      {
+        "id": 232,
+        "v": [
+          [
+            2.42,
+            0,
+            -1.42
+          ],
+          [
+            2.42,
+            0.8,
+            -1.42
+          ],
+          [
+            2.42,
+            0.8,
+            -1.58
+          ],
+          [
+            2.42,
+            0,
+            -1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "west"
+      },
+      {
+        "id": 233,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -0.42
+          ],
+          [
+            -2.58,
+            0.18,
+            -0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 234,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.58
+          ],
+          [
+            -2.58,
+            0.98,
+            -0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 235,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -0.58
+          ],
+          [
+            -2.58,
+            0.98,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.18,
+            -0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 236,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.42,
+            0.18,
+            -0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 237,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            -0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.58,
+            0.18,
+            -0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 238,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            -0.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -0.42
+          ],
+          [
+            -2.58,
+            0.98,
+            -0.58
+          ],
+          [
+            -2.58,
+            0.18,
+            -0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 8
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 239,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            0.42
+          ],
+          [
+            -2.42,
+            0.18,
+            0.42
+          ],
+          [
+            -2.42,
+            0.18,
+            0.58
+          ],
+          [
+            -2.58,
+            0.18,
+            0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 240,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            0.42
+          ],
+          [
+            -2.58,
+            0.98,
+            0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 241,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            0.42
+          ],
+          [
+            -2.58,
+            0.98,
+            0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            0.42
+          ],
+          [
+            -2.42,
+            0.18,
+            0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 242,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            0.42
+          ],
+          [
+            -2.42,
+            0.98,
+            0.58
+          ],
+          [
+            -2.42,
+            0.18,
+            0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 243,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            0.58
+          ],
+          [
+            -2.42,
+            0.98,
+            0.58
+          ],
+          [
+            -2.58,
+            0.98,
+            0.58
+          ],
+          [
+            -2.58,
+            0.18,
+            0.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 244,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            0.58
+          ],
+          [
+            -2.58,
+            0.98,
+            0.58
+          ],
+          [
+            -2.58,
+            0.98,
+            0.42
+          ],
+          [
+            -2.58,
+            0.18,
+            0.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 9
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 245,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            1.42
+          ],
+          [
+            -2.42,
+            0.18,
+            1.42
+          ],
+          [
+            -2.42,
+            0.18,
+            1.58
+          ],
+          [
+            -2.58,
+            0.18,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 246,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            1.42
+          ],
+          [
+            -2.58,
+            0.98,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 247,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            1.42
+          ],
+          [
+            -2.58,
+            0.98,
+            1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            1.42
+          ],
+          [
+            -2.42,
+            0.18,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 248,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            1.42
+          ],
+          [
+            -2.42,
+            0.98,
+            1.58
+          ],
+          [
+            -2.42,
+            0.18,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 249,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            1.58
+          ],
+          [
+            -2.42,
+            0.98,
+            1.58
+          ],
+          [
+            -2.58,
+            0.98,
+            1.58
+          ],
+          [
+            -2.58,
+            0.18,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 250,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            1.58
+          ],
+          [
+            -2.58,
+            0.98,
+            1.58
+          ],
+          [
+            -2.58,
+            0.98,
+            1.42
+          ],
+          [
+            -2.58,
+            0.18,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 251,
+        "v": [
+          [
+            7.42,
+            0,
+            1.42
+          ],
+          [
+            7.58,
+            0,
+            1.42
+          ],
+          [
+            7.58,
+            0,
+            1.58
+          ],
+          [
+            7.42,
+            0,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 252,
+        "v": [
+          [
+            7.42,
+            0.8,
+            1.58
+          ],
+          [
+            7.58,
+            0.8,
+            1.58
+          ],
+          [
+            7.58,
+            0.8,
+            1.42
+          ],
+          [
+            7.42,
+            0.8,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "top"
+      },
+      {
+        "id": 253,
+        "v": [
+          [
+            7.42,
+            0,
+            1.42
+          ],
+          [
+            7.42,
+            0.8,
+            1.42
+          ],
+          [
+            7.58,
+            0.8,
+            1.42
+          ],
+          [
+            7.58,
+            0,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "north"
+      },
+      {
+        "id": 254,
+        "v": [
+          [
+            7.58,
+            0,
+            1.42
+          ],
+          [
+            7.58,
+            0.8,
+            1.42
+          ],
+          [
+            7.58,
+            0.8,
+            1.58
+          ],
+          [
+            7.58,
+            0,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "east"
+      },
+      {
+        "id": 255,
+        "v": [
+          [
+            7.58,
+            0,
+            1.58
+          ],
+          [
+            7.58,
+            0.8,
+            1.58
+          ],
+          [
+            7.42,
+            0.8,
+            1.58
+          ],
+          [
+            7.42,
+            0,
+            1.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "south"
+      },
+      {
+        "id": 256,
+        "v": [
+          [
+            7.42,
+            0,
+            1.58
+          ],
+          [
+            7.42,
+            0.8,
+            1.58
+          ],
+          [
+            7.42,
+            0.8,
+            1.42
+          ],
+          [
+            7.42,
+            0,
+            1.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "post",
+        "raisedOnPorch": false,
+        "extensionFace": "west"
+      },
+      {
+        "id": 257,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            2.42
+          ],
+          [
+            -2.42,
+            0.18,
+            2.42
+          ],
+          [
+            -2.42,
+            0.18,
+            2.58
+          ],
+          [
+            -2.58,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 258,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            2.58
+          ],
+          [
+            -2.42,
+            0.98,
+            2.58
+          ],
+          [
+            -2.42,
+            0.98,
+            2.42
+          ],
+          [
+            -2.58,
+            0.98,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 259,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            2.42
+          ],
+          [
+            -2.58,
+            0.98,
+            2.42
+          ],
+          [
+            -2.42,
+            0.98,
+            2.42
+          ],
+          [
+            -2.42,
+            0.18,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 260,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            2.42
+          ],
+          [
+            -2.42,
+            0.98,
+            2.42
+          ],
+          [
+            -2.42,
+            0.98,
+            2.58
+          ],
+          [
+            -2.42,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 261,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            2.58
+          ],
+          [
+            -2.42,
+            0.98,
+            2.58
+          ],
+          [
+            -2.58,
+            0.98,
+            2.58
+          ],
+          [
+            -2.58,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 262,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            2.58
+          ],
+          [
+            -2.58,
+            0.98,
+            2.58
+          ],
+          [
+            -2.58,
+            0.98,
+            2.42
+          ],
+          [
+            -2.58,
+            0.18,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 263,
+        "v": [
+          [
+            7.42,
+            0.18,
+            2.42
+          ],
+          [
+            7.58,
+            0.18,
+            2.42
+          ],
+          [
+            7.58,
+            0.18,
+            2.58
+          ],
+          [
+            7.42,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 264,
+        "v": [
+          [
+            7.42,
+            0.98,
+            2.58
+          ],
+          [
+            7.58,
+            0.98,
+            2.58
+          ],
+          [
+            7.58,
+            0.98,
+            2.42
+          ],
+          [
+            7.42,
+            0.98,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 265,
+        "v": [
+          [
+            7.42,
+            0.18,
+            2.42
+          ],
+          [
+            7.42,
+            0.98,
+            2.42
+          ],
+          [
+            7.58,
+            0.98,
+            2.42
+          ],
+          [
+            7.58,
+            0.18,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 266,
+        "v": [
+          [
+            7.58,
+            0.18,
+            2.42
+          ],
+          [
+            7.58,
+            0.98,
+            2.42
+          ],
+          [
+            7.58,
+            0.98,
+            2.58
+          ],
+          [
+            7.58,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 267,
+        "v": [
+          [
+            7.58,
+            0.18,
+            2.58
+          ],
+          [
+            7.58,
+            0.98,
+            2.58
+          ],
+          [
+            7.42,
+            0.98,
+            2.58
+          ],
+          [
+            7.42,
+            0.18,
+            2.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 268,
+        "v": [
+          [
+            7.42,
+            0.18,
+            2.58
+          ],
+          [
+            7.42,
+            0.98,
+            2.58
+          ],
+          [
+            7.42,
+            0.98,
+            2.42
+          ],
+          [
+            7.42,
+            0.18,
+            2.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 11
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 269,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            3.42
+          ],
+          [
+            -2.42,
+            0.18,
+            3.42
+          ],
+          [
+            -2.42,
+            0.18,
+            3.58
+          ],
+          [
+            -2.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 270,
+        "v": [
+          [
+            -2.58,
+            0.98,
+            3.58
+          ],
+          [
+            -2.42,
+            0.98,
+            3.58
+          ],
+          [
+            -2.42,
+            0.98,
+            3.42
+          ],
+          [
+            -2.58,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 271,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            3.42
+          ],
+          [
+            -2.58,
+            0.98,
+            3.42
+          ],
+          [
+            -2.42,
+            0.98,
+            3.42
+          ],
+          [
+            -2.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 272,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            3.42
+          ],
+          [
+            -2.42,
+            0.98,
+            3.42
+          ],
+          [
+            -2.42,
+            0.98,
+            3.58
+          ],
+          [
+            -2.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 273,
+        "v": [
+          [
+            -2.42,
+            0.18,
+            3.58
+          ],
+          [
+            -2.42,
+            0.98,
+            3.58
+          ],
+          [
+            -2.58,
+            0.98,
+            3.58
+          ],
+          [
+            -2.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 274,
+        "v": [
+          [
+            -2.58,
+            0.18,
+            3.58
+          ],
+          [
+            -2.58,
+            0.98,
+            3.58
+          ],
+          [
+            -2.58,
+            0.98,
+            3.42
+          ],
+          [
+            -2.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 275,
+        "v": [
+          [
+            1.42,
+            0.18,
+            3.42
+          ],
+          [
+            1.58,
+            0.18,
+            3.42
+          ],
+          [
+            1.58,
+            0.18,
+            3.58
+          ],
+          [
+            1.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 276,
+        "v": [
+          [
+            1.42,
+            0.98,
+            3.58
+          ],
+          [
+            1.58,
+            0.98,
+            3.58
+          ],
+          [
+            1.58,
+            0.98,
+            3.42
+          ],
+          [
+            1.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 277,
+        "v": [
+          [
+            1.42,
+            0.18,
+            3.42
+          ],
+          [
+            1.42,
+            0.98,
+            3.42
+          ],
+          [
+            1.58,
+            0.98,
+            3.42
+          ],
+          [
+            1.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 278,
+        "v": [
+          [
+            1.58,
+            0.18,
+            3.42
+          ],
+          [
+            1.58,
+            0.98,
+            3.42
+          ],
+          [
+            1.58,
+            0.98,
+            3.58
+          ],
+          [
+            1.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 279,
+        "v": [
+          [
+            1.58,
+            0.18,
+            3.58
+          ],
+          [
+            1.58,
+            0.98,
+            3.58
+          ],
+          [
+            1.42,
+            0.98,
+            3.58
+          ],
+          [
+            1.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 280,
+        "v": [
+          [
+            1.42,
+            0.18,
+            3.58
+          ],
+          [
+            1.42,
+            0.98,
+            3.58
+          ],
+          [
+            1.42,
+            0.98,
+            3.42
+          ],
+          [
+            1.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 281,
+        "v": [
+          [
+            2.42,
+            0.18,
+            3.42
+          ],
+          [
+            2.58,
+            0.18,
+            3.42
+          ],
+          [
+            2.58,
+            0.18,
+            3.58
+          ],
+          [
+            2.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 282,
+        "v": [
+          [
+            2.42,
+            0.98,
+            3.58
+          ],
+          [
+            2.58,
+            0.98,
+            3.58
+          ],
+          [
+            2.58,
+            0.98,
+            3.42
+          ],
+          [
+            2.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 283,
+        "v": [
+          [
+            2.42,
+            0.18,
+            3.42
+          ],
+          [
+            2.42,
+            0.98,
+            3.42
+          ],
+          [
+            2.58,
+            0.98,
+            3.42
+          ],
+          [
+            2.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 284,
+        "v": [
+          [
+            2.58,
+            0.18,
+            3.42
+          ],
+          [
+            2.58,
+            0.98,
+            3.42
+          ],
+          [
+            2.58,
+            0.98,
+            3.58
+          ],
+          [
+            2.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 285,
+        "v": [
+          [
+            2.58,
+            0.18,
+            3.58
+          ],
+          [
+            2.58,
+            0.98,
+            3.58
+          ],
+          [
+            2.42,
+            0.98,
+            3.58
+          ],
+          [
+            2.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 286,
+        "v": [
+          [
+            2.42,
+            0.18,
+            3.58
+          ],
+          [
+            2.42,
+            0.98,
+            3.58
+          ],
+          [
+            2.42,
+            0.98,
+            3.42
+          ],
+          [
+            2.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 11,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 287,
+        "v": [
+          [
+            3.42,
+            0.18,
+            3.42
+          ],
+          [
+            3.58,
+            0.18,
+            3.42
+          ],
+          [
+            3.58,
+            0.18,
+            3.58
+          ],
+          [
+            3.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 288,
+        "v": [
+          [
+            3.42,
+            0.98,
+            3.58
+          ],
+          [
+            3.58,
+            0.98,
+            3.58
+          ],
+          [
+            3.58,
+            0.98,
+            3.42
+          ],
+          [
+            3.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 289,
+        "v": [
+          [
+            3.42,
+            0.18,
+            3.42
+          ],
+          [
+            3.42,
+            0.98,
+            3.42
+          ],
+          [
+            3.58,
+            0.98,
+            3.42
+          ],
+          [
+            3.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 290,
+        "v": [
+          [
+            3.58,
+            0.18,
+            3.42
+          ],
+          [
+            3.58,
+            0.98,
+            3.42
+          ],
+          [
+            3.58,
+            0.98,
+            3.58
+          ],
+          [
+            3.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 291,
+        "v": [
+          [
+            3.58,
+            0.18,
+            3.58
+          ],
+          [
+            3.58,
+            0.98,
+            3.58
+          ],
+          [
+            3.42,
+            0.98,
+            3.58
+          ],
+          [
+            3.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 292,
+        "v": [
+          [
+            3.42,
+            0.18,
+            3.58
+          ],
+          [
+            3.42,
+            0.98,
+            3.58
+          ],
+          [
+            3.42,
+            0.98,
+            3.42
+          ],
+          [
+            3.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 12,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 293,
+        "v": [
+          [
+            4.42,
+            0.18,
+            3.42
+          ],
+          [
+            4.58,
+            0.18,
+            3.42
+          ],
+          [
+            4.58,
+            0.18,
+            3.58
+          ],
+          [
+            4.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 294,
+        "v": [
+          [
+            4.42,
+            0.98,
+            3.58
+          ],
+          [
+            4.58,
+            0.98,
+            3.58
+          ],
+          [
+            4.58,
+            0.98,
+            3.42
+          ],
+          [
+            4.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 295,
+        "v": [
+          [
+            4.42,
+            0.18,
+            3.42
+          ],
+          [
+            4.42,
+            0.98,
+            3.42
+          ],
+          [
+            4.58,
+            0.98,
+            3.42
+          ],
+          [
+            4.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 296,
+        "v": [
+          [
+            4.58,
+            0.18,
+            3.42
+          ],
+          [
+            4.58,
+            0.98,
+            3.42
+          ],
+          [
+            4.58,
+            0.98,
+            3.58
+          ],
+          [
+            4.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 297,
+        "v": [
+          [
+            4.58,
+            0.18,
+            3.58
+          ],
+          [
+            4.58,
+            0.98,
+            3.58
+          ],
+          [
+            4.42,
+            0.98,
+            3.58
+          ],
+          [
+            4.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 298,
+        "v": [
+          [
+            4.42,
+            0.18,
+            3.58
+          ],
+          [
+            4.42,
+            0.98,
+            3.58
+          ],
+          [
+            4.42,
+            0.98,
+            3.42
+          ],
+          [
+            4.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 13,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 299,
+        "v": [
+          [
+            5.42,
+            0.18,
+            3.42
+          ],
+          [
+            5.58,
+            0.18,
+            3.42
+          ],
+          [
+            5.58,
+            0.18,
+            3.58
+          ],
+          [
+            5.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 300,
+        "v": [
+          [
+            5.42,
+            0.98,
+            3.58
+          ],
+          [
+            5.58,
+            0.98,
+            3.58
+          ],
+          [
+            5.58,
+            0.98,
+            3.42
+          ],
+          [
+            5.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 301,
+        "v": [
+          [
+            5.42,
+            0.18,
+            3.42
+          ],
+          [
+            5.42,
+            0.98,
+            3.42
+          ],
+          [
+            5.58,
+            0.98,
+            3.42
+          ],
+          [
+            5.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 302,
+        "v": [
+          [
+            5.58,
+            0.18,
+            3.42
+          ],
+          [
+            5.58,
+            0.98,
+            3.42
+          ],
+          [
+            5.58,
+            0.98,
+            3.58
+          ],
+          [
+            5.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 303,
+        "v": [
+          [
+            5.58,
+            0.18,
+            3.58
+          ],
+          [
+            5.58,
+            0.98,
+            3.58
+          ],
+          [
+            5.42,
+            0.98,
+            3.58
+          ],
+          [
+            5.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 304,
+        "v": [
+          [
+            5.42,
+            0.18,
+            3.58
+          ],
+          [
+            5.42,
+            0.98,
+            3.58
+          ],
+          [
+            5.42,
+            0.98,
+            3.42
+          ],
+          [
+            5.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 14,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 305,
+        "v": [
+          [
+            6.42,
+            0.18,
+            3.42
+          ],
+          [
+            6.58,
+            0.18,
+            3.42
+          ],
+          [
+            6.58,
+            0.18,
+            3.58
+          ],
+          [
+            6.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 306,
+        "v": [
+          [
+            6.42,
+            0.98,
+            3.58
+          ],
+          [
+            6.58,
+            0.98,
+            3.58
+          ],
+          [
+            6.58,
+            0.98,
+            3.42
+          ],
+          [
+            6.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 307,
+        "v": [
+          [
+            6.42,
+            0.18,
+            3.42
+          ],
+          [
+            6.42,
+            0.98,
+            3.42
+          ],
+          [
+            6.58,
+            0.98,
+            3.42
+          ],
+          [
+            6.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 308,
+        "v": [
+          [
+            6.58,
+            0.18,
+            3.42
+          ],
+          [
+            6.58,
+            0.98,
+            3.42
+          ],
+          [
+            6.58,
+            0.98,
+            3.58
+          ],
+          [
+            6.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 309,
+        "v": [
+          [
+            6.58,
+            0.18,
+            3.58
+          ],
+          [
+            6.58,
+            0.98,
+            3.58
+          ],
+          [
+            6.42,
+            0.98,
+            3.58
+          ],
+          [
+            6.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 310,
+        "v": [
+          [
+            6.42,
+            0.18,
+            3.58
+          ],
+          [
+            6.42,
+            0.98,
+            3.58
+          ],
+          [
+            6.42,
+            0.98,
+            3.42
+          ],
+          [
+            6.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 15,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 311,
+        "v": [
+          [
+            7.42,
+            0.18,
+            3.42
+          ],
+          [
+            7.58,
+            0.18,
+            3.42
+          ],
+          [
+            7.58,
+            0.18,
+            3.58
+          ],
+          [
+            7.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 312,
+        "v": [
+          [
+            7.42,
+            0.98,
+            3.58
+          ],
+          [
+            7.58,
+            0.98,
+            3.58
+          ],
+          [
+            7.58,
+            0.98,
+            3.42
+          ],
+          [
+            7.42,
+            0.98,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 313,
+        "v": [
+          [
+            7.42,
+            0.18,
+            3.42
+          ],
+          [
+            7.42,
+            0.98,
+            3.42
+          ],
+          [
+            7.58,
+            0.98,
+            3.42
+          ],
+          [
+            7.58,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 314,
+        "v": [
+          [
+            7.58,
+            0.18,
+            3.42
+          ],
+          [
+            7.58,
+            0.98,
+            3.42
+          ],
+          [
+            7.58,
+            0.98,
+            3.58
+          ],
+          [
+            7.58,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 315,
+        "v": [
+          [
+            7.58,
+            0.18,
+            3.58
+          ],
+          [
+            7.58,
+            0.98,
+            3.58
+          ],
+          [
+            7.42,
+            0.98,
+            3.58
+          ],
+          [
+            7.42,
+            0.18,
+            3.58
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 316,
+        "v": [
+          [
+            7.42,
+            0.18,
+            3.58
+          ],
+          [
+            7.42,
+            0.98,
+            3.58
+          ],
+          [
+            7.42,
+            0.98,
+            3.42
+          ],
+          [
+            7.42,
+            0.18,
+            3.42
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 12
+        },
+        "railingPart": "post",
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 317,
+        "v": [
+          [
+            -2.5,
+            0.52,
+            -1.56
+          ],
+          [
+            2.5,
+            0.52,
+            -1.56
+          ],
+          [
+            2.5,
+            0.52,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.52,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 318,
+        "v": [
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 319,
+        "v": [
+          [
+            -2.5,
+            0.52,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.52,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 320,
+        "v": [
+          [
+            2.5,
+            0.52,
+            -1.56
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.52,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 321,
+        "v": [
+          [
+            2.5,
+            0.52,
+            -1.44
+          ],
+          [
+            2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.52,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 322,
+        "v": [
+          [
+            -2.5,
+            0.52,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.6400000000000001,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.52,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 323,
+        "v": [
+          [
+            -2.5,
+            0.74,
+            -1.56
+          ],
+          [
+            2.5,
+            0.74,
+            -1.56
+          ],
+          [
+            2.5,
+            0.74,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.74,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 324,
+        "v": [
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 325,
+        "v": [
+          [
+            -2.5,
+            0.74,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.74,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 326,
+        "v": [
+          [
+            2.5,
+            0.74,
+            -1.56
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.56
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            2.5,
+            0.74,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 327,
+        "v": [
+          [
+            2.5,
+            0.74,
+            -1.44
+          ],
+          [
+            2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.74,
+            -1.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 328,
+        "v": [
+          [
+            -2.5,
+            0.74,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.44
+          ],
+          [
+            -2.5,
+            0.8600000000000001,
+            -1.56
+          ],
+          [
+            -2.5,
+            0.74,
+            -1.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 329,
+        "v": [
+          [
+            1.5,
+            0.52,
+            3.44
+          ],
+          [
+            7.5,
+            0.52,
+            3.44
+          ],
+          [
+            7.5,
+            0.52,
+            3.56
+          ],
+          [
+            1.5,
+            0.52,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 330,
+        "v": [
+          [
+            1.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.44
+          ],
+          [
+            1.5,
+            0.6400000000000001,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 331,
+        "v": [
+          [
+            1.5,
+            0.52,
+            3.44
+          ],
+          [
+            1.5,
+            0.6400000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.52,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 332,
+        "v": [
+          [
+            7.5,
+            0.52,
+            3.44
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.52,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 333,
+        "v": [
+          [
+            7.5,
+            0.52,
+            3.56
+          ],
+          [
+            7.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.52,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 334,
+        "v": [
+          [
+            1.5,
+            0.52,
+            3.56
+          ],
+          [
+            1.5,
+            0.6400000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.6400000000000001,
+            3.44
+          ],
+          [
+            1.5,
+            0.52,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 335,
+        "v": [
+          [
+            1.5,
+            0.74,
+            3.44
+          ],
+          [
+            7.5,
+            0.74,
+            3.44
+          ],
+          [
+            7.5,
+            0.74,
+            3.56
+          ],
+          [
+            1.5,
+            0.74,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 336,
+        "v": [
+          [
+            1.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.44
+          ],
+          [
+            1.5,
+            0.8600000000000001,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 337,
+        "v": [
+          [
+            1.5,
+            0.74,
+            3.44
+          ],
+          [
+            1.5,
+            0.8600000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.74,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 338,
+        "v": [
+          [
+            7.5,
+            0.74,
+            3.44
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.44
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            7.5,
+            0.74,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 339,
+        "v": [
+          [
+            7.5,
+            0.74,
+            3.56
+          ],
+          [
+            7.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.74,
+            3.56
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 340,
+        "v": [
+          [
+            1.5,
+            0.74,
+            3.56
+          ],
+          [
+            1.5,
+            0.8600000000000001,
+            3.56
+          ],
+          [
+            1.5,
+            0.8600000000000001,
+            3.44
+          ],
+          [
+            1.5,
+            0.74,
+            3.44
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 10,
+          "y": 12
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 7,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 341,
+        "v": [
+          [
+            -2.56,
+            0.52,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.52,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.52,
+            3.5
+          ],
+          [
+            -2.56,
+            0.52,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 342,
+        "v": [
+          [
+            -2.56,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.6400000000000001,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 343,
+        "v": [
+          [
+            -2.56,
+            0.52,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.6400000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.52,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 344,
+        "v": [
+          [
+            -2.44,
+            0.52,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.52,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 345,
+        "v": [
+          [
+            -2.44,
+            0.52,
+            3.5
+          ],
+          [
+            -2.44,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.52,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 346,
+        "v": [
+          [
+            -2.56,
+            0.52,
+            3.5
+          ],
+          [
+            -2.56,
+            0.6400000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.6400000000000001,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.52,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 347,
+        "v": [
+          [
+            -2.56,
+            0.74,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.74,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.74,
+            3.5
+          ],
+          [
+            -2.56,
+            0.74,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 348,
+        "v": [
+          [
+            -2.56,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.8600000000000001,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "top"
+      },
+      {
+        "id": 349,
+        "v": [
+          [
+            -2.56,
+            0.74,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.8600000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.74,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "north"
+      },
+      {
+        "id": 350,
+        "v": [
+          [
+            -2.44,
+            0.74,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            -1.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.44,
+            0.74,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "east"
+      },
+      {
+        "id": 351,
+        "v": [
+          [
+            -2.44,
+            0.74,
+            3.5
+          ],
+          [
+            -2.44,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.74,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "south"
+      },
+      {
+        "id": 352,
+        "v": [
+          [
+            -2.56,
+            0.74,
+            3.5
+          ],
+          [
+            -2.56,
+            0.8600000000000001,
+            3.5
+          ],
+          [
+            -2.56,
+            0.8600000000000001,
+            -1.5
+          ],
+          [
+            -2.56,
+            0.74,
+            -1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 6,
+          "y": 7
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 6,
+        "raisedOnPorch": true,
+        "extensionFace": "west"
+      },
+      {
+        "id": 353,
+        "v": [
+          [
+            7.44,
+            0.34,
+            1.5
+          ],
+          [
+            7.56,
+            0.34,
+            1.5
+          ],
+          [
+            7.56,
+            0.34,
+            3.5
+          ],
+          [
+            7.44,
+            0.34,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 354,
+        "v": [
+          [
+            7.44,
+            0.46,
+            3.5
+          ],
+          [
+            7.56,
+            0.46,
+            3.5
+          ],
+          [
+            7.56,
+            0.46,
+            1.5
+          ],
+          [
+            7.44,
+            0.46,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "top"
+      },
+      {
+        "id": 355,
+        "v": [
+          [
+            7.44,
+            0.34,
+            1.5
+          ],
+          [
+            7.44,
+            0.46,
+            1.5
+          ],
+          [
+            7.56,
+            0.46,
+            1.5
+          ],
+          [
+            7.56,
+            0.34,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "north"
+      },
+      {
+        "id": 356,
+        "v": [
+          [
+            7.56,
+            0.34,
+            1.5
+          ],
+          [
+            7.56,
+            0.46,
+            1.5
+          ],
+          [
+            7.56,
+            0.46,
+            3.5
+          ],
+          [
+            7.56,
+            0.34,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "east"
+      },
+      {
+        "id": 357,
+        "v": [
+          [
+            7.56,
+            0.34,
+            3.5
+          ],
+          [
+            7.56,
+            0.46,
+            3.5
+          ],
+          [
+            7.44,
+            0.46,
+            3.5
+          ],
+          [
+            7.44,
+            0.34,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "south"
+      },
+      {
+        "id": 358,
+        "v": [
+          [
+            7.44,
+            0.34,
+            3.5
+          ],
+          [
+            7.44,
+            0.46,
+            3.5
+          ],
+          [
+            7.44,
+            0.46,
+            1.5
+          ],
+          [
+            7.44,
+            0.34,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorLow",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "west"
+      },
+      {
+        "id": 359,
+        "v": [
+          [
+            7.44,
+            0.56,
+            1.5
+          ],
+          [
+            7.56,
+            0.56,
+            1.5
+          ],
+          [
+            7.56,
+            0.56,
+            3.5
+          ],
+          [
+            7.44,
+            0.56,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "floor"
+      },
+      {
+        "id": 360,
+        "v": [
+          [
+            7.44,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            1.5
+          ],
+          [
+            7.44,
+            0.6799999999999999,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "top"
+      },
+      {
+        "id": 361,
+        "v": [
+          [
+            7.44,
+            0.56,
+            1.5
+          ],
+          [
+            7.44,
+            0.6799999999999999,
+            1.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            1.5
+          ],
+          [
+            7.56,
+            0.56,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "north"
+      },
+      {
+        "id": 362,
+        "v": [
+          [
+            7.56,
+            0.56,
+            1.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            1.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.56,
+            0.56,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "east"
+      },
+      {
+        "id": 363,
+        "v": [
+          [
+            7.56,
+            0.56,
+            3.5
+          ],
+          [
+            7.56,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.44,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.44,
+            0.56,
+            3.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "south"
+      },
+      {
+        "id": 364,
+        "v": [
+          [
+            7.44,
+            0.56,
+            3.5
+          ],
+          [
+            7.44,
+            0.6799999999999999,
+            3.5
+          ],
+          [
+            7.44,
+            0.6799999999999999,
+            1.5
+          ],
+          [
+            7.44,
+            0.56,
+            1.5
+          ]
+        ],
+        "tag": "railing",
+        "color": null,
+        "extensionType": "railing",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        },
+        "railingPart": "horizontalConnectorHigh",
+        "railRunTiles": 3,
+        "raisedOnPorch": false,
+        "extensionFace": "west"
       }
     ]
   },
@@ -595,24 +8967,7 @@
     "peakRotateFalloff": 0,
     "highlandInterlockOffset": 0.25,
     "shingleSource": "",
-    "crossGableSections": [
-      {
-        "axis": "x",
-        "x0": 6,
-        "x1": 12,
-        "y0": 7,
-        "y1": 11,
-        "role": "single_rectangle",
-        "roofSpan": 4,
-        "roofHeight": 1.19,
-        "highlandBodyTopScale": 0.85,
-        "roofBaseAlignedToCeiling": true,
-        "continuousFrustumSlope": true,
-        "triangularPrismRidge": true,
-        "clipToPrimaryRidge": false,
-        "clipSide": ""
-      }
-    ]
+    "crossGableSections": []
   },
   "assets": [],
   "wallStyle": "logs",
@@ -623,12 +8978,14 @@
     "courseGap": -0.03
   },
   "extensionGeneration": {
-    "entryTunnelGroups": 0,
+    "entryTunnelGroups": 1,
     "tallEntryTunnelGroups": 0,
     "chimneyGroups": 0,
-    "porches": 0,
-    "porchStairs": 0,
-    "railings": 0,
-    "generatedAt": "2026-10-15T02:53:53.621Z"
-  }
+    "porches": 42,
+    "porchStairs": 3,
+    "railings": 20,
+    "generatedAt": "2026-11-14T00:00:00.000Z"
+  },
+  "placementOrigin": "fullFootprint",
+  "entryDoorRise": 0.18
 }

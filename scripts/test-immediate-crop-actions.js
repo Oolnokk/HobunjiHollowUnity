@@ -41,6 +41,8 @@ assert.match(bridge, /tryCropAction,[\s\S]*?tryPlantAction,[\s\S]*?tryHarvestAct
 
 function fixture(roll = 0) {
   const inventory = { needlegrainSeeds: 1 }; // Both input routes receive the same stack and crop definitions.
+  const inventoryItems = [{ key: 'needlegrainSeeds', seedFor: 'needlegrain' }]; // Shared scroll registry receives imported seed definitions later.
+  const itemDefs = {}; // Canonical metadata registry is enriched when imported varieties are attached.
   const quality = [], xp = [], events = [], sounds = [], saved = []; // Side effects must fire exactly once through the canonical owner.
   const cropData = { needlegrain: { label: 'Needlegrain', emoji: '🌾', cropKey: 'needlegrain', seedKey: 'needlegrainSeeds', idealMin: 0.2, idealMax: 0.5 } }; // Matches the live crop registry shape.
   let tile = { type: 'tilled', crop: 'needlegrain', cropAge: 3, cropReady: true, fertilized: true }; // Fertilizer must end with this crop cycle on every input device.
@@ -60,7 +62,7 @@ function fixture(roll = 0) {
   window.CropPlanting.init({ inventory, cropData, CropType: { NONE: '' },
     canPlantCropOnTile: (crop, target) => !!cropData[crop] && ['tilled', 'raised'].includes(target.type) && !target.crop,
     clampInventoryStack: key => { if (inventory[key] <= 0) delete inventory[key]; } });
-  window.CookingSystem.init({ inventory, inventoryItems: [{ key: 'needlegrainSeeds', seedFor: 'needlegrain' }], ITEM_DEFS: {} });
+  window.CookingSystem.init({ inventory, inventoryItems, ITEM_DEFS: itemDefs });
   window.Fishing.init({ getReticleTile: () => ({ col: 2, row: 3 }), getActiveTileAt: () => tile, getCurrentArea: () => 'farm' });
   window.HousePieces.init({ hasFarmPermission: () => allowed, saveFarmLayout: () => saved.push(true) });
   function tap(action, moved = false) {
@@ -70,7 +72,7 @@ function fixture(roll = 0) {
     if (moved) listeners.get('pointermove')({ ...event, clientX: 40 });
     listeners.get('pointerup')(event);
   }
-  return { window, inventory, quality, xp, events, sounds, saved, tap,
+  return { window, inventory, inventoryItems, itemDefs, cropData, quality, xp, events, sounds, saved, tap,
     tile: () => tile, setTile: value => { tile = value; }, setAllowed: value => { allowed = value; } };
 }
 
@@ -113,4 +115,26 @@ delete unavailable.window.CropPlanting;
 assert.equal(unavailable.window.HobunjiInventoryActionMetadataBridge.tryHarvestAction().ok, false);
 assert.equal(unavailable.tile().cropReady, true);
 
-console.log('immediate crop actions: shared planting/harvesting, bonus yield, fertilizer, quality, events, permissions and drag behavior passed');
+const cultivars = fixture(0.99); // Tests real foreign/hybrid registration through the same UI and crop mutation owner.
+vm.runInNewContext(source('docs/js/crop-varieties.js'), { window: cultivars.window, console });
+cultivars.window.CropVarieties.attach({
+  cropData: cultivars.cropData, ITEM_DEFS: cultivars.itemDefs,
+  inventory: cultivars.inventory, inventoryItems: cultivars.inventoryItems,
+});
+for (const cultivarId of ['cv_needlegrain_222222', 'cv_needlegrain_223344_a0b1c2']) {
+  const variety = cultivars.window.CropVarieties.ensure(cultivarId); // Covers regional purchases and color-preserving crossbred seeds.
+  const entry = cultivars.inventoryItems.find(item => item.key === variety.seedKey); // Exercises the real dynamically registered pack entry.
+  assert.equal(entry?.seedFor, cultivarId, 'owned cultivar seeds expose the contextual Plant action');
+  cultivars.inventory[variety.seedKey] = 1;
+  cultivars.setTile({ type: 'tilled', crop: '' });
+  cultivars.window.HobunjiInventoryActionMetadataBridge.refresh();
+  cultivars.tap('plant_' + entry.seedFor);
+  assert.equal(cultivars.tile().crop, cultivarId, 'Plant through the visible button reaches the correct cultivar');
+  assert.equal(cultivars.inventory[variety.seedKey], undefined, 'one imported seed is consumed');
+  cultivars.tile().cropReady = true;
+  cultivars.tap('harvest');
+  assert.equal(cultivars.inventory[cultivarId], 1, 'the planted cultivar harvests as its own produce');
+}
+assert.equal(cultivars.saved.length, 4, 'foreign and crossbred crops save both their planting and harvest');
+
+console.log('immediate crop actions: shared planting/harvesting, imported + hybrid seeds, bonus yield, fertilizer, quality, events, permissions and drag behavior passed');

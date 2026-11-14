@@ -19,6 +19,7 @@
   'use strict';
 
   const FURNITURE_KEY = 'woodenDoor';
+  const DOUBLE_FURNITURE_KEY = 'doubleWoodenDoor'; // Two-tile doors use the independently authored seven-part assembly.
   const ROTATION_DEG = Object.freeze({ south: 0, west: 90, north: 180, east: 270 }); // Same facing convention as entry-tunnel-door-furniture.js.
   const SIDES = Object.freeze({ north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] });
   const CLOSE_DELAY_S = 0.45; // Keeps a door from flapping when an NPC steps off and straight back on.
@@ -218,6 +219,14 @@
     return runtime.peek?.(FURNITURE_KEY) || (runtime.load ? await runtime.load(FURNITURE_KEY).catch(() => null) : null);
   }
 
+  async function loadPairDoorData(single) {
+    const runtime = window.AuthoredFurniture; // The double-door asset, not a runtime distortion of the single door, owns its geometry.
+    const cached = runtime?.peek?.(DOUBLE_FURNITURE_KEY);
+    if (cached?.key === DOUBLE_FURNITURE_KEY && cached?.parts?.length) return cached;
+    const loaded = typeof runtime?.load === 'function' ? await runtime.load(DOUBLE_FURNITURE_KEY).catch(() => null) : null;
+    return loaded?.key === DOUBLE_FURNITURE_KEY && loaded?.parts?.length ? loaded : doubleDoorData(single); // Offline fallback for older builds.
+  }
+
   function setOpen(entry, open) {
     if (entry.active === open) return;
     entry.active = open;
@@ -261,7 +270,8 @@
     // A farmhouse rebuild can supersede this scene while the authored door
     // loads. Never let an old async completion register stale door mechanisms.
     if (maps.get(mapId) !== state || !data || !window.AuthoredFurniture?.buildGroup) return state;
-    const pairedData = doubleDoorData(data); // Reused immutable paired geometry for this scene build.
+    const pairedData = tiles.some(record => record.tiles.length === 2) ? await loadPairDoorData(data) : null; // Load the actual authored pair only when needed.
+    if (maps.get(mapId) !== state) return state; // A second asynchronous asset load must respect scene disposal.
     const records = [];
     const objectById = new Map();
     for (const record of tiles) {
@@ -284,7 +294,7 @@
         entry.projectileTopY = coverBox.max.y; // Shots above this height clear the actual furniture.
       }
       state.doors.push(entry);
-      records.push({ id, itemKey: 'woodenDoorFurniture' });
+      records.push({ id, itemKey: record.tiles.length === 2 ? 'doubleWoodenDoorFurniture' : 'woodenDoorFurniture' });
       objectById.set(id, group);
       if (!entry.exitId) for (const tile of entry.tiles) registerInteractable?.(tile.col, tile.row, interactableFor(entry)); // Map-switch doors keep the existing Enter/Leave action.
     }

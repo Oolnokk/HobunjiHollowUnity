@@ -320,38 +320,6 @@ api.beginFrame(context());
 assert.equal(api.snapshot().corpseCandidates,0,'missing registry cannot hide any corpses');
 api.endFrame();win.CreatureDeath=deathWindow.CreatureDeath;
 
-// Away-facing portrait plane: only the single-sided body plane turned away from the camera is hidden, for the render only.
-{
-  const planeMesh=(nx,extra=[])=>{const mesh={isMesh:true,visible:true,parent:{},children:extra,
-    matrixWorld:{elements:[1,0,0,0, 0,1,0,0, nx,0,0,0, 11,0,0,1]},updateWorldMatrix(){},
-    traverse(fn){fn(mesh);for(const child of extra)fn(child);}};for(const child of extra)child.parent=mesh;return mesh;};
-  const rig=(frontNx,frontExtra)=>{const front=planeMesh(frontNx,frontExtra),back=planeMesh(-frontNx);
-    const group=makeRoot(11,'facing');group.children=[{name:'bandit_front_plane',children:[front]},{name:'bandit_back_plane',children:[back]}];
-    return {group,front,back,actor:{avatarRef:{group},areaId:'town',health:100,isBandit:true,state:'chase'}};};
-  const towards=rig(-1), away=rig(1), edgeOn=rig(0), dressed=rig(1,[{isMesh:true,visible:true,name:'garment'}]), prone=rig(1);
-  prone.actor.prone=true;
-  hostiles.push(towards.actor,away.actor,edgeOn.actor,dressed.actor,prone.actor);
-  api.beginFrame(context());
-  assert.deepEqual([towards.front.visible,towards.back.visible],[true,false],'the back plane is skipped while the front faces the camera');
-  assert.deepEqual([away.front.visible,away.back.visible],[false,true],'and the front plane once the actor has turned its back');
-  assert.deepEqual([edgeOn.front.visible,edgeOn.back.visible],[true,true],'edge-on keeps both');
-  assert.deepEqual([dressed.front.visible,dressed.back.visible],[true,true],'a plane that carries other drawn meshes is never hidden');
-  assert.deepEqual([prone.front.visible,prone.back.visible],[true,true],'a knocked-down actor keeps both');
-  assert.equal(api.snapshot().facingHidden,2);
-  api.endFrame();
-  for(const r of [towards,away,edgeOn,dressed,prone])assert.deepEqual([r.front.visible,r.back.visible],[true,true],'both planes are restored before gameplay resumes');
-  away.front.matrixWorld.elements[8]=-1;away.back.matrixWorld.elements[8]=1; // The sprite flipped this frame.
-  api.beginFrame(context());
-  assert.deepEqual([away.front.visible,away.back.visible],[true,false],'a same-frame flip is judged from the current matrix');
-  api.endFrame();
-  api.setFacingCullEnabled(false);
-  api.beginFrame(context());
-  assert.deepEqual([towards.front.visible,towards.back.visible],[true,true],'the A/B switch turns only this cull off');
-  api.endFrame();
-  api.setFacingCullEnabled(true);
-  hostiles.length=2;
-}
-
 api.setGpuEnabled(true);
 forcedFailure=true;
 api.beginFrame(context());

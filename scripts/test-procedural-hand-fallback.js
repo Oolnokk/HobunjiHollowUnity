@@ -16,6 +16,7 @@ class Vector3 {
 }
 class BufferGeometry {
   setAttribute() {}
+  setDrawRange() {}
   dispose() {}
 }
 class Float32BufferAttribute {}
