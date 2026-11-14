@@ -1890,6 +1890,7 @@
       findMineableSeparator,
       thickenSeparator,
       installMineableSeparator,
+      addCacheLayer, // Isolated regression coverage for a bonus cache that cannot fit behind an otherwise valid hidden Puzzle Cave door.
       EXTENSION_CHANCES,
       MIN_OPTIONAL_EXTENSION_FLOOR,
       floorTiles,
