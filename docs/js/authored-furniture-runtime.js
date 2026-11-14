@@ -78,6 +78,8 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    if(data.tileSpan?.axis==='y'&&data.tileSpan.verticalTarget==='ceiling')
+      group.addEventListener?.('added',()=>{window.InteriorEnvironmentRuntime?.fitCeilingFurniture?.(group);}); // Match the final owning room after placement.
     setTileSpan(group); // Apply rigid end offsets and surface-rooted center deformation before downstream attachments.
     if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
       const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
