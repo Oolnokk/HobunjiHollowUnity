@@ -337,6 +337,45 @@ async function main() {
     'missing yawn recordings use a five-second composition with species pitch/cadence');
   assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
     && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
+  // A weapon held but not yet fired has no lunge/stagger flags; yawn must not consume the input before release.
+  let weaponPress = null; // Injected public Combat.input state used by the guarded player yawn query.
+  let queuedAttacks = []; // Simulates attacks waiting on vocal/pose ownership.
+  let strikeDelay = 0; // Represents an attack still in its authored windup/strike/hold timeline.
+  window.Combat.input = {
+    getState: slot => slot === 1 ? weaponPress : null,
+    queueSnapshot: () => queuedAttacks,
+  };
+  window.CombatVocalizations.attackStartDelayS = () => strikeDelay;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'ordinary idle player is eligible when neither input is held nor a pose owns them');
+  weaponPress = { down: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a pressed attack input must prevent the yawn from stealing the held attack');
+  weaponPress = { alignmentPending: true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'target alignment must finish before the player can yawn');
+  weaponPress = null;
+  queuedAttacks = [1];
+  assert.equal(runtime._test.playerCanYawn(false), false, 'buffered attack inputs take priority over the fatigue animation');
+  queuedAttacks = [];
+  strikeDelay = 0.25;
+  assert.equal(runtime._test.playerCanYawn(false), false, 'real attack animation hold/windup must finish before yawning');
+  strikeDelay = 0;
+  for (const transition of ['mountingUp', 'mounted', 'mountingDown', 'climbLeap']) {
+    window.Mounts = { rideState: transition };
+    assert.equal(runtime._test.playerCanYawn(false), false, 'mount transition ' + transition + ' must own the body');
+  }
+  window.Mounts = null;
+  assert.equal(runtime._test.playerCanYawn(false), true, 'all temporary action conditions restore eligibility afterward');
+
+  // Deselecting the character previously stopped the scheduler while leaving a five-second yawn, hidden visuals and an action lock stranded.
+  const priorPresentationEnds = stretchCalls.filter(call => call.kind === 'end').length; // Confirms the unload path owns the final release.
+  window.__hobunjiPlayerProfile.characterId = null;
+  ms += 16; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().characterId, null, 'unloaded character resets the fatigue namespace');
+  assert.equal(runtime.debugSnapshot().active.length, 0, 'all NPC and player yawn states end when leaving the character');
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'character unload cannot strand the player at quarter-speed');
+  assert.ok(stretchCalls.filter(call => call.kind === 'end').length > priorPresentationEnds,
+    'character unload releases the player stretch and action ownership');
+  assert.equal(runtime.debugSnapshot().playerWakePending, false, 'unloaded saves clear stale waking triggers');
+
   console.log('Player/NPC fatigue, reconstructed breathing fallback, voice ownership, and rested buffs: OK');
 }
 
