@@ -136,6 +136,24 @@ for(const axis of ['x','z']){
   data.parts[1].tileSpanRoots.end.surfaceId='landingEnd';
   assert.equal(stretch.apply(group,data).errors.length,0,'explicit named surface roots resolve');
 }
+{
+  const {group,data,middle}=bridge();
+  data.parts[1].tileSpanRoots.start.surfaceId='missing-named-face';
+  const result=stretch.apply(group,data);
+  assert.equal(result.errors.length,1,'missing named surface cannot silently fall back to the mesh bounding box');
+  assert.ok(result.errors[0].includes('attachment surfaces'));
+  assert.equal(middle.userData.tileSpanSource,undefined,'source geometry is not embedded in serializable mesh metadata');
+}
+{
+  const {group,data}=bridge();
+  data.parts[0].tileSpanRole='stretch';
+  assert.ok(stretch.apply(group,data).errors[0].includes('rigid beginning'),'stretch roots must belong to rigid beginning/end pieces');
+}
+{
+  const spec=stretch.normalize({enabled:true,startTiles:256,endTiles:256,middleTiles:256,totalTiles:9999});
+  assert.equal(spec.baseTiles,512,'all authored tile sections fit within maximum footprint');
+  assert.equal(spec.totalTiles,512,'total tile count never exceeds supported footprint');
+}
 // Execute the real preset author, not only a test-made replica of its bridge geometry.
 {
   const inputs=new Map(); // Fake editor controls capture configured tile counts without needing a browser.
@@ -199,8 +217,24 @@ const runtime=fs.readFileSync('docs/js/authored-furniture-runtime.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
 assert.match(html,/tileSpan:cloneJson\(state\.tileSpan/,'project export preserves tile-span settings');
 assert.match(html,/state\.tileSpan=cloneJson\(data\.tileSpan/,'project import restores tile-span settings');
-assert.match(html,/tileSpanRoots\[end\]\.partId=idMap\.get/,'database imports remap piece attachment IDs');
-assert.match(html,/importedPartIds\.get\(root\.partId\)/,'appended repository furniture remaps stretch-root IDs');
+// Execute the real author import helper: named surfaces must follow newly assigned part IDs.
+{
+  const begin=html.indexOf('function remapSpanSurfaceRoots(');
+  const end=html.indexOf('function importFurnitureDatabaseEntry(',begin);
+  assert.ok(begin>=0 && end>begin,'author exposes shared import root remapper');
+  const sandbox={};
+  vm.runInNewContext(html.slice(begin,end),sandbox);
+  const parts=[{tileSpanRoots:{
+    start:{partId:'old-left',surfaceId:'old-left:surface:12'},
+    end:{partId:'old-right',surfaceId:'old-right:surface:18'}
+  }}];
+  sandbox.remapSpanSurfaceRoots(parts,new Map([['old-left','new-left'],['old-right','new-right']]));
+  assert.equal(parts[0].tileSpanRoots.start.partId,'new-left','start root piece remapped');
+  assert.equal(parts[0].tileSpanRoots.start.surfaceId,'new-left:surface:12','start named surface remapped');
+  assert.equal(parts[0].tileSpanRoots.end.surfaceId,'new-right:surface:18','end named surface remapped');
+}
+assert.match(html,/remapSpanSurfaceRoots\(addedParts,idMap\)/,'database imports use shared remapper');
+assert.match(html,/remapSpanSurfaceRoots\(importedParts,importedPartIds\)/,'repository imports use shared remapper');
 assert.match(author,/Stair Bridge \(Stretchable\)/,'preset bridge is present in the author');
 assert.match(author,/tileSpanRole:'stretch'/,'bridge has flexible center geometry');
 assert.match(author,/tileSpanRole:role/,'bridge has fixed stair ends');
