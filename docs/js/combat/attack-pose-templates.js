@@ -66,5 +66,19 @@
     return out;
   }
 
-  window.AttackPoseTemplates = Object.freeze({ TEMPLATES, STYLE_NEUTRAL_POSE, poseFor, styleOf: id => TEMPLATES[id]?.style || null });
+
+  function torchForehandPose(authoredNeutral) {
+    const forehand = poseFor('hatchet_swing'); // The real Forehand Swing template owns the swing arc.
+    const axes = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']; // Translate forehand deltas onto the torch's authored rest without changing the hand-on-item grip.
+    const neutral = { ...forehand.neutral };
+    for (const axis of axes) if (Number.isFinite(authoredNeutral?.[axis])) neutral[axis] = authoredNeutral[axis];
+    const relativeEndpoint = endpoint => {
+      const result = { ...endpoint };
+      for (const axis of axes) result[axis] = neutral[axis] + ((Number(endpoint[axis]) || 0) - (Number(forehand.neutral[axis]) || 0));
+      return result;
+    };
+    return { neutral, windup: relativeEndpoint(forehand.windup), strike: relativeEndpoint(forehand.strike) };
+  }
+
+  window.AttackPoseTemplates = Object.freeze({ TEMPLATES, STYLE_NEUTRAL_POSE, poseFor, torchForehandPose, styleOf: id => TEMPLATES[id]?.style || null });
 })();
