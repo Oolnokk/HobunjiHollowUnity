@@ -32,7 +32,7 @@
     const records=new Map(),controls=[],flames=[],lights=[],shaftBraziers=[]; // Session-owned destinations, input controls, particles, and light records.
     const unlockedShaftIds=new Set(); // Saved floor identities; only personally discovered shaft braziers may receive teleports.
     let disposed=false,activeId=null,shaftLit=false; // Existing floor-zero ignition and checkpoint save fields remain compatible.
-    let activeTravelWheel=null; // The currently held shaft control owns the existing tool/utility selection arch.
+    let activeTravelWheel=null,travelPointerCleanup=null; // One held shaft control and pointer-drag listener may own the existing selection arch.
     let lastBlink=0; // Checkpoint particle presentation reuses the shaft's existing frame callback.
     const now=()=>typeof performance!=='undefined'?performance.now():Date.now();
     const player=()=>{
@@ -229,6 +229,15 @@
         if(activeTravelWheel&&activeTravelWheel!==record.id)return;
         root._desktopSelectionArc.openEntries('ruin-shaft-travel',travelEntries(record)); // Reuse keyboard/controller/touch held-selection arch, not a second radial menu.
         wheelOpen=true;activeTravelWheel=record.id;
+        const doc=root.document; // Pointer events from mobile Action 1 remain captured by its original button after the arch opens.
+        if(doc?.addEventListener){
+          const move=event=>{
+            if(activeTravelWheel===record.id&&event.isPrimary!==false)
+              root._desktopSelectionArc?.movePointer?.(event.clientX,event.clientY);
+          };
+          doc.addEventListener('pointermove',move,true);
+          travelPointerCleanup=()=>doc.removeEventListener('pointermove',move,true); // Only while a shaft travel wheel is visible.
+        }
       }
       const control={kind:record.kind==='shaft'?'ruinShaftTravel':'ruinCheckpointTravel',
         object:record.holder,promptRoot:record.holder,floorY:record.at.y,
@@ -248,6 +257,7 @@
           const valid=!disposed&&!detail?.canceled&&!detail?.cancelled&&closeEnough(player(),record.at,2.1);
           if(wheelOpen){
             wheelOpen=false;activeTravelWheel=null;
+            travelPointerCleanup?.();travelPointerCleanup=null;
             if(valid)root._desktopSelectionArc?.releaseSelection?.();
             else root._desktopSelectionArc?.close?.(); // Canceled input/movement cannot commit a destination.
             return;
@@ -277,7 +287,7 @@
     function restore(saved){
       if(!snapshotValid(saved,ruin.seed))return false;
       unlockedShaftIds.clear(); // Reroll/save restore must never carry travel access to a different seed.
-      for(const story of saved.unlockedShaftFloors||[]){
+      for(const story of (Array.isArray(saved.unlockedShaftFloors)?saved.unlockedShaftFloors:[])){
         if(!Number.isInteger(story))continue;
         const record=shaftBraziers.find(entry=>entry.story===story);
         if(record){unlockedShaftIds.add(record.id);render(record,true);}
@@ -302,6 +312,9 @@
       }
       for(const record of shaftBraziers)
         if(!unlockedShaftIds.has(record.id)&&closeEnough(p,record.at,2.1))igniteShaft(record);
+      if(activeTravelWheel&&!root._desktopSelectionArc?.entryMenuOpen?.()){
+        activeTravelWheel=null;travelPointerCleanup?.();travelPointerCleanup=null; // Backdrop cancel or Dodge must not strand the held input owner.
+      }
       for(const record of records.values())if(record.kind==='small'
         &&closeEnough(p,record.at,1.55)){becomeCheckpoint(record.id);break;}
       const t=now(); // One shared particle-update cadence; the caller need not supply a frame delta.
@@ -318,6 +331,7 @@
     function dispose(){
       if(disposed)return;disposed=true;
       if(activeTravelWheel){root._desktopSelectionArc?.close?.();activeTravelWheel=null;}
+      travelPointerCleanup?.();travelPointerCleanup=null;
       if(liveOwner===owner)liveOwner=null;
       for(const c of controls){const index=ruin.controls.indexOf(c);if(index>=0)ruin.controls.splice(index,1);}
       for(const f of flames)f.dispose?.();
