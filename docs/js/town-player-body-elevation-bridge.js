@@ -255,6 +255,12 @@
     return highest; // Among reachable, staggered treads prefer the highest real walking surface.
   }
 
+  function isBalconyAt(worldX, worldZ, worldY, area = activeArea()) {
+    if (!Number.isFinite(worldY)) return false;
+    return matchingSupports(worldX,worldZ,area).some(entry=>entry.kind==='balcony' &&
+      Math.abs(entry.bounds.topY-worldY)<=.25); // A building blocks at ground level, but not when standing on its explicit rooftop deck.
+  }
+
   function surfaceLiftAt(worldX, worldZ, area = activeArea()) {
     const entry = supportAt(worldX, worldZ, area);
     return entry ? Math.max(0, entry.bounds.topY - entry.bounds.baseY) : 0;
@@ -771,6 +777,7 @@
     registerObject,
     registerPiecePorches,
     registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
+    isBalconyAt, // Height-aware structural-footprint exception; never grants ground-level access.
     railBlocksBox, // Mobile diagnostics can compare a failed move with the visual railing geometry.
     unregister,
     clearKind,
