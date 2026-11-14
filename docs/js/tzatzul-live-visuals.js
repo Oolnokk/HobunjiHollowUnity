@@ -229,6 +229,17 @@
     const camera = deps.getActiveCamera?.() || window.Combat?.deps?.getActiveCamera?.()
       || deps.camera || null; // Real combat camera; no new renderer or global camera mutation.
     for (const [actor, state] of tracked) {
+      const lootableSkeeriCorpse = actor.isRuinSkeeri === true && !(actor.health > 0)
+        && (actor.state === 'dying' || actor.state === 'corpse') && actor.areaId === area
+        && state.rig && state.group?.parent && actor.avatarRef?.group === state.group
+        && !actor._wildlifeVisualsReleased
+        && window.CreatureDeath?.getCorpseObjects?.()?.has?.(actor) === true; // This rare ruin corpse still owns the visible palette and must be lootable.
+      if (lootableSkeeriCorpse) {
+        actor.skeeriFlightPose = 'perched'; // Death uses the folded pose; the corpse owner rotates the whole group onto the ground.
+        actor.skeeriDivePitchRad = 0;
+        present(actor, state, camera); // Keep the authored dye and camera-facing card; no new rig is created for dead actors.
+        continue;
+      }
       if (actor.health <= 0 || actor.areaId !== area || (!deps.hostileObjects.has(actor) && !deps.companionObjects?.has?.(actor))) {
         release(actor, 'died, despawned or left area');
         continue;
