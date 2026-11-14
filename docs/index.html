@@ -187,13 +187,14 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261114herdAudit2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
+  <script src="js/rig-transform-layers.js?v=20261114hRigLayers1"></script> <!-- One named, removable offset ledger for procedural NPC/head/leg transforms. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261113playerKoma1"></script>
   <script src="js/yawn-breath-composer.js?v=20261114naturalBreath1"></script> <!-- Dedicated fallback breath reconstruction; no animal/combat voice behavior changes. -->
   <script src="js/player-yawn-stretch-presentation.js?v=20261114playerYawnStretch1"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
-  <script src="js/npc-yawn-rest.js?v=20261114playerYawnStretch1"></script> <!-- NPC fatigue, waking yawns, player stretch and daily Slagothim Koma. -->
+  <script src="js/npc-yawn-rest.js?v=20261114hRigLayers1"></script> <!-- NPC fatigue, waking yawns, player stretch and daily Slagothim Koma. -->
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20261028packpreview2"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -348,7 +349,7 @@
   <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114rooftopLoader3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114hRigLayers1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2807,7 +2808,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261114posobj1754"></script>
+  <script src="js/fishing-minigame.js?v=20261114hRigLayers1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->

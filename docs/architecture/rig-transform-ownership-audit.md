@@ -1,0 +1,70 @@
+# Procedural rig transform ownership audit (14 November 2026)
+
+## Scope and principle
+
+A code search of the active Three.js game runtime, animation modules, and
+authoring paths looked for cumulative position/rotation/scale mutations,
+quaternion post-multiplication, direct render-time poses, blend spaces,
+procedural hands/legs, paired dances, combat and Tzatzul carries. This document
+is a reviewed inventory, **not a proof that every transform writer in the
+repository has been exhaustively enumerated**. Large authored-config files,
+non-rig world animation and standalone tool previews need additional coverage.
+
+The rule for rig presentation is: **recompute from a current baseline (absolute
+pose) or own a named, removable transform contribution. Never assume another
+animation will reset an offset.** A layer should be cleaned before an owner
+switch, including interrupted actions, seated/mounted states and scene rebuilds.
+
+## Findings
+
+| Path / subsystem | Risk | Evidence / disposition |
+| --- | --- | --- |
+| `docs/game.js` NPC walking bob (station wander and normal route) | **Confirmed: medium** | Previously did `root.position.y += bob` *after* smoothing toward the current ground height, so earlier bob contaminated future smoothing. Now clears the named bob before the movement tick and recomposes after ground follow. |
+| `docs/js/drunk-locomotion.js` thigh sway | **Confirmed: high during mode transitions** | Feet and body quaternions were tracked, but thigh XYZ used raw `+=`. The procedural leg solver zeros thigh offsets on ordinary steps, but seated and external IK have distinct paths. Now explicitly clears named thigh offsets before calling the original solver, then reapplies them. |
+| `docs/js/npc-yawn-rest.js` head/chest bend | **Conditional: medium** | Old last-applied-value matching fails cleanup whenever another owner changes a rotation between yawn frames. Now uses the same additive ledger for the live game, retaining legacy fallback in isolated contexts. |
+| `docs/js/npc-dance-presentation-runtime.js` late hand poses | **Review: medium** | Saves ordinary hand baseline and detects repeated render passes by position; intentionally persists the dance pose across outline/depth passes. Needs explicit ownership cleanup on dance cancellation when the normal hand driver is skipped or LOD-throttled. Do not unconditionally restore the previous quaternion: forearm alignment may have already acquired it. |
+| `docs/js/festival-wheel-dance-runtime.js` paired wheel | **Review: low** | Actor positions and quaternions are assigned from dance frame each update; ground correction adds within the freshly constructed frame. Requires interrupt tests for partner removal and hand-provider cleanup. |
+| `docs/js/procedural-dance-mode-core.js` editor preview | **Review: low** | Captures a preview body baseline and uses `copy(base)` for the blended dance; restored on release. Editor leg/arm ownership should be tested during model replacement. |
+| `docs/js/procedural-leg-animation.js` locomotion/seat/hover/lunge/paired IK | **Review: medium** | Most transforms are solved or reassigned absolutely. Important branches return early for seated and external contacts; any **additional** layer must remove its previous contribution *before* entering these branches. |
+| `docs/js/procedural-hand-frame-driver.js` and `procedural-hand-attachments.js` | **Review: low** | Main socket poses are copied from grip and idle targets. Verify priority at render-hook boundaries, especially when multi-pass rendering can skip a writer. |
+| `docs/js/player-body-transform-composer.js` | **Existing authority** | Already layers local player body contributions and restores the render transform. Do not replace it with a competing player-body owner; the shared ledger is for residual procedural local-node contributions. |
+| `docs/js/drunk-prone-composition-bridge.js` | **Existing mitigation** | Temporarily draws hostile low-Footing/run lean; uses an undo closure for render-only rotation. Verify exception paths and overlapping hostile visual owners. |
+| `docs/js/combat/impact-ragdoll-playback.js` + `impact-blend-library.js` | **Review: low–medium** | Interpolated blend-space body and IK samples use absolute `copy`/assignment, not unbounded accumulation. Watch for pivot reparenting and cleanup on repeated prone/stand transitions. |
+| `docs/js/player-crawl.js` | **Review: low** | Uses named player-composer channels for blending in/out. Exercise rapid crawl/stand, impact and capture interrupts. |
+| `docs/js/tzatzul-flight-runtime.js` + `tzatzul-live-visuals.js` | **Review: medium** | Captive pose is snapshotted and restored, including quaternion/scale; a post-release two-frame reset may conflict with the immediately resumed locomotion/impact writer. Needs ownership-aware release handoff, not blind extra reset. |
+| `docs/js/animal-sleep-presentation.js` | **Existing mitigation** | Captures render-only Y/scale and restores after the frame; guarded for game-loop and external render contexts. Test early return and rebuild. |
+| `docs/js/weapon-tool-stances.js` + `tool-world-upright.js` | **Existing mitigation** | Tool offset and world-up correction are temporary during the holder's matrix update; `finally` restores holder position/quaternion and child twist. Do not strip this without understanding its matrix-bake handoff. |
+| `docs/js/furniture-piece-animation-runtime.js` | **Existing mitigation** | Hinge/spin/bob are appended after `basePivotFrame()` restores the authored pivot each update. |
+| `docs/js/spouse-kiss-motion.js` + `bed-lie-pose.js` | **Review: medium** | Paired and lie poses use absolute body transforms and explicit teardown, but are sensitive to changes in parentage and interruption order. |
+| `docs/js/game-feel.js` camera shake | **Not a rig leak** | Temporarily adds position/roll and provides a corresponding `restoreShake()` in the frame path. |
+
+## New local transform ledger
+
+`window.RigTransformLayers` is loaded before NPC/character runtimes.
+It is a lightweight, allocation-conservative, per-node `WeakMap` of named
+axis offsets. It composes concurrent named owners from an unchanged axis
+baseline; `setAxis` and `setPosition` are idempotent.
+`clear(node, owner)` and `clearAll(node)` release contributions on cancel
+and dispose. If another system assigns a different absolute value, the ledger
+drops prior owner claims **without subtracting a stale inverse**.
+
+Mobile debugging: `RigTransformLayers.getDebug()` returns writes, clears,
+externalTakeovers, invalidInputs and activeLayers.
+
+Important limitation: an uncoordinated third-party additive writer that changes
+an axis after the ledger's last write looks like an absolute takeover. That
+writer must either register its own layer or restore its transform before the
+next ledger update. Quaternion and full-parent-space transforms continue to be
+owned by existing composer/pose systems; they are *not* represented as Euler
+angle offsets indiscriminately.
+
+## Recommended next migration/testing pass
+
+Prioritize NPC dance late-hand cancellation, Tzatzul talon release and grip
+handoff, and repeated prone/standing interrupted by a new capture.
+Then run deliberate alternating sequences: walking → sitting → drunk →
+yawning → dance → bird capture → knockdown → crawling → re-spawn, checking
+position/quaternion/scale at identical baseline points in the existing
+`RigTransformDump`/Pixel Probe capture. Ensure no unowned transform survives
+after each transition. Do not move the player render-composer or impact-pose
+sampling into the ledger: those already have stronger ownership contracts.

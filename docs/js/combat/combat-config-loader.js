@@ -87,7 +87,7 @@
     ['js/town-player-body-elevation-bridge.js?v=20261114rooftopJump3', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/animal-subtle-elevation-bridge.js?v=20260920furniture1', () => !!window.HobunjiAnimalSubtleElevation],
     ['js/porch-surface-material.js?v=20261028entrancewood1', () => !!window.HobunjiPorchSurfaceMaterial],
-    ['js/drunk-locomotion.js?v=20261020h-npcrun-pivot3', () => !!window.HobunjiDrunkWalk],
+    ['js/drunk-locomotion.js?v=20261114hRigLayers1', () => !!window.HobunjiDrunkWalk],
     ['js/crop-sprite-art.js?v=20261107cultivarColor3', () => !!window.HobunjiCropSpriteArt],
     ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20260924perf1', () => !!window.HobunjiCropBillboardPresentation],
