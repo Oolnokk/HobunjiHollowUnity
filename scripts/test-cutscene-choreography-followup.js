@@ -13,7 +13,16 @@ assert.equal(chair.row,6);assert.equal(meeting.actors.find(a=>a.id==='harkharash
 assert(meeting.stages.filter(s=>s.speakerId==='harkharash').every(s=>s.cameraDistanceMultiplier===.7));
 assert.equal(meeting.stages[meeting.stages.findIndex(s=>s.id==='meeting_hark_leave')+1].visible,false);
 class V {constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){Object.assign(this,{x,y,z});return this;}copy(v){Object.assign(this,v);return this;}clone(){return new V(this.x,this.y,this.z);}applyQuaternion(q){const x=this.x,z=this.z;this.x=x*Math.cos(q.yaw)+z*Math.sin(q.yaw);this.z=-x*Math.sin(q.yaw)+z*Math.cos(q.yaw);return this;}project(){this.x/=2;this.y=0;this.z=0;return this;}}
-class Q {constructor(yaw=0){this.yaw=yaw;}identity(){this.yaw=0;return this;}premultiply(q){this.yaw+=q.yaw;return this;}setFromAxisAngle(axis,angle){this.yaw=angle;return this;}}
+class Q {
+  constructor(yaw=0){this.yaw=yaw;}
+  identity(){this.yaw=0;return this;}
+  clone(){return new Q(this.yaw);}
+  copy(q){this.yaw=q.yaw;return this;}
+  multiply(q){this.yaw+=q.yaw;return this;}
+  premultiply(q){return this.multiply(q);}
+  invert(){this.yaw=-this.yaw;return this;}
+  setFromAxisAngle(axis,angle){this.yaw=angle;return this;}
+}
 const cut= (source,a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a))); // Extract owning closures without mirroring their implementation.
 // Real travel method drives the gait of every humanoid, with floor grounding and current displacement speed.
 const gait=[];
@@ -34,8 +43,10 @@ assert(Math.abs(entrance.actorStates.get('spearhead').c/2)>1.4,'spawn falls outs
 const rotation={window:{},THREE:{Quaternion:Q,Vector3:V,MathUtils:{degToRad:d=>d*Math.PI/180}},performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/perp-rotation.js'),rotation);
 rotation.window.PerpRotation.init({angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))});
-const body={visible:true,position:new V(),rotation:{y:Math.PI/2},localToWorld:v=>v},feet={rotation:{y:0}},neck={rotation:{y:-.4}},tool={rotation:{y:Math.PI/2}};
-const rendered={window:rotation.window,THREE:{Vector3:V,Quaternion:Q},playerMesh:body,playerLegRoot:feet,playerPosteriorY:.4,wrapSignedAngle:a=>Math.atan2(Math.sin(a),Math.cos(a)),hierarchyWorldQuaternion:node=>new Q(node.rotation.y),currentPlayerNeckJoint:()=>neck,currentOwnedRootEntries:()=>[{root:body},{root:tool}],applyWorldDelta(root,pivot,q,t,undo){const before=root.rotation.y;root.rotation.y+=q.yaw;undo.push(()=>root.rotation.y=before);}};
+const body={visible:true,position:new V(),rotation:{y:Math.PI/2},localToWorld:v=>v},
+  feet={parent:body,quaternion:new Q(),rotation:{get y(){return feet.quaternion.yaw;}}},
+  neck={rotation:{y:-.4}},tool={rotation:{y:Math.PI/2}}; // Leg-root quaternion drives its Euler-facing readout just as real Three.js does.
+const rendered={window:rotation.window,THREE:{Vector3:V,Quaternion:Q},playerMesh:body,playerLegRoot:feet,playerPosteriorY:.4,wrapSignedAngle:a=>Math.atan2(Math.sin(a),Math.cos(a)),hierarchyWorldQuaternion:(node,out=new Q())=>out.copy(new Q(node?.rotation?.y||0)),currentPlayerNeckJoint:()=>neck,currentOwnedRootEntries:()=>[{root:body},{root:tool}],applyWorldDelta(root,pivot,q,t,undo){const before=root.rotation.y;root.rotation.y+=q.yaw;undo.push(()=>root.rotation.y=before);}};
 vm.runInNewContext(cut(read('docs/js/player-body-transform-composer.js'),'  let renderFacingState','  function registerPlayerRig')+'\nundo=[];debug={};applyRenderedFacingDeadzone({position:{x:0,z:5}},undo,debug);',rendered);
 assert(Math.abs(Math.abs(body.rotation.y-Math.PI/2)-40*Math.PI/180)<1e-8);
 assert.equal(body.rotation.y,tool.rotation.y);assert(Math.abs(body.rotation.y+feet.rotation.y-Math.PI/2)<1e-8);

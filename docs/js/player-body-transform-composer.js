@@ -421,6 +421,19 @@
   const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
   const renderFacingPivot = new THREE.Vector3(); // Reused posterior pivot for final facing correction.
   const renderFacingRotation = new THREE.Quaternion(); // Reused collision-free billboard yaw delta.
+  const legFacingParentWorld = new THREE.Quaternion(); // Scale-free parent orientation used to translate the visual yaw correction into leg-local space.
+  const legFacingLocalCorrection = new THREE.Quaternion(); // Reused correction so foot stance keeps its logical heading under pitch, roll and mirrored scale.
+  const legFacingWorldInverse = new THREE.Quaternion(); // Reused inverse render yaw; avoid allocating a new quaternion per frame.
+  function counterRotateLegRootForRender(legRoot, worldCorrection, undo) {
+    const originalLegQuaternion = legRoot.quaternion.clone(); // Restore all axes, not only Euler yaw, when the frame completes.
+    hierarchyWorldQuaternion(legRoot.parent, legFacingParentWorld);
+    legFacingWorldInverse.copy(worldCorrection).invert();
+    legFacingLocalCorrection.copy(legFacingParentWorld).invert()
+      .multiply(legFacingWorldInverse)
+      .multiply(legFacingParentWorld); // Scale-free world-to-local conjugation also supports a leaned or mirrored parent.
+    legRoot.quaternion.premultiply(legFacingLocalCorrection);
+    undo.push(() => { legRoot.quaternion.copy(originalLegQuaternion); });
+  }
   function applyRenderedFacingDeadzone(camera, undo, renderDebug) {
     if(window.CharacterActionLocks?.isLocked?.('player','facing'))return; // Paired inward-facing choreography must not be counter-rotated by the ordinary billboard clamp.
     const api = window.PerpRotation; // Shared hysteresis/clamp authority; unavailable in isolated editor fixtures.
@@ -436,11 +449,7 @@
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
     for (const entry of currentOwnedRootEntries()) applyWorldDelta(entry.root, pivot, renderFacingRotation, renderFacingTranslation, undo);
-    if (playerLegRoot) {
-      const feetYaw = playerLegRoot.rotation.y; // Feet keep their logical heading while the flat body avoids an edge-on view.
-      playerLegRoot.rotation.y -= correction;
-      undo.push(() => { playerLegRoot.rotation.y = feetYaw; });
-    }
+    if (playerLegRoot) counterRotateLegRootForRender(playerLegRoot, renderFacingRotation, undo);
     const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
   }
@@ -547,6 +556,7 @@
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
+      try {
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
       if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
@@ -583,7 +593,6 @@
       if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
       lastRenderDebug = renderDebug;
 
-      try {
         const result = originalRender.call(this, scene, camera);
         // Fires after the real render (so anything that re-syncs itself off
         // playerMesh/toolHolder inside that render, e.g. the procedural hand
@@ -597,9 +606,25 @@
           try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
         }
         return result;
-      }
-      finally {
-        for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+      } catch (error) {
+        renderDebug.renderError = String(error?.message || error); // Mobile diagnostics retain the failed compose/draw phase.
+        lastRenderDebug = renderDebug;
+        throw error;
+      } finally {
+        // Pre-render failure must restore all temporary transforms. If one
+        // rollback itself fails, continue restoring the others rather than
+        // letting a single stale attachment leave the feet turned all session.
+        let rollbackIndex = undo.length - 1; // Reverse-order undo index; the normal path has no per-item try/catch cost.
+        try {
+          for (; rollbackIndex >= 0; rollbackIndex--) undo[rollbackIndex]();
+        } catch (error) {
+          renderDebug.rollbackErrors = [String(error?.message || error)]; // Inspect from the existing mobile composer snapshot.
+          for (rollbackIndex--; rollbackIndex >= 0; rollbackIndex--) {
+            try { undo[rollbackIndex](); }
+            catch (nextError) { renderDebug.rollbackErrors.push(String(nextError?.message || nextError)); }
+          }
+          lastRenderDebug = renderDebug;
+        }
       }
     };
     // held-object-render-order.js's internal depth-replay passes need the
