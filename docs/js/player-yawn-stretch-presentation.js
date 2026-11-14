@@ -15,6 +15,7 @@
   let sentinel = null; // Invisible pre-render mesh that runs after the ordinary procedural hand driver.
   let sentinelParent = null; // Tracks avatar replacement so the sentinel never persists on an old player mesh.
   let handRig = null; // The existing player procedural hand rig, reused rather than creating new hands.
+  let ownedHandRig = null; // A temporary idle-pose provider makes the ordinary hand driver release weapon grips before the stretch.
   let progress = 0; // Five-second normalized yawn clock, read by the final-render hand pose.
   let handApplications = 0; // Mobile-readable count of successful final-render stretch samples.
   let lastError = null; // Mobile diagnostics when a late-created dependency is unavailable.
@@ -80,8 +81,24 @@
     if (!found) mesh?.traverse?.(node => {
       if (!found && node?.userData?.proceduralHandRig) found = node.userData.proceduralHandRig;
     });
-    if (handRig !== found) { restoreHandPose(); handRig = found; handBase.clear(); }
+    if (handRig !== found) { restoreHandPose(); releaseHandOwnership(); handRig = found; handBase.clear(); }
     return handRig;
+  }
+
+  function releaseHandOwnership() {
+    ownedHandRig?.setPoseProvider?.(OWNER, null); // The rig API releases only our own provider; another action may have superseded it.
+    ownedHandRig = null;
+  }
+
+  function syncHandOwnership() {
+    const rig = discoverHandRig();
+    if (entry?.komaStarted || !rig?.setPoseProvider) { releaseHandOwnership(); return; }
+    if (ownedHandRig === rig) return;
+    const poseOwner = rig.getDebug?.()?.poseOwner;
+    if (poseOwner && poseOwner !== OWNER) return; // Never steal a cinematic or paired interaction's hand ownership.
+    releaseHandOwnership();
+    rig.setPoseProvider(OWNER, owned => owned.useIdlePose?.()); // The native frame driver now chooses neutral hands instead of an invisible weapon's grip.
+    ownedHandRig = rig;
   }
 
   function samePose(actual, expected) {
@@ -167,7 +184,7 @@
     sentinel.name = 'player_yawn_stretch_final_hand_pose';
     sentinel.frustumCulled = false;
     sentinel.renderOrder = -99985; // Just after the -100000 normal hand driver and -99990 dance presentation.
-    sentinel.onBeforeRender = () => { if (entry) { suppressHeldVisuals(); applyStretch(); } };
+    sentinel.onBeforeRender = () => { if (entry) { suppressHeldVisuals(); syncHandOwnership(); applyStretch(); } };
     mesh.add(sentinel);
     sentinelParent = mesh;
   }
@@ -213,7 +230,7 @@
       owner: OWNER, reason: 'five-second player yawn and stretch',
       participants: [{ id: 'player', channels: ['tools', 'actions'] }],
     }) || null; // The player may still walk at 25% speed; selection never changes.
-    try { patchComposer(); suppressHeldVisuals(); discoverHandRig(); ensureSentinel(); hookPortraitPlanes(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); hookPortraitPlanes(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -221,7 +238,7 @@
   function update(activeYawn, t) {
     if (!entry || entry !== activeYawn) return false;
     progress = clamp01(t);
-    try { patchComposer(); suppressHeldVisuals(); ensureSentinel(); if (!handRig) discoverHandRig(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -229,6 +246,7 @@
   function end(activeYawn) {
     if (entry !== activeYawn) return;
     restoreHandPose();
+    releaseHandOwnership();
     entry = null;
     progress = 0;
     yawnLock?.release?.();
@@ -240,7 +258,7 @@
     version: 1, start, update, end, actionBlocked,
     debugSnapshot: () => ({
       active: !!entry, progress, hasHandRig: !!handRig, sentinelAttached: !!sentinel?.parent,
-      handApplications, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
+      handApplications, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
     }),
     _test: Object.freeze({ applyStretch, suppressHeldVisuals, restoreHandPose, heldRoots }),
   });
