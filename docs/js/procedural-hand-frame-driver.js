@@ -803,6 +803,7 @@
       0.0001, 0, 0,
       0, 0.0001, 0,
     ], 3));
+    geometry.setDrawRange(0, 0); // Three.js runs the pose callback before checking the draw range.
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false });
     material.colorWrite = false;
     const sentinel = new THREE.Mesh(geometry, material);

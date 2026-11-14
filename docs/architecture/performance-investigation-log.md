@@ -1,5 +1,9 @@
 # Performance investigation log
 
+## 14 Nov 2026: hand pose callbacks without GPU draws
+
+The direct hand sync and free-hand forearm alignment meshes use empty draw ranges. Three.js r128 calls their pose hooks in render order and skips the two invisible triangle draws per rig in each pass that processes both meshes. The dance render hook can reset wrist rotations on a later pass, so forearm alignment still runs after it on eligible passes.
+
 ## 13 Nov 2026: browser HUD DOM/style invalidation audit (in progress)
 
 The Chrome capture supplied by the player included approximately **1,414 ms of Recalculate Style** across the selected interval. This is cumulative browser time, not an isolated self-time measurement for one HUD module. Two confirmed code-level causes of avoidable invalidation in the UI layer were:

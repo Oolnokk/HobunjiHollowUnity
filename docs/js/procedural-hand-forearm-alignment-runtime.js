@@ -141,6 +141,7 @@
       0.0001, 0, 0,
       0, 0.0001, 0,
     ], 3));
+    geometry.setDrawRange(0, 0); // Keep the alignment callback in render order without a GPU draw.
     const material = new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false });
     material.colorWrite = false;
     const sentinel = new THREE.Mesh(geometry, material);
