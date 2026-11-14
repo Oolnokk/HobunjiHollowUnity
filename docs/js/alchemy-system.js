@@ -45,6 +45,16 @@
     perfumeOfEmbers: recipe('perfumeOfEmbers', 'senses', 'greaten', 'fire', { label: 'Ember Perfume', icon: '🌺', useMode: 'gift', application: 'spousePerfume', kissStat: 'maxStamina', kissEffectLabel: 'Maximum Stamina', kissBonus: 0.10, desc: 'Gift to your spouse. Their kisses grant increased maximum Stamina until you give them another perfume.' }),
     perfumeOfZephyrs: recipe('perfumeOfZephyrs', 'senses', 'lighten', 'wind', { label: 'Zephyr Perfume', icon: '🌼', useMode: 'gift', application: 'spousePerfume', kissStat: 'footingRegen', kissEffectLabel: 'Footing recovery', kissBonus: 0.10, desc: 'Gift to your spouse. Their kisses grant increased Footing recovery until you give them another perfume.' }),
 
+    perfumeOfVigor: recipe('perfumeOfVigor', 'senses', 'restore', 'earth', { label: 'Heartwood Perfume', icon: '💞', useMode: 'gift', application: 'spousePerfume', kissStat: 'staminaRegen', kissEffectLabel: 'Stamina recovery', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase stamina recovery until a different perfume is gifted.' }),
+    perfumeOfMight: recipe('perfumeOfMight', 'blood', 'greaten', 'wind', { label: 'Valor Perfume', icon: '💪', useMode: 'gift', application: 'spousePerfume', kissStat: 'outgoingDamage', kissEffectLabel: 'Outgoing damage', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase outgoing damage until a different perfume is gifted.' }),
+    perfumeOfImpact: recipe('perfumeOfImpact', 'bones', 'greaten', 'wind', { label: 'Thunder Perfume', icon: '💥', useMode: 'gift', application: 'spousePerfume', kissStat: 'footingDamage', kissEffectLabel: 'Footing damage', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase footing damage until a different perfume is gifted.' }),
+    perfumeOfQuickness: recipe('perfumeOfQuickness', 'senses', 'lighten', 'water', { label: 'Spark Perfume', icon: '⚡', useMode: 'gift', application: 'spousePerfume', kissStat: 'attackSpeed', kissEffectLabel: 'Attack speed', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase attack speed until a different perfume is gifted.' }),
+    perfumeOfFleetness: recipe('perfumeOfFleetness', 'bones', 'lighten', 'earth', { label: 'Fleetfoot Perfume', icon: '🏃', useMode: 'gift', application: 'spousePerfume', kissStat: 'movementSpeed', kissEffectLabel: 'Movement speed', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase movement speed until a different perfume is gifted.' }),
+    perfumeOfEfficiency: recipe('perfumeOfEfficiency', 'breath', 'lighten', 'earth', { label: 'Feather Perfume', icon: '🪶', useMode: 'gift', application: 'spousePerfume', kissStat: 'staminaSpend', kissEffectLabel: 'Stamina costs', kissBonus: 0.10, kissReduces: true, desc: 'Gift to your spouse. Kisses reduce stamina costs until a different perfume is gifted.' }),
+    perfumeOfThickblood: recipe('perfumeOfThickblood', 'blood', 'restore', 'earth', { label: 'Thickblood Perfume', icon: '🩸', useMode: 'gift', application: 'spousePerfume', kissStat: 'incomingDamageAffliction', kissEffectLabel: 'Harmful Damage-affliction buildup', kissBonus: 0.10, kissReduces: true, desc: 'Gift to your spouse. Kisses reduce harmful damage-affliction buildup until a different perfume is gifted.' }),
+    perfumeOfDevotion: recipe('perfumeOfDevotion', 'blood', 'lighten', 'wind', { label: 'Devotion Perfume', icon: '💝', useMode: 'gift', application: 'spousePerfume', kissStat: 'positiveFavor', kissEffectLabel: 'Positive Favor gains', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase positive favor gains until a different perfume is gifted.' }),
+    perfumeOfInsight: recipe('perfumeOfInsight', 'senses', 'lighten', 'earth', { label: 'Insight Perfume', icon: '👁️', useMode: 'gift', application: 'spousePerfume', kissStat: 'perception', kissEffectLabel: 'Perception', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase perception until a different perfume is gifted.' }),
+
     breedingGigantism: recipe('breedingGigantism', 'bones', 'greaten', 'water', { brewWeight: 0.1, label: 'Breeding Potion of Gigantism', icon: '🐘', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: 1, desc: "Raises the affected animal's next offspring by one Size class." }),
     potionOfPoise: recipe('potionOfPoise', 'bones', 'greaten', 'earth', { label: 'Potion of Poise', icon: '🗿', useMode: 'drink', application: 'buff', stat: 'maxFooting', magnitude: 0.35, durationS: 90, desc: 'Temporarily increases maximum Footing.' }),
     potionOfImpact: recipe('potionOfImpact', 'bones', 'greaten', 'fire', { label: 'Potion of Impact', icon: '💥', useMode: 'drink', application: 'buff', stat: 'footingDamage', magnitude: 1.5, durationS: 15, desc: 'Enormously increases knockback and Footing damage briefly.' }),
@@ -250,9 +260,10 @@
     const definition = RECIPE_DEFS[recipeId]; // Canonical effect of a saved spouse perfume, independent of inventory ownership.
     if (definition?.application !== 'spousePerfume' || definition.useMode !== 'gift') return null;
     const tier = Math.max(0, Math.min(4, Math.floor(Number(potencyTier) || 0))); // Crafted potency remains fixed after the bottle is gifted.
-    const multiplier = Math.round((1 + definition.kissBonus * potencyMultiplier(tier)) * 10000) / 10000; // Stable multiplier; perfume potency never changes the kiss lifetime.
-    const percentage = Math.round((multiplier - 1) * 1000) / 10; // Human-readable HUD/toast bonus.
-    return { recipeId, potencyTier: tier, label: definition.label, icon: definition.icon, stat: definition.kissStat, multiplier, effectLabel: `+${percentage}% ${definition.kissEffectLabel}` };
+    const magnitude = Math.round(definition.kissBonus * potencyMultiplier(tier) * 10000) / 10000; // Positive magnitude feeds existing alchemy multiplier formulas, even for cost/resistance reductions.
+    const multiplier = Math.round((1 + (definition.kissReduces ? -magnitude : magnitude)) * 10000) / 10000; // Stable 10–16% strength; the buff lifetime is unchanged.
+    const percentage = Math.round(magnitude * 1000) / 10; // Human-readable HUD/toast bonus.
+    return { recipeId, potencyTier: tier, label: definition.label, icon: definition.icon, stat: definition.kissStat, magnitude, multiplier, effectLabel: `${definition.kissReduces ? '-' : '+'}${percentage}% ${definition.kissEffectLabel}` };
   }
   function perfumeFromItemKey(itemKey) {
     const payload = parseBrewedItemKey(itemKey); // Only genuine authored, tiered perfume recipes may change a spouse's kiss.
@@ -462,7 +473,14 @@
     return { ok: true, message: `🧪 Drank preserved legacy potion (${payload.legacyEffects?.join(', ') || 'unknown effect'}).` };
   }
 
-  function statMagnitude(stat) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat)).reduce((sum, effect) => sum + effect.magnitude * (window.DevotionRestBuffs?.potionStackScale?.(effect) ?? 1), 0); } // Central buff query.
+  const RESOURCE_KISS_STATS = new Set(['healthRegen', 'staminaRegen', 'footingRegen', 'maxFooting', 'maxStamina']); // ResourceSystem already owns these kiss channels; never count them twice through potion multipliers.
+  function isResourceKissStat(stat) { return RESOURCE_KISS_STATS.has(stat); } // Shared with RomanceSystem's single-player ResourceSystem provider.
+  function statMagnitude(stat) {
+    const now = performance.now() / 1000; // Real alchemy potions keep their existing wall-clock lifetime.
+    const potionMagnitude = activeEffects.filter(effect => effect.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat)).reduce((sum, effect) => sum + effect.magnitude * (window.DevotionRestBuffs?.potionStackScale?.(effect) ?? 1), 0); // Existing potion stacks remain unchanged.
+    const perfume = !isResourceKissStat(stat) ? window.RomanceSystem?.activeKissPerfumeEffect?.() : null; // Perfume uses the existing alchemy getter for non-resource buffs only, never a second fake potion timer.
+    return potionMagnitude + (perfume?.stat === stat ? perfume.magnitude : 0); // Keeps alchemy Strength/Fury/Speed/etc. consumers and existing HUD formulas authoritative.
+  }
   function recipeMagnitude(recipeId) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && effect.recipeId === recipeId).reduce((sum, effect) => sum + effect.magnitude * (window.DevotionRestBuffs?.potionStackScale?.(effect) ?? 1), 0); } // Used by Strength's recipe-specific secondary effects while preserving stored potency.
   const getMovementSpeedMultiplier = () => 1 + statMagnitude('movementSpeed');
   const getSpeedMul = getMovementSpeedMultiplier;
@@ -653,7 +671,7 @@
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canCompleteSelection,canAddReagent,outcomeWeight,weightedOutcome,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
     serializeFavorites,restoreFavorites,loadFavorite,toggleFavorite,
-    itemKeyForRecipe,parseBrewedItemKey,getPerfumeEffect,perfumeFromItemKey,throwingFlaskColors,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
+    itemKeyForRecipe,parseBrewedItemKey,getPerfumeEffect,perfumeFromItemKey,isResourceKissStat,throwingFlaskColors,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,
     get selectedReagents(){return [...selectedReagents];}, get targetedRecipeId(){return targetedRecipeId;}, get activeEffects(){return activeEffects.map(effect=>({...effect}));},
