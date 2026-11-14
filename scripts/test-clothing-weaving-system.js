@@ -174,6 +174,14 @@ assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'trim', null, '#1234
 assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'base', null, '#123456', null, '#111111'), '#123456', 'missing optional Dye B falls back safely without breaking older dye data');
 assert.equal(api.__test.patternInkHexForLayer({ layers: oppositeDyes.layers }, 'base', 'A', '#123456', '#fedcba', '#111111'), '#111111', 'unchecked mode keeps Dye C as the pattern color');
 assert.notEqual(api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: oppositeDyes }), api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: { layers: oppositeDyes.layers } }), 'changing cross-dye mode invalidates previously cached inventory portraits');
+const customInkPattern = { motifDataUrl: 'data:image/png;base64,INK==', inkColorHex: '#ffff00' }; // Stand-in for an Advanced Loom overpass whose optional ink must yield to the new checkbox.
+const customInkStack = [customInkPattern, { ...customInkPattern, inkColorHex: '#ff00ff' }]; // Both pattern slots share the layer dye when crossed.
+const routedInkStack = api.__test.dyeRoutedPatterns(oppositeDyes, customInkStack);
+assert.equal(routedInkStack.length, 2, 'cross-dye routing keeps both advanced pattern layers');
+assert.equal(routedInkStack[0].inkColorHex, undefined, 'primary authored ink does not override Dye A/B when the box is checked');
+assert.equal(routedInkStack[1].inkColorHex, undefined, 'advanced overpass ink does not override Dye A/B when the box is checked');
+assert.equal(customInkStack[1].inkColorHex, '#ff00ff', 'routing never mutates the saved reusable overpass pattern');
+assert.equal(api.__test.dyeRoutedPatterns({}, customInkStack), customInkStack, 'unchecked mode continues to use authored ink overrides unchanged');
 assert.equal(api.__test.weavingHasOptionalTrim({ trim: { enabled: true, dyeSlot: 'C' } }), true, 'trim metadata is recognized without fabricating a reusable pattern');
 assert.equal(api.__test.weavingHasAnyDecoration({ trim: { enabled: true, dyeSlot: 'A' } }), true, 'trim-only garments enter the shared decorated render/save path');
 assert.equal(api.hasWovenPattern({ weaving: { trim: { enabled: true, dyeSlot: 'B' } } }), true, 'trim-only inventory icons are treated as fully composited so legacy tinting cannot wash them out');
