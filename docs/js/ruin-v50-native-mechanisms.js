@@ -304,6 +304,40 @@
     if(typeof api.registerDetachedCubeRoots!=='function'){unreg();throw new Error('Original V50 linked-cube solver is unavailable for this story');}
     const releaseCubes=api.registerDetachedCubeRoots(nativeRoot); // Restore source-owned solver actors lost during subsequent floor generations.
     let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
+    const acceptedInMotion=new Set(); // Only completed room objectives may keep moving while that chamber sleeps.
+    function advanceMechanism(state,step,desired){
+      state.solved=desired>.95;
+      state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
+      if(Math.abs(state.progress-desired)<.001)state.progress=desired;
+      const soundSource=state.motion==='stoneDoor'
+        ?(state.object.children||[]).find(child=>child.isMesh&&child.geometry)||state.object
+        :state.object;
+      host.RuinInteractionAudio?.watchMovement?.(soundSource,state.progress);
+      state.reapplyAfter-=step;
+      if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
+        api.applyProgress(state.object,state.progress);
+        state.lastApplied=state.progress;state.reapplyAfter=1;
+      }
+      if(state.accepted&&state.progress>=1)acceptedInMotion.delete(state);
+    }
+    function acceptSolution(id,restore=false){
+      if(disposed)return false;
+      const state=states.get(String(id));
+      if(!state)return false;
+      state.accepted=true;state.target=1;state.solved=true;
+      if(restore){
+        state.progress=1;state.reapplyAfter=1;state.lastApplied=1;
+        acceptedInMotion.delete(state);
+        api.applyProgress(state.object,1); // Persisted completed gates are already physically open when the world loads.
+      }else if(state.progress<1)acceptedInMotion.add(state);
+      return true;
+    }
+    function updateDormant(dt){
+      if(disposed)return;
+      const step=Math.max(0,Math.min(.05,Number(dt)||0));
+      for(const state of acceptedInMotion)advanceMechanism(state,step,1); // No off-room puzzle inputs, moving daises or AI are simulated.
+      updateTransitDoors(step); // Passage doors still react to approach outside the active puzzle chamber.
+    }
     function updateTransitDoors(dt){
       if(disposed)return;
       const step=Math.max(0,Math.min(.05,Number(dt)||0));
@@ -335,21 +369,11 @@
         const plateValue=Number(plate?.userData?.weightProgress),cubeValue=Number(cubes?.userData?.solveProgress);
         if(plate)host.RuinInteractionAudio?.watchPlate?.(plate,plateValue>.5); // Shared edge tracker avoids duplicate activation sounds from stacked-floor readers.
         let desired=state.target;
-        if(plate&&Number.isFinite(plateValue))desired=plateValue;
-        else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
-        state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
-        state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
-        if(Math.abs(state.progress-desired)<.001)state.progress=desired;
-        const soundSource=state.motion==='stoneDoor'
-          ?(state.object.children||[]).find(child=>child.isMesh&&child.geometry)||state.object
-          :state.object; // Size follows the physical moving door panel, not its decorative frame.
-        host.RuinInteractionAudio?.watchMovement?.(soundSource,state.progress);
-        state.reapplyAfter-=step;
-        if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
-          api.applyProgress(state.object,state.progress);
-          state.lastApplied=state.progress;
-          state.reapplyAfter=1; // Unchanged authored stone still gets a periodic restoration pass.
-        }
+        if(!state.accepted){
+          if(plate&&Number.isFinite(plateValue))desired=plateValue;
+          else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
+        }else desired=1; // An accepted room exit must not relock if the player leaves its pressure plate.
+        advanceMechanism(state,step,desired);
       }
       for(const lift of elevatorBlocks){
         if(lift.pushes()>0)continue; // After the first push the block owns its own V50 route position, not the elevator's current animation.
@@ -406,7 +430,8 @@
       for(const record of controls)removeControl?.(record);
       for(const id of [...surfaceIds,...blockerIds])DS.remove?.(id);
     }
-    return {tick,tickDoors:updateTransitDoors,dispose,inventory,states,stageCandidate,
+    return {tick,tickDoors:updateTransitDoors,tickDormant:updateDormant,
+      acceptSolution,dispose,inventory,states,stageCandidate,
       isSolved:id=>states.get(String(id))?.solved===true,
       getState:()=>({
         mechanisms:states.size,activators:inventory.activators.length,
