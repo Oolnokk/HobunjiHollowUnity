@@ -33,11 +33,13 @@
     if (!calendar || calendar.isInitialized?.() === false) return NaN;
     const absolute = calendar.getAbsoluteGameHour?.();
     if (Number.isFinite(absolute)) return absolute;
-    const snapshot = calendar.timeDebugSnapshot?.(); // Legacy/editor fallback retains the same 16-hour daytime scale.
+    const snapshot = calendar.timeDebugSnapshot?.(); // Editor fallback must use the live day's span, not the obsolete daylight-only model.
     const day = snapshot?.rawDay;
     const fraction = snapshot?.time01 ?? snapshot?.rawTime01;
     if (!Number.isFinite(day) || !Number.isFinite(fraction)) return NaN;
-    return day * 24 + 6 + fraction * 16;
+    const fullDay = snapshot?.fullDayClock === true || calendar.constants?.FULL_DAY_CYCLE === true; // Sky-dome's 24h clock runs through midnight.
+    const rolloverHour = Number(snapshot?.dayRolloverHour ?? calendar.constants?.DAY_ROLLOVER_HOUR ?? 6); // Used by the fallback absolute game hour.
+    return day * 24 + rolloverHour + fraction * (fullDay ? 24 : 16);
   }
 
   function rememberChange() { dirty = true; } // Marks a checkpoint for the next batched save.
