@@ -422,12 +422,12 @@ function hiveWorld({ night = false } = {}) {
   state.calendar.day = 3;
   const result = target.onAction('obj_loot_corpse');
   assert.equal(result.ok, true, result.message);
-  assert(result.eggs >= 1 && result.eggs <= 3, 'one to three fertile eggs');
-  assert.equal(state.inventory.fertileHoneyfuzzleEgg, result.eggs);
+  assert.equal(result.queens, 1, 'exactly one queen per harvested hive');
+  assert.equal(state.inventory.honeyfuzzleQueen, 1);
   const stumpColor = swarm.swarmColor;
-  for (let i = 0; i < result.eggs; i++) assert.equal(context.HoneyfuzzleColors.takeEggColor('w1'), stumpColor, 'each egg carries its stump\'s color');
-  assert.equal(context.HoneyfuzzleColors.takeEggColor('w1'), null, 'one queued color per egg');
-  assert(state.inventory.honey >= H.HONEY_MIN && state.inventory.honey <= H.HONEY_MAX, 'honey arrives with the eggs');
+  assert.equal(context.HoneyfuzzleColors.takeQueenAppearance('w1')?.color, stumpColor, 'the queen carries her hive color');
+  assert.equal(context.HoneyfuzzleColors.takeQueenAppearance('w1'), null, 'one queued appearance per queen');
+  assert(state.inventory.honey >= H.HONEY_MIN && state.inventory.honey <= H.HONEY_MAX, 'honey arrives with the queen');
   assert.equal(grid[4][5].type, TileType.GRASS, 'the stump collapses');
   assert.equal(grid[4][5].floraKind, 'beehive', 'the same stump is what regrows later');
   const entries = state.felled.get('map_test');
@@ -442,9 +442,9 @@ function hiveWorld({ night = false } = {}) {
 {
   // rollHarvest stays inside the 1-3 egg range for every roll.
   const { H } = hiveWorld();
-  for (let i = 0; i <= 100; i++) { const r = H.rollHarvest(() => i / 100 * 0.999999); assert(r.eggs >= 1 && r.eggs <= 3 && r.honey >= H.HONEY_MIN && r.honey <= H.HONEY_MAX); }
+  for (let i = 0; i <= 100; i++) { const r = H.rollHarvest(() => i / 100 * 0.999999); assert(r.queens === 1 && r.honey >= H.HONEY_MIN && r.honey <= H.HONEY_MAX); }
   // A full bag of eggs refuses rather than eating the stump.
-  const full = hiveWorld(); full.state.inventory.fertileHoneyfuzzleEgg = full.context.InventoryStacks.MAX_TOTAL;
+  const full = hiveWorld(); full.state.inventory.honeyfuzzleQueen = full.context.InventoryStacks.MAX_TOTAL;
   assert.equal(full.H.harvest('map_test', 5, 4).ok, false); assert.equal(full.grid[4][5].type, TileType.SHRUB, 'a refused harvest leaves the stump standing');
 }
 
@@ -510,7 +510,7 @@ function hiveWorld({ night = false } = {}) {
 // ---- Honeyfuzzle House (FarmProduction building) --------------------------------------------
 {
   const values = new Map();
-  const inventory = { fertileHoneyfuzzleEgg: 1, growthTonic: 1 };
+  const inventory = { honeyfuzzleQueen: 1, growthTonic: 1 };
   const calendar = { day: 1, time01: 0 };
   const objects = new Map();
   let livestock = [], saves = 0, allowed = true;
@@ -547,13 +547,13 @@ function hiveWorld({ night = false } = {}) {
   const entry = context.FarmProduction.entries()[0];
   assert.equal(house.phase(entry), 'empty');
   // Placing an egg takes it from the bag; hatching is exercised on fresh houses below.
-  assert.equal(house.placeEgg(entry).ok, true);
-  assert.equal(inventory.fertileHoneyfuzzleEgg, 0);
-  assert.equal(house.phase(entry), 'egg');
-  assert.equal(house.placeEgg(entry).ok, false, 'an occupied house takes no second egg');
+  assert.equal(house.placeQueen(entry).ok, true);
+  assert.equal(inventory.honeyfuzzleQueen, 0);
+  assert.equal(house.phase(entry), 'queen');
+  assert.equal(house.placeQueen(entry).ok, false, 'an occupied house takes no second queen');
 }
 {
-  const inventory = { fertileHoneyfuzzleEgg: 2, growthTonic: 1 };
+  const inventory = { honeyfuzzleQueen: 2, growthTonic: 1 };
   const calendar = { day: 1, time01: 0 };
   let livestock = [], allowed = true;
   const context = sandbox();
@@ -596,12 +596,12 @@ function hiveWorld({ night = false } = {}) {
     spectacles: { color: '#55aaee', copies: 1, enabled: true },
   }; // Hive egg color remains authoritative; secondary markings must not be rerolled on hatching.
   context.HoneyfuzzleColors.queueEggAppearances('w1', [{ color: '#123a22', genotype: sourceGenes }]);
-  assert.equal(house.placeEgg(a).ok, true);
-  assert.equal(a.house.egg.genotype.tailfeathers.color, '#804400', 'a placed egg retains its source hive genes');
+  assert.equal(house.placeQueen(a).ok, true);
+  assert.equal(a.house.queen.genotype.tailfeathers.color, '#804400', 'a placed egg retains its source hive genes');
   calendar.day = 2; context.FarmProduction.tick();
-  assert.equal(house.phase(a), 'egg', 'not hatched before its time');
+  assert.equal(house.phase(a), 'queen', 'queen has not established her swarm yet');
   calendar.day = 3; calendar.time01 = 0.5; context.FarmProduction.tick();
-  assert.equal(house.phase(a), 'swarm', 'hatches after the wait');
+  assert.equal(house.phase(a), 'swarm', 'the queen establishes a swarm after the wait');
   assert.equal(house.visualCount(), 1, 'a swarm hovers over the occupied house'); assert.equal(added.length, 1);
   assert.equal(livestock.length, 1);
   assert.equal(livestock[0].kind, 'honeyfuzzle'); assert.equal(livestock[0].houseId, 'h1'); assert.equal(livestock[0].barnId, null);
@@ -612,7 +612,7 @@ function hiveWorld({ night = false } = {}) {
   const houseMesh = added[0].children[0].children[0]; // Inspect the real swarm material attached by House.syncVisual.
   assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#804400', 'house swarm displays inherited secondary tail pigment');
   assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#55aaee', 'house swarm displays inherited spectacles pigment');
-  assert.equal(house.placeEgg(a).ok, false, 'the swarm fills the house');
+  assert.equal(house.placeQueen(a).ok, false, 'the swarm fills the house');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
   assert.equal(saved.find(r => r.id === 'h1').house.livestockId, livestock[0].id);
@@ -621,8 +621,8 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(house.phase(reloaded), 'swarm');
   // Growth Tonic hatches an egg at once; it needs a tonic.
   assert.equal(house.useTonic(b).ok, false, 'nothing to hatch in an empty house');
-  assert.equal(house.placeEgg(b).ok, true);
-  assert(context.HoneyfuzzleColors.regionPalettes().temperate.concat(context.HoneyfuzzleColors.regionPalettes().tropical, context.HoneyfuzzleColors.regionPalettes().ominous).includes(b.house.egg.color), 'an egg with no queued color rolls one from the master palette');
+  assert.equal(house.placeQueen(b).ok, true);
+  assert(context.HoneyfuzzleColors.regionPalettes().temperate.concat(context.HoneyfuzzleColors.regionPalettes().tropical, context.HoneyfuzzleColors.regionPalettes().ominous).includes(b.house.queen.color), 'an egg with no queued color rolls one from the master palette');
   inventory.growthTonic = 0;
   assert.equal(house.useTonic(b).ok, false, 'no tonic, no instant hatch');
   inventory.growthTonic = 1;
@@ -635,8 +635,8 @@ function hiveWorld({ night = false } = {}) {
   context.FarmProduction.tick();
   assert.equal(house.visualCount(), 1, 'h1 keeps its swarm while h2 (hatched by tonic) lost its record'); // h2's swarm visual is dropped by the tick sync
   // Permission gate.
-  allowed = false; inventory.fertileHoneyfuzzleEgg = 1;
-  assert.equal(house.placeEgg(b).ok, false);
+  allowed = false; inventory.honeyfuzzleQueen = 1;
+  assert.equal(house.placeQueen(b).ok, false);
 }
 
 // ---- never a barn animal ---------------------------------------------------------------------------
@@ -646,7 +646,7 @@ function hiveWorld({ night = false } = {}) {
   vm.runInContext(config, context, { filename: 'scratchbones-config.js' });
   const livestockCfg = context.SCRATCHBONES_CONFIG.game.livestock;
   assert.equal(livestockCfg.housing.honeyfuzzle, 'honeyfuzzleHouse');
-  assert.equal(livestockCfg.itemKinds.fertileHoneyfuzzleEgg, undefined, 'the egg is not an incubator/barn livestock item');
+  assert.equal(livestockCfg.itemKinds.honeyfuzzleQueen, undefined, 'the egg is not an incubator/barn livestock item');
 
   const farm = sandbox({ SCRATCHBONES_CONFIG: context.SCRATCHBONES_CONFIG, __farmLog() {} });
   farm.CreatureGenetics = { defaultLivestockName: () => 'Honeyfuzzle Swarm' };
