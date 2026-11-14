@@ -60,7 +60,22 @@
   }
   function syncCharacter() {
     const id = String(window.__hobunjiPlayerProfile?.characterId || '');
-    if (!id || saveCharacterId === id) return !!id;
+    if (!id) {
+      if (saveCharacterId) {
+        for (const entry of [...active]) finish(entry, 'character unloaded'); // Leaving a save must not strand hidden tools or a player action lock at the title screen.
+        flush(); // Persist the outgoing character's final rest state before clearing its namespace.
+        saveCharacterId = null;
+        saved = {};
+        dirty = false;
+        walkerStates = new WeakMap();
+        playerWalker = null;
+        voicePlans.clear();
+        playerWakePending = false;
+        lastBedSleepCount = null;
+      }
+      return false;
+    }
+    if (saveCharacterId === id) return true;
     for (const entry of [...active]) finish(entry, 'character changed');
     flush();
     saveCharacterId = id;
@@ -383,16 +398,29 @@
     }
     return playerWalker;
   }
+  function playerAttackInputBusy() {
+    const input = window.Combat?.input; // The weapon input module exposes live held, queued, and alignment states before a swing actually starts.
+    for (const slot of [1, 2]) {
+      const press = input?.getState?.(slot);
+      if (press?.down || press?.holding || press?.holdStarted
+          || press?.alignmentPending || press?.releaseQueued || press?.attackQueued) return true;
+    }
+    if (input?.queueSnapshot?.()?.length) return true; // A buffered attack also owns the pending animation slot.
+    return (Number(window.CombatVocalizations?.attackStartDelayS?.()) || 0) > 0; // Still in the real windup/strike/hold timeline, even after button release.
+  }
+  function playerMountTransitionActive() {
+    return ['mounted', 'mountingUp', 'mountingDown', 'climbLeap'].includes(window.Mounts?.rideState); // Preserve both mounting transitions as authored full-body actions.
+  }
   function playerCanYawn(globalCombat, ongoingEntry = null) {
     const player = window.Combat?.deps?.player; // Shared live combat participant owns prone, dodge, lunge and capture states.
-    if (globalCombat || window.ClothingWeavingSystem?.combatActive?.(player) === true
+    if (globalCombat || playerAttackInputBusy() || window.ClothingWeavingSystem?.combatActive?.(player) === true
         || (Number.isFinite(player?.health) && player.health <= 0)) return false; // Recent attack attempts/hits count as combat even without a currently chasing foe.
     if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
       || player?.tzatzulCapturedBy || player?._knockbackLedgeFall) return false; // Never layer a yawn over forced combat/traversal body poses.
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
     const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
     if (window.PlayerSocialPoses?.active || seat) return false;
-    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted') return false; // Tool modes and mounted rider poses own their own locomotion.
+    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || playerMountTransitionActive()) return false; // Tool modes and mount/dismount transitions own the body and hands.
     if (window.PlayerYawnStretchPresentation?.actionBlocked?.(ongoingEntry)
         ?? window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false; // Ignore only our own active lock and the yawn's Koma lock, never unrelated actions.
     if (window.CharacterActionLocks?.isLocked?.('player', 'pose')) return false;
@@ -416,7 +444,7 @@
     const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
       || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState
       || window.__hobunjiFurnitureDebug?.sitInteraction || window.Fishing?.state?.active
-      || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted'
+      || window.MusicMinigame?.state?.active || playerMountTransitionActive()
       || player?.prone || player?.dodging || player?.lunging || player?.tzatzulCapturedBy
       || player?._knockbackLedgeFall); // No lingering slow/pose over a completed seat or new combat/traversal animation.
     if (state.active && (scriptedPose || !playerCanYawn(globalCombat, state.active)))
@@ -503,6 +531,6 @@
       playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),
-    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow, resolvePlayerWalker, playerHourlyYawn }),
+    _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow, resolvePlayerWalker, playerHourlyYawn, playerCanYawn, playerAttackInputBusy, syncCharacter }),
   });
 })();
