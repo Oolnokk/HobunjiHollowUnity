@@ -429,8 +429,32 @@ THREE.Raycaster=class {
 };
 const cliffScene=new Group();
 cliffScene.add(caveRock);cliffScene.add(snowCap);
+// Revisit the already solved music cave first: persistence must open the door
+// without creating a second music session or asking for its notes again.
+const [restoredGate]=Exterior.mount(area,network,cliffScene,[profile]);
+await Promise.resolve();await Promise.resolve();
+assert(restoredGate.solved&&restoredGate.rise===1,
+  're-entering a solved exterior song cave restores its fully raised stone slab');
+assert.equal(restoredGate.session,undefined,
+  'solved exterior cave entrances no longer build a redundant music session');
+assert.equal(restoredGate.scoreSurface,null,
+  'solved cave entrances do not require the player to reconstruct music score pillars');
+player.onCliffBalcony=restoredGate.shelf.id;
+player.x=(restoredGate.entry.c+.5)*64;
+player.y=(restoredGate.entry.r+.5)*64;
+Exterior.update(.01,area);
+assert.equal(layoutTransition.target,'building',
+  'the restored open cave door becomes usable without replaying the exterior music puzzle');
+Exterior.clear(area);
+
+// The cliff inscription tests intentionally require an *unsolved* music cave.
+// A solved gate correctly omits music/glyph construction, so give this visual
+// geometry fixture its own fresh save state instead of reusing the solved one.
+saved.delete(mapId);
 let [withoutCliff]=Exterior.mount(area,network,cliffScene,[profile]);
 await Promise.resolve();await Promise.resolve();
+assert(withoutCliff.requiresSong&&!withoutCliff.solved,
+  'the note-placement fixture must actually mount an unsolved music challenge');
 assert.equal(withoutCliff.scoreSurface?.kind,'pillarPair',
   'snow caps and carved cave walls may not displace deliberately built notation pillars');
 Exterior.clear(area);
