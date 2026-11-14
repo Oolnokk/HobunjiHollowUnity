@@ -45,7 +45,7 @@ banditPet.x = 0;
 assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), pet,
   'Beastmaster companions also consider the player\'s ground pet by default');
 assert.equal(banditPet._beastmasterCombatTarget, pet, 'enemy pet commits to a real creature reference');
-pet.x = 108;
+pet.x = 119; // Player at 90 is now more than 24% closer after the target-retention margin.
 assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), player,
   'enemy pet switches when the player becomes appreciably closer');
 pet.x = 25;
