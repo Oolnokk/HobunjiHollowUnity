@@ -29752,7 +29752,7 @@
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
         const horizontalTargetIntent = rightStickOwner === 'camera' && mobileAutoTargetEnabled()
           && Math.abs(rx) >= 0.6 && Math.abs(rx) > Math.abs(ry) * 1.2
-          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.isOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
+          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.isOpen?.() && !window.SocialActionWheel?.isOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
         if (horizontalTargetIntent) {
           const direction = Math.sign(rx); // Right selects screen-right; left selects screen-left.
           if (!gamepadState.primeButtonsOnResume && controllerTargetHorizontalLatch !== direction) cycleAutoTarget(direction);
@@ -30131,7 +30131,7 @@
         }
         if (heldOnly) return false;
         if (mobileAutoTargetEnabled() && e.deltaY && !cutscenePreviewActive && !dialogueZoomActive()
-          && !window._desktopSelectionArc?.isOpen?.()
+          && !window._desktopSelectionArc?.isOpen?.() && !window.SocialActionWheel?.isOpen?.()
           && !window.FurniturePlacer?.isOpen?.() && !window.AuthoredCutsceneRuntime?.isActive?.()) {
           e.preventDefault();
           cycleAutoTarget(dir); // Wheel down selects screen-right, up selects screen-left; no camera zoom in lock-on.

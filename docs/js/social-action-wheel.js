@@ -957,6 +957,7 @@ ${outerRules}
     stopDance,
     spin,
     spinRotation,
+    isOpen: () => state.open, // Let other input owners defer to the Social Actions wheel without constructing a debug snapshot.
     isDancing: () => !!state.dance,
     get actions() { return ACTIONS.slice(); },
     getDebug() {

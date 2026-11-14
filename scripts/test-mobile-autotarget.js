@@ -132,6 +132,7 @@ buttonHidden=false;
 
 assert.match(selectionArch, /isOpen\(\) \{ return !!_arcOpen; \}/, 'Item, Tool and entry arches expose shared open state');
 assert.equal((game.match(/!window\._desktopSelectionArc\?\.isOpen\?\.\(\)/g) || []).length, 2, 'controller and wheel target changes require every arch closed');
+assert.equal((game.match(/!window\.SocialActionWheel\?\.isOpen\?\.\(\)/g) || []).length, 2, 'both cycle paths yield to the Social Actions wheel');
 console.log('mobile autotarget preference, acquisition, switching, and gesture checks passed');
 
 function injectedCss(file, nextFunction, extra = {}) {
