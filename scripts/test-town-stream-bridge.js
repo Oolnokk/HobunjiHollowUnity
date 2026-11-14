@@ -10,7 +10,8 @@ const town = workspace.maps.find(m => m.id === 'map_hobunji_town'); // Paired ma
 const recipe = JSON.parse(fs.readFileSync('docs/config/furniture-authored/townStairBridge.json','utf8')); // Exact placed authored bridge.
 const index = JSON.parse(fs.readFileSync('docs/config/furniture-authored/index.json','utf8')); // Runtime furniture catalog.
 const repaired = ['25,15','26,15','27,15','28,15','23,19','24,19','25,19']; // Seven old path cells that cut across flowing water.
-const crossing = ['26,15','27,15','26,16','27,16','25,17','26,17','25,18','26,18','24,19','25,19']; // Walkable stream cells beneath the bridge.
+const crossing = ['26,15','27,15','26,16','27,16','25,17','26,17','25,18','26,18','24,19','25,19',
+  '25,15','25,16','24,17','24,18','23,19']; // Five additional stream cells are traversable beneath the widened west side.
 assert(town, 'Town is missing from the workspace');
 assert.equal(Object.keys(map.visualHeights).length,653,'Keep the latest main town elevation map after placing the bridge');
 assert.deepEqual(town.visualHeights,map.visualHeights,'Editor must retain the updated town elevations');
@@ -30,7 +31,7 @@ for (const key of crossing) {
   assert.equal(workspaceTiles.get(key)?.bridgeCrossing,true,'Editor must preserve walkable water flag at '+key);
 }
 assert.equal(map.tiles['28,15']?.bridgeCrossing,undefined,'Water beside the bridge must remain impassable');
-assert.equal(map.tiles['23,19']?.bridgeCrossing,undefined,'Unbridged stream remains water');
+assert.equal(map.tiles['26,19']?.bridgeCrossing,undefined,'Water beyond the wide bridge remains impassable');
 for (const key of ['27,14','24,21'])
   assert.equal(map.tiles[key]?.type,'path','Bridge must land on the original path at '+key);
 assert.equal(map.furniture.length,1,'Exactly one authored bridge spans the repaired stream');
@@ -50,7 +51,7 @@ assert.equal(recipe.tileSpan.startTiles,1);
 assert.equal(recipe.tileSpan.endTiles,1);
 assert.equal(recipe.tileSpan.middleTiles,2);
 assert.equal(recipe.tileSpan.totalTiles,8);
-assert.deepEqual(recipe.footprint,{w:8,d:2},'Full bridge footprint must be eight by two tiles');
+assert.deepEqual(recipe.footprint,{w:8,d:3},'Full bridge footprint must be eight by three tiles');
 const stairs=recipe.parts.filter(p=>p.name?.includes('staircase')); // Eight rigid authored steps in one-tile-long flights.
 const deck=recipe.parts.find(p=>p.name?.includes('bridge deck')); // Only this deck and its rails extend over added center tiles.
 const rails=recipe.parts.filter(p=>p.name?.includes('Stretchable railing'));
@@ -64,13 +65,24 @@ for(const side of ['start','end']){
   const min=Math.min(...parts.map(p=>p.transform.x-p.transform.sx/2));
   const max=Math.max(...parts.map(p=>p.transform.x+p.transform.sx/2));
   near(max-min,1,'Four rigid '+side+' steps occupy one tile in the travel direction');
-  assert(parts.every(p=>Math.abs(p.transform.sz-1.8001)<.0001),'Stairs remain two tiles wide');
+  assert(parts.every(p=>Math.abs(p.transform.sz-2.8001)<.0001),'Each full stair flight spans three tiles in width');
+  assert(parts.every(p=>Math.abs(p.transform.z-.502)<.0001),'Stair tread width expands west instead of moving the eastern edge');
   assert(parts.every(p=>Math.abs(p.transform.sx-.25)<.0001),'All four steps are scaled, not removed');
   assert(parts.every(p=>p.walkableElevation===true),'Stair treads must participate in physical bridge support');
 }
 assert.equal(deck.walkableElevation,true,'The deck, not the railing, is physical ground');
 assert(recipe.parts.filter(p=>p.walkableElevation).every(p=>p.tileSpanRole!=='none'),'Every support part belongs to the authored span');
 assert(rails.every(p=>p.walkableElevation!==true),'Railings cannot become a raised invisible floor');
+const railParts=recipe.parts.filter(p=>p.railingCollision===true); // Fine collision comes only from the visible posts and rails.
+assert.equal(railParts.length,6,'All four posts and both stretchable rails are the exact physical blockers');
+assert(railParts.every(p=>!p.walkableElevation),'No collision rail can become the raised walking floor');
+assert.equal(railParts.filter(p=>p.transform.z<0).length,3,'Eastern rail has one beam and two posts');
+assert(railParts.filter(p=>p.transform.z<0).every(p=>p.transform.z===-.8023),
+  'Easternmost rail remains in its original world position while the bridge widens westward');
+assert(railParts.filter(p=>p.transform.z>0).every(p=>p.transform.z>1.8),
+  'Western rail and posts move outward with the added width');
+assert.equal(deck.transform.z,.502,'Deck center shifts west by half a tile');
+assert.equal(deck.transform.sz,2.8001,'Deck covers three tiles without rescaling its longitudinal span');
 const start=recipe.parts.find(p=>p.id===deck.tileSpanRoots.start.partId);
 const end=recipe.parts.find(p=>p.id===deck.tileSpanRoots.end.partId);
 assert(start&&end,'Both deck roots must resolve');
@@ -93,7 +105,7 @@ for(const [x,key] of [[-4,'27,14'],[4,'24,21']]) {
 for(const key of crossing) {
   const [col,row]=key.split(',').map(Number),dx=col+.5-cx,dz=row+.5-cz;
   const localX=dx*cos-dz*sin,localZ=dx*sin+dz*cos;
-  assert(Math.abs(localX)<=4.01&&Math.abs(localZ)<=1.01,'Walkable crossing tile must lie under the actual rotated bridge: '+key);
+  assert(Math.abs(localX)<=4.01&&localZ>=-.91&&localZ<=1.91,'Walkable crossing tile must lie under the actual rotated 3-wide bridge: '+key);
 }
 // Terrain crossing stays connected as a water body: the river is not replaced by an invisible road surface.
 const water=(col,row)=>map.tiles[col+','+row]?.type==='stream';
@@ -131,9 +143,11 @@ const editor=fs.readFileSync('docs/tools/map-editor/index.html','utf8'); // Edit
 assert(runtime.includes('window.AuthoredFurniture.load(key)'),'Town must load authored bridge data');
 assert(runtime.includes('window.AuthoredFurniture.setTileSpan?.(group, f.tileSpanTiles)'),'Town must resize the middle at placement');
 assert(runtime.includes('window.HobunjiWalkableElevation?.refreshFurniture?.()'),'Town must register new walkable bridge after asynchronous spawn');
+assert(runtime.includes('registerFurnitureRails?.(group)'),'Town must install the fine rail collision after final placement');
+assert(runtime.includes('unregisterFurnitureRails?.(mesh)'),'Town rebuild must remove stale rail blockers');
 const elevation = fs.readFileSync('docs/js/town-player-body-elevation-bridge.js','utf8'); // The same existing elevation engine handles true angled bridge bounds.
 assert(elevation.includes('containsBridgeFootprint(surface, x, z)'), 'Players cannot stand on water outside the diagonally rotated deck');
 assert(elevation.includes('object.userData?.townBridgeCrossing'), 'Exact support is opt-in only for bridge furniture');
 assert(editor.includes("townStairBridge: { icon:'🌉'"),'Map Editor must preserve and select the mapped bridge');
 assert(editor.includes('window.AuthoredFurniture.load(record.authoredFurnitureKey)'),'Map Editor 3D must render actual authored geometry');
-console.log('Town stream bridge: continuous water, 8×2 rotated crossing, rigid stairs, editor, gameplay and NPC walking passed.');
+console.log('Town stream bridge: continuous water, 8×3 rotated crossing, fixed east rail, rigid stairs, editor and NPC pathing passed.');
