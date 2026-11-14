@@ -32,6 +32,7 @@ class Vector3 {
 class Quaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { Object.assign(this, { x, y, z, w }); }
   clone() { return new Quaternion(this.x, this.y, this.z, this.w); }
+  dot(q) { return this.x * q.x + this.y * q.y + this.z * q.z + this.w * q.w; }
   copy(q) { Object.assign(this, { x: q.x, y: q.y, z: q.z, w: q.w }); return this; }
   identity() { return this.copy(new Quaternion()); }
   invert() { this.x = -this.x; this.y = -this.y; this.z = -this.z; return this; }
