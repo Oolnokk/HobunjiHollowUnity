@@ -57,10 +57,12 @@ class Element {
   constructor() {
     this.children = []; // Holds generated layer controls for the delayed-initialization fixture.
     this.nodes = new Map(); // Stable querySelector targets model the parsed loom overlay.
+    this.attributes = new Map(); // Tracks the new pattern-swap input's DOM attributes during loom hydration.
     this.style = {}; this.dataset = {}; this.classList = { toggle() {} };
     this.isConnected = true;
   }
   appendChild(child) { this.children.push(child); }
+  setAttribute(name, value) { this.attributes.set(String(name), String(value)); } // Production adds semantic attributes to every pattern-swap checkbox.
   querySelector(selector) { if (!this.nodes.has(selector)) this.nodes.set(selector, new Element()); return this.nodes.get(selector); }
   querySelectorAll() { return []; }
   addEventListener() {}
