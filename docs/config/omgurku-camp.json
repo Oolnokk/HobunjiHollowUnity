@@ -85,8 +85,8 @@
     "warningRadiusTiles": 10,
     "warningStaySeconds": 10,
     "initialWarnings": [
-      "Stay to your path, and we shall stay to ours, decieved one.",
-      "You intrude upon our territory, decieved one. Go back the way you came, or face the consequences.",
+      "Stay to your path, and we shall stay to ours, deceived one.",
+      "You intrude upon our territory, deceived one. Go back the way you came, or face the consequences.",
       "Leave this place now and no blood shall be spilled. Stay, and it shall!"
     ],
     "escalationWarnings": [
