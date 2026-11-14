@@ -3,7 +3,7 @@
 
 // Honeyfuzzle: swarm wing cycle/pose math and instanced avatar, hive-stump
 // lifecycle (spawn, night return, hold harvest, collapse), the 1x1 Honeyfuzzle
-// House (FarmProduction building, egg -> swarm), the fixed Medium size, and the
+// House (FarmProduction building, queen -> swarm), the fixed Medium size, and the
 // "never a barn animal" gate. Every check runs the real modules.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -443,7 +443,7 @@ function hiveWorld({ night = false } = {}) {
   // Every roll yields exactly one queen; only the honey quantity varies.
   const { H } = hiveWorld();
   for (let i = 0; i <= 100; i++) { const r = H.rollHarvest(() => i / 100 * 0.999999); assert(r.queens === 1 && r.honey >= H.HONEY_MIN && r.honey <= H.HONEY_MAX); }
-  // A full bag of eggs refuses rather than eating the stump.
+  // A full queen inventory refuses rather than eating the stump.
   const full = hiveWorld(); full.state.inventory.honeyfuzzleQueen = full.context.InventoryStacks.MAX_TOTAL;
   assert.equal(full.H.harvest('map_test', 5, 4).ok, false); assert.equal(full.grid[4][5].type, TileType.SHRUB, 'a refused harvest leaves the stump standing');
 }
@@ -546,7 +546,7 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(context.FarmProduction.placeAt(3, 3), null, 'placement mode ended');
   const entry = context.FarmProduction.entries()[0];
   assert.equal(house.phase(entry), 'empty');
-  // Placing an egg takes it from the bag; hatching is exercised on fresh houses below.
+  // Placing a queen takes it from the bag; colony formation is exercised on fresh houses below.
   assert.equal(house.placeQueen(entry).ok, true);
   assert.equal(inventory.honeyfuzzleQueen, 0);
   assert.equal(house.phase(entry), 'queen');
@@ -598,7 +598,7 @@ function hiveWorld({ night = false } = {}) {
   const save = [{ id: 'h1', key: 'honeyfuzzleHouse', col: 2, row: 2 }, { id: 'h2', key: 'honeyfuzzleHouse', col: 6, row: 2 }];
   context.FarmProduction.load(save);
   const [a, b] = context.FarmProduction.entries();
-  // Timed hatch. The egg's color comes from the queue filled when its stump was harvested.
+  // Timed queen settlement. The color comes from the queue filled when its stump was harvested.
   const sourceGenes = {
     base: { color: '#cccccc', copies: 2 },
     tailfeathers: { color: '#804400', copies: 1, enabled: true },
@@ -628,7 +628,7 @@ function hiveWorld({ night = false } = {}) {
   context.FarmProduction.load(saved);
   const reloaded = context.FarmProduction.entries().find(e => e.id === 'h1');
   assert.equal(house.phase(reloaded), 'swarm');
-  // Growth Tonic hatches an egg at once; it needs a tonic.
+  // Growth Tonic establishes the queen's colony at once; it needs a tonic.
   assert.equal(house.useTonic(b).ok, false, 'nothing to hatch in an empty house');
   assert.equal(house.placeQueen(b).ok, true);
   assert(context.HoneyfuzzleColors.regionPalettes().temperate.concat(context.HoneyfuzzleColors.regionPalettes().tropical, context.HoneyfuzzleColors.regionPalettes().ominous).includes(b.house.queen.color), 'an egg with no queued color rolls one from the master palette');
