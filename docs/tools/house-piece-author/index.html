@@ -1131,7 +1131,7 @@ if (typeof ResizeObserver !== 'undefined') {
 }
 function animate(){ requestAnimationFrame(animate); try{ controls.update(); renderer.render(scene,camera); }catch(err){ log('RENDER ERROR: '+(err?.message||err),'error'); } }
 
-function faceMaterial(face){ if(state.selectedFaceIds.has(face.sourceWallFaceId ?? face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; if(face.tag==='canvas') return matCanvas; if(face.tag==='doorOpening') return matDoorOpening; return matFace; }
+function faceMaterial(face){ if(state.selectedFaceIds.has(face.sourceWallFaceId ?? face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='balcony') return matPorch; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; if(face.tag==='canvas') return matCanvas; if(face.tag==='doorOpening') return matDoorOpening; return matFace; }
 function faceNormal(face){ const a=new THREE.Vector3(...face.v[0]), b=new THREE.Vector3(...face.v[1]), c=new THREE.Vector3(...face.v[2]); return b.clone().sub(a).cross(c.clone().sub(a)).normalize(); }
 function faceCenter(face){ const c=new THREE.Vector3(); for(const v of face.v)c.add(new THREE.Vector3(...v)); return c.multiplyScalar(1/face.v.length); }
 function faceBasis(face){
