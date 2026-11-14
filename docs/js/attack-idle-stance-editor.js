@@ -1,12 +1,13 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261111flailPose1';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261114torch1747a';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const STANCE_ORDER = ['tool', 'hoeTool', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
+  const STANCE_ORDER = ['tool', 'hoeTool', 'torchHold', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
     tool: 'Tool / Shovel-style',
     hoeTool: 'Hoe Tool (unused — Top-heavy Tool replaced it)',
+    torchHold: 'Adventuring Torch — World Upright Hold', // Editable, separate idle stance.
     topHeavyTool: 'Top-heavy Tool (hoe / hatchet / fishing mace)',
     longHaftedTool: 'Long-hafted Tool (fishing spear / pick-shovel)',
     heavyWeapon: 'Heavy Weapon',
@@ -31,6 +32,7 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+      torchHold: Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Same as committed torch idle pose.
       topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -53,6 +55,8 @@
       const value = numberOr(source[field.key], fallbackValue);
       out[field.key] = field.key === 'flailLengthScale' ? Math.max(0.1, Math.min(3, value)) : value;
     }
+    if (typeof source.worldUpright === 'boolean' || typeof fallback.worldUpright === 'boolean')
+      out.worldUpright = typeof source.worldUpright === 'boolean' ? source.worldUpright : fallback.worldUpright; // Preserve authored world-space rotation in saved JSON.
     return out;
   }
 
