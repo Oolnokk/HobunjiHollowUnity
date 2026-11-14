@@ -29752,13 +29752,19 @@
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
         const horizontalTargetIntent = rightStickOwner === 'camera' && mobileAutoTargetEnabled()
           && Math.abs(rx) >= 0.6 && Math.abs(rx) > Math.abs(ry) * 1.2
-          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.isOpen?.() && !window.SocialActionWheel?.isOpen?.() && !window.FurniturePlacer?.isOpen?.(); // Any open selector retains right-stick priority.
+          && !menuOpen && !farmEditMode && !window._desktopSelectionArc?.isOpen?.() && !window.SocialActionWheel?.isOpen?.()
+          && !window.FurniturePlacer?.isOpen?.() && !!findAutoTarget(); // Only an active lock can own the horizontal stick; selector UI and unrelated gameplay keep priority.
         if (horizontalTargetIntent) {
           const direction = Math.sign(rx); // Right selects screen-right; left selects screen-left.
           if (!gamepadState.primeButtonsOnResume && controllerTargetHorizontalLatch !== direction) cycleAutoTarget(direction);
           controllerTargetHorizontalLatch = direction;
           controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target selection'; // Camera follows the newly selected target rather than fighting the stick.
-        } else controllerTargetHorizontalLatch = 0; // Vertical/neutral input rearms the next horizontal flick.
+          down.delete('RightStickLeft'); down.delete('RightStickRight'); // A target flick must never also trigger a separately mapped gameplay action.
+          down.delete('RightStickUp'); down.delete('RightStickDown'); // Diagonal flicks remain exclusive to the target selector.
+        } else {
+          const selectorStillHoldingStick = rightStickOwner !== 'camera' || menuOpen || farmEditMode; // A selector-closing held stick is not a new targeting gesture.
+          controllerTargetHorizontalLatch = selectorStillHoldingStick && Math.abs(rx) >= 0.25 ? Math.sign(rx) : Math.abs(rx) < 0.25 ? 0 : controllerTargetHorizontalLatch;
+        }
         if (gamepadState.primeButtonsOnResume) {
           // A menu-closing B/View press must not become a fresh gameplay
           // Dodge/action press on the very next frame. Seed edge state from
