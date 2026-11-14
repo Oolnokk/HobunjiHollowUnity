@@ -28,6 +28,30 @@
     if (lit || !isHoldingTorch()) return false;
     lit=true; lastEvent='lit from fire-hazard furniture'; deps?.refreshActionBar?.(); return true;
   }
+  function forehandSwingVisual() {
+    if (!isHoldingTorch()) return null;
+    const forehand = window.AttackPoseTemplates?.poseFor?.('hatchet_swing'); // Reuse the real Forehand Swing's authored channels, not a second hardcoded sweep.
+    if (!forehand) { lastEvent='forehand pose missing'; return null; }
+    const authoredNeutral = window.WeaponToolStances?.poses?.torchHold; // Keep the dedicated torch carry as the starting frame instead of teleporting into the hatchet's rest pose.
+    const axes = ['x','y','z','pitch','yaw','roll','bodyYaw']; // These pose channels translate Forehand relative to the torch's own neutral, without changing its separate longsword-derived grip.
+    const neutral = { ...forehand.neutral };
+    for (const axis of axes) if (Number.isFinite(authoredNeutral?.[axis])) neutral[axis] = authoredNeutral[axis];
+    const offsetEndpoint = endpoint => {
+      const adjusted = { ...endpoint };
+      for (const axis of axes) adjusted[axis] = neutral[axis] + ((Number(endpoint[axis]) || 0) - (Number(forehand.neutral[axis]) || 0));
+      return adjusted;
+    };
+    const durationS = 0.345 + 0.07; // Forehand's windup and strike only; no character movement/lunge is started here.
+    lastEvent='stationary torch forehand'; // Mobile Pixel Probe can show which swing configuration was selected.
+    return {
+      durationS,
+      options: {
+        toolSlot: 'adventuring', anim: 'sweep', dirSign: 1, power: 1,
+        windupFrac: 0.345 / durationS, strikeFrac: 1, holdS: 0.43,
+        pose: { neutral, windup: offsetEndpoint(forehand.windup), strike: offsetEndpoint(forehand.strike) },
+      },
+    };
+  }
   function swingAtAim(col,row) {
     if (!isHoldingTorch()) return {ok:false,message:'No torch equipped.'};
     const ray=deps?.getAimRay?.(), THREE=deps?.THREE, holder=deps?.getToolHolder?.();
@@ -65,7 +89,7 @@
     return {ok:true,message:''};
   }
   window.AdventuringTools=Object.freeze({
-    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,swingAtAim,throwLit,
+    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,forehandSwingVisual,swingAtAim,throwLit,
     get debug() {
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
