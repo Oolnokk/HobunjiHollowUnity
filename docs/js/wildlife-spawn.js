@@ -1491,8 +1491,9 @@
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
       const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // A stale itemKinds mapping alone cannot create a usable egg or baby.
       const tags = Array.isArray(itemDef?.tags) ? itemDef.tags : []; // Authored fertility tags distinguish hatchable eggs from ordinary food eggs.
-      const hatchable = tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile'))
-        || (kind === 'honeyfuzzle' && tags.includes('Queen')); // A house queen founds a swarm; other species still need real babies/eggs.
+      const hatchable = kind === 'honeyfuzzle'
+        ? tags.includes('Queen') // A fertile egg alone cannot masquerade as a captured queen.
+        : tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile')); // Other species still require real offspring.
       const offspringMapped = exempt || !!(itemDef?.cat === 'livestock' && hatchable
         && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Honeyfuzzle queens found colonies in a House instead of a Stable.
       const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
