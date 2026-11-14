@@ -1606,7 +1606,6 @@ function sharedAttackPoses(templateId) {
   if (!poses) throw new Error(`Missing shared attack pose template ${templateId}`);
   return poses;
 }
-const TORCH_FOREHAND_PREVIEW_TIMELINE = SharedAttackPose.swingTimeline({}, 0.415, 0.345 / 0.415, 1, 0.43); // The torch editor shows the exact forehand windup, contact, hold and return durations played in-game.
 const TOOL_PRESETS = [
   ...(window.HeldActionAnimations?.drink ? [{
     id: 'drink', label: 'Bottle — Drink', style: 'drink', toolKey: 'bottle', still: false,
@@ -1635,9 +1634,8 @@ const TOOL_PRESETS = [
     strike:defaultPose(.13,.16,.03,10.31,0,0,0),
     windupFrac:.16,strikeFrac:.28 },
   { id:'torch_swing', label:'Torch — Forehand Swing (no lunge)',style:'sweep',toolKey:'torch',still:false,worldUpright:false,
-    ...window.AttackPoseTemplates.torchForehandPose(defaultPose(.13,.16,.03,10.31,0,0,0)), // Same shared forehand deltas applied to the dedicated torch rest pose, not its grip.
-    windupFrac:TORCH_FOREHAND_PREVIEW_TIMELINE.wf,strikeFrac:TORCH_FOREHAND_PREVIEW_TIMELINE.sf,
-    holdFrac:TORCH_FOREHAND_PREVIEW_TIMELINE.hf,durationS:TORCH_FOREHAND_PREVIEW_TIMELINE.totalS },
+    ...sharedAttackPoses('hatchet_swing'), // Test-friendly fallback: applyPreset translates the shared forehand onto the authored torch neutral.
+    windupFrac:.345/.99025,strikeFrac:.415/.99025,holdFrac:.845/.99025,durationS:.99025 }, // .415s windup+strike, .43s hold and .14525s automatic return.
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -1745,8 +1743,10 @@ async function loadWeaponIdlePresets() {
 void loadWeaponIdlePresets();
 function applyPreset(preset) {
   if (preset.id === 'torch_swing') {
-    const authoredTorchRest = window.AttackIdleStanceEditor?.getConfig?.()?.stances?.torchHold; // Local/fetched torch carry authoring overrides the preset fallback when previewing a swing.
-    if (authoredTorchRest) preset = { ...preset, ...window.AttackPoseTemplates.torchForehandPose(authoredTorchRest) };
+    const authoredTorchRest = window.AttackIdleStanceEditor?.getConfig?.()?.stances?.torchHold
+      || TOOL_PRESETS.find(entry => entry.id === 'torch_idle')?.neutral; // Prefer local/fetched torch carry; static torch idle is the safe editor fallback.
+    const torchForehand = window.AttackPoseTemplates?.torchForehandPose?.(authoredTorchRest); // Shared runtime/editor pose math remains optional for isolated editor test harnesses.
+    if (torchForehand) preset = { ...preset, ...torchForehand };
   }
   if (gizmoMode !== 'off') setGizmoMode('off'); // Switching Actions cannot leave the previous instrument's endpoint/hand gizmo attached.
   if (preset.name) {
