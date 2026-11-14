@@ -1128,7 +1128,15 @@ function selectedSurfaces() { return activeSurfaceIds().map(id=>surfaceGroups.ge
 function selectedSurface() { return state.selectedType==='surface'?surfaceGroups.get(state.selectedId)||selectedSurfaces().at(-1)||null:null; }
 function isSurfaceSelected(surfaceId) { return state.selectedType==='surface'&&activeSurfaceIds().includes(surfaceId); }
 function getSurfaceWorldFrame(surfaceId) {
-  const group=surfaceGroups.get(surfaceId),mesh=group?meshes.get(group.partId):null;if(!group||!mesh)return null;mesh.updateMatrixWorld(true);const center=group.localCentroid.clone().applyMatrix4(mesh.matrixWorld);const normal=group.localNormal.clone().transformDirection(mesh.matrixWorld).normalize();const u=group.basisU.clone().transformDirection(mesh.matrixWorld).normalize();const v=group.basisV.clone().transformDirection(mesh.matrixWorld).normalize();return {group,mesh,center,normal,u,v};
+  const group=surfaceGroups.get(surfaceId),mesh=group?meshes.get(group.partId):null;if(!group||!mesh)return null;mesh.updateMatrixWorld(true);
+  const center=group.localCentroid.clone(),normal=group.localNormal.clone(),u=group.basisU.clone(),v=group.basisV.clone();
+  window.FurnitureTileSpan?.mapLocalPoint?.(mesh,center); // Preview surfaces follow the same deformed geometry as their runtime counterparts.
+  window.FurnitureTileSpan?.mapLocalDirection?.(mesh,normal,true);
+  window.FurnitureTileSpan?.mapLocalDirection?.(mesh,u);
+  window.FurnitureTileSpan?.mapLocalDirection?.(mesh,v);
+  center.applyMatrix4(mesh.matrixWorld);normal.transformDirection(mesh.matrixWorld).normalize();
+  u.transformDirection(mesh.matrixWorld).normalize();v.transformDirection(mesh.matrixWorld).normalize();
+  return {group,mesh,center,normal,u,v};
 }
 function surfaceColorFor(group,index=0) { const seed=(group.faceIndices[0]+index*7+group.partId.length)%SURFACE_COLORS.length;return SURFACE_COLORS[seed]; }
 
@@ -2562,7 +2570,7 @@ window.HobunjiFurnitureStatuePiecesReady=true; // A direct piece transfer is saf
 window.HobunjiFurnitureSpanEditorContext={
   state,root,meshes,surfaceGroups,selectedPart,pushPart,beginPreset,setPresetFootprint,
   rebuildAll,rebuildTileBase,frameFurniture,selectObject,recognizedSurfaceExport,
-  ensureSurfaceSetting,queueUndoHistory,updateLists,log
+  ensureSurfaceSetting,queueUndoHistory,updateLists,rebuildItemPreviews,rebuildPlacementGrid,log
 }; // Adapter for the isolated stretch editor; avoids a second furniture state model.
 if(window.opener)window.opener.postMessage({type:'hobunji-furniture-editor-ready'},location.origin);
 try{const sibling=window.parent!==window?window.parent.document.getElementById('if-statue-pose-bake')?.contentWindow:null;
