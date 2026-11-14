@@ -255,6 +255,17 @@
     return highest; // Among reachable, staggered treads prefer the highest real walking surface.
   }
 
+  function roofHatchAt(worldX, worldZ, area = activeArea()) {
+    const col=Math.floor(worldX),row=Math.floor(worldZ);
+    // This map is tiny (typically one per building); checking only on a player's first unsupported town tick avoids per-frame scans.
+    for(const hatch of roofHatches.values()){
+      if(hatch.area!==area || hatch.col!==col || hatch.row!==row || !objectInActiveScene(hatch.owner))continue;
+      if(Math.hypot(worldX-(col+.5),worldZ-(row+.5))>.38)continue;
+      return hatch;
+    }
+    return null;
+  }
+
   function isBalconyAt(worldX, worldZ, worldY, area = activeArea()) {
     if (!Number.isFinite(worldY)) return false;
     return matchingSupports(worldX,worldZ,area).some(entry=>entry.kind==='balcony' &&
@@ -361,9 +372,22 @@
     addCells(porches, 'porch', 'porch');
     addCells(stairs, 'porchStair', 'porchStair');
     addCells(balconies, 'balcony', 'balcony'); // Raised supports follow the existing approach-ceiling and fall/landing logic.
+    for(const balcony of piece?.balconies||[]){
+      const hatch=balcony?.access?.openingTile; // One interior ladder authorizes access without opening a ground-level route.
+      if(!hatch||balcony.access?.type!=='interiorFurniture')continue;
+      const localX=finite(hatch.x,NaN)-minX, localY=finite(hatch.y,NaN)-minY;
+      if(!Number.isFinite(localX)||!Number.isFinite(localY))continue;
+      const rotated=rotateCell(localX,localY,width,depth,options.rotationDeg||0);
+      const col=finite(gridX,0)+rotated.x,row=finite(gridZ,0)+rotated.y;
+      const topY=elevationY+(balcony.heightMode==='wall'
+        ? groundLocalY+finite(piece.base?.height,1.4) : finite(balcony.height,groundLocalY+1.4));
+      const id=piece.id+':'+gridX+','+gridZ+':'+balcony.id;
+      roofHatches.set(id,{col,row,topY,owner:group,area:options.area||'town',mapId:balcony.access.mapId});
+    }
     return ids;
   }
 
+  const roofHatches = new Map(); // Rotated interior-ladder roof spawn tiles, indexed independently of their non-walkable building shell.
   const railCollisionCells = new Map(); // Grid cell -> railing face boxes, so normal walking/NPC collision does not scan every placed building.
   const railCollidersByPiece = new Map(); // Stable piece placement -> live railing boxes; replacing a house does not leave ghost blockers.
   let railCollisionProviderInstalled = false; // The shared AreaFootprintBlockers provider is registered once.
@@ -778,6 +802,7 @@
     registerPiecePorches,
     registerPieceRails, // Test hooks and building reauthoring can refresh exact railing footprints without rescanning the world.
     isBalconyAt, // Height-aware structural-footprint exception; never grants ground-level access.
+    roofHatchAt, // Lets the native upstairs/exit arrival transfer onto the actual roof support.
     railBlocksBox, // Mobile diagnostics can compare a failed move with the visual railing geometry.
     unregister,
     clearKind,
