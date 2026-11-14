@@ -71,6 +71,7 @@
       || !!document.getElementById('introductionLoadingScreen')
       || !!combatDeps?.isDialogueOpen?.()
       || !!dialogueEl?.classList.contains('open')
+      || !!window.MusicMinigame?.state?.active // A player-owned instrument puzzle or performance must never display a combat sight.
       || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled
       || (!!sitInteraction && sitInteraction.phase !== 'out');
   }
