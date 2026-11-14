@@ -413,14 +413,14 @@
         let pedestal,flame;
         if(lichBrazier){
           pedestal=lichBrazier.holder;flame=lichBrazier.fire.anchor;
-          wingFlameVisuals.push({update:dt=>lichBrazier.update(dt),dispose:()=>lichBrazier.fire.emitter?.dispose?.()}); // Flicker + particles each tick; emitter freed on reroll.
+          wingFlameVisuals.push({roomId:goal.id,update:dt=>lichBrazier.update(dt),dispose:()=>lichBrazier.fire.emitter?.dispose?.()}); // Flicker + particles each tick; emitter freed on reroll.
         }else{
           pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),brazierMat,bx,floor.y+.38,bz);
           flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
           flame.name='ruin-brazier-flame-'+wing.id;
           flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
           const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
-          if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+          if(flameVisual)wingFlameVisuals.push({...flameVisual,roomId:goal.id}); // Uses the exact player-placeable campfire emitter recipe.
         }
         const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
         const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),active:false}; // Kanthic's goal room is already lit by its brazier record below.
@@ -491,11 +491,15 @@
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
-      for(const flame of wingFlameVisuals)flame.update?.(Math.max(0,Math.min(.05,dt))); // Particle lifecycle is owned by the ruin's existing tick.
+      for(const flame of wingFlameVisuals)
+        if(roomSession.isRoomActive(flame.roomId))flame.update?.(Math.max(0,Math.min(.05,dt))); // Particle work sleeps in every closed room.
       for(const record of states){
-        record.challenges[record.solved]?.tick?.(dt); // Only the current room consumes inputs, notes and target hooks.
-        for(let i=0;i<record.solved;i++)
-          record.challenges[i]?.animate?.(dt); // Already-cleared ice may still shrink; no inactive puzzle logic runs.
+        const current=record.challenges[record.solved];
+        if(current&&roomSession.isRoomActive(current.id))current.tick?.(dt); // Inactive rooms do not advance puzzles or their input clocks.
+        for(let i=0;i<record.solved;i++){
+          const solved=record.challenges[i];
+          if(roomSession.isRoomActive(solved.id))solved.animate?.(dt); // Cosmetic completion remains visible once that room is revisited.
+        }
       }
     };
     owner.serializeProgress=()=>Object.fromEntries(states.map(record=>[
