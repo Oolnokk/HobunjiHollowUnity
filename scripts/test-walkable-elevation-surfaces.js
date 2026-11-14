@@ -109,4 +109,40 @@ assert.equal(api.surfaceLiftAt(2.5,3.5,'farm'),0,
 assert.equal(api.unregister(bridgeId),true,'bridge support unregisters cleanly after replacement');
 assert.equal(api.surfaceLiftAt(2.5,3.5,'town'),0,'no ghost walkable surface survives teardown');
 
+// The weapon-depth policy must attach only to authored parts that actually
+// support footsteps. These checks execute the production helper independently
+// of THREE.Box3/scene placement and verify it isolates the shader material.
+const topMarkerStart = runtimeSource.indexOf('  function markWalkableFurnitureTopForXray('); // Finds the one furniture x-ray policy used by stage and bridge supports.
+const topMarkerEnd = runtimeSource.indexOf('  function registerObject(', topMarkerStart); // The next function marks its exact boundary.
+assert(topMarkerStart >= 0 && topMarkerEnd > topMarkerStart);
+const registeredTopFaces = []; // Collects actual meshes submitted to the existing held-render registry.
+const markTopFace = new Function('window', runtimeSource.slice(topMarkerStart, topMarkerEnd)
+  + '\nreturn markWalkableFurnitureTopForXray;')({
+    HeldObjectRenderOrder: { markTopFaceGroundMesh(mesh) { registeredTopFaces.push(mesh); } },
+  });
+const sharedSolidMaterial = {
+  key: 'shared-wood',
+  clone() { return { key: 'isolated-wood' }; },
+}; // Mimics the shared material used by rails and other authored furniture.
+const deckPart = {
+  isMesh: true,
+  userData: { authoredPart: { walkableElevation: true } },
+  geometry: { getAttribute(name) { return name === 'normal' ? {} : null; } },
+  material: sharedSolidMaterial,
+}; // An opted-in, normal-bearing bridge tread.
+assert.equal(markTopFace(deckPart), true, 'walkable bridge tread opts into the top-only x-ray policy');
+assert.equal(deckPart.userData.hobunjiGroundTopFacesOnly, true, 'top-face flag accompanies the marked bridge tread');
+assert.notStrictEqual(deckPart.material, sharedSolidMaterial, 'bridge tread has its own shader material');
+assert.strictEqual(registeredTopFaces[0], deckPart, 'late-registered furniture joins the existing held depth registry');
+assert.equal(markTopFace(deckPart), false, 'repeat furniture registration does not re-clone its material');
+assert.equal(registeredTopFaces.length, 1, 'late registration is idempotent');
+const unnormaledPart = {
+  isMesh: true, userData: {}, material: sharedSolidMaterial,
+  geometry: { getAttribute() { return null; } },
+}; // An unsupported geometry must keep ordinary solid depth.
+assert.equal(markTopFace(unnormaledPart), false, 'unnormaled surfaces remain normal occluders');
+assert.strictEqual(unnormaledPart.material, sharedSolidMaterial, 'unsupported surfaces preserve their original material');
+assert.match(runtimeSource, /if \(registeredId\) for \(const mesh of supportParts\) markWalkableFurnitureTopForXray\(mesh\)/,
+  'the marker is applied only after a real furniture support has been registered');
+
 console.log('walkable elevation regression checks passed');
