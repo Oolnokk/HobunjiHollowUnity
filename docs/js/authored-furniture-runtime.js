@@ -78,6 +78,7 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    setTileSpan(group); // Apply rigid end offsets and surface-rooted center deformation before downstream attachments.
     if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
       const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
       for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
@@ -225,6 +226,10 @@
     return layer;
   }
 
+  function setTileSpan(group, totalTiles) {
+    return window.FurnitureTileSpan?.apply(group, group?.userData?.authoredFurnitureData, totalTiles) || { enabled: false };
+  }
+
   function addFurniturePlacement(holder, record, ancestors = [], isCurrent = () => true) {
     const key = String(record.furnitureKey || ''); // Same authored furniture key used by ordinary placed furniture and editor exports.
     if (!key || ancestors.includes(key) || ancestors.length >= 8) return Promise.resolve(null);
@@ -239,6 +244,7 @@
           : buildGroup(data, record.color ?? 0x8b6540);
       } finally { surfaceBuildAncestors = previousAncestors; }
       child.userData.surfaceFurnitureKey = key;
+      if (record.tileSpanTiles != null) setTileSpan(child, record.tileSpanTiles); // Saved placement chooses how many middle tiles to add.
       if (record.liquidColor) child.traverse(node => { if (node.userData?.authoredPart?.kind === 'liquidSurface') node.material?.color?.set?.(record.liquidColor); });
       holder.add(child);
       window.FurnitureTableSystem?.refreshServices?.();
@@ -688,6 +694,7 @@
     load,
     peek,
     buildGroup,
+    setTileSpan,
     setRuntimeValues,
     setItemPlacements,
     addFurniturePlacement,
