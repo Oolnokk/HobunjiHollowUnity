@@ -75,6 +75,16 @@
       "yaw": -49,
       "bodyYaw": -8,
       "roll": -96
+    },
+    "torchHold": {
+      "x": 0.13,
+      "y": 0.16,
+      "z": 0.03,
+      "pitch": 10.31,
+      "yaw": 0,
+      "bodyYaw": 0,
+      "roll": 0,
+      "worldUpright": true
     }
   }
 }
