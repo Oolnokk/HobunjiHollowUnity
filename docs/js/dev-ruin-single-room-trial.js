@@ -13,7 +13,7 @@
     ['dungeonFire','Dungeon fire / ice','Equip a ranged weapon, use the lit brazier, then shoot the ice.'],
     ['ropeChain','Bottomless rope chain','Grab the first rope, build momentum, then jump toward the next rope.'],
     ['statueDefense','Key Statue defense','Place the Key Statue on the plinth and protect it until the plinth finishes sinking.'],
-    ['nativeBrazier','V50 torch-to-brazier route','Light a torch at the fuel station and carry it to the unlit brazier before it burns out.'],
+    ['nativeBrazier','V50 torch-to-brazier route','Light your Adventuring Tools torch at the fixed fire-hazard brazier, then ignite the unlit puzzle brazier.'],
     ['nativeGlyphObelisk','V50 hidden glyph obelisks','Look for recessed glyphs in the stonework and hit them with ranged shots.'],
     ['nativeStackedObelisk','V50 stacked obelisk','Turn the marked pieces to line up the glyphs.'],
     ['nativeLinkedCubePillars','V50 linked cube pillars','Turn the marked cubes and watch which other cubes move with them.'],
