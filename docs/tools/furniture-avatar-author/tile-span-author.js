@@ -121,7 +121,7 @@
     for (const z of [-.42,.42]) {
       for (const side of ['start','end']) pushPart('legSquare',{...wood,
         name:(side==='start'?'Start':'End')+' railing post',
-        tileSpanRole:side,transform:{x:(side==='start'?-1.22:1.22)*tile,y:1.1*tile,z:z*tile,
+        tileSpanRole:side,transform:{x:(side==='start'?-1:1)*tile,y:1.1*tile,z:z*tile,
           rx:0,ry:0,rz:0,sx:.11*tile,sy:.51*tile,sz:.11*tile}});
       pushPart('beam',{...wood,name:'Stretchable railing '+(z<0?'left':'right'),
         tileSpanRole:'stretch',tileSpanRoots:JSON.parse(JSON.stringify(roots)),
