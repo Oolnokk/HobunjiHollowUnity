@@ -64,6 +64,20 @@ assert.ok(west.seasonGrowth.Coldmuck > east.seasonGrowth.Coldmuck);
 const offspring = game.CropVarieties.breed(east.id, west.id, () => .6); // Predictable recombination without mutation.
 assert.ok(offspring.id.startsWith('cv_needlegrain_'));
 assert.equal(Object.keys(offspring.effects).length, 2);
+assert.equal(Object.keys(game.CropVarieties.effectsOf(offspring.id)).length, 2, 'harvested crossbreed retains two edible buffs');
+assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, west.id).length, 1, 'pure regional parents have one ordinary two-buff outcome');
+assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, west.id)[0].probability, 1, 'pure effect alleles predict the ordinary result with certainty');
+assert.equal(game.CropVarieties.possibleOffspringEffects(east.id, 'heftroot').length, 0, 'incompatible species cannot preview a cross');
+assert.ok(itemDefs[offspring.id].desc.includes('Food buffs:'), 'harvested cultivars explain their multiple food effects');
+assert.ok(itemDefs[offspring.seedKey].desc.includes('Harvest buffs:'), 'seed tooltips expose their reason to crossbreed');
+for (const family of ['heftroot', 'redberries']) {
+  const native = game.CropVarieties.effectsOf(family); // Native Fortitude previously collided with the Highplains import in these two species.
+  const imported = Array.from({length:5}, (_, i) => game.CropVarieties.ensure('cv_' + family + '_' + String(i + 1).repeat(6)).effects);
+  const effects = [Object.keys(native)[0], ...imported.map(effect => Object.keys(effect)[0])]; // All six geographic origins must contribute a distinct trait.
+  assert.equal(new Set(effects).size, 6, family + ' offers six unique buffs for selective breeding');
+}
+const repeated = game.CropVarieties.breed(east.id, east.id, () => .6); // Crossing the same pure strain cannot invent a second trait.
+assert.equal(Object.keys(repeated.effects).length, 1);
 assert.ok(itemDefs[offspring.seedKey]);
 assert.equal(itemDefs[offspring.seedKey].seedFor, offspring.id, 'crossbred seeds retain their distinct planting target');
 assert.equal(inventoryItems.find(item => item.key === offspring.seedKey)?.seedFor, offspring.id, 'new hybrid seeds expose Plant in the inventory');
@@ -223,6 +237,7 @@ assert.match(inventoryBridge, /api\.restore = function inventoryActionMetadataRe
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
+assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Possible offspring buffs/, 'mobile seed maker previews ordinary multi-buff inheritance');
 assert.match(fs.readFileSync('docs/js/crop-sprite-art.js', 'utf8'), /hobunjiCropVarietyColor/, 'authored garlink\/ongyums sprite bridge carries hybrid pigment');
 assert.match(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), /hobunjiCropBaseKey/, 'renderer identifies hybrid plants by species, not their new hue');
 new vm.Script(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), { filename: 'docs/js/vegetation-crop-rendering.js' }); // Compile-check for duplicate let/const declarations without a Three.js scene.
