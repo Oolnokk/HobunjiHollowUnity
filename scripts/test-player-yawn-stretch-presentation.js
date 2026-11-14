@@ -113,6 +113,10 @@ const conflictingAction = { owner: 'other-interaction', participants: [{ id: 'pl
 locks.push(conflictingAction);
 assert.equal(presentation.actionBlocked(yawn), true, 'new unrelated actions still interrupt an active yawn');
 locks.pop();
+const traversalAction = { owner: 'ledge-climb', participants: [{ id: 'player', channels: ['movement'] }] }; // Traversal may own movement without also locking the attack input.
+locks.push(traversalAction);
+assert.equal(presentation.actionBlocked(yawn), true, 'a movement-only traversal lock interrupts the stretch');
+locks.pop();
 presentation.end(yawn);
 assert.equal(tool.visible, true);
 assert.equal(bag.visible, true);
