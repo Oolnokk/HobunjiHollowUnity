@@ -25,7 +25,7 @@
     const terrorText = terror
       ? ` terror=${terror.stacks}/${terror.maxStacks}/move${Number(terror.movementMultiplier || 1).toFixed(3)}/dark${Number(terror.darknessAlpha || 0).toFixed(3)}/lantern${Number(terror.lanternRadiusMultiplier || 1).toFixed(3)}`
       : ' terror=unavailable';
-    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} anchor=${anchor} build=${buildText} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} groundErr=${groundErr} ticks=${data.updateTicks ?? '-'} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}${terrorText} commander=${data.commander?.id || '-'} detailed=${data.detailedMembers ?? 0} regrouping=${!!data.regrouping} owner=${data.tickOwner || '-'} change=${data.latestChange || '-'} beacon=[${window.HarlyaoNightMarchBeacon?.formatDebug?.() || 'unavailable'}]`;
+    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} anchor=${anchor} build=${buildText} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} groundErr=${groundErr} ticks=${data.updateTicks ?? '-'} coarseTicks=${data.coarseTicks ?? '-'} plannerSkips=${data.abstractPlannerSkips ?? '-'} blockedPlacements=${data.blockedPlacements ?? '-'} blockedBuildSkips=${data.blockedBuildSkips ?? '-'} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}${terrorText} commander=${data.commander?.id || '-'} detailed=${data.detailedMembers ?? 0} regrouping=${!!data.regrouping} owner=${data.tickOwner || '-'} change=${data.latestChange || '-'} beacon=[${window.HarlyaoNightMarchBeacon?.formatDebug?.() || 'unavailable'}]`;
   }
 
   function appendOrReplace(report) {
