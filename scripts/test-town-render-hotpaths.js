@@ -260,6 +260,57 @@ assert.match(heldRender, /hideObjects\(tintCovers\.filter\(cover => !nearbyTintC
 assert.match(heldRender, /prepareOverlayCoverTintMaterials\(nearbyTintCovers\)/,
   'only nearby covers may be selected for the translucent tint pass');
 
+const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
+const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
+assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
+  'owner-aware wet/dry grouping is part of the production renderer');
+const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor',
+  heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
+)(8, tintCoverNearActor);
+const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
+const wetHeld = { material: sharedMaterial };
+const dryHeld = { material: sharedMaterial };
+const wetActor = scope(5, 5);
+const dryActor = scope(18, 18);
+const tintScopes = new Map([[wetHeld, wetActor], [dryHeld, dryActor]]);
+const mixedGroup = {
+  elevation: 0.2,
+  regions: [{ col: 5, row: 5, elevation: 0.2, meshes: [wetHeld] },
+    { col: 18, row: 18, elevation: 0.2, meshes: [dryHeld] }],
+  meshes: [wetHeld, dryHeld],
+};
+const separatedTintGroups = splitTintGroups([mixedGroup], tintScopes, [sparseWaterMesh]);
+assert.equal(separatedTintGroups.length, 2,
+  'mixed wet and dry holders are replayed separately even when they share a material');
+assert.equal(separatedTintGroups[0].tintStencilRef, 1,
+  'wet actor marks water-tint stencil');
+assert.equal(separatedTintGroups[1].tintStencilRef, 0,
+  'dry actor clears water-tint stencil');
+assert.deepEqual(separatedTintGroups.map(group => group.meshes[0]), [wetHeld, dryHeld],
+  'each holder still receives exactly one overlay draw');
+assert.equal(separatedTintGroups[0].tiles[0], 5,
+  'wet x-ray group keeps the correct local ground tile');
+assert.equal(separatedTintGroups[1].tiles[0], 18,
+  'dry x-ray group retains its own ground tile rather than inheriting the wet actor tile');
+const ordinaryMixed = splitTintGroups([
+  { elevation: undefined, regions: [], meshes: [wetHeld, dryHeld] },
+], tintScopes, [sparseWaterMesh]);
+assert.deepEqual(ordinaryMixed.map(group => group.tintStencilRef), [1, 0],
+  'ordinary-depth equipment also separates wet/dry tint ownership');
+const stencilStart = heldRender.indexOf('  function prepareSubmergedOverlayStencilMaterials(');
+const stencilEnd = heldRender.indexOf('  function prepareOverlayCoverTintMaterials(', stencilStart);
+const stampStencil = new Function('THREE', 'saveMaterialState', 'forEachMaterial',
+  heldRender.slice(stencilStart, stencilEnd) + '\nreturn prepareSubmergedOverlayStencilMaterials;'
+)({ AlwaysStencilFunc: 1, KeepStencilOp: 2, ReplaceStencilOp: 3 },
+  (states, material) => states.set(material, material.stencilRef),
+  (material, fn) => (Array.isArray(material) ? material : [material]).forEach(fn));
+stampStencil([wetHeld], 1);
+assert.equal(sharedMaterial.stencilRef, 1, 'wet equipment stamps bit 0 with 1');
+stampStencil([dryHeld], 0);
+assert.equal(sharedMaterial.stencilRef, 0, 'dry equipment clears bit 0 rather than falsely acquiring water');
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef\)/,
+  'each depth group actually uses its own water-tint stencil value');
+
 assert.match(testedWaterMaterial.fragmentShader,
   /uHobunjiSurfaceOcclusionDepthOnly > 0\.5[\s\S]*?alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
   'the production water shader discards only faint fragments during depth-only replay');
