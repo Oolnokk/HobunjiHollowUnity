@@ -275,6 +275,7 @@
 
   window.NorthernCliffsPlateauBackdrop = Object.freeze({
     installed: true, attach, detach, resolveLayout, getDebugState: debug,
+    getActiveRoot: () => active.get(NORTH_ID)?.root || null,
     constants: Object.freeze({ NORTH_ID, GROUP_NAME, BORDER_WIDTH, BORDER_CLEARANCE, HEIGHT_RATIO, LONG_EDGE_SEGMENTS }),
   });
   window.__northernCliffsPlateauBackdropDebug = debug; // Allows a mobile player to inspect height, draw count and map clearance via existing debug tooling.
