@@ -45,11 +45,14 @@
   let actionPromptEls = null;
   let pressAction = null; // Used by the retained pointer handler so frame updates don't create new closures.
   let cancelAction = null; // Used by the retained cancel handler while the prompt is visible.
+  const styleDebug = { refreshes: 0, appliedWrites: 0, skippedWrites: 0 }; // Used by the mobile Pixel Probe HUD style report.
   function setPromptText(element, property, value) {
-    if (element[property] !== value) element[property] = value;
+    if (element[property] !== value) { element[property] = value; styleDebug.appliedWrites++; }
+    else styleDebug.skippedWrites++;
   }
   function setPromptDisplay(element, display) {
-    if (element.style.display !== display) element.style.display = display;
+    if (element.style.display !== display) { element.style.display = display; styleDebug.appliedWrites++; }
+    else styleDebug.skippedWrites++;
   }
   function buildActionPromptDom() {
     if (actionPromptEls) return;
@@ -95,6 +98,7 @@
   function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
     buildActionPromptDom();
     if (!actionPromptEls) return;
+    styleDebug.refreshes++;
     const glyph = actionPromptGlyph(actionId, touchIcon);
     // The prompt can refresh each frame during fishing and moving ruin puzzles.
     // Write only changed values: assigning identical HTML, classes or styles
@@ -122,21 +126,25 @@
     if (panicPercent != null) {
       setPromptDisplay(actionPromptEls.panicWrap, '');
       const panicWidth = panicPercent + '%'; // Used to preserve the existing panic-fill scale.
-      if (actionPromptEls.panicFill.style.width !== panicWidth) actionPromptEls.panicFill.style.width = panicWidth;
+      if (actionPromptEls.panicFill.style.width !== panicWidth) { actionPromptEls.panicFill.style.width = panicWidth; styleDebug.appliedWrites++; }
+      else styleDebug.skippedWrites++;
     } else {
       setPromptDisplay(actionPromptEls.panicWrap, 'none');
     }
-    if (!actionPromptEls.el.classList.contains('open')) actionPromptEls.el.classList.add('open');
+    if (!actionPromptEls.el.classList.contains('open')) { actionPromptEls.el.classList.add('open'); styleDebug.appliedWrites++; }
+    else styleDebug.skippedWrites++;
   }
 
   function hideActionPrompt() {
     if (!actionPromptEls) return;
-    if (actionPromptEls.el.classList.contains('open')) actionPromptEls.el.classList.remove('open');
+    if (actionPromptEls.el.classList.contains('open')) { actionPromptEls.el.classList.remove('open'); styleDebug.appliedWrites++; }
+    else styleDebug.skippedWrites++;
     pressAction = null;
     cancelAction = null;
   }
 
   window.ActionPromptUI = {
     init, getLastInputDevice, buildActionPromptDom, actionPromptGlyph, actionPromptColor, showActionPrompt, hideActionPrompt,
+    getDebug: () => ({ ...styleDebug, visible: !!actionPromptEls?.el.classList.contains('open') }),
   };
 })();
