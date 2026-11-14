@@ -34,12 +34,14 @@
   function heldRoots() {
     const mesh = playerMesh();
     const d = deps();
-    const tool = typeof d.toolHolder === 'function' ? d.toolHolder() : d.toolHolder;
+    const combat = window.Combat?.deps || {};
+    const rawTool = d.toolHolder || combat.toolHolder; // The hand adapter may initialize before combat's equipment holder is injected.
+    const tool = typeof rawTool === 'function' ? rawTool() : rawTool;
     const bag = mesh?.children?.find(node =>
       node?.type === 'Group' && node.userData?.isPngPlane === true && !String(node.name || '').trim()
     ); // game.js's unnamed heldItemHolder, separate from weapon/toolHolder.
     const burden = window.Shattercasks?.heldHandTarget?.()?.holder;
-    const directItem = d.getHeldItemHandTarget?.()?.holder;
+    const directItem = (d.getHeldItemHandTarget?.() || combat.getHeldItemHandTarget?.())?.holder;
     return [...new Set([tool, bag, burden, directItem].filter(node => node?.isObject3D))];
   }
 
@@ -199,7 +201,8 @@
 
   function start(activeYawn) {
     if (!activeYawn?.isPlayer) return false;
-    if (entry && entry !== activeYawn) end(entry);
+    if (entry === activeYawn) return true; // A duplicate wake event must not acquire a second lock or resnapshot hidden items.
+    if (entry) end(entry);
     entry = activeYawn;
     progress = 0;
     yawnLock = window.CharacterActionLocks?.acquire?.({
