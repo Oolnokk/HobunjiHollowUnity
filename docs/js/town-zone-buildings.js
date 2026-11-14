@@ -441,7 +441,7 @@
         const sourcePiece=piece?.currentPiece||piece; // Authored shell and balcony markers for this placed building.
         const roofCells=sourcePiece?.footprint?.cells||[]; // Structural shell cells establish the same full-footprint origin as HousePieceGen.
         const roofExt=sourcePiece?.footprint?.extensions||{}; // Exterior porch cells affect the building's rotated placement pivot.
-        const allRoofCells=sourcePiece.placementOrigin==='fullFootprint'
+        const allRoofCells=sourcePiece?.placementOrigin==='fullFootprint'
           ? roofCells.concat(roofExt.entryTunnels||[],roofExt.tallEntryTunnels||[],
             roofExt.chimneys||[],roofExt.porches||[],roofExt.porchStairs||[],roofExt.railings||[],
             (sourcePiece.balconies||[]).flatMap(entry=>entry.cells||[]))
@@ -450,7 +450,7 @@
           const minX=Math.min(...allRoofCells.map(c=>c.x)), minZ=Math.min(...allRoofCells.map(c=>c.y));
           const width=Math.max(...allRoofCells.map(c=>c.x))-minX+1;
           const depth=Math.max(...allRoofCells.map(c=>c.y))-minZ+1;
-          for(const balcony of sourcePiece.balconies||[]){
+          for(const balcony of sourcePiece?.balconies||[]){
             const access=balcony.access, hatch=access?.openingTile; // Only explicitly linked interior ladders create roof entrances.
             if(access?.type!=='interiorFurniture'||!hatch||!access.mapId)continue;
             const local=BuildingDoor.rotateCell(hatch.x-minX,hatch.y-minZ,width,depth,rotDeg); // Same transform as porch deck supports.
