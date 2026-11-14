@@ -15,6 +15,9 @@ jobs:
       relevant: ${{ steps.select.outputs.lighting }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Select affected specialist tests
         id: select
         env:
