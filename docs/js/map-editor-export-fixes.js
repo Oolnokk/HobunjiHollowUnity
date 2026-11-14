@@ -302,6 +302,19 @@
     baselineById.set(String(map.id), mapSnapshot(map));
   }
 
+  function adoptBundledMapBaselines(mapIds) {
+    const ws = workspace();
+    if (!ws || !Array.isArray(mapIds)) return;
+    for (const mapId of mapIds) {
+      const id = String(mapId || '');
+      if (!id || baselineMapIds.has(id)) continue;
+      const map = ws.maps.find(entry => String(entry?.id || '') === id);
+      if (!map) continue;
+      captureMapBaseline(map);
+      baselineMapIds.add(id); // Officially imported bundled maps are not new user-authored maps.
+    }
+  }
+
   function workspaceAuthoringSnapshot(ws) {
     const clone = jsonSafeClone(ws) || {}; // Used only for diffing persistent workspace-level authoring data, not editor navigation state.
     delete clone.maps;
@@ -427,6 +440,7 @@
       buildDetailedDiff,
       buildWorkspaceDiffBundle,
       captureMapBaseline, // Used after confirmed Town reload; other map baselines must not be erased.
+      adoptBundledMapBaselines, // Accepts only newly imported indexed maps, without touching unrelated pending diffs.
       captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
