@@ -1057,6 +1057,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       return () => hiddenListeners.delete(listener);
     }, // Completed-loading event for HUD arrivals, rather than a guessed delay.
     coversWorld,
+    pendingRequestCount() { return pendingFetches.size; }, // O(1) indicator edge check, even while hundreds of requests are in flight.
     pendingRequestNames() { return [...pendingFetches.values()]; }, // Snapshot is created only when the live loading UI asks.
     onPendingRequestsChanged(listener) {
       if (typeof listener !== 'function') return () => {};
