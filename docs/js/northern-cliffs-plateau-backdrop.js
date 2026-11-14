@@ -109,7 +109,8 @@
     const rockBuilder = window.TerrainGeometry?.buildRockTileGeo; // The same deterministic low-poly rock/mini-plateau geometry used for loose rocks in the playable world.
     if (typeof rockBuilder !== 'function') throw new Error('Loose-rock terrain geometry is not ready');
     const built = rockBuilder.call(window.TerrainGeometry, ROCK_SEED_BASE + PLATEAU_ROCK_SEED_OFFSET, ROCK_SEED_BASE * 3 + 71); // One independent source mound, reused as a single enormous backdrop rock.
-    const geometry = built?.stoneGeo; // The stone-only part preserves the irregular natural-rock perimeter without a flat square grass base.
+    const geometry = built?.stoneGeo?.toNonIndexed?.() || built?.stoneGeo; // Discard unused full-tile vertices; only drawn stone triangles set the giant rock's footprint and cliff silhouette.
+    if (geometry !== built?.stoneGeo) built?.stoneGeo?.dispose?.(); // The original indexed geometry still contains unused grass-grid corners.
     built?.grassGeo?.dispose?.(); // Loose-rock grass is not part of this pure-stone distant landmark.
     const pos = geometry?.getAttribute?.('position'); // Used to stretch the source rock in world space before the farm's surface detector measures its actual face sizes.
     if (!pos?.count) throw new Error('Loose-rock stone geometry has no positions');
