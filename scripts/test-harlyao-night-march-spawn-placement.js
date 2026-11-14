@@ -54,6 +54,9 @@ async function host(options = {}) {
   const fallbackClock = await host({ omitDirectCalendar: true }); // Before combat/calendar wiring, the original debug accessor is still legal.
   fallbackClock.tick();
   assert(fallbackClock.calendarDebugCalls > 0 && fallbackClock.api.commanderTarget(), 'startup fallback still resolves the absolute day');
+  const fallbackCalls = fallbackClock.calendarDebugCalls; // The beacon should not perform route/day diagnostics even while the live calendar is unbound.
+  for (let i = 0; i < 120; i++) fallbackClock.api.commanderTarget();
+  assert.equal(fallbackClock.calendarDebugCalls, fallbackCalls, 'per-frame beacon targets use only the active hour, not the full calendar diagnostics');
   const beforeJump = d.commander.x; // Game-hour changes must not interpolate toward an endpoint.
   h.setHour(5.5); h.tick();
   assert(Math.abs(h.api.commanderTarget().x - beforeJump) < 1.2, 'no clock-driven chunk teleport');
