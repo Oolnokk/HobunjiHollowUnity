@@ -245,7 +245,8 @@ async function main() {
   window.__hobunjiPlayerProfile.appearance.speciesId = 'tletingan';
   completedBedSleeps++; // Legacy bed sleep completes with no hobunji-time-passage event.
   hour += 25; ms += 6500; frame({ timestamp: ms });
-  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'player waking', 'legacy bed wake also animates the player');
+  assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
+    'legacy bed wake animates the player even when other NPCs also yawn in the same frame');
   assert.equal(toasts.length, 4, 'legacy bed wake still lets an eligible player chew their daily Koma');
   console.log('NPC yawns, full-day clock, both sleep paths, silent NPC Koma and player-only subspecies toast: OK');
 }
