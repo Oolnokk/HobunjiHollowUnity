@@ -139,12 +139,18 @@
     return best;
   }
 
-  function visual(entity,show){
-    if(entity.avatarRef?.group)entity.avatarRef.group.visible=show;
-    if(entity.groundShadow)entity.groundShadow.visible=show;
-    if(entity._banditToolHolder)entity._banditToolHolder.visible=show;
-    if(entity._banditRangedToolHolder)entity._banditRangedToolHolder.visible=show&&!!entity._rangedMode;
-    if(!show&&entity._banditTrailMesh)entity._banditTrailMesh.visible=false;
+  function visual(record,show){
+    if(show){
+      for(const [node,original] of record.hidden||[])node.visible=original;
+      record.hidden=[];return;
+    }
+    const entity=record.enemy;
+    record.hidden=[]; // Save each component's real state: waking a naturally invisible enemy must not reveal it.
+    for(const node of [entity.avatarRef?.group,entity.groundShadow,entity._banditToolHolder,
+      entity._banditRangedToolHolder,entity._banditTrailMesh]){
+      if(!node)continue;
+      record.hidden.push([node,node.visible]);node.visible=false;
+    }
   }
   function resetHostile(entity,home){
     entity.x=home.x;entity.y=home.y;
@@ -166,14 +172,14 @@
     function wake(record){
       if(!record.sleeping)return;
       record.enemy.areaId=record.originalArea;
-      record.sleeping=false;visual(record.enemy,true);
+      record.sleeping=false;visual(record,true);
     }
     function sleep(record){
       if(record.sleeping)return;
       const enemy=record.enemy;
       if((Number(enemy.health)||0)<=0)return;
       resetHostile(enemy,record.home);
-      enemy.areaId=sleepingArea;record.sleeping=true;visual(enemy,false);resets++;
+      enemy.areaId=sleepingArea;record.sleeping=true;visual(record,false);resets++;
     }
     function scanHostiles(){
       const hostiles=getHostiles?.()||root.Combat?.deps?.hostileObjects;
