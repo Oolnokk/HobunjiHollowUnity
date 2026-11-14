@@ -68,7 +68,7 @@
   // Same actor test as combat-bandit.js's damageBanditCombatTarget: the player,
   // ruin statue proxies and other non-actors are never staged.
   function isActor(target) {
-    return !!target && (
+    return !!target && target.isEncounterProxy !== true && ( // Ruin-encounter statue stand-ins carry a creatureKey but are scripted objectives.
       target.isBandit === true
       || target.isPorakanekiHunter === true
       || target.banditCompanion === true
@@ -111,8 +111,17 @@
     return !playerInvolved(c, target);
   }
 
+  // Hidden = avatar not drawn, or outside this frame's camera frustum (checked
+  // directly; an actor's _rigOffscreenAsleep flag can be stale when its mesh
+  // update was skipped). Unknown -> visible, so the fallback is a real swing.
   function isHidden(entity) {
-    return entity?._rigOffscreenAsleep === true || entity?.avatarRef?.group?.visible === false;
+    const group = entity?.avatarRef?.group;
+    if (!group) return false;
+    if (group.visible === false) return true;
+    const pos = group.position;
+    const lod = window.OffscreenRigLod;
+    if (!pos || typeof lod?.inView !== 'function') return false;
+    return !lod.inView(pos.x, pos.y, pos.z);
   }
 
   function turnToward(c, angle, dt) {
@@ -179,7 +188,7 @@
     const canStrike = distPx <= reach && c.attackCooldownT <= 0 && staminaOk;
     if (canStrike && aligned) {
       if (isHidden(c) && isHidden(target)) resolveAbstractExchange(c, target, api);
-      else if (api.fireStagedSwing(c, target)) stats.stagedSwings++;
+      else if (api.fireStagedSwing(c, target, dt)) stats.stagedSwings++;
       return { aimAngle: c.facing, moving: false };
     }
     if (canStrike) return { aimAngle: c.facing, moving: false }; // Finishing the turn-in.
@@ -234,6 +243,7 @@
     noteStagedShot,
     isStaged,
     isStageable,
+    isHidden,
     maybeStageDodge,
     strikeLands,
     setEnabled(value) { enabled = value !== false; return enabled; },

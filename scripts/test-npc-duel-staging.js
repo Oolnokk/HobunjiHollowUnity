@@ -14,17 +14,22 @@ let roll = 0; // Deterministic rnd() value.
 const TILE = 64;
 const player = { x: 0, y: 0, health: 100 };
 
-const windowStub = { ResourceSystem: { spendStamina(entity, amount) { entity.stamina -= amount; } } };
+const HIDDEN_X = 9999; // Avatar positions beyond this are outside the stub camera frustum.
+const windowStub = {
+  ResourceSystem: { spendStamina(entity, amount) { entity.stamina -= amount; } },
+  OffscreenRigLod: { inView: x => x < HIDDEN_X },
+};
 const context = vm.createContext({ window: windowStub, performance: { now: () => now }, Date, Math, console });
 vm.runInContext(fs.readFileSync('docs/js/combat/npc-duel-staging.js', 'utf8'), context, { filename: 'npc-duel-staging.js' });
 const staging = windowStub.NpcDuelStaging;
 assert.ok(staging, 'module exposes window.NpcDuelStaging');
 staging.init({ TILE, player, rnd: () => roll, now: () => now });
 
+function hidden(entity) { entity.avatarRef.group.position.x = HIDDEN_X; return entity; }
 function fighter(id, x, y, extra = {}) {
   return {
     id, isBandit: true, banditRank: 'grunt', health: 50, x, y, facing: 0, stamina: 40, attackCooldownT: 0,
-    _banditComboIndex: 0, avatarRef: { group: { visible: true } },
+    _banditComboIndex: 0, state: 'chase', avatarRef: { group: { visible: true, position: { x: x / TILE, y: 0, z: y / TILE } } },
     def: { attackStaminaCost: 10, attackCooldownS: 1.1, attackDamage: 7, chaseSpeed: 200, attackTag: 'sharp' },
     ...extra,
   };
@@ -64,8 +69,8 @@ assert.equal(calls.swings, 1, 'a fighter facing away turns before swinging');
 assert.ok(Math.abs(c.facing - Math.PI) > 0.1, 'it actually turned toward its opponent');
 
 // Both offscreen: resolved abstractly (no swing, but stamina/cooldown/damage still move).
-const e = fighter('e', far, 0, { _rigOffscreenAsleep: true });
-const f = fighter('f', far + 60, 0, { _rigOffscreenAsleep: true });
+const e = hidden(fighter('e', far, 0));
+const f = hidden(fighter('f', far + 60, 0));
 roll = 0; // Below ABSTRACT_HIT_CHANCE -> hit.
 staging.update(e, 0.016, f, 60, 0, api);
 assert.equal(calls.swings, 1, 'no swing is staged for a fight nobody can see');
@@ -79,6 +84,15 @@ staging.update(e, 0.016, f, 60, 0, api);
 assert.equal(calls.damage.length, 1, 'a failed roll misses');
 roll = 0;
 
+// A stale _rigOffscreenAsleep flag on an actor that is actually in view must not
+// hide the fight (the flag is only refreshed when its mesh update runs).
+const staleA = fighter('staleA', far, 0, { _rigOffscreenAsleep: true });
+const staleB = fighter('staleB', far + 60, 0, { _rigOffscreenAsleep: true });
+const swingsBefore = calls.swings;
+staging.update(staleA, 0.016, staleB, 60, 0, api);
+assert.equal(calls.swings, swingsBefore + 1, 'visible fighters with a stale offscreen flag still swing for real');
+assert.equal(staging.isHidden(fighter('inv', 0, 0, { avatarRef: { group: { visible: false, position: { x: 0, y: 0, z: 0 } } } })), true, 'an undrawn avatar is hidden');
+
 // Player involvement returns the fight to full simulation.
 const g = fighter('g', 3 * TILE, 0);
 const h = fighter('h', 3 * TILE + 60, 0);
@@ -87,7 +101,8 @@ const i = fighter('i', far, 0);
 const j = fighter('j', far + 60, 0, { _teamHitAt: now - 1000 });
 assert.equal(staging.update(i, 0.016, j, 60, 0, api), null, 'opponent recently hit by the player -> full simulation');
 assert.equal(staging.update(i, 0.016, player, 60, 0, api), null, 'the player is never a staged opponent');
-assert.equal(staging.update(i, 0.016, { x: far, y: 0, health: 10 }, 60, 0, api), null, 'non-actor targets (ruin proxies) are never staged');
+assert.equal(staging.update(i, 0.016, { x: far, y: 0, health: 10 }, 60, 0, api), null, 'non-actor targets are never staged');
+assert.equal(staging.update(i, 0.016, { x: far, y: 0, health: 1e9, creatureKey: 'encounterStatueProxy', isEncounterProxy: true }, 60, 0, api), null, 'ruin statue proxies are never staged');
 const boss = fighter('boss', far, 0, { maskboundTroop: 'headtaker' });
 assert.equal(staging.update(boss, 0.016, b, 60, 0, api), null, 'scripted/boss attackers keep their own AI');
 
@@ -148,6 +163,9 @@ for (let n = 0; n < 5 && !defender.dodging; n++) dodgeWindow.BanditCombat.update
 assert.equal(defender.dodging, true, 'the defender plays the ordinary roll');
 assert.deepEqual(dodgeVoices, [defender]);
 assert.equal(dodgeWindow.EnemyDodge.stageDodge(defender, attacker, 0.2), false, 'no second dodge while one is active');
+const notFighting = fighter('idle', 100, 0, { state: 'return' });
+roll = 0;
+assert.equal(staging.maybeStageDodge(notFighting, attacker, 0.2), false, 'a defender outside chase AI never queues a dodge that would fire late');
 roll = 0.99;
 const defender2 = fighter('def2', 100, 0);
 assert.equal(staging.maybeStageDodge(defender2, attacker, 0.2), false, 'failed roll -> no dodge');
@@ -220,8 +238,8 @@ assert.ok(rangedSandbox.ranged.stagedTargetHit(foe, {}, {}, 0.1, 'zone'), 'stage
 assert.equal(rangedSandbox.ranged.stagedTargetHit({ ...foe, health: 0 }, {}, {}, 0.1, 'zone'), null, 'dead targets are not hit');
 
 // Offscreen: no action, no projectile, same cadence and a damage roll.
-const hiddenArcher = fighter('harcher', far, 0, { def: { ...fighter('x', 0, 0).def, rangedWeaponKey: 'crossbow' }, _rangedCooldownT: 0, _rangedLoaded: false, _rigOffscreenAsleep: true });
-const hiddenFoe = fighter('hfoe', far + 5 * TILE, 0, { _rigOffscreenAsleep: true });
+const hiddenArcher = hidden(fighter('harcher', far, 0, { def: { ...fighter('x', 0, 0).def, rangedWeaponKey: 'crossbow' }, _rangedCooldownT: 0, _rangedLoaded: false }));
+const hiddenFoe = hidden(fighter('hfoe', far + 5 * TILE, 0));
 const volleysBefore = rangedLog.volleys.length;
 roll = 0;
 rangedUpdate(hiddenArcher, 0.016, hiddenFoe, 5 * TILE);
@@ -258,7 +276,7 @@ const flaskContext = vm.createContext({
 });
 vm.runInContext(banditSource.slice(banditSource.indexOf('  function updateBanditFlaskAI('), banditSource.indexOf('  function makeBanditDef(')), flaskContext);
 const flaskDef = { banditFlaskLoadout: ['venom', 'fire'], banditFlaskPotencyTier: 2, banditFlaskerTuning: { minThrowRangeTiles: 2.25, maxThrowRangeTiles: 10, throwCooldownSeconds: 2 } };
-const hiddenFlasker = fighter('hflask', far, 0, { banditRank: 'flasker', _banditFlaskIndex: 0, def: { ...fighter('x', 0, 0).def, ...flaskDef }, _rigOffscreenAsleep: true });
+const hiddenFlasker = hidden(fighter('hflask', far, 0, { banditRank: 'flasker', _banditFlaskIndex: 0, def: { ...fighter('x', 0, 0).def, ...flaskDef } }));
 roll = 0;
 assert.ok(flaskContext.updateBanditFlaskAI(hiddenFlasker, 0.016, hiddenFoe, 5 * TILE).handled);
 assert.equal(flaskStarts, 0, 'no throw animation offscreen');

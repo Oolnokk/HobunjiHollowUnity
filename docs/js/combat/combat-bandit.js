@@ -1482,7 +1482,7 @@
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.
-        if (!staged || c._rigOffscreenAsleep !== true) spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
+        if (!staged || !window.NpcDuelStaging.isHidden(c)) spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
         const landed = staged
           ? window.NpcDuelStaging.strikeLands(c, targetPlayer, rangePx, halfConeRad)
           : window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 });
@@ -2191,7 +2191,13 @@
       });
       npcDuelStagingApi = {
         comboReachPx: actor => banditComboReachPx(actor, actor.def, actor.def.banditAbilityLoadout),
-        fireStagedSwing: (actor, foe) => fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true }),
+        fireStagedSwing: (actor, foe, stepDt) => {
+          // Same stamina cost and same-frame lunge catch-up as the full path's swing.
+          window.ResourceSystem?.spendStamina(actor, actor.def.attackStaminaCost, 'bandit attack');
+          const fired = fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true });
+          if (fired) updateBanditLunge(actor, stepDt, foe);
+          return fired;
+        },
         moveToward: (actor, x, y, speed, stepDt) => deps.moveCreatureToward(actor, x, y, speed, stepDt),
         damage: (actor, foe, amount, knockbackPxS) => damageBanditCombatTarget(actor, foe, amount, actor.x, actor.y, knockbackPxS, { tag: actor.def.attackTag, stagedDuel: true }),
       };

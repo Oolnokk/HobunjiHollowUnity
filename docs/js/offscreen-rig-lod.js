@@ -82,9 +82,19 @@
     return false;
   }
 
+  // Stateless view test against this frame's frustum (true when no frustum is
+  // available). Unlike an actor's _rigOffscreenAsleep flag it cannot go stale
+  // when updateCreatureMesh skips an actor, so NPC duel staging uses this.
+  function inView(x, y, z) {
+    if (!haveFrustum) return true;
+    sphere.center.set(x, y, z);
+    return frustum.intersectsSphere(sphere);
+  }
+
   window.OffscreenRigLod = Object.freeze({
     beginFrame,
     shouldAnimate,
+    inView,
     setEnabled(value) { enabled = value !== false; if (!enabled) haveFrustum = false; return enabled; },
     get enabled() { return enabled; },
     getStats() { return { ...stats, enabled }; },

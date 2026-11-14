@@ -222,6 +222,7 @@
   }
   function stageDodge(entity, attacker, timeToImpactS) {
     if (!entity || !attacker || !deps || entity.health <= 0) return false;
+    if (entity.state !== 'chase') return false; // A pending reaction only advances inside the chase AI; outside it, it would fire late.
     if (entity._enemyDodge || entity._enemyDodgePending || (Number(entity._enemyDodgeCooldownT) || 0) > 0) return false;
     if (entity.prone || entity._banditAction || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return false;
     // Negative ids never collide with player threat ids and still vary the dodge side.
