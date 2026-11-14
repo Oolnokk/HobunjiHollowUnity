@@ -547,7 +547,6 @@
         savedQuaternion = this.quaternion.clone();
         try {
           const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
-          if (targetPose.worldUpright) window.ToolWorldUpright?.apply?.(this, toolPlane, THREE); // World-up is active only at idle, never during a swing or throw.
           if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
@@ -569,6 +568,7 @@
         }
       }
 
+      if (stanceApplied && targetPose?.worldUpright) window.ToolWorldUpright?.apply?.(this, toolPlane, THREE); // Apply after the sprite-plane neutral twist; otherwise the visual tip tilts again.
       const stateLabel = attackInProgress
         ? `attack-neutral=${visual?.progress?.toFixed?.(2) ?? '0'}`
         : stanceApplied ? 'idle-holder' : holderMoving ? 'tool-motion' : 'default';
