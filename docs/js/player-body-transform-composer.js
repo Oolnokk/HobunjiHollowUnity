@@ -556,6 +556,7 @@
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
+      try {
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
       if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
@@ -592,7 +593,6 @@
       if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
       lastRenderDebug = renderDebug;
 
-      try {
         const result = originalRender.call(this, scene, camera);
         // Fires after the real render (so anything that re-syncs itself off
         // playerMesh/toolHolder inside that render, e.g. the procedural hand
@@ -608,6 +608,9 @@
         return result;
       }
       finally {
+        // Pose composition itself can throw before WebGLRenderer.render starts.
+        // Every temporary foot/body/held transform must still be undone or the
+        // next gameplay frame inherits its render-only orientation indefinitely.
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
