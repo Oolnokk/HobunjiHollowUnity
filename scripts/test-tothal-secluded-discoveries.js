@@ -68,7 +68,7 @@ assert.equal(Cave.exteriorPuzzleState(first[0].mapId).solved,true,'solved gate p
 const oldIds=new Set(first.map(site=>site.mapId));
 cycle=2;
 const next=Cave.registerOutdoorPuzzleSites(zone,shelves);
-assert.equal(next.length,first.length,'changing year must not alter the site count without changing terrain');
+assert(next.length>=4&&next.length<=24,'new year rerolls the cave population inside the existing density bounds');
 assert(next.every(site=>!oldIds.has(site.mapId)),'all old site identities are retired on a new Tothal cycle');
 assert([...oldIds].every(id=>!Cave.__test.sitesByMapId.has(id)),'old cached cave map ids must be removed from registry');
 assert(next.every(site=>!Cave.exteriorPuzzleState(site.mapId).solved),
