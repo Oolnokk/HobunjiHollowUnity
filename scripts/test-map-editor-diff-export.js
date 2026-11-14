@@ -107,4 +107,14 @@ const afterBundledMaps = api.buildWorkspaceDiffBundle();
 assert.equal(afterBundledMaps.summary.addedMaps, 0, 'Canonical indexed map imports must not appear as user-added maps');
 assert(afterBundledMaps.maps.some(entry => entry.mapId === imported.id), 'Baseline adoption must preserve the unrelated map edit');
 assert.equal(api.buildDetailedDiff(canonicalZone).summary.changed, false, 'Canonical map gets its own captured baseline');
+workspace.plateauGroups.push({ id: 'bundled_group', elevation: 2 }); // Bundled geometry should establish a baseline without hiding other edits.
+workspace.ramps.push({ id: 'bundled_ramp', fromMapId: canonicalZone.id, toMapId: updatedTown.id });
+api.adoptBundledWorkspaceBaselines({ plateauGroupIds: ['bundled_group'], rampIds: ['bundled_ramp'] });
+assert.equal(api.buildWorkspaceDiffBundle().workspaceChanges.fields, undefined, 'Bundled plateau geometry must not appear as user-authored changes');
+workspace.plateauGroups.push({ id: 'user_group', elevation: 3 }); // Locally authored plateau must still show in the diff.
+const ownWorkspaceEdit = api.buildWorkspaceDiffBundle().workspaceChanges.fields;
+assert(ownWorkspaceEdit.after.plateauGroups.some(group => group.id === 'user_group'), 'User plateau changes must remain visible');
+assert(!ownWorkspaceEdit.before.plateauGroups.some(group => group.id === 'user_group'), 'User plateau must not be absorbed into the bundled baseline');
+assert(ownWorkspaceEdit.before.plateauGroups.some(group => group.id === 'bundled_group'), 'Bundled plateau should be part of the accepted baseline');
+
 console.log('Map diff baselines, per-map Town reset, bundled indexed maps, unrelated edits, and modal export passed.');
