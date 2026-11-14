@@ -121,7 +121,7 @@ async function main() {
   assert.deepEqual(toasts, [], 'an NPC Koma chew must NEVER display a toast addressed to the player');
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
   assert.equal(expressions.get('test-npc'), 'yap', 'use the existing mouth-open sprite during a yawn');
-  assert.ok(storage.has('hobunji_npc_yawn_rest_v1:character-a'));
+  assert.ok(storage.has('hobunji_npc_yawn_rest_v2:character-a'));
 
   const femaleVoice = await runtime._test.voiceFor('tletingan', 'female');
   assert.equal(femaleVoice.source, 'male yawn, relative female modulation');
