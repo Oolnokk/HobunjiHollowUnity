@@ -205,7 +205,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261114hd3b7ebf"></script>
+  <script src="js/character-action-locks.js?v=20261114herdAudit2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -237,7 +237,7 @@
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/pingdort-registration.js?v=20261107pingnelk2"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
-  <script src="js/moot-registration.js?v=20261107mootreview1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
+  <script src="js/moot-registration.js?v=20261114herdAudit2"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
   <script src="js/creature-genetics.js?v=20261108hdenlineage6"></script>
   <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
@@ -576,7 +576,7 @@
   <script src="js/climb-surfaces.js?v=20261108h4c58289"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/ruin-jump-shaft.js?v=20261111h610a325"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
+  <script src="js/ruin-jump-shaft.js?v=20261114he3c66fa"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261114f2portal"></script>
   <script src="js/ruin-layer-plan.js?v=20261114f2apron"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261109timedMelody1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
@@ -667,7 +667,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261114queenPerf1"></script>
+  <script src="js/wildlife-spawn.js?v=20261114herdAudit2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -778,7 +778,7 @@
   <script src="js/tasks-panel.js?v=20261029hguild2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261111tzGripBaseline1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261114herdAudit2"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -2911,7 +2911,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261114melodyTempoPer1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261114hd2f805e"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
