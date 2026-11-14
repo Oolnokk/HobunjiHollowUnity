@@ -37,17 +37,20 @@
       const p=getPlayerPosition?.(),y=Number(getPlayerY?.());
       return p&&Number.isFinite(y)?point(p.x,p.z,y):null;
     };
-    function fixture(id,kind,at,scale){
+    function fixture(id,kind,at,scale,platformParent=null){
       if(![at.x,at.z,at.y].every(Number.isFinite))return null;
       const holder=new THREE.Group(); // Local parent moves every constituent of this freestanding prop together.
       holder.name='ruin-'+kind+'-'+id.replace(/[^a-z0-9_-]/gi,'-');
-      holder.position.set(at.x,at.y,at.z);holder.userData.devRuinFootprintIgnore=true;group.add(holder);
+      if(platformParent)platformParent.add(holder); // Shaft platforms are already at world X/Y/Z; keep the prop local to its platform.
+      else {holder.position.set(at.x,at.y,at.z);group.add(holder);}
+      holder.userData.devRuinFootprintIgnore=true;
       const base=new THREE.Mesh(foot,stone);base.scale.setScalar(scale);base.position.y=.31*scale;holder.add(base);
       const dish=new THREE.Mesh(bowl,stone);dish.scale.setScalar(scale);dish.position.y=.73*scale;holder.add(dish);
       const anchor=new THREE.Group(); // Use the canonical campfire emitter with white rather than lich-colored particles.
       anchor.position.y=.9*scale;anchor.visible=false;holder.add(anchor);
+      const emberColors=kind==='source'?{colorA:'#ffb25a',colorB:'#ff5f1d'}:{colorA:WHITE_BRIGHT,colorB:WHITE_LOW}; // Tothal ignition is visually distinct from white checkpoint flames.
       const emitter=root.PersistentGroundFire?.attachCampfireFlame?.(anchor,{
-        scale:scale*.7,rateScale:.46,colorA:WHITE_BRIGHT,colorB:WHITE_LOW,
+        scale:scale*.7,rateScale:.46,...emberColors,
       });
       if(emitter)flames.push(emitter);
       const light={x:at.x,y:at.y+1,z:at.z,floorY:at.y,floorTolerance:1.2,
@@ -105,6 +108,43 @@
       const at=positions.map(([x,z])=>point(x,z,typeof heightAt==='function'?heightAt(x,z):y))
         .find(candidate=>Number.isFinite(candidate.y)&&floorCanStand(candidate.x,candidate.z,candidate.y));
       return at?fixture(id,'small',at,.72):null; // Native V50 plateaus need their actual surface height, not the nominal story datum.
+    }
+    const ignitionSources=[]; // Reusable Tothal projectile-fire sources, not teleport destinations or Great Door goals.
+    const tothal=String(ruin.theme||'').toLowerCase()==='tothal';
+    function igniteNextShot(at){
+      if(disposed||!closeEnough(player(),at,2.1))return false;
+      if(root.DungeonFire?.armNextProjectile?.()===true){
+        showToast?.('Next ranged projectile ignited.',true);
+        return true;
+      }
+      showToast?.('Equip a ranged weapon first.',false);
+      return false;
+    }
+    if(tothal){
+      // The floor-zero shaft waystone remains an ignition fallback after nearby Shattercasks detonate.
+      const shaftSourceControl={kind:'dungeonFireSource',object:shaft.holder,promptRoot:shaft.holder,
+        floorY:shaftAt.y,inputAction:'action2',range:1.8,priority:26,touchIcon:'🔥',
+        available:()=>!!root.RangedWeapons?.equippedRangedKey?.(),
+        label:'Ignite Next Shot',onPress:()=>igniteNextShot(shaftAt)};
+      ruin.controls.push(shaftSourceControl);controls.push(shaftSourceControl);
+      const jump=ruin.shaftObeliskRuntime,api=root.RuinJumpShaft;
+      if(jump?.method==='jumpPlatforms'&&jump.plan?.routes&&jump.columns&&api?.assignFixture){
+        for(const route of jump.plan.routes){
+          // First jump of each story is reachable directly from the gallery.
+          // Keep its icy surface and reserve only the central prop footprint.
+          const platform=jump.plan.platforms.find(p=>p.id===route.platformIds?.[0]);
+          const column=platform&&jump.columns.get(platform.id);
+          if(!column?.holder||!api.assignFixture(jump.plan,platform.id,'ignitionBrazier'))continue;
+          const at=point(platform.x,platform.z,platform.y);
+          const source=fixture('ignition:'+platform.id,'source',at,.72,column.holder);
+          render(source,true);ignitionSources.push(source);
+          const control={kind:'dungeonFireSource',object:source.holder,promptRoot:source.holder,
+            floorY:at.y,inputAction:'action1',range:1.65,priority:26,touchIcon:'🔥',
+            available:()=>!!root.RangedWeapons?.equippedRangedKey?.(),
+            label:'Ignite Next Shot',onPress:()=>igniteNextShot(at)};
+          ruin.controls.push(control);controls.push(control);
+        }
+      }
     }
     for(const floor of plan.floors)for(const wing of floor.wings||[])
       roomCheckpoint(wing.rooms?.[0],floor.y,'wing:'+wing.id,null,wing.side); // One automatic return point at the beginning of each composed wing.
@@ -207,11 +247,13 @@
       if(liveOwner===owner)liveOwner=null;
       for(const c of controls){const index=ruin.controls.indexOf(c);if(index>=0)ruin.controls.splice(index,1);}
       for(const f of flames)f.dispose?.();
+      for(const source of ignitionSources)source.holder.parent?.remove(source.holder); // Platform props have parents outside the checkpoint group's render tree.
       bowl.dispose();foot.dispose();stone.dispose?.();
       group.parent?.remove(group);
     }
     const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
-      getState:()=>({shaftLit,activeCheckpoint:activeId,checkpoints:[...records.values()].map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
+      getState:()=>({shaftLit,activeCheckpoint:activeId,ignitionSources:ignitionSources.map(r=>({id:r.id,x:r.at.x,z:r.at.z,y:r.at.y})),
+       shaftIgnitionAvailable:tothal,checkpoints:[...records.values()].filter(r=>r.kind!=='source').map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
     return owner;
   }
