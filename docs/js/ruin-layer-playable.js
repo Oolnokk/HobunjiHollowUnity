@@ -172,8 +172,14 @@
         const w=maxX-minX+1,h=maxZ-minZ+1,mask=new Uint8Array(w*h);
         for(const [x,z] of floorCells)mask[(z-minZ)*w+(x-minX)]=1;
         const rects=Faces.mergeMask(mask,w,h).map(r=>({axis:'y',side:1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
-        const floor=add(wingName+'-floor',Faces.buildQuads(rects,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:PATCH}));
+        const surface=Faces.buildQuads(rects,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:PATCH});
+        const covered=RoomSystem.projectedFloorArea(surface); // Validate actual rendered triangles against the walkable support mask.
+        if(Math.abs(covered-floorCells.length)>1e-3)throw new Error(
+          'Ruin '+wingName+' floor geometry mismatch: '+covered+' of '+floorCells.length+' cells');
+        const floor=add(wingName+'-floor',surface);
+        if(!floor)throw new Error('Ruin '+wingName+' has no rendered floor despite '+floorCells.length+' supported tiles');
         floor.userData.hobunjiGroundTopFacesOnly=true;
+        floor.userData.ruinVerifiedFloorArea=covered;
       }
       const runs=Faces.mergeEdges([
         ...wallsX.map(([cx,z,faces])=>({along:'x',line:z,from:cx-.5,to:cx+.5,side:faces})),
