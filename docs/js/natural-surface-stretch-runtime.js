@@ -22,6 +22,8 @@
     missingUvSurfaceMarkersFound: 0,
     missingUvSurfaceRepairs: 0,
     islandUvReassertions: 0,
+    validUvFastPaths: 0,
+    sceneAddDuplicateInspectionsAvoided: 0,
   }; // Used by snapshot() and the mobile-visible render debug log.
 
   function debugLog(message, level = 'info') {
@@ -204,6 +206,19 @@
     geometry.userData = Object.assign({}, geometry.userData || {});
     const position = geometry.getAttribute?.('position') || geometry.attributes?.position; // Used as the authoritative vertex count that a valid UV attribute must match.
     const uvBefore = geometry.getAttribute?.('uv') || geometry.attributes?.uv; // Used to detect the exact Pixel Probe state where the final rendered rock has no UVs.
+    const validUv = !!(position && uvBefore?.count === position.count && Number(uvBefore.itemSize || 0) >= 2); // Used to trust a completed map only while its UV buffer remains present and correctly sized.
+    const expectedMaterial = mesh.userData?.naturalSurfaceCliffSlot == null ? '*' : String(mesh.userData.naturalSurfaceCliffSlot); // Used to prevent an earlier whole-mesh map from masquerading as plateau cliff-slot UVs.
+    const signature = String(geometry.userData.hobunjiSurfaceStretchSignature || ''); // Used to recognize only current central-mapper signatures.
+    const priorReport = geometry.userData.hobunjiSurfaceStretch; // Used to validate version and material-slot parity without rerunning the surface solver.
+    const existingCrossMesh = mesh.userData?.naturalSurfaceCrossMeshUvOwner === 'plateau-cliff-cross-mesh-v1'; // Used to preserve the touching-mesa UV solve exactly as the central mapper already does.
+    const currentIsland = signature.startsWith('surface-island-v3|')
+      && signature.includes('|material=' + expectedMaterial + '|')
+      && priorReport?.version === 3 && priorReport?.mapping === 'edge-preserving-nine-slice'
+      && geometry.userData.naturalSurfaceUvMapping !== 'cliff-face-stretch'; // Used to reject legacy UV overrides and invalidated surface signatures.
+    if (validUv && (existingCrossMesh || currentIsland)) {
+      stats.validUvFastPaths++;
+      return false;
+    }
     const hadStaleIslandMarkerWithoutUvs = !!(
       geometry.userData.hobunjiSurfaceStretchSignature
       && position
@@ -281,8 +296,12 @@
   if (objectProto && typeof previousObjectAdd === 'function' && !previousObjectAdd.__hobunjiSurfaceStretchNestedWrapped) {
     function wrappedObjectAdd(...objects) {
       const result = previousObjectAdd.apply(this, objects);
-      stats.nestedAddsInspected += objects.length;
-      for (const object of objects) inspectObject(object);
+      if (this.isScene) {
+        stats.sceneAddDuplicateInspectionsAvoided += objects.length; // Scene.add's own wrapper already inspects the same root after Object3D.add returns.
+      } else {
+        stats.nestedAddsInspected += objects.length;
+        for (const object of objects) inspectObject(object);
+      }
       return result;
     }
     wrappedObjectAdd.__hobunjiSurfaceStretchNestedWrapped = true;
