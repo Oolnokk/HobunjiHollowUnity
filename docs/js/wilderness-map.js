@@ -171,10 +171,9 @@
   // radius and records its discovery for this Shift (permanently for fixed
   // landmarks). Discovery records only
   // *that* a locale was found, never *where* -- the map always draws
-  // discovered locales from _allLocaleInstances()'s live current placement,
-  // so "current location... if you've discovered them before" holds even
-  // after a later Tothal Shift moves it, with no need to physically
-  // revisit it again first.
+  // discovered locales from _allLocaleInstances()'s live current placement.
+  // Shift secrets require rediscovery in each new cycle; permanent authored
+  // locales retain their previous discoveries and current coordinates.
   function _checkLocaleDiscovery(zoneId, pc, pr) {
     const discovered = _loadDiscoveredLocales();
     let changed = false;
