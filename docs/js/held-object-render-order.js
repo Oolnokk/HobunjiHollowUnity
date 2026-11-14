@@ -1386,7 +1386,13 @@
     return false;
   }
 
-  const XRAY_ELEVATION_TOLERANCE = 0.18; // Separates the authored trench/raised offsets and map tiers while allowing small body/terrain sampling drift.
+  const XRAY_ELEVATION_TOLERANCE = 0.18; // Physical floor tolerance, retained for porches, interior slabs and cave faces.
+  const xrayTerrainConfig = window.HOBUNJI_CONFIG?.terrain || {}; // Used only to derive how far visual-only terrain can differ across an actor's 3x3 neighborhood.
+  const xrayVisualDisplacement = Math.max(0, Number(xrayTerrainConfig.subtleHeightMaxDisplacement) || 0.6); // Same displacement bound used by the authored visual-height renderer.
+  const xrayPlateauUnit = Math.max(0, Number(xrayTerrainConfig.plateauVerticalUnit) || 2.5); // Protects actual adjacent cliff tiers from a wider visual-only terrain tolerance.
+  const XRAY_VISUAL_GROUND_TOLERANCE = Math.max(XRAY_ELEVATION_TOLERANCE,
+    Math.min(XRAY_ELEVATION_TOLERANCE + xrayVisualDisplacement * 2,
+      xrayPlateauUnit - xrayVisualDisplacement * 2 - 0.04)); // Same-tier opposite slopes can differ by 2*visual displacement; different tiers must still occlude.
   const XRAY_ELEVATION_GROUP_EPSILON = 0.05; // Actors on effectively the same standing surface share one depth replay.
   const XRAY_TILE_RADIUS = 1; // A holder can reveal ground in its tile and the eight adjacent tiles.
   const XRAY_TILE_EDGE_EPSILON = 0.0001; // Bias slab side fragments into their own tile at shared grid edges.
@@ -1619,7 +1625,7 @@
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
     if (state) return state;
-    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, tileCount: { value: 0 }, tiles: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
+    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, tolerance: { value: XRAY_ELEVATION_TOLERANCE }, anyFacing: { value: 0 }, tileCount: { value: 0 }, tiles: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
     const previousCacheKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey : null;
@@ -1664,8 +1670,8 @@
       // Path bricks and interior slabs can expose their sides within the
       // actor's elevation band. Mixed terrain keeps cliff/wall faces solid.
       shader.fragmentShader = fragment
-        .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayTileCount;\nuniform vec2 uHobunjiXrayTiles[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
-        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE} && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) {
+        .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXraySurfaceTolerance;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayTileCount;\nuniform vec2 uHobunjiXrayTiles[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= uHobunjiXraySurfaceTolerance && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) {
   vec2 groundTile = floor(vHobunjiXrayWorldXZ - vHobunjiXrayWorldNormal.xz * (uHobunjiXrayAnyFacing * ${XRAY_TILE_EDGE_EPSILON}));
   for (int i = 0; i < ${XRAY_MAX_BATCH_TILES}; ++i) {
     if (i >= uHobunjiXrayTileCount) break;
@@ -1674,13 +1680,14 @@
 }`);
       shader.uniforms.uHobunjiXrayActorElevation = state.uniforms.elevation;
       shader.uniforms.uHobunjiXrayElevationEnabled = state.uniforms.enabled;
+      shader.uniforms.uHobunjiXraySurfaceTolerance = state.uniforms.tolerance;
       shader.uniforms.uHobunjiXrayAnyFacing = state.uniforms.anyFacing;
       shader.uniforms.uHobunjiXrayTileCount = state.uniforms.tileCount;
       shader.uniforms.uHobunjiXrayTiles = state.uniforms.tiles;
       state.supported = true;
     };
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
-      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v4';
+      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v5';
     };
     material.needsUpdate = true;
     return state;
@@ -1714,6 +1721,9 @@
           material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
         }
         if (roadSurface || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
+        if (groundKind(mesh) === 'terrain' || roadSurface) {
+          state.uniforms.tolerance.value = XRAY_VISUAL_GROUND_TOLERANCE; // Only visual terrain/paths use the wider tolerance; raised porches and interior floors keep true-floor occlusion.
+        }
         if (seen.has(material)) return;
         seen.add(material);
         if (state.supported) materialCount++;
