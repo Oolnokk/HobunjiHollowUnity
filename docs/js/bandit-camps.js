@@ -1252,6 +1252,46 @@
     window.__farmLog?.('[bandits] tent ' + obj.id + ' ignited; it will burn down in ' + burnS + 's.', 'wildlife');
   }
 
+  function igniteAimedTentWithTorch() {
+    const zoneId=deps?.getCurrentArea?.(); // Current zone is the only eligible fire-action authority.
+    if (!zoneId || !deps.isZoneArea(zoneId)) return false;
+    const tent=aimedBanditTent(zoneId); // Uses the existing physical canvas ray and close-range check.
+    if (!tent || tent.burning || tent.destroyed) return false;
+    burnBanditTent(zoneId,tent);
+    return true;
+  }
+
+  function igniteTorchSegment(zoneId,start,end,maxT=1,radius=0) {
+    if (!deps || zoneId !== deps.getCurrentArea() || !deps.isZoneArea(zoneId) || !start || !end) return false;
+    const limit=Math.max(0,Math.min(1,Number(maxT) || 0));
+    const finish=start.clone().lerp(end,limit); // Cannot ignite a tent behind a projectile-blocking wall.
+    const delta=finish.clone().sub(start);
+    const box=new THREE.Box3(); // Reused for each tent rather than allocating per camp prop.
+    const meshMap=_banditCampMeshes.get(zoneId);
+    let first=null;
+    for (const tent of _banditZoneTents(zoneId)) {
+      if (tent.burning || tent.destroyed) continue;
+      const mesh=meshMap?.get(tent.id)?.mesh;
+      if (!mesh?.visible) continue;
+      mesh.updateWorldMatrix?.(true,true);
+      box.setFromObject(mesh).expandByScalar(Math.max(.04,Number(radius)||0));
+      if (box.isEmpty()) continue;
+      let enter=0, exit=1; // Slab intersection on the real world-space tent bounds.
+      for (const axis of ['x','y','z']) {
+        const d=delta[axis];
+        if (Math.abs(d)<1e-8) { if (start[axis]<box.min[axis] || start[axis]>box.max[axis]) {enter=2;break;} continue; }
+        const t0=(box.min[axis]-start[axis])/d, t1=(box.max[axis]-start[axis])/d;
+        enter=Math.max(enter,Math.min(t0,t1));
+        exit=Math.min(exit,Math.max(t0,t1));
+        if (enter>exit) break;
+      }
+      if (enter<=exit && enter>=0 && enter<=1 && (!first || enter<first.t)) first={tent,t:enter};
+    }
+    if (!first) return false;
+    burnBanditTent(zoneId,first.tent);
+    return true;
+  }
+
   function updateBanditTentInteraction(dt) {
     updateBanditFireEffects(dt);
     updateSimpleHydra(dt);
@@ -1462,6 +1502,7 @@
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,
+    igniteAimedTentWithTorch, igniteTorchSegment, // Shared instant ignition for held and thrown lit torches.
     hasNearbyTent,
     getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
