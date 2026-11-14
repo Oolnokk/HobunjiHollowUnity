@@ -57,7 +57,7 @@
     styleDebug.refreshes++;
     const entries = activeEntries(); // Used for both icon markup and countdown fill updates.
     if (bar !== lastBar) { lastBar = bar; lastRenderKey = null; iconNodes.clear(); }
-    const renderKey = entries.map(entry => `${entry.domId}:${entry.stacks}:${entry.label}:${entry.icon}:${entry.kind}:${entry.sourceLabel || entry.sourceId}`).join('|');
+    const renderKey = entries.map(entry => `${entry.domId}:${entry.stacks}:${entry.label}:${entry.icon}:${entry.kind}:${entry.sourceLabel || entry.sourceId}:${entry.fractionLabel ? 'with-fraction' : 'without-fraction'}`).join('|'); // Presence changes need a badge node; changing the fraction text alone does not rebuild it.
     if (forceRebuild || renderKey !== lastRenderKey) {
       styleDebug.rebuilds++;
       lastRenderKey = renderKey;
