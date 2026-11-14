@@ -423,6 +423,17 @@
   const renderFacingRotation = new THREE.Quaternion(); // Reused collision-free billboard yaw delta.
   const legFacingParentWorld = new THREE.Quaternion(); // Scale-free parent orientation used to translate the visual yaw correction into leg-local space.
   const legFacingLocalCorrection = new THREE.Quaternion(); // Reused correction so foot stance keeps its logical heading under pitch, roll and mirrored scale.
+  const legFacingWorldInverse = new THREE.Quaternion(); // Reused inverse render yaw; avoid allocating a new quaternion per frame.
+  function counterRotateLegRootForRender(legRoot, worldCorrection, undo) {
+    const originalLegQuaternion = legRoot.quaternion.clone(); // Restore all axes, not only Euler yaw, when the frame completes.
+    hierarchyWorldQuaternion(legRoot.parent, legFacingParentWorld);
+    legFacingWorldInverse.copy(worldCorrection).invert();
+    legFacingLocalCorrection.copy(legFacingParentWorld).invert()
+      .multiply(legFacingWorldInverse)
+      .multiply(legFacingParentWorld); // Scale-free world-to-local conjugation also supports a leaned or mirrored parent.
+    legRoot.quaternion.premultiply(legFacingLocalCorrection);
+    undo.push(() => { legRoot.quaternion.copy(originalLegQuaternion); });
+  }
   function applyRenderedFacingDeadzone(camera, undo, renderDebug) {
     if(window.CharacterActionLocks?.isLocked?.('player','facing'))return; // Paired inward-facing choreography must not be counter-rotated by the ordinary billboard clamp.
     const api = window.PerpRotation; // Shared hysteresis/clamp authority; unavailable in isolated editor fixtures.
@@ -438,16 +449,7 @@
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
     for (const entry of currentOwnedRootEntries()) applyWorldDelta(entry.root, pivot, renderFacingRotation, renderFacingTranslation, undo);
-    if (playerLegRoot) {
-      const legRoot = playerLegRoot; // Capture the active rig for full-pose restoration after this render pass.
-      const originalLegQuaternion = legRoot.quaternion.clone(); // A yaw-only Euler undo can retain a spurious 180° X/Z branch.
-      hierarchyWorldQuaternion(legRoot.parent, legFacingParentWorld);
-      legFacingLocalCorrection.copy(legFacingParentWorld).invert()
-        .multiply(renderFacingRotation.clone().invert())
-        .multiply(legFacingParentWorld); // Conjugate inverse world yaw into leg-local space, preserving the entire planted-foot pose.
-      legRoot.quaternion.premultiply(legFacingLocalCorrection);
-      undo.push(() => { legRoot.quaternion.copy(originalLegQuaternion); });
-    }
+    if (playerLegRoot) counterRotateLegRootForRender(playerLegRoot, renderFacingRotation, undo);
     const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
   }
