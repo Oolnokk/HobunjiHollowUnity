@@ -1047,8 +1047,8 @@
       snd.dataset.objectSfxKey = key;
       snd.load();
       objectSfxPreloads.set(cfgEntry.url, snd);
-      if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
-        prepareCombatPositionalClip(cfgEntry.url); // Pre-warm authored object one-shots so the first physical interaction is directional, not just later repeats.
+      if (!/^stoneBeat[1-4]$/.test(key) && (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function')) {
+        prepareCombatPositionalClip(cfgEntry.url); // Pre-warm world object one-shots, but do not decode numbered metronome clips twice.
       }
     }
   }
