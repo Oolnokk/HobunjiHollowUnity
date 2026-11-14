@@ -205,7 +205,7 @@
     const potionPayload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.parseBrewedItemKey?.(key); // Used to reject target-dependent flask/livestock recipes before generic drink detection.
     const potionRecipe = potionPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[potionPayload.recipeId];
     const explicitUseMode = potionRecipe?.useMode || def.useMode || null; // Used so throw/livestock items never gain a misleading direct Inventory button.
-    if (explicitUseMode === 'throw' || explicitUseMode === 'livestock') return null;
+    if (explicitUseMode === 'throw' || explicitUseMode === 'livestock' || explicitUseMode === 'gift') return null; // A perfume has Hold/Gift, never Drink or Eat.
 
     const bridge = window.HobunjiDrunkGameplayBridge;
     if (explicitUseMode === 'drink' || potionPayload?.legacyEffects || bridge?.isPotionOrDrink?.(key, def)) {
