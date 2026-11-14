@@ -194,8 +194,7 @@
         rotationDeg: (sideRotationDeg(side) + transformed.rotationDeg) % 360,
         side, localTile: { x: cell.x, y: cell.y },
         worldTile: { col: Math.floor(transformed.x), row: Math.floor(transformed.z) },
-        furnitureKey: placement.furnitureKey || FURNITURE_KEY,
-      entryTunnelDoorWidth: placement.widthTiles || 1, scale: 1, widthTiles: 1,
+        furnitureKey: FURNITURE_KEY, scale: 1, widthTiles: 1,
       };
     });
   }
@@ -254,7 +253,8 @@
     Object.assign(ensureUserData(door), {
       entryTunnelDoorFurniture: true,
       entryTunnelDoorPlacementKey: placement.key,
-      furnitureKey: FURNITURE_KEY,
+      furnitureKey: placement.furnitureKey || FURNITURE_KEY,
+      entryTunnelDoorWidth: placement.widthTiles || 1,
       entryTunnelSide: placement.side,
       entryTunnelTile: placement.worldTile || null,
       entryTunnelLocalTile: placement.localTile || null,
