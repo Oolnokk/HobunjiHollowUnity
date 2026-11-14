@@ -86,7 +86,9 @@ assert.equal(targetContext.cycleAutoTarget(-1),true,'leftmost target wraps to sc
 assert.equal(targetContext.manualAutoTarget,rightTarget);
 targetContext.manualAutoTarget=middleTarget;middleTarget.health=0;
 assert.equal(targetContext.computeAutoTarget(),rightTarget,'the active hostile inherits a killed target ahead of idle prey');
-targetContext.isDesktop=true;
+rightTarget.x=150;targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'a pursuing enemy still succeeds a dead lock beyond the shorter acquisition range');
+rightTarget.x=20;targetContext.isDesktop=true;
 vm.runInContext('desktopLockOnActive = true',targetContext);
 targetContext.manualAutoTarget=middleTarget;
 assert.equal(targetContext.computeAutoTarget(),rightTarget,'desktop lock-on reacquires hostile targets');
@@ -157,6 +159,11 @@ stickArchOpen = true;
 pollStick('selection'); assert.deepEqual(stickTransitions, [1], 'open arch owns the stick');
 stickArchOpen = false;
 pollStick(); assert.deepEqual(stickTransitions, [1], 'closing an arch while still held cannot trigger a target swap');
+stickScope.rx = 0; pollStick();
+stickArchOpen = true; stickScope.rightStickOwner = 'camera'; stickScope.rx = 0.85; // Item arches leave camera as the stick owner even though the arch itself is open.
+pollStick(); assert.equal(stickScope.controllerTargetHorizontalLatch, 1, 'an open item arch reserves a held horizontal flick');
+stickArchOpen = false; pollStick();
+assert.deepEqual(stickTransitions, [1], 'releasing an item arch without neutral stick must not steal the previous flick');
 stickScope.rx = 0; pollStick();
 stickScope.rx = -0.85; stickScope.down = new Set(['RightStickLeft']); pollStick();
 assert.deepEqual(stickTransitions, [1, -1], 'neutral then left flick selects the opposite direction');
