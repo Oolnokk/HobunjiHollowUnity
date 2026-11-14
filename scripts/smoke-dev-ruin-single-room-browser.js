@@ -5,6 +5,12 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {chromium}=require('playwright');
 const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIntro=1';
+// Each lab regenerates a whole ruin and plays its room transition, which advances by
+// frames (game dt is capped at 0.04 s). Software-rendered CI runs near 1 FPS, so a
+// 20 s budget failed intermittently on a slow runner while the same step took 1-3 s
+// unloaded and up to ~19 s when two browsers shared the CPU locally.
+// The first ruin entry above already allows 120 s for the same kind of work.
+const LAB_REGEN_TIMEOUT_MS=60000;
 
 async function main(){
   const browser=await chromium.launch({headless:true});
@@ -76,7 +82,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'glyphObelisk',
     }),0x51a7cafe);
     assert.equal(forced,true,'V50 glyph lab must enter successfully');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.linked===true,null,{timeout:20000});
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.linked===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
     let info=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),runtime:window.DevRandomRuin.getRuntimeContext(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
@@ -97,7 +103,7 @@ async function main(){
       return {ok,expected};
     });
     assert.equal(weighted.ok,true,'weighted lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:20000});
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
     info=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),runtime:window.DevRandomRuin.getRuntimeContext(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
@@ -119,7 +125,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'ropeChain',
     }),0x2468ace0);
     assert.equal(rope,true,'rope-chain lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ropeLinked===true,null,{timeout:20000});
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ropeLinked===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
     const ropeInfo=await page.evaluate(()=>{
       const runtime=window.DevRandomRuin.getRuntimeContext();
       const simple=window.DevRandomRuinSimplePuzzles.snapshot();
@@ -151,7 +157,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'nativeStackedObelisk',
     }),0x4ed17f2a);
     assert.equal(native,true,'native V50 obelisk lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:20000});
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
     const nativeInfo=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,

@@ -109,29 +109,7 @@
   <script src="js/farm-editor.js?v=20261102tablechild1"></script>
   <script src="js/farm-plot-editor.js?v=20261109family1"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
-  <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
-       load before game.js, which calls window.TerrainGeometry.init(...)
-       partway through its own setup (after camTargetX/pathWallBuilder/
-       VEG_CULL_* are declared, well before the first real terrain mesh
-       build). -->
-  <script src="js/terrain-geometry.js?v=20261114waterBrick1"></script>
-  <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
-       ground+vegetation mesh building, extracted out of game.js. Must load
-       before game.js, which calls window.VegetationCropRendering.init(...)
-       immediately before the farm's very first buildTileMeshes() call (same
-       forward-reference-safe ordering as WaterSystem/FarmEditor above) —
-       several other already-extracted modules (BorderTerrain,
-       ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
-       read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
-       from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261112hc490ca8"></script>
-  <!-- Active-area grid/scene/dimension accessors and building/den footprint
-       collision checks, extracted out of game.js. Must load before game.js,
-       which calls window.GridTileAccessors.init(...) alongside the other
-       window.*.init(...) calls — dozens of already-extracted modules also
-       read getActiveGrid/getActiveScene/etc. from their own init() calls
-       throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20261114balcony1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="world-surface"></script> <!-- Terrain geometry, grass/crop rendering and active-area accessors extracted from game.js -->
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -738,22 +716,7 @@
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
-  <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20261114farCull1"></script>
-  <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
-       — owns both Western Slope's permanent snow and seasonal Coldmuck
-       slush on every other outdoor zone, reading tile height straight from
-       grid data (elevTier/rampElevation) instead of scanning rendered
-       terrain geometry. Fully replaced the old triangle-copy job-queue
-       system in environment-surface-runtime.js (rain-planes.js loads that
-       above on demand, now an inert stub kept only so that bootstrap check
-       and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1"></script>
-  <!-- Feeds the surface overlay's build progress into the Pixel Probe
-       report line (window.EnvironmentSurfacePixelProbe) — intercepts
-       window.PixelProbe assignment if pixel-probe.js below hasn't loaded
-       yet. -->
-  <script src="js/environment-surface-pixel-probe.js?v=20261106charge879"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="weather-surfaces"></script> <!-- Rain sheets (which load the sky dome) and outdoor snow/slush surfaces -->
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
@@ -880,12 +843,7 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
-  <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261114puzzleCaveVaultAudit2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261114hiddenWallGuaranteedReward1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cave-sites"></script> <!-- Wilderness cave sites, cliff-mounted puzzle cave entrances and cave traps -->
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -2955,7 +2913,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114adventAudit1"></script>
+  <script src="game.js?v=20261114adventMainPerf1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

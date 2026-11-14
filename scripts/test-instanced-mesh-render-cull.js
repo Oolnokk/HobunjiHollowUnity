@@ -255,11 +255,17 @@ const hBegin = heldSource.indexOf('  function isReplayCullable(object) {');
 const hEnd = heldSource.indexOf('  function cullReplayGroup(', hBegin);
 assert(hBegin > 0 && hEnd > hBegin, 'replay cull block is present');
 const replayCullFrustum = new Frustum().setFromProjectionMatrix({ minX: -1, maxX: 1 }); // The small scissor sub-frustum.
-const replay = new Function('THREE', 'window', 'replayCullFrustum', `
+const objectProto = { onBeforeRender() {} }; // Stand-in for THREE.Object3D.prototype: the default (no-op) hook.
+const registry = () => { const all = new Set(); return { all, has: o => all.has(o) }; };
+const pngDepthRegistry = registry(), protectedCoverRegistry = registry(), tintCoverRegistry = registry();
+const replay = new Function('THREE', 'window', 'replayCullFrustum', 'objectProto', 'pngDepthRegistry', 'protectedCoverRegistry', 'tintCoverRegistry', `
+  const PNG_OCCLUDER_LAYER = 4;
+  const hasLayer = (object, layer) => ((object.layers.mask >>> 0) & (1 << layer)) !== 0;
+  const isProtectedCover = object => object.userData?.testCover === true;
   let lastReplayCulledCount = 0, lastReplayKeptCount = 0, lastReplayInstancedCulled = 0, lastReplayInstancedKept = 0, lastReplayInertCount = 0;
   ${heldSource.slice(hBegin, hEnd)}
   return { collectReplayCulled, replayFrustumIntersects, stats: () => ({ lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInertCount }) };
-`)(THREE, win, replayCullFrustum);
+`)(THREE, win, replayCullFrustum, objectProto, pngDepthRegistry, protectedCoverRegistry, tintCoverRegistry);
 const plain = (x, extra = {}) => ({ isMesh: true, visible: true, children: [], userData: {}, layers: { mask: 1 }, geometry: {}, testSphere: new Sphere(new Vector3(x, 0, 0), 1), ...extra });
 const authored = (x, extra = {}) => plain(x, { isInstancedMesh: true, frustumCulled: true, userData: { hobunjiAuthoredInstanceBounds: true }, geometry: { boundingSphere: {} }, ...extra });
 const skyShell = plain(0, { frustumCulled: false, userData: { hobunjiDepthReplayInert: true }, material: { depthWrite: false } });
@@ -285,6 +291,35 @@ assert(culled.has(rock) && !culled.has(nearRock), 'ordinary mesh culling is unch
 assert(candidates.includes(nearWall) && candidates.includes(wildNear), 'kept meshes are offered to the per-group cull');
 assert.deepEqual(replay.stats(), { lastReplayInstancedCulled: 2, lastReplayInstancedKept: 2, lastReplayInertCount: 1 });
 assert.equal(replay.replayFrustumIntersects(farWall), false, 'per-group cull uses the instance sphere too');
+
+// Untagged leaves that provably cannot touch a colorless depth replay are
+// dropped too (sun/moon sprites, additive flame/smoke emitters), but never
+// anything the replay forces to write depth, stencil writers, hook carriers,
+// held-overlay motes or objects on extra layers.
+const noDepth = (extra = {}) => ({ depthWrite: false, ...extra });
+const sunSprite = plain(0, { isMesh: false, isSprite: true, frustumCulled: false, material: noDepth() });
+const flames = plain(0, { frustumCulled: false, material: noDepth() });
+const multiFlames = plain(0, { frustumCulled: false, material: [noDepth(), noDepth()] });
+const halfDepth = plain(0, { frustumCulled: false, material: [noDepth(), { depthWrite: true }] });
+const hookMesh = plain(0, { frustumCulled: false, material: noDepth(), onBeforeRender() {} });
+const defaultHook = plain(0, { frustumCulled: false, material: noDepth(), onBeforeRender: objectProto.onBeforeRender });
+const water = plain(0, { frustumCulled: false, material: noDepth(), userData: { testCover: true } });
+const pngPlane = plain(0, { frustumCulled: false, material: noDepth() }); pngDepthRegistry.all.add(pngPlane);
+const occluderLayer = plain(0, { frustumCulled: false, material: noDepth(), layers: { mask: 1 | (1 << 4) } });
+const cutout = plain(0, { frustumCulled: false, material: noDepth({ alphaTest: 0.3 }) });
+const stencil = plain(0, { frustumCulled: false, material: noDepth({ stencilWrite: true }) });
+const mote = plain(0, { isMesh: false, isSprite: true, frustumCulled: false, material: noDepth(), userData: { hobunjiHeldOverlayParticle: true } });
+const autoNodes = [sunSprite, flames, multiFlames, halfDepth, hookMesh, defaultHook, water, pngPlane, occluderLayer, cutout, stencil, mote];
+const autoCulled = new Set(replay.collectReplayCulled({ traverseVisible(fn) { for (const n of autoNodes) fn(n); } }, new Set()));
+assert(autoCulled.has(sunSprite), 'a depthWrite:false celestial sprite leaves the replay');
+assert(autoCulled.has(flames) && autoCulled.has(multiFlames), 'additive emitters that write no depth leave the replay');
+assert(autoCulled.has(defaultHook), 'the default no-op onBeforeRender does not pin an object');
+for (const [object, why] of [[halfDepth, 'one depth-writing material'], [hookMesh, 'a custom onBeforeRender hook'], [water, 'a protected cover forced to write depth'],
+  [pngPlane, 'a PNG cutout forced to write depth'], [occluderLayer, 'an occluder-layer mesh'], [cutout, 'an alpha-cutout material'],
+  [stencil, 'a stencil writer'], [mote, 'a held-overlay mote']]) {
+  assert(!autoCulled.has(object), `${why} keeps the object in the replay`);
+}
+assert.equal(replay.stats().lastReplayInertCount, 4, 'auto-inert leaves are counted with the tagged ones');
 assert.match(heldSource, /if \(replayFrustumIntersects\(object\)\) continue;/, 'cullReplayGroup shares the instance-aware test');
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
