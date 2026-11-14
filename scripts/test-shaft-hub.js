@@ -773,7 +773,8 @@ for(const side of ['north','east','south','west']){
     floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group(),occlusionMeshes:[]};
   const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[],theme:'tothal'};
   const meta={cellSize:.5,worldWidth:54,worldDepth:49,entrance:{side:'west',axis:'x',boundary:0,center:48}};
-  const DS={registerSurface(){},clearScope(){}},climb={registerGrid:()=>3,clearScope(){}};
+  const supportRects=[]; // Captures the real DynamicSurfaces spans registered for the shaft and wing floors, including all F2 passages.
+  const DS={registerSurface(spec){supportRects.push(spec);},clearScope(){}},climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const preplanned=Plan.compose({seed,anchorX:320,anchorZ:320,...Plan.tierOptions('cave'),shaftTraversal:'buttress'});
   assert(preplanned.ok,'the reported cave seed must create the intended two-door F2 wing graph');
@@ -794,6 +795,11 @@ for(const side of ['north','east','south','west']){
       assert(connected.hub.grid.canStand(col,row,portal.level),'3D F2 passage blocked at '+portal.id+'/'+k);
       assert(rec.floorSet.has(k),'2D movement floor missing at '+portal.id+'/'+k);
       assert.equal(rec.grid[z]?.[x]?.type,'grass','2D movement still sees rock at '+portal.id+'/'+k);
+      const supportY=connected.hub.grid.levelToY(portal.level); // The physical story height, not the old projected level-zero floor.
+      assert(supportRects.some(surface=>surface.scope==='shaft-hub'&&Math.abs(surface.topY-supportY)<1e-6&&
+        surface.bounds.minX<=x+.5&&surface.bounds.maxX>=x+.5&&
+        surface.bounds.minZ<=z+.5&&surface.bounds.maxZ>=z+.5),
+        'F2 tunnel must retain native DynamicSurfaces footing through the shaft shell: '+portal.id+'/'+k);
       if(!wingTiles.has(k)&&!connected.hub.grid.canStand(col,row,0))previouslyBlocked++;
     }
   }
