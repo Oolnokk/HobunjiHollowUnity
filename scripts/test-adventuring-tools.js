@@ -16,14 +16,18 @@ class Vector3 {
   addScaledVector(vec, scale) { this.x += vec.x * scale; this.y += vec.y * scale; this.z += vec.z * scale; return this; }
 }
 
-let activeTool = 'adventuring', heldMode = 'tool', fireHazard = false;
-let fireContacts = 0, tentContacts = 0, throws = 0, persisted = [];
+let activeTool = 'adventuring', heldMode = 'tool', fireHazard = false, ruinHazard = false; // Fire sources are independent of furniture tiles.
+let fireContacts = 0, tentContacts = 0, ruinContacts = 0, throws = 0, persisted = [];
 const world = {
   DungeonFire: { contactProjectile(projectile, start, end) {
     assert.equal(projectile.team, 'player'); assert.equal(projectile.dungeonFire, true);
     assert.ok(end.x > start.x); fireContacts++;
   } },
   BanditCamps: { igniteAimedTentWithTorch() { tentContacts++; } },
+  DevRandomRuinHitPuzzles: {
+    isIgnitionSourceAlongSegment(start,end) { assert.ok(end.x > start.x); return ruinHazard; },
+    contactAdventuringTorchSegment(start,end) { assert.ok(end.x > start.x); ruinContacts++; return true; },
+  },
   RangedWeapons: { throwAdventuringTorch() { throws++; return { itemKey:'torch' }; } },
   CharacterMetaSave: { update(callback) { const ch = {}; callback(ch); persisted = ch.adventuringToolUnlocks; } },
 };
@@ -49,13 +53,18 @@ assert.equal(torch.swingAtAim(1,1).ok, true);
 assert.equal(torch.isLit(), true);
 assert.equal(fireContacts, 1);
 assert.equal(tentContacts, 1);
+assert.equal(ruinContacts, 1);
 assert.equal(torch.canThrow(), true);
 assert.equal(torch.throwLit().ok, true);
 assert.equal(throws, 1);
 assert.equal(torch.isLit(), false);
 assert.equal(torch.throwLit().ok, false);
 assert.equal(throws, 1);
-torch.swingAtAim(1,1);
+fireHazard = false;
+ruinHazard = true;
+assert.equal(torch.swingAtAim(1,1).ok, true);
+assert.equal(torch.isLit(), true, 'V50 fire-hazard source lights the permanent torch without a pickup');
+assert.equal(ruinContacts, 2, 'lit swing contacts real V50 torch puzzle targets');
 torch.stow();
 assert.equal(torch.isLit(), false);
 assert.equal(torch.register({ id:'lantern',label:'Lantern',onSelect() {} }), true);
@@ -89,6 +98,7 @@ assert.match(arc, /_openAdventuringArc\(\)/);
 assert.match(ranged, /throwAdventuringTorch\(\)/);
 assert.match(ranged, /projectileVisualStyle:'weapon'/);
 assert.match(ranged, /dungeonFire:true/);
+assert.match(ranged, /DevRandomRuinHitPuzzles\?\.contactAdventuringTorchSegment/);
 assert.match(bandits, /igniteTorchSegment\(/);
 assert.match(bandits, /igniteAimedTentWithTorch\(/);
 assert.match(assets, /torch: \{[\s\S]*?litOnly:true/);
@@ -101,4 +111,11 @@ assert.match(editor, /torch_idle/);
 assert.match(index, /js\/adventuring-tools\.js/);
 assert.match(index, /js\/tool-world-upright\.js/);
 assert.match(read('docs/js/pixel-probe.js'), /Adventuring Tools:/);
+const nativeHit = read('docs/js/dev-random-ruin-hit-puzzles.js');
+assert.match(nativeHit, /source\.userData\.fireHazard = true/);
+assert.match(nativeHit, /isIgnitionSourceAlongSegment/);
+assert.match(nativeHit, /contactAdventuringTorchSegment/);
+assert.match(nativeHit, /temporaryTorchPickupsDisabled:true/);
+assert.match(nativeHit, /debugPickupTorch:\(\)=>false/);
+assert.doesNotMatch(read('docs/js/dev-random-ruin-solvability.js'), /torch route exceeds burn duration/);
 console.log('Adventuring Tools integration/state assertions passed.');
