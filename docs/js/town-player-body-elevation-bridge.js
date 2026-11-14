@@ -172,6 +172,18 @@
     return u >= -edge && u <= 1 + edge && v >= -edge && v <= 1 + edge;
   }
 
+  function markWalkableFurnitureTopForXray(mesh) {
+    if (!mesh?.isMesh || mesh.userData?.hobunjiGroundTopFacesOnly === true
+        || !mesh.geometry?.getAttribute?.('normal')) return false; // Unsupported/unnormaled meshes remain solid rather than permitting full-object x-ray.
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Original part materials may also be used by solid rails, legs or trim.
+    if (!materials.length || materials.some(material => typeof material?.clone !== 'function')) return false;
+    mesh.material = Array.isArray(mesh.material)
+      ? materials.map(material => material.clone()) : materials[0].clone(); // Isolate only the explicitly walkable part's top-face shader.
+    mesh.userData.hobunjiGroundTopFacesOnly = true; // Matches cave and porch top-face policy; vertical box faces still occlude.
+    window.HeldObjectRenderOrder?.markTopFaceGroundMesh?.(mesh); // Register after placement even if the scene's initial scan already ran.
+    return true;
+  }
+
   function registerObject(object, options = {}) {
     if (!object || !window.THREE?.Box3) return null;
     try {
@@ -189,7 +201,7 @@
         ? supportParts.map(bridgeFootprintFromPart).filter(Boolean) : null; // Stairs keep individual heights; neither railings nor water beside the deck support a character.
       if (object.userData?.townBridgeCrossing && !bridgeFootprints?.length) return null;
       const bridgeBaseY = bridgeFootprints ? object.getWorldPosition(new THREE.Vector3()).y : null; // Terrain height below the bridge, not the first tread's bounding-box minimum.
-      return registerBox({
+      const registeredId = registerBox({
         minX: box.min.x,
         maxX: box.max.x,
         minZ: box.min.z,
@@ -197,6 +209,8 @@
         baseY,
         topY,
       }, { ...options, owner: object, bridgeFootprints, bridgeBaseY });
+      if (registeredId) for (const mesh of supportParts) markWalkableFurnitureTopForXray(mesh); // Opt-in stage and bridge tops share the same weapon occlusion rule as porches.
+      return registeredId;
     } catch (error) {
       console.warn('[walkable-elevation] furniture bounds failed:', error);
       return null;
