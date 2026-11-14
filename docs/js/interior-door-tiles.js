@@ -223,7 +223,7 @@
     const runtime = window.AuthoredFurniture; // The double-door asset, not a runtime distortion of the single door, owns its geometry.
     const cached = runtime?.peek?.(DOUBLE_FURNITURE_KEY);
     if (cached?.key === DOUBLE_FURNITURE_KEY && cached?.parts?.length) return cached;
-    const loaded = await runtime?.load?.(DOUBLE_FURNITURE_KEY).catch(() => null);
+    const loaded = typeof runtime?.load === 'function' ? await runtime.load(DOUBLE_FURNITURE_KEY).catch(() => null) : null;
     return loaded?.key === DOUBLE_FURNITURE_KEY && loaded?.parts?.length ? loaded : doubleDoorData(single); // Offline fallback for older builds.
   }
 
