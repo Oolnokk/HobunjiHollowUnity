@@ -17929,6 +17929,7 @@
           icon: ITEM_DEFS[key].icon,
           label: ITEM_DEFS[key].label.toUpperCase(),
           max: 99,
+          seedFor: ITEM_DEFS[key].seedFor, // A missing scroll entry must not strip a dynamically registered seed's Plant action.
         });
         inventoryWheelCache.frame = gameFrameSerial;
         inventoryWheelCache.keys = keys;
