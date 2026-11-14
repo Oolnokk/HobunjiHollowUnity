@@ -48,7 +48,7 @@ w.WildlifeSpawn.init(deps);
 const tick = () => w.WildlifeSpawn.updateHostileSpawning(3); // Real two-second spawning entry point.
 const herds = () => w.WildlifeSpawn.roamingHerdCensus('map_northern_cliffs').herds; // The mobile dev-panel census.
 tick();
-assert.deepEqual(herds().map(h=>h.species),['moot','moot']);
+assert.deepEqual(Array.from(herds(), herd => herd.species),['moot','moot']);
 assert(herds().every(h=>h.adults===12&&!h.mothers),'Moots must be proper herds, not 3-5-member foragers');
 assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5,'Nazgraku remains independent');
 randomValue=0.01;
@@ -72,9 +72,9 @@ assert.equal(herds()[0].pendingTurnover,false);
 assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5);
 randomValue=0.99;deps.player.x=-9999;deps.player.y=-9999;
 w.WildlifeSpawn.advanceCaveMidnight(11);tick();
-assert.deepEqual(herds().map(h=>h.species),['moot','moot'],'all-Moot days remain possible');
+assert.deepEqual(Array.from(herds(), herd => herd.species),['moot','moot'],'all-Moot days remain possible');
 randomSequence=[0.01,0.01,0.01,0.01,0.99,0.99]; // First Voorg-Ass slot needs four rolls; the Moot slot needs two.
 w.WildlifeSpawn.advanceCaveMidnight(12);tick();
-assert.deepEqual(herds().map(h=>h.species),['voorg-ass','moot'],'different species can occupy different slots on the same day');
+assert.deepEqual(Array.from(herds(), herd => herd.species),['voorg-ass','moot'],'different species can occupy different slots on the same day');
 assert(logs.some(line=>line.includes('deferredNearby=1')),'mobile debug log explains pending rotation');
 console.log('PASS rotating herd slots, real midnight distance gates, map-exit deferral, Nazgraku isolation');
