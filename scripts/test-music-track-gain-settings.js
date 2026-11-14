@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Includes grouped pre-game audio scripts while retaining raw HTML for UI assertions.
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
@@ -13,10 +14,11 @@ function source(relativePath) {
 const gainSettingsSource = source('docs/js/audio-track-gain-settings.js');
 const musicSource = source('docs/js/music-system.js');
 const indexSource = source('docs/index.html');
+const shippedStartup = expandClassicScriptGroups(indexSource); // Browser parser order with audio settings' versioned manifest entry.
 
 assert.match(indexSource, /id="settingMusicTrackGainSong"[\s\S]*?id="settingMusicTrackGain"[^>]*max="500"/,
   'Audio calibration retains its song dropdown and gain slider reaching 500%');
-assert.match(indexSource, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
+assert.match(shippedStartup, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
   'the per-song gain settings runtime is loaded by the game page');
 assert.match(musicSource, /window\._footstepAudioCtx = _musicAudioCtx/,
   'music reuses the proven shared boosted-audio context rather than an isolated destination');

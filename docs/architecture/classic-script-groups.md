@@ -5,6 +5,10 @@ unrelated PRs editing `docs/index.html`, compatible *late* scripts can move to
 separate manifests in `docs/js/bootstrap/classic-groups/`.
 
 Currently migrated:
+- `pre-game-render.js`: Weapon x-ray owns the shared surface policy and held-overlay renderer; no icon-HUD coupling.
+- `pre-game-item-art.js`: HUD action icons and item sprites, in their original parser order.
+- `pre-game-services.js`: Mounts, companion movement, sound effects and music (AudioSystem before its consumers).
+- `pre-game-diagnostics.js`: Rig inspection utilities followed by mobile-friendly Pixel Probe diagnostics.
 - `qol.js`: toast, arrival, hotkeys, inventory search.
 - `guild.js`: guild progression, magic checkpoint, vault signal.
 - `render.js`: actor/mesh/grass culling and depth snapshot.
@@ -49,6 +53,29 @@ literally in `index.html`.
 
 This first migration intentionally leaves early startup scripts and inline
 boot handoff scripts in place. They have stronger parser/side-effect coupling.
+
+## Independently owned pre-game startup manifests
+
+Four parser-ordered classic groups occupy the original tool-icon position:
+`pre-game-render.js` (surface composer and held x-ray), `pre-game-item-art.js`
+(HUD icons and object sprites), `pre-game-services.js` (mount, companions,
+voices and music), and `pre-game-diagnostics.js` (rig inspection and Pixel
+Probe). Each manifest owns its own versioned child script URLs: changing the
+held shader no longer conflicts with changing an inventory icon or an audio
+system's cache token. Do not put individual module cache versions in
+`docs/index.html` or re-add the renderer's loader to `tool-icon-render.js`.
+
+The shared surface policy must load before the held renderer, and both before
+the HUD adapter. AudioSystem must precede animal/audio consumers, and transform
+dump helpers must precede Pixel Probe. All groups use blocking `document.write`
+during normal HTML parsing; there is no async dependency race or per-frame
+polling. The existing `scripts/test-classic-script-groups.js` and
+`scripts/test-pre-game-services-script-group.js` test the expanded load order.
+
+**Tradeoff:** compared with one pre-game manifest this adds three small,
+parser-blocking manifest fetches during startup. Resist further subdivision
+without mobile startup profiling. The existing per-navigation manifest refresh
+still prevents stale module tokens without changing the shared index page.
 
 ## Dependency notes for migrated festival and NPC systems
 

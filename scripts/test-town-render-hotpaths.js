@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Checks the actual parser order after independently owned startup manifests expand.
 
 const read = path => fs.readFileSync(path, 'utf8');
 const controller = read('docs/js/controller-ui-nav.js');
@@ -11,7 +12,7 @@ const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
 const surfaceComposerSource = read('docs/js/surface-occlusion-composer.js');
-const toolIconRender = read('docs/js/tool-icon-render.js'); // Existing synchronous bootstrap must load the shared policy before the renderer.
+const expandedStartup = expandClassicScriptGroups(read('docs/index.html')); // Surface compositor and held-overlay now load from the pre-game services manifest.
 const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
 const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
 const readme = read('README.md');
@@ -75,8 +76,11 @@ assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depth
   'translucent floodwater retains normal opaque-grass depth testing in its material');
 assert.match(mergedWater, /if \(uHobunjiSurfaceOcclusionDepthOnly > 0\.5\s*&& alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
   'the water depth-only shader discards fragments below its visible-alpha threshold without changing normal color rendering');
-assert.match(toolIconRender, /surface-occlusion-composer\.js[\s\S]{0,260}held-object-render-order\.js/,
-  'the shared policy script is loaded before the held renderer');
+assert(expandedStartup.indexOf('js/surface-occlusion-composer.js?') >= 0
+  && expandedStartup.indexOf('js/surface-occlusion-composer.js?') < expandedStartup.indexOf('js/held-object-render-order.js?')
+  && expandedStartup.indexOf('js/held-object-render-order.js?') < expandedStartup.indexOf('js/tool-icon-render.js?')
+  && expandedStartup.indexOf('js/tool-icon-render.js?') < expandedStartup.indexOf('src="game.js?v='),
+  'parser-ordered pre-game services load surface policy, held overlay and HUD adapter before game.js');
 assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', { actorElevation: 0.42 }).groundXrayMode,
   'same-elevation-upward-faces', 'known actor elevations retain selective ground x-ray');
 assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', {}).groundXrayMode,
@@ -568,6 +572,101 @@ assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && stan
 assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const copiedGroundMaterial = {
+  userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.
+  onBeforeCompile: groundMaterial.onBeforeCompile,
+  customProgramCacheKey: groundMaterial.customProgramCacheKey,
+  needsUpdate: false,
+};
+const copiedState = installElevationShader(copiedGroundMaterial);
+assert.notEqual(copiedState, groundShaderState, 'a cloned material gets its own tile/elevation uniforms');
+assert.equal(installElevationShader(copiedGroundMaterial), copiedState, 'a live clone is registered only once');
+copiedState.geometryHasNormals = true;
+const copiedShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+// Use the stock shader before its first injection: a clone must inherit the prior hook,
+// not re-inject the source material's elevation declarations a second time.
+copiedGroundMaterial.onBeforeCompile(copiedShader, {});
+assert.equal(copiedShader.uniforms.uHobunjiXrayActorElevation, copiedState.uniforms.elevation,
+  'the cloned ground shader is wired to its own live elevation, not the source material');
+assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
+  'cloned material shader injection must not introduce duplicate GLSL declarations');
+assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
+  'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
+
+const shallowSharedGroundMaterial = {
+  userData: { hobunjiXrayElevationShader: groundShaderState }, // A custom clone may retain the SAME nested state and callback, unlike Three.Material.clone().
+  onBeforeCompile: groundMaterial.onBeforeCompile,
+  customProgramCacheKey: groundMaterial.customProgramCacheKey,
+  needsUpdate: false,
+};
+const shallowSharedState = installElevationShader(shallowSharedGroundMaterial);
+assert.notEqual(shallowSharedState, groundShaderState,
+  'a shallow material clone must not reuse the source material shader state or actor tile uniforms');
+assert.equal(installElevationShader(shallowSharedGroundMaterial), shallowSharedState,
+  'a shallow clone stabilizes its own shader hook without wrapping again every replay');
+shallowSharedState.geometryHasNormals = true;
+const shallowSharedShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+shallowSharedGroundMaterial.onBeforeCompile(shallowSharedShader, {});
+assert.equal(shallowSharedShader.uniforms.uHobunjiXrayActorElevation, shallowSharedState.uniforms.elevation,
+  'a shallow clone compiles with its own live actor elevation');
+assert.equal((shallowSharedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
+  'a shallow callback clone does not double-inject x-ray GLSL');
+
+const jigsawClone = {
+  userData: { ...groundMaterial.userData, terrainJigsawMaterial: true }, // TerrainRenderChunks.cloneJigsawMaterial retains the source metadata but Three.js drops onBeforeCompile.
+  onBeforeCompile() {}, // Prototype default supplied to the clone, without the old ground shader injection.
+  needsUpdate: false,
+};
+const jigsawState = installElevationShader(jigsawClone);
+assert.notEqual(jigsawState, groundShaderState,
+  'a real Jigsaw-style material clone must not reuse its source material shader state');
+assert.equal(jigsawClone.userData.hobunjiXrayElevationShader, jigsawState,
+  'the cloned ground material owns the live shader state after registration');
+jigsawState.geometryHasNormals = true;
+const jigsawShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+jigsawClone.onBeforeCompile(jigsawShader, {});
+assert.equal(jigsawShader.uniforms.uHobunjiXrayActorElevation, jigsawState.uniforms.elevation,
+  'Jigsaw-style clones reinstall the selective depth fragment shader even after Three drops their old callback');
+assert.match(jigsawShader.fragmentShader, /if \(uHobunjiXrayElevationEnabled > 0\.5/,
+  'new Jigsaw material still discards only the actor-local floor fragments');
+let terrainUvHooks = 0; // Verifies existing Jigsaw/terrain material instrumentation still runs exactly once after an x-ray-aware clone.
+const terrainUvMaterial = {
+  userData: {},
+  onBeforeCompile(shader) { terrainUvHooks++; shader.uniforms.uTerrainUvOwner = { value: 7 }; },
+  customProgramCacheKey() { return 'terrain-uv'; },
+};
+const terrainUvState = installElevationShader(terrainUvMaterial);
+const clonedTerrainUvMaterial = {
+  userData: { hobunjiXrayElevationShader: { ...terrainUvState } },
+  onBeforeCompile: terrainUvMaterial.onBeforeCompile,
+  customProgramCacheKey: terrainUvMaterial.customProgramCacheKey,
+};
+const clonedTerrainUvState = installElevationShader(clonedTerrainUvMaterial);
+clonedTerrainUvState.geometryHasNormals = true;
+const terrainUvShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+clonedTerrainUvMaterial.onBeforeCompile(terrainUvShader, {});
+assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs once, not twice');
+assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
+assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
+  'the selective depth shader still binds the clone-specific elevation after running the prior hook');
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-tile-xray-v4',
+  'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
 basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
@@ -627,6 +726,12 @@ collect([
 ]);
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
   'a shared unlit ground material fails closed if any registered mesh lacks normals');
+sharedGroundMaterial.needsUpdate = false;
+collect([{ material: sharedGroundMaterial, geometry: drawable({ normal: {} }) }]);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
+  'the live ground with normals regains x-ray after transient/replaced normal-less geometry is removed');
+assert.equal(sharedGroundMaterial.needsUpdate, true,
+  'the recovered ground material recompiles its shader, rather than retaining a stale solid-only variant');
 const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
   { material: chunkedGroundMaterial, geometry: { attributes: {} } },

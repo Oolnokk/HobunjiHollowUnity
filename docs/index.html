@@ -2799,39 +2799,12 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261114packbooks1"></script>
-  <script src="js/sprite-recolor.js?v=20261114inventoryPerf2"></script>
-  <script src="js/object-sprite-catalog.js?v=20261114potionAudit2"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
-  <!-- Mount ride system (window.Mounts) — must load before game.js, which
-       calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20261016he27d4d6"></script>
-  <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
-  <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
-       which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261114melodyTempoPer1"></script>
-  <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
-  <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
-       AudioSystem above remains the replaceable low-level renderer. -->
-  <!-- Original Scratchbones emoji silhouettes rendered over NPCs and animals by one shared world-space effect. -->
-  <script src="js/scratchbones-emoji-reactions.js?v=20261109scaleglow1"></script>
-  <script src="js/animal-vocalizations.js?v=20261114naturalBreath1"></script>
-  <!-- Background music/ambient cues/bgs/furniture-proximity SFX
-       (window.Music) — wires its own DOM audio-unlock listeners at load
-       time, and must load before game.js, which calls
-       window.Music.init(...) during its own setup. Depends on
-       window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261108shaftfade1"></script>
-  <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
-  <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
-       also loaded by the Attack Animation Editor, so a probed character's
-       node-by-node local transforms use the exact same code/format as the
-       editor's own preview dump. Must load before pixel-probe.js below. -->
-  <script src="js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-  <script src="js/rig-transform-dump.js?v=20261029rigdump1"></script> <!-- Full root-relative rig dump (player + hostiles), diffable against the Attack Animation Editor. -->
-  <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
-       buttons at load time, and must load before game.js, which calls
-       window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261114h3619c93"></script>
+  <!-- Feature-owned pre-game startup manifests, preserving the original parser order.
+       Each group owns its own module cache versions; keep individual URLs out of index.html. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-render"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-item-art"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-services"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-diagnostics"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
