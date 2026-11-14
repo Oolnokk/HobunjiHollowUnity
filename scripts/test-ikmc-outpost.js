@@ -19,7 +19,13 @@ assert(mouthFaces.length > 0 && mouthFaces.every(face => face.extensionFace === 
 assert.deepEqual(piece.footprint.door, { x: 13, y: 11 }, 'authored doorway belongs outside the shell, within its covered entry tunnel');
 assert.deepEqual(piece.footprint.extensions.entryTunnels, [{ x: 13, y: 11 }]);
 assert.equal(piece.placementOrigin, 'fullFootprint', 'the porch must determine the outpost placement envelope, not just the shell');
-assert.equal(piece.entryDoorRise, 0.18, 'wooden doorway must rest on the visible raised porch');
+const stockDoor = read('docs/config/furniture-authored/door.json'); // Ground-truth regular door geometry, shared by the town tunnel and other one-tile entries.
+const stockLeaf = stockDoor.parts.find(part => part.transform?.rx === 90 && part.transform?.sz > 0.8); // Its rotated Z dimension becomes the slab's vertical height.
+assert(stockLeaf, 'the regular door's upright leaf must exist in authored furniture');
+const stockBottom = stockLeaf.transform.y - stockLeaf.transform.sz / 2; // Used to prove the root sits exactly on the porch surface, not 8 cm above it.
+const stockTop = stockLeaf.transform.y + stockLeaf.transform.sz / 2; // Used to ensure the visible leaf does not intersect its timber lintel.
+const porchTop = Math.max(...piece.base.faces.filter(face => face.tag === 'porch' && face.fusedPorchDeck && face.extensionFace === 'top').flatMap(face => face.v.map(vertex => vertex[1]))); // Actual serialized porch deck height.
+assert(Math.abs(piece.entryDoorRise + stockBottom - porchTop) < 1e-4, 'wooden door slab bottom must land on the visible porch, with no floating gap');
 assert.equal(piece.footprint.extensions.porches.length, 42, 'the complete original west/front wraparound deck must be restored');
 assert.equal(piece.footprint.extensions.porchStairs.length, 3, 'the original three-wide stairs must be restored');
 assert.equal(piece.footprint.extensions.railings.length, 20, 'the original wraparound railing posts must be restored');
@@ -34,7 +40,19 @@ const fullCells = [...piece.footprint.cells, ...piece.footprint.extensions.porch
 assert.deepEqual([Math.min(...fullCells.map(c=>c.x)),Math.max(...fullCells.map(c=>c.x)),Math.min(...fullCells.map(c=>c.y)),Math.max(...fullCells.map(c=>c.y))], [6,16,7,13]);
 const shellSouthLeft = structuralFaces.find(face => face.entryPortalPart === 'leftWall'); // Left solid span, ending at the new physical opening.
 const shellSouthRight = structuralFaces.find(face => face.entryPortalPart === 'rightWall'); // Right solid span, starting beyond the new physical opening.
-assert(shellSouthRight.v[0][0] - shellSouthLeft.v[1][0] > 0.8, 'the south wall must contain a real full-width walkable gap');
+const entryGapWidth = shellSouthRight.v[0][0] - shellSouthLeft.v[1][0]; // Compare the physical opening to the real stock wooden door width rather than a hardcoded former 82% tunnel mouth.
+assert(entryGapWidth >= stockLeaf.transform.sx + 0.05 && entryGapWidth <= stockLeaf.transform.sx + 0.10, 'carved wall opening must leave just a small clearance beside the stock wooden door');
+const shellHeader = structuralFaces.find(face => face.entryPortalPart === 'lintel'); // Upper wall over the physical doorway, not the outer frame fascia.
+const portalBottom = Math.min(...shellHeader.v.map(vertex => vertex[1])); // Shared bottom height for the inner cutout and external doorway lintel.
+assert(portalBottom > piece.entryDoorRise + stockTop + 0.06, 'door slab must clear the inner wall header at its full rendered height');
+const outsideJambs = piece.base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening && face.doorwayFrame); // Each fused mouth box must reach the carved frame height.
+const framedHeader = outsideJambs.filter(face => face.v.some(v => Math.abs(v[1] - portalBottom) < 1e-7));
+assert(framedHeader.length >= 5 && outsideJambs.length === 18, 'carved outer tunnel frame and inner shell opening must share their top edge');
+const frameTop = Math.max(...outsideJambs.flatMap(face => face.v.map(v => v[1]))); // Outer top of visible doorway posts and crossbar.
+assert(frameTop > portalBottom + 0.08 && frameTop < 1.4, 'visible outer frame must have a real lintel thickness under the cabin eave');
+const framedOpeningLeft = Math.max(...outsideJambs.filter(face => face.v.some(v => v[0] < 4.5)).flatMap(face => face.v.filter(v => v[0] < 4.5).map(v => v[0]))); // Left face's inner seam.
+const framedOpeningRight = Math.min(...outsideJambs.filter(face => face.v.some(v => v[0] > 4.5)).flatMap(face => face.v.filter(v => v[0] > 4.5).map(v => v[0]))); // Right face's inner seam.
+assert(Math.abs((framedOpeningRight - framedOpeningLeft) - entryGapWidth) < 1e-7, 'shell opening and outer frame must have the same passage width');
 
 const structuralCells = piece.footprint.cells;
 const gridCenter = Math.floor((piece.gridSize || 18) / 2);
