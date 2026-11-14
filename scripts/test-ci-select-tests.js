@@ -125,7 +125,7 @@ test('specialist impact detection follows test imports rather than guessing from
 });
 
 test('unknown gameplay assets and configuration fail open instead of falsely skipping all tests', () => {
-  for (const file of ['docs/config/loot/loot-pools.json', 'docs/assets/environments/new-tile.png', 'docs/js/unknown-shared-module.js']) {
+  for (const file of ['docs/config/loot/loot-pools.json', 'docs/config/patterns/pattern_shared_motif.json', 'docs/assets/environments/new-tile.png', 'docs/js/unknown-shared-module.js']) {
     const result = selectFeatureChecks([file]);
     assert.equal(result.full, true, file + ' could affect the specialist game environment');
     assert(Object.values(result.selected).every(Boolean), file + ' must not suppress all coverage');
@@ -139,6 +139,12 @@ test('uncertain game-wide edits and manual dispatch fail open to every specialis
     assert(Object.values(selected.output).every(Boolean));
   }
   assert(Object.values(selectFeatureChecks([], { full: true }).output).every(Boolean), 'manual dispatch runs all checks');
+});
+
+test('explicitly cosmetic-only manifests remain independent of environmental checks', () => {
+  for (const file of ['docs/config/patterns/clothing-trims.json', 'docs/config/patterns/fur-hoods.json', 'docs/config/cosmetics/fine_hood.json']) {
+    assert(Object.values(selectFeatureChecks([file]).selected).every(enabled => !enabled), file + ' does not alter physical puzzles or furniture');
+  }
 });
 
 test('actual code changes and failed version reads are never mistaken for inert cache bumps', () => {
