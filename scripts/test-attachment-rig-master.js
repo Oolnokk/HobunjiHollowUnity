@@ -66,6 +66,11 @@ for (const species of ['mao-ao', 'engh-sho', 'kenkari', 'mashtzarr', 'tletingan'
   }
 }
 
+// Nohuknuk has an independent male bipedal-monster rig and a native 1x attack orbit.
+const nohuknukRig = profiles.characters['nohuknuk::male'];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nohuknukRig.anchors.shoulderPerch.position)), JSON.parse(JSON.stringify(nohuknukRig.anchors.rightHandShoulder.position)), 'Nohuknuk shoulder pet grip must match his own right shoulder');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nohuknukRig.anchors.shoulderPerch.scale)), { x: 1, y: 1, z: 1 }, 'Nohuknuk must not inherit the Engh-sho 0.7x grip scale');
+
 const expectedPosteriorFloorPercents = {
   'tletingan::male': -5.5,
   'engh-sho::male': 30.5,
