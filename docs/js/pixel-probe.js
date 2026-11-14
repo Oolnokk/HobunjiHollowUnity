@@ -704,6 +704,8 @@
     if (sleeping?.begins) lines.push(`Bed lie-down: ${JSON.stringify(sleeping)}`);
     const npcBedPoses = window.BedLiePose?.npcDebug?.(window._npcWalkers || []) || []; // Real NPC mattress height, full-body blend and x-ray are inspectable on mobile.
     if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
+    const npcYawns = window.NpcYawnRest?.debugSnapshot?.(); // Copyable yawns, voice fallback and daily Koma status for mobile.
+    if (npcYawns) lines.push(`NPC yawns: ${JSON.stringify(npcYawns)}`);
     const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
     if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
     const spouseKiss = window.SpouseKissMotion?.diagnostics?.(); // Mobile-visible contact, reach, cancellation and height-solver readout.
@@ -1000,7 +1002,7 @@
       const visibleScores = caveOverlayState.portals.filter(portal => portal.scoreVisible); // Plate-gated inscriptions whose note planes should appear after the cliff/outline composite.
       const readyScores = visibleScores.filter(portal => portal.scoreOverlayReady); // Identifies missing CanvasTexture/depth options from a phone Pixel Probe report.
       const scoreActorMask = window.OutlineRenderPerformance?.snapshot?.(); // Mobile-only check that final note rendering reconstructed character silhouettes (not a permanent on-screen diagnostic).
-      lines.push(`Puzzle Cave note overlay: portals=${caveOverlayState.portals.length} active=${visibleScores.length} finalPassReady=${readyScores.length}/${visibleScores.length} outlineOverlay=${window.OutlineRenderPerformance?.worldTextAboveShell === true ? 'installed' : 'missing'} characterMask=${scoreActorMask?.scoreActorDepthReady ? 'ready' : 'missing'} actorDepthPasses=${scoreActorMask?.scoreActorDepthPasses ?? 0} lastActorMeshes=${scoreActorMask?.scoreActorDepthMeshes ?? 0}; modes=${visibleScores.map(portal => portal.scoreOcclusion || '-').join(',') || '-'}`);
+      lines.push(`Puzzle Cave note overlay: portals=${caveOverlayState.portals.length} active=${visibleScores.length} finalPassReady=${readyScores.length}/${visibleScores.length} outlineOverlay=${window.OutlineRenderPerformance?.worldTextAboveShell === true ? 'installed' : 'missing'} characterMask=${scoreActorMask?.scoreActorDepthReady ? 'ready' : 'missing'} actorDepthPasses=${scoreActorMask?.scoreActorDepthPasses ?? 0} lastActorMeshes=${scoreActorMask?.scoreActorDepthMeshes ?? 0} scoreMask=${scoreActorMask?.lastScoreMaskStatus || 'unknown'} maskedScoreFrames=${scoreActorMask?.scoreFramesWithActorMask ?? 0} hiddenNoMask=${scoreActorMask?.scoreFramesWithMissingActorMask ?? 0} auxBasePreserved=${scoreActorMask?.auxiliaryWorldBasePassesPreserved ?? 0} abandonedOverlays=${scoreActorMask?.abandonedWorldTextOverlays ?? 0}; modes=${visibleScores.map(portal => portal.scoreOcclusion || '-').join(',') || '-'}; ${scoreActorMask?.latestScoreChange || ''}`);
     }
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
     if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
@@ -1017,6 +1019,8 @@
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
       lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
       lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
+      const denCollision = window.ZoneDenTotemFeatures?.denCollisionDebugSnapshot?.(); // Read cache hits/rebuilds only during a Pixel Probe; no gameplay-frame string work.
+      if (denCollision) lines.push(`Den collision cache: hits=${denCollision.hits} builds=${denCollision.builds} invalidations=${denCollision.invalidations}`);
     } catch (error) {
       lines.push('Den nest diagnostics failed: ' + String(error?.message || error));
     }
@@ -1229,6 +1233,11 @@
     } else if (creatureDeathDebug?.lastBegin) {
       lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
     }
+    const buffDom = window.EffectBuffBar?.getDebug?.(); // Mobile report of real writes versus identical-value skips in buff icons.
+    const promptDom = window.ActionPromptUI?.getDebug?.(); // Mobile report of real writes versus identical-value skips in contextual action prompts.
+    if (buffDom || promptDom) {
+      lines.push(`HUD DOM styles: buffs=${buffDom?.appliedWrites ?? 0} writes/${buffDom?.skippedWrites ?? 0} skips, ${buffDom?.rebuilds ?? 0} rebuilds/${buffDom?.refreshes ?? 0} refreshes; prompts=${promptDom?.appliedWrites ?? 0} writes/${promptDom?.skippedWrites ?? 0} skips over ${promptDom?.refreshes ?? 0} refreshes (${promptDom?.visible ? 'visible' : 'hidden'})`);
+    }
     const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
     if (compassDebug) {
       const markerText = compassDebug.markers.map(marker => `${marker.source}:${marker.label}@${marker.distanceTiles}t/${marker.sizePx}px/${marker.bearingDeg}°`).join(' ');
@@ -1410,6 +1419,9 @@
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       const hitPointText = hit.point ? ` world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)})` : ''; // Used to compare exact foot and water intersections along this screen ray.
       lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)}${hitPointText} visible=${o.visible} renderOrder=${o.renderOrder}`);
+      if (o.userData?.retainNaturalSurfaceShellOutline || o.userData?.facetedSurfaceTextureOutline) {
+        lines.push(`     natural surface outline: shell=${(o.layers.mask & (1 << 1)) !== 0} policy=${o.userData.retainNaturalSurfaceShellOutline ? 'rounded stone' : 'faceted texture'}`);
+      }
       if (o.userData?.hobunjiGroundXray) {
         const xray = window.HeldObjectRenderOrder?.classify?.(o); // Diagnostic uses the same semantic classification as the actual replay.
         lines.push(`     mesa ground: batched=${!!o.userData?.plateauMesaRenderBatch} xray=${xray?.ground === true} registered=${o.userData?.hobunjiHeldGroundReplay === true} materialSlots=${mats.length}`);

@@ -261,6 +261,10 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
+assert.equal([...Exterior.activeScoreMeshes(area,scene)].length,gate.glyphs.length*3,
+  'the direct world pass collects active note ink and both halos from its own scene');
+assert.equal([...Exterior.activeScoreMeshes(area,new Group())].length,0,
+  'a cached score cannot be picked up by another scene');
 assert.equal(Exterior.debugSnapshot().areas[0].portals[0].scoreOverlayReady,true, 'puzzle debug snapshot confirms all clue ink is post-composite eligible');
 assert.match(read('docs/js/pixel-probe.js'), /Puzzle Cave note overlay:[^\n]*finalPassReady=/,
   'the existing copyable mobile Pixel Probe reports active score overlay readiness');
@@ -297,6 +301,7 @@ const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain 
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
 assert(!gate.scoreBoard.visible,'stepping off the pressure plate hides both glyphs and their glows');
+assert.equal([...Exterior.activeScoreMeshes(area,scene)].length,0,'an inactive plate adds no direct overlay work');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,2,
   'releasing the exterior plate plays one more edge-triggered stone cue');
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;

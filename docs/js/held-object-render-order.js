@@ -1038,6 +1038,8 @@
     return !!geometry && !geometry.morphAttributes?.position?.length;
   }
 
+  let instancedReplaySphereReuses = 0; // Counts costly instanced-world-bounds queries reused by the frustum cull.
+
   function hasAlternateReplayPose(object) {
     // A fresh hand/foot parity snapshot can be the transform used by a later
     // draw even when matrixWorld currently projects outside this viewport.
@@ -1075,9 +1077,10 @@
       && !(Number(material.alphaTest) > 0) && object.layers.mask === 1;
   }
 
-  function replayFrustumIntersects(object) {
+  function replayFrustumIntersects(object, instanceSphere = undefined) {
     if (object.isSprite) return replayCullFrustum.intersectsSprite(object);
-    const sphere = instancedReplaySphere(object);
+    // The union cull may have already obtained this instanced world sphere.
+    const sphere = instanceSphere === undefined ? instancedReplaySphere(object) : instanceSphere;
     return sphere ? replayCullFrustum.intersectsSphere(sphere) : replayCullFrustum.intersectsObject(object);
   }
 
@@ -1088,9 +1091,11 @@
     scene.traverseVisible((object) => {
       if (keep.has(object) || hasAlternateReplayPose(object)) return;
       if (isDepthReplayInert(object)) { culled.push(object); lastReplayInertCount++; return; }
-      const instanced = !!instancedReplaySphere(object) || hasAuthoredInstanceBounds(object);
+      const instanceSphere = instancedReplaySphere(object); // Reused for the intersection test below.
+      const instanced = !!instanceSphere || hasAuthoredInstanceBounds(object);
       if (!instanced && !isReplayCullable(object)) return;
-      const inside = replayFrustumIntersects(object);
+      if (instanceSphere) instancedReplaySphereReuses++;
+      const inside = replayFrustumIntersects(object, instanceSphere);
       if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
         kept++;
@@ -1596,6 +1601,8 @@
   let lastNearReplayFarDepth = 0; // View-space depth of the last group's farthest held part (Infinity = unknown, no far cull).
   const NEAR_REPLAY_MARGIN = 1.5; // World units behind the farthest held part that still count as "near": shell extrusion, sway, pose slack.
   let nearScratchSphere = null, nearScratchPoint = null; // Created on first use.
+  let nearReplayViewMatrix = null; // Lazy per-module matrix, used only when near-only replay culling sees boxed geometry.
+  let nearReplayBoxTests = 0; // Counts eight-corner bounding-box depth checks replaced by the affine fast path.
 
   function nearReplaySupport(canLockColorMask) {
     return nearReplayEnabled && canLockColorMask && window.ScissorDepthSnapshot?.save ? window.ScissorDepthSnapshot : null;
@@ -1647,6 +1654,17 @@
     return out;
   }
 
+  // For an affine transform, the farthest view-space Z of an AABB is at one of
+  // its eight corners. Choose that corner analytically without transforming all
+  // eight, retaining the original conservative test for every rotation/scale.
+  // Non-finite inputs produce NaN and are never culled by the caller.
+  function nearestReplayBoxViewDepth(box, elements) {
+    return -(elements[14]
+      + Math.max(elements[2] * box.min.x, elements[2] * box.max.x)
+      + Math.max(elements[6] * box.min.y, elements[6] * box.max.y)
+      + Math.max(elements[10] * box.min.z, elements[10] * box.max.z));
+  }
+
   // Hides candidates whose whole bound is farther from the camera than the
   // held parts. Returns the visibility map to restore, or null.
   function hideBeyondViewDepth(camera, candidates, farDepth) {
@@ -1664,13 +1682,10 @@
       if (box && box.min.x <= box.max.x) {
         // Box corners, not the sphere: a wide flat floor or snow chunk has a
         // sphere that reaches the camera long after its real surface is behind the parts.
-        nearest = Infinity;
-        for (let corner = 0; corner < 8; corner++) {
-          nearScratchPoint.set(corner & 1 ? box.max.x : box.min.x, corner & 2 ? box.max.y : box.min.y, corner & 4 ? box.max.z : box.min.z)
-            .applyMatrix4(object.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
-          if (-nearScratchPoint.z < nearest) nearest = -nearScratchPoint.z;
-          else if (!(-nearScratchPoint.z >= nearest)) { nearest = NaN; break; } // NaN corner: keep the object.
-        }
+        if (!nearReplayViewMatrix) nearReplayViewMatrix = new THREE.Matrix4();
+        const view = nearReplayViewMatrix.multiplyMatrices(camera.matrixWorldInverse, object.matrixWorld).elements;
+        nearest = nearestReplayBoxViewDepth(box, view);
+        nearReplayBoxTests++;
       } else {
         if (!sphere) {
           const source = geometry?.boundingSphere;
@@ -2273,6 +2288,7 @@
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
       lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount,
+      instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
       baseWorldRenders: baseWorldRenderCount,
@@ -2346,6 +2362,7 @@
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
+    get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.

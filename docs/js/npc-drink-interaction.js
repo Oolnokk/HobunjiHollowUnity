@@ -10,6 +10,7 @@
   const activeInteractions = new Set(); // Advanced by update() and exposed through getDebug().
   const heldTargets = new WeakMap(); // Root-keyed hand targets let the shared procedural hand driver follow NPC bowls/bottles without crowd scans.
   const ambientCarries = new Map(); // Reuses the drink-neutral bottle pose for persistent NPC-held bottles such as Tooth's nighttime carry.
+  let sharedKomaTexture = null; // Used only by daily Koma leaf props; each actor owns/disposes its own mesh and material.
   let deps = null; // Populated once by init() with game-owned rendering/state adapters.
 
   function log(message, level = 'items') {
@@ -71,7 +72,7 @@
 
   function disposeAmbientCarry(carry) {
     if (!carry) return;
-    if (heldTargets.get(carry.root)?.holder === carry.holder) heldTargets.delete(carry.root);
+    clearHandTarget(carry.root, carry.holder);
     carry.holder?.parent?.remove?.(carry.holder);
     deps?.disposeBottlePlane?.(carry.bottlePlane, carry.holder);
   }
@@ -156,14 +157,24 @@
       poseQuaternion: makePoseQuaternion(THREE),
     };
     ambientCarries.set(key, carry);
-    publishHandTarget(root,holder,bottlePlane);
+    publishHandTarget(root, holder, bottlePlane, avatarGroup);
     applyHolderPose(carry, neutralPose);
     log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
     return true;
   }
 
-  function publishHandTarget(root, holder, plane) {
-    heldTargets.set(root,{holder,plane,mode:'bottle',width:.2,height:.2,neckFraction:.2}); // Same grip contract used by player held-item animation.
+  function publishHandTarget(root, holder, plane, avatarGroup) {
+    const handParent = avatarGroup?.userData?.proceduralHandRig?.parent
+      || avatarGroup?.userData?.proceduralHandParent || avatarGroup?.parent; // Direct hand driver queries the actual hand-rig parent, not the outer NPC world root.
+    const target = { holder, plane, mode: 'bottle', width: .2, height: .2, neckFraction: .2, handParent }; // One shared target holds both root-key aliases.
+    heldTargets.set(root, target);
+    if (handParent && handParent !== root) heldTargets.set(handParent, target); // O(1) hand lookup during every rig frame, no ancestor scan.
+  }
+  function clearHandTarget(root, holder) {
+    const target = heldTargets.get(root);
+    if (target?.holder !== holder) return; // A newer drink/carry may have legitimately replaced this hand target.
+    heldTargets.delete(root);
+    if (target.handParent && heldTargets.get(target.handParent) === target) heldTargets.delete(target.handParent);
   }
   function heldItemTarget(root) {
     const target = root && heldTargets.get(root); // Called by the existing hand driver; no allocations or scene searches.
@@ -188,8 +199,8 @@
     if (!interaction || interaction.finished) return;
     interaction.finished = true;
     if (reason === 'complete') applyDrinkEffect(interaction);
-    interaction.walker.root.rotation.y = interaction.baseNpcFacing;
-    if (heldTargets.get(interaction.walker.root)?.holder === interaction.holder) heldTargets.delete(interaction.walker.root);
+    if (!interaction.preserveFacing) interaction.walker.root.rotation.y = interaction.baseNpcFacing; // Player Koma never overwrites the player's live aim/facing.
+    clearHandTarget(interaction.walker.root, interaction.holder);
     interaction.holder.parent?.remove(interaction.holder);
     deps?.disposeBottlePlane?.(interaction.bottlePlane, interaction.holder);
     interaction.lockHandle?.release?.();
@@ -275,26 +286,53 @@
     return totalDurationMs;
   }
 
-  function playAutonomous(walker, itemKey, onDrink) {
-    const animation = deps?.getDrinkAnimation?.(), itemDef = deps?.getItemDef?.(itemKey); // Existing clip/held sprite also serve NPC meals.
+  function playAutonomous(walker, itemKey, onDrink, options = {}) {
+    const animation = deps?.getDrinkAnimation?.(), itemDef = options.plane ? { key: itemKey } : deps?.getItemDef?.(itemKey); // A ceremonial PNG can share the authored drink clip without becoming an inventory item.
+    const participantId = options.participantId || npcParticipantId(walker); // Player ceremonies reuse the same drink clip with the real player action-lock owner.
     if (!animation || !itemDef || !walker?.root?.parent || walker.area !== deps.getCurrentArea?.()
-        || hasActiveInteractionForRoot(walker.root) || deps.actionLocks?.isLocked?.(npcParticipantId(walker), 'actions')) return 0;
-    const lockHandle = deps.actionLocks?.acquire?.({ owner:'npc-autonomous-drink', reason:'eating a meal',
-      participants:[npcParticipantId(walker)], channels:['movement','tools','actions'] }); // Never locks or hides the player.
+        || hasActiveInteractionForRoot(walker.root) || deps.actionLocks?.isLocked?.(participantId, 'actions')) return 0;
+    const lockHandle = deps.actionLocks?.acquire?.({ owner:'npc-autonomous-drink', reason: options.reason || 'eating a meal',
+      participants:[participantId], channels: options.allowWalking ? ['tools','actions'] : ['movement','tools','actions'] }); // Koma follows the same drink pose but lets the shared yawn speed modifier handle movement.
     if (!lockHandle) return 0;
     clearAmbientCarryForRoot(walker.root);
-    const holder = new deps.THREE.Group(), bottlePlane = deps.makeBottlePlane?.({ ...itemDef, key:itemKey }); // Private transient prop uses the normal PNG pipeline.
+    const holder = new deps.THREE.Group(), bottlePlane = options.plane || deps.makeBottlePlane?.({ ...itemDef, key:itemKey }); // Existing bottles and transient ceremonial PNGs use one pose/cleanup path.
     if (!bottlePlane) { lockHandle.release(); return 0; }
     holder.add(bottlePlane); walker.root.add(holder);
     const interaction = { walker,itemKey,holder,bottlePlane,lockHandle,onDrink,autonomous:true,
-      phase:'drink',elapsed:0,durationS:Math.max(.1,Number(animation.durationS)||.95),effectApplied:false,finished:false,
+      phase:'drink',elapsed:0,durationS:Math.max(.1,Number(options.durationS)||Number(animation.durationS)||.95),effectApplied:false,finished:false,
+      allowWalking: !!options.allowWalking, // Only NPC Koma ceremonies allow slow walking; the player stays still while chewing.
+      preserveFacing: !!options.preserveFacing, // Player aiming/facing remains owned by the normal player movement system.
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
     applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
-    publishHandTarget(walker.root,holder,bottlePlane);
+    publishHandTarget(walker.root, holder, bottlePlane, walker.avatarGroup);
     return interaction.durationS*1000;
   }
-  function stopAutonomous(walker) {
-    for (const interaction of activeInteractions) if (interaction.autonomous && interaction.walker === walker) finish(interaction,'cancelled');
+  function stopAutonomous(walker, itemKey = null) {
+    for (const interaction of activeInteractions) {
+      if (interaction.autonomous && interaction.walker === walker && (!itemKey || interaction.itemKey === itemKey)) finish(interaction, 'cancelled');
+    }
+  }
+
+  function playDailyKoma(walker, onChew, durationS = 5, options = {}) {
+    const THREE = deps?.THREE;
+    if (!THREE || !walker?.root) return 0;
+    if (!sharedKomaTexture) {
+      sharedKomaTexture = new THREE.TextureLoader().load('assets/leaves/koma_leaf.png'); // Uses the exact authored hedge leaf sprite without creating a fake inventory item.
+      if ('colorSpace' in sharedKomaTexture && THREE.SRGBColorSpace) sharedKomaTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const material = window.HobunjiSpritePngSurface?.makeMaterial?.(THREE, sharedKomaTexture, 'npc-koma-leaf', { side: THREE.DoubleSide })
+      || new THREE.MeshBasicMaterial({ map: sharedKomaTexture, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(0.20, 0.20), material); // One disposable sprite-card prop per ceremonial drink.
+    plane.name = 'npc_daily_koma_leaf';
+    plane.renderOrder = 1.5; // Match the existing held-item render order so the leaf sits over the portrait rather than disappearing behind it.
+    window.PngPlaneOutlineOccluder?.markPngPlane?.(plane); // Use the same PNG outline/occlusion classification as authored held bottle sprites.
+    plane.userData.ownsTexture = false; // The shared hedge PNG is retained across NPCs, unlike a per-item recolored texture.
+    const started = playAutonomous(walker, '__daily_koma_leaf__', onChew, {
+      plane, durationS, allowWalking: options.allowWalking !== false, participantId: options.participantId,
+      preserveFacing: options.preserveFacing === true, reason: 'chewing daily Koma leaves',
+    });
+    if (!started) deps?.disposeBottlePlane?.(plane);
+    return started;
   }
 
   function update(dt) {
@@ -316,7 +354,7 @@
           interaction.holder.parent?.remove(interaction.holder);
           (interaction.walker.avatarGroup?.userData?.proceduralHandParent || interaction.walker.root).add(interaction.holder);
           interaction.phase = 'drink';
-          publishHandTarget(interaction.walker.root,interaction.holder,interaction.bottlePlane);
+          publishHandTarget(interaction.walker.root, interaction.holder, interaction.bottlePlane, interaction.walker.avatarGroup);
           interaction.elapsed = 0;
           applyHolderPose(interaction, deps.poseAt(deps.getDrinkAnimation(), 0));
         }
@@ -327,7 +365,12 @@
       const progress = deps.clamp(interaction.elapsed / interaction.durationS, 0, 1);
       const pose = deps.poseAt(animation, progress);
       applyHolderPose(interaction, pose);
-      interaction.walker.root.rotation.y = interaction.baseNpcFacing + deps.THREE.MathUtils.degToRad(pose.bodyYaw);
+      if (!interaction.preserveFacing) {
+        if (interaction.allowWalking && interaction.walker._moveSpeedTiles > 0.05) {
+          interaction.baseNpcFacing = interaction.walker.root.rotation.y; // Follow real NPC movement facing; never restore the stale pre-Koma direction.
+        }
+        interaction.walker.root.rotation.y = interaction.baseNpcFacing + deps.THREE.MathUtils.degToRad(pose.bodyYaw);
+      }
       if (progress >= (Number(animation.strikeFrac) || 0.62)) applyDrinkEffect(interaction);
       if (progress >= 1) finish(interaction);
     }
@@ -362,6 +405,6 @@
     return api;
   }
 
-  const api = Object.freeze({ init, canPlay, play, playAutonomous, stopAutonomous, heldItemTarget, update, getDebug, setAmbientCarry, clearAmbientCarry, getAmbientDebug });
+  const api = Object.freeze({ init, canPlay, play, playAutonomous, playDailyKoma, stopAutonomous, heldItemTarget, update, getDebug, setAmbientCarry, clearAmbientCarry, getAmbientDebug });
   window.NpcDrinkInteraction = api;
 })();

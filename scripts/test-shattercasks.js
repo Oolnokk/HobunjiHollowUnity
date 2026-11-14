@@ -300,7 +300,7 @@ class Node {
   }
 }
 class Mesh extends Node {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
-class InstancedMesh extends Mesh {constructor(geometry,material){super(geometry,material);this.instanceMatrix={};}setMatrixAt(){}}
+class InstancedMesh extends Mesh {constructor(geometry,material){super(geometry,material);this.instanceMatrix={};this.matrixWrites=0;}setMatrixAt(){this.matrixWrites++;}}
 class Object3D extends Node {updateMatrix(){this.matrix={};}}
 class Geometry {dispose(){}}
 class RingGeometry extends Geometry {
@@ -424,7 +424,12 @@ async function scenario(reloading=false) {
   // A shot from either team uses this same swept-segment intersection.
   const hit=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},{x:5.6,y:.42,z:3.5},.08,1,area);
   assert(hit&&hit.t>0&&hit.t<1,'swept projectile crosses the vase');
+  const savesBeforeBlast=game.Shattercasks.debugSnapshot().performance.blastPersistenceWrites;
   assert(game.Shattercasks.hitProjectile(hit),'projectile triggers a single detonation');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.blastPersistenceWrites,savesBeforeBlast+1,
+    'consuming the charge and clearing several tiles persist as one completed explosion snapshot');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.blastRubbleRebuilds,1,
+    'one blast rebuilds rubble instances only after all destroyed tiles are registered');
   assert.deepEqual(playedSfx,['shattercaskBlast'],'weapon-triggered detonation plays the dedicated Shattercask cue once');
   assert.equal(damage.length,1,'player is hurt by own nearby charge');
   assert.equal(tiles[3][5].type,'grass','blast opens the mineable wall');
@@ -469,6 +474,20 @@ async function scenario(reloading=false) {
   assert.equal(playedSfx.length,2,'the one-shot guard prevents duplicate explosion audio');
   assert.equal(game.Shattercasks.debugSnapshot().performance.textureBatchesCreated,1,
     'repeated explosions reuse pooled GPU source assets');
+  const shardGroup=scene.children.find(node=>node.children?.filter(child=>child instanceof InstancedMesh).length===2);
+  assert(shardGroup,'the live pottery effect owns two shard batches');
+  const reusableMeshes=shardGroup.children.filter(child=>child instanceof InstancedMesh);
+  for(let frame=0;frame<15;frame++)game.Combat.update(.1); // Fade both effects until eligible for reuse.
+  assert(game.Shattercasks.debugSnapshot().performance.pooledPotteryBursts>=2,
+    'retired simultaneous sprays retain separate GPU instance buffers');
+  const thirdGroup=new Node();thirdGroup.position.set(4.5,0,3.5);
+  const writesBeforeReuse=reusableMeshes.map(mesh=>mesh.matrixWrites);
+  assert(game.Shattercasks.detonate({id:'performance-reused',kind:'shattercask',mapId:area,col:4,row:3,
+    group:thirdGroup,exploded:false,carried:false},'regression'));
+  assert(reusableMeshes.some((mesh,index)=>mesh.matrixWrites>writesBeforeReuse[index]),
+    'retired pottery particle instances reset before the reused effect is rendered');
+  assert(game.Shattercasks.debugSnapshot().performance.burstPoolHits>=1,
+    'another blast reuses a retired instanced mesh');
 }
 async function arenaScenario() {
   let currentArea='map_dev_arena',modelBuilds=0;

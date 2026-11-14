@@ -68,6 +68,10 @@
   let scoreActorRootProvider = null; // game.js supplies authoritative live player, NPC, hostile and animal roots; consulted only when a puzzle score is visible.
   let withheldWorldTextBasePasses = 0; // Debug counter: offscreen base draws where text was intentionally reserved for the final overlay.
   let abandonedWorldTextOverlays = 0; // Debug counter: stale pending overlays restored by the next base pass instead of reaching presentation.
+  let auxiliaryWorldBasePassesPreserved = 0; // Offscreen auxiliary renders no longer abandon the gameplay frame's pending popup/glyph overlay.
+  let scoreFramesWithMissingActorMask = 0; // Count visible-score frames suppressed because a trustworthy character mask was unavailable.
+  let scoreFramesWithActorMask = 0; // Count score frames successfully presented with their character-depth silhouette.
+  let lastScoreMaskStatus = 'not-checked'; // Mobile Pixel Probe differentiates a missing actor provider/mask from normal plate invisibility.
   let targetAlphaCutoutPasses = 0; // Target-outline passes where alpha-cutout parity preparation ran.
   let targetAlphaCutoutMeshesPrepared = 0; // Alpha-tested meshes given the per-draw target-mask hook.
   let targetAlphaShaderPatches = 0; // Target ShaderMaterials upgraded to sample source alpha before painting red/green.
@@ -596,6 +600,10 @@
           if (!mask?.meshes) {
             // An unavailable/missing actor mask must not silently turn active
             // score notes into a player/NPC-covering HUD effect.
+            scoreFramesWithMissingActorMask++;
+            scoreActorDepthMeshes = 0;
+            lastScoreMaskStatus = typeof scoreActorRootProvider !== 'function' ? 'provider-unavailable'
+              : typeof renderer.clearDepth !== 'function' ? 'depth-clear-unavailable' : 'no-attached-actor-mesh';
             for (const entry of scoreNotes) {
               temporarilyHiddenNotes.push(entry.object);
               entry.object.visible = false;
@@ -607,6 +615,8 @@
               originalRender.call(renderer, scene, camera); // Colorless alpha-aware silhouettes of the player, NPCs, hostiles and animals.
               scoreActorDepthPasses++;
               scoreActorDepthMeshes = mask.meshes;
+              scoreFramesWithActorMask++;
+              lastScoreMaskStatus = 'presented';
             } finally {
               mask.restore(); // Do not leave rig material colorWrite/depthWrite or layer membership changed during final note draw.
               mask = null;
@@ -754,7 +764,64 @@
 
   function wrappedRender(scene, camera) {
     const renderer = this;
-    const pass = classifyPass(renderer, scene, camera);
+    if (window.HeldObjectRenderOrder?.replayingDepth) {
+      // Held/shell replays can reach this hook through other render decorators.
+      // They may use the world camera and target while rewriting cutout depth
+      // materials. Keep the base frame's overlay pending and out of those draws.
+      const pending = pendingWorldTextOverlayByRenderer.get(renderer); // Only overlays from this renderer's matching world frame can enter the replay.
+      if (pending?.scene !== scene) return originalRender.call(renderer, scene, camera);
+      const hidden = []; // Remember only entries still visible after the replay's own scissor culling.
+      for (const { object } of pending.entries) {
+        if (!object.visible) continue;
+        hidden.push(object);
+        object.visible = false;
+      }
+      try {
+        return originalRender.call(renderer, scene, camera);
+      } finally {
+        for (const object of hidden) object.visible = true;
+      }
+    }
+    let auxiliaryCameraHidden = null; // Pending popup/glyph meshes temporarily withheld from a same-scene auxiliary camera draw.
+    let pass = classifyPass(renderer, scene, camera);
+    if (pass === 'base') {
+      const pending = pendingWorldTextOverlayByRenderer.get(renderer); // Existing frame must reach the post composite even if a separate world preview renders meanwhile.
+      if (pending && (pending.scene !== scene || pending.camera !== camera)) {
+        // A genuine gameplay zone change may use the same renderer and camera;
+        // GridTileAccessors is the authority on which scene actually became active.
+        // An auxiliary scene/camera is NOT a new base frame, however, and may not
+        // invalidate the pending glyphs or floating text for the visible frame.
+        let auxiliaryScene = false; // Only offscreen draws of a non-active scene may preserve an older scene's overlay.
+        let auxiliaryCamera = false; // A different cinematic/gameplay camera must instead replace its own old pending frame.
+        if (pending.scene !== scene) {
+          let activeScene = null; // Resolve the gameplay owner only on a scene change, not every world render.
+          try { activeScene = window.GridTileAccessors?.getActiveScene?.() || null; } catch (_) {}
+          auxiliaryScene = activeScene !== scene;
+        } else if (pending.camera !== camera) {
+          let activeCamera = null; // The combat dependency uses the live gameplay camera, including cinematic transitions.
+          try { activeCamera = window.Combat?.deps?.getActiveCamera?.() || null; } catch (_) {}
+          auxiliaryCamera = !!activeCamera && activeCamera !== camera;
+          // Without a camera authority, prefer accepting a new world camera rather than
+          // indefinitely presenting glyphs from a stale camera after a scene transition.
+        }
+        if (auxiliaryScene || auxiliaryCamera) {
+          auxiliaryWorldBasePassesPreserved++;
+          if (auxiliaryCamera) {
+            // The auxiliary camera traverses this same scene with every layer
+            // enabled. Keep pending text out of its render, but still take the
+            // ordinary 'other' pass below to advance scene matrix epochs and
+            // invalidate stale shadow/matrix reuse after the extra traversal.
+            auxiliaryCameraHidden = [];
+            for (const { object } of pending.entries) {
+              if (!object.visible) continue;
+              auxiliaryCameraHidden.push(object);
+              object.visible = false;
+            }
+          }
+          pass = 'other';
+        }
+      }
+    }
 
     // Material-ID is solely the old screen-space internal/material seam source.
     // Returning before WebGLRenderer.render() guarantees it cannot contribute a
@@ -853,6 +920,7 @@
       // renderer.render(), and auxiliary passes must not be able to delete popup
       // text before the real _postScene/_postCamera composite arrives.
     } finally {
+      if (auxiliaryCameraHidden) for (const object of auxiliaryCameraHidden) object.visible = true;
       restoreTargetAlphaFillLayers(targetAlphaFillEntries);
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
@@ -872,6 +940,28 @@
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
     },
+    prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
+      if (!scoreMeshes) return null;
+      const entries = []; // Reserve only active exterior notes for the direct canvas path.
+      for (const object of scoreMeshes) {
+        if (object.visible && isWorldTextOverlayMesh(object)) {
+          entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
+        }
+      }
+      if (!entries.length) return null;
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      return function finishDirectScoreOverlay(present) {
+        restoreWorldTextBaseVisibility(entries);
+        try {
+          if (present) drawWorldTextOverlayToCanvas(renderer, {
+            scene, camera, entries, matrixEpoch: matrixEpochOf(scene), baseAt: performance.now(),
+          });
+        } finally {
+          restoreWorldTextOverlayLayers({ entries });
+        }
+      };
+    },
     targetAlphaCutoutParity: true,
     targetAlphaBillboardFill: true,
     worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
@@ -886,10 +976,15 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
+        latestScoreChange: 'Timed Scratchbone glyphs survive depth replays and respect character silhouettes with Outlines on or off.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',
         abandonedWorldTextOverlays,
+        auxiliaryWorldBasePassesPreserved,
+        scoreFramesWithMissingActorMask,
+        scoreFramesWithActorMask,
+        lastScoreMaskStatus,
         targetAlphaCutoutPasses,
         targetAlphaCutoutMeshesPrepared,
         targetAlphaShaderPatches,

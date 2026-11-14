@@ -12,6 +12,7 @@
     meshes: 0,
     uvVertices: 0,
     failures: 0,
+    perMeshFallbacks: 0,
     recent: [],
   }; // Used by Pixel Probe and snapshot() to verify the remaining cross-mesh adapter without duplicating stretch policy.
 
@@ -54,8 +55,7 @@
     geometry.userData = Object.assign({}, source.userData || {}, geometry.userData || {});
     delete geometry.userData.hobunjiSurfaceStretchSignature;
     delete geometry.userData.hobunjiSurfacePerimeterFrameSignature;
-    mesh.geometry = geometry;
-    return geometry;
+    return geometry; // The caller adopts this temporary clone only after every cliff in the combined batch maps successfully.
   }
 
   function mapTouchingPlateauCliffBatch(meshes, label = 'plateau-cross-mesh') {
@@ -67,15 +67,22 @@
     const positions = []; // Used as one temporary world-space triangle soup spanning every plateau cliff-slot mesh in this batch.
     const targets = []; // Used to copy each solved combined UV back to its exact source mesh vertex afterward.
     const touched = new Map(); // Used to mark each source UV attribute once after all copied writes finish.
+    const prepared = []; // Used to release uncommitted per-mesh geometry clones if this combined solve cannot finish.
     const point = new THREE.Vector3(); // Used repeatedly while transforming local plateau vertices into common world space.
 
     for (const mesh of candidates) {
       const geometry = ensureIndependentPlateauGeometry(mesh); // Used to make grass and cliff corners independently writable before cross-mesh solving.
+      if (geometry) prepared.push(geometry);
       const position = geometry?.getAttribute?.('position');
       const uv = geometry?.getAttribute?.('uv');
       if (!position || !uv) continue;
       mesh.updateMatrixWorld?.(true);
       const ranges = selectedUvRanges(geometry, PLATEAU_CLIFF_MATERIAL_SLOT, position.count); // Used to include only the actual cliff-side material slot.
+      const selectedCorners = ranges.reduce((total, [start, end]) => total + end - start, 0); // Used to avoid stitching partial triangles from different mesas into one false batch.
+      if (selectedCorners < 3 || selectedCorners % 3 !== 0 || ranges.some(([start, end]) => start % 3 !== 0 || (end - start) % 3 !== 0)) {
+        for (const geometry of prepared) geometry.dispose?.(); // Failed selection must not leak clones or change existing visible terrain.
+        return false;
+      }
       for (const [start, end] of ranges) {
         for (let index = start; index < end; index++) {
           point.set(position.getX(index), position.getY(index), position.getZ(index));
@@ -86,15 +93,29 @@
       }
       if (ranges.length) touched.set(mesh, { geometry, uv });
     }
-    if (targets.length < 6 || targets.length % 3 !== 0) return false;
+    // A partial batch can produce a plausible combined UV buffer while silently
+    // leaving a second deferred mesa unmapped. Fall back for the whole batch
+    // unless every intended cliff contributes complete triangles.
+    if (touched.size !== candidates.length || touched.size < 2 || targets.length < 6 || targets.length % 3 !== 0) {
+      for (const geometry of prepared) geometry.dispose?.();
+      return false;
+    }
 
     const combined = new THREE.BufferGeometry(); // Used only as a temporary common-topology carrier; it never enters the scene.
     combined.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const mapped = mapper.mapGeometry(combined, { label: `${label}:touching-mesh-batch` }); // The central mapper now owns both continuous fitting and no-perpendicular-stretch edge behavior.
+    let mapped; // Used to dispose a failed or completed central-mapper result independently of the temporary combined geometry.
+    try {
+      mapped = mapper.mapGeometry(combined, { label: `${label}:touching-mesh-batch` }); // The central mapper now owns both continuous fitting and no-perpendicular-stretch edge behavior.
+    } catch (error) {
+      for (const geometry of prepared) geometry.dispose?.();
+      combined.dispose?.();
+      throw error; // The scheduled caller logs the error and applies the original per-mesh fallback.
+    }
     const mappedUv = mapped?.getAttribute?.('uv');
     const report = mapped?.userData?.hobunjiSurfaceStretch || null;
     if (!mappedUv || mappedUv.count !== targets.length || !report) {
       crossMeshStats.failures++;
+      for (const geometry of prepared) geometry.dispose?.();
       if (mapped && mapped !== combined) mapped.dispose?.();
       combined.dispose?.();
       return false;
@@ -106,6 +127,7 @@
     }
     const batchSignature = `cross-mesh-surface-v2|meshes=${touched.size}|surfaces=${report.patchCount}|uvs=${targets.length}|mapping=${report.mapping || 'unknown'}`; // Used by runtime repair/debugging to identify this exact shared solve.
     for (const [mesh, state] of touched) {
+      mesh.geometry = state.geometry; // Commit only once all cliff UVs are solved, leaving the original mesh intact on failure.
       state.uv.needsUpdate = true;
       state.geometry.userData = Object.assign({}, state.geometry.userData || {}, {
         hobunjiSurfaceStretchSignature: batchSignature,
@@ -123,6 +145,9 @@
       mesh.userData = Object.assign({}, mesh.userData || {}, {
         naturalSurfaceCrossMeshUvOwner: CROSS_MESH_UV_OWNER,
         naturalSurfaceCrossMeshUvBatch: batchSignature,
+        naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV', // Used by runtime repair to recognize a completed authoritative solve.
+        wildernessCliffSurfaceParity: true, // Used to preserve parity's established completed-cliff marker on deferred solves.
+        wildernessCliffUvPatchWorldSize: window.WildernessCliffSurfaceParity?.uvPatchWorldSize || 6, // Used by Pixel Probe to retain the established cliff texture scale diagnostic.
         terrainJigsawIgnore: true,
       });
     }
@@ -158,7 +183,25 @@
   function schedulePlateauCrossMeshBatch(meshes, label) {
     const candidates = (meshes || []).filter(mesh => mesh?.isMesh); // Used to freeze the builder result before later unrelated scene additions occur.
     if (candidates.length < 2) return;
-    const run = () => mapTouchingPlateauCliffBatch(candidates, label); // Used after WildernessCliffSurfaceParity's own per-mesh microtask so this batch solve is authoritative.
+    const run = () => {
+      let mapped = false; // Used to select the ordinary per-mesh mapper when the shared solve cannot complete.
+      try {
+        mapped = mapTouchingPlateauCliffBatch(candidates, label); // Runs after the parity material-only microtask so each cliff gets one combined UV solve.
+      } catch (error) {
+        crossMeshStats.failures++;
+        debugLog(label + ': cross-mesh solve failed (' + String(error?.message || error) + '); using individual UV mapping.', 'warn');
+      }
+      if (mapped) return;
+      const fallback = window.WildernessCliffSurfaceParity?.applyFinalSurfacePass; // Used to preserve textured cliff UVs when a combined solve fails or becomes ineligible.
+      if (typeof fallback !== 'function') {
+        debugLog(label + ': cross-mesh solve unavailable and no cliff fallback was installed.', 'warn');
+        return;
+      }
+      for (const [index, mesh] of candidates.entries()) {
+        if (!mesh?.isMesh || !Array.isArray(mesh.material) || !mesh.material[PLATEAU_CLIFF_MATERIAL_SLOT]) continue;
+        if (fallback(mesh, label + ':fallback:' + (mesh.name || index), { materialSlot: PLATEAU_CLIFF_MATERIAL_SLOT })) crossMeshStats.perMeshFallbacks++;
+      }
+    };
     if (typeof queueMicrotask === 'function') queueMicrotask(run);
     else Promise.resolve().then(run);
   }
@@ -201,12 +244,17 @@
   function formatPixelProbePerimeterDiagnostics() {
     const surface = window.HobunjiSurfaceStretchUV?.snapshot?.(); // Used as the authoritative live mapping state for mobile-visible verification.
     if (!surface) return '';
+    const parity = window.WildernessCliffSurfaceParity?.snapshot?.() || {}; // Used to display individual solves avoided and material factory reuse on mobile.
+    const repair = window.NaturalSurfaceStretchRuntime?.snapshot?.() || {}; // Used to display how often valid UV islands skip expensive repair.
+    const post = window.NaturalSurfaceStretchPostJigsaw?.snapshot?.() || {}; // Used to display geometry-owner notifications avoided across auxiliary render passes.
     const lines = [
       '',
       '=== Natural surface edge-preserving stretch diagnostics ===',
       `Installed=${!!window.HobunjiSurfaceStretchUV?.installed} loaderGeneration=${window.HobunjiNaturalSurfaceUvLoaderVersion || '-'} mapping=${surface.mapping || '-'} sourcePNGEdge=${((surface.edgeSourceFraction || 0) * 100).toFixed(1)}% nativePNGWorldSize=${Number(surface.edgeReferenceWorldSize || 0).toFixed(2)} protectedEdgeWorld=${Number(surface.edgeWorldSize || 0).toFixed(3)}`,
       `Central mapper: geometries=${surface.mappedGeometries || 0} meshes=${surface.mappedMeshes || 0} surfaces=${surface.patches || 0} fallbacks=${surface.fallbacks || 0}`,
-      `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures}`,
+      `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures} fallbackMeshes=${crossMeshStats.perMeshFallbacks}`,
+      `Terrain pass savings: deferredUV=${parity.crossMeshUvsDeferred || 0} materialCacheHits=${parity.farmMaterialCacheHits || 0} validUVSkips=${repair.validUvFastPaths || 0} sceneDuplicateSkips=${repair.sceneAddDuplicateInspectionsAvoided || 0}`,
+      `Render notice scans: performed=${post.geometryNoticeScans || 0} avoided=${post.geometryNoticeScansAvoided || 0} terrainNotifications=${post.terrainGeometryNotifications || 0}`,
     ]; // Used as a compact self-contained readout that can be pasted back without DevTools.
     const recent = Array.isArray(surface.recent) ? surface.recent.slice(-6) : []; // Used to show which natural surfaces most recently passed through the central mapper.
     if (!recent.length) {
@@ -255,8 +303,12 @@
   const runtime = window.NaturalSurfaceStretchRuntime; // Used to repair stranded textures and restore central surface-island UVs before chunking/render.
   if (typeof originalRender !== 'function' || !jigsawApi?.scanScene || !chunkApi?.scanScene || !runtime?.inspectObject) return;
 
+  const lastGeometryNoticeAt = new WeakMap(); // Used to avoid rescanning all terrain owners on every outline/depth render pass.
+  const GEOMETRY_NOTICE_INTERVAL_MS = 16; // Used to coalesce same-frame depth/outline passes without delaying terrain-owner updates for half a second.
   const stats = {
     renderPasses: 0,
+    geometryNoticeScans: 0,
+    geometryNoticeScansAvoided: 0,
     jigsawMutations: 0,
     postJigsawInspections: 0,
     chunkMutations: 0,
@@ -307,7 +359,14 @@
 
     const chunksMade = Number(chunkApi.scanScene(scene, now)) || 0; // Runs only after the central natural-surface mapper has reclaimed final texture and UV ownership.
     if (chunksMade) stats.chunkMutations += chunksMade;
-    notifyTerrainGeometryReady(scene);
+    const lastNotice = scene?.isScene ? lastGeometryNoticeAt.get(scene) : undefined; // Used to preserve eventual notifications while bypassing duplicate auxiliary passes.
+    if (scene?.isScene && (jigsawMade || chunksMade || lastNotice == null || now - lastNotice >= GEOMETRY_NOTICE_INTERVAL_MS)) {
+      lastGeometryNoticeAt.set(scene, now);
+      stats.geometryNoticeScans++;
+      notifyTerrainGeometryReady(scene);
+    } else {
+      stats.geometryNoticeScansAvoided++;
+    }
     return originalRender.call(this, scene, camera);
   }
 

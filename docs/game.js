@@ -11344,7 +11344,10 @@
                 geometry.computeVertexNormals();
                 const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Metal-colored rock with optional verdigris markings, shared with caves and the town mine.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
-                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Preserve original continuous rock UVs after terrain displacement.
+                if (matKey === TileType.ROCK) {
+                  rockMesh.userData.retainNaturalSurfaceShellOutline = true; // Keep the individually removable stone's perimeter despite rock PNG texturing.
+                  window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`);
+                }
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -11516,6 +11519,10 @@
           mesh.receiveShadow = true;
           mesh.userData.mapEditorTerrain = { mapId };
           mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (matKey === TileType.ROCK) {
+            mesh.userData.retainNaturalSurfaceShellOutline = true; // Structural rounded stone mounds share this chunk-local render bucket.
+            _markOutline(mesh);
+          }
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
             mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
             mesh.userData.wildernessGlobalPathGround = true;
@@ -13604,7 +13611,7 @@
               else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose, { allowSpeedRun: this._npcRunning }); this._offAreaLegsDt = 0; }
             }
             if (this._npcRunLeanPivot) {
-              const pitch = isVisibleArea && this._npcRunning && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // The canonical leg gait supplies the same run-lean strength used by the player.
+              const pitch = isVisibleArea && (this._npcRunning || appearance.speciesId === 'longoran') && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // Longoran lurch even at walking pace; other NPCs keep run-only pitch. // The canonical leg gait supplies the same run-lean strength used by the player.
               if (pitch > 0.0001) {
                 const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
                 const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
@@ -19818,7 +19825,7 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'harpoon' && action === 'fish') {
-          return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+          return tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL; // Waterfall crests share river fishing and host Frenzy water tiles.
         }
         if (tool === 'machete' || tool === 'axe') {
           const targets = getMacheteTargets(col, row, action);
@@ -20907,7 +20914,7 @@
         if (activeTool === 'harpoon' && activeAction === 'fish') {
           const reticle = getReticleTile();
           if (!canUseAction('harpoon', 'fish', reticle.col, reticle.row)) {
-            showToast('No river or stream here to fish.', false);
+            showToast('No river, stream or waterfall here to fish.', false);
             return;
           }
           window.Fishing?.beginCast();
@@ -27399,23 +27406,31 @@
           // the painterly/outline post-process can't smear them.
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         } else {
-          window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
-          renderer.setRenderTarget(null);
-          renderer.render(activeScene, camera);
-          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
-          window.PerfProfiler?.end(actorProbePerf);
-          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-          if (_targetOutlineMeshes.length > 0) {
-            renderer.autoClearColor = false;
-            renderer.autoClearDepth = false;
-            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-            camera.layers.set(2);
-            renderer.render(scene, camera);
-            camera.layers.enableAll();
-            scene.overrideMaterial = null;
-            renderer.autoClearColor = true;
-            renderer.autoClearDepth = true;
+          const scoreMeshes = window.PuzzleCaveEntrances?.activeScoreMeshes?.(currentArea, activeScene); // The active cave plate owns direct-render score candidates.
+          const finishScore = window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes); // Keeps the glyphs out of actor probes and held-depth replay.
+          let worldPresented = false; // Release the temporary layer on error without drawing an overlay over an incomplete frame.
+          try {
+            window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
+            renderer.setRenderTarget(null);
+            renderer.render(activeScene, camera);
+            const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+            window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
+            window.PerfProfiler?.end(actorProbePerf);
+            // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+            if (_targetOutlineMeshes.length > 0) {
+              renderer.autoClearColor = false;
+              renderer.autoClearDepth = false;
+              scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+              camera.layers.set(2);
+              renderer.render(scene, camera);
+              camera.layers.enableAll();
+              scene.overrideMaterial = null;
+              renderer.autoClearColor = true;
+              renderer.autoClearDepth = true;
+            }
+            worldPresented = true;
+          } finally {
+            finishScore?.(worldPresented);
           }
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         }
@@ -32742,6 +32757,7 @@
       window.ZoneTerrainFeatures?.init({
         TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
         displaceZoneGeometry, resolveTileMat,
+        markOutline: _markOutline,
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,

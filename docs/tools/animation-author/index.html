@@ -1220,9 +1220,10 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261112kurrayaParity1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261113longoranscales5', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261110geomMainMerge1', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261112longoran1', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1233,6 +1234,7 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
+  'js/character-spine.js', // Before PNGPlaneAvatar: otherwise Longoran's bind/applyToRig calls silently skip its forward-curved spine.
   'js/png-plane-avatar.js',
   'config/portrait-mouth-points.js', // Shared species/gender lip pixels used by B'shuakauitl and the Kiss contact diagnostic.
   'js/combat/shared-attack-pose.js', // The exact skinned mouth-frame resolver, without a second face-coordinate formula.
@@ -1508,6 +1510,7 @@ async function loadRepositoryRuntime(settings) {
   for (const relativePath of REQUIRED_SCRIPTS) {
     const path = settings.docsRoot + relativePath;
     const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
+      : relativePath === 'js/character-spine.js' ? AUTHOR_SPINE_RUNTIME_SCRIPT
       : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
         : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT : null; // Hands and feet must match the author page that implements their preview contract.
     const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
@@ -1526,6 +1529,9 @@ async function loadRepositoryRuntime(settings) {
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
+  if (!window.HobunjiCharacterSpine?.bind || !window.HobunjiCharacterSpine?.applyToRig) {
+    throw new Error('character-spine.js did not initialize the real Longoran spine deformation solver.'); // Visible in the mobile Diagnostics log instead of silently displaying an upright preview.
+  }
   if (!window.LegBones || !window.ProceduralLegAnimation) throw new Error('The shoulder-rig feet preview runtime did not initialize.');
   if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
@@ -2997,6 +3003,7 @@ function prepareGameplayBackdropHost() {
     getPreviewMode() { return state.previewMode; },
     getScene() { return state.three.scene; },
     getCamera() { return state.three.camera; },
+    getCameraControls() { return state.three.controls; }, // Full Character Scale uses the existing OrbitControls target so manual orbit stays centered after explicit camera framing.
     getRenderer() { return state.three.renderer; },
     getAvatarModel() { return state.three.model; },
     setCameraView(view) { setCameraView(view); },

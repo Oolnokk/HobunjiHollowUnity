@@ -110,7 +110,11 @@
   }
 
   function getAbsoluteGameHour() {
-    return isInitialized() ? deps.calendar.day * 24 + getHour() : NaN; // Cheap clock for active station deadlines, including overnight passage.
+    if (!isInitialized()) return NaN;
+    const day = Number(deps.calendar.day), fraction = Number(deps.calendar.time01); // Monotonic 06:00-based absolute hour used by processing deadlines, NPC fatigue, and daily Koma.
+    const morning = Number(deps.MORNING_HOUR), span = Number(deps.NIGHT_HOUR) - morning; // The sky-dome extends the live clock to 24 hours; getHour() alone wraps at midnight.
+    return Number.isFinite(day) && Number.isFinite(fraction) && Number.isFinite(morning) && span > 0
+      ? day * 24 + morning + fraction * span : NaN;
   }
 
   // ── Calendar derivations ───────────────────────────────────────────

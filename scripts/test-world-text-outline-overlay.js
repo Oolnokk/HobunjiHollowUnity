@@ -37,7 +37,7 @@ class Renderer {
 }
 Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
-    noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
+    noteVisible:scene?.scoreNote?.visible, noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
     actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorAlphaTest:scene?.maskActor?.material?.alphaTest,
     effectLayers:scene?.maskEffect?.layers?.mask, actorLayers:scene?.maskActor?.layers?.mask });
 };
@@ -167,8 +167,24 @@ function testFixedPostCameraAndUnrelatedPass() {
   const baseCall = renderer.calls.find(call => call.scene === 'world' && call.target !== null);
   assert.strictEqual(baseCall?.mask, 0xFFFFFFFF >>> 0, 'nested render hooks must still see the authoritative all-layers gameplay camera mask during the base pass');
 
-  // An auxiliary render between base and composite used to invalidate the pending
-  // popup handoff. It must no longer be allowed to make text disappear.
+  // An auxiliary offscreen render can arrive while a camp's scene is starting
+  // or a preview is initialized. Even with MASK_ALL it is NOT a replacement
+  // gameplay frame and must not steal the pending overlay.
+  const auxiliaryWorld = makeWorldScene('camp-loading-preview', makePopupMesh()); // Independent scene used by the startup preview.
+  const auxiliaryCamera = { layers: new Layers(0xFFFFFFFF) }; // Full layers formerly misclassified this preview as a new base frame.
+  const beforeAuxiliary = api.snapshot(); // Prove preserved overlays by inspecting both counters and the final draw.
+  renderer.setRenderTarget({ texture: {}, depthTexture: {} });
+  renderer.render(auxiliaryWorld, auxiliaryCamera);
+  assert.equal(popup.layers.mask, 1 << 6, 'an offscreen preview with another camera cannot reset the pending popup');
+  assert.equal(api.snapshot().auxiliaryWorldBasePassesPreserved, beforeAuxiliary.auxiliaryWorldBasePassesPreserved + 1);
+  assert.equal(api.snapshot().abandonedWorldTextOverlays, beforeAuxiliary.abandonedWorldTextOverlays);
+  windowObject.GridTileAccessors = { getActiveScene: () => worldScene }; // The game can also render an auxiliary scene with the actual world camera.
+  renderer.render(auxiliaryWorld, worldCamera);
+  assert.equal(popup.layers.mask, 1 << 6, 'an auxiliary preview sharing the world camera cannot reset the pending popup either');
+  assert.equal(api.snapshot().auxiliaryWorldBasePassesPreserved, beforeAuxiliary.auxiliaryWorldBasePassesPreserved + 2);
+  delete windowObject.GridTileAccessors;
+
+  // An auxiliary canvas render between base and composite was already covered.
   renderer.setRenderTarget(null);
   renderer.render({ name: 'auxiliary', overrideMaterial: null, children: [], autoUpdate: true }, { layers: new Layers(1) });
   assert.strictEqual(popup.layers.mask, 1 << 6, 'unrelated render calls must not discard a pending popup overlay');
@@ -209,6 +225,65 @@ function testNoShellStillRestoresPopup() {
   assert.strictEqual(after.abandonedWorldTextOverlays, before.abandonedWorldTextOverlays, 'successful presentation must not increment abandoned-overlay diagnostics');
 }
 
+function testGameplayZoneChangeReplacesStaleOverlay() {
+  const renderer = new Renderer();
+  const stalePopup = makePopupMesh(), currentPopup = makePopupMesh(); // Independent text planes owned by the two world scenes.
+  const oldScene = makeWorldScene('former-camp', stalePopup);
+  const newScene = makeWorldScene('new-farm', currentPopup);
+  const camera = { layers: new Layers(0xFFFFFFFF) };
+  renderBase(renderer, oldScene, camera);
+  assert.equal(stalePopup.layers.mask, 1 << 6);
+  windowObject.GridTileAccessors = { getActiveScene: () => newScene }; // A real teleport must replace stale pending text.
+  try {
+    renderBase(renderer, newScene, camera);
+    assert.equal(stalePopup.layers.mask, 1, 'a real zone switch retires the old frame');
+    assert.equal(currentPopup.layers.mask, 1 << 6, 'the new active scene gets its own pending text overlay');
+    renderPost(renderer, makePostScene('post-after-teleport'), { layers: new Layers(1) });
+    assert.equal(currentPopup.layers.mask, 1, 'the new scene is presented and restored');
+    assert.equal(renderer.calls.filter(call => call.scene === 'new-farm' && call.mask === (1 << 6)).length, 1);
+  } finally {
+    delete windowObject.GridTileAccessors;
+  }
+}
+
+function testSameSceneAuxiliaryAndLiveCameraSwap() {
+  const renderer = new Renderer();
+  const popup = makePopupMesh(); // Shared active text plane that must appear only after the real game's base pass.
+  const scene = makeWorldScene('wilderness-camp-world', popup);
+  scene.scoreNote = popup; // The renderer fixture records whether each nested draw actually sees the popup.
+  const originalCamera = { layers: new Layers(0xFFFFFFFF) }; // Current camera before a cinematic/teleport.
+  const previewCamera = { layers: new Layers(0xFFFFFFFF) }; // A different camera drawing the same scene.
+  windowObject.Combat = { deps: { getActiveCamera: () => originalCamera } }; // Real active camera is authoritative.
+  try {
+    renderBase(renderer, scene, originalCamera);
+    const beforePreview = api.snapshot();
+    renderBase(renderer, scene, previewCamera);
+    assert.equal(api.snapshot().auxiliaryWorldBasePassesPreserved,
+      beforePreview.auxiliaryWorldBasePassesPreserved + 1, 'offscreen alternate cameras preserve the pending overlay');
+    assert.equal(api.snapshot().abandonedWorldTextOverlays,
+      beforePreview.abandonedWorldTextOverlays, 'an auxiliary camera must not abandon the visible world frame');
+    assert.equal(api.snapshot().sequenceInvalidations, beforePreview.sequenceInvalidations + 1,
+      'auxiliary same-scene renders invalidate outdated matrix/shadow reuse sequences');
+    assert.equal(renderer.calls.at(-1).noteVisible, false,
+      'a full-layer preview camera cannot accidentally draw the reserved glyph or popup');
+    assert.equal(popup.visible, true, 'alternate-camera visibility suppression restores the live popup');
+    assert.equal(popup.layers.mask, 1 << 6, 'the original frame retains the reserved overlay layer');
+
+    windowObject.Combat.deps.getActiveCamera = () => previewCamera; // Game adopts the other camera during a cinematic.
+    const beforeSwitch = api.snapshot();
+    renderBase(renderer, scene, previewCamera);
+    assert.equal(api.snapshot().abandonedWorldTextOverlays,
+      beforeSwitch.abandonedWorldTextOverlays + 1, 'a genuine camera handoff retires the prior frame');
+    assert.equal(popup.layers.mask, 1 << 6, 'the newly active camera reserves its own overlay');
+    renderPost(renderer, makePostScene('post-after-camera-switch'), { layers: new Layers(1) });
+    assert.equal(popup.layers.mask, 1, 'presenting the active camera restores the popup to its original layer');
+    assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.mask === (1 << 6)).length, 1,
+      'only the active camera gets the world-popup canvas pass');
+  } finally {
+    delete windowObject.Combat;
+  }
+}
+
 function testPlateGatedScoreAvoidsHiddenFinalPass() {
   const renderer = new Renderer();
   const note = makePopupMesh(); // Uses the same CanvasTexture/depth/renderOrder contract as outdoor Scratchbone clues.
@@ -240,6 +315,20 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
   board.visible = true;
   renderBase(renderer, scene, camera);
   renderShell(renderer, scene, camera);
+  const beforeReplay = api.snapshot(); // A colorless render can use the base camera and target while temporarily replacing note depth settings.
+  windowObject.HeldObjectRenderOrder = { replayingDepth: true };
+  note.material.depthWrite = true;
+  try {
+    renderer.render(scene, camera);
+  } finally {
+    note.material.depthWrite = false;
+    delete windowObject.HeldObjectRenderOrder;
+  }
+  assert.equal(renderer.calls.at(-1).noteVisible, false, 'held-item depth replays must not submit pending score notes');
+  assert.equal(api.snapshot().abandonedWorldTextOverlays, beforeReplay.abandonedWorldTextOverlays,
+    'the colorless replay must leave the actual world frame’s pending score intact');
+  assert.equal(note.layers.mask, 1 << 6, 'score keeps its reserved layer until presentation');
+  assert.equal(note.visible, true, 'replay visibility is restored before the final pass');
   renderPost(renderer, post, postCamera);
   assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
     'a newly active note draws once after the shell/post composite');
@@ -275,10 +364,38 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
     'deactivating the plate removes the score again without a second overlay call');
   assert.equal(renderer.calls.filter(call=>call.kind==='clearDepth').length,1,
     'stepping off the plate must not trigger a second actor-depth replay');
+  const noActiveScore = api.prepareDirectScoreOverlay(renderer, scene, camera, []);
+  assert.equal(noActiveScore, null, 'a direct frame with no active score requires no overlay pass');
+  board.visible = true;
+  const finishDirectScore = api.prepareDirectScoreOverlay(renderer, scene, camera, [note]); // Emulate the canvas path with Outlines off.
+  assert.equal(note.visible, false, 'direct base and target passes must not draw the note');
+  const beforeDirect = api.snapshot(); // Compare the mask and overlay counters after direct presentation.
+  renderer.render(scene, camera);
+  finishDirectScore(true);
+  assert.equal(api.snapshot().scoreActorDepthPasses, beforeDirect.scoreActorDepthPasses + 1);
+  assert.equal(renderer.calls.at(-1).noteDepthTest, true, 'direct score tests against foreground silhouettes too');
+  assert.equal(note.layers.mask, 1, 'direct score restores its original layer');
+  assert.equal(note.visible, true, 'direct score restores its original visibility');
+  const finishFailedFrame = api.prepareDirectScoreOverlay(renderer, scene, camera, [note]); // Failed world draws only release their temporary state.
+  finishFailedFrame(false);
+  assert.equal(api.snapshot().scoreActorDepthPasses, beforeDirect.scoreActorDepthPasses + 1);
+  assert.equal(note.layers.mask, 1);
+  assert.equal(note.visible, true);
+  api.setScoreCharacterRootsProvider(() => []); // First-load camp fixture: actor provider exists but returns no scene-attached meshes.
+  const beforeMissingMask = api.snapshot(); // A missing mask must be visible in the phone's existing Pixel Probe.
+  const finishWithoutActors = api.prepareDirectScoreOverlay(renderer, scene, camera, [note]);
+  finishWithoutActors(true);
+  const afterMissingMask = api.snapshot();
+  assert.equal(afterMissingMask.scoreFramesWithMissingActorMask, beforeMissingMask.scoreFramesWithMissingActorMask + 1);
+  assert.equal(afterMissingMask.lastScoreMaskStatus, 'no-attached-actor-mesh');
+  assert.equal(afterMissingMask.scoreActorDepthMeshes, 0, 'a missing actor mask does not report stale successful mesh counts');
+  assert.equal(note.visible, true, 'the temporarily suppressed glyph is restored for the next frame');
   api.setScoreCharacterRootsProvider(null);
 }
 
 testFixedPostCameraAndUnrelatedPass();
 testNoShellStillRestoresPopup();
+testGameplayZoneChangeReplacesStaleOverlay();
+testSameSceneAuxiliaryAndLiveCameraSwap();
 testPlateGatedScoreAvoidsHiddenFinalPass();
 console.log('world-text final-overlay regression guard passed');

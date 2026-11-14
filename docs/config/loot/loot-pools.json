@@ -1672,10 +1672,13 @@
     },
     "mastery_bandit": {
       "label": "Bandits",
-      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Lieutenants always drop one, while grunts and flaskers keep the ordinary chance. rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.05,
+        "chanceBySource": {
+          "bandit_lieutenant": 1
+        },
         "rankWeights": {
           "1": 50,
           "2": 50
@@ -1780,10 +1783,10 @@
     },
     "mastery_tent": {
       "label": "Bandit Tents",
-      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One guaranteed mastery scroll per tent. Reading consumes the scroll; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
-        "chance": 0.5,
+        "chance": 1,
         "rankWeights": {
           "2": 50,
           "3": 50

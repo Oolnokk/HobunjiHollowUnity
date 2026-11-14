@@ -166,7 +166,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  };
  runtimeWindow.window=runtimeWindow;
  vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
-  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},
+  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},queueMicrotask,
  });
  runtimeWindow.HronalWitchBombs.registerDispenser('map_witch_bomb_runtime','tube-fixture',tube,{bombFuseSeconds:7});
  const first=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
@@ -208,6 +208,70 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.deepEqual(playedSfx,['witchBombBlast','witchBombBlast'],'fuse and chain detonations each emit the lowblast cue once');
  assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),false,'an already exploded Witch-bomb cannot replay the sound');
  assert.equal(playedSfx.length,2,'duplicate impacts do not duplicate explosion audio');
+ for(let frame=0;frame<9;frame++)runtimeWindow.HronalWitchBombs.tick(.1);
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().pooledFlashes.fire,2,
+   'expired effects retain their own GPU instance buffers');
+ const third=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(third,'recycled visual effects do not block physical dispenser');
+ assert(third.onImpact(third,'witch-bomb-chain'));
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().burstPoolHits,1,
+   'the next detonation reuses a retired Hronal effect');
+ const fourth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const fifth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ assert(fourth&&fifth,'two independent physical bombs can share one blast frame');
+ const newlyBroken=[];
+ const firstMarked=new RuntimeGroup();firstMarked.position.set(2,0,4);
+ firstMarked.userData.hronalBombBreakable=true;
+ firstMarked.userData.onHronalBombBreak=()=>{
+   newlyBroken.push('old');
+   const added=new RuntimeGroup();added.position.set(2,0,4);
+   added.userData.hronalBombBreakable=true;
+   added.userData.onHronalBombBreak=()=>newlyBroken.push('new');
+   scene.add(added); // First blast can add a new breakable before the next fuse expires in the same tick.
+ };
+ scene.add(firstMarked);
+ const scansBeforeIndependent=runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans;
+ clock=20000;
+ runtimeWindow.HronalWitchBombs.tick(.016);
+ assert.deepEqual(newlyBroken,['old','new'],
+   'independent same-tick blasts discover props created by the previous blast');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeIndependent,2,
+   'unrelated detonations do not share a potentially stale candidate snapshot');
+ const sixth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const seventh=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const scansBeforeChain=runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans;
+ const reusesBeforeChain=runtimeWindow.HronalWitchBombs.debugSnapshot().legacyScanReuses;
+ runtimeWindow.Shattercasks.triggerBurdenBlastAt=(_map,_x,_z,_radius,sourceId)=>{
+   if(sourceId===sixth.id)seventh.onImpact(seventh,'witch-bomb-chain');
+ };
+ assert(sixth.onImpact(sixth,'witch-bomb-chain'));
+ assert(sixth.exploded&&seventh.exploded,'both bombs in a synchronous chain detonate');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeChain,1,
+   'nested chain reactions scan the scene only once');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacyScanReuses-reusesBeforeChain,1,
+   'the outer blast reuses its nested chain discovery without a second traversal');
+ const eighth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const ninth=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:2,y:0,z:4,fuseSeconds:1});
+ const nestedBreaks=[];
+ const nestedProp=new RuntimeGroup();nestedProp.position.set(2,0,4);
+ nestedProp.userData.hronalBombBreakable=true;
+ nestedProp.userData.onHronalBombBreak=()=>{
+   nestedBreaks.push('first');
+   const replacementProp=new RuntimeGroup();replacementProp.position.set(2,0,4);
+   replacementProp.userData.hronalBombBreakable=true;
+   replacementProp.userData.onHronalBombBreak=()=>nestedBreaks.push('replacement');
+   scene.add(replacementProp);
+ };
+ scene.add(nestedProp);
+ const scansBeforeMutation=runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans;
+ runtimeWindow.Shattercasks.triggerBurdenBlastAt=(_map,_x,_z,_radius,sourceId)=>{
+   if(sourceId===eighth.id)ninth.onImpact(ninth,'witch-bomb-chain');
+ };
+ assert(eighth.onImpact(eighth,'witch-bomb-chain'));
+ assert.deepEqual(nestedBreaks,['first','replacement'],
+   'the outer explosion discovers a prop created by the inner explosion callback');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeMutation,2,
+   'a scene-mutating callback invalidates the nested-chain cache and triggers a fresh scan');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 

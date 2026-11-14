@@ -1,5 +1,43 @@
 # Performance investigation log
 
+## 13 Nov 2026: browser HUD DOM/style invalidation audit (in progress)
+
+The Chrome capture supplied by the player included approximately **1,414 ms of Recalculate Style** across the selected interval. This is cumulative browser time, not an isolated self-time measurement for one HUD module. Two confirmed code-level causes of avoidable invalidation in the UI layer were:
+
+- The timed-effect strip scanned all countdown/fraction elements again for every active effect on every refresh (quadratic DOM selector work), while assigning unchanged `display` and `width` inline styles. It now caches child references per structural rebuild, compares before writing, and quantizes width to 0.1 percentage points for countdown stability. The mobile Pixel Probe reports real and skipped writes.
+- The contextual action prompt rebuilt identical button HTML, classes, styles, and pointer handler closures on repeated show/update calls (notably the fishing interaction). Its DOM is now updated only when contents change; stable handlers dispatch the latest callbacks. The desktop status pill also avoids redundant `display` assignments.
+
+No Three.js render function was changed. **Not yet measured:** device/browser `Recalculate Style` time after this patch; the Pixel Probe write counters establish mutation frequency, not a replacement for an A/B Chrome Performance capture.
+
+## 13 Nov 2026: den entrance collision now reuses translated authored colliders
+
+A Chrome Performance capture at approximately 8 FPS on the wilderness slope showed
+`denEntranceCollisionState` near the top of Bottom-up (about 909 ms self time during
+the selected recording). `TilePathfinding.findPath` called collision predicates
+often enough to expose the per-query locale scan and world-rectangle allocation.
+This is CPU work, not an indication that den meshes are expensive to draw.
+
+- `ZoneDenTotemFeatures.denEntranceCollisionState` now caches each den's translated
+  colliders in a `WeakMap`, with a conservative union bound that includes authored
+  objects **outside** the den footprint. Position, dimensions, entrance template,
+  mouth anchor, or locale source changes force recomputation; dead den objects
+  are not retained. `GridTileAccessors` skips tile tests outside the union.
+- `LocalDBOverrides.getRuntimeOverride` retains a read-only parsed locale source
+  for gameplay, invalidated on same-tab edits and cross-tab `storage` events.
+  The editor's `getOverride` intentionally retains its fresh-read behavior.
+  Repository templates are loaded separately so switching back from local mode
+  cannot leave editor-authored collisions as the repo fallback.
+- Mobile Pixel Probe reports cache hits, builds and invalidations; the authored
+  den collision regression tests exercise 600 repeated checks, relocation,
+  resizing, template changes, local edits, and external furniture colliders.
+  A direct runtime test with both checked-in templates also passed 2,000
+  repeated cached reads plus source/geometry invalidation scenarios.
+
+**Not measured:** new physical-device FPS, frame time, or Chrome profiler self
+time after the change. Reprofile the same wilderness view to measure the effect,
+then investigate style recalculation and held-overlay render work separately.
+
+
 Read this before you start chasing a "the game gets slow, especially in the wilderness after fights" report.
 It records what was measured, what turned out to be the cause, and — just as important — what looked like a
 cause and was **not**, so nobody spends another session re-ruling those out.
@@ -40,9 +78,10 @@ found nothing it kept no memory of the failure, so every stuck hunter searched a
 `npc-pathfinding.js`'s cliff-approach search (7,500 nodes), found on Old Man Nohuknuk on the same map. Both now wait
 (1.2 s / 750 ms) before repeating a search that failed from the same tile to the same entry.
 
-**Amplifier 2: `denEntranceCollisionState` per tile test.** `isAnimalDenCollisionTile` calls it once per den for every
-tile a path search probes; each call re-read the Local DB source mode from `localStorage` and rebuilt the rectangle
-list. It is now kept per den for 500 ms (invalidated when the den moves, resizes or changes template).
+**Amplifier 2: `denEntranceCollisionState` per tile test** (2.98 ms of self time in the profile below).
+`isAnimalDenCollisionTile` called it once per den for every tile a path search probes, and each call re-read the Local
+DB source mode and rebuilt the rectangle list. Main fixed this independently while this work was in progress (the
+per-den cache in `zone-den-totem-features.js`, #1672), so nothing was changed for it here.
 
 **Off-camera AI cadence (new).** `OffscreenRigLod.shouldCoarseTickAi`: a `BanditCombat` humanoid in `idle`/`return`
 with nothing in progress, more than 4 tiles from the player and outside the camera frustum, advances at the far-wildlife
@@ -744,3 +783,15 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - A swapped corpse is a flat dark marker, not a body. It is still lootable (looting reads the entity, never the rig),
   and revivable bodies (`keepCorpseAfterLoot`, e.g. a lich's skeletons) and timed-search bodies keep their rigs.
 - Bandits asleep under the wilderness LOD now count as residents of their zone, so a zone whose only bandits are asleep is released (and its camps re-seed) like any other bandit zone.
+
+
+## 13 Nov 2026: chained explosions — effect pooling and save coalescing
+
+- `shattercasks.js`: retired pottery and Soursap sprays return to bounded per-kind pools (maximum six each). Reusing the Three.js instanced meshes also reuses their GPU instance buffers instead of allocating a new mesh and per-flash material on every detonation. Simultaneous sprays remain independent.
+- Synchronous Shattercask chain reactions now hold a batching depth: each cleared-area rubble mesh is rebuilt once, and persisted consumptions/terrain/piles are serialized once after the outermost charge returns. The visible rubble and persisted state are still settled before the synchronous detonation call completes.
+- `hronal-witch-bombs.js`: Hronal, Tothal and Kanthic bursts each have their own bounded pool (six per variant) and independently animated effects. Legacy `userData.hronalBombBreakable` discovery is cached only inside nested bomb-chain calls; independent same-tick explosions rescan so a first blast can introduce new props safely. Registered breakables still use their Map.
+- `dev-random-ruin-lich-themes.js`: Hronal exploding pillar and Tothal icicle sprays reuse per-scene instanced shard meshes keyed by material color and count (up to four retired per style), with explicit active/pooled disposal on arena and ruin teardown. `snapshot()` reports shard reuse and active/pooled sprays.
+- Mobile diagnostics: `Shattercasks.debugSnapshot().performance` exposes burst pool hits/misses and blast saves/rubble rebuilds; `HronalWitchBombs.debugSnapshot()` exposes effect pool activity and reused scene scans. The tests exercise actual expiration and reuse of the visual instances.
+- Visual first-frame audit: pooled pottery, Soursap, Hronal pillar and Tothal icicle instance matrices are rewritten at emission rather than briefly replaying the previous spray's position. Regression tests verify immediate matrix writes on reuse.
+- Review hardening: legacy breakable scans are invalidated when break callbacks might author new props, including inside recursive chains; nested and independent same-tick blast tests cover this. Shattercask persistence now flushes in a nested `finally` even if the post-chain rubble GPU rebuild throws, with an injected-error regression.
+- **Not yet measured:** device-specific FPS, GPU upload time, or real-world long chain size. The pool limits trade a bounded amount of retired GPU memory for avoiding repeated allocation; capture a before/after explosion frame trace on mobile before claiming a measured speedup.

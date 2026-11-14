@@ -18,7 +18,8 @@
   }
 
   function movementSpeedMultiplier(npcId) {
-    return window.HobunjiDrunkGameplayBridge?.npcSpeedMultiplier?.(npcId) ?? 1;
+    return (window.HobunjiDrunkGameplayBridge?.npcSpeedMultiplier?.(npcId) ?? 1)
+      * (window.NpcYawnRest?.movementMultiplier?.(npcId) ?? 1); // Combines drunkenness with the 75% five-second yawn slowdown.
   }
 
   function setBlackoutPose(walker, active) {

@@ -13,6 +13,8 @@ const variant = config.gruntVariants?.slagothimBeastmaster; // Used by every ass
 assert(variant, 'Slagothim Beastmaster grunt variant must be configured');
 assert(variant.chancePerGrunt > 0 && variant.chancePerGrunt <= 0.1, 'Beastmaster must remain a rare grunt roll');
 assert.equal(variant.maxPerCamp, 1, 'a camp must be capped at one Beastmaster');
+assert.equal(variant.speciesWeights.longoran, 5, '5% of Slagothim Beastmasters are Longoran');
+assert(Math.abs(variant.speciesWeights.nuhongan / variant.speciesWeights.tletingan - 0.2) < 1e-9, 'Nuhongan Beastmaster odds are one fifth of Tletingan');
 assert.equal(variant.speciesId, 'tletingan', 'Beastmaster must use the Tletingan/Slagothim avatar and naming data');
 assert.equal(variant.companionCreatureKey, 'dabinggi-hound', 'Beastmaster must bring a Dabinggi-hound');
 assert(variant.companionHealthMultiplier < 1, 'enemy hound must be less durable than a full companion');
@@ -20,7 +22,7 @@ assert(variant.companionDamageMultiplier <= 0.5, 'enemy hound damage must stay m
 assert(variant.companionAttackCooldownMultiplier > 1, 'enemy hound must attack more slowly than a full companion');
 
 assert.match(campSource, /rank !== 'grunt'/, 'only a normal grunt slot can become a Beastmaster');
-assert.match(campSource, /speciesWeights: \{ \[speciesId\]: 1 \}/, 'Beastmaster species must be forced without changing ordinary bandit weights');
+assert.match(campSource, /variant\?\.speciesWeights/, 'Beastmaster species must roll within the Slagothim family without changing ordinary bandit weights');
 assert.match(campSource, /banditVariant: variant \? 'slagothimBeastmaster' : null/, 'spawned Beastmaster must carry a debug-visible variant marker');
 assert.match(campSource, /deps\.hostileObjects\.add\(hound\)[\s\S]{0,180}deps\.companionObjects\.add\(hound\)/, 'hound must be targetable as hostile while companion AI drives it');
 assert.match(campSource, /banditCampInstanceId: rec\.instance\.id/, 'hound must count toward clearing its source camp');

@@ -99,6 +99,8 @@
   const _animalDenEntranceLocalePromises = new Map(); // Template id -> repo-backed request shared across all zone builds.
   const _animalDenEntranceLocales = new Map(); // Template id -> synchronous full template used by den rendering and movement collision after loading.
   const _denFurnitureDataCache = new Map(); // Furniture key -> authored JSON promise reused by every generated den instance.
+  const _denEntranceCollisionCache = new WeakMap(); // Den identity -> translated rectangles, reused by tile queries and rebuilt when geometry/template changes.
+  const _denCollisionStats = { hits: 0, builds: 0, invalidations: 0 }; // On-demand Pixel Probe counters, not per-frame formatting.
 
   function denEntranceLocaleId(den) {
     const id = String(den?.entranceTemplateId || ''); // Generator-chosen template; unknown/legacy ids fall back to the shared full-size template.
@@ -108,7 +110,8 @@
   function localAnimalDenEntranceLocale(id = ANIMAL_DEN_ENTRANCE_LOCALE_ID) {
     try {
       if (window.LocalDBOverrides?.getSourceMode?.() !== 'local') return null;
-      const override = window.LocalDBOverrides.getOverride?.('locales');
+      const database = window.LocalDBOverrides; // Runtime cached read avoids JSON.parse for every animal-den collision test.
+      const override = database.getRuntimeOverride ? database.getRuntimeOverride('locales') : database.getOverride?.('locales');
       const locales = Array.isArray(override) ? override : override?.locales;
       return Array.isArray(locales) ? locales.find(locale => locale?.id === id) || null : null;
     } catch (_) { return null; }
@@ -127,13 +130,11 @@
   }
 
   function loadAnimalDenEntranceLocale(id = ANIMAL_DEN_ENTRANCE_LOCALE_ID) {
-    const local = localAnimalDenEntranceLocale(id); // Live Locale Editor override supplies the complete den template during local-db testing.
-    if (local) {
-      _animalDenEntranceLocales.set(id, local);
-      return Promise.resolve(local);
-    }
-    if (_animalDenEntranceLocalePromises.has(id)) return _animalDenEntranceLocalePromises.get(id);
-    if (typeof fetch !== 'function') return Promise.resolve(null); // Headless/unit-test runtimes keep the legacy facade without browser fetch.
+    const local = localAnimalDenEntranceLocale(id); // Live editor data must not replace the repository fallback cache.
+    if (_animalDenEntranceLocalePromises.has(id)) return local ? Promise.resolve(local) : _animalDenEntranceLocalePromises.get(id);
+    if (typeof fetch !== 'function') return Promise.resolve(local); // Headless tests can still read local overrides.
+    // Always preload the repo fallback, including in local mode, so a source
+    // switch cannot accidentally reuse the editor's colliders as repo data.
     const promise = fetch(zoneFeatureAssetUrl(`config/locales/${id}.json`), { cache:'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(locale => {
@@ -145,7 +146,7 @@
         return null;
       });
     _animalDenEntranceLocalePromises.set(id, promise);
-    return promise;
+    return local ? Promise.resolve(local) : promise;
   }
 
   function loadAllAnimalDenEntranceLocales() {
@@ -221,42 +222,56 @@
     };
   }
 
-  // Movement collision asks for this once per den per tile test, thousands of
-  // times in one path search, and every call re-read the Local DB source mode
-  // (localStorage) and rebuilt the rectangle list. The answer only changes
-  // when the den moves/resizes or the Locale Editor saves a template, so one
-  // result per den is kept for a short time.
-  const DEN_COLLISION_STATE_TTL_MS = 500;
-  const _denCollisionStateCache = new WeakMap(); // den -> { at, x, y, w, h, templateId, state }
   function denEntranceCollisionState(den) {
-    if (!den || typeof den !== 'object') return computeDenEntranceCollisionState(den);
-    const now = globalThis.performance?.now?.() ?? Date.now();
-    const cached = _denCollisionStateCache.get(den);
-    if (cached && now - cached.at < DEN_COLLISION_STATE_TTL_MS && cached.x === den.x && cached.y === den.y
-      && cached.w === den.w && cached.h === den.h && cached.templateId === den.entranceTemplateId) return cached.state;
-    const state = computeDenEntranceCollisionState(den);
-    _denCollisionStateCache.set(den, { at: now, x: den.x, y: den.y, w: den.w, h: den.h, templateId: den.entranceTemplateId, state });
-    return state;
-  }
-  function computeDenEntranceCollisionState(den) {
-    const locale = activeAnimalDenEntranceLocale(den); // This den's template supplies cave + furniture collider policies.
-    const transform = denTemplateTransform(den, locale); // Shared placement transform keeps collision aligned with rendered template objects.
-    if (!locale || !transform) return null;
-    const rects = []; // Explicit collider rectangles for all authored den-template objects.
-    let useLegacyCave = true; // Auto/missing cave collision preserves the historical doorway-gap rock collider.
+    if (!den || typeof den !== 'object') return null;
+    const locale = activeAnimalDenEntranceLocale(den); // Runtime override identity changes only after a saved locale edit or source-mode switch.
+    if (!locale) return null;
+    const x = Number(den.x) || 0; // Cache key: den position; relocation must recompute world-space rectangles.
+    const y = Number(den.y) || 0; // Cache key: row position used by denTemplateTransform.
+    const w = Math.max(.1, Number(den.w) || 1); // Cache key: final footprint width affects collider scale.
+    const h = Math.max(.1, Number(den.h) || 1); // Cache key: final footprint height affects collider scale.
+    const templateId = den.entranceTemplateId || null; // Cache key: distinguishes legacy cave shells from authored entrance templates.
+    const mouthX = den.mouthAnchor?.x ?? null; // Cache key: relocation can update the entrance anchor independently of the den footprint.
+    const mouthY = den.mouthAnchor?.y ?? null; // Cache key: same for the entrance row.
+    const cached = _denEntranceCollisionCache.get(den); // Weak ownership means removed zone dens do not remain resident.
+    if (cached && cached.locale === locale && cached.x === x && cached.y === y && cached.w === w && cached.h === h
+      && cached.templateId === templateId && cached.mouthX === mouthX && cached.mouthY === mouthY) {
+      _denCollisionStats.hits++;
+      return cached.state;
+    }
+
+    const transform = denTemplateTransform(den, locale); // Expensive locale-object translation runs only on a cache miss.
+    if (!transform) return null;
+    const rects = []; // Explicit authored cave and furniture colliders, translated to world tiles once per den revision.
+    let useLegacyCave = true; // Historical doorway-gap rock collision is retained for unassigned/auto caves.
+    let minX = x, minY = y, maxX = x + w, maxY = y + h; // Union covers the legacy footprint AND authored furniture outside it.
     for (const object of (locale.objects || [])) {
       const collision = object?.collision;
       const isCave = object === transform.cave;
       if (isCave) {
-        if (!den?.entranceTemplateId || !collision || collision.mode === 'auto') continue; // Only explicitly assigned Locale Editor entrance templates replace the legacy cave collider.
+        if (!den.entranceTemplateId || !collision || collision.mode === 'auto') continue;
         useLegacyCave = false;
       }
       if (!collision || collision.mode === 'auto' || collision.mode === 'none') continue;
       if (collision.mode !== 'footprint' && collision.mode !== 'custom') continue;
-      const rect = denTemplateRect(den, object, collision, transform); // World-space rectangle consumed by movement collision.
-      if (rect) rects.push(rect);
+      const rect = denTemplateRect(den, object, collision, transform); // Uses the same authored shapes as the uncached path.
+      if (rect) {
+        rects.push(rect);
+        minX = Math.min(minX, rect.x);
+        minY = Math.min(minY, rect.y);
+        maxX = Math.max(maxX, rect.x + rect.w);
+        maxY = Math.max(maxY, rect.y + rect.h);
+      }
     }
-    return { useLegacyCave, rects };
+    const state = { useLegacyCave, rects, bounds: { x:minX, y:minY, w:maxX-minX, h:maxY-minY } }; // Conservative broad-phase for GridTileAccessors.
+    _denEntranceCollisionCache.set(den, { locale, x, y, w, h, templateId, mouthX, mouthY, state });
+    _denCollisionStats.builds++;
+    if (cached) _denCollisionStats.invalidations++;
+    return state;
+  }
+
+  function denCollisionDebugSnapshot() {
+    return { ..._denCollisionStats }; // Requested only by Pixel Probe, never allocated during steady-state collision checks.
   }
 
   function denEntranceCollisionFor(den) {
@@ -613,7 +628,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, updateBanubuVisibility, banubuCaveAlpha };
+  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, denCollisionDebugSnapshot, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, updateBanubuVisibility, banubuCaveAlpha };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();
