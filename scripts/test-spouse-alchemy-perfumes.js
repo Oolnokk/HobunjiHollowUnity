@@ -85,7 +85,23 @@ const recipes = [ // Unique three-source reactions, one per supported kiss stat 
   { id: 'perfumeOfStone', keys: ['mistpetalBloom', 'graniteThistle', 'shalefrondFern'], stat: 'maxFooting' },
   { id: 'perfumeOfEmbers', keys: ['mistpetalBloom', 'graniteThistle', 'cinderveinBramble'], stat: 'maxStamina' },
   { id: 'perfumeOfZephyrs', keys: ['mistpetalBloom', 'cloudberryVine', 'silverfernFrond'], stat: 'footingRegen' },
+  { id: 'perfumeOfVigor', keys: ['mistpetalBloom', 'frostcapMoss', 'graniteThistle'], stat: 'staminaRegen' },
+  { id: 'perfumeOfMight', keys: ['palehartLichen', 'graniteThistle', 'silverfernFrond'], stat: 'outgoingDamage' },
+  { id: 'perfumeOfImpact', keys: ['frostcapMoss', 'graniteThistle', 'silverfernFrond'], stat: 'footingDamage' },
+  { id: 'perfumeOfQuickness', keys: ['mistpetalBloom', 'cloudberryVine', 'frostcapMoss'], stat: 'attackSpeed' },
+  { id: 'perfumeOfFleetness', keys: ['frostcapMoss', 'cloudberryVine', 'graniteThistle'], stat: 'movementSpeed' },
+  { id: 'perfumeOfEfficiency', keys: ['windrootBulb', 'cloudberryVine', 'graniteThistle'], stat: 'staminaSpend', reduces: true },
+  { id: 'perfumeOfThickblood', keys: ['palehartLichen', 'frostcapMoss', 'graniteThistle'], stat: 'incomingDamageAffliction', reduces: true },
+  { id: 'perfumeOfDevotion', keys: ['palehartLichen', 'cloudberryVine', 'silverfernFrond'], stat: 'positiveFavor' },
+  { id: 'perfumeOfInsight', keys: ['mistpetalBloom', 'cloudberryVine', 'graniteThistle'], stat: 'perception' },
 ];
+assert.equal(Object.keys(alchemy.RECIPE_DEFS).length, 49, '36 original alchemy reactions and 13 spouse perfumes are registered');
+const alchemyGetters = { // Existing potion getter paths used by Combat, movement, resource costs, reputation and perception.
+  outgoingDamage: 'getOutgoingDamageMultiplier', footingDamage: 'getFootingDamageMultiplier',
+  attackSpeed: 'getAttackSpeedMultiplier', movementSpeed: 'getMovementSpeedMultiplier',
+  staminaSpend: 'getStaminaSpendMultiplier', incomingDamageAffliction: 'getIncomingDamageAfflictionMultiplier',
+  positiveFavor: 'getPositiveFavorMultiplier', perception: 'getPerceptionMultiplier',
+};
 for (const key of Object.keys(alchemy.REAGENT_DEFS)) inventory[key] = 8;
 romance.completeWedding('spouse');
 assert.equal(statProviders.length, 1, 'kiss bonus composes through one shared ResourceSystem provider');
@@ -96,7 +112,7 @@ assert.equal(romance.remainingKissHours(), 24, 'kiss duration is exactly one ful
 assert.equal(statProviders[0](player, 'staminaRegen'), 1.10);
 assert.equal(statProviders[0](strangerWalker, 'staminaRegen'), 1, 'NPCs do not inherit a player blessing');
 
-for (const { id, keys, stat } of recipes) {
+for (const { id, keys, stat, reduces = false } of recipes) {
   const outcomes = alchemy.enumerateRecipes(keys); // The actual table must offer the reaction from three distinct live reagents.
   assert.ok(outcomes.some(outcome => outcome.recipeId === id), id + ' is reachable by normal alchemy');
   const made = alchemy.brewFrom(keys, { targetRecipeId: id, random: () => 0, alchemyLevel: 0 });
@@ -116,17 +132,23 @@ for (const { id, keys, stat } of recipes) {
   assert.equal(gifting.offerGift(spouseWalker), true, 'ordinary gift transaction accepts perfume');
   assert.equal(inventory[held.key], before - 1, 'successful gift consumes one perfume');
   assert.equal(romance.currentKissEffect().stat, stat);
-  assert.equal(romance.currentKissEffect().multiplier, 1.10);
+  const expectedMultiplier = reduces ? 0.90 : 1.10; // Lower Stamina spend and harmful affliction buildup are beneficial reductions.
+  assert.equal(romance.currentKissEffect().multiplier, expectedMultiplier);
   for (const channel of ['staminaRegen', 'healthRegen', 'maxFooting', 'maxStamina', 'footingRegen']) {
-    assert.equal(statProviders[0](player, channel), channel === stat ? 1.10 : 1, 'only the selected perfume stat applies: ' + channel);
+    assert.equal(statProviders[0](player, channel), channel === stat ? expectedMultiplier : 1, 'ResourceSystem only owns the selected resource perfume: ' + channel);
   }
+  for (const [channel, getter] of Object.entries(alchemyGetters)) {
+    assert.equal(alchemy[getter](), channel === stat ? expectedMultiplier : 1, 'the real existing alchemy gameplay getter must apply exactly one selected perfume: ' + channel);
+  }
+  assert.equal(statProviders[0](strangerWalker, stat), 1, 'perfume does not buff NPCs');
+  assert.equal(romance.activeKissPerfumeEffect()?.stat, stat, 'the kiss provider sees the selected worn perfume while active');
   assert.equal(romance.remainingKissHours(), 24, 'switching perfume never extends an active kiss');
   const shown = effects['romance-spouse-kiss']()[0];
   assert.equal(shown.id, 'beloved');
   assert.ok(shown.label.includes(romance.currentKissEffect().effectLabel), 'HUD shows the current perfume effect');
   assert.ok(shown.sourceLabel.includes(itemDefs[made.itemKey].label.split(' · ')[0]), 'HUD identifies the gifted perfume');
 }
-assert.equal(romance.getSpouse().perfume.recipeId, 'perfumeOfZephyrs', 'last perfume replaces earlier ones');
+assert.equal(romance.getSpouse().perfume.recipeId, 'perfumeOfInsight', 'last perfume replaces earlier ones');
 const beforeOther = romance.getSpouse().perfume.recipeId;
 const other = alchemy.ensureRecipeItemDef('perfumeOfBlossoms', 0);
 inventory[other] = 2;
@@ -149,6 +171,8 @@ assert.equal(romance.remainingKissHours(), 24, 'restore preserves kiss expiry');
 rawDay = 11; // One full day later; perfume remains on spouse but no stat bonus until another kiss.
 assert.equal(romance.remainingKissHours(), 0);
 assert.equal(statProviders[0](player, 'maxStamina'), 1);
+assert.equal(romance.activeKissPerfumeEffect(), null, 'expired kisses do not contribute any saved perfume to Alchemy');
+for (const getter of Object.values(alchemyGetters)) assert.equal(alchemy[getter](), 1, 'expired perfumes do not leak through alchemy getter ' + getter);
 romance.completeSpouseKiss('spouse');
 assert.equal(statProviders[0](player, 'maxStamina'), 1.16, 'the next kiss reuses the worn perfume');
 const tampered = romance.serialize();
@@ -162,4 +186,8 @@ assert.equal(statProviders[0](player, 'staminaRegen'), 1.10, 'old saves remain f
 romance.completeWedding('spouse');
 assert.equal(romance.getSpouse().perfume, undefined, 'a new marriage starts without inherited perfume');
 assert.ok(toasts.some(message => message.includes('Beloved')), 'kiss feedback remains visible');
-console.log('spouse alchemy perfumes: brewing, gifting, replacement, potency, persistence and expiry passed');
+// The live consumable and wheel adapters must explicitly reject gift-only bottles.
+assert.match(read('docs/js/alcohol-gameplay-bridge.js'), /if \(!def \|\| def\.useMode === 'gift'\) return false;/);
+assert.match(read('docs/js/item-processing.js'), /if \(def\.useMode === 'gift'\) return false;/);
+assert.match(read('docs/js/inventory-held-override.js'), /explicitUseMode === 'gift'/);
+console.log('spouse alchemy perfumes: 13 existing-effect channels, brewing, gifting, replacement, potency, inventory actions, persistence and expiry passed');
