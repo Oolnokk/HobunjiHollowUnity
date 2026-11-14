@@ -113,17 +113,19 @@ const wrapperSource = between(composerSource,
 let temporaryYaw = 0; // Represents a render-scoped visual rotation that must never persist.
 let failDuringPose = false; // Deliberately throws after the visual correction has registered its undo.
 let failDuringDraw = false; // Also checks the existing WebGL error path.
+let failDuringRollback = false; // Simulates a stale attachment whose undo throws before the feet can be restored.
 let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
 const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
   'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'postHeadAimHooks',
   'let renderSequence = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
-    + wrapperSource + '\nreturn proto.render;'
+    + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; return proto.render;'
 )(
   () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
   {}, (_camera, undo) => {
     temporaryYaw += 1;
     undo.push(() => { temporaryYaw -= 1; });
+    undo.push(() => { if (failDuringRollback) throw new Error('synthetic undo failure'); }); // Runs first during reverse-order rollback.
     if (failDuringPose) throw new Error('synthetic pose failure');
   },
   () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
@@ -140,5 +142,16 @@ failDuringDraw = true;
 assert.throws(() => renderWrapper({}, {}), /synthetic render failure/);
 assert.equal(temporaryYaw, 0, 'renderer failure rolls back temporary orientation');
 assert.equal(drawCalls, 2, 'renderer was reached before the draw failure');
+assert.match(renderWrapper.getDebug().renderError, /synthetic render failure/,
+  'mobile composer diagnostics retain a render-stage exception');
+failDuringDraw = false;
+failDuringRollback = true;
+assert.equal(renderWrapper({}, {}), 'drawn', 'a failing rollback does not break the frame');
+assert.equal(temporaryYaw, 0, 'a failed attachment undo cannot prevent the later foot/body undo');
+assert.match(renderWrapper.getDebug().rollbackErrors[0], /synthetic undo failure/,
+  'mobile composer diagnostics record which rollback failed');
+failDuringRollback = false;
+assert.equal(renderWrapper({}, {}), 'drawn', 'normal rendering recovers after the interrupted rollback');
+assert.equal(temporaryYaw, 0, 'no stale rotation survives the recovery frame');
 
 console.log('PASS: mirrored foot contacts, stance/climb reset, and render-only body yaw preserve foot facing and rollback failed renders');
