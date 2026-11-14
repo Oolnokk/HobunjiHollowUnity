@@ -433,7 +433,6 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
 // reserved before those layers, and the backup chest uses normal lockpicking.
 {
   let rockDoors = 0; // Count hidden puzzle-cave portals exercised across independent deterministic seeds.
-  let ruinDoors = 0; // Count existing full-sized ruin thresholds safely concealed by an optional wall.
   let surpriseCaches = 0; // Count chest-only fallbacks on non-cache cave histories.
   let walledChambers = 0; // Number of generated side chambers that must all have a real payoff.
   for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave', 'ruin_entrance', 'trapped_cache']) {
@@ -455,7 +454,6 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
       assert(map.floor.some(([col,row]) => col === reward.col && row === reward.row),
         `${map.id}: destination stands on carved floor, not empty rock`);
       if (hiddenRuin) {
-        ruinDoors++;
         assert(map.caveRuinEntrance?.id === reward.id, `${map.id}: the real full-size ruin threshold is retained`);
         assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'ruinEntranceDoor'),
           `${map.id}: ruin destination uses the existing modeled ruin doorway`);
@@ -475,7 +473,6 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   }
   assert(walledChambers > 0, 'regression fixture exercises at least one destructible wall');
   assert(rockDoors > 0, 'spacious hidden chambers can contain genuine Puzzle Cave entrances');
-  assert(ruinDoors >= 0, 'hidden ruin count is collected when a valid full-size doorway can be concealed');
   assert(surpriseCaches > 0, 'non-cache histories also generate the guaranteed secret cache outcome');
 }
 
