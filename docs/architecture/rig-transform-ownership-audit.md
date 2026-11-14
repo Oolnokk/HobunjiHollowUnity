@@ -58,6 +58,14 @@ next ledger update. Quaternion and full-parent-space transforms continue to be
 owned by existing composer/pose systems; they are *not* represented as Euler
 angle offsets indiscriminately.
 
+## Independent editor loader review
+
+The Enemy Loadout Editor has its own ordered classic-script loader.
+It previously used an old drunk-locomotion.js cache token and omitted the
+new ledger. The preview now loads rig-transform-layers.js first, then the
+current drunken locomotion module; the editor module-import cache-bust chain
+was updated too. This prevents editor-only untracked thigh offsets.
+
 ## Recommended next migration/testing pass
 
 Prioritize NPC dance late-hand cancellation, Tzatzul talon release and grip

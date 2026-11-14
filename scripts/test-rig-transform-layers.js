@@ -72,4 +72,9 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
   near(node.position.z, 0);
   assert.equal(layers.getDebug().activeLayers, 0);
 }
-console.log('Rig transform layers: ownership, interrupts, drift and release PASS');
+// Workshop loads runtime scripts independently from the gameplay loader.
+const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
+const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
+const drunkAt = editorScripts.indexOf("'js/drunk-locomotion.js?v=");
+assert.ok(ledgerAt >= 0 && drunkAt > ledgerAt, 'Workshop must load the rig ledger before drunken locomotion');
+console.log('Rig transform layers: ownership, interrupts, drift, editor bootstrap and release PASS');
