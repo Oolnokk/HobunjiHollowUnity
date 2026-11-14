@@ -44,8 +44,7 @@ for (const name of required) {
   previous = index;
 }
 assert(previous < expanded.indexOf('src="game.js?v='), 'all services register before game initializes');
-assert(expanded.indexOf('js/pixel-probe.js?') < expanded.indexOf('data-classic-group="dialogue"') ||
-  expanded.indexOf('js/pixel-probe.js?') < expanded.indexOf('js/cinematic-camera-runtime.js?'),
+assert(expanded.indexOf('js/pixel-probe.js?') < expanded.indexOf('js/cinematic-camera-runtime.js?'),
   'Pixel Probe remains before the dialogue group, not after it');
 assert.match(manifest, /document\.readyState !== 'loading'/,
   'the manifest rejects async/late insertion that could reorder game startup');
