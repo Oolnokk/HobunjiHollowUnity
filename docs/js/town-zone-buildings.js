@@ -434,6 +434,45 @@
           ring.position.set(eCol + 0.5, deps.tileSurfaceY(deps.TileType.GRASS) + _tileVisualHeight(townMap, eCol, eRow) + 0.02, eRow + 0.5);
           townScene2.add(ring);
         }
+
+        // Roof access reuses the same building-transition action as ordinary doors,
+        // but its approach lives on an elevated authored deck, not the ground floor.
+        const sourcePiece=piece?.currentPiece||piece; // Authored shell and balcony markers for this placed building.
+        const roofCells=sourcePiece?.footprint?.cells||[]; // Structural shell cells establish the same full-footprint origin as HousePieceGen.
+        const roofExt=sourcePiece?.footprint?.extensions||{}; // Exterior porch cells affect the building's rotated placement pivot.
+        const allRoofCells=sourcePiece.placementOrigin==='fullFootprint'
+          ? roofCells.concat(roofExt.entryTunnels||[],roofExt.tallEntryTunnels||[],
+            roofExt.chimneys||[],roofExt.porches||[],roofExt.porchStairs||[],roofExt.railings||[],
+            (sourcePiece.balconies||[]).flatMap(entry=>entry.cells||[]))
+          : roofCells; // Exactly mirror HousePieceGen's full-footprint/legacy anchor rule.
+        if(allRoofCells.length){
+          const minX=Math.min(...allRoofCells.map(c=>c.x)), minZ=Math.min(...allRoofCells.map(c=>c.y));
+          const width=Math.max(...allRoofCells.map(c=>c.x))-minX+1;
+          const depth=Math.max(...allRoofCells.map(c=>c.y))-minZ+1;
+          for(const balcony of sourcePiece.balconies||[]){
+            const access=balcony.access, hatch=access?.openingTile; // Only explicitly linked interior ladders create roof entrances.
+            if(access?.type!=='interiorFurniture'||!hatch||!access.mapId)continue;
+            const local=BuildingDoor.rotateCell(hatch.x-minX,hatch.y-minZ,width,depth,rotDeg); // Same transform as porch deck supports.
+            const col=bldg.gridX+local.x,row=bldg.gridZ+local.y;
+            const roofId='bldg_roof_hatch_'+bldg.id+'_'+balcony.id;
+            if(!worldTownTransitions.some(t=>t.id===roofId))worldTownTransitions.push({
+              id:roofId,label:access.returnLabel||'Descend Ladder',col,row,area:'town',
+              target:'interior',targetMapId:access.mapId,targetSpotId:'',
+              targetCol:access.interiorTile?.col??Math.floor(deps.INTERIOR_COLS/2),
+              targetRow:access.interiorTile?.row??Math.floor(deps.INTERIOR_ROWS/2),
+              buildingId:bldg.id,roofAccess:true,balconyId:balcony.id,
+            });
+            const roofY=elevationY+(balcony.heightMode==='wall'
+              ? Number(sourcePiece.base?.groundY||0)+Number(sourcePiece.base?.height||1.4)
+              : Number(balcony.height)||1.4); // Deck support height in the same world datum as the placed house.
+            const ring=new THREE.Mesh(_entranceRingGeo,_entranceMat);
+            ring.rotation.x=-Math.PI/2;
+            ring.position.set(col+.5,roofY+.035,row+.5); // Unlike a door/porch marker, this must NOT project to ground.
+            ring.userData.transitionId=roofId;
+            ring.userData.roofAccess=true;
+            townScene2.add(ring);
+          }
+        }
       }
 
       deps.debugLog('_spawnTownBuildings: built ' + groups.length + ' buildings from piece JSON'
