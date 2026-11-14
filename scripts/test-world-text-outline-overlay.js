@@ -262,6 +262,8 @@ function testSameSceneAuxiliaryAndLiveCameraSwap() {
       beforePreview.auxiliaryWorldBasePassesPreserved + 1, 'offscreen alternate cameras preserve the pending overlay');
     assert.equal(api.snapshot().abandonedWorldTextOverlays,
       beforePreview.abandonedWorldTextOverlays, 'an auxiliary camera must not abandon the visible world frame');
+    assert.equal(api.snapshot().sequenceInvalidations, beforePreview.sequenceInvalidations + 1,
+      'auxiliary same-scene renders invalidate outdated matrix/shadow reuse sequences');
     assert.equal(renderer.calls.at(-1).noteVisible, false,
       'a full-layer preview camera cannot accidentally draw the reserved glyph or popup');
     assert.equal(popup.visible, true, 'alternate-camera visibility suppression restores the live popup');
