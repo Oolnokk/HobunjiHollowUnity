@@ -32,6 +32,7 @@ const itemDefs = { // Current native item/seed records used as templates for var
   redberrySeeds: { label: 'Redberry Seeds', cat: 'seed', sellPrice: 5 },
 };
 const inventory = { seedMakerSmallPlan: 1, needlegrain: 1, heftroot: 1, gold: 999 }; // Bag inventory used by parent validation and building purchases.
+const inventoryItems = [{ key: 'cv_needlegrain_222222Seeds', label: 'RESTORED IMPORTED SEEDS', max: 999 }]; // Existing entries may precede cultivar registration after a save reload.
 const storage = { needlegrain: 1 }; // Farm-storage inventory used for the second parent.
 const calendar = { day: 1, time01: 0, season: 'Coldmuck' }; // Controllable in-game clock for processing and crop growth.
 game.InventoryStacks = { MAX_TOTAL: 999 };
@@ -43,7 +44,7 @@ game.HobunjiCookingData = { items: {
 } };
 game.GameRandom = { random: () => .6 };
 run('docs/js/crop-varieties.js');
-game.CropVarieties.attach({ cropData, ITEM_DEFS: itemDefs, inventory, inventoryItems: [], loadStorage: () => storage });
+game.CropVarieties.attach({ cropData, ITEM_DEFS: itemDefs, inventory, inventoryItems, loadStorage: () => storage });
 const regions = game.CropVarieties.REGIONS; // Source geography and climate gene indices.
 assert.equal(regions.length, 6);
 assert.equal(regions[2].label, 'Eastern Highplains');
@@ -51,6 +52,12 @@ assert.equal(regions[3].label, 'Western Highlands');
 const east = game.CropVarieties.ensure('cv_needlegrain_222222'); // Mashtzarr permafrost-plains genotype.
 const west = game.CropVarieties.ensure('cv_needlegrain_333333'); // Eternal-snow western plateau genotype.
 assert.equal(east.region, 'Eastern Highplains');
+for (const entry of inventoryItems.filter(item => item.key.startsWith('cv_') && item.key.endsWith('Seeds'))) {
+  const plantedCrop = entry.key.slice(0, -'Seeds'.length); // Foreign seed IDs must resolve to their own cultivar, not a copied native parent.
+  assert.equal(entry.seedFor, plantedCrop, 'every imported seed has a plant action in the held-item scroll');
+  assert.equal(itemDefs[entry.key].seedFor, plantedCrop, 'canonical metadata survives cooking/pack re-registration');
+}
+assert.equal(inventoryItems.filter(item => item.key === east.seedKey).length, 1, 'an existing saved seed entry is repaired without duplication');
 assert.equal(west.region, 'Western Highlands');
 assert.notEqual(east.idealMin, west.idealMin);
 assert.ok(west.seasonGrowth.Coldmuck > east.seasonGrowth.Coldmuck);
@@ -58,6 +65,8 @@ const offspring = game.CropVarieties.breed(east.id, west.id, () => .6); // Predi
 assert.ok(offspring.id.startsWith('cv_needlegrain_'));
 assert.equal(Object.keys(offspring.effects).length, 2);
 assert.ok(itemDefs[offspring.seedKey]);
+assert.equal(itemDefs[offspring.seedKey].seedFor, offspring.id, 'crossbred seeds retain their distinct planting target');
+assert.equal(inventoryItems.find(item => item.key === offspring.seedKey)?.seedFor, offspring.id, 'new hybrid seeds expose Plant in the inventory');
 const rgbMidpoint = (a, b) => [16, 8, 0].reduce((rgb, shift) => rgb | (Math.round((((a >>> shift) & 255) + ((b >>> shift) & 255)) / 2) << shift), 0); // Independent exact 50/50 color expectation.
 const expectedPigment = rgbMidpoint(east.color, west.color); // Both visible parent colors contribute equally.
 assert.equal(offspring.color, expectedPigment, 'first-generation color must blend both parents');
@@ -79,6 +88,7 @@ reloadedWindow.CropVarieties.attach({ cropData: reloadedCrops, ITEM_DEFS: reload
   inventory: { [grandchild.seedKey]: 1 }, inventoryItems: [], loadStorage: () => ({}) });
 assert.equal(reloadedWindow.CropVarieties.colorOf(grandchild.seedKey), grandchild.color, 'fresh runtime restores second-generation pigment solely from saved seed ID');
 assert.equal(reloadedCrops[grandchild.id].varietyColor, grandchild.color, 'restored farm crop mesh uses exactly the saved hybrid color');
+assert.equal(reloadedItemDefs[grandchild.seedKey].seedFor, grandchild.id, 'reloaded seeds regain their planting target from their saved item key');
 const storageOnlyWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Separate restored farm stores the seed outside the bag.
 vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { window: storageOnlyWindow });
 storageOnlyWindow.CropVarieties.attach({ cropData: { needlegrain: { ...cropData.needlegrain }, heftroot: { ...cropData.heftroot }, redberries: { ...cropData.redberries } },
