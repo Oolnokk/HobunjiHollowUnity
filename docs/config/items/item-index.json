@@ -841,8 +841,14 @@
   },
   "fertileHoneyfuzzleEgg": {
     "key": "fertileHoneyfuzzleEgg",
-    "label": "Fertile Honeyfuzzle Egg",
+    "label": "Fertile Honeyfuzzle Egg (Legacy)",
     "icon": "🥚",
+    "cat": "livestock"
+  },
+  "honeyfuzzleQueen": {
+    "key": "honeyfuzzleQueen",
+    "label": "Honeyfuzzle Queen",
+    "icon": "👑",
     "cat": "livestock"
   },
   "fishingmace": {
