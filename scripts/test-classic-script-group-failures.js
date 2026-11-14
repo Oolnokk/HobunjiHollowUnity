@@ -10,11 +10,13 @@ const insertedScripts = []; // Captures script tags written during parsing.
 const nodes = new Map(); // Mobile-visible error nodes created by the simulated page.
 const body = { appendChild(element) { nodes.set(element.id, element); } }; // Minimal DOM append target for failures.
 const listeners = []; // Installed event handlers, used to prove one capture listener across groups.
+const domReadyCallbacks = []; // Deferred manifest warning callbacks queued before the body is parsed.
 const browser = {
   addEventListener(type, callback, capture) { listeners.push({ type, callback, capture }); },
 };
 const doc = {
   readyState: 'loading',
+  addEventListener(type, callback, options) { domReadyCallbacks.push({ type, callback, options }); },
   currentScript: { getAttribute: () => 'qol' },
   write(markup) { insertedScripts.push(markup); },
   body,
@@ -54,4 +56,20 @@ doc.currentScript.getAttribute = () => 'render';
 vm.runInNewContext(loader, context);
 assert.equal(listeners.length, 1, 'repeated group loads must not register duplicate event listeners');
 assert.equal(insertedScripts.length, 2, 'both groups still write their manifest tags');
+
+// A manifest in <head> may fail before the page has created document.body.
+nodes.clear();
+doc.body = null;
+listeners[0].callback({ target: { src: 'https://example.org/docs/js/bootstrap/classic-groups/combat-main.js?load=4321' } });
+listeners[0].callback({ target: { src: 'https://example.org/docs/js/bootstrap/classic-groups/ruin-puzzles.js?load=4321' } });
+assert.equal(nodes.size, 0, 'no alert can mount before body exists');
+assert.equal(domReadyCallbacks.length, 1, 'multiple early failures queue one DOMContentLoaded handler');
+assert.equal(domReadyCallbacks[0].type, 'DOMContentLoaded');
+assert.equal(domReadyCallbacks[0].options.once, true);
+doc.body = body;
+domReadyCallbacks[0].callback();
+assert.equal(nodes.size, 1, 'body availability surfaces previously silent head-time errors');
+assert.match(nodes.get('classicScriptLoadFailure').textContent, /combat-main, ruin-puzzles/);
+assert.equal(browser.HobunjiClassicScriptGroups.failedGroups.length, 4, 'diagnostics retain all early and late failures');
+
 console.log('Manifest load and evaluation errors surface once on mobile without affecting successful startup.');

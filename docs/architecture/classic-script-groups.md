@@ -17,7 +17,7 @@ Currently migrated:
 
 The stable index entry is:
 ```html
-<script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="qol"></script>
+<script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="qol"></script>
 ```
 
 The loader runs while the HTML parser is active, writes a uniquely queried
@@ -71,3 +71,7 @@ The classic-script-group-loader installs one capture-phase error listener when t
 - Ranged reticle and weapon scripts share the `combat-enemies.js` manifest because they are adjacent to the authored enemy combat group and must still precede bandit combat.
 - `scripts/test-combat-dialogue-puzzle-script-groups.js` checks manifest ownership and the original dependency-order anchors, not merely whether a module appears somewhere in the HTML.
 - This stage adds four parser-blocking manifest fetches. A successful static-order test does not measure mobile startup latency; profile it before considering more broad migrations.
+
+### Early parsing failures
+
+Combat and puzzle groups may load in the document head, before `document.body` exists. The manifest-error listener queues exactly one `DOMContentLoaded` callback on the first such failure. It then displays all accumulated failed group names in the existing on-screen alert. Successful loads install no additional listener or UI. `scripts/test-classic-script-group-failures.js` covers head-time failures and duplicate reporting.

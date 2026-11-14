@@ -341,7 +341,7 @@
   <script src="js/weapon-sprite-assemblies.js?v=20261111fishFlailHead1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="combat-main"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261107jump-rebased2"></script>
@@ -353,7 +353,7 @@
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <!-- Ranged combat and HUD reticles, bandits, ghouls, minions, maskbound guardians and liches. Edit js/bootstrap/classic-groups/combat-enemies.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="combat-enemies"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-enemies"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -582,7 +582,7 @@
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <!-- Timed melodies, ruin challenges, V50 floors, shaft connections and checkpoint travel. Edit js/bootstrap/classic-groups/ruin-puzzles.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="ruin-puzzles"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="ruin-puzzles"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2838,13 +2838,13 @@
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
   <!-- Cinematic and dialogue cameras, authored dialogue content, rich text and voice ownership. Edit js/bootstrap/classic-groups/dialogue.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="dialogue"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="dialogue"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
   <!-- Festival scripts are maintained in their manifest. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="festival"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="festival"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261112townProgressReadOnly1"></script>
@@ -2892,7 +2892,7 @@
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
   <!-- NPC scheduling, social policy, and pathing scripts are maintained in their manifest. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="npc-schedule"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="npc-schedule"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -2972,11 +2972,11 @@
   <script src="js/farm-access.js?v=20261016a"></script>
   <!-- Parser-ordered feature groups; edit their manifests rather than this shared entrypoint.
        See architecture/classic-script-groups.md. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="qol"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="guild"></script>
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="render"></script>
   <script src="game.js?v=20261114targetCycle1678v1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
