@@ -132,6 +132,7 @@ async function main() {
   assert.ok(audioOptions, 'the first yawn must actually play a voice, not merely return a playback plan');
   assert.equal(audioOptions.pitchSemitones, 6);
   assert.equal(audioOptions.tempo, 0.8);
+  assert.equal(audioOptions.preservePitchOnFallback, true, 'a male-borrowed or stretched yawn must never lower its pitch on native media');
   assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
   assert.equal(audioActor?.x, 128);
   walker.root.position.x = 6;
