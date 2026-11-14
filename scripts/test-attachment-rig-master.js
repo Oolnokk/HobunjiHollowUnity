@@ -53,7 +53,7 @@ assert.strictEqual(profiles.characters['mao-ao::female'].anatomy.portraitScale, 
 assert.strictEqual(profiles.characters['mashtzarr::male'].anatomy.portraitScale, 1.18, 'latest authored Mashtzarr male body scale must remain authoritative');
 assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.7000103424366998, 'November 14 authored Engh-sho perch matches the right-hand shoulder target');
 
-const expectedPosteriorFloorPercents = {
+// Authored shoulder-pet grip scale follows the attack orbit scale, while perch XYZ follows the unchanged right shoulder.\nconst authoredOrbitScales = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/combat/species-pose-orbit-scales.json'), 'utf8')).species; // Independent attack-authoring authority for all ten standard character profiles.\nfor (const species of ['mao-ao', 'engh-sho', 'kenkari', 'mashtzarr', 'tletingan']) {\n  for (const gender of ['male', 'female']) {\n    const key = `\u0024{species}::\u0024{gender}`;\n    const profile = profiles.characters[key];\n    assert.deepStrictEqual(JSON.parse(JSON.stringify(profile.anchors.shoulderPerch.position)), JSON.parse(JSON.stringify(profile.anchors.rightHandShoulder.position)), `\u0024{key} perch must match the approved right-hand shoulder XYZ`);\n    for (const axis of ['x', 'y', 'z']) {\n      assert.strictEqual(profile.anchors.shoulderPerch.scale[axis], authoredOrbitScales[species][gender], `\u0024{key} grip ${axis} scale must match the attack orbit multiplier`);\n    }\n  }\n}\n\nconst expectedPosteriorFloorPercents = {
   'tletingan::male': -5.5,
   'engh-sho::male': 30.5,
   'mao-ao::male': 25,
