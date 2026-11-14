@@ -20199,6 +20199,18 @@
           : base; // Subtle town terrain is a continuous standing contour, not a gameplay tier.
       }
 
+      // The player's last real foot height limits which porch/bridge deck can
+      // be entered in ordinary walking. High overhead supports remain real
+      // surfaces for cameras and airborne landings, but never teleport someone
+      // on the lower floor to their top.
+      function playerReachableWalkableSupportAt(worldX, worldZ, stepUp = 0.25) {
+        const terrainY = activeSurfaceYAtWorld(worldX, worldZ); // Current continuous ground at the prospective tile.
+        const lastFeetY = Number.isFinite(player.physicalFeetY) ? player.physicalFeetY
+          : activeSurfaceYAtWorld(player.x / TILE, player.y / TILE); // Uninitialized saves use actual ground, not Number(null)=0.
+        const maxTopY = Math.max(terrainY, lastFeetY) + stepUp; // A deck reachable by a small stair/step is eligible.
+        return window.HobunjiWalkableElevation?.supportAt?.(worldX, worldZ, currentArea, maxTopY) || null;
+      }
+
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
@@ -21497,7 +21509,7 @@
         if (type === TileType.RIVER || type === TileType.STREAM) {
           // A character walking along a registered bridge deck stands above the
           // stream; the water tile underneath must not impose swimming speed.
-          const onBridge = !projectile && !!window.HobunjiWalkableElevation?.supportAt?.(wx / TILE, wy / TILE, currentArea);
+          const onBridge = !projectile && !!playerReachableWalkableSupportAt(wx / TILE, wy / TILE, window.PlayerJump?.config?.maxStepUp ?? 0.25); // The deck must be reachable from the actor's actual feet, not overhead.
           return onBridge ? 1 : SWIM_SPEED_MUL;
         }
         // Block structural building tiles on exterior maps (player must use doors/transitions).
@@ -25981,12 +25993,17 @@
           : activeSurfaceYAtWorld(wx, wz); // Exact farm/zone/town terrain contour replaces the old flat-tile approximation.
         const physicalGroundOwnedByWalk = !player._freeJump && !player.climbing && !player.onBranch
           && !player.onCliffBalcony && !player.onClimbSurface && !Number.isFinite(ruinStandY)
-          && !sitInteraction && !player.prone && !player.lunging && mountRideState === 'none'; // Movement only owns Y when no other traversal/pose system does.
-        const physicalSurfaceY = physicalGroundOwnedByWalk
-          ? (window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(wx, wz, ordinaryStandY, currentArea) ?? ordinaryStandY)
-          : ordinaryStandY; // Absolute top makes porch/stage/bridge a real floor, not a visual body offset.
+          && !sitInteraction && mountRideState === 'none'; // Grounded prone and ordinary melee poses still stand on the same actual porch floor.
+        const reachableSupport = physicalGroundOwnedByWalk
+          ? playerReachableWalkableSupportAt(wx, wz, window.PlayerJump?.config?.maxStepUp ?? 0.25)
+          : null; // A high overhead bridge must not silently lift an actor walking below it.
+        const physicalSurfaceY = reachableSupport
+          ? Math.max(ordinaryStandY, reachableSupport.bounds.topY)
+          : ordinaryStandY; // Absolute porch, stair or stage top is the actual standing surface, not a render offset.
         const stoodOnRaisedSupport = physicalSurfaceY > ordinaryStandY + 0.01; // Reused to suppress water wading above bridge decks.
-        if (physicalGroundOwnedByWalk) player.physicalFeetY = physicalSurfaceY; // Physical interactions and subsequent jumps inherit the actual standing floor.
+        if (physicalGroundOwnedByWalk && !Number.isFinite(player.lungeFlightWorldY)) {
+          player.physicalFeetY = physicalSurfaceY; // Grounded melee/prone actors and subsequent jumps inherit the real floor.
+        }
         const standY = knockbackVisualSurfaceY(player, physicalSurfaceY);
         window.BurningAfflictionVfx?.syncEntity?.(player, playerMesh); // Burning Health uses the authored furniture flame emitter on the player's live avatar root.
 
@@ -26077,7 +26094,11 @@
         // independent lerps. Mounting/dismounting states intentionally keep
         // the transition positioning above.
         window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
-        playerGroundShadow.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        const shadowSurfaceY = player._freeJump && !supportedJump
+          ? (window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(wx, wz, activeSurfaceYAtWorld(wx, wz), currentArea,
+              Number.isFinite(player.physicalFeetY) ? player.physicalFeetY : Infinity) ?? activeSurfaceYAtWorld(wx, wz))
+          : physicalSurfaceY; // Shadows remain on the actual floor instead of following airborne feet or sinking beneath bridge decking.
+        playerGroundShadow.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
         // ground shadow, tracking the same smoothed XZ. Uses the actually
@@ -26089,7 +26110,7 @@
         // wasn't the one actually being rendered.
         if (window.ResourceRings) {
           const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
-          ringHud.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+          ringHud.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z); // Ground HUD and player shadow share the same true floor.
         }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
@@ -32902,7 +32923,7 @@
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
         isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid())
-          && !window.HobunjiWalkableElevation?.supportAt?.(player.x / TILE, player.y / TILE, currentArea), // Water beneath a true walkway cannot extinguish someone standing on it.
+          && !playerReachableWalkableSupportAt(player.x / TILE, player.y / TILE, 0.05), // Water still wets someone below an overhead walkway, but not someone standing on the deck.
         handlePlayerDeath: reason => { if (!window.PlayerDowned?.interceptDeath?.(reason)) respawnPlayer(reason); }, // Bleeding/burning/poison ticks put the player down instead of killing them.
       });
 
