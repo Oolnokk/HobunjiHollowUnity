@@ -262,7 +262,7 @@
   <script src="js/procedural-furniture.js?v=20261109statuePiece1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
-  <script src="js/ruin-interaction-audio.js?v=20261109stoneclockflail2"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261114melodyTempoPer1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -637,10 +637,10 @@
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/melody-camera-framing.js?v=20261112dynamicMelodyAudit3"></script><!-- Plate-discovered, geometry-fitted camera framing; loaded before every score producer. -->
-  <script src="js/puzzle-cave-melody.js?v=20261110rhythmMotifs3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
+  <script src="js/puzzle-cave-melody.js?v=20261114melodyTempoPer1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261112dynamicMelodyAudit2"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261114melodyTempoPer1"></script>
   <script src="js/ruin-layer-playable.js?v=20261110h8b3a4fc"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261110h0efff27"></script>
@@ -945,7 +945,7 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261113hdf5829b"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261114melodyTempoPer1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
   <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
@@ -2872,7 +2872,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261109stoneclockflail2"></script>
+  <script src="js/audio-system.js?v=20261114melodyTempoPer1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
@@ -3052,7 +3052,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261113explosionAudit2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261114melodyTempoPer1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

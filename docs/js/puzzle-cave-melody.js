@@ -9,7 +9,8 @@
   'use strict';
   const TICKS_PER_MEASURE=16; // Sixteenth-note time base shared by composition, timing and the UI.
   const NOTE_COUNT=8; // The existing Kurraya puzzle instrument has eight playable note controls.
-  const MIN_BPM=60,MAX_BPM=88; // Slightly slower than the original 66–100 BPM range to leave room for live button input.
+  const MIN_BPM=60,MAX_BPM=120; // Length-scaled tempos span the full requested range.
+  const TEMPO_BY_MEASURES=Object.freeze({1:120,2:90,4:60}); // Short phrases run briskly; longer phrases give more time for each note.
   const DURATIONS=[2,4,8,16]; // Eighth note is the shortest value; quarter, half and whole notes remain possible.
   const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
   function hash(value){
@@ -48,7 +49,9 @@
     const rng=seeded(String(id)+':puzzle-cave-song-rhythm-v2');
     const difficulty=clamp(Math.floor(Number(options.difficulty)||1),1,5);
     const measures=[1,2,4].includes(options.measures)?options.measures:(difficulty>=5?4:difficulty>=3?2:1); // Only full 1-, 2- or 4-bar phrases.
-    const bpm=clamp(Math.round(Number(options.bpm)||Math.round(MIN_BPM+rng()*(MAX_BPM-MIN_BPM))),MIN_BPM,MAX_BPM);
+    const customBpm=Number(options.bpm); // Explicit author/test tempos override the normal per-length tempo while remaining within bounds.
+    const bpm=Number.isFinite(customBpm)&&customBpm>0
+      ?clamp(Math.round(customBpm),MIN_BPM,MAX_BPM):TEMPO_BY_MEASURES[measures];
     const motifs=difficulty===1?RHYTHM_MOTIFS.beginner:difficulty===2?RHYTHM_MOTIFS.easy:
       difficulty===3?RHYTHM_MOTIFS.medium:RHYTHM_MOTIFS.hard; // Complexity follows the number of eighth-note figures, not rhythmic randomness.
     const motif=motifs[Math.floor(rng()*motifs.length)];
@@ -111,10 +114,11 @@
     if(outerMat){outerMat.color?.setHex?.(transition.color);outerMat.opacity=transition.outer;}
     return {...transition}; // Also available to the existing in-game debug/inspection path.
   }
-  function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{},onStop=()=>{},clockMs=null,lookaheadMs=0}={}){
+  function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{},onNote=()=>{},onStop=()=>{},clockMs=null,lookaheadMs=0}={}){
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
-    let startedAtMs=null,nextScheduledBeat=1; // The plate's monotonic start and next unqueued beat keep both score judgment and audio on one clock.
+    let startedAtMs=null,nextScheduledBeat=1; // Absolute start and next quarter beat keep the judge and metronome on one clock.
+    let nextScheduledNoteIndex=1,nextScheduledNoteCycle=0; // The next score attack queues pitched percussion independently of the four-beat meter.
     let expiredProgress=null; // Keeps the last expired attempt available to timestamped inputs delivered after a stalled render frame.
     let currentClockMs=clockMs; // The optional author/test clock can be swapped without changing the live game's absolute-time source.
     const quarterSeconds=song.secondsPerTick*4; // Four sixteenth ticks per numbered stonebeat recording; independent of MP3 duration.
@@ -134,12 +138,28 @@
       if(signature!==lastSignature){lastSignature=signature;onChanged(snap);}
       return snap;
     }
+    function queueNoteOnsets(){
+      const currentTick=tickAt(); // The judge's tick clock is also the percussion transport.
+      const horizonTick=(elapsed+lookaheadSeconds)/song.secondsPerTick; // Queue note attacks slightly ahead for hardware-timed playback.
+      const currentCycle=Math.floor(currentTick/song.cycleTicks); // Skip whole repeats after a stalled frame rather than replaying old attacks.
+      if(nextScheduledNoteCycle<currentCycle){nextScheduledNoteCycle=currentCycle;nextScheduledNoteIndex=0;}
+      while(nextScheduledNoteCycle<=currentCycle+1){
+        const scoredNote=song.notes[nextScheduledNoteIndex]; // Each authored note contributes one drum strike at its onset, not at its release.
+        const onsetTick=nextScheduledNoteCycle*song.cycleTicks+scoredNote.startTick;
+        if(onsetTick>horizonTick+1e-8)break;
+        if(onsetTick>=currentTick-.075/song.secondsPerTick-1e-8)
+          onNote({noteIndex:nextScheduledNoteIndex,pitchIndex:scoredNote.index,absoluteTick:onsetTick,
+            whenMs:startedAtMs===null?null:startedAtMs+onsetTick*song.secondsPerTick*1000});
+        nextScheduledNoteIndex++;
+        if(nextScheduledNoteIndex===song.notes.length){nextScheduledNoteIndex=0;nextScheduledNoteCycle++;}
+      }
+    }
     function step(dt,isStanding){
       const down=!!isStanding;
       const sampledMs=typeof currentClockMs==='function'?Number(currentClockMs()):NaN; // Browser performance.now; deterministic unit tests use dt when no clock is injected.
       if(!down){
         if(standing){
-          standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;expiredProgress=null;
+          standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;nextScheduledNoteIndex=1;nextScheduledNoteCycle=0;expiredProgress=null;
           onStop(); // Cancel only future scheduled picks when a plate is vacated; sounded tails may finish.
         }
         return notify();
@@ -147,8 +167,11 @@
       if(!standing){
         standing=true;elapsed=0;progress=0;cycle=0;expiredProgress=null;
         startedAtMs=Number.isFinite(sampledMs)?sampledMs:null;
-        nextScheduledBeat=1;
-        if(!solved)onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0,whenMs:startedAtMs}); // First beat starts at the same clock origin as the score and all future picks.
+        nextScheduledBeat=1;nextScheduledNoteIndex=1;nextScheduledNoteCycle=0;
+        if(!solved){
+          onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0,whenMs:startedAtMs}); // Establish the metronome transport first.
+          onNote({noteIndex:0,pitchIndex:song.notes[0].index,absoluteTick:0,whenMs:startedAtMs}); // The opening percussion note lands with the downbeat.
+        }
       }else if(!solved){
         const delta=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0;
         const previousCycle=Math.floor(tickAt()/song.cycleTicks);
@@ -164,6 +187,7 @@
           });
           nextScheduledBeat=lookaheadBeat+1;
         }
+        queueNoteOnsets(); // Include eighth-note attacks between numbered metronome beats, but never the silent measure.
         const nextCycle=Math.floor(tickAt()/song.cycleTicks);
         if(nextCycle!==previousCycle){
           if(progress>0&&startedAtMs!==null)expiredProgress={progress,cycle:previousCycle}; // A queued press may predate a skipped song-cycle boundary.
