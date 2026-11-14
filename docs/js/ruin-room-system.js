@@ -147,9 +147,9 @@
     return {audit,meshes:[roof,wall]};
   }
 
-  function doorNear(player,door,wasOpen=false){
+  function doorNear(player,door,wasOpen=false,playerY=player?.y){
     if(!player||!door||![player.x,player.z,door.x,door.z].every(Number.isFinite))return false;
-    const floor=Number(door.y),height=Number(player.y);
+    const floor=Number(door.y),height=Number(playerY);
     if(Number.isFinite(floor)&&Number.isFinite(height)&&Math.abs(height-floor)>WALL_HEIGHT+1)return false;
     // Preserve a traversable doorway during vertical jumps and during crossing; the open radius has hysteresis.
     return Math.hypot(player.x-door.x,player.z-door.z)<(wasOpen?3.5:2.8);
@@ -160,7 +160,8 @@
     for(const room of rooms){
       if(!inside(room,x,z))continue;
       const delta=Number.isFinite(y)?Math.abs(y-room.y):0;
-      if(delta<distance&&delta<=WALL_HEIGHT+.65){best=room;distance=delta;}
+      if(Number.isFinite(y)&&(y<room.y-.65||y>room.y+WALL_HEIGHT+1))continue; // Never treat an actor jumping below an upper deck as already inside its room.
+      if(delta<distance){best=room;distance=delta;}
     }
     return best;
   }
