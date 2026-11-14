@@ -37,6 +37,7 @@
   const MIN_SIZE = 1.1, MAX_SIZE = 6; // Big chambers get big, forgiving slabs rather than long gaps.
   const PILLAR_RADIUS = 3.1; // js/dev-random-ruin-lich-themes.js PILLAR_RADIUS.
   const PILLAR_HEIGHT = 2.4;
+  const FIXTURE_MARGIN = .12; // Keeps central fixtures inside each slab's walkable perimeter, including the smallest ice pads.
   const SAFE_GAP_FRACTION = 0.85;
   const FALL_SAFE_DROP = 3, FALL_DAMAGE_PER_UNIT = 3.2;
   const DEATH_DEPTH = 8; // Pit bottom sits this far below the ground gallery.
@@ -152,6 +153,9 @@
       }
       for (const record of chosen.records) {
         if (record.kind === 'plasm') record.tiles = plasmTiles(record, record.axis, record.side === 'N' || record.side === 'E'); // N and E sides run toward +x/+z.
+        const fixtureSize = Math.min(1.05, record.w - FIXTURE_MARGIN * 2, record.d - FIXTURE_MARGIN * 2); // Size shared by props on Tothal, Hronal and Kanthic platforms.
+        record.fixtureSlot = { x: record.x, y: record.y, z: record.z, w: fixtureSize, d: fixtureSize,
+          occupiedBy: record.kind === 'pillar' ? 'explodingPillar' : record.kind === 'plasm' ? 'plasm' : null }; // A pillar/plasm occupies the slot by default but can be replaced while composing.
         platforms.push(record);
         ids.push(record.id);
       }
@@ -183,6 +187,41 @@
   }
 
 
+  function assignFixture(plan, platformId, fixtureKind) {
+    // Hazard fixtures must be reserved before mount. Once a Hronal pillar or
+    // Kanthic plasm slab exists, changing only the plan would leave the live
+    // hazard behind. Harmless props on ice/plain slabs can be reserved later.
+    const kind = String(fixtureKind || '').trim();
+    if (!/^[a-z][a-z0-9-]{0,40}$/i.test(kind)) return null;
+    const platform = plan?.platforms?.find?.(p => p.id === platformId);
+    const slot = platform?.fixtureSlot;
+    if (!slot || (slot.occupiedBy && !['explodingPillar', 'plasm', kind].includes(slot.occupiedBy))) return null;
+    const replacesHazard = platform.kind === 'pillar' || platform.kind === 'plasm';
+    if (replacesHazard && (plan.mounted || plan.hazardsMounted)) return null;
+    if (slot.occupiedBy === kind) return slot;
+    const old = {kind:platform.kind, originalKind:platform.originalKind, tiles:platform.tiles,
+      clearTiles:platform.clearTiles, occupiedBy:slot.occupiedBy, checks:plan.checks, ok:plan.ok}; // Undo an invalid assignment atomically.
+    if (replacesHazard) {
+      platform.originalKind = platform.kind; // Debugging records whether a pillar or plasm patch was swapped.
+      platform.kind = 'plain'; // Preserve every dimension and the already verified jump route.
+      delete platform.tiles; delete platform.clearTiles;
+    }
+    slot.occupiedBy = kind;
+    const checks = verify(plan);
+    if (!checks.every(check => check.ok)) {
+      platform.kind = old.kind;
+      if (old.originalKind === undefined) delete platform.originalKind;
+      else platform.originalKind = old.originalKind;
+      if (old.tiles === undefined) delete platform.tiles; else platform.tiles = old.tiles;
+      if (old.clearTiles === undefined) delete platform.clearTiles; else platform.clearTiles = old.clearTiles;
+      slot.occupiedBy = old.occupiedBy;
+      plan.checks = old.checks; plan.ok = old.ok;
+      return null;
+    }
+    plan.checks = checks; plan.ok = true;
+    return slot;
+  }
+
   function verify(plan) {
     const checks = [], add = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail || '' });
     const limit = plan.physics.reach * SAFE_GAP_FRACTION;
@@ -209,6 +248,9 @@
         add(`story${route.story}-${p.id}-steppingTiles`, hasIsland);
       }
     }
+    add('fixtureSlots', plan.platforms.every(p => p.fixtureSlot && p.fixtureSlot.w >= .8 && p.fixtureSlot.d >= .8 &&
+      p.fixtureSlot.x === p.x && p.fixtureSlot.y === p.y && p.fixtureSlot.z === p.z &&
+      p.fixtureSlot.w <= p.w - FIXTURE_MARGIN * 2 + 1e-6 && p.fixtureSlot.d <= p.d - FIXTURE_MARGIN * 2 + 1e-6));
     add('uniqueIds', new Set(plan.platforms.map(p => p.id)).size === plan.platforms.length);
     return checks;
   }
@@ -277,30 +319,34 @@
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
-    const pillarRecords = [];
+    const pillarRecords = [], attachedPillars = new Set(), attachedPlasm = new Set(); // Retry an incomplete theme mount without duplicating hazards.
+    let pitPlasmAttached = false; // Kanthic's permanent pit patch must be registered exactly once.
     // The theme composer (lich-themes) owns pillar/plasm behaviour; it may not
     // have built its world yet when the shaft mounts, so attach on first ticks.
     const attachHazards = () => {
       const themes = root.DevRandomRuinLichThemes;
       if (!themes || themes.activeTheme?.() !== tradition) return false;
       if (tradition === 'hronal') {
-        for (const p of plan.platforms) if (p.kind === 'pillar') {
+        for (const p of plan.platforms) if (p.kind === 'pillar' && !attachedPillars.has(p.id)) {
           const record = themes.addPlatformPillar?.({ x: p.x, z: p.z, y: p.y, height: PILLAR_HEIGHT, id: 'jump-' + p.id });
           if (!record) return false;
-          pillarRecords.push(record);
+          attachedPillars.add(p.id); pillarRecords.push(record);
         }
       } else if (tradition === 'kanthic') {
-        const pitTiles = []; // The old sinking Kanthic plasm fills the pit (it is deadly to reach in any case).
-        for (let tz = Math.floor(cz - half); tz < Math.ceil(cz + half); tz++) for (let tx = Math.floor(cx - half); tx < Math.ceil(cx + half); tx++) pitTiles.push({ x: tx, z: tz, y: plan.pit.bottomY });
-        const pitPlasm = themes.createPlasmPatch?.(pitTiles, { permanent: true, ignoreClear: true, label: 'shaft-pit' });
-        if (!pitPlasm) return false;
-        plasmHandles.push(pitPlasm);
-        for (const p of plan.platforms) if (p.kind === 'plasm') {
+        if (!pitPlasmAttached) {
+          const pitTiles = []; // The permanent pit patch persists across retry attempts, including partial failures.
+          for (let tz = Math.floor(cz - half); tz < Math.ceil(cz + half); tz++) for (let tx = Math.floor(cx - half); tx < Math.ceil(cx + half); tx++) pitTiles.push({ x: tx, z: tz, y: plan.pit.bottomY });
+          const pitPlasm = themes.createPlasmPatch?.(pitTiles, { permanent: true, ignoreClear: true, label: 'shaft-pit' });
+          if (!pitPlasm) return false;
+          pitPlasmAttached = true; plasmHandles.push(pitPlasm);
+        }
+        for (const p of plan.platforms) if (p.kind === 'plasm' && !attachedPlasm.has(p.id)) {
           const handle = themes.createPlasmPatch?.(p.tiles.map(t => ({ x: t.x, z: t.z, y: p.y })), { permanent: true, ignoreClear: true });
           if (!handle) return false;
-          plasmHandles.push(handle);
+          attachedPlasm.add(p.id); plasmHandles.push(handle);
         }
       }
+      plan.hazardsMounted = true; // Subsequent fixture assignments must not silently orphan mounted hazards.
       return true;
     };
     const playerOn = (p, x, z, y) => Math.abs(x - p.x) <= p.w / 2 + .05 && Math.abs(z - p.z) <= p.d / 2 + .05 && Math.abs(y - p.y) <= .35;
@@ -320,6 +366,7 @@
     const isVoidAt = (x, z) => Math.abs(x - cx) < half && Math.abs(z - cz) < half;
     const dispose = () => {
       if (disposed) return; disposed = true;
+      plan.mounted = false; // The live scene no longer owns the slots, but hazardsMounted remains an explicit historical guard.
       DS.clearScope(scope);
       for (const handle of plasmHandles) handle?.dispose?.();
       plasmHandles = [];
@@ -328,9 +375,14 @@
       for (const m of materials) m.dispose?.();
       columns.clear();
     };
-    const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0, // `active` stays false: the ambient-music silencer keys on the obelisk beat clock. platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
+    const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0,
+      // 'active' stays false: the ambient-music silencer keys on the obelisk beat clock.
+      platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
+      fixtures: plan.platforms.filter(p => p.fixtureSlot?.occupiedBy
+        && !['explodingPillar','plasm'].includes(p.fixtureSlot.occupiedBy)).map(p => [p.id, p.fixtureSlot.occupiedBy, p.originalKind || null]),
       route0: plan.platforms.filter(p => p.floor === 0).map(p => [p.kind, +p.x.toFixed(2), +p.z.toFixed(2), +p.y.toFixed(2), +p.w.toFixed(2), +p.d.toFixed(2)]), // Compact layout for on-device checks and headless drivers.
       pillars: pillarRecords.length, plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'death-pit' });
+    plan.mounted = true; // Future Hronal/Kanthic requests cannot swap out already-rendered hazards.
     return {
       plan, method: TRAVERSAL, tick, dispose, columns, supportAt, isVoidAt, isIceAt, tradition, pitY: plan.pit.bottomY, softLanding: true,
       noteFall: () => { fallEvents++; }, getState: state,
@@ -343,7 +395,7 @@
   let active = null;
   const mountTracked = (plan, deps) => { active?.dispose?.(); const runtime = mount(plan, deps); const dispose = runtime.dispose; active = runtime; runtime.dispose = () => { if (active === runtime) active = null; dispose(); }; return runtime; };
   return Object.freeze({
-    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, mount: mountTracked, plasmTiles,
+    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles,
     isIceAt: (x, z, y) => !!active?.isIceAt?.(x, z, y),
     senseTargets: () => [],
   });

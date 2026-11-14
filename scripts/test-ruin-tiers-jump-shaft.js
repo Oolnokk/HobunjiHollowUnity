@@ -52,6 +52,14 @@ for (const [tier, spec] of Object.entries(SPEC)) {
       }
       assert.ok(list.every(p => p.y > route.entryY && p.y < route.exitY), 'platforms stay between their two galleries');
     }
+    for (const p of jump.platforms) {
+      assert(p.fixtureSlot, `${tier}/${theme}: every shaft platform has a central fixture slot`);
+      assert.equal(p.fixtureSlot.x, p.x);
+      assert.equal(p.fixtureSlot.y, p.y);
+      assert.equal(p.fixtureSlot.z, p.z);
+      assert(p.fixtureSlot.w >= .8 && p.fixtureSlot.w <= p.w - .24 + 1e-6, 'fixture fits inside the slab');
+      assert(p.fixtureSlot.d >= .8 && p.fixtureSlot.d <= p.d - .24 + 1e-6, 'fixture does not overhang the slab');
+    }
     const kinds = new Set(jump.platforms.map(p => p.kind));
     if (theme === 'tothal') assert.deepEqual([...kinds], ['ice'], 'tothal: every platform is ice');
     if (theme === 'hronal') {
@@ -65,7 +73,143 @@ for (const [tier, spec] of Object.entries(SPEC)) {
         assert.ok(p.clearTiles.length >= 5, 'entry, exit and stepping tiles stay clear');
       }
     }
+    // Gameplay props replace conflicting hazards without moving their verified jump slabs.
+    const replaceable = jump.platforms.find(p => p.kind === 'pillar' || p.kind === 'plasm') || jump.platforms[0];
+    const originalKind = replaceable.kind;
+    const originalShape = [replaceable.x, replaceable.y, replaceable.z, replaceable.w, replaceable.d];
+    const placed = Jump.assignFixture(jump, replaceable.id, 'ignitionBrazier');
+    assert(placed && jump.ok, `${tier}/${theme}: fixture is safe to install`);
+    assert.equal(placed.occupiedBy, 'ignitionBrazier');
+    assert.deepEqual([replaceable.x, replaceable.y, replaceable.z, replaceable.w, replaceable.d], originalShape, 'never move or shrink a verified jump');
+    if (originalKind === 'pillar' || originalKind === 'plasm') {
+      assert.equal(replaceable.kind, 'plain', 'fixture swaps out conflicting hazards');
+      assert.equal(replaceable.originalKind, originalKind, 'diagnostics identify the removed hazard');
+      assert.equal(replaceable.tiles, undefined, 'no leftover lethal plasm tiles');
+    }
+    assert.equal(Jump.assignFixture(jump, replaceable.id, 'anotherBrazier'), null, 'one slot cannot host two fixtures');
+    assert.equal(Jump.assignFixture(jump, 'nonexistent', 'fixture'), null, 'unknown platforms do not receive props');
+    assert.equal(Jump.assignFixture(jump, replaceable.id, '<script>'), null, 'invalid fixture IDs are ignored');
   }
+}
+// Mount-time safety: a plan can replace a Hronal pillar or Kanthic plasm patch
+// before the scene is built, never by mutating a live hazard after mounting.
+{
+  class Node {
+    constructor() {
+      this.children = []; this.userData = {}; this.visible = true;
+      this.position = {x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
+      this.rotation = {x:0,y:0,z:0};
+    }
+    add(child) { this.children.push(child); child.parent = this; }
+    remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
+  }
+  class Geometry { dispose() {} }
+  class Material { dispose() {} }
+  class Mesh extends Node { constructor(geometry,material) { super(); this.geometry=geometry; this.material=material; } }
+  const THREE={ Group:Node, Mesh, BoxGeometry:Geometry, PlaneGeometry:Geometry, MeshBasicMaterial:Material };
+  const DynamicSurfaces={registerSurface(){},registerPit(){},clearScope(){}};
+  const previousThemes=globalThis.DevRandomRuinLichThemes;
+  try {
+    for (const theme of ['hronal','kanthic','tothal']) {
+      const plan=Jump.compose({shaft:37,spacing:10,floors:2,seed:73,theme});
+      assert(plan.ok);
+      const toReplace=plan.platforms.find(p=>['pillar','plasm'].includes(p.kind)) || plan.platforms[0];
+      assert(Jump.assignFixture(plan,toReplace.id,'testFixture'),'fixture must be allocated before theme mounts');
+      const remaining=plan.platforms.filter(p=>p.kind==='pillar'||p.kind==='plasm');
+      const spawned=[]; // Captures which physical hazards the real composer would mount.
+      globalThis.DevRandomRuinLichThemes={
+        activeTheme:()=>theme,
+        addPlatformPillar:props=>{spawned.push(['pillar',props.id]);return props;},
+        createPlasmPatch:(_tiles,opts)=>{spawned.push(['plasm',opts?.label||'platform']);return {dispose(){}};},
+      };
+      const runtime=Jump.mount(plan,{THREE,DynamicSurfaces,parent:new Node(),tradition:theme});
+      assert.equal(plan.mounted,true,'platform plan must know the 3D scene is already mounted');
+      const stillHazard=remaining[0];
+      if (stillHazard) {
+        assert.equal(Jump.assignFixture(plan,stillHazard.id,'tooLate'),null,
+          'no fixture may turn a live Hronal pillar or Kanthic plasm into a phantom hazard');
+        assert.equal(stillHazard.kind,theme==='hronal'?'pillar':'plasm');
+      }
+      runtime.tick();
+      const state=runtime.getState();
+      assert.equal(state.platforms,plan.platforms.length,'mobile diagnostic must retain total platform count');
+      assert.equal(state.hazards,theme,'mobile diagnostic must include the themed hazard type');
+      assert.equal(state.hazardsAttached,true,'the theme producer must finish mounting');
+      assert(state.fixtures.some(item=>item[0]===toReplace.id&&item[1]==='testFixture'),
+        'mobile diagnostic reports replacement fixture');
+      if(theme==='hronal')assert.equal(spawned.length,remaining.length,'the replaced pillar was never spawned');
+      if(theme==='kanthic')assert.equal(spawned.length,remaining.length+1,'only remaining plasm plus pit were spawned');
+      runtime.noteFall();
+      assert.equal(runtime.getState().falls,1,'mobile fall counter remains visible');
+      runtime.dispose();
+      assert.equal(plan.mounted,false,'a disposed runtime no longer owns the platform plan');
+    }
+  } finally {
+    if (previousThemes === undefined) delete globalThis.DevRandomRuinLichThemes;
+    else globalThis.DevRandomRuinLichThemes=previousThemes;
+  }
+}
+// If the theme runtime becomes available in stages, already mounted hazards
+// cannot be duplicated on the next frame's retry.
+{
+  class Node {
+    constructor(){this.children=[];this.userData={};this.position={set(){}};this.rotation={};}
+    add(child){this.children.push(child);child.parent=this;}
+    remove(child){this.children=this.children.filter(item=>item!==child);}
+  }
+  class Geometry{dispose(){}}
+  class Material{dispose(){}}
+  class Mesh extends Node{constructor(geo,mat){super();this.geometry=geo;this.material=mat;}}
+  const THREE={Group:Node,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,MeshBasicMaterial:Material};
+  const DS={registerSurface(){},registerPit(){},clearScope(){}};
+  const previous=globalThis.DevRandomRuinLichThemes;
+  try {
+    for (const theme of ['hronal','kanthic']) {
+      const plan=Jump.compose({shaft:37,spacing:10,floors:2,theme});
+      const made=[]; // The first retry deliberately fails after one physical hazard has mounted.
+      let failed=false;
+      globalThis.DevRandomRuinLichThemes={
+        activeTheme:()=>theme,
+        addPlatformPillar:props=>{
+          if(!failed&&made.length===1){failed=true;return null;}
+          made.push(props.id);return props;
+        },
+        createPlasmPatch:(_tiles,opts)=>{
+          if(!failed&&opts?.label!=='shaft-pit'){failed=true;return null;}
+          made.push(opts?.label||'platform');return {dispose(){}};
+        },
+      };
+      const runtime=Jump.mount(plan,{THREE,DynamicSurfaces:DS,parent:new Node(),tradition:theme});
+      runtime.tick();
+      assert.equal(runtime.getState().hazardsAttached,false,`${theme}: partial build is retryable`);
+      runtime.tick();
+      assert.equal(runtime.getState().hazardsAttached,true,`${theme}: second attempt finishes`);
+      const expected=plan.platforms.filter(p=>p.kind===(theme==='hronal'?'pillar':'plasm')).length
+        +(theme==='kanthic'?1:0);
+      assert.equal(made.length,expected,`${theme}: no duplicate on retry`);
+      if(theme==='hronal')assert.equal(new Set(made).size,made.length,'one record per Hronal pillar');
+      if(theme==='kanthic')assert.equal(made.filter(id=>id==='shaft-pit').length,1,'Kanthic pit created only once');
+      runtime.dispose();
+    }
+  } finally {
+    if(previous===undefined)delete globalThis.DevRandomRuinLichThemes;
+    else globalThis.DevRandomRuinLichThemes=previous;
+  }
+}
+// Invalid geometry must roll back both the slot and hazard, not leave a broken plan.
+{
+  const plan=Jump.compose({shaft:37,spacing:10,floors:2,theme:'hronal'});
+  const pillar=plan.platforms.find(p=>p.kind==='pillar');
+  const originalReach=plan.physics.reach;
+  const oldChecks=plan.checks;
+  plan.physics.reach=0; // Makes the placement verification reject every nonzero jump.
+  assert.equal(Jump.assignFixture(plan,pillar.id,'testFixture'),null,'failed verification rejects the fixture');
+  assert.equal(pillar.kind,'pillar','failed verification restores the pillar kind');
+  assert.equal(pillar.fixtureSlot.occupiedBy,'explodingPillar','failed verification restores slot ownership');
+  assert.equal(pillar.originalKind,undefined,'failed verification removes temporary history');
+  assert.equal(plan.checks,oldChecks,'failed verification keeps the original plan check references');
+  plan.physics.reach=originalReach;
+  assert(plan.ok&&Jump.verify(plan).every(check=>check.ok),'rollback preserves the original playable plan');
 }
 // A room is a room: every puzzle room draws from the whole set; fire and ice belong to Tothal only; no back-to-back repeats.
 {
