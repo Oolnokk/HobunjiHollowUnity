@@ -100,4 +100,11 @@ assert.equal(api.buildDetailedDiff(imported).summary.tileChanges, 1, 'Town reloa
 const afterTownReload = api.buildWorkspaceDiffBundle(); // Bundle reporting must retain pending non-Town changes.
 assert(afterTownReload.maps.some(entry => entry.mapId === imported.id), 'Pending unrelated map changes must stay in the workspace diff');
 assert(!afterTownReload.maps.some(entry => entry.mapId === updatedTown.id), 'Reloaded Town must not be reported as an uncommitted edit');
-console.log('Map diff baselines, per-map Town reset, unrelated edits, authored fields, and modal export passed.');
+const canonicalZone = { ...JSON.parse(JSON.stringify(original)), id: 'map_indexed_zone', name: 'Indexed zone' }; // Simulated additional map from bundled repo workspace.
+workspace.maps.push(canonicalZone);
+api.adoptBundledMapBaselines([canonicalZone.id]); // Server-authored maps loaded with Town are not newly authored in this session.
+const afterBundledMaps = api.buildWorkspaceDiffBundle();
+assert.equal(afterBundledMaps.summary.addedMaps, 0, 'Canonical indexed map imports must not appear as user-added maps');
+assert(afterBundledMaps.maps.some(entry => entry.mapId === imported.id), 'Baseline adoption must preserve the unrelated map edit');
+assert.equal(api.buildDetailedDiff(canonicalZone).summary.changed, false, 'Canonical map gets its own captured baseline');
+console.log('Map diff baselines, per-map Town reset, bundled indexed maps, unrelated edits, and modal export passed.');
