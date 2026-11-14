@@ -153,7 +153,7 @@
 (() => {
   'use strict';
   if (window.ItemArchCategoryColors?.installed || document.querySelector('script[data-item-arch-category-colors]')) return;
-  const src = 'js/item-arch-category-colors.js?v=20261024h1ebee67'; // Used to cache-bust grouping/category presentation independently.
+  const src = 'js/item-arch-category-colors.js?v=20261114packbooks1'; // Used to cache-bust grouping/category presentation independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-category-colors="1" src="${src}"><\/script>`);
     return;
