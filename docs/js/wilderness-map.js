@@ -32,8 +32,8 @@
   // Bit-packed per-tile fog-of-war, one Uint8Array per zone (year+dims
   // scoped -- discarded and rebuilt fresh whenever a Tothal Shift changes
   // either). Discovered locales are separate and persist forever (see
-  // below): finding a place is remembered even after a shift moves it or
-  // regenerates the terrain fog around it.
+  // below): fixed places retain discovery, while Shift-generated mysteries
+  // require rediscovery after the terrain and its hidden sites are replaced.
   const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
   const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
 
@@ -118,13 +118,17 @@
   }
 
   // All currently-placed locale instances this session, fixed + randomly
-  // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
+  // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible, shiftSecret }].
   function _allLocaleInstances() {
     const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
     for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
       const layout = deps._zoneLayouts.get(zoneId);
       for (const inst of (layout?.localeInstances || [])) {
-        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
+        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false,
+          shiftSecret: !inst.alwaysVisible && (inst.shiftGeneratedSecret === true
+            || (inst.shiftGeneratedSecret == null && (inst.category === 'ruin_entrance'
+              || (inst.category === 'great_fey_shrine' && inst.localeId !== 'locale_banubu_shrine')))), // Older caches need category fallback; explicit authored opt-outs and always-visible locations stay persistent.
+          alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
       }
     }
     return out;
@@ -132,8 +136,16 @@
 
   const ENTER_ONLY_LOCALE_IDS = new Set(['locale_banubu_shrine']); // Only a successful interior visit may reveal these locales on the map.
 
+  function localeDiscoveryKey(instance) {
+    return instance?.shiftSecret
+      ? `${instance.localeId}:tothal:${deps.currentTothalYear()}`
+      : instance.localeId; // Shift-generated mysteries must be discovered again; fixed story landmarks retain history.
+  }
+
   function localeIsDiscovered(instance, discovered) {
-    const record = discovered[instance.localeId]; // Existing proximity-only discoveries cannot reveal an enter-only cave.
+    const current = discovered[localeDiscoveryKey(instance)]; // New secret discoveries belong to a single Tothal cycle.
+    const legacy = instance?.shiftSecret ? discovered[instance.localeId] : null; // Older saves used a non-year-qualified shrine id.
+    const record = current || (legacy && Number(legacy.firstDiscoveredYear) === Number(deps.currentTothalYear()) ? legacy : null); // Keep a discovery from this very cycle after upgrading, but never reveal it in later Shifts.
     return ENTER_ONLY_LOCALE_IDS.has(instance.localeId) ? record?.entered === true : !!record;
   }
 
@@ -156,20 +168,21 @@
 
   // Called whenever fog newly reveals ground in `zoneId` -- checks every
   // locale instance currently placed there against the just-revealed
-  // radius and flags it discovered forever. Discovery only ever records
+  // radius and records its discovery for this Shift (permanently for fixed
+  // landmarks). Discovery records only
   // *that* a locale was found, never *where* -- the map always draws
-  // discovered locales from _allLocaleInstances()'s live current placement,
-  // so "current location... if you've discovered them before" holds even
-  // after a later Tothal Shift moves it, with no need to physically
-  // revisit it again first.
+  // discovered locales from _allLocaleInstances()'s live current placement.
+  // Shift secrets require rediscovery in each new cycle; permanent authored
+  // locales retain their previous discoveries and current coordinates.
   function _checkLocaleDiscovery(zoneId, pc, pr) {
     const discovered = _loadDiscoveredLocales();
     let changed = false;
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId || discovered[inst.localeId] || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
+      const discoveryKey = localeDiscoveryKey(inst); // Rerolled shrine map pins expire naturally with the previous Tothal year.
+      if (inst.zoneId !== zoneId || localeIsDiscovered(inst, discovered) || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
       const dist = Math.hypot(inst.col - pc, inst.row - pr);
       if (dist > FOG_REVEAL_RADIUS) continue;
-      discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
+      discovered[discoveryKey] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
       changed = true;
       deps.showToast(`Discovered: ${inst.name}`, true);
     }
@@ -365,6 +378,9 @@
     if (saved.source === 'locale') {
       if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales())) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
+      if (!live && (saved.category === 'ruin_entrance'
+          || (saved.category === 'great_fey_shrine' && saved.localeId !== 'locale_banubu_shrine'))) return null; // A site that vanished in the Shift cannot keep its old waypoint.
+      if (live?.shiftSecret && !localeIsDiscovered(live, _loadDiscoveredLocales())) return null; // A waypoint cannot reveal a new year's undiscovered secret.
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
     const liveThreat = [...(window.BanditCamps?.perceivedThreats || [])]

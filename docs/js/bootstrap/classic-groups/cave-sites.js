@@ -10,9 +10,9 @@
   const scriptUrls = [
     "js/locale-cave-runtime.js?v=20261010h40fea5e",
     "js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1",
-    "js/puzzle-cave-entrances.js?v=20261114h87b2c38",
+    "js/puzzle-cave-entrances.js?v=20261114tothalSecretLos1",
     "js/cave-tripwire-traps.js?v=20261110tripwire2",
-    "js/cave-site-system.js?v=20261114hiddenWallGuaranteedReward1"
+    "js/cave-site-system.js?v=20261114tothalSecretLos1"
   ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

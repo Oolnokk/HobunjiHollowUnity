@@ -2,23 +2,30 @@ name: Check Kanthic shaft lighting
 
 on:
   pull_request:
-    paths:
-      - 'docs/js/ruin-multifloor-v50-style.js'
-      - 'docs/js/ruin-shaft-connector.js'
-      - 'docs/js/ruin-layer-playable.js'
-      - 'docs/js/ruin-v50-native-floors.js'
-      - 'docs/js/cloud-forest-fog.js'
-      - 'docs/index.html'
-      - 'scripts/test-shaft-hub.js'
-      - 'scripts/test-kanthic-shaft-firelight.js'
-      - '.github/workflows/check-kanthic-shaft-lighting.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Select Kanthic lighting changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.select.outputs.lighting }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Select affected specialist tests
+        id: select
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci-select-tests.js --suite=feature
   lighting:
+    needs: impact
+    if: ${{ !cancelled() && (needs.impact.result != 'success' || needs.impact.outputs.relevant == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

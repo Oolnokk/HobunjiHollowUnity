@@ -37,8 +37,8 @@
     if (window.InteriorEnvironmentRuntime || typeof document === 'undefined') return;
     const currentSrc = document.currentScript?.src || ''; // Resolves correctly from both docs/index.html and the nested Interior Editor.
     const src = currentSrc
-      ? new URL('interior-environment-runtime.js?v=20261114ceilingladder1', currentSrc).href
-      : 'js/interior-environment-runtime.js?v=20261114ceilingladder1';
+      ? new URL('interior-environment-runtime.js?v=20261114ceilingladder3', currentSrc).href
+      : 'js/interior-environment-runtime.js?v=20261114ceilingladder3';
     const alreadyRequested = [...document.scripts].some(script => script.src?.includes('/interior-environment-runtime.js'));
     if (alreadyRequested) return;
     if (document.readyState === 'loading') {

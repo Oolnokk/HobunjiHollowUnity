@@ -520,10 +520,46 @@
     return candidate.score > best.score + 1e-9 || (Math.abs(candidate.score - best.score) <= 1e-9 && candidate.tie > best.tie);
   }
 
+  function seclusionScorer() {
+    // The browser loads the shared scorer before locale placement; Node tests
+    // use the same module instead of duplicating the LOS rules.
+    if (typeof globalThis !== 'undefined' && globalThis.WildernessSeclusion) return globalThis.WildernessSeclusion;
+    if (typeof require === 'function') return require('./wilderness-seclusion.js');
+    return null;
+  }
+
+  function localeSeclusionOptions(context) {
+    const root = context.root; // The exported Shift terrain is authoritative for every probe.
+    return {
+      cols: root.cols, rows: root.rows,
+      getTile: (c, r) => tileRecord(root, c, r),
+      canStand: tile => !!tile && !WATER_TYPES.has(tile.type)
+        && !['rock', 'wall', 'ramp'].includes(tile.type)
+        && !tile.incline && !isBoundaryCliffTile(tile)
+        && !HARD_BLOCKING_TYPES.has(tileGeneratedType(tile)),
+      blocksSight: tile => !!tile && (tile.incline || isBoundaryCliffTile(tile)
+        || ['rock', 'wall'].includes(tile.type)
+        || HARD_BLOCKING_TYPES.has(tileGeneratedType(tile))
+        || tileGeneratedType(tile) === 'copse'),
+      elevation: tile => {
+        const ramp = Number(tile?.rampElevation); // Explicit sloped surface height, if authored.
+        if (Number.isFinite(ramp)) return ramp;
+        return Number(context.plateauElev.get(tile?.plateau)) || 0; // Actual raised plateau tiers occlude sight.
+      },
+    };
+  }
+
   function findCandidate(context, compiled, options = {}) {
     const rejected = []; // Small capped sample is exported for preview diagnostics without bloating workspaces.
     const maxRejected = Math.max(0, Number(options.maxRejectedDiagnostics) || 48);
     let best = null; // Highest authored-probe score wins normally; isolated locales instead use the least-populated remoteness rank.
+    const placement = compiled.locale.placement || {}; // Opt-outs preserve authored landmarks and entry-adjacent story stages.
+    const secret = (placement.preferSeclusion === true || ['ruin_entrance', 'great_fey_shrine', 'story_poi'].includes(compiled.locale.category))
+      && !placement.sameSectorAsEntry && !placement.alwaysVisibleOnMap && !placement.preferIsolation
+      && placement.preferSeclusion !== false;
+    const scorer = secret ? seclusionScorer() : null; // Bounded LOS is generation-only, never a per-frame calculation.
+    const sightCandidates = []; // Seed-spread legal anchors from which a bounded LOS pass chooses hidden destinations.
+    const MAX_SIGHT_CANDIDATES = 40; // Per-locale ray budget, even on large or many-cliff maps.
     const isolation = compiled.locale.placement?.preferIsolation ? (context.isolation || (context.isolation = isolationField(context))) : null; // Built once for the late cave search, never per candidate.
     let tested = 0;
     let valid = 0;
@@ -544,8 +580,36 @@
         const tie = candidateTie(context.seed, compiled.locale.id, anchorC, anchorR);
         const ranked = { anchorC, anchorR, tie, ...result };
         if (isolation) ranked.isolation = isolationRank(isolation, compiled, anchorC, anchorR);
+        if (scorer) {
+          // Keep the 40 largest seeded tie values, not the first 40 scan-order
+          // hits. Every legal region gets a chance without computing LOS per cell.
+          if (sightCandidates.length < MAX_SIGHT_CANDIDATES) sightCandidates.push(ranked);
+          else {
+            let lowest = 0; // Index of the least-preferred deterministic sample.
+            for (let index = 1; index < sightCandidates.length; index++)
+              if (sightCandidates[index].tie < sightCandidates[lowest].tie) lowest = index;
+            if (ranked.tie > sightCandidates[lowest].tie) sightCandidates[lowest] = ranked;
+          }
+        }
         if (isolation ? preferIsolatedSite(ranked, best) : (!best || ranked.score > best.score + 1e-9 || (Math.abs(ranked.score - best.score) <= 1e-9 && ranked.tie > best.tie))) best = ranked;
       }
+    }
+    if (scorer && sightCandidates.length) {
+      // The strongest terrain-rule match is always considered, so adding
+      // seclusion can never discard the only excellent legal footprint.
+      if (best && !sightCandidates.includes(best)) sightCandidates.push(best);
+      const sightOptions = localeSeclusionOptions(context); // One shared probe adapter for all finalists.
+      let selected = null; // Highest visibility-adjusted score among valid authored-site candidates.
+      for (const candidate of sightCandidates) {
+        const connector = compiled.locale.connectors?.[0]; // Sample the discoverable entrance rather than an embedded cliff's solid center.
+        const c = candidate.anchorC + (connector?.col != null ? Number(connector.col) : (compiled.footprint.minC + compiled.footprint.maxC) * .5) * compiled.scale;
+        const r = candidate.anchorR + (connector?.row != null ? Number(connector.row) : (compiled.footprint.minR + compiled.footprint.maxR) * .5) * compiled.scale;
+        candidate.visibility = scorer.sampleVisibility(sightOptions, c, r);
+        candidate.discoveryScore = candidate.score + candidate.visibility.concealmentScore * 12
+          + Math.min(candidate.visibility.nearbyObserverCount, 3) * .1 + candidate.tie * .15;
+        if (!selected || candidate.discoveryScore > selected.discoveryScore) selected = candidate;
+      }
+      best = selected;
     }
     return { best, rejected, tested, valid };
   }
@@ -656,6 +720,10 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
+      shiftGeneratedSecret: !locale.placement?.alwaysVisibleOnMap && locale.placement?.preferSeclusion !== false
+        && (locale.placement?.preferSeclusion === true || ['ruin_entrance','great_fey_shrine'].includes(locale.category))
+        && locale.id !== 'locale_banubu_shrine', // Authored permanent/visible locations retain their discovered map markers across Shifts.
+      seclusion: selected.visibility || null, // Mobile map diagnostics can inspect the selected Shift site's measured exposure.
       floorTier: selected.floorTier,
       alwaysVisible: !!locale.placement?.alwaysVisibleOnMap,
       interior: locale.interior ? JSON.parse(JSON.stringify(locale.interior)) : null, // Used by runtime diagnostics and the terrain-aware transition exporter without mutating authored locale data.
@@ -767,6 +835,7 @@
           floorGroupId: search.best.floorGroupId || null,
           score: search.best.score,
           isolation: search.best.isolation || null, // Mobile/Wilderness Lab diagnostics reveal why the cave chose this site.
+          seclusion: search.best.visibility || null, // Bounded LOS report for hidden Shift-generated locales.
           probes: search.best.probes || [],
           embedded: search.best.embedded || [],
           footprint: search.best.footprint || [],

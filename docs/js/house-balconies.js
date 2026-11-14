@@ -16,6 +16,7 @@
       const height = entry?.heightMode === 'wall' ? wallTop : number(entry?.height, wallTop); // Deck top in piece-local Y.
       return {
         id: String(entry?.id || 'balcony_' + index), cells, height, tile,
+        deckThickness: Math.max(.08, Math.min(.6, number(entry?.deckThickness, Math.max(.08, tile * .12)))), // Optional deck depth fits rounded log courses.
         railHeight: Math.max(.25, Math.min(2, number(entry?.railHeight, .72))),
         railings: entry?.railings !== false,
         access: entry?.access || null, // A furniture/interior interaction handles the climb; the deck does not create a ground stair.
@@ -48,7 +49,7 @@
     for (const balcony of balconies) {
       const occupied = new Set(balcony.cells.map(c=>cellKey(c.x,c.y))); // Neighbor test for open deck edges and rail placement.
       const boundary = [];
-      const y = balcony.height, thickness = Math.max(.08, balcony.tile * .12);
+      const y = balcony.height, thickness = balcony.deckThickness; // Preserve the walkable surface; fit only its underside.
       for (const cell of balcony.cells) {
         const r = cellRect(cell.x,cell.y,balcony.tile);
         const meta = {extensionType:'balcony',balconyId:balcony.id,extensionFace:'top',sourceTile:{x:cell.x,y:cell.y}};

@@ -99,8 +99,8 @@
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
   <script src="js/action-arc-ui.js?v=20261114adventuring1"></script>
-  <script src="js/adventuring-tools.js?v=20261114torchConverge1"></script> <!-- Adventure tools; torch and later unlocks. -->
-  <script src="js/tool-world-upright.js?v=20261114torch1"></script> <!-- Shared authored world-space neutral rotation. -->
+  <script src="js/adventuring-tools.js?v=20261114torchIdleMove2"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/tool-world-upright.js?v=20261114torchIdleMove2"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -266,9 +266,8 @@
   <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261107mireOutlet1"></script>
-  <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20261110banubuNightAudit2"></script>
+  <!-- Shared seclusion scorer, procedural generation and terrain-aware authored locales. Script versions live in the feature manifest, with parser-blocking ordering. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-generation"></script>
   <script src="js/foliage-furniture-renderer.js?v=20261107h509318a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20261110cloneaudit2"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -349,7 +348,7 @@
   <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114rooftopLoader2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114rooftopLoader3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -541,7 +540,7 @@
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261114rooftopaccess1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261114rooftopJump2"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261114posobj1754"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
@@ -570,8 +569,7 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261110banubuNightAudit2"></script>
-  <script src="js/navigation-compass.js?v=20261023h72d5c44"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-navigation"></script> <!-- Fog/discovery maps must load before the navigation compass and game.js. -->
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -874,7 +872,7 @@
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261110banubuNightAudit2"></script>
   <script src="js/ruin-sites.js?v=20261110hb96c703"></script>
-  <script src="js/zone-den-totem-features.js?v=20261113hdenCache2"></script>
+  <script src="js/zone-den-totem-features.js?v=20261114ikmcRoof3"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no

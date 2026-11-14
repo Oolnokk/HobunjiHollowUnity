@@ -2,17 +2,30 @@ name: Check integrated ruin and puzzle changes
 
 on:
   pull_request:
-    paths:
-      - 'docs/**'
-      - 'scripts/test-*.js'
-      - '.github/workflows/check-integrated-ruin-puzzles.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Select integrated ruin/puzzle changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.select.outputs.integrated }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Select affected specialist tests
+        id: select
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci-select-tests.js --suite=feature
   integration:
+    needs: impact
+    if: ${{ !cancelled() && (needs.impact.result != 'success' || needs.impact.outputs.relevant == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
