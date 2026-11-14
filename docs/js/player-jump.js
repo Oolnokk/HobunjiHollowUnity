@@ -448,7 +448,9 @@
       // Never grant access to someone standing beneath the hatch or arriving from an unrelated interior.
       if (player && area==='town' && pendingRoofArrival && !player.climbing && !player.onBranch && player.health>0) {
         const x=player.x/deps.TILE,z=player.y/deps.TILE; // Tile-space arrival shared with the rotated house and mini-cliff support.
-        const hatch=window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Exact authored hatch, not a broad building-footprint match.
+        pendingRoofArrival.spawn ||= {x,z}; // Preserve arrival coordinates: walking from a normal door must never trigger a later roof climb.
+        if(Math.hypot(x-pendingRoofArrival.spawn.x,z-pendingRoofArrival.spawn.z)>.33)pendingRoofArrival=null;
+        const hatch=pendingRoofArrival && window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Exact authored hatch, not a broad building-footprint match.
         if(hatch && hatch.mapId===pendingRoofArrival.source && Number.isFinite(hatch.topY)) {
           const roofState={area:'town',phase:'supported',feetY:hatch.topY,launchGround:hatch.topY,
             vy:0,elapsed:0,source:'roof ladder',safeX:x,safeZ:z,lastX:x,lastZ:z};
