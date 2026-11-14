@@ -239,6 +239,9 @@
       if(rolled.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
       if(!rolled.includes(shelf)) rolled.push(shelf);
     }
+    ensureStateLoaded(); // Read this cycle's pre-upgrade solved cave records before choosing new cave ids.
+    const legacySignatureFor = shelf => key + ':puzzle-cliff:' + String(shelf.id); // Original identity must survive a code update within the same Shift.
+    const retainedLegacy = candidates.filter(shelf => runtimeStateBySignature.has(legacySignatureFor(shelf))); // Existing player progress wins over a new concealment preference.
     const ranked = outdoorPuzzleSeclusion(key, candidates, terrainGrid); // Re-rank valid real balcony positions, never invent unwalkable entrances.
     const rankedById = new Map(); // Selected profiles carry the measured seclusion for mobile debugging.
     let selected = rolled; // No runtime grid (e.g. unit tests): retain the existing deterministic roll.
@@ -261,10 +264,16 @@
       }
       selected = chosen.map(entry => entry.shelf);
     }
+    if (retainedLegacy.length) {
+      const saved = new Set(retainedLegacy.map(shelf => shelf.id)); // Earlier cave solves must not disappear just because visibility ranking was upgraded.
+      selected = [...retainedLegacy, ...selected.filter(shelf => !saved.has(shelf.id))].slice(0, rolled.length);
+    }
     const cycleIdentity = currentStateIdentity(); // New Shift incarnation owns fresh cave map IDs and unopened treasure.
     const sites = selected.map(shelf => {
-      const denId = 'puzzle_cliff_' + hashSeed(cycleIdentity + ':' + key + ':' + shelf.id).toString(36); // Shift-specific cavern id avoids restoring the old interior after landscape replacement.
-      return puzzleProfile(key, denId, cycleIdentity + ':' + key + ':puzzle-cliff:' + String(shelf.id),
+      const oldSignature = legacySignatureFor(shelf); // Pre-upgrade save key is already isolated by the world|cycle cave-state payload.
+      const existing = runtimeStateBySignature.has(oldSignature); // Preserve its map id and opened gate in this current Shift only.
+      const denId = 'puzzle_cliff_' + hashSeed(existing ? key + ':' + shelf.id : cycleIdentity + ':' + key + ':' + shelf.id).toString(36);
+      return puzzleProfile(key, denId, existing ? oldSignature : cycleIdentity + ':' + key + ':puzzle-cliff:' + String(shelf.id),
         'independent_cliff', { shelfId:shelf.id, mouthAnchor:{x:Math.floor(shelf.x),y:Math.floor(shelf.z)},
           seclusion: rankedById.get(shelf.id) || null });
     });
