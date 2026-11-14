@@ -126,7 +126,9 @@
 
     const next = {
       basePos: socket.position.clone(), // Ordinary hand-driver position used as the source for every dance reapplication until that driver changes it.
-      baseQuat: socket.quaternion.clone(), // Ordinary hand-driver rotation paired with basePos.
+      baseQuat: (previous?.appliedQuat && socket.quaternion?.dot
+        && Math.abs(Math.abs(socket.quaternion.dot(previous.appliedQuat)) - 1) < 1e-7
+        ? previous.baseQuat : socket.quaternion).clone(), // A position-only hand refresh must not rebase rotation on our own previous dance twist.
       appliedPos: null,
       appliedQuat: null, // Track the last dance-authored rotation separately from the forearm driver's rotation.
     };
