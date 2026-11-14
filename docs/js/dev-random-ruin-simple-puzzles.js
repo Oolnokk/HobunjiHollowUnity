@@ -1262,6 +1262,7 @@
       clockMs:window.AudioSystem?.metronomeLookaheadMs?()=>window.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
       onStop:()=>{window.RuinInteractionAudio?.metronomeStop?.();window.MusicMinigame?.clearPuzzleBeatClock?.();}, // No stale flute clock after the score resets.
       onBeat:beat=>{if(beat.absoluteBeat===0)window.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);window.RuinInteractionAudio?.metronomeTick?.(beat);},
+       onNote:note=>window.RuinInteractionAudio?.melodyPercussionTick?.(note), // The same note transport drives the high stonebeat percussion; no note pitches are demonstrated.
       onSolved:()=>completeEchoSet(set),
       onChanged:snapshot=>{
         if(snapshot.mistakes>set.mistakes){

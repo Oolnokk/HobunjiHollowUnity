@@ -5,7 +5,7 @@ const Song=require('../docs/js/puzzle-cave-melody.js'); // Exercises the exact b
 const first=Song.generate('wilderness:puzzle:1',{difficulty:1});
 assert.deepEqual(first,Song.generate('wilderness:puzzle:1',{difficulty:1}),'one cave retains its score on reload');
 assert.equal(first.measures,1);
-assert.ok(first.bpm<=88&&first.bpm>=60,'all tempos are slower and bounded');
+assert.equal(first.bpm,120,'one-measure scores use the fastest 120 BPM tempo');
 assert.equal(first.cycleTicks-first.totalTicks,16,'one full measure of silence separates repeats');
 assert.ok(first.notes.length>=2);
 assert.ok(first.notes.every(note=>Number.isInteger(note.index)&&note.index>=0&&note.index<8));
@@ -14,12 +14,16 @@ assert.ok(first.notes.every(note=>[2,4,8,16].includes(note.lengthTicks)),'no not
 const harder=Song.generate('wilderness:puzzle:2',{difficulty:5});
 assert.equal(harder.measures,4);
 assert.equal(harder.totalTicks,64);
+assert.equal(harder.bpm,60,'four-measure scores use the slowest 60 BPM tempo');
+assert.equal(Song.generate('two-bar-tempo',{measures:2}).bpm,90,'two measures fall halfway through the BPM range');
+assert.equal(Song.generate('one-bar-override',{measures:1,bpm:75}).bpm,75,'author-specified BPM remains supported');
+assert.equal(Song.generate('minimum-override',{measures:1,bpm:10}).bpm,60,'low author tempos are clamped');
 assert.ok(harder.rewardTier>=first.rewardTier,'a longer, complex melody should not award lower-tier treasure');
 for(let index=0;index<80;index++){
   const song=Song.generate('cave-'+index,{difficulty:1+index%5});
   assert.ok(song.notes.every(note=>note.startTick+note.lengthTicks<=song.totalTicks));
   assert.ok(song.notes.some(note=>note.startTick===0),'all scores start with a playable note');
-  assert.ok(song.bpm<=88);
+  assert.ok(song.bpm>=60&&song.bpm<=120);
   assert.ok([1,2,4].includes(song.measures)&&song.totalTicks===song.measures*16,'every phrase fills one, two or four full 4/4 bars');
   assert.ok(song.notes.every(note=>note.lengthTicks>=2&&note.startTick%2===0),'eighth-note grid has no sixteenth attacks');
 }
@@ -77,7 +81,7 @@ for(let difficulty=1;difficulty<=5;difficulty++){
 const requestedMeasures=Song.generate('four-bars',{measures:4,bpm:300});
 assert.equal(requestedMeasures.measures,4);
 assert.equal(requestedMeasures.totalTicks,64);
-assert.equal(requestedMeasures.bpm,88,'explicit out-of-range BPM is still clamped');
+assert.equal(requestedMeasures.bpm,120,'explicit out-of-range BPM is still clamped');
 let solved=0;
 const session=Song.createSession(harder,{onSolved:()=>solved++});
 assert.equal(session.note(harder.notes[0].index),false,'off-plate music cannot solve the cave');
@@ -192,6 +196,32 @@ assert.deepEqual(cycleBeats.map(beat=>beat.beatIndex),[0,1,2,3,0,1,2,3,0,1,2,3,0
   'beat-number recordings repeat 1-2-3-4 across score and silence without drifting');
 assert(cycleBeats.every((beat,index)=>beat.absoluteBeat===index),
   'beat events stay tied to the absolute BPM clock, not frame count or note count');
+
+const scoredRhythm=Song.generate('note-percussion',{difficulty:4,measures:2});
+const noteEvents=[]; // Captures the independent note-onset transport through the score and silent repeat gap.
+const rhythmJudge=Song.createSession(scoredRhythm,{onNote:event=>noteEvents.push(event)});
+rhythmJudge.step(0,true);
+for(let tick=1;tick<scoredRhythm.cycleTicks*2;tick++)rhythmJudge.step(scoredRhythm.secondsPerTick,true);
+const expectedAttackTicks=scoredRhythm.notes.map(note=>note.startTick)
+  .concat(scoredRhythm.notes.map(note=>scoredRhythm.cycleTicks+note.startTick));
+assert.deepEqual(noteEvents.map(note=>note.absoluteTick),expectedAttackTicks,
+  'percussion tracks each eighth/quarter/half-note attack for every repeat, never the silent bar');
+assert(noteEvents.some((event,i)=>i>0&&(event.absoluteTick-noteEvents[i-1].absoluteTick)===2),
+  'eighth-note figures receive their own extra percussion hits between metronome quarters');
+rhythmJudge.step(0,false);
+assert.equal(noteEvents.length,expectedAttackTicks.length,'leaving the plate stops pending scored attacks');
+let nowMs=1000; // The independent rhythm scheduler uses the same hardware deadline as metronome and note judgment.
+const aheadEvents=[]; // Tracks an attack scheduled before its audible timestamp.
+const aheadJudge=Song.createSession(scoredRhythm,{clockMs:()=>nowMs,lookaheadMs:90,onNote:e=>aheadEvents.push(e)});
+aheadJudge.step(0,true);
+const secondAttackMs=1000+scoredRhythm.notes[1].startTick*scoredRhythm.secondsPerTick*1000;
+nowMs=secondAttackMs-50;
+aheadJudge.step(0,true);
+assert.equal(aheadEvents.length,2,'audio lookahead schedules the next authored note once');
+assert(Math.abs(aheadEvents[1].whenMs-secondAttackMs)<.001,
+  'percussion playback is scheduled at the note onset, not at the frame that queues it');
+nowMs=secondAttackMs+10;aheadJudge.step(0,true);
+assert.equal(aheadEvents.length,2,'lookahead does not double-play the queued percussion note');
 
 const paint={color:{hex:null,setHex(n){this.hex=n;}}};
 const ink={material:paint,userData:{},scale:{x:.2,y:.24}}; // A carved numeral may tint but must retain the exact same physical dimensions.

@@ -193,6 +193,7 @@
       clockMs:typeof options.clockMs==='function'?options.clockMs:(root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null), // Deterministic trial harnesses inject their own monotonic clock; gameplay shares the audio clock.
       onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();}, // Keep flute note-off and stonebeat in one lifecycle.
       onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);},
+       onNote:note=>root.RuinInteractionAudio?.melodyPercussionTick?.(note), // The same note transport drives the high stonebeat percussion; no note pitches are demonstrated.
         onSolved:()=>complete(), // The instrument remains equipped; only the owning mechanism unlocks.
         onChanged:snapshot=>{
           if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){

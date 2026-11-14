@@ -473,6 +473,7 @@
       clockMs:root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
       onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();}, // Retire the metronome and its flute release clock together.
       onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);}, // The plate's first downbeat establishes both clocks.
+       onNote:note=>root.RuinInteractionAudio?.melodyPercussionTick?.(note), // The same note transport drives the high stonebeat percussion; no note pitches are demonstrated.
       onSolved:()=>{
         portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.
         root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
