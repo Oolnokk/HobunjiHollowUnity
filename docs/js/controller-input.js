@@ -172,6 +172,8 @@
   const frame = {
     id: 0,
     now: 0,
+    previousNow: 0, // Earlier raw poll time used to validate an input-edge Gamepad.timestamp after a stalled frame.
+    rawGapMs: 0, // Unclamped frame gap used for mobile hitch diagnostics; gameplay dt remains clamped.
     dt: 0,
     pad: null,
     pads: padScratch,
@@ -202,6 +204,8 @@
 
   let activePadIndex = null;
   let lastNow = 0;
+  let longPollGaps = 0; // Counts >120 ms controller polling gaps for on-device hitch diagnostics.
+  let maxPollGapMs = 0; // Highest observed polling gap exposed by getDebug(), not used for game simulation.
   const errorCounts = new Map(); // Subscriber name -> thrown-error count, surfaced in getDebug().
   let cadenceOwner = 'manual'; // Used by diagnostics/tests to prove whether the global scheduler or compatibility fallback owns browser cadence.
   let schedulerUnsubscribe = null; // Retained only so a development reload/dispose path can replace the named scheduler registration cleanly.
@@ -220,7 +224,11 @@
   function pollFrame(now) {
     frame.id++;
     frame.now = now || performance.now();
-    frame.dt = lastNow ? Math.min(0.05, Math.max(0, (frame.now - lastNow) / 1000)) : 1 / 60; // Caps resume spikes after a backgrounded tab.
+    frame.previousNow = lastNow; // Preserves the prior poll boundary before advancing the frame's wall clock.
+    frame.rawGapMs = lastNow ? Math.max(0, frame.now - lastNow) : 0;
+    frame.dt = lastNow ? Math.min(0.05, frame.rawGapMs / 1000) : 1 / 60; // Caps resume spikes after a backgrounded tab.
+    if (frame.rawGapMs > 120 && !document.hidden) longPollGaps++;
+    if (!document.hidden) maxPollGapMs = Math.max(maxPollGapMs, frame.rawGapMs);
     lastNow = frame.now;
     frame.focused = typeof document?.hasFocus === 'function' ? document.hasFocus() : true;
 
@@ -315,6 +323,9 @@
       padId: frame.pad?.id || null,
       padCount: padScratch.length,
       focused: frame.focused,
+      lastPollGapMs: frame.rawGapMs,
+      maxPollGapMs,
+      longPollGaps,
       down: [...downSet],
       subscribers: subscribers.map(entry => ({ name: entry.name, priority: entry.priority, errors: errorCounts.get(entry.name) || 0 })),
     };

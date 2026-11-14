@@ -13,13 +13,15 @@
   if (!window.Combat?.loadout) { console.error('combat-input.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const HOLD_THRESHOLD_S = 0.24; // Weapon-action press duration before a hold starts; 50% longer than the previous 0.16 seconds.
+  const STALLED_PRESS_SETTLE_MS = 50; // Lets queued release events catch up before a backdated press triggers a held attack; only affects delayed presses.
   const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Compatibility key; enabled state is never restored automatically.
   let autoTargetEnabled = false; // Targeting requires an explicit tap or hold in this session.
   let autoTargetControl = null; // Cached Settings checkbox synchronized with runtime state.
 
   function makeSlotState() {
     return {
-      down: false, downAt: 0, holding: false,
+      down: false, downAt: 0, deliveredAtMs: 0, holding: false, // deliveredAtMs lets the hold threshold await a delayed physical release after a browser stall.
+      pressDeliveryLagMs: 0, releaseDeliveryLagMs: 0, // Measured physical-event delivery lag shown in getState() for mobile diagnostics.
       alignmentRequest: null, // Cancel handle for an offensive hold that is still aligning before windup.
       holdAbility: null, // Ability captured at the hold threshold so loadout swaps cannot change the pending action.
       holdStarted: false, // Distinguishes a real hold windup from one still waiting for alignment.
@@ -32,6 +34,24 @@
 
   function now() {
     return performance.now() / 1000;
+  }
+
+  // Browser input Event.timeStamp is the physical event's monotonic timestamp,
+  // which may predate its JavaScript delivery when a long render blocks the UI
+  // thread. Controller polls have no event timestamp and use arrival time.
+  function inputTimeMs(phase, physicalEvent = null) {
+    const receivedAtMs = performance.now(); // Fallback for gamepads, non-event callers and clocks from an incompatible origin.
+    const event = physicalEvent; // Only an explicitly routed physical event may backdate a combat press; frame-polled controllers use arrival time.
+    const eventType = String(event?.type || '');
+    const acceptable = phase === 'press'
+      ? /^(keydown|mousedown|pointerdown|touchstart)$/.test(eventType)
+      : /^(keyup|mouseup|pointerup|touchend)$/.test(eventType);
+    if (!acceptable) return receivedAtMs;
+    let stampedAtMs = Number(event.timeStamp); // Used only for bounded historical onset/release calculations.
+    if (stampedAtMs > 1e12 && Number.isFinite(performance.timeOrigin)) stampedAtMs -= performance.timeOrigin;
+    return Number.isFinite(stampedAtMs) && stampedAtMs >= 0
+      && stampedAtMs <= receivedAtMs + 8 && receivedAtMs - stampedAtMs <= 5000
+      ? Math.min(stampedAtMs, receivedAtMs) : receivedAtMs;
   }
 
   function isAutoTargetEnabled() {
@@ -114,6 +134,8 @@
       releaseQueued: s.releaseQueued,
       attackQueued: queuedAttacks.has(slotIndex),
       downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
+      pressDeliveryLagMs: s.pressDeliveryLagMs,
+      releaseDeliveryLagMs: s.releaseDeliveryLagMs,
       holdThresholdS: HOLD_THRESHOLD_S,
     };
   }
@@ -288,13 +310,16 @@
   }
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
-  function pressStart(slotIndex) {
+  function pressStart(slotIndex, physicalEvent = null) {
     if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // No attack state and no bandage cancellation on a context-owned press.
     window.BandageSystem?.cancel?.('attack');
     const s = slots[slotIndex];
     if (!s || s.down || blockedByActionLock()) return;
+    const pressedAtMs = inputTimeMs('press', physicalEvent); // The same event timestamp follows the input through delayed frame processing.
     s.down = true;
-    s.downAt = now();
+    s.downAt = pressedAtMs / 1000;
+    s.deliveredAtMs = performance.now(); // A press queued behind a stalled frame must not start a hold before its queued release has a chance to arrive.
+    s.pressDeliveryLagMs = Math.max(0, performance.now() - pressedAtMs);
     s.holding = false;
     s.alignmentRequest?.cancel?.();
     s.alignmentRequest = null;
@@ -305,11 +330,22 @@
   }
 
   // Call on pointerup/touch-end for the given slot.
-  function pressEnd(slotIndex) {
+  function pressEnd(slotIndex, physicalEvent = null) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
+    if (/^(pointercancel|touchcancel|lostpointercapture)$/.test(String(physicalEvent?.type || ''))) {
+      abortPress(slotIndex); // Losing physical ownership must never turn a canceled touch or pointer into a melee attack.
+      return;
+    }
     if (blockedByActionLock() || window.GameplayInputRouter?.isAttackBlocked?.()) { abortPress(slotIndex); return; }
+    const releasedAtMs = inputTimeMs('release', physicalEvent); // The real release time disambiguates holds when a frame could not run.
+    s.releaseDeliveryLagMs = Math.max(0, performance.now() - releasedAtMs);
     try {
+      if (!s.holding && releasedAtMs / 1000 - s.downAt >= HOLD_THRESHOLD_S) {
+        s.holding = true; // A full physical hold cannot become a tap merely because the frame update stalled.
+        emitState(slotIndex, 'hold-threshold-on-release');
+        startHold(slotIndex); // Reuse the existing alignment/ability ownership and cancel rules, never synthesize a tap.
+      }
       if (s.holding) endHold(slotIndex);
       else fireTap(slotIndex);
     } finally {
@@ -400,7 +436,8 @@
         continue;
       }
       if (!s.holding) {
-        if (now() - s.downAt >= HOLD_THRESHOLD_S) {
+        const settleMs = Math.min(STALLED_PRESS_SETTLE_MS, s.pressDeliveryLagMs); // On-time presses keep the ordinary 240 ms threshold.
+        if (now() - s.downAt >= HOLD_THRESHOLD_S && performance.now() - s.deliveredAtMs >= settleMs) {
           s.holding = true;
           emitState(slotIndex, 'hold-threshold');
           startHold(slotIndex);
