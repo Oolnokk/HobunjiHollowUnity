@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
-const { selectTests, selectFeatureChecks, sourceDependencies, onlyCacheBustChanged, withoutCacheBusts } = require('./ci-select-tests.js');
+const { selectTests, selectFeatureChecks, featureWorkflowDependencies, sourceDependencies, onlyCacheBustChanged, withoutCacheBusts } = require('./ci-select-tests.js');
 
 // The selector must neither silently omit unknown changes nor overrun every
 // browser smoke for an unrelated narrowly scoped ruin file.
@@ -103,6 +103,32 @@ test('feature selector retains each specialist when its real subsystem changes',
   ]) {
     const selected = selectFeatureChecks([file]); // Each fixture is a real workflow dependency, not a synthetic category.
     assert.deepEqual(Object.entries(selected.output).filter(([, run]) => run).map(([id]) => id), enabled, file);
+  }
+});
+
+test('specialist impact detection follows test imports rather than guessing from filenames', () => {
+  const lighting = featureWorkflowDependencies('lighting'); // The overlay light regression actually imports shared furniture/ambient modules.
+  for (const file of [
+    'docs/js/furniture-light-registry.js',
+    'docs/js/farmhouse-flat-lighting.js',
+    'docs/js/daylight-window-runtime.js',
+    'docs/js/cloud-forest-fog.js',
+  ]) assert(lighting.has(file), 'Kanthic lighting must rerun when its overlay regression dependency changes: ' + file);
+  const cavern = 'docs/js/cavern-ore-rocks.js'; // The integrated puzzle-cave art test reads the cavern rendering code through its own read() helper.
+  assert(featureWorkflowDependencies('integrated').has(cavern), 'integrated puzzle coverage retains the cavern artwork source dependency');
+  assert.equal(selectFeatureChecks(['docs/js/furniture-light-registry.js']).selected.lighting, true,
+    'furniture lighting bridge changes do not silently skip the shaft-lighting test');
+  assert.equal(selectFeatureChecks(['docs/js/daylight-window-runtime.js']).selected.lighting, true,
+    'daylight changes retain Kanthic overlay-light coverage');
+  assert.equal(selectFeatureChecks([cavern]).selected.integrated, true,
+    'cavern rendering changes retain the integrated puzzle art regression');
+});
+
+test('unknown gameplay assets and configuration fail open instead of falsely skipping all tests', () => {
+  for (const file of ['docs/config/loot/loot-pools.json', 'docs/assets/environments/new-tile.png', 'docs/js/unknown-shared-module.js']) {
+    const result = selectFeatureChecks([file]);
+    assert.equal(result.full, true, file + ' could affect the specialist game environment');
+    assert(Object.values(result.selected).every(Boolean), file + ' must not suppress all coverage');
   }
 });
 
