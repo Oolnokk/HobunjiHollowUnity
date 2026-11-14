@@ -145,4 +145,15 @@ assert.strictEqual(pieceCalls.length, 3, 'A second install must not nest another
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(mineGroup2).count, mineExpectedDoors);
 assert.strictEqual(styledDoors.length, beforeRestyle + 1 + mineExpectedDoors, 'doors attached after style initialization receive the shared finish immediately');
 
+const ikmcPiece = JSON.parse(fs.readFileSync('docs/config/pieces/ikmc-outpost.json', 'utf8')); // Full west/front porch relocation exercises fullFootprint placement and a rotated one-tile mouth.
+const ikmcGroup = windowStub.HousePieceGen.buildGroupFromPiece({}, ikmcPiece, 4, 40, { rotationDeg: 180, elevationY: 0.5 });
+const ikmcDebug = windowStub.EntryTunnelDoorFurniture.debugInfo(ikmcGroup);
+assert.strictEqual(ikmcDebug.count, 1, 'full wraparound porch must have exactly one physical entry door');
+assert.strictEqual(ikmcDebug.doors[0].furnitureKey, 'door', 'one-tile IKMC tunnel must retain the regular door');
+assert.strictEqual(ikmcDebug.doors[0].tile.col, 7);
+assert.strictEqual(ikmcDebug.doors[0].tile.row, 42);
+assert(Math.abs(ikmcDebug.doors[0].position.y - 0.68) < 1e-9, 'door sill must rise by the 0.18-tile porch height above the building elevation');
+assert(Math.abs(ikmcDebug.doors[0].rotationYDeg + 180) < 1e-9, 'south-facing authored entrance must rotate north toward the new town road');
+assert(ikmcGroup.children[0]?.userData?.entryTunnelDoorFurniture, 'visible authored IKMC door must actually attach to building group');
+
 console.log('entry-tunnel door furniture integration: ok');
