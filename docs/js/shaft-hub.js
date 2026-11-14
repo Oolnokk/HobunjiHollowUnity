@@ -186,13 +186,24 @@
       if (portalKeys.has(id)) throw new Error('Duplicate shaft wing portal ' + id);
       portalKeys.add(id);
       const level = floor * o.spacing;
+      const width = request?.width ?? 1; // Each passage carves the width of its real corridor; native V50 entrances remain one cell wide.
+      if (!Number.isInteger(width) || width < 1 || width > 5 || width % 2 !== 1)
+        throw new Error('Shaft wing portal must have an odd width of 1–5 cells: ' + id);
       const geometry = sideGeometry(side, { ...o, depth: 1, length: 1 }, cols, rows, portalOffset);
-      for (const t of geometry.tunnel)
-        grid.fillBox(t.c, t.r, level, t.c, t.r, level + 1, KIND.AIR);
+      const tunnel = [], mouth = []; // Every lane of the carved passage is shared with the wing's visible end wall and voxel border.
+      const alongX = side === 'N' || side === 'S'; // N/S openings widen along X; E/W openings widen along Z.
+      for (const t of geometry.tunnel) for (let lane = -(width - 1) / 2; lane <= (width - 1) / 2; lane++) {
+        const c = t.c + (alongX ? lane : 0), r = t.r + (alongX ? 0 : lane);
+        if (!grid.inBounds(c, r, level + 1)) throw new Error('Shaft portal exceeds voxel bounds: ' + id);
+        grid.fillBox(c, r, level, c, r, level + 1, KIND.AIR);
+        tunnel.push({ col:c, row:r });
+        if (t.c === geometry.edge.c && t.r === geometry.edge.r)
+          mouth.push([Math.floor(grid.colToX(c + .5)), Math.floor(grid.rowToZ(r + .5))]);
+      }
       wingPortals.push({
-        id, floor, side, offset: portalOffset, level,
+        id, floor, side, offset: portalOffset, level, width, mouth,
         col: geometry.edge.c, row: geometry.edge.r,
-        inside: geometry.tunnel[0], tunnel: geometry.tunnel.map(t => ({col:t.c,row:t.r})),
+        inside: geometry.tunnel[0], tunnel,
         outward: OUTWARD[side],
         world: {x:grid.colToX(geometry.edge.c + .5), z:grid.rowToZ(geometry.edge.r + .5), y:grid.levelToY(level)}
       });

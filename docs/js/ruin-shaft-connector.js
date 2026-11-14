@@ -121,8 +121,8 @@
       throw new Error('Reserved native V50 shaft overlaps the original entry-floor V50 footprint');
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
     const portals=plan.floors.flatMap(f=>[
-      ...f.wings.map(w=>({floor:f.floor,side:w.side})),
-      ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
+      ...f.wings.map(w=>({floor:f.floor,side:w.side,width:plan.options.corridorWidth})), // Match each three-cell wing hall rather than carving a one-cell pinch point.
+      ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side,width:1}]:[]), // Native V50 corridor deliberately narrows to its single-cell exterior threshold.
     ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
       shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,

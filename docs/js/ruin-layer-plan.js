@@ -206,6 +206,12 @@
           if((bend.x!==approach.x)||(bend.z!==approach.z))pieces.push(segment(bend,approach,o.corridorWidth,along)); // Radial length varies to fit rooms.
           // Straight corridor if there was no lateral drift.
           if(!pieces.length)pieces.push(segment(previous,approach,o.corridorWidth,along));
+          if(stage===1){ // The first hallway may dogleg immediately. Always cover the full three-cell shaft aperture before turning.
+            const half=Math.floor(o.corridorWidth/2); // Centres the entrance apron on this wing's physical shaft portal.
+            pieces.unshift(dir.dx
+              ?{x:portal.x,z:portal.z-half,w:1,d:o.corridorWidth}
+              :{x:portal.x-half,z:portal.z,w:o.corridorWidth,d:1});
+          }
           const hall={id:`${wingId}-hall${stage}`,floor,y,from:stage===1?`shaft-f${floor}`:nodes[stage-2].id,to:id,rects:pieces,
             start:{...previous},end:{...approach},bend:{...bend},length:Math.abs(previous.x-approach.x)+Math.abs(previous.z-approach.z)};
           corridors.push(hall);hallways.push(hall);
