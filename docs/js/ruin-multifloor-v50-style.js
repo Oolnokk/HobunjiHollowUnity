@@ -22,7 +22,7 @@
     if(ruin.theme!=='kanthic')return null;
     const rootGroup=new THREE.Group(); // Session-owned, non-colliding fire furniture in the actual shaft.
     rootGroup.name='kanthic-shaft-fire-fixtures';rec.scene.add(rootGroup); // Keep fire furniture outside the engraved-masonry tree: its brackets must not acquire expensive wall-pattern atlases.
-    const grid=hub.grid,o=hub.options,lights=[],flames=[],towerFixtures=[],controls=[]; // Shared source list and cleanup handles for sconces and optional hub braziers.
+    const grid=hub.grid,o=hub.options,lights=[],flames=[],towerFixtures=[]; // Shared source list and cleanup handles for Kanthic sconces; checkpoint travel owns every shaft brazier.
     const stone=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#766b62'
     })||new THREE.MeshBasicMaterial({color:0x766b62}); // Use the same PNG stone as the ruin itself.
@@ -31,12 +31,10 @@
       materialFillColor:'#66442c',materialFillMode:'always',color:'#66442c'
     })||new THREE.MeshBasicMaterial({color:0x66442c}); // Warm metallic fittings remain stone-textured on unlit phones.
     const fire=new THREE.MeshBasicMaterial({color:0xff8b31}); // Emissive-looking geometry stays visible under the new firelight mask.
-    const ember=new THREE.MeshBasicMaterial({color:0xffcc68}); // The light core helps identify the fixture before a brazier is lit.
     const bracketGeo=new THREE.BoxGeometry(.95,.3,.65),armGeo=new THREE.BoxGeometry(.22,.8,.4); // Reused by every giant wall and moving-tower sconce.
     const sconceBowlGeo=new THREE.CylinderGeometry(.55,.39,.29,10),flameGeo=new THREE.ConeGeometry(.31,1.05,7); // Shared sconces keep draw and allocation counts bounded.
-    const brazierBaseGeo=new THREE.CylinderGeometry(.68,.83,.8,10),brazierDishGeo=new THREE.CylinderGeometry(.83,.62,.28,10); // Freestanding hub braziers have real bowls, not flat markers.
-    const geometries=[bracketGeo,armGeo,sconceBowlGeo,flameGeo,brazierBaseGeo,brazierDishGeo]; // Disposed with this ruin session, never while another shaft is active.
-    const materials=[stone,bronze,fire,ember]; // No global material registry or extra WebGL PointLights.
+    const geometries=[bracketGeo,armGeo,sconceBowlGeo,flameGeo]; // The universal checkpoint system owns freestanding shaft brazier meshes.
+    const materials=[stone,bronze,fire]; // No global material registry or extra WebGL PointLights.
     const worldPoint=new THREE.Vector3(); // Reused to track light emitters attached to rotating/elevating obelisk towers.
     const floorRoots=new Map(); // Hides decorative sconces above the current level, matching existing shaft-wing rendering.
     function floorRoot(story){
@@ -100,36 +98,8 @@
       const fixture=sconce(holder,0,-1.65,front*2.08,0,front,pillar.story,true);
       towerFixtures.push(fixture); // Explicitly detach from a different runtime's owner before it is destroyed.
     }
-    for(let story=1;story<o.floors;story++){
-      const level=story*o.spacing,cell=chooseHubBrazierCell(hub,story); // Floor zero now has the universal white, automatically lit shaft brazier; never stack an orange Kanthic optional fixture on it. // Reuse the same grid-grounded placement selection that regression tests exercise.
-      if(!cell)continue; // Never invent a brazier on an unsupported story or block the only available path.
-      const floorY=grid.levelToY(level),x=grid.colToX(cell[0]+.5),z=grid.rowToZ(cell[1]+.5);
-      const group=new THREE.Group(); // Optional fire source, separate from the Great Door's required wing braziers.
-      group.name='kanthic-shaft-optional-brazier-'+story;group.position.set(x,floorY,z);
-      group.userData.devRuinFootprintIgnore=true;floorRoot(story).add(group);
-      addMesh(group,'brazier-carved-base',brazierBaseGeo,stone,0,.43,0);
-      addMesh(group,'brazier-bronze-fire-dish',brazierDishGeo,bronze,0,.96,0);
-      const flame=new THREE.Group(); // Use the existing authored campfire particle emitter only for the few interactive braziers.
-      flame.name='kanthic-shaft-brazier-fire';flame.position.y=1.15;flame.visible=false;group.add(flame);
-      const visual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.35,rateScale:.9});
-      if(visual)flames.push(visual);
-      else addMesh(flame,'brazier-burning-fallback',flameGeo,fire,0,.52,0); // A lit brazier remains visually obvious even if particle assets are still loading.
-      const source={x,y:floorY+1.4,z,story,floorY,radius:12,strength:.99,
-        color:[255,132,54],active:false}; // A lit brazier clears nearly all darkness within reach and fades gently, revealing a practical part of the shaft.
-      lights.push(source);
-      const state={lit:false,group,source}; // Shared by the mobile prompt, fire emitter and light mask.
-      const control={kind:'kanthicShaftBrazier',object:group,promptRoot:group,floorY,range:2.1,
-        priority:18,touchIcon:'🔥',label:()=>state.lit?'Brazier Burning':'Ignite Shaft Brazier',
-        onPress:()=>{
-          const playerY=Number(getPlayerY?.()); // Prevent igniting the same X/Z position from another stacked floor.
-          if(state.lit||!Number.isFinite(playerY)||Math.abs(playerY-floorY)>1.1)return;
-          state.lit=true;flame.visible=true;source.active=true;
-          root.RuinInteractionAudio?.activator?.(group,{size:1.5});
-          showToast?.('The Kanthic shaft grows brighter.',true);
-          root.CloudForestFog?.refreshLightingOverlay?.();onStateChange?.();
-        }};
-      ruin.controls.push(control);controls.push(control);
-    }
+    // Every story's freestanding brazier is now owned by RuinCheckpointTravel.
+    // Kanthic retains its wall and tower sconces, without placing an overlapping orange bowl.
     const sconceCount=lights.filter(light=>!!light.anchor).length; // Fixture diagnostics count sconces only; goal braziers are a separate category.
     const requiredWingLights=ruin.shaftLayerRuntime?.lightSources?.()||[]; // Existing required wing brazier records, activated by their actual puzzle completion handlers.
     const nativeGoalLights=ruin.nativeV50Runtime?.lightSources?.()||[]; // Native upper-floor goals reveal stone using their actual support Y.
@@ -149,7 +119,6 @@
     };
     tick(); // Populate moving-tower light positions on the very first draw.
     const dispose=()=>{
-      for(const control of controls){const index=ruin.controls.indexOf(control);if(index>=0)ruin.controls.splice(index,1);}
       for(const effect of flames)effect.dispose?.();
       for(const fixture of towerFixtures)fixture.parent?.remove(fixture);
       if(activeKanthicLights===lights)activeKanthicLights=[];
@@ -157,8 +126,8 @@
       for(const mat of materials)mat.dispose();
       rootGroup.parent?.remove(rootGroup);
     };
-    return {tick,dispose,lights,braziers:controls.length,sconces:sconceCount,
-      requiredBraziers:requiredWingLights.length+nativeGoalLights.length}; // All three lightable brazier families share the same cached overlay source list.
+    return {tick,dispose,lights,braziers:0,sconces:sconceCount,
+      requiredBraziers:requiredWingLights.length+nativeGoalLights.length}; // Universal shaft checkpoints contribute their own white light list, without duplication.
   }
   function apply({rec,ruin,hub,seed,THREE,getPlayerY,routeTiles=[],showToast,onStateChange}={}){
     if(!rec?.scene||!ruin?.localeRoot||!hub?.grid||!THREE?.Mesh)
