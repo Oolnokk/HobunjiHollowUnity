@@ -98,7 +98,7 @@
     if(!group)return[];
     const normalized=normalizeAuthorConfig(config||readAuthorConfig());
     const sizes=ASSET_URLS.map((_,i)=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:layerGroup?.userData?.sourceWidth||SOURCE_SIZES[i].width,height:layerGroup?.userData?.sourceHeight||SOURCE_SIZES[i].height};});
-    const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER});
+    const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER,cullBoundsRevision:(Number(group.userData?.cullBoundsRevision)||0)+1});
     for(const layer of layout){
       const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer);
       const record=activeByMap.get(WESTERN_SLOPE_ID); // An omitted runtime ridge can still be materialized if a later author config enables it.
