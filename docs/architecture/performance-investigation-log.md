@@ -1,5 +1,14 @@
 # Performance investigation log
 
+## 13 Nov 2026: browser HUD DOM/style invalidation audit (in progress)
+
+The Chrome capture supplied by the player included approximately **1,414 ms of Recalculate Style** across the selected interval. This is cumulative browser time, not an isolated self-time measurement for one HUD module. Two confirmed code-level causes of avoidable invalidation in the UI layer were:
+
+- The timed-effect strip scanned all countdown/fraction elements again for every active effect on every refresh (quadratic DOM selector work), while assigning unchanged `display` and `width` inline styles. It now caches child references per structural rebuild, compares before writing, and quantizes width to 0.1 percentage points for countdown stability. The mobile Pixel Probe reports real and skipped writes.
+- The contextual action prompt rebuilt identical button HTML, classes, styles, and pointer handler closures on repeated show/update calls (notably the fishing interaction). Its DOM is now updated only when contents change; stable handlers dispatch the latest callbacks. The desktop status pill also avoids redundant `display` assignments.
+
+No Three.js render function was changed. **Not yet measured:** device/browser `Recalculate Style` time after this patch; the Pixel Probe write counters establish mutation frequency, not a replacement for an A/B Chrome Performance capture.
+
 ## 13 Nov 2026: den entrance collision now reuses translated authored colliders
 
 A Chrome Performance capture at approximately 8 FPS on the wilderness slope showed
