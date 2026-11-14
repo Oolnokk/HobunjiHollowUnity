@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/town-magic-checkpoint.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 const guildSource = fs.readFileSync('docs/js/delvers-guild-story.js', 'utf8');
 const keyItemSource = fs.readFileSync('docs/js/key-item-system.js', 'utf8'); // Uses the same persistent world-key storage as the live Guild.
 const artifact = fs.readFileSync('docs/js/artifact-collection.js', 'utf8');

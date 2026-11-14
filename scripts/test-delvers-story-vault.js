@@ -220,7 +220,7 @@ for (const name of ['key-item-system','delvers-guild-story','ruin-sites','dev-ra
 
   assert(fs.existsSync('docs/assets/textures/decals/footprint_hachutu.png'),
     'the authored toe-up bird footprint asset must be present on the branch');
-  const index=fs.readFileSync('docs/index.html','utf8');
+  const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
   assert(index.includes('js/delvers-vault-signal.js'));
   assert(index.includes('js/delvers-guild-story.js'));
   assert(fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8')

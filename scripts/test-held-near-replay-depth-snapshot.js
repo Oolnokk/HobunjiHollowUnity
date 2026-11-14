@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const snapshotSource = fs.readFileSync('docs/js/scissor-depth-snapshot.js', 'utf8');
 const heldSource = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 // ── ScissorDepthSnapshot ────────────────────────────────────────────────────
 function fakeGl() {
