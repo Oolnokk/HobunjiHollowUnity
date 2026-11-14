@@ -80,6 +80,7 @@
 
   function classify(key, def = {}) {
     if (!key || NO_OVERRIDE.has(key)) return null;
+    if (def.alchemyRecipeId && def.spriteIcon) return { spriteIcon: def.spriteIcon, spriteColor: def.spriteColor, spriteMode: def.spriteMode }; // Alchemy owns bottle/flask art even for narcotics; don't relabel it as generic powder.
     const label = String(def.label || key);
     const joined = String(key) + ' ' + label;
     const tags = Array.isArray(def.tags) ? def.tags.join(' ') : '';
