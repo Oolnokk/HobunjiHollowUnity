@@ -596,7 +596,7 @@
         if(typeof row.onHoldStart==='function')row.onHoldStart();
         else row.onPress?.();
       },
-      onRelease:()=>row.onHoldEnd?.(),
+      onRelease:detail=>row.onHoldEnd?.(detail), // Preserve canceled input releases so a held travel menu never commits after interruption.
     }));
     registry.setClaims(INPUT_CLAIM_OWNER,claims);
   }
