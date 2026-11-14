@@ -85,9 +85,9 @@
     "warningRadiusTiles": 10,
     "warningStaySeconds": 10,
     "initialWarnings": [
-      "Go away. We don't want trouble.",
-      "This is our territory, not yours. Leave.",
-      "We don't want to fight. Go away."
+      "Stay to your path, and we shall stay to ours, decieved one.",
+      "You intrude upon our territory, decieved one. Go back the way you came, or face the consequences.",
+      "Leave this place now and no blood shall be spilled. Stay, and it shall!"
     ],
     "escalationWarnings": [
       "Leave, or we'll fight!",
