@@ -12,7 +12,7 @@ assert.doesNotMatch(compositor, /HeadRelativeWeaponOcclusion|headGroups|headHidd
 const selectiveStart = compositor.indexOf('function replaySelectiveHeldOverlay(');
 const selectiveEnd = compositor.indexOf('function isShellOutlinePass(', selectiveStart);
 const selectiveReplay = compositor.slice(selectiveStart, selectiveEnd);
-assert.match(selectiveReplay, /for \(const group of groups\)[\s\S]*?const overlayStates = tintOverlay \? prepareSubmergedOverlayStencilMaterials\(group\.meshes\) : null;/, 'held tools share the overlay and water-tint path within each actor-elevation group');
+assert.match(selectiveReplay, /for \(const group of groups\)[\s\S]*?const overlayStates = tintOverlay \? prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef\) : null;/, 'held tools share the overlay and water-tint path within each actor-elevation group');
 assert.match(compositor, /if \(!ground\.length && !topFaceGround\.length && !\(tintCovers\.length && \(held\.length \|\| feet\.length\)\)\) return originalRender/, 'interiors without replay requirements take the ordinary render path');
 assert.doesNotMatch(editor, /HeadRelativeWeaponOcclusion|headOcclusion|weapon\.visible = false/, 'the attack editor cannot mask or temporarily hide head-anchored tools');
 const animationStart = editor.indexOf('function animate()'); // Inspect the actual editor preview loop rather than assuming no weapon animation call can appear between controls and render.
