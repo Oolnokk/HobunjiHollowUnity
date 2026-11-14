@@ -19,7 +19,7 @@
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
     "js/combat/combat-input.js?v=20261114hcombatinputtiming1",
-    "js/combat/attack-pose-templates.js?v=20261017a",
+    "js/combat/attack-pose-templates.js?v=20261114torchForehand1",
     "js/combat/combat-combo.js?v=20261107combo1501a",
     "js/combat/combat-quickattacks.js?v=20261110quickreach2",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",
