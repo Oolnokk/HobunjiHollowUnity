@@ -79,7 +79,10 @@
       mesh.updateMatrixWorld?.(true);
       const ranges = selectedUvRanges(geometry, PLATEAU_CLIFF_MATERIAL_SLOT, position.count); // Used to include only the actual cliff-side material slot.
       const selectedCorners = ranges.reduce((total, [start, end]) => total + end - start, 0); // Used to avoid stitching partial triangles from different mesas into one false batch.
-      if (selectedCorners < 3 || selectedCorners % 3 !== 0 || ranges.some(([start, end]) => start % 3 !== 0 || (end - start) % 3 !== 0)) return false;
+      if (selectedCorners < 3 || selectedCorners % 3 !== 0 || ranges.some(([start, end]) => start % 3 !== 0 || (end - start) % 3 !== 0)) {
+        for (const geometry of prepared) geometry.dispose?.(); // Failed selection must not leak clones or change existing visible terrain.
+        return false;
+      }
       for (const [start, end] of ranges) {
         for (let index = start; index < end; index++) {
           point.set(position.getX(index), position.getY(index), position.getZ(index));
