@@ -299,6 +299,17 @@
     }
     const patternFlying = furPatternOverlay('patternFlying', flying.geometry); // Authored markings follow flying pose and preserve the same outline.
     const patternPerched = furPatternOverlay('patternPerched', perched.geometry); // Authored markings follow the deformed perch silhouette.
+    function detailOverlay(key, geometry) {
+      if (!images[key]) return null; // Only colored-accent species pay for an untinted detail material.
+      const mesh = new THREE.Mesh(geometry, material(key, { depthWrite: false, alphaTest: 0 }));
+      mesh.position.z = .005; // Above the fur pattern, below the colored eye glow.
+      mesh.visible = false;
+      mesh.userData.flyingAnimalDetailOverlay = true; // Protected source detail needs no per-bird recolor.
+      pitch.add(mesh);
+      return mesh;
+    }
+    const detailFlying = detailOverlay('detailFlying', flying.geometry); // Reuse native flying pose geometry.
+    const detailPerched = detailOverlay('detailPerched', perched.geometry); // Share the deformed perch pose.
     function setPalette(bodyHex, eyeHex, patternHex) {
       let changed = false; // Used by the live visual owner to restore per-creature colors after damage flashes.
       for (const [meshes, color] of [[[flying, perched, wings], bodyHex], [[glowFlying, glowPerched], eyeHex], [[patternFlying, patternPerched], patternHex]]) {
@@ -381,6 +392,8 @@
       if (glowPerched) glowPerched.visible = grounded || carrying; // The talon-grip pose reuses the perched body silhouette.
       if (patternFlying) patternFlying.visible = !grounded && !carrying;
       if (patternPerched) patternPerched.visible = grounded || carrying; // No separate talon-grip markings: it shares the perched silhouette.
+      if (detailFlying) detailFlying.visible = !grounded && !carrying;
+      if (detailPerched) detailPerched.visible = grounded || carrying; // Match the exact fur pose.
       if (eyeMaterial) {
         eyeFlying.visible = rearEyeFlying.visible = !grounded && !carrying;
         eyePerched.visible = rearEyePerched.visible = grounded;
@@ -413,7 +426,7 @@
         eyeMaterial.dispose();
         rearEyeMaterial.dispose(); // Six eye meshes share body geometries and two textures; neither is disposed a second time.
       }
-      for (const overlay of [glowFlying, glowPerched, patternFlying, patternPerched]) {
+      for (const overlay of [glowFlying, glowPerched, patternFlying, patternPerched, detailFlying, detailPerched]) {
         if (!overlay) continue;
         overlay.material.map.dispose();
         overlay.material.dispose(); // Body owns reused geometry; dispose every individual overlay texture/material exactly once.

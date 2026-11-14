@@ -1418,6 +1418,16 @@
         "Pungent Paste"
       ]
     },
+    "skeeriMeat": { // All ruin Skeeri sizes contribute meat to normal cooking recipes.
+      "id": "skeeriMeat",
+      "name": "Skeeri Meat",
+      "categories": ["meat"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "speed",
+      "tags": ["Meat", "Skeeri"]
+    },
     "mootMeat": { // Northern Cliffs Moot: ordinary meat, using the existing food-processing paths.
       "id": "mootMeat",
       "name": "Moot Meat",
