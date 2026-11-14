@@ -1139,6 +1139,8 @@
     const sightWork = window.EnemySearchAI?.debugSnapshot?.(); // Copyable hostile-perception cadence and query counts.
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
+    const offscreenAi = window.OffscreenRigLod?.aiSnapshot?.(); // Shows when the combat loop defers or wakes calm actors.
+    if (offscreenAi) lines.push(`Off-screen hostile AI: ${JSON.stringify(offscreenAi)}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);

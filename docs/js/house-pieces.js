@@ -33,7 +33,7 @@
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     // View-direction counterpart: hostile leg/hand procedural animation pauses while the actor is behind or beside the camera.
-    ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261107a'],
+    ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261114h560c4c1'],
     // Whole-NPC camera broad-phase: temporarily hides off-view visual rigs
     // across every color/depth/outline pass without pausing walker simulation.
     ['NpcViewFrustumCull', 'npc-view-frustum-cull.js?v=20261110npcReplayCull2'],

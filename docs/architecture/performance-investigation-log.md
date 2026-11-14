@@ -1,5 +1,9 @@
 # Performance investigation log
 
+## 14 Nov 2026: calm off-screen humanoids update at 5 Hz
+
+Idle and returning enemy humanoids more than six tiles from the player can use accumulated 200 ms updates while their rigs are outside the camera frustum. Existing combat, hit reactions, vocalizations and vital updates keep their normal cadence. Deferred actors are checked again against the final camera before drawing, so a turn can wake an actor on the same frame. Pixel Probe reports deferrals, coarse ticks and camera wakes. Live frame-time and movement comparisons are still pending.
+
 ## 14 Nov 2026: failed cliff-entry searches have a retry delay
 
 A failed climb-entry search can be requested every movement update. For the same entry and start tile, scheduled NPCs wait 750 ms and creatures wait 1.2 seconds before repeating the search. A different entry, different start tile, or rebuilt route can search immediately. Pixel Probe reports skipped retries, and the cliff-route test exercises recovery when an obstacle clears.

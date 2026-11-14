@@ -7049,6 +7049,7 @@
       const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
       const ENEMY_COMBAT_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(300); // Prevents chase facing from teleporting to the player every frame.
       const currentHostilesFrame = []; // Reused rather than allocated for every updateHostiles frame.
+      const deferredHostilesFrame = []; // Rechecked against the final camera before this gameplay frame renders.
       const grazingPreyByPatchFrame = new Map(); // Reuses per-patch prey buckets while the player remains in one area.
       const EMPTY_GRAZING_PREY = Object.freeze([]); // Avoids allocating an empty fallback list for predators without a matching herbivore patch.
       let grazingPreyIndexArea = null; // Clears retained patch buckets when the active area changes.
@@ -7221,6 +7222,29 @@
             c._farWildlifeAiAccumS = 0;
           }
           window.AnimalVocalizations?.tickCreature?.(c, entityDt);
+          if (c.isBandit) {
+            entityDt = window.OffscreenRigLod.hostileAiDt(c, initialDistanceTiles, TILE, dt);
+            if (entityDt < 0) {
+              if (tickCreatureResources(c, dt, false)) deferredHostilesFrame.push(c); // Afflictions keep their regular cadence while AI waits.
+              continue;
+            }
+          }
+          updateHostileBehavior(c, entityDt, foodWebCtx, c.isBandit ? dt : entityDt, dt);
+        }
+      }
+
+      function wakeNewlyVisibleHostiles(dt) {
+        if (!deferredHostilesFrame.length) return;
+        window.OffscreenRigLod.refreshFrustum(camera);
+        const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Same context as the regular hostile update.
+        for (const c of deferredHostilesFrame) {
+          if (c.areaId !== currentArea || c.health <= 0 || c._denHidden) continue;
+          const distance = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Recheck against the live player position on wake.
+          if (window.OffscreenRigLod.wakeHostileAi(c, distance, TILE)) updateHostileBehavior(c, dt, foodWebCtx, null, dt); // Vitals were already updated before deferring.
+        }
+      }
+
+      function updateHostileBehavior(c, entityDt, foodWebCtx, resourceDt, frameDt) {
           const def = c.def;
           const attackSpeedMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'attackSpeed') ?? 1; // Sluggish slows the shared hostile attack-cadence clock without slowing locomotion/AI simulation.
           c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt * attackSpeedMul);
@@ -7255,21 +7279,21 @@
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
           let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
-          if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
+          if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) return;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
-          if (window.CreatureCliffClimb?.update?.(c, entityDt, targetPlayer)) { updateCreatureMesh(c, entityDt, c.facing); continue; }
+          if (window.CreatureCliffClimb?.update?.(c, entityDt, targetPlayer)) { updateCreatureMesh(c, entityDt, c.facing); return; }
           // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
           // parks a drenkirra on a branch to forage/sleep, outside the
           // player-facing defend hop above — same "skip ordinary ground AI
           // entirely this frame" escape hatch, gated on its own per-creature
           // marker so it never touches the Nestmother's branch-defend flow.
-          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
+          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) return;
           let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
           let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
-          if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
+          if (resourceDt !== null && !tickCreatureResources(c, resourceDt, visuallyLodSleeping)) return;
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
@@ -7339,6 +7363,7 @@
             dxp = targetPlayer.x - c.x; dyp = targetPlayer.y - c.y;
             distToPlayer = Math.hypot(dxp, dyp);
           }
+          if (c.isBandit && c.state === 'chase') entityDt = frameDt; // A newly acquired target starts combat on a regular frame step.
           if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
           }
@@ -7834,7 +7859,7 @@
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
           if (skipDistantVisualUpdate) {
             if (c.isBandit && c.state !== 'chase') window.BanditCombat?.restNeckLook?.(c, entityDt); // Off-screen hostiles can cheaply return their neck to neutral.
-            continue;
+            return;
           }
           window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
@@ -7859,7 +7884,6 @@
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, entityDt, moving);
-        }
       }
 
       const FOLLOW_FAR_PX  = TILE * 2.2;
@@ -26920,6 +26944,7 @@
         const dt = window.GameFeel ? window.GameFeel.frameDt(rawFrameDt) : rawFrameDt; // Melee hit-stop briefly time-scales the simulation (js/game-feel.js).
         lastTime = now;
         gameFrameSerial++;
+        deferredHostilesFrame.length = 0;
         window.FestivalSystem?.update?.();
         window.CombatTutorial?.update?.(); // Simulation and scene cleanup share the existing gameLoop cadence.
 
@@ -27289,6 +27314,7 @@
         // actual avatar roots are positioned together after NPC and player
         // simulation, with no second requestAnimationFrame.
         window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
+        wakeNewlyVisibleHostiles(dt); // The final camera can reveal actors deferred earlier in this tick.
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
