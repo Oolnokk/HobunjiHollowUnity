@@ -221,7 +221,24 @@
     };
   }
 
+  // Movement collision asks for this once per den per tile test, thousands of
+  // times in one path search, and every call re-read the Local DB source mode
+  // (localStorage) and rebuilt the rectangle list. The answer only changes
+  // when the den moves/resizes or the Locale Editor saves a template, so one
+  // result per den is kept for a short time.
+  const DEN_COLLISION_STATE_TTL_MS = 500;
+  const _denCollisionStateCache = new WeakMap(); // den -> { at, x, y, w, h, templateId, state }
   function denEntranceCollisionState(den) {
+    if (!den || typeof den !== 'object') return computeDenEntranceCollisionState(den);
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    const cached = _denCollisionStateCache.get(den);
+    if (cached && now - cached.at < DEN_COLLISION_STATE_TTL_MS && cached.x === den.x && cached.y === den.y
+      && cached.w === den.w && cached.h === den.h && cached.templateId === den.entranceTemplateId) return cached.state;
+    const state = computeDenEntranceCollisionState(den);
+    _denCollisionStateCache.set(den, { at: now, x: den.x, y: den.y, w: den.w, h: den.h, templateId: den.entranceTemplateId, state });
+    return state;
+  }
+  function computeDenEntranceCollisionState(den) {
     const locale = activeAnimalDenEntranceLocale(den); // This den's template supplies cave + furniture collider policies.
     const transform = denTemplateTransform(den, locale); // Shared placement transform keeps collision aligned with rendered template objects.
     if (!locale || !transform) return null;

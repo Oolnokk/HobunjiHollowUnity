@@ -33,7 +33,7 @@
   let haveFrustum = false;
   let projView = null;
   let camX = 0, camY = 0, camZ = 0;
-  const stats = { checked: 0, skipped: 0, lastFrameChecked: 0, lastFrameSkipped: 0 };
+  const stats = { checked: 0, skipped: 0, lastFrameChecked: 0, lastFrameSkipped: 0, aiChecked: 0, aiCoarse: 0, lastFrameAiChecked: 0, lastFrameAiCoarse: 0 };
   const sphere = { center: null, radius: BOUNDING_RADIUS_TILES };
 
   function ensureThree() {
@@ -48,8 +48,12 @@
   function beginFrame(camera) {
     stats.lastFrameChecked = stats.checked;
     stats.lastFrameSkipped = stats.skipped;
+    stats.lastFrameAiChecked = stats.aiChecked;
+    stats.lastFrameAiCoarse = stats.aiCoarse;
     stats.checked = 0;
     stats.skipped = 0;
+    stats.aiChecked = 0;
+    stats.aiCoarse = 0;
     haveFrustum = false;
     if (!enabled || !camera || !ensureThree()) return;
     // matrixWorldInverse/projectionMatrix are refreshed by the render pass, so
@@ -82,12 +86,43 @@
     return false;
   }
 
+  // Off-camera AI LOD for BanditCombat humanoids (bandits, tribe hunters,
+  // ghouls, skeletons). A calm one the camera cannot see does not need its
+  // whole hostile update (perception, travel, rig, weapon pose) every frame:
+  // updateHostiles asks this and, when true, advances it at the same 5 Hz
+  // accumulated-time cadence far wildlife already uses. A tribe camp is 15
+  // such actors and most of them are behind or beside the camera.
+  //  - Pure read of this frame's frustum, so an actor that comes into view is
+  //    back to full rate on that same frame.
+  //  - Only 'idle'/'return' with nothing in progress: anyone fighting,
+  //    searching, reacting to a hit, climbing or mid-attack stays full rate.
+  //  - Anyone within COARSE_MIN_TILES of the player stays full rate.
+  const COARSE_MIN_TILES = 4;
+  let coarseAiEnabled = true;
+  function shouldCoarseTickAi(c, playerDistanceTiles) {
+    if (!coarseAiEnabled || !haveFrustum || !c || !c.isBandit) return false;
+    stats.aiChecked++;
+    if (!(playerDistanceTiles > COARSE_MIN_TILES)) return false;
+    if (c.state !== 'idle' && c.state !== 'return') return false;
+    if (c._chunkCombatTarget || c._banditAction || c._rangedAction || c._banditLunging || c.telegraphState) return false;
+    if (c.prone || c.knockbackT > 0 || c.retreatT > 0 || c._cliffClimb || c._cliffRouteTravel || c.onBranch) return false;
+    const position = c.avatarRef?.group?.position;
+    if (!position) return false;
+    sphere.center.set(position.x, position.y + 0.8, position.z);
+    if (frustum.intersectsSphere(sphere)) return false;
+    stats.aiCoarse++;
+    return true;
+  }
+
   window.OffscreenRigLod = Object.freeze({
     beginFrame,
     shouldAnimate,
+    shouldCoarseTickAi,
     setEnabled(value) { enabled = value !== false; if (!enabled) haveFrustum = false; return enabled; },
+    setCoarseAiEnabled(value) { coarseAiEnabled = value !== false; return coarseAiEnabled; }, // A/B switch for the off-camera AI cadence only.
     get enabled() { return enabled; },
-    getStats() { return { ...stats, enabled }; },
-    constants: Object.freeze({ SLEEP_DELAY_S, ALWAYS_ANIMATE_TILES, BOUNDING_RADIUS_TILES }),
+    get coarseAiEnabled() { return coarseAiEnabled; },
+    getStats() { return { ...stats, enabled, coarseAiEnabled }; },
+    constants: Object.freeze({ SLEEP_DELAY_S, ALWAYS_ANIMATE_TILES, BOUNDING_RADIUS_TILES, COARSE_MIN_TILES }),
   });
 })();

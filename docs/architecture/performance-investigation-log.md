@@ -12,6 +12,62 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 14 Nov 2026: barbarian camps: phantom ecology fights, per-frame path searches, off-camera AI cadence
+
+Report: "performance tanks around lots of barbarians, and in open country they are visible well past their simulation
+distance, spinning in place until you come close." Both halves were one defect plus two amplifiers.
+
+**The defect (`porakaneki-camps-runtime.js` ecology pass).** Every tribe hunter, bandit and predator inside the 24-tile
+ecology bubble around the player was handed the *nearest opponent anywhere in that bubble* as a fight target: no limit
+on the distance between the two (up to 48 tiles), no reachability, and no check that the opponent was on screen. Camp
+residents keep their rig out to 24 tiles, but wildlife is hidden beyond 14-18 tiles and inside dens, so in practice all
+of a camp's live hunters were committed to prey nobody could see, permanently (a target was only released on death or
+on leaving the bubble). Pursuit is a straight line with no pathfinding, and a hunter carrying a throwing weapon either
+holds its post when the target is beyond throw range or side-steps for a line of sight it will never get. Measured on
+the Western Slope with 15 materialised Porakaneki hunters and 3 puktuk in a den: 15 of 15 hunters in `chase`, 8 stacked
+on one tile at the den mouth 21 tiles from the player, one frozen 3.6 tiles from the player facing prey 18 tiles away,
+and one that walked 11.9 tiles of path in 5 s for 0.37 tiles of net movement with 231 direction reversals. Walking
+closer woke the prey, which is why it "fixed itself" up close.
+
+Now: only actors with a shown rig take part (`ecologyPresented`: not LOD-hidden, not data-only, not den-hidden); a
+fight starts within `ecologyEngageRadiusTiles` (10) and is dropped past `ecologyDisengageRadiusTiles` (15), both in
+`config/porakaneki-camp.json`; and a pursuit that gains no ground and deals no damage for 6 s is abandoned and that
+opponent ignored for 30 s (`ecologyPursuitAlive`). `scripts/test-porakaneki-camp.js` covers all three.
+
+**Amplifier 1: a failed path search repeated every frame.** A blocked creature falls through `moveCreatureToward` into
+`CreatureCliffClimb.navigate` -> `walkToEntry`, which ran a `TilePathfinding.findPath` of up to 6,500 nodes; when that
+found nothing it kept no memory of the failure, so every stuck hunter searched again on every frame. Same shape in
+`npc-pathfinding.js`'s cliff-approach search (7,500 nodes), found on Old Man Nohuknuk on the same map. Both now wait
+(1.2 s / 750 ms) before repeating a search that failed from the same tile to the same entry.
+
+**Amplifier 2: `denEntranceCollisionState` per tile test.** `isAnimalDenCollisionTile` calls it once per den for every
+tile a path search probes; each call re-read the Local DB source mode from `localStorage` and rebuilt the rectangle
+list. It is now kept per den for 500 ms (invalidated when the den moves, resizes or changes template).
+
+**Off-camera AI cadence (new).** `OffscreenRigLod.shouldCoarseTickAi`: a `BanditCombat` humanoid in `idle`/`return`
+with nothing in progress, more than 4 tiles from the player and outside the camera frustum, advances at the far-wildlife
+5 Hz accumulated-time cadence instead of every frame. In view, or doing anything else, it is full rate on the same
+frame. `OffscreenRigLod.setCoarseAiEnabled(false)` is the A/B switch; `getStats()` has `aiChecked` / `aiCoarse`.
+
+Headless, rendering stubbed out so frames run at 60 Hz, 10 s CDP CPU profiles, JS ms per frame. **The before and after
+rows are different generated worlds** (camps are random), so compare the named functions, not the totals:
+
+| Western Slope, standing by a Porakaneki camp | `updateHostiles` | of which bandit combat AI | `findPath` | `gameLoop` |
+| --- | --- | --- | --- | --- |
+| Before: 15 hunters, all on phantom targets | 7.08 | 5.88 | 4.47 (`denEntranceCollisionState` 2.98 self) | 13.40 |
+| After: 10 hunters, calm, NPC fix not yet in | 0.75 | not in the top 45 | not in the top 45 | 11.98 (6.1 of it Nohuknuk's NPC search) |
+| After, all fixes: 6 hunters, calm, all off camera | 0.19 | - | - | 5.97 (Nohuknuk 1.6, down from 5-6) |
+
+Same spot, same 10 idle hunters, coarse cadence off -> on: `updateHostiles` 0.88 -> 0.63 ms (6 of 10 off camera).
+
+A staged visible hunt still works: a puktuk moved 3 tiles from an Omgurku hunter was targeted on the next ecology tick
+and thrown at repeatedly while it ran.
+
+**Not measured:** real-device FPS, and the render side. A camp is still 15 full rigs in every pass when they are on
+screen (lead 1 below, the shell outline pass, is unchanged). **Not fixed:** a thrower whose target is in engage range
+but beyond its throw range still stands facing it for the 6 s give-up window; and hunters build their rig at 18 tiles
+while wildlife wakes at 14, so a den-hunting party can arrive at a den whose animals are not shown yet.
+
 ## 12 Nov 2026: large wilderness meshes split into cells (mesa tiers, cliff decals, bedrock)
 
 What the near-only replays (next entry) still resubmitted in the wilderness was a handful of zone-spanning meshes whose

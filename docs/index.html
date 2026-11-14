@@ -509,7 +509,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261113h7c46782&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261114hf455cb1&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -616,7 +616,7 @@
   <script src="js/player-jump.js?v=20261109ropeBase1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
+  <script src="js/creature-cliff-climb.js?v=20261114h0137b40"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
@@ -976,7 +976,7 @@
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261110banubuNightAudit2"></script>
   <script src="js/ruin-sites.js?v=20261110hb96c703"></script>
-  <script src="js/zone-den-totem-features.js?v=20261110banubuNightAudit2"></script>
+  <script src="js/zone-den-totem-features.js?v=20261114he92d05f"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -3000,7 +3000,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261110cliffsideMerge1"></script>
+  <script src="js/npc-pathfinding.js?v=20261114hbec40dc"></script>
   <script src="js/nohuknuk-wilderness.js?v=20261110nohukWaterCache1"></script> <!-- Western Slope NPC uses the shared schedule, pathing, sight and burrow systems. -->
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
@@ -3100,7 +3100,7 @@
   <script src="js/scissor-depth-snapshot.js?v=20261112depthsnap1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261113hff8fb38"></script>
+  <script src="game.js?v=20261114hd1071ec"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
