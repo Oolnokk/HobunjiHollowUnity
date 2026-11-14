@@ -363,6 +363,20 @@ async function main() {
     assert.equal(runtime._test.playerCanYawn(false), false, 'mount transition ' + transition + ' must own the body');
   }
   window.Mounts = null;
+  for (const [stateName, stateValue] of [['_freeJump', { phase: 'air' }], ['climbing', true],
+    ['onClimbSurface', true], ['onCliffBalcony', true], ['_cliffRouteSession', {}], ['onBranch', true],
+    ['knockbackT', 0.3]]) {
+    window.Combat.deps.player[stateName] = stateValue;
+    assert.equal(runtime._test.playerCanYawn(false), false,
+      'active traversal or impact ' + stateName + ' prevents a yawn');
+    delete window.Combat.deps.player[stateName];
+  }
+  window.PlayerCrawl = { isActive: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'downed crawl retains hand pose ownership');
+  window.PlayerCrawl = null;
+  window.PlayerDowned = { isDowned: () => true };
+  assert.equal(runtime._test.playerCanYawn(false), false, 'a downed player must not yawn');
+  window.PlayerDowned = null;
   assert.equal(runtime._test.playerCanYawn(false), true, 'all temporary action conditions restore eligibility afterward');
 
   // Deselecting the character previously stopped the scheduler while leaving a five-second yawn, hidden visuals and an action lock stranded.
