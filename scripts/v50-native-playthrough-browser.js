@@ -178,28 +178,32 @@ module.exports=async function runNativeV50Playthrough(page){
     };
     const lightBrazier=async (actor,record,stage)=>{
       const sources=hit.debugTorchSources?.()||[];
-      if(!sources.length)fail('V50 braziers need a real lit-torch source',record,stage);
+      if(!sources.length)fail('V50 braziers need a stationary lit fire hazard',record,stage);
       const target=point(actor);
       const ordered=sources.map(object=>({object,p:point(object)}))
         .filter(row=>row.p&&Math.abs(row.p.y-target.y)<2)
         .sort((a,b)=>Math.hypot(a.p.x-target.x,a.p.z-target.z)-Math.hypot(b.p.x-target.x,b.p.z-target.z));
-      if(!ordered.length)fail('no same-story lit-torch source for V50 brazier',record,stage,{target});
-      if(hit.isCarryingTorch())hit.dropTorch();
+      if(!ordered.length)fail('no same-story ignition source for V50 brazier',record,stage,{target});
+      const adventuring=window.AdventuringTools;
+      const torch=adventuring?.entries?.().find(entry=>entry.id==='torch');
+      if(!torch)fail('permanent adventuring torch is unavailable',record,stage);
+      torch.onSelect(); // Equip through the actual tool registry, not a fabricated carried-weapon record.
       await put({...ordered[0].p,y:floorY(record)},record,stage);
-      if(!hit.debugPickupTorch())fail('actual torch pickup callback failed',record,stage,{source:ordered[0].p});
+      if(!hit.debugLightAdventuringTorchAtSource?.(ordered[0].object))
+        fail('lit fire hazard could not ignite the equipped permanent torch',record,stage,{source:ordered[0].p,torch:adventuring?.debug});
       await put({...target,y:floorY(record)},record,stage);
       if(!hit.debugIgniteTarget(actor)){
-        const status=hit.snapshot?.()||{}; // Precise CI evidence without a desktop console: distinguish actor mismatch, range and torch expiry.
-        fail('authored brazier rejected actual fire-transfer callback',record,stage,{
+        const status=hit.snapshot?.()||{};
+        fail('authored brazier rejected permanent-torch fire transfer',record,stage,{
           target,actorId:actor.id,
           registered:status.ignitionTargets?.some(entry=>entry.id==='ignite-'+actor.id)||false,
           range:hit.distanceToWorldObject?.(actor),
-          carriedTorch:status.temporaryTorches?.find(torch=>torch.id===status.carryingTorch)||null,
+          permanentTorch:adventuring?.debug,
           ignitionTargets:status.ignitionTargets?.filter(entry=>entry.kind==='brazier').slice(0,20),
         });
       }
-      hit.dropTorch();
-      steps.push({floor:record.floor,stage:stage.id,event:'torch-pickup-and-contact-callback'});
+      adventuring.stow();
+      steps.push({floor:record.floor,stage:stage.id,event:'permanent-torch-fire-hazard-and-contact'});
       await advance(32);
     };
     const solveNative=async(state,record,stage,depth=0)=>{
