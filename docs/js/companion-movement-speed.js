@@ -7,7 +7,10 @@
 
   const DEFAULT_OWNER_SPEED_RATIO = 1; // Used when a companion has no explicit owner-speed percentage: 100% of its owner's pace.
   const DEFAULT_PLAYER_MOVE_SPEED = 238; // Matches game.js's ordinary MOVE_SPEED fallback used by the alcohol locomotion bridge.
-  const FOOTING_SPEED_MIN = 0.55; // Matches the player's low-Footing movement floor in alcohol-gameplay-bridge.js.
+  const FOOTING_SPEED_MIN = 0.55; // Matches getFootingSpeedMul in game.js for all low-Footing states.
+  const FOLLOW_CATCHUP_START_TILES = 2.2; // Follow acceleration starts at game.js's FOLLOW_FAR_PX threshold.
+  const FOLLOW_CATCHUP_FULL_TILES = 6; // Full recovery pace is available once the pet falls six tiles behind.
+  const FOLLOW_CATCHUP_MAX_MUL = 1.65; // Bounded temporary advantage used only while closing distance to the owner.
 
   let deps = null; // Combat.init supplies the live player, map, and companion collection.
   let mountDeps = null; // Mounts.init supplies the authoritative MOVE_SPEED, Alchemy, and global speed getters used by player locomotion.
@@ -46,13 +49,9 @@
   }
 
   function playerFootingMultiplier(player) {
-    const drunkenFooting = Math.max(0, Number(player?.afflictions?.drunkenFooting) || 0);
-    if (!(drunkenFooting > 0)) return 1; // The game's Footing pace penalty is part of drunken locomotion, not a general low-Footing penalty.
-    const baseMax = Math.max(0, Number(player?.maxFooting) || 0);
-    if (!(baseMax > 0)) return 1;
-    const effectiveMax = Math.max(0, Number(window.ResourceSystem?.getEffectiveMax?.(player, 'footing')) || baseMax);
-    const footing = Math.max(0, Number(player?.footing) || 0);
-    const fraction = effectiveMax > 0 ? clamp(footing / effectiveMax, 0, 1) : 1;
+    const max = Math.max(0, Number(player?.maxFooting) || 0); // Uses the same denominator as game.js's getFootingSpeedMul.
+    if (!(max > 0)) return 1;
+    const fraction = clamp((Number(player?.footing) || 0) / max, 0, 1);
     return FOOTING_SPEED_MIN + (1 - FOOTING_SPEED_MIN) * fraction;
   }
 
@@ -103,7 +102,10 @@
       * playerTerrainMultiplier(player)
       * general
       * devGlobal
-      * playerFootingMultiplier(player);
+      * playerFootingMultiplier(player)
+      * multiplier(() => window.RangedWeapons?.movementSpeedMultiplier?.(player), 1)
+      * multiplier(() => window.FestivalSystem?.blessingMultiplier?.('speed'), 1)
+      * multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
   }
 
   function ownerPosition(owner, walker) {
@@ -234,9 +236,31 @@
   }
 
   function ownerSpeedRatio(companion) {
-    const configured = Number(companion?.ownerMovementSpeedPercent);
+    const configured = companion?.ownerMovementSpeedPercent == null
+      ? NaN : Number(companion.ownerMovementSpeedPercent); // Missing or null percentages retain the default full owner pace.
     const ratio = Number.isFinite(configured) ? configured / 100 : DEFAULT_OWNER_SPEED_RATIO;
     return Math.max(0, ratio);
+  }
+
+  function followCatchupMultiplier(companion) {
+    if (!companion || companion.stableRole === 'mount' || companion.stableRole === 'shoulderPet'
+      || companion.banditCompanion || companion._companionCombatTarget || companion._honeyfuzzleRescueTarget
+      || companion.treasureCue || companion._animalAttack || companion._furiousSpecial
+      || ownerSpeedRatio(companion) !== DEFAULT_OWNER_SPEED_RATIO) return 1;
+    const distance = Number(companion._companionGroundFollow?.distancePx);
+    if (!Number.isFinite(distance) || distance <= 0) return 1;
+    const distanceTiles = distance / Math.max(1, Number(deps?.TILE) || 55);
+    const blend = clamp((distanceTiles - FOLLOW_CATCHUP_START_TILES)
+      / (FOLLOW_CATCHUP_FULL_TILES - FOLLOW_CATCHUP_START_TILES), 0, 1);
+    return 1 + (FOLLOW_CATCHUP_MAX_MUL - 1) * blend;
+  }
+
+  function compensateGlobalCreatureMovement(companion) {
+    // moveCreatureToward multiplies devGlobalSpeedMul *again*. Player velocity and
+    // position-based/walker NPC paces already represent the owner's world speed.
+    // Authored creature masters instead need that multiplier on both species.
+    const owner = companion?.master || deps?.player;
+    return owner === deps?.player || !owner?.def || !!findNpcWalker(owner);
   }
 
   function applyCompanionProxy(companion) {
@@ -254,16 +278,21 @@
         const speed = ownerMovementSpeed(companion, String(property));
         if (!(speed > 0)) return originalValue;
         const ratio = ownerSpeedRatio(companion);
-        const resolved = speed * ratio;
-        companion._companionMovementSpeedDebug = {
-          ownerId: companion.master?.npcId || companion.master?.id || 'player',
-          ownerSpeedPxS: speed,
-          ownerSpeedPercent: ratio * 100,
-          property: String(property),
-          baseSpeciesSpeedPxS: baseline,
-          resolvedSpeedPxS: resolved,
-        };
-        return resolved;
+        const catchup = property === 'chaseSpeed' ? followCatchupMultiplier(companion) : 1;
+        const desiredWorldSpeed = speed * ratio * catchup; // World-space pace after any temporary follow recovery.
+        const global = devGlobalMovementMultiplier();
+        const commandSpeed = compensateGlobalCreatureMovement(companion) && global > 0
+          ? desiredWorldSpeed / global : desiredWorldSpeed; // The creature mover restores the global multiplier once.
+        const debug = companion._companionMovementSpeedDebug || (companion._companionMovementSpeedDebug = {});
+        debug.ownerId = companion.master?.npcId || companion.master?.id || 'player';
+        debug.ownerSpeedPxS = speed;
+        debug.ownerSpeedPercent = ratio * 100;
+        debug.catchupMultiplier = catchup;
+        debug.property = String(property);
+        debug.baseSpeciesSpeedPxS = baseline;
+        debug.resolvedSpeedPxS = desiredWorldSpeed;
+        debug.commandSpeedPxS = commandSpeed; // Read this with CompanionMovementSpeed.debugSnapshot on mobile.
+        return commandSpeed;
       },
     });
 
@@ -389,6 +418,8 @@
       playerTerrainMultiplier,
       playerFootingMultiplier,
       ownerSpeedRatio,
+      followCatchupMultiplier,
+      compensateGlobalCreatureMovement,
     }),
   });
 
