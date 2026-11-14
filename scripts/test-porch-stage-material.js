@@ -130,6 +130,37 @@ assert.strictEqual(generatedTunnel, frameGroup, 'the generated tunnel retains th
 assert.strictEqual(frameMesh.material, sharedMaterial, 'generated farm entry-tunnel doorframes receive the same finish');
 assert.equal(api.debugSnapshot().generatedTunnelPatchInstalled, true, 'generated farm entrance material hook is installed');
 
+// Walkable porch tops receive a separate *shader* material, not a different color or texture.
+// A shared material would make a top-face discard shader affect the rails and door.
+function faceFixture(vertices) {
+  const positions = [0, 1, 2, 0, 2, 3].map(index => vertices[index]).flat(); // Rendered triangulated quad coordinates.
+  const attributes = { position: {
+    count: 6,
+    getX(i) { return positions[i * 3]; },
+    getY(i) { return positions[i * 3 + 1]; },
+    getZ(i) { return positions[i * 3 + 2]; },
+  } }; // The porch mapper reads positions and writes UVs on this same fixture.
+  return { isMesh: true, userData: {}, material: null, geometry: {
+    getAttribute(name) { return attributes[name]; },
+    setAttribute(name, attr) { attributes[name] = attr; },
+  } };
+}
+const deckVertices = [[0, 0.18, 0], [0, 0.18, 1], [1, 0.18, 1], [1, 0.18, 0]]; // Valid top face with upward normal.
+const railVertices = [[2, 0, 0], [2, 0.5, 0], [2, 0.5, 1], [2, 0, 1]]; // Vertical solid rail, near but not on the deck.
+const deckMesh = faceFixture(deckVertices); // Must be registered as a top-face-only floor.
+const railMesh = faceFixture(railVertices); // Must remain a solid material participant.
+const porchPiece = { gridSize: 1, footprint: { cells: [{ x: 0, y: 0 }] }, base: { faces: [
+  { tag: 'porch', extensionFace: 'top', v: deckVertices },
+  { tag: 'railing', extensionFace: 'north', v: railVertices },
+] } }; // Exercises the real material wrapper, not a mocked floor classifier.
+const porchGroup = { traverse(callback) { callback(deckMesh); callback(railMesh); } };
+assert.equal(api.applyToBuiltGroup(porchGroup, porchPiece, 0, 0).converted, 2);
+assert.equal(deckMesh.userData.hobunjiGroundTopFacesOnly, true, 'porch top is an x-ray eligible walkable floor');
+assert.notStrictEqual(deckMesh.material, sharedMaterial, 'porch top owns an isolated shader material');
+assert.strictEqual(railMesh.material, sharedMaterial, 'rail still uses solid common entrance material');
+assert.equal(railMesh.userData.hobunjiGroundTopFacesOnly, undefined, 'rail never inherits the floor exception');
+assert.deepEqual(requestedTextures, ['assets/textures/carved_smooth.png'], 'isolating the deck shader does not reload the shared texture');
+
 const elevationIndex = loaderSource.indexOf('town-player-body-elevation-bridge.js');
 const porchMaterialIndex = loaderSource.indexOf('porch-surface-material.js');
 assert.ok(elevationIndex >= 0 && porchMaterialIndex > elevationIndex, 'porch material wrapper loads after the proven elevation bridge');
