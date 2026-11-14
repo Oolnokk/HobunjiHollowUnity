@@ -581,6 +581,7 @@
       npcAlcoholState: {},            // { [npcId]: { sobriety, blackoutUntilMinute, lastDrinkKey } }
       alchemyKnownEffects: {},        // { [reagentKey]: [effectIndex, ...] } — discovered reagent effects
       alchemyFavoriteRecipes: [],     // Exact saved reagent combinations for this member.
+      alchemyPotionBatches: { version: 1, stacks: {} }, // Provenance counts and majority tint for each potion inventory key.
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
@@ -1497,6 +1498,7 @@
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
       alchemyFavoriteRecipes: Array.isArray(memberState.alchemyFavoriteRecipes) ? [...memberState.alchemyFavoriteRecipes] : [],
+      alchemyPotionBatches: memberState.alchemyPotionBatches || { version: 1, stacks: {} }, // Restore counted recipes in a world member's potion stacks.
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
@@ -1883,6 +1885,7 @@
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
       playerData.alchemyFavoriteRecipes = Array.isArray(memberState.alchemyFavoriteRecipes) ? [...memberState.alchemyFavoriteRecipes] : [];
+      playerData.alchemyPotionBatches = memberState.alchemyPotionBatches || { version: 1, stacks: {} }; // Preserve ingredient provenance when creating/switching worlds.
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];

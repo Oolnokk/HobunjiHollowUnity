@@ -617,7 +617,9 @@
       parts.push(`💰${bundle.gold}g`);
     }
     if (bundle.potionKey) {
-      treasureDeps.inventory[bundle.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[bundle.potionKey] || 0) + 1);
+      const priorPotion = Math.max(0, Number(treasureDeps.inventory[bundle.potionKey]) || 0); // Use actual accepted Gullet reward quantity.
+      treasureDeps.inventory[bundle.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, priorPotion + 1);
+      window.AlchemySystem?.recordPotionAcquisition?.(bundle.potionKey, treasureDeps.inventory[bundle.potionKey] - priorPotion); // Recovered potions use the authored standard trio.
       parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.potionKey]?.icon || '🧪'} ${treasureDeps.ITEM_DEFS?.[bundle.potionKey]?.label || 'Potion'}`);
     }
     if (bundle.recipeItemKey) {

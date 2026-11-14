@@ -9611,6 +9611,7 @@
         member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
         member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
         member.alchemyFavoriteRecipes = window.AlchemySystem.serializeFavorites?.() || []; // Save this character's assembled reagent combinations.
+        member.alchemyPotionBatches = window.AlchemySystem.serializePotionBatches?.() || { version: 1, stacks: {} }; // World-member provenance counts for each potion stack.
         member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
@@ -17766,6 +17767,7 @@
 
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
+        if (key) window.AlchemySystem?.syncPotionStack?.(key); // Direct inventory grants/sales are reconciled before HUD/Pack painting.
         window.ItemProcessing.normalizeAlcoholItemDef(def);
         window.ObjectSpriteCatalog?.ensure?.(key, def); // Dynamic items acquire artwork before the existing Pack/HUD/arch sprite renderer.
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
@@ -18008,6 +18010,7 @@
       function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
+        if (key) window.AlchemySystem?.syncPotionStack?.(key); // Consuming or transferring a potion can change the stack's most common recipe.
       }
 
       // Shipping tab (player bag <-> shipping-box transfer UI) now lives
@@ -24715,6 +24718,7 @@
       _markPngPlane(heldItemHolder);
 
       let _heldItemPlane = null, _heldItemKey = null;
+      let _heldItemAppearanceSignature = null; // Remembers the last rendered potion tint so only actual majority changes rebuild its held sprite.
       // Phase state machine driven by beginHeldDrinkAnimation/continueHeldDrinkAnimation/
       // cancelHeldDrinkAnimation/abortHeldDrinkAnimation (see below), themselves driven
       // by window.HeldItemActionInput's press/hold/cancel/arm/release timing:
@@ -25082,7 +25086,10 @@
         }
         if (!item) { heldItemHolder.visible = false; return; }
         const isKurraya = item.key === 'kurraya';
-        if (item.key !== _heldItemKey) {
+        const heldPotion = String(item.key).startsWith('alchemy_') && !!window.AlchemySystem?.parseBrewedItemKey?.(item.key); // Only alchemy stacks have batch-majority pigments.
+        if (heldPotion) window.AlchemySystem?.syncPotionStack?.(item.key); // Refresh the dominant liquid before checking the held plane.
+        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode) : null; // Compared only for potion items; ordinary held objects keep their old O(1) key-only path.
+        if (item.key !== _heldItemKey || (heldPotion && appearanceSignature !== _heldItemAppearanceSignature)) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
           // The Kurraya's real art lives at assets/toolsprites (the same
           // sprite/texture Foroji's NPC station prop uses — see
@@ -25094,6 +25101,7 @@
           // instead of a single flat billboard.
           _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
+          _heldItemAppearanceSignature = appearanceSignature; // Future frames retain this plane until its ingredients or selected item change.
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
           window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
@@ -32230,7 +32238,7 @@
           if(_heldItemKey!=='festival_bowl'&&_heldItemKey!=='festival_cup')return;
           _heldDrinkPhase=null;_heldDrinkApply=null;_heldDrinkApplied=false; // Prevent a delayed bite after switching to a weapon or leaving the feast.
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
-          _heldItemPlane=null;_heldItemKey=null;heldItemHolder.visible=false;
+          _heldItemPlane=null;_heldItemKey=null;_heldItemAppearanceSignature=null;heldItemHolder.visible=false;
         },
         equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
@@ -33888,6 +33896,7 @@
         // each one's display/Drink metadata straight from its key, which
         // deterministically encodes its effects (see ensurePotionItemDef).
         window.AlchemySystem.migrateLegacyPotionInventory(inventory);
+        window.AlchemySystem.restorePotionBatches?.(playerData.alchemyPotionBatches, inventory); // Load counted ingredient trios before rebuilding potion item sprites.
         Object.keys(inventory).forEach(key => {
           const payload = window.AlchemySystem.getPotionEffectsFromKey(key);
           if (payload?.recipeId) window.AlchemySystem.ensureRecipeItemDef(payload.recipeId, payload.potencyTier);

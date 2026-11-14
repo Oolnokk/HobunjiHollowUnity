@@ -112,7 +112,74 @@
     muckmelonRind:{label:'Muckmelon Rind',icon:'🍈',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x8a9a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'fire'}},
   });
 
+
+  const STANDARD_RECIPE_INGREDIENTS = Object.freeze({
+    healingPotion: ['mistpetalBloom', 'duskcapMushroom', 'mireLotusBud'],
+    greaterHealingPotion: ['cinderveinBramble', 'goldbrushWeed', 'mireLotusBud'],
+    staminaPotion: ['frostcapMoss', 'shalefrondFern', 'weepingReed'],
+    greaterStaminaPotion: ['cinderveinBramble', 'mireLotusBud', 'weepingReed'],
+    potionOfBalance: ['frostcapMoss', 'mistpetalBloom', 'thistledownCap'],
+    controlRemedy: ['frostcapMoss', 'cloudberryVine', 'hazewortSprig'],
+    woundRemedy: ['frostcapMoss', 'hazewortSprig', 'mireLotusBud'],
+    mendingDraught: ['duskcapMushroom', 'mireLotusBud', 'weepingReed'],
+    potionOfClarity: ['mistpetalBloom', 'larkspurTuft', 'mireLotusBud'],
+    antidote: ['frostcapMoss', 'shalefrondFern', 'muckmelonRind'],
+    soberingDraught: ['cinderveinBramble', 'thistledownCap', 'mireLotusBud'],
+    perfumeOfBlossoms: ['cinderveinBramble', 'mistpetalBloom', 'mireLotusBud'],
+    perfumeOfStone: ['cinderveinBramble', 'mistpetalBloom', 'goldbrushWeed'],
+    perfumeOfEmbers: ['cinderveinBramble', 'larkspurTuft', 'sunbarleyHead'],
+    perfumeOfZephyrs: ['duskcapMushroom', 'cloudberryVine', 'larkspurTuft'],
+    perfumeOfVigor: ['frostcapMoss', 'larkspurTuft', 'weepingReed'],
+    perfumeOfMight: ['cloudberryVine', 'hazewortSprig', 'goldbrushWeed'],
+    perfumeOfImpact: ['silverfernFrond', 'cloudberryVine', 'windrootBulb'],
+    perfumeOfQuickness: ['mistpetalBloom', 'windrootBulb', 'mireLotusBud'],
+    perfumeOfFleetness: ['shalefrondFern', 'windrootBulb', 'goldbrushWeed'],
+    perfumeOfEfficiency: ['windrootBulb', 'goldbrushWeed', 'sunbarleyHead'],
+    perfumeOfThickblood: ['palehartLichen', 'mistpetalBloom', 'goldbrushWeed'],
+    perfumeOfDevotion: ['palehartLichen', 'silverfernFrond', 'windrootBulb'],
+    perfumeOfInsight: ['cloudberryVine', 'goldbrushWeed', 'larkspurTuft'],
+    breedingGigantism: ['mistpetalBloom', 'cloudberryVine', 'larkspurTuft'],
+    potionOfPoise: ['graniteThistle', 'silverfernFrond', 'goldbrushWeed'],
+    potionOfImpact: ['frostcapMoss', 'sunbarleyHead', 'muckmelonRind'],
+    potionOfRegeneration: ['goldbrushWeed', 'sunbarleyHead', 'sporeclusterCap'],
+    potionOfStrength: ['duskcapMushroom', 'larkspurTuft', 'weepingReed'],
+    potionOfFury: ['cinderveinBramble', 'goldbrushWeed', 'bogwortLeaf'],
+    potionOfQuickness: ['goldbrushWeed', 'larkspurTuft', 'bogwortLeaf'],
+    potionOfEndurance: ['windrootBulb', 'sunbarleyHead', 'thistledownCap'],
+    potionOfVigor: ['cinderveinBramble', 'goldbrushWeed', 'sunbarleyHead'],
+    thickbloodPotion: ['hazewortSprig', 'goldbrushWeed', 'bogwortLeaf'],
+    lovePotion: ['palehartLichen', 'cinderveinBramble', 'sunbarleyHead'],
+    potionOfPerception: ['graniteThistle', 'mistpetalBloom', 'duskcapMushroom'],
+    breedingPygmation: ['graniteThistle', 'windrootBulb', 'sporeclusterCap'],
+    potionOfSpeed: ['frostcapMoss', 'cloudberryVine', 'larkspurTuft'],
+    potionOfEfficiency: ['duskcapMushroom', 'windrootBulb', 'weepingReed'],
+    fireFlask: ['cinderveinBramble', 'mistpetalBloom', 'duskcapMushroom'],
+    hemorrhageFlask: ['hazewortSprig', 'bogwortLeaf', 'muckmelonRind'],
+    woundingFlask: ['hazewortSprig', 'mireLotusBud', 'sporeclusterCap'],
+    congealingFlask: ['hazewortSprig', 'bogwortLeaf', 'weepingReed'],
+    bruisingFlask: ['goldbrushWeed', 'sporeclusterCap', 'weepingReed'],
+    venomFlask: ['cinderveinBramble', 'mireLotusBud', 'muckmelonRind'],
+    sickeningFlask: ['frostcapMoss', 'duskcapMushroom', 'sporeclusterCap'],
+    windingFlask: ['duskcapMushroom', 'bogwortLeaf', 'weepingReed'],
+    rushNarcotic: ['graniteThistle', 'duskcapMushroom', 'sporeclusterCap'],
+    frenzyNarcotic: ['duskcapMushroom', 'goldbrushWeed', 'sporeclusterCap'],
+  }); // Frozen, authored legal mixed-source ingredient trios for all found/shop alchemy items.
+  for (const keys of Object.values(STANDARD_RECIPE_INGREDIENTS)) Object.freeze(keys);
+
+  function recipeSpriteColor(recipeId) {
+    const standard = STANDARD_RECIPE_INGREDIENTS[recipeId]; // Potion color comes from its standard three-reagent recipe.
+    if (standard) return mixColor(standard);
+    let hash = 2166136261; // Deterministic fallback only for pre-refactor legacy effect keys.
+    for (const char of String(recipeId)) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+    const hue = (hash % 360) / 60; // HSV sector for previously unrecorded old effects.
+    const chroma = 0.82 * 0.67, x = chroma * (1 - Math.abs(hue % 2 - 1)), m = 0.82 - chroma; // Stable saturated pigment.
+    const sector = hue < 1 ? [chroma,x,0] : hue < 2 ? [x,chroma,0] : hue < 3 ? [0,chroma,x]
+      : hue < 4 ? [0,x,chroma] : hue < 5 ? [x,0,chroma] : [chroma,0,x]; // Conversion to RGB.
+    return sector.map(channel => Math.round((channel + m) * 255)).reduce((hex, channel) => (hex << 8) | channel, 0);
+  }
+
   const POTION_ITEMS = {}; // Item key -> stored recipe/potency payload.
+  const potionBatches = new Map(); // Tracks the number of bottles produced by each reagent trio in an inventory stack.
   const discoveredRecipes = new Set(); // Recipe-level discovery state.
   let activeEffects = []; // Timed alchemy effects exposed through EffectBuffBar.
   let selectedReagents = []; // Existing table selection state.
@@ -274,12 +341,201 @@
     (keys || []).forEach(key => { const color = REAGENT_DEFS[key]?.color; if (color == null) return; red += color >> 16 & 255; green += color >> 8 & 255; blue += color & 255; count++; });
     return count ? Math.round(red / count) << 16 | Math.round(green / count) << 8 | Math.round(blue / count) : fallback;
   }
-  function throwingFlaskColors(reagentKeys) {
+
+  function standardRecipeFor(recipeId) { return STANDARD_RECIPE_INGREDIENTS[recipeId]?.slice() || null; } // Caller receives an editable copy.
+  function normalizedPotionIngredients(reagentKeys, recipeId) {
+    if (!Array.isArray(reagentKeys) || reagentKeys.length !== MAX_REAGENTS) return null;
+    const keys = [...reagentKeys].sort(); // Combining the same ingredients in any order gives one color group.
+    if (new Set(keys).size !== MAX_REAGENTS || keys.some(key => !REAGENT_DEFS[key])) return null;
+    return enumerateRecipes(keys).some(result => result.recipeId === recipeId) ? keys : null; // Reject invalid saved provenance.
+  }
+  function ingredientSignature(keys) { return keys.join('|'); } // Canonical identity for a three-reagent group.
+  function groupTotal(record) { return record.groups.reduce((sum, group) => sum + group.count, 0); } // Bottles accounted for by provenance.
+  function dominantGroup(record) {
+    if (!record?.groups.length) return null;
+    let winner = record.groups.find(group => ingredientSignature(group.keys) === record.leader) || record.groups[0]; // Preserve the old color during ties.
+    for (const group of record.groups) if (group.count > winner.count) winner = group; // The most common trio wins.
+    record.leader = ingredientSignature(winner.keys);
+    return winner;
+  }
+  function addIngredientGroup(record, keys, count) {
+    if (!Number.isInteger(count) || count <= 0) return;
+    const identity = ingredientSignature(keys); // A repeated brew of identical ingredients extends its group.
+    const found = record.groups.find(group => ingredientSignature(group.keys) === identity);
+    if (found) found.count += count;
+    else record.groups.push({ keys: keys.slice(), count });
+  }
+  function paintPotionStack(itemKey, record) {
+    const definition = deps?.ITEM_DEFS?.[itemKey]; // The icon metadata shared by Pack, HUD, held items and shops.
+    const payload = parseBrewedItemKey(itemKey);
+    if (!definition || !payload) return;
+    const winner = dominantGroup(record); // Exactly one ingredient trio decides the stacked item's liquid tint.
+    const keys = winner?.keys || standardRecipeFor(payload.recipeId);
+    const color = keys ? mixColor(keys) : recipeSpriteColor(payload.recipeId); // Real reagent pigments mixed with the existing alchemy rule.
+    if (RECIPE_DEFS[payload.recipeId].useMode === 'throw') {
+      applyThrowingFlaskSprite(definition, throwingFlaskColors(keys, color, color), winner ? 'stack-majority' : 'standard');
+    } else {
+      definition.spriteIcon = 'bottle_potion.png';
+      definition.spriteColor = color;
+      definition.spriteMode = 'keyed';
+      definition.alchemyPotionColorSource = winner ? 'stack-majority' : 'standard';
+    }
+    definition.alchemyPotionLeadingIngredients = keys?.slice() || []; // Mobile-readable explanation of the liquid tint.
+    definition.alchemyPotionMajorityCount = winner?.count || 0; // The winning batch's bottle count.
+  }
+  function syncPotionStack(itemKey, countOverride = null, paint = true) {
+    const payload = parseBrewedItemKey(itemKey);
+    if (!payload) return null;
+    const actual = countOverride == null ? Number(deps?.inventory?.[itemKey]) : Number(countOverride); // Actual stack or pre-grant quantity.
+    const target = Math.max(0, Math.min(window.InventoryStacks?.MAX_TOTAL || 9999, Math.floor(actual) || 0)); // Reject negative/corrupted totals.
+    let record = potionBatches.get(itemKey);
+    if (record?.lastCount === target) return record; // O(1) fast path for inventory/HUD icons; all writes keep lastCount in sync.
+    if (!record) record = { groups: [], leader: null, lastCount: -1 }; // Missing saves use the found potion's standard recipe.
+    let excess = groupTotal(record) - target; // Consumption, sale, gift, thrown flask or transfer.
+    while (excess > 0 && record.groups.length) {
+      const group = dominantGroup(record); // Indistinguishable bottles are consumed from the visibly dominant group first.
+      const removed = Math.min(excess, group.count);
+      group.count -= removed;
+      excess -= removed;
+      if (group.count <= 0) record.groups.splice(record.groups.indexOf(group), 1);
+    }
+    if (target > groupTotal(record)) {
+      const keys = normalizedPotionIngredients(standardRecipeFor(payload.recipeId), payload.recipeId); // Untracked rewards are standard finds.
+      if (keys) addIngredientGroup(record, keys, target - groupTotal(record));
+    }
+    record.lastCount = target;
+    if (target > 0) potionBatches.set(itemKey, record);
+    else potionBatches.delete(itemKey); // No old provenance leaks into a future stack after depletion.
+    if (paint) paintPotionStack(itemKey, record);
+    return record;
+  }
+  function recordPotionAcquisition(itemKey, quantity, reagentKeys = null) {
+    const payload = parseBrewedItemKey(itemKey);
+    if (!payload) return false;
+    const owned = Math.max(0, Math.floor(Number(deps?.inventory?.[itemKey]) || 0)); // Authoritative total after grant.
+    const admitted = Math.min(owned, Math.max(0, Math.floor(Number(quantity) || 0))); // Only actual additions count near capacity.
+    if (!admitted) { syncPotionStack(itemKey); return false; }
+    const record = syncPotionStack(itemKey, owned - admitted, false); // Reconcile old bottles BEFORE adding the new recipe.
+    const keys = normalizedPotionIngredients(reagentKeys, payload.recipeId)
+      || normalizedPotionIngredients(standardRecipeFor(payload.recipeId), payload.recipeId); // Loot and shop bottles use standard recipe.
+    if (!keys) { syncPotionStack(itemKey); return false; }
+    addIngredientGroup(record, keys, admitted);
+    record.lastCount = owned;
+    potionBatches.set(itemKey, record);
+    paintPotionStack(itemKey, record);
+    return true;
+  }
+  function normalizeContainerPotionRecord(itemKey, container, count) {
+    const payload = parseBrewedItemKey(itemKey);
+    if (!payload || !container || typeof container !== 'object') return null;
+    const quantity = Math.max(0, Math.floor(Number(count) || 0)); // Storage can hold more than the bag's 9999-unit ceiling; do not lose its recipe history.
+    const original = container[itemKey]; // Stored plain JSON record, not a live Map entry.
+    const record = { groups: [], leader: typeof original?.leader === 'string' ? original.leader : null }; // Rebuild with validated reagent trios only.
+    for (const group of Array.isArray(original?.groups) ? original.groups : []) {
+      const keys = normalizedPotionIngredients(group?.keys, payload.recipeId);
+      const requested = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(group?.count) || 0))); // Retain real stored groups before reconciling sold/transferred amounts.
+      if (keys && requested) addIngredientGroup(record, keys, requested);
+    }
+    let excess = groupTotal(record) - quantity; // Shipping sales remove units from the dominant recipe, not arbitrarily from the first saved group.
+    while (excess > 0 && record.groups.length) {
+      const group = dominantGroup(record);
+      const removed = Math.min(excess, group.count);
+      group.count -= removed;
+      excess -= removed;
+      if (!group.count) record.groups.splice(record.groups.indexOf(group), 1);
+    }
+    if (quantity > groupTotal(record)) {
+      const standard = normalizedPotionIngredients(standardRecipeFor(payload.recipeId), payload.recipeId); // Older storage had no provenance.
+      if (standard) addIngredientGroup(record, standard, quantity - groupTotal(record));
+    }
+    if (quantity > 0) { dominantGroup(record); container[itemKey] = record; } // Recompute winner after sold/moved units, never persist a stale leading recipe.
+    else delete container[itemKey];
+    return record;
+  }
+  function movePotionProvenance(itemKey, count, direction, container, containerCountBefore = 0) {
+    const payload = parseBrewedItemKey(itemKey);
+    if (!payload || !container || (direction !== 'deposit' && direction !== 'withdraw')) return false;
+    const moved = Math.max(0, Math.floor(Number(count) || 0)); // Exact units admitted by the shipping/storage transaction.
+    if (!moved) return false;
+    const priorBagCount = Math.max(0, Math.floor(Number(deps?.inventory?.[itemKey]) || 0)); // Caller invokes this BEFORE changing its bag count.
+    const priorContainerCount = Math.max(0, Math.floor(Number(containerCountBefore) || 0)); // Container snapshot must also precede mutation.
+    if (direction === 'deposit' ? moved > priorBagCount : moved > priorContainerCount) return false;
+    const bag = syncPotionStack(itemKey); // Reconcile any previous consumption against the bag before moving units.
+    const external = normalizeContainerPotionRecord(itemKey, container, priorContainerCount); // Restores real historical recipe mixes for the target/source storage.
+    if (!bag || !external) return false;
+    const source = direction === 'deposit' ? bag : external; // Provenance flows in the same direction as the real inventory.
+    const destination = direction === 'deposit' ? external : bag; // Duplicate trios merge on arrival.
+    let remaining = moved; // Keeps the transfer all-or-nothing if records were incomplete.
+    while (remaining > 0) {
+      const group = dominantGroup(source);
+      if (!group) return false; // Source integrity is checked against the current count above.
+      const quantity = Math.min(remaining, group.count);
+      addIngredientGroup(destination, group.keys, quantity);
+      group.count -= quantity;
+      if (!group.count) source.groups.splice(source.groups.indexOf(group), 1);
+      remaining -= quantity;
+    }
+    const nextBagCount = priorBagCount + (direction === 'withdraw' ? moved : -moved); // Anticipated count after the caller commits the inventory mutation.
+    const nextContainerCount = priorContainerCount + (direction === 'deposit' ? moved : -moved); // Expected external quantity after the transfer.
+    bag.lastCount = nextBagCount;
+    if (nextBagCount) potionBatches.set(itemKey, bag);
+    else potionBatches.delete(itemKey);
+    if (nextContainerCount) {
+      dominantGroup(external);
+      container[itemKey] = { leader: external.leader, groups: external.groups.map(group => ({ keys: group.keys.slice(), count: group.count })) }; // Serializable world storage / crate payload.
+    } else delete container[itemKey];
+    paintPotionStack(itemKey, bag); // Both inventory HUD and held potion can respond to the new majority.
+    return true;
+  }
+  function reconcilePotionContainer(itemKey, container, currentCount) {
+    if (!parseBrewedItemKey(itemKey)) return false;
+    normalizeContainerPotionRecord(itemKey, container, currentCount); // Used after shipping sales remove items permanently.
+    return true;
+  }
+
+  function serializePotionBatches() {
+    const stacks = {}; // World-member sidecar, never added as a fake inventory key.
+    for (const key of Object.keys(deps?.inventory || {})) {
+      if (!parseBrewedItemKey(key)) continue;
+      const record = syncPotionStack(key); // Reconcile all untracked reward/sale paths before saving.
+      if (!record?.groups.length) continue;
+      const winner = dominantGroup(record);
+      stacks[key] = { leader: winner ? ingredientSignature(winner.keys) : null,
+        groups: record.groups.map(group => ({ keys: group.keys.slice(), count: group.count })) };
+    }
+    return { version: 1, stacks };
+  }
+  function restorePotionBatches(saved, inventory = deps?.inventory) {
+    potionBatches.clear(); // Per-world/per-character provenance must never cross a save switch.
+    const stacks = saved?.version === 1 && saved.stacks && typeof saved.stacks === 'object' ? saved.stacks : {};
+    for (const [key, entry] of Object.entries(stacks)) {
+      const payload = parseBrewedItemKey(key);
+      const owned = Math.max(0, Math.floor(Number(inventory?.[key]) || 0));
+      if (!payload || !owned || !Array.isArray(entry?.groups)) continue;
+      const record = { groups: [], leader: typeof entry.leader === 'string' ? entry.leader : null, lastCount: -1 };
+      for (const group of entry.groups) {
+        const keys = normalizedPotionIngredients(group?.keys, payload.recipeId); // Validate every restored recipe.
+        const count = Math.max(0, Math.min(owned, Math.floor(Number(group?.count) || 0)));
+        if (keys && count) addIngredientGroup(record, keys, Math.min(count, owned - groupTotal(record)));
+        if (groupTotal(record) >= owned) break;
+      }
+      if (record.groups.length) potionBatches.set(key, record);
+    }
+    for (const key of Object.keys(inventory || {})) if (parseBrewedItemKey(key)) syncPotionStack(key); // Backfill old saves with standard recipes.
+  }
+  function potionStackDiagnostics(itemKey) {
+    const record = syncPotionStack(itemKey); // Mobile debug can show every counted recipe variation.
+    const winner = dominantGroup(record);
+    return record ? { itemKey, total: record.lastCount, majority: winner ? { reagents: winner.keys.slice(), count: winner.count } : null,
+      groups: record.groups.map(group => ({ reagents: group.keys.slice(), count: group.count })) } : null;
+  }
+
+  function throwingFlaskColors(reagentKeys, fallbackPrimary = recipeSpriteColor('fireFlask'), fallbackSecondary = fallbackPrimary) {
     const validKeys = [...(reagentKeys || [])].filter(key => REAGENT_DEFS[key]); // Used to keep stale/unknown reagent keys out of procedural flask colors.
     const afflictKeys = validKeys.filter(key => REAGENT_DEFS[key].traits?.drive === 'afflict'); // Used exclusively for the throwing flask's yellow Afflict-color target.
     const otherKeys = validKeys.filter(key => REAGENT_DEFS[key].traits?.drive !== 'afflict'); // Used exclusively for the original green bottle-color target.
-    const allColor = mixColor(validKeys); // Used as the truthful fallback when one side of the Afflict/non-Afflict split is empty.
-    const afflictColor = mixColor(afflictKeys, allColor); // Used to mix every ingredient whose native Drive is Afflict.
+    const allColor = mixColor(validKeys, fallbackPrimary); // Uses the recipe color for ingredient-free shop/save items.
+    const afflictColor = mixColor(afflictKeys, validKeys.length ? allColor : fallbackSecondary); // Used to mix every ingredient whose native Drive is Afflict.
     const primaryColor = mixColor(otherKeys, allColor); // Used to mix every remaining ingredient, regardless of the trait category it supplied to the recipe.
     return { validKeys, afflictKeys, otherKeys, primaryColor, afflictColor };
   }
@@ -295,21 +551,32 @@
     return itemDef;
   }
   function ensureRecipeItemDef(recipeId, tier = 0, reagentKeys = null) {
-    const definition = RECIPE_DEFS[recipeId]; // Single item metadata source.
+    const definition = RECIPE_DEFS[recipeId]; // Authored potion identity, regardless of source.
     if (!definition) return null;
-    const safeTier = Math.max(0, Math.min(4, Math.floor(Number(tier) || 0))); // Stored tier.
-    const key = itemKeyForRecipe(recipeId, safeTier); // Stack identity.
-    const isThrowingFlask = definition.useMode === 'throw'; // Used to select the authored two-color flask without affecting Afflict narcotics or ordinary potions.
-    const flaskColors = isThrowingFlask ? throwingFlaskColors(reagentKeys) : null; // Used to split Afflict vs. remaining ingredient colors for throwable recipes.
-    const hasIngredientColors = !!flaskColors?.validKeys.length; // Used to distinguish a real brew from provenance-free shop/treasure/save registration.
+    const safeTier = Math.max(0, Math.min(4, Math.floor(Number(tier) || 0))); // Potency remains encoded in the item key.
+    const key = itemKeyForRecipe(recipeId, safeTier); // Shared inventory identity.
+    const actualIngredients = normalizedPotionIngredients(reagentKeys, recipeId); // Prevent invalid preview trios from pretending to brew this recipe.
+    const previewKeys = actualIngredients || standardRecipeFor(recipeId); // Legal crafted or standard found-item recipe.
     POTION_ITEMS[key] = Object.freeze({ recipeId, potencyTier: safeTier });
     if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) {
-      const modeTag = isThrowingFlask ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : definition.useMode === 'gift' ? 'Perfume' : 'Potion'; // Inventory filter tag.
-      const color = mixColor(reagentKeys); // Procedural bottle tint for ordinary potions and the initial fallback before flask-specific splitting.
-      deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 24 + safeTier * 12 + (isThrowingFlask ? 8 : 0), tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
+      const modeTag = definition.useMode === 'throw' ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : definition.useMode === 'gift' ? 'Perfume' : 'Potion'; // Existing filter label.
+      deps.ITEM_DEFS[key] = { icon: definition.icon, label: definition.label + (safeTier ? ' · Potency ' + (safeTier + 1) : ''), cat: 'processed', sellPrice: 24 + safeTier * 12 + (definition.useMode === 'throw' ? 8 : 0), tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: recipeSpriteColor(recipeId), spriteMode: 'keyed' };
     }
-    const itemDef = deps?.ITEM_DEFS?.[key]; // Used to upgrade throwables from the generic bottle/fallback once ingredient provenance is available.
-    if (isThrowingFlask && itemDef && itemDef.alchemyFlaskColorSource !== 'ingredients') applyThrowingFlaskSprite(itemDef, flaskColors, hasIngredientColors ? 'ingredients' : 'fallback');
+    const itemDef = deps?.ITEM_DEFS?.[key]; // Re-registering an owned stack must not overwrite its dominant brewed ingredients.
+    if (itemDef) {
+      if ((deps?.inventory?.[key] || 0) > 0) {
+        const record = syncPotionStack(key); // This may be an unchanged restored count whose ITEM_DEFS was just recreated.
+        paintPotionStack(key, record); // New definition must receive the restored majority even when the ledger cache is already warm.
+      }
+      else if (definition.useMode === 'throw') {
+        const color = mixColor(previewKeys, recipeSpriteColor(recipeId)); // Correct flask preview before bottles enter inventory.
+        applyThrowingFlaskSprite(itemDef, throwingFlaskColors(previewKeys, color, color), actualIngredients ? 'ingredients-preview' : 'standard');
+      } else {
+        itemDef.spriteColor = mixColor(previewKeys, recipeSpriteColor(recipeId));
+        itemDef.spriteMode = 'keyed';
+        itemDef.alchemyPotionColorSource = actualIngredients ? 'ingredients-preview' : 'standard';
+      }
+    }
     return key;
   }
   function recipeScrollKey(recipeId) { return RECIPE_DEFS[recipeId] ? `alchemy_recipe_${recipeId}` : null; } // Common shops/quests/treasure recipe-item key.
@@ -335,7 +602,9 @@
     if (!effects?.length) return null;
     const key = `potion_${effects.slice().sort().join('_')}`; // Preserve old stacks without creating new ones.
     POTION_ITEMS[key] = Object.freeze({ legacyEffects: effects.slice() });
-    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 12, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: mixColor(reagentKeys), spriteMode: 'keyed' };
+    const legacyColor = recipeSpriteColor(key); // Stable fallback per old effect combination, even when its reagent history is gone.
+    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 12, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: legacyColor, spriteMode: 'keyed' };
+    if (deps?.ITEM_DEFS?.[key]) deps.ITEM_DEFS[key].spriteColor = legacyColor; // Repairs previously loaded purple legacy definitions.
     return key;
   }
   function getPotionEffectsFromKey(key) { const modern = parseBrewedItemKey(key); if (modern) return modern; if (!String(key || '').startsWith('potion_')) return null; const legacyEffects = String(key).slice(7).split('_').filter(Boolean); return legacyEffects.length ? { legacyEffects } : null; } // Old loader compatibility.
@@ -380,7 +649,9 @@
     });
     const itemKey = ensureRecipeItemDef(chosen.recipeId, tier, keys); // One recipe per result.
     const batch = batchCountFor(chosen.recipeId); // Base batch (see recipe.baseBatch), scaled by Empower Flasks/Healing & Cures.
-    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[itemKey] || 0) + batch);
+    const previousCount = Math.max(0, Number(deps.inventory[itemKey]) || 0); // Existing bottles, so we account only for new ones that fit.
+    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, previousCount + batch);
+    recordPotionAcquisition(itemKey, deps.inventory[itemKey] - previousCount, keys); // Exact brewed trio contributes its actual bottle count.
     const discovered = discoverRecipe(chosen.recipeId, 'brewed new recipe'); // One-time discovery XP.
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
     window.HobunjiActivityEvents?.emit('potion_brewed', { itemKey, recipeId: chosen.recipeId });
@@ -466,6 +737,7 @@
       const result = applyRecipeToEntity(payload.recipeId, potencyMultiplier(payload.potencyTier), entity, { potencyTier: payload.potencyTier });
       if (!result.ok) return result;
       deps.inventory[itemKey]--; deps.clampInventoryStack?.(itemKey);
+      syncPotionStack(itemKey); // Consumption can change which recipe forms the majority.
       return { ok: true, message: `${definition.icon} Drank ${definition.label}.`, recipeId: payload.recipeId };
     }
     deps.inventory[itemKey]--; deps.clampInventoryStack?.(itemKey); // Preserve legacy item rather than delete on migration.
@@ -660,18 +932,19 @@
     const selectedKey = deps?.getSelectedItemKey?.() || null; // Current held/selected item.
     const flaskPayload = parseBrewedItemKey(selectedKey); // Current alchemy payload.
     const flaskDefinition = flaskPayload && RECIPE_DEFS[flaskPayload.recipeId]; // Current flask recipe.
-    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, favoriteCount:favoriteRecipes.length, activeFavoriteId, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
+    const potionStacks = Object.keys(deps?.inventory || {}).filter(key => parseBrewedItemKey(key)).map(key => potionStackDiagnostics(key)); // Mobile Alchemy diagnostics show every ingredient group and its visible majority.
+    return { potionStacks, alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, favoriteCount:favoriteRecipes.length, activeFavoriteId, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
   }
   function diagnosticsText() { return JSON.stringify(diagnosticsSnapshot(), null, 2); }
   window._doBrewPotion = () => { const result = brew(); deps?.showToast?.(result.message, result.ok !== false); renderPanel(); if (result.ok) deps?.saveMemberWorldData?.(); };
 
   window.AlchemySystem = {
     TRAIT_CATEGORIES,HUMOURS,DRIVES,MAGNETISMS,ELEMENT_DURATION_S,RAW_POTENCY_FACTOR,POTENCY_TIER_MULTIPLIERS,DEFAULT_SPLASH_RADIUS_TILES,FAMILY_ORDER,
-    RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,POTION_ITEMS,
+    RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,STANDARD_RECIPE_INGREDIENTS,standardRecipeFor,recipeSpriteColor,POTION_ITEMS,
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canCompleteSelection,canAddReagent,outcomeWeight,weightedOutcome,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
     serializeFavorites,restoreFavorites,loadFavorite,toggleFavorite,
-    itemKeyForRecipe,parseBrewedItemKey,getPerfumeEffect,perfumeFromItemKey,isResourceKissStat,throwingFlaskColors,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
+    itemKeyForRecipe,parseBrewedItemKey,getPerfumeEffect,perfumeFromItemKey,isResourceKissStat,throwingFlaskColors,ensureRecipeItemDef,recordPotionAcquisition,syncPotionStack,movePotionProvenance,reconcilePotionContainer,serializePotionBatches,restorePotionBatches,potionStackDiagnostics,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,
     get selectedReagents(){return [...selectedReagents];}, get targetedRecipeId(){return targetedRecipeId;}, get activeEffects(){return activeEffects.map(effect=>({...effect}));},
