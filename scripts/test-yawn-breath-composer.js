@@ -80,7 +80,7 @@ async function main() {
   assert.equal(await render('breath-test.m4a', decoded, context, 1, 7, 4, 24, options), rendered, 'renderer caches identical fallback compositions');
   assert.notEqual(await render('breath-test.m4a', decoded, context, 1, 7, 4, 24, { ...options, breathYawnCadence: 1 }),
     rendered, 'different species cadence must not share the same cache entry');
-  const normal = await render('breath-test.m4a', decoded, context, 1, 0, 4, 24, {}); // Ordinary voices retain their original one-second time axis.
+  const normal = await render('breath-test.m4a', decoded, context, 1, 0, 4, 24, { tailPadS: 0 }); // Real independent voice playback explicitly disables the ordinary 18ms tail pad.
   assert.equal(normal.length, sourceLength, 'the shared renderer still uses normal processing when composition is not requested');
   console.log('Natural breath-yawn composer, pitch/duration, stereo, non-silent overlap, cache isolation and ordinary voice parity: OK');
 }
