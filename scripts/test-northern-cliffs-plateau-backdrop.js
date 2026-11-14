@@ -135,6 +135,7 @@ assert(Math.abs(box.max.z-box.min.z-layout.depth)<1e-5,'visible stone must exten
 assert(box.max.z<=-24,'all rendered stone remains outside the map and border terrain');
 assert(Math.abs(box.max.y-layout.topWorldY)<1e-5,'flat stone crown exactly reaches the intended height');
 assert(layout.flatCapVertices>=3,'several vertices must form a level cap');
+assert(layout.flatCapTriangles>=1,'flattening must create an actual horizontal plateau triangle, not just high vertices');
 assert.equal(api.getDebugState().clearOfPlayableMap,true);
 assert.strictEqual(api.attach(scene,200,200),root,'duplicate attach must not create second rock');
 assert.equal(sources.length,18,'duplicate attach must not rebuild');
