@@ -431,7 +431,23 @@
 
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
-    if (!state) return false;
+    if (!state) {
+      // A ladder-triggered building exit arrives on an upper roof without an airborne state.
+      // Adopt the exact authored support only on its dedicated hatch tile; never lift somebody under an arbitrary balcony.
+      if (player && deps?.getCurrentArea?.()==='town' && !player.climbing && !player.onBranch && player.health>0) {
+        const x=player.x/deps.TILE,z=player.y/deps.TILE; // Tile-space arrival used by both town transitions and mini-cliff supports.
+        const hatch=window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Indexed authored hatch, not a broad building-footprint match.
+        if(hatch && Number.isFinite(hatch.topY)) {
+          const roofState={area:'town',phase:'supported',feetY:hatch.topY,launchGround:hatch.topY,
+            vy:0,elapsed:0,source:'roof ladder',safeX:x,safeZ:z,lastX:x,lastZ:z};
+          player._freeJump=roofState;
+          setElevation(player,roofState); // Shares normal jump/ledge walk-off and fall physics.
+          debug.lastEvent='entered rooftop via ceiling ladder';
+          return true;
+        }
+      }
+      return false;
+    }
     if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
