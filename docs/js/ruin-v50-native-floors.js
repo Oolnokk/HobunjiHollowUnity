@@ -310,6 +310,25 @@
           group.add(particles);
         }
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
+        const RoomSystem=root.RuinRoomSystem,faces=root.RuinWallFaces; // Shared with authored wing rooms; no per-native-floor room manager or scene.
+        const nativeRooms=RoomSystem?.v50Rooms?.(meta,{
+          originX:place.originX,originZ:place.originZ,tileScale:options.tileScale||2,
+          y:floor.y+(Number(meta.floorSurfaceY)||0),prefix:'v50-f'+item.floor,theme:ruin.theme,
+        })||[];
+        ruin.shaftLayerRuntime?.registerRooms?.(nativeRooms); // Room IDs apply to AI/light isolation even on V50's original physical layout.
+        if(faces?.buildQuads&&faces?.toGeometry){
+          const roofHeight=floor.y+(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Every native room gets a ceiling at its own story's wall-top datum.
+          for(const room of nativeRooms){
+            const roofData=faces.buildQuads([{
+              axis:'y',side:-1,plane:0,a0:0,a1:room.w,b0:0,b1:room.d,
+            }],{origin:{x:room.x,y:roofHeight,z:room.z},size:{x:1,y:1,z:1},patch:{h:6,v:6}});
+            const roof=new THREE.Mesh(faces.toGeometry(THREE,roofData),material);
+            roof.name='ruin-native-room-ceiling-'+room.id;
+            roof.userData.ruinRoomId=room.id;
+            roof.userData.devRuinFootprintIgnore=true;
+            group.add(roof); // Downward-wound roof leaves the overhead third-person camera unobstructed.
+          }
+        }
         NativeMechanisms.namespace(nativeRoot,item.floor); // Prevent V50's per-generation mechanism IDs colliding across stacked stories.
         let minLocalY=0,maxLocalY=0;
         for(const localY of heights.values()){
