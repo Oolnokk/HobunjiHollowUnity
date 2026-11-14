@@ -6030,7 +6030,7 @@
 
       function updateMobileAutoTargetCamera(dt) {
         const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
-        if (desktopLockOnActive && !target) releaseLockOn(); // Target died, escaped retention range, or the weapon was put away.
+        if (desktopLockOnActive && !target) releaseLockOn(); // computeAutoTarget tries hostile succession before disengaging a dead lock.
         const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
           || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
@@ -6152,6 +6152,18 @@
           if (!preview) manualAutoTarget = null;
           return null;
         }
+        if (!preview && manualAutoTarget && manualAutoTarget.health <= 0) {
+          const threatRange = autoTargetRetentionRange(); // Hostiles pursuing the player can inherit a fallen lock within its retention range.
+          let closestThreat = null, closestDistance = Infinity; // Nearest actual player threat wins, not passive prey or an ecology fight.
+          for (const c of hostileObjects) {
+            if (!autoTargetCandidateValid(c, threatRange) || c.denDisplacedPrey || c._porakanekiPlannerControlled === true
+              || (c.state !== 'chase' && c.state !== 'searching') || c._chunkCombatTarget?.health > 0) continue;
+            const distance = Math.hypot(c.x - player.x, c.y - player.y);
+            if (distance < closestDistance && autoTargetVisible(c)) { closestThreat = c; closestDistance = distance; }
+          }
+          if (closestThreat) { manualAutoTarget = closestThreat; return closestThreat; }
+          if (desktopLockOnActive) { manualAutoTarget = null; return null; } // Desktop lock-on cannot silently pass to passive prey.
+        }
         if (meleeWeaponOut()) {
           const target = meleeAttackTargetCandidate(preview); // The same selection serves attacks and the read-only prey availability preview.
           if (!preview) manualAutoTarget = target;
@@ -6176,6 +6188,7 @@
       }
 
       function findAutoTarget() {
+        if (autoTargetCacheFrame === gameFrameSerial && autoTargetCacheValue?.health <= 0) invalidateAutoTargetCache(); // A death this frame must not return the old target.
         if (autoTargetCacheFrame === gameFrameSerial) return autoTargetCacheValue;
         autoTargetCacheValue = computeAutoTarget();
         autoTargetCacheFrame = gameFrameSerial;
@@ -6268,6 +6281,30 @@
         }
         if (!best) return false;
         manualAutoTarget = best;
+        invalidateAutoTargetCache();
+        return true;
+      }
+
+      function cycleAutoTarget(direction) {
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Both active weapon types use the existing selection.
+        if (!mobileAutoTargetEnabled() || (!meleeWeaponOut() && !rangedActive) || !Number.isFinite(direction) || !direction) return false;
+        const selected = findAutoTarget(); // The current valid selection defines the left/right cycling origin.
+        if (!selected) return false;
+        const maxDist = desktopLockOnActive ? Math.max(autoTargetRange(), TILE * LOCK_ON_ACQUIRE_TILES) : autoTargetRange(); // Desktop and mobile retain their authored ranges.
+        const azimuth = activeCameraAzimuthRad(); // Camera-relative horizontal positions match what the player sees.
+        const rightX = Math.cos(azimuth), rightY = -Math.sin(azimuth); // Same camera axes as targetStickWorldAngle.
+        const screenX = c => (c.x - player.x) * rightX + (c.y - player.y) * rightY; // Sort target positions across the screen.
+        const candidates = hostileObjects.filter(c => (c === selected && autoTargetCandidateValid(c, autoTargetRetentionRange()))
+          || (autoTargetCandidateValid(c, maxDist) && autoTargetVisible(c))); // Keep a valid retained lock in the cycle.
+        if (candidates.length < 2) return false;
+        candidates.sort((a, b) => screenX(a) - screenX(b)
+          || Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y)
+          || hostileObjects.indexOf(a) - hostileObjects.indexOf(b)); // Stable ties for actors with the same projected location.
+        const index = candidates.indexOf(selected);
+        const next = index < 0 ? candidates[direction > 0 ? 0 : candidates.length - 1]
+          : candidates[(index + (direction > 0 ? 1 : -1) + candidates.length) % candidates.length]; // Wrap in either direction.
+        if (next === selected) return false;
+        manualAutoTarget = next;
         invalidateAutoTargetCache();
         return true;
       }
@@ -29577,6 +29614,7 @@
         const statusEl = document.getElementById('controllerInputStatus'); // Used to diagnose browser mappings without a developer console.
         if (statusEl) statusEl.textContent = nextText;
       }
+      let controllerTargetHorizontalLatch = 0; // Blocks repeat target changes and remapped virtual stick actions until the stick returns to neutral.
       function releaseControllerGameplayInput(reason = 'released') {
         for (const button of gamepadState.previous) {
           const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
@@ -29585,6 +29623,7 @@
         gamepadState.previous.clear();
         gamepadState.actionByButton.clear();
         gamepadState.activeShift = null;
+        controllerTargetHorizontalLatch = 0; // Focus loss, controller disconnect and input cancellation reset the gesture.
         input.x = 0; input.y = 0;
         controllerCameraX = 0; controllerCameraY = 0;
         controllerLookActive = false;
@@ -29653,6 +29692,7 @@
         }
         if (window.__mapEditorGizmoActive) {
           input.x = 0; input.y = 0; controllerLookActive = false;
+          controllerTargetHorizontalLatch = 0; // Editor owns this stick, never a combat target.
           gamepadState.previous.clear(); gamepadState.activeShift = null;
           return;
         }
@@ -29731,6 +29771,25 @@
         if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
+        const targetSelectorOpen = window._desktopSelectionArc?.isOpen?.() === true || window.SocialActionWheel?.isOpen?.() === true
+          || window.FurniturePlacer?.isOpen?.() === true; // Existing menus keep ownership of the stick.
+        const horizontalTargetIntent = rightStickOwner === 'camera' && mobileAutoTargetEnabled()
+          && Math.abs(rx) >= 0.6 && Math.abs(rx) > Math.abs(ry) * 1.2
+          && !menuOpen && !farmEditMode && !targetSelectorOpen && !!findAutoTarget(); // Only a current lock can request target cycling.
+        if (horizontalTargetIntent) {
+          const direction = Math.sign(rx); // Right/left follows visible screen ordering, not world compass.
+          if (!gamepadState.primeButtonsOnResume && controllerTargetHorizontalLatch === 0) cycleAutoTarget(direction);
+          if (controllerTargetHorizontalLatch === 0) controllerTargetHorizontalLatch = direction; // A direction reversal without neutral never retriggers.
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target selection'; // Camera follows the newly chosen target.
+        } else if (Math.abs(rx) < 0.25) {
+          controllerTargetHorizontalLatch = 0; // Stick must return to center before a second flick.
+        } else if (controllerTargetHorizontalLatch === 0 && (rightStickOwner !== 'camera' || targetSelectorOpen || menuOpen || farmEditMode)) {
+          controllerTargetHorizontalLatch = Math.sign(rx); // Menu close cannot turn a still-held stick into a target change.
+        }
+        if (horizontalTargetIntent || (controllerTargetHorizontalLatch !== 0 && Math.abs(rx) >= 0.25)) {
+          down.delete('RightStickLeft'); down.delete('RightStickRight'); // No remapped gameplay press on a target flick, including its return to center.
+          down.delete('RightStickUp'); down.delete('RightStickDown'); // Stick-gesture ownership includes any diagonal virtual buttons.
+        }
         if (gamepadState.primeButtonsOnResume) {
           // A menu-closing B/View press must not become a fresh gameplay
           // Dodge/action press on the very next frame. Seed edge state from
@@ -30097,6 +30156,13 @@
           return true;
         }
         if (heldOnly) return false;
+        if (mobileAutoTargetEnabled() && e.deltaY && !cutscenePreviewActive && !dialogueZoomActive()
+          && !window._desktopSelectionArc?.isOpen?.() && !window.SocialActionWheel?.isOpen?.()
+          && !window.FurniturePlacer?.isOpen?.() && !window.AuthoredCutsceneRuntime?.isActive?.()) {
+          e.preventDefault();
+          cycleAutoTarget(dir); // Normal mouse wheel cycles targets while locked; held item/tool/potion selectors above retain precedence.
+          return true;
+        }
         e.preventDefault();
         // The Director authors every camera beat of a cutscene (including
         // Zoom cards, cutscenePreviewZoomPercent) — manual wheel-zoom would
