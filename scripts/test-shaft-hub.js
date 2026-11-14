@@ -708,7 +708,7 @@ for(const side of ['north','east','south','west']){
   assert(gateSolid(),'a solved chamber unlocks its auto door without leaving it permanently open');
   const [gateC,gateR]=challenge.gate.tiles[1];
   player={x:gateC+.5,z:gateR+.5,y:challenge.floorY}; // Close approach causes a solved door to retract without moving maps.
-  for(let i=0;i<10;i++)network.tick(.05);
+  for(let i=0;i<18;i++)network.tick(.05); // The stone slab retracts before its four voxel layers stop blocking passage.
   assert(!gateSolid(),'approaching the unlocked room door opens the corresponding 3D gate obstruction');
   player={x:challenge.x,z:challenge.z,y:challenge.floorY};
   for(let i=0;i<28;i++)network.tick(.05);
