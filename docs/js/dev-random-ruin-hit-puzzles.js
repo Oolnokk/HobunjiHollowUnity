@@ -777,12 +777,12 @@
       && segmentBoxInterval(start, finish, boxFor(object), radius));
   }
 
-  function contactAdventuringTorchSegment(start, end, maxT = 1, radius = .12) {
+  function contactAdventuringTorchSegment(start, end, maxT = 1, radius = .12, requireReach = false) {
     if (!root || currentArea() !== MAP_ID || !start || !end) return false;
     const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
     let nearest = null;
     for (const target of ignitionTargets) {
-      if (target.lit) continue;
+      if (target.lit || (requireReach && worldDistanceTo(target.object) > CONTROL_RANGE)) continue;
       const interval = segmentBoxInterval(start, finish, boxFor(target.object), radius);
       if (interval && (!nearest || interval.enter < nearest.t)) nearest = { target, t:interval.enter };
     }
