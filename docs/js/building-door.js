@@ -89,17 +89,21 @@
       // Authored doors are coordinates on the structural footprint. HousePieceGen anchors its
       // rendered shell to footprint.cells, so porch/chimney extensions west or north of that
       // shell must not silently translate the door away from the visible building.
-      const structuralCells = pieceData?.footprint?.cells || []; // Structural shell cells define the building's gridX/gridZ origin.
-      if (!structuralCells.length) return derived;
-      const minX = Math.min(...structuralCells.map(c => c.x));
-      const minY = Math.min(...structuralCells.map(c => c.y));
-      const maxX = Math.max(...structuralCells.map(c => c.x));
-      const maxY = Math.max(...structuralCells.map(c => c.y));
+      const structuralCells = pieceData?.footprint?.cells || [];
+      const placementCells = pieceData.placementOrigin === 'fullFootprint'
+        ? footprintCells(pieceData)
+        : structuralCells; // Porch-bearing outposts use the visible full envelope; ordinary houses keep their structural anchor.
+      if (!placementCells.length) return derived;
+      const minX = Math.min(...placementCells.map(c => c.x));
+      const minY = Math.min(...placementCells.map(c => c.y));
+      const maxX = Math.max(...placementCells.map(c => c.x));
+      const maxY = Math.max(...placementCells.map(c => c.y));
       return {
         bboxW: maxX - minX + 1,
         bboxD: maxY - minY + 1,
         cells: [{ x: authored.x - minX, y: authored.y - minY }],
         psCells: [],
+        doorIsTile: pieceData.placementOrigin === 'fullFootprint', // Full-porch entrances name the actual walkable door tile, not a shell edge needing a one-tile outward offset.
       };
     }
     return derived;
@@ -125,7 +129,12 @@
       if (wr < wBMinR) wBMinR = wr; if (wr > wBMaxR) wBMaxR = wr;
     }
     let eCol, eRow;
-    if (psCells && psCells.length) {
+    if (doorEntrance.doorIsTile) {
+      // Full-footprint authors place footprint.door on the physical threshold.
+      // Applying the legacy south-edge +1 here shifts rotated porch doors one tile away.
+      eCol = wBMinC;
+      eRow = Math.min(clampRow, wBMinR);
+    } else if (psCells && psCells.length) {
       let wPMinC = Infinity, wPMaxC = -Infinity, wPMinR = Infinity, wPMaxR = -Infinity;
       for (const c of psCells) {
         const r = rotateCell(c.x, c.y, bboxW, bboxD, rotDeg);

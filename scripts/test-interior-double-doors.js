@@ -8,8 +8,13 @@ vm.runInNewContext(fs.readFileSync('docs/js/interior-door-tiles.js', 'utf8'), { 
 const Doors = window.InteriorDoorTiles; // Shared runtime and editor API.
 const data = JSON.parse(fs.readFileSync('docs/config/furniture-authored/woodenDoor.json', 'utf8')); // Actual authored transforms, materials, and swing endpoints.
 const original = JSON.stringify(data); // Proves pair generation cannot mutate shared furniture.
+const authoredPair = JSON.parse(fs.readFileSync('docs/config/furniture-authored/doubleWoodenDoor.json', 'utf8')); // Shipped pair must be editable independently of the single door.
 const pair = Doors.doubleDoorData(data); // Derived geometry registered as one mechanism.
 assert.equal(JSON.stringify(data), original);
+assert.equal(authoredPair.key, 'doubleWoodenDoor');
+assert.equal(authoredPair.parts.length, 7);
+assert.equal(JSON.stringify(authoredPair.parts.map(part => part.transform)), JSON.stringify(pair.parts.map(part => part.transform)), 'shipped carved assembly preserves original hinge poses');
+assert.equal(JSON.stringify(authoredPair.puzzle.motion.parts), JSON.stringify(pair.puzzle.motion.parts), 'shipped carved pair has the exact two-leaf swing animation');
 assert.equal(pair.parts.length, 7, 'two panels, two latches, two outer posts, one header');
 assert.equal(new Set(pair.parts.map(part => part.id)).size, 7);
 for (const part of pair.parts) {
@@ -80,7 +85,7 @@ for (const [id, map] of maps) {
   const groups = []; // Captures the exact furniture recipe passed by the runtime builder.
   const interactions = new Map(); // Both halves must share the same mechanism state.
   const objects = new Map(); // Mechanisms keyed by registered instance ID.
-  window.AuthoredFurniture = { peek: () => data, buildGroup: recipe => {
+  window.AuthoredFurniture = { peek: key => key === 'doubleWoodenDoor' ? authoredPair : data, buildGroup: recipe => {
     const group = { recipe, position: { set(x, y, z) { this.x = x; this.y = y; this.z = z; } }, rotation: {}, userData: { blocksMovement: true } }; // Minimal rendered object.
     groups.push(group); return group;
   } };
@@ -91,6 +96,7 @@ for (const [id, map] of maps) {
   await Doors.build({ scene: { add() {} }, mapId: 'test', mapData: { doorTiles: [[3, 3], [4, 3]] }, floorSet: new Set(['3,3', '4,3', '3,2', '4,2']), registerInteractable: (c, r, obj) => interactions.set(`${c},${r}`, obj) });
   assert.equal(groups.length, 1);
   assert.equal(groups[0].recipe.parts.length, 7);
+  assert.equal(groups[0].recipe.key, 'doubleWoodenDoor', 'runtime must use the authored pair, not stretch a single door dynamically');
   assert.equal(groups[0].position.x, 4);
   assert.equal(interactions.size, 2);
   assert.equal(Doors.blocksBox('test', 3.5, 3.5), true);
