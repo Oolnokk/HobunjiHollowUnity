@@ -9,11 +9,27 @@ const Hub = require('../docs/js/shaft-hub.js');
 const Playable = require('../docs/js/ruin-layer-playable.js');
 
 const SIDES = ['N', 'E', 'S', 'W']; // Exercise all cardinal layouts, not only the seed's original wing orientations.
+const THEMES = ['tothal', 'hronal', 'kanthic']; // Theme-specific puzzle selection can change stage geometry without changing the entrance contract.
+function leadsToFirstRoom(start, tiles, room) {
+  const key = (x,z) => x+','+z;
+  const visited = new Set([key(...start)]); // Bounded flood from one actual portal lane through the exact generated wing floor.
+  const queue = [start]; // A separate queue per lane proves none of the three seemingly open lanes ends in an isolated tile.
+  for (let i=0; i<queue.length; i++) {
+    const [x,z] = queue[i];
+    if (x>=room.x&&x<room.x+room.w&&z>=room.z&&z<room.z+room.d)return true;
+    for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx=x+dx,nz=z+dz,nk=key(nx,nz);
+      if (visited.has(nk)||!tiles.has(nk))continue;
+      visited.add(nk);queue.push([nx,nz]);
+    }
+  }
+  return false;
+}
 const SEEDS = [3687055066, 1, 104729, 7919, 0x7fffffff]; // Includes the F2 blocked-doorway report plus different layout/offset rolls.
 let checked = 0; // Count physically inspected mouths for the test summary.
-for (const tier of ['cave', 'hole', 'lich']) for (const seed of SEEDS) for (const entrySide of SIDES) {
+for (const tier of ['cave', 'hole', 'lich']) for (const theme of THEMES) for (const seed of SEEDS) for (const entrySide of SIDES) {
   const plan = Plan.compose({
-    seed, spacing:64, anchorX:256, anchorZ:256, groundEntranceSide:entrySide,
+    seed, theme, spacing:64, anchorX:256, anchorZ:256, groundEntranceSide:entrySide,
     ...Plan.tierOptions(tier),
   });
   assert.ok(plan.ok, `${tier}/${seed}/${entrySide}: invalid plan ${plan.checks.filter(c=>!c.ok).map(c=>c.name)}`);
@@ -23,7 +39,7 @@ for (const tier of ['cave', 'hole', 'lich']) for (const seed of SEEDS) for (cons
   const opts = {
     seed, floors:plan.floorCount, chambers:false, wall:plan.options.shaftWall,
     shaft:plan.options.shaftSize, spacing:plan.options.floorHeight,
-    traversal:plan.options.shaftTraversal, entranceSide:entrySide, portals,
+    traversal:plan.options.shaftTraversal, entranceSide:entrySide, theme, portals,
   };
   const dimensions = Hub.compose(opts);
   const hub = Hub.compose({
@@ -39,6 +55,8 @@ for (const tier of ['cave', 'hole', 'lich']) for (const seed of SEEDS) for (cons
     const roomTiles = Playable.collect(wing);
     for (const [x,z] of portal.mouth) {
       assert.ok(roomTiles.has(x+','+z), `${wing.id}: visible wing floor missing at portal lane ${x},${z}`);
+      assert.ok(leadsToFirstRoom([x,z],roomTiles,wing.rooms[0]),
+        `${tier}/${theme}/${seed}/${entrySide}/${wing.id}: portal lane ${x},${z} cannot reach its first room`);
       const col = hub.grid.xToCol(x+.5), row = hub.grid.zToRow(z+.5);
       assert.ok(hub.grid.canStand(col,row,portal.level), `${wing.id}: open doorway has solid collision at ${x},${z}`);
       assert.ok(hub.grid.hasHeadroom(col,row,portal.level), `${wing.id}: doorway headroom blocked at ${x},${z}`);
@@ -68,4 +86,4 @@ for (const floor of nativePlan.floors.filter(f=>f.nativePort)) {
   assert.equal(portal.width,1);
   assert.equal(portal.mouth.length,1);
 }
-console.log(`ok ruin wing doorway clearance: ${checked} three-wide wing mouths; native doors stay one-wide`);
+console.log(`ok ruin wing doorway clearance: ${checked} three-wide traversable wing mouths across all themes; native doors stay one-wide`);
