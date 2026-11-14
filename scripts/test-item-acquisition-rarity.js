@@ -558,7 +558,7 @@ const nestFrequency=rarity.itemSourceFrequency('nelkBaby',{zoneId:sourceZone});
 assert.equal(nestFrequency.denSites,1,'baby acquisition knows actual matching resident den count');
 assert.equal(nestFrequency.chancePerGeneratedDen,.5,'specific den species share is measured rather than treated as a default guess');
 const simulatedPingdort={debugSnapshot:()=>({habitats:[{area:sourceZone,nests:[{remaining:3},{remaining:1}]}]})};
-const simulatedHives={EGG_ITEM:'fertileHoneyfuzzleEgg',EGG_MIN:1,EGG_MAX:3,
+const simulatedHives={QUEEN_ITEM:'honeyfuzzleQueen',QUEEN_COUNT:1,
   census:()=>({zoneId:sourceZone,hives:[{standing:true},{standing:false}]})};
 wildlifeHost.window.PingdortFlocks=simulatedPingdort;
 wildlifeHost.window.HoneyfuzzleHives=simulatedHives;
@@ -573,12 +573,12 @@ assert.equal(completeNestCensus.surfaceNestSources.pingdortNests.remainingEggs,4
 assert.equal(completeNestCensus.surfaceNestSources.tzatzulRoosts.sites,2,
   'Tzatzul roost sites are enumerated without assigning them fertile egg items');
 assert.equal(completeNestCensus.surfaceNestSources.honeyfuzzleHives.standing,1,
-  'collapsed Honeyfuzzle hives do not count as harvestable egg sources');
+  'collapsed Honeyfuzzle hives do not count as harvestable queen sources');
 const pingSource=rarity.itemSourceFrequency('fertilePingdortEgg',{zoneId:sourceZone});
 assert.equal(pingSource.currentlyRemainingEggs,4,'fertile Pingdort egg item reads actual live remaining nest contents');
 assert.equal(pingSource.observedNests,2,'per-species wild nest frequency is measured from selected shelves');
-assert.equal(rarity.itemSourceFrequency('fertileHoneyfuzzleEgg',{zoneId:sourceZone}).eggYieldPerSuccessfulHarvest.max,3,
-  'fertile Honeyfuzzle egg source uses real authored 1–3 egg harvest range');
+assert.equal(rarity.itemSourceFrequency('honeyfuzzleQueen',{zoneId:sourceZone}).queenYieldPerSuccessfulHarvest,1,
+  'Honeyfuzzle hives yield exactly one queen per harvest');
 assert(rarity.acquisitionSources('fertilePingdortEgg',{zoneId:sourceZone,shopStock:{},lootPools:{}}).some(s=>s.kind==='surface-nest'),
   'wild nest eggs appear in first-class acquisition routes');
 const across=rarity.wildernessSourceCensus({zoneIds:[sourceZone,'map_not_generated']});

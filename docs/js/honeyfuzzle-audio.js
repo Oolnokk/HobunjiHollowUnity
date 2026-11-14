@@ -131,10 +131,16 @@
     candidates.clear();
     const items = []; // Current nearby live hives, free swarms and farm houses before voice-budget selection.
     const tileSize = Math.max(1, Number(deps.TILE) || 1);
-    const hives = window.HoneyfuzzleHives?.census?.();
-    if (hives?.zoneId === area && !hives.excluded) {
-      for (const hive of hives.hives) {
-        if (hive.standing) emit(items, 'hive:' + hive.key, 'hive', hive.col + 0.5, hive.row + 0.5);
+    const hives = window.HoneyfuzzleHives;
+    if (typeof hives?.forEachStandingHive === 'function') {
+      // Audio needs only standing stump coordinates; skip building the full combat/respawn diagnostic census.
+      hives.forEachStandingHive((key, col, row) => emit(items, 'hive:' + key, 'hive', col + 0.5, row + 0.5));
+    } else {
+      const snapshot = hives?.census?.(); // Legacy/test providers may not implement the cheap iterator.
+      if (snapshot?.zoneId === area && !snapshot.excluded) {
+        for (const hive of snapshot.hives) {
+          if (hive.standing) emit(items, 'hive:' + hive.key, 'hive', hive.col + 0.5, hive.row + 0.5);
+        }
       }
     }
     for (const actor of deps.hostileObjects || []) {

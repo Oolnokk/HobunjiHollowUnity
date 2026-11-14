@@ -492,13 +492,13 @@
           perSuccessfulEggTake:1,
           certainty:nest?.known?'actual selected reachable minicliff nest clutch':'unloaded nest shelves; availability unknown'};
       }
-      if (key === G.HoneyfuzzleHives?.EGG_ITEM) {
+      if (key === G.HoneyfuzzleHives?.QUEEN_ITEM) {
         const hives = nestSources?.honeyfuzzleHives;
         return {key,sourceKind:'honeyfuzzle-hive',zoneId,
           known:!!hives?.known,observedHives:hives?.known?hives.sites:null,
           standingHives:hives?.known?hives.standing:null,
-          eggYieldPerSuccessfulHarvest:{min:G.HoneyfuzzleHives.EGG_MIN,max:G.HoneyfuzzleHives.EGG_MAX},
-          certainty:hives?.known?'actual uncollapsed hive stumps with authored egg yield':'unloaded or distant hive zone; availability unknown'};
+          queenYieldPerSuccessfulHarvest:G.HoneyfuzzleHives.QUEEN_COUNT,
+          certainty:hives?.known?'actual uncollapsed hive stumps, one queen per harvested hive':'unloaded or distant hive zone; availability unknown'};
       }
     }
     const config = G.SCRATCHBONES_CONFIG?.game || {};
