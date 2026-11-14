@@ -213,6 +213,24 @@
     return { handled: true, moving: !!entity._enemyDodge, aimAngle: entity.facing || 0 };
   }
 
+  // NPC-vs-NPC staged duels (js/combat/npc-duel-staging.js) have no player
+  // threat to react to; this queues the same readable roll against another
+  // actor's swing, through the same pending -> beginDodge path.
+  let stagedThreatSerial = 0;
+  function dodgeChance(entity) {
+    return clamp01(tuning.chanceByRank[entity?.banditRank] ?? tuning.chanceByRank.grunt);
+  }
+  function stageDodge(entity, attacker, timeToImpactS) {
+    if (!entity || !attacker || !deps || entity.health <= 0) return false;
+    if (entity._enemyDodge || entity._enemyDodgePending || (Number(entity._enemyDodgeCooldownT) || 0) > 0) return false;
+    if (entity.prone || entity._banditAction || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return false;
+    // Negative ids never collide with player threat ids and still vary the dodge side.
+    const threat = { id: -(++stagedThreatSerial), attacker, source: 'npc-duel', timeToImpactS: Math.max(0, Number(timeToImpactS) || 0) };
+    const delayS = Math.min(tuning.reactionDelayS, threat.timeToImpactS * 0.45);
+    entity._enemyDodgePending = { threat, remainingS: delayS };
+    return true;
+  }
+
   window.BanditCombat.init = function enemyDodgeBanditInit(injectedDeps, ...rest) {
     deps = injectedDeps;
     return originalInit(injectedDeps, ...rest);
@@ -254,6 +272,6 @@
     return { version: VERSION, ready: !!deps, tuning: { ...tuning, chanceByRank: { ...tuning.chanceByRank } }, dodgeCount, lastEvent, enemies };
   }
 
-  window.EnemyDodge = Object.freeze({ version: VERSION, applyConfig, profileOutfit, armorStats, combatMoveMultiplier, threatStatus, cancel, debugSnapshot });
+  window.EnemyDodge = Object.freeze({ version: VERSION, applyConfig, profileOutfit, armorStats, combatMoveMultiplier, threatStatus, cancel, debugSnapshot, dodgeChance, stageDodge });
   window.__enemyDodgeDebug = debugSnapshot;
 })();

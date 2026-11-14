@@ -238,6 +238,50 @@
   }
 
 
+  // Explicitly aimed meleeHit probes (debug:false: lunge halts, the HUD reticle,
+  // targetable scans) run every frame and never keep their solution, so they write
+  // into one scratch solution instead of allocating origin/direction vectors per call.
+  let meleeProbeSolutionScratch = null;
+  function probeSolutionScratch() {
+    if (!meleeProbeSolutionScratch) {
+      meleeProbeSolutionScratch = { origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 0, z: 0 }, solution: {} };
+    }
+    return meleeProbeSolutionScratch;
+  }
+  function explicitProbeDirection(attacker, opts, out) {
+    const raw = opts.direction;
+    let x, y, z;
+    if ([raw?.x, raw?.y, raw?.z].every(Number.isFinite) && raw.x * raw.x + raw.y * raw.y + raw.z * raw.z > 1e-8) {
+      x = raw.x; y = raw.y; z = raw.z;
+    } else if (opts.yaw != null || opts.pitch != null) {
+      const yaw = Number(opts.yaw ?? attacker?.facing ?? attacker?.angle ?? 0) || 0;
+      const pitch = THREE.MathUtils.clamp(Number(opts.pitch ?? 0) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
+      const horizontal = Math.cos(pitch);
+      x = Math.cos(yaw) * horizontal; y = Math.sin(pitch); z = Math.sin(yaw) * horizontal;
+    } else return null;
+    const length = Math.hypot(x, y, z);
+    out.x = x / length; out.y = y / length; out.z = z / length;
+    return out;
+  }
+  function meleeProbeSolution(attacker, opts) {
+    const scratch = probeSolutionScratch();
+    const direction = explicitProbeDirection(attacker, opts, scratch.direction);
+    if (!direction) return null;
+    const attackerHitbox = combatActorHitbox(attacker);
+    const center = attackerHitbox?.center;
+    const origin = scratch.origin;
+    if (center) { origin.x = center.x; origin.y = center.y; origin.z = center.z; }
+    else {
+      origin.x = (Number(attacker?.x) || 0) / (deps?.TILE || 64); origin.y = 0.5; origin.z = (Number(attacker?.y) || 0) / (deps?.TILE || 64);
+    }
+    const solution = scratch.solution;
+    solution.attacker = attacker; solution.target = null; solution.attackerHitbox = attackerHitbox; solution.targetHitbox = null;
+    solution.origin = origin; solution.targetPoint = null; solution.direction = direction;
+    solution.yaw = Math.atan2(direction.z, direction.x);
+    solution.pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
+    return solution;
+  }
+
   function meleeSolutionForOptions(attacker, opts = {}) {
     const hasExplicitAngles = opts.yaw != null || opts.pitch != null;
     const explicitDirection = finiteDirection(opts.direction)
@@ -349,7 +393,8 @@
   // A target is hit when its portrait Box3 intersects the pitched, vertically
   // extruded pie piece described above.
   function meleeHit(attacker, target, opts = {}) {
-    const solution = meleeSolutionForOptions(attacker, opts);
+    // meleeHit's probes copy the solution into meleeColliderScratch and keep nothing.
+    const solution = (opts.debug === false && meleeProbeSolution(attacker, opts)) || meleeSolutionForOptions(attacker, opts);
     // Repeated lunge hit probes need no persistent collider snapshots, unlike a visible strike.
     if (opts.debug === false && !meleeColliderScratch) meleeColliderScratch = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
     const collider = meleeColliderVolume(attacker, opts, solution, opts.debug === false ? meleeColliderScratch : null);

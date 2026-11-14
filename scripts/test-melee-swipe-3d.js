@@ -165,8 +165,8 @@ const arcContext = vm.createContext({ window: { Combat: { spawnMeleeTrail: opts 
 vm.runInContext(banditSource.slice(arcStart, arcEnd) + '\nthis.banditArc = spawnBanditTrailArc;', arcContext);
 arcContext.banditArc({ def: { attackTag: 'sharp' }, scene, x: 0, y: 0, facing: 0 }, 64, 0.2, 0.2, 0);
 assert.equal(scene.children.length, 1, 'actual bandit trail helper renders without needing a successful meleeHit');
-const firstOnStrike = banditSource.indexOf('        spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);');
-assert(firstOnStrike > 0 && banditSource.slice(firstOnStrike, firstOnStrike + 280).includes('meleeHit'), 'bandit spawns its ribbon before hit resolution');
+const firstOnStrike = banditSource.indexOf('spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);');
+assert(firstOnStrike > 0 && banditSource.slice(firstOnStrike, firstOnStrike + 400).includes('meleeHit'), 'bandit spawns its ribbon before hit resolution');
 window.Combat.update(1);
 assert.equal(scene.children.length, 0, 'a genuine bandit attack ribbon returns to the pool after a miss');
 

@@ -1393,7 +1393,12 @@
     c._banditLungeHopCurrent = 0;
   }
 
-  function fireBanditComboStep(c, def, loadout, targetPlayer) {
+  // opts.staged: an NPC-vs-NPC duel the player is not part of (see
+  // js/combat/npc-duel-staging.js). Same pose, lunge, trail and audio, but no
+  // 3D aim solve, no per-frame lunge cone probe, a 2D strike test and no
+  // afflictions -- and the defender may play a cosmetic dodge.
+  function fireBanditComboStep(c, def, loadout, targetPlayer, opts = null) {
+    const staged = opts?.staged === true && !!window.NpcDuelStaging;
     const comboData = window.Combat?.comboData;
     const steps = comboData?.[loadout.tap1];
     if (!steps || !steps.length) return false;
@@ -1423,7 +1428,7 @@
     const knockbackPxS = base.knockbackPxS * step.knockbackMul * shapeStats.power;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
-    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail. // lunge direction locks off c.facing -- must be fresh, not last frame's
+    c._banditAimPitch = staged ? 0 : (window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0); // Used by this enemy's leap, 3D hit cone, and pitched trail. // lunge direction locks off c.facing -- must be fresh, not last frame's
     c.telegraphState = 'windup';
     // The same authored pose the player's combo plays for this step (power already applied), or the step's own.
     const stepPose = window.Combat?.comboStepPose?.(loadout.tap1, step) || null;
@@ -1431,7 +1436,16 @@
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = stepPose ? 1 : (step.power || 1);
     c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (step.holdS || 0) / shapeStats.speed; c._banditSwingReturnS = (step.returnS || 0) / shapeStats.speed; // Same pause / finisher tail combat-combo.js hands the player's swing visual.
-    beginBanditLunge(c, deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), (step.windupS + step.strikeS) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
+    const lungeBudgetPx = deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5);
+    const lungeDurationS = (step.windupS + step.strikeS) / shapeStats.speed;
+    if (staged) {
+      // Pre-capped instead of halted by a per-frame meleeHit probe (null hitTest skips it).
+      const gapPx = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) - rangePx * BANDIT_LUNGE_HALT_MARGIN;
+      if (gapPx > 0) beginBanditLunge(c, Math.min(lungeBudgetPx, gapPx), lungeDurationS, null, null);
+      window.NpcDuelStaging.maybeStageDodge(targetPlayer, c, step.windupS / shapeStats.speed);
+    } else {
+      beginBanditLunge(c, lungeBudgetPx, lungeDurationS, { rangePx, halfConeRad }, targetPlayer);
+    }
     // Tracked so onComplete below can tell a whiff from a landed hit --
     // a bandit should only break off (retreat) on a miss or after
     // landing its 3rd/final step, never after landing steps 1-2, which
@@ -1453,8 +1467,16 @@
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.
-        spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
+        if (!staged || c._rigOffscreenAsleep !== true) spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
+        const landed = staged
+          ? window.NpcDuelStaging.strikeLands(c, targetPlayer, rangePx, halfConeRad)
+          : window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 });
+        if (landed && staged) {
+          comboStepHit = true;
+          c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true });
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
+        } else if (landed) {
           comboStepHit = true;
           c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
           // def.attackTag (the bandit's actual rolled weapon material,
@@ -1718,17 +1740,21 @@
     // up being the binding cap instead (a small lungeMul ability).
     return Math.max(rangePx, Math.min(safeReach, haltDist + lungeBudgetPx));
   }
+  // Safe reach of the current combo step alone (also what a staged NPC duel
+  // uses, since it only ever swings combo steps).
+  function banditComboReachPx(c, def, loadout) {
+    const base = banditAttackBaseline(def);
+    const combo = window.Combat?.comboData;
+    const steps = combo?.[loadout?.tap1];
+    if (!steps?.length) return base.rangePx;
+    const step = steps[(c._banditComboIndex || 0) % steps.length];
+    const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
+    const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
+    return banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
+  }
   function banditEngagementReachPx(c, def, loadout, targetPlayer) {
     const base = banditAttackBaseline(def);
-    let reach = base.rangePx;
-    const combo = window.Combat?.comboData;
-    const steps = combo?.[loadout.tap1];
-    if (steps?.length) {
-      const step = steps[(c._banditComboIndex || 0) % steps.length];
-      const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
-      const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
-      reach = banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
-    }
+    let reach = banditComboReachPx(c, def, loadout);
     // Quick attack (tap2) can fire on ANY cycle regardless of which
     // combo step is current (see updateBanditCombatAI's conditionFavorable
     // roll), so its own safe reach always constrains this gate too.
@@ -2137,6 +2163,28 @@
 
   const ghoulWyrmApiByActor = new WeakMap(); // One Wyrm-witch adapter per actor; no temporary closures for ordinary bandits or per-frame allocations.
 
+  let npcDuelStagingReady = false;
+  let npcDuelStagingApi = null; // Stable callbacks handed to NpcDuelStaging; built once.
+  function npcDuelStagingUpdate(c, dt, target, distPx, towardAngle) {
+    const staging = window.NpcDuelStaging;
+    if (!staging) return null;
+    if (!npcDuelStagingReady) {
+      staging.init({
+        get TILE() { return deps.TILE; },
+        get player() { return deps.player; },
+        rnd: () => deps.rnd(),
+      });
+      npcDuelStagingApi = {
+        comboReachPx: actor => banditComboReachPx(actor, actor.def, actor.def.banditAbilityLoadout),
+        fireStagedSwing: (actor, foe) => fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true }),
+        moveToward: (actor, x, y, speed, stepDt) => deps.moveCreatureToward(actor, x, y, speed, stepDt),
+        damage: (actor, foe, amount, knockbackPxS) => damageBanditCombatTarget(actor, foe, amount, actor.x, actor.y, knockbackPxS, { tag: actor.def.attackTag, stagedDuel: true }),
+      };
+      npcDuelStagingReady = true;
+    }
+    return staging.update(c, dt, target, distPx, towardAngle, npcDuelStagingApi);
+  }
+
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
     if (!targetPlayer || Number(targetPlayer.health) <= 0) return { aimAngle: c.facing || 0, moving: false };
@@ -2184,6 +2232,11 @@
       // The transient lock is already gone: committed windup/strike facing stays fixed.
       return { aimAngle: c.facing, moving: false };
     }
+    // A fight the player is not part of only has to look like combat:
+    // js/combat/npc-duel-staging.js replaces the decision step below with a
+    // cheap staged duel and hands back here (null) once the player gets involved.
+    const stagedDuel = npcDuelStagingUpdate(c, dt, targetPlayer, distToPlayer, towardAngle);
+    if (stagedDuel) return stagedDuel;
 
     // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
     // other bandits -- once a bandit is "in range" (below) it stops

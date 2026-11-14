@@ -3,7 +3,7 @@
   // combat-main: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
     "js/combat/weapon-shape-stats.js?v=20261109grappledonor1",
-    "js/combat/combat-core.js?v=20261112hbb5144a",
+    "js/combat/combat-core.js?v=20261114h7523051",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28",
