@@ -55,8 +55,7 @@
     geometry.userData = Object.assign({}, source.userData || {}, geometry.userData || {});
     delete geometry.userData.hobunjiSurfaceStretchSignature;
     delete geometry.userData.hobunjiSurfacePerimeterFrameSignature;
-    mesh.geometry = geometry;
-    return geometry;
+    return geometry; // The caller adopts this temporary clone only after every cliff in the combined batch maps successfully.
   }
 
   function mapTouchingPlateauCliffBatch(meshes, label = 'plateau-cross-mesh') {
@@ -68,10 +67,12 @@
     const positions = []; // Used as one temporary world-space triangle soup spanning every plateau cliff-slot mesh in this batch.
     const targets = []; // Used to copy each solved combined UV back to its exact source mesh vertex afterward.
     const touched = new Map(); // Used to mark each source UV attribute once after all copied writes finish.
+    const prepared = []; // Used to release uncommitted per-mesh geometry clones if this combined solve cannot finish.
     const point = new THREE.Vector3(); // Used repeatedly while transforming local plateau vertices into common world space.
 
     for (const mesh of candidates) {
       const geometry = ensureIndependentPlateauGeometry(mesh); // Used to make grass and cliff corners independently writable before cross-mesh solving.
+      if (geometry) prepared.push(geometry);
       const position = geometry?.getAttribute?.('position');
       const uv = geometry?.getAttribute?.('uv');
       if (!position || !uv) continue;
@@ -92,15 +93,26 @@
     // A partial batch can produce a plausible combined UV buffer while silently
     // leaving a second deferred mesa unmapped. Fall back for the whole batch
     // unless every intended cliff contributes complete triangles.
-    if (touched.size !== candidates.length || touched.size < 2 || targets.length < 6 || targets.length % 3 !== 0) return false;
+    if (touched.size !== candidates.length || touched.size < 2 || targets.length < 6 || targets.length % 3 !== 0) {
+      for (const geometry of prepared) geometry.dispose?.();
+      return false;
+    }
 
     const combined = new THREE.BufferGeometry(); // Used only as a temporary common-topology carrier; it never enters the scene.
     combined.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const mapped = mapper.mapGeometry(combined, { label: `${label}:touching-mesh-batch` }); // The central mapper now owns both continuous fitting and no-perpendicular-stretch edge behavior.
+    let mapped; // Used to dispose a failed or completed central-mapper result independently of the temporary combined geometry.
+    try {
+      mapped = mapper.mapGeometry(combined, { label: `${label}:touching-mesh-batch` }); // The central mapper now owns both continuous fitting and no-perpendicular-stretch edge behavior.
+    } catch (error) {
+      for (const geometry of prepared) geometry.dispose?.();
+      combined.dispose?.();
+      throw error; // The scheduled caller logs the error and applies the original per-mesh fallback.
+    }
     const mappedUv = mapped?.getAttribute?.('uv');
     const report = mapped?.userData?.hobunjiSurfaceStretch || null;
     if (!mappedUv || mappedUv.count !== targets.length || !report) {
       crossMeshStats.failures++;
+      for (const geometry of prepared) geometry.dispose?.();
       if (mapped && mapped !== combined) mapped.dispose?.();
       combined.dispose?.();
       return false;
@@ -112,6 +124,7 @@
     }
     const batchSignature = `cross-mesh-surface-v2|meshes=${touched.size}|surfaces=${report.patchCount}|uvs=${targets.length}|mapping=${report.mapping || 'unknown'}`; // Used by runtime repair/debugging to identify this exact shared solve.
     for (const [mesh, state] of touched) {
+      mesh.geometry = state.geometry; // Commit only once all cliff UVs are solved, leaving the original mesh intact on failure.
       state.uv.needsUpdate = true;
       state.geometry.userData = Object.assign({}, state.geometry.userData || {}, {
         hobunjiSurfaceStretchSignature: batchSignature,
