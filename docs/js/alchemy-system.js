@@ -384,12 +384,13 @@
     definition.alchemyPotionMajorityCount = winner?.count || 0; // The winning batch's bottle count.
   }
   function syncPotionStack(itemKey, countOverride = null, paint = true) {
-    const payload = parseBrewedItemKey(itemKey);
-    if (!payload) return null;
+    if (typeof itemKey !== 'string' || !itemKey.startsWith('alchemy_')) return null; // Ordinary inventory icons skip potion parsing entirely.
     const actual = countOverride == null ? Number(deps?.inventory?.[itemKey]) : Number(countOverride); // Actual stack or pre-grant quantity.
     const target = Math.max(0, Math.min(window.InventoryStacks?.MAX_TOTAL || 9999, Math.floor(actual) || 0)); // Reject negative/corrupted totals.
-    let record = potionBatches.get(itemKey);
-    if (record?.lastCount === target) return record; // O(1) fast path for inventory/HUD icons; all writes keep lastCount in sync.
+    let record = potionBatches.get(itemKey); // Cached ingredient ledger for this inventory stack.
+    if (record?.lastCount === target) return record; // Warm HUD/Pack repaint no longer allocates a regex-match/payload object.
+    const payload = parseBrewedItemKey(itemKey);
+    if (!payload) return null;
     if (!record) record = { groups: [], leader: null, lastCount: -1 }; // Missing saves use the found potion's standard recipe.
     let excess = groupTotal(record) - target; // Consumption, sale, gift, thrown flask or transfer.
     while (excess > 0 && record.groups.length) {
