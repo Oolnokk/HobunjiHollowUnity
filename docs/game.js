@@ -27300,6 +27300,7 @@
         // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
         // first (js/grass-billboard-render-chunks.js), then off-camera tagged
         // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
+        window.EnvironmentSurfaceMicroPlateau?.updateDistanceLod?.(camera); // Far snow/slush chunks draw their flat slab; js/environment-surface-micro-plateau.js.
         const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
         const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
         try {

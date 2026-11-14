@@ -50,6 +50,51 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 14 Nov 2026: Western Slope snow cap gets a distance tier
+
+The snow cap (`environment-surface-micro-plateau.js`) was the largest single item in a Western Slope frame (see the
+next entry): every covered tile is a 4x4 vertex grid, 18 triangles, so its exposed sides can incline back down inside
+the tile, and the whole 200x200 zone is built at that detail with no distance cut: about 630 k triangles, 60+ chunks in
+a long view, each drawn in roughly 2.6 passes.
+
+Each 16-tile chunk now also carries a **far slab** and `updateDistanceLod(camera)` (called from `renderWorldPasses`)
+shows one or the other: slab beyond 28 tiles from the camera to the chunk's nearest edge, full detail again inside 24.
+
+- Slab = flat patches at full cap height. Neighbouring flat tiles at the same height merge into one rectangle (greedy,
+  inside the chunk). A dug trench, a raised bed, a ramp or another mesa tier has its own height or is not flat, so it
+  stays its own patch; uncovered tiles (water, ruin openings) stay uncovered. Nothing is removed at any distance.
+- **Merging is limited by the texture, not the geometry.** The snow UVs are one relaxed zone-wide stretch map, strongly
+  non-linear toward a snowfield's outline. The first version merged on height alone and far plateaus turned grey and
+  streaky (a big patch interpolates between four corners and samples the wrong part of the texture). A rectangle may now
+  cover a set of tiles only if every tile corner inside it lands within 0.0012 UV of where the patch puts it.
+- Merged rectangles meet at T-junctions, so each snow patch is grown 0.02 tiles (coplanar, same white).
+- A flat slab seen from below has no edge, which cost far clifftops their white rim; opaque snow keeps one quad per
+  exposed tile side (the same incline as the full detail).
+- Translucent slush would blend twice under overlaps or rims, so it gets exact one-tile patches and no rims.
+- The slab never answers raycasts; the detailed mesh stays the surface for those and for camera collision.
+- `EnvironmentSurfaceMicroPlateau.setDistanceLodEnabled(false)` is the A/B switch; `debugSnapshot().distanceLod` has
+  the counts. `scripts/test-environment-surface-distance-lod.js` runs the real module (coverage, own patches for
+  dug/raised tiles, texture tolerance under a warped map, rims, hysteresis, slush).
+
+Measured headless, exact counts. Zone totals (three generated worlds): full detail 627-655 k triangles; slab 79-90 k
+(about 50 k of patches plus two triangles for each of about 16 k exposed sides). One frame, tier off -> on:
+
+| View | Snow triangles | Whole frame |
+| --- | --- | --- |
+| Beside a tribe camp, long view | 536,976 -> 183,268 (before rims were added) | 1,841,646 -> 1,477,274 |
+| Beside a tribe camp, another world (final build) | 257,040 -> 94,176 | 976,778 -> 769,731 |
+
+What is left of the snow in those frames is the near chunks at full detail.
+
+Looked at, tier off vs on from the same instant (scene rendered to a target, two long views): 0.4-0.6% of pixels
+differ at all, as pixel-thin lines along distant ledges; the two frames are not distinguishable by eye at that size.
+**Not measured:** real-device FPS, and the swap itself while walking (a chunk changes tier at 24-28 tiles; the rim and
+the texture tolerance are what should keep that from popping).
+
+**Still there:** `zone_path_ground` (about 470 k triangles a frame in the camp view) lies entirely under the opaque
+snow on this map. Skipping ground the cap fully covers would be the next large cut, but the held-object ground replay,
+raycasts and the cap's own open edges all depend on that ground, so it was not attempted.
+
 ## 14 Nov 2026: what a camp of barbarians costs to draw, and three cuts
 
 Follow-up to the entry below (which was all JS). Western Slope, standing 8 tiles from a Porakaneki camp, 17 residents
