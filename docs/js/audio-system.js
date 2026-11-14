@@ -1068,6 +1068,22 @@
     return combatAudioSpatial(source, { earshotTiles: Math.max(1, Number(source?.earshotTiles || cfgEntry?.earshotTiles) || 12) }); // Heavy blasts can carry farther than quiet tool cues.
   }
 
+  const TOOL_CONTACT_SFX_KEYS = new Set(['dig','pick','chop','breakTree','breakRock']); // Legacy tool-action stages have an aimed contact position but do not yet pass an explicit audio emitter.
+  function toolContactSfxSource(key) {
+    if (!TOOL_CONTACT_SFX_KEYS.has(key)) return null;
+    const target = deps?.getReticleTile?.() || window.Combat?.deps?.getReticleTile?.(); // Prefer the game's authoritative aimed tile when exposed.
+    const areaId = deps?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.();
+    if (Number.isFinite(target?.col) && Number.isFinite(target?.row)) return objectSfxSourceAt(target.col+.5,target.row+.5,areaId);
+    const debug = window.__hobunjiFurnitureDebug; // Existing mobile state bridge knows the player and world-facing action aim.
+    const player = debug?.playerState, angle = Number(debug?.targetAimAngleDeg);
+    if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y) || !Number.isFinite(angle)) return null; // Never invent a world origin from an ordinary UI cue.
+    const radius = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.orbitRadiusTiles); // The authored reticle contact radius, not an extra raycast.
+    const tileSize = Math.max(1,Number(deps?.TILE)||64);
+    const distance = tileSize * (Number.isFinite(radius) ? radius : .62);
+    const radians = angle*Math.PI/180;
+    return { x:player.x+Math.cos(radians)*distance,y:player.y+Math.sin(radians)*distance,areaId };
+  }
+
   function reversedObjectBuffer(url) {
     if (reversedObjectBuffers.has(url)) return reversedObjectBuffers.get(url);
     const context = ensureCombatPositionalContext(); // Reverse playback uses the same HRTF listener and environmental wet bus as forward object sounds.
@@ -1288,23 +1304,36 @@
     return true;
   }
 
-  function playGeneratedStoneKchunk(volume = 1) {
+  function playGeneratedStoneKchunk(volume = 1, source = null) {
     const AudioCtx=window.AudioContext||window.webkitAudioContext; // Temporary procedural completion cue; intended to be replaced by a recorded stone kchunk asset later.
     if(!AudioCtx)return false;
     try{
-      const ctx=playGeneratedStoneKchunk._ctx||(playGeneratedStoneKchunk._ctx=new AudioCtx());
+      const spatial=objectSfxSpatial(source,objectSfxConfig().puzzleComplete); // Procedural stone confirmation must not bypass its recorded cue's physical origin.
+      if(spatial && spatial.gain<=.002)return true;
+      const ctx=spatial?.position3d ? ensureCombatPositionalContext() : (playGeneratedStoneKchunk._ctx||(playGeneratedStoneKchunk._ctx=new AudioCtx()));
+      if(!ctx)return false;
       ctx.resume?.();
       const now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
       osc.type='square';osc.frequency.setValueAtTime(92,now);osc.frequency.exponentialRampToValueAtTime(46,now+.18);
       filter.type='lowpass';filter.frequency.value=520;
-      gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(.0001,.16*volume),now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);
-      osc.connect(filter).connect(gain).connect(ctx.destination);osc.start(now);osc.stop(now+.25);
+      gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(.0001,.16*volume*(spatial?.gain??1)),now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);
+      osc.connect(filter).connect(gain);
+      const route=spatial?.position3d?connectCombatSpatialDry(ctx,gain,spatial):null; // Reuse the game's directional renderer instead of a second stereo implementation.
+      const wet=route?window.EnvironmentalReverb?.connectWetNode?.(ctx,gain,{area:spatial.areaId,extraWet:spatial.extraWetBoost}):null;
+      if(!route)gain.connect(ctx.destination);
+      let finished=false;
+      const handle={pause(){try{osc.stop();}catch(_){} cleanup();}};
+      function cleanup(){if(finished)return;finished=true;activePositionalCombat.delete(handle);try{osc.disconnect();filter.disconnect();gain.disconnect();route?.dispose?.();wet?.send?.disconnect?.();}catch(_){}}
+      osc.onended=cleanup;
+      osc.start(now);osc.stop(now+.25);
+      if(route)activePositionalCombat.add(handle); // Introduction can silence every world-facing one-shot, including the procedural stone layer.
       return true;
     }catch(_){return false;}
   }
 
   function playObjectSfxKey(key, volumeScale = 1, pitch = 1, source = null) {
     const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
+    const origin = source || toolContactSfxSource(key); // Old tool callbacks now inherit their real reticle origin without changing action/timing APIs.
     const preloaded = cfgEntry?.url ? objectSfxPreloads.get(cfgEntry.url) : null; // Used by the mobile-readable debug snapshot below.
     lastObjectSfxKeyDebug = {
       key,
@@ -1313,10 +1342,10 @@
       preloaded: !!preloaded,
       readyState: preloaded?.readyState ?? null,
       atMs: Math.round(performance.now()),
-      source: source ? { x: source.x, y: source.y, areaId: source.areaId, worldY: source.worldY ?? null, reverse: !!source.reverse } : null, // Copyable mobile proof of a positional object cue.
+      source: origin ? { x: origin.x, y: origin.y, areaId: origin.areaId, worldY: origin.worldY ?? null, reverse: !!origin.reverse } : null, // Copyable mobile proof of a positional object cue.
     };
-    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch, null, source);
-    if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
+    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch, null, origin);
+    if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale,origin);
   }
 
   function stoneBeatAudioContext() {
