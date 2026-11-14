@@ -85,7 +85,7 @@
       THREE, headRoot, headParts: [], itemKey: 'ruinRopeTorch', materialLayers: [],
       resolveAsset: path => path, masteryLevel: () => 5,
     }; // The existing fire runtime only needs these fields; no tool inventory or combat assembly is created.
-    const torch = { root, marker, aura, facingRoot, headRoot, state, ready: false, disposed: false, phase: Math.random() * Math.PI * 2 };
+    const torch = { root, marker, aura, facingRoot, headRoot, state, ready: false, disposed: false, wasVisible: false, phase: Math.random() * Math.PI * 2 };
     active.add(torch);
 
     texturesFor(spec).then(textures => {
@@ -127,7 +127,9 @@
         effects.registerLayer(state, mesh, layer, image); // Recolors the source marker fuel exactly like the held Torch-Flail.
       }
       effects.activateHead(state, spec, textures.map(texture => ({ image: texture.image })), HEAD_UNIT);
+      effects.refreshMetal?.(state, performance.now() + 1200); // Preserve the weapon's ordinary bronze/verdigris surface treatment when available.
       torch.ready = true;
+      lastError = null;
     }).catch(error => {
       if (torch.disposed) return;
       lastError = String(error?.message || error);
@@ -159,7 +161,9 @@
       }
     }
     torch.root.visible = visible; // Distance and story culling also applies to the cheap sprite aura.
-    if (!visible || !torch.ready) return;
+    if (!visible || !torch.ready) { torch.wasVisible = false; return; }
+    if (!torch.wasVisible) window.HobunjiLayeredWeaponEffects?.stepFire?.(torch.state, 0.4); // Kill stale flames when a previously culled rope returns to view.
+    torch.wasVisible = true;
     torch.aura.material.opacity = AURA_OPACITY * (0.94 + 0.06 * Math.sin(performance.now() * 0.006 + torch.phase));
     window.HobunjiLayeredWeaponEffects?.stepFire?.(torch.state, Math.max(0, Math.min(0.05, dt)));
   }
@@ -167,6 +171,7 @@
   function dispose(torch) {
     if (!torch || torch.disposed) return;
     torch.disposed = true;
+    torch.state.dead = true; // Late bronze recolor/image promises cannot reattach materials after a ruin reroll.
     active.delete(torch);
     window.HobunjiLayeredWeaponEffects?.dispose?.(torch.state); // Retires pooled and live flame sprite materials.
     torch.headRoot.traverse(node => {
