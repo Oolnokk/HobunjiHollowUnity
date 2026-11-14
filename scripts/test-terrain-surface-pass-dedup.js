@@ -141,6 +141,16 @@ function checkCompleteBatchBeforeCommit() {
   assert.equal(one.userData.wildernessCliffSurfaceParity, true, 'deferred cliff retains the completed parity marker');
   assert.equal(two.userData.wildernessCliffUvPatchWorldSize, 6, 'deferred cliff retains the authored rock texture scale');
   assert.equal(one.geometry.getAttribute('uv').getX(0), 0.75, 'the combined solver writes the cliff UV corners');
+
+  const priorOne = one.geometry; // Used to verify a throwing central mapper leaves a previously committed mesh untouched.
+  const priorTwo = two.geometry; // Used for the same ownership check on the second mesa.
+  windowMock.HobunjiSurfaceStretchUV.mapGeometry = () => { throw new Error('deliberate unwrap failure'); };
+  let caught = false; // Used to confirm the adapter propagates the exception to its scheduled per-mesh fallback.
+  try { solve([one, two], 'throwing'); } catch (error) { caught = error.message === 'deliberate unwrap failure'; }
+  assert.equal(caught, true, 'central unwrap exception propagates to the safe batch fallback');
+  assert.equal(one.geometry, priorOne, 'throwing batch never replaces the first mesh');
+  assert.equal(two.geometry, priorTwo, 'throwing batch never replaces the second mesh');
+  assert.equal(abandonedClonesDisposed, 4, 'throwing batch disposes both uncommitted mesh clones');
 }
 
 function checkFallbackOwnershipReset() {
