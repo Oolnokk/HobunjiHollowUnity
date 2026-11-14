@@ -52,6 +52,14 @@ for (const [tier, spec] of Object.entries(SPEC)) {
       }
       assert.ok(list.every(p => p.y > route.entryY && p.y < route.exitY), 'platforms stay between their two galleries');
     }
+    for (const p of jump.platforms) {
+      assert(p.fixtureSlot, `${tier}/${theme}: every shaft platform has a central fixture slot`);
+      assert.equal(p.fixtureSlot.x, p.x);
+      assert.equal(p.fixtureSlot.y, p.y);
+      assert.equal(p.fixtureSlot.z, p.z);
+      assert(p.fixtureSlot.w >= .8 && p.fixtureSlot.w <= p.w - .24 + 1e-6, 'fixture fits inside the slab');
+      assert(p.fixtureSlot.d >= .8 && p.fixtureSlot.d <= p.d - .24 + 1e-6, 'fixture does not overhang the slab');
+    }
     const kinds = new Set(jump.platforms.map(p => p.kind));
     if (theme === 'tothal') assert.deepEqual([...kinds], ['ice'], 'tothal: every platform is ice');
     if (theme === 'hronal') {
@@ -65,6 +73,22 @@ for (const [tier, spec] of Object.entries(SPEC)) {
         assert.ok(p.clearTiles.length >= 5, 'entry, exit and stepping tiles stay clear');
       }
     }
+    // Gameplay props replace conflicting hazards without moving their verified jump slabs.
+    const replaceable = jump.platforms.find(p => p.kind === 'pillar' || p.kind === 'plasm') || jump.platforms[0];
+    const originalKind = replaceable.kind;
+    const originalShape = [replaceable.x, replaceable.y, replaceable.z, replaceable.w, replaceable.d];
+    const placed = Jump.assignFixture(jump, replaceable.id, 'ignitionBrazier');
+    assert(placed && jump.ok, `${tier}/${theme}: fixture is safe to install`);
+    assert.equal(placed.occupiedBy, 'ignitionBrazier');
+    assert.deepEqual([replaceable.x, replaceable.y, replaceable.z, replaceable.w, replaceable.d], originalShape, 'never move or shrink a verified jump');
+    if (originalKind === 'pillar' || originalKind === 'plasm') {
+      assert.equal(replaceable.kind, 'plain', 'fixture swaps out conflicting hazards');
+      assert.equal(replaceable.originalKind, originalKind, 'diagnostics identify the removed hazard');
+      assert.equal(replaceable.tiles, undefined, 'no leftover lethal plasm tiles');
+    }
+    assert.equal(Jump.assignFixture(jump, replaceable.id, 'anotherBrazier'), null, 'one slot cannot host two fixtures');
+    assert.equal(Jump.assignFixture(jump, 'nonexistent', 'fixture'), null, 'unknown platforms do not receive props');
+    assert.equal(Jump.assignFixture(jump, replaceable.id, '<script>'), null, 'invalid fixture IDs are ignored');
   }
 }
 // A room is a room: every puzzle room draws from the whole set; fire and ice belong to Tothal only; no back-to-back repeats.
