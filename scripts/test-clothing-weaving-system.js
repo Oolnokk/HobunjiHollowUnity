@@ -207,6 +207,12 @@ assert.equal(api.__test.layersUseSecondaryDye(fineHoodLayers), true, 'Fine Hood 
 const anuriPonchoConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/anuri_poncho.json', 'utf8')); // Non-hood control protects positional back/front sandwich layers from hood-facing semantics.
 const anuriPonchoLayers = api.__test.resolveIconLayerUrls(anuriPonchoConfig, 'mao-ao', 'male'); // Falls back to the cosmetic's shared parts tree just like runtime resolution.
 assert.equal(api.__test.iconLayersForView(anuriPonchoLayers, 'front').length, anuriPonchoLayers.length, 'non-hood back/front layers remain composited together instead of becoming alternate facing views');
+const anuriTrimSprite = anuriPonchoLayers.find(layer => layer.role === 'layer1'); // This real garment's trim image uses B but the palette map calls its role 'overlay'.
+assert.equal(anuriTrimSprite?.paletteKey, 'B', 'loom preview recognizes sprite-level Dye B trim metadata even when the palette role map is incomplete');
+assert.equal(api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig).get(anuriTrimSprite.url), 'B', 'equipped portrait lookup recovers the same trim dye from that authored sprite URL');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, anuriTrimSprite.role, anuriTrimSprite.paletteKey, '#123456', '#fedcba', '#111111'), '#123456', 'Anuri trim patterns use base dye A, not trim dye B');
+assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'base', image: { colors: ['B'] } }, { base: 'A' }), 'A', 'authoritative palette map overrides conflicting image hints');
+assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'unknown', image: { colors: ['A', 'B'] } }, {}), null, 'ambiguous multicolor images do not guess a trim dye');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::basic_headband' }), true, 'basic non-leather headband is cloth-craftable');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::leather_headband' }), false, 'other hats are excluded');
 assert.equal(api.isCraftableCloth({ slot: 'torso', cosmeticId: 'bandolier1' }), false, 'bandolier is excluded');
