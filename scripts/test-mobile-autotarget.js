@@ -70,6 +70,34 @@ targetContext.enabled=true;targetContext.isDesktop=true;
 assert.equal(targetContext.computeAutoTarget(),null,'desktop ranged stays manual');
 assert.equal(targetContext.swapAutoTarget(0),false,'desktop cannot swap an assisted target');
 
+// Verify cycling, wraparound, hostile successor selection, and never replacing desktop lock-on with passive prey.
+targetContext.isDesktop=false; targetContext.enabled=true; targetContext.activeTool='ranged';
+const leftTarget={id:'left-cycle',health:10,x:-20,y:20,areaId:'farm',state:'idle'}; // Leftmost screen candidate.
+const middleTarget={id:'middle-cycle',health:10,x:0,y:20,areaId:'farm',state:'idle'}; // Selected target before player cycling.
+const rightTarget={id:'right-cycle',health:10,x:20,y:20,areaId:'farm',state:'chase'}; // Actual pursuing enemy eligible to inherit a fallen lock.
+targetContext.activeCameraAzimuthRad=()=>0;
+targetContext.hostileObjects=[leftTarget,middleTarget,rightTarget];
+targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.cycleAutoTarget(1),true,'right selects the next visible target');
+assert.equal(targetContext.manualAutoTarget,rightTarget);
+assert.equal(targetContext.cycleAutoTarget(1),true,'cycling at the right edge wraps to the left');
+assert.equal(targetContext.manualAutoTarget,leftTarget);
+assert.equal(targetContext.cycleAutoTarget(-1),true,'cycling at the left edge wraps to the right');
+assert.equal(targetContext.manualAutoTarget,rightTarget);
+targetContext.manualAutoTarget=middleTarget; middleTarget.health=0;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'a pursuing enemy inherits a dead target ahead of idle prey');
+rightTarget.x=150; targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'a chasing enemy is eligible anywhere within lock retention range');
+rightTarget.x=20; targetContext.isDesktop=true;
+vm.runInContext('desktopLockOnActive = true',targetContext);
+targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),rightTarget,'desktop lock-on also reacquires chasing enemies');
+rightTarget.state='idle'; targetContext.manualAutoTarget=middleTarget;
+assert.equal(targetContext.computeAutoTarget(),null,'desktop lock-on releases instead of locking passive prey');
+vm.runInContext('desktopLockOnActive = false',targetContext);
+targetContext.isDesktop=false; targetContext.manualAutoTarget=null;
+assert.equal(targetContext.cycleAutoTarget(0),false,'neutral input never cycles');
+
 const handlers = {}; // Captures handlers attached by the real target-stick installation.
 const timers = new Map(); // Deterministic hold timer callbacks without sleeping.
 let timerId = 0, selectedAngle = null, enabled = true, transitions = 0, buttonHidden = false; // Shared observable gesture results.
@@ -103,6 +131,75 @@ buttonHidden=true;
 assert.equal(transitions,beforeCancel,'combat ending before the hold timer does not enable targeting');
 assert.equal(timers.size,0,'hidden hold gesture releases its timer');
 buttonHidden=false;
+
+// Exercise the actual controller gesture block with simulated selector, binding and stick states.
+const stickStart=game.indexOf('        const targetSelectorOpen ='); // Start of the production controller target-ownership decision.
+const stickEnd=game.indexOf('        if (gamepadState.primeButtonsOnResume)',stickStart); // Excludes unrelated device action dispatch.
+assert(stickStart>=0 && stickEnd>stickStart,'controller target-flick arbitration exists');
+const stickTransitions=[]; // Records real target changes from the production gesture.
+let stickArchOpen=false; // Simulates menu ownership across open/close transitions.
+let stickTargetAvailable=true; // Simulates an unavailable combat lock.
+const stickScope={
+  rightStickOwner:'camera',rx:0.85,ry:0.1,menuOpen:false,farmEditMode:false,
+  controllerTargetHorizontalLatch:0,controllerCameraX:0.85,controllerCameraY:0.1,
+  gamepadState:{primeButtonsOnResume:false},down:new Set(['RightStickRight','RightStickUp']),
+  window:{_desktopSelectionArc:{isOpen:()=>stickArchOpen},SocialActionWheel:{isOpen:()=>false},FurniturePlacer:{isOpen:()=>false}},
+  mobileAutoTargetEnabled:()=>true,findAutoTarget:()=>stickTargetAvailable?{health:10}:null,
+  cycleAutoTarget:dir=>stickTransitions.push(dir),
+}; // Supplies only the production block's required context.
+vm.createContext(stickScope);
+function pollTargetStick(owner='camera') {
+  stickScope.rightStickOwner=owner;
+  vm.runInContext('(()=>{\n'+game.slice(stickStart,stickEnd)+'\n})()',stickScope);
+}
+pollTargetStick();
+assert.deepEqual(stickTransitions,[1],'first right flick cycles once');
+assert.equal(stickScope.down.size,0,'flick does not fire remapped right-stick buttons');
+assert.equal(stickScope.controllerCameraX,0,'flick does not independently turn the camera');
+pollTargetStick();
+assert.deepEqual(stickTransitions,[1],'held stick cannot repeatedly cycle');
+stickScope.rx=-0.85; stickScope.down=new Set(['RightStickLeft']); pollTargetStick();
+assert.deepEqual(stickTransitions,[1],'reversing direction without neutral is still the same gesture');
+stickArchOpen=true; pollTargetStick('selection');
+stickArchOpen=false; pollTargetStick();
+assert.deepEqual(stickTransitions,[1],'closing selection menu cannot trigger a held target flick');
+stickScope.rx=0; pollTargetStick();
+stickScope.rx=-0.85; stickScope.down=new Set(['RightStickLeft']); pollTargetStick();
+assert.deepEqual(stickTransitions,[1,-1],'neutral then left flick switches target');
+stickScope.rx=-0.3; stickScope.down=new Set(['RightStickLeft']); pollTargetStick();
+assert.equal(stickScope.down.size,0,'releasing the stick cannot trigger a remapped input while it crosses the threshold');
+stickScope.rx=0; pollTargetStick();
+stickTargetAvailable=false; stickScope.rx=0.85; stickScope.down=new Set(['RightStickRight']); stickScope.controllerCameraX=0.85;
+pollTargetStick();
+assert(stickScope.down.has('RightStickRight'),'no target leaves original stick binding available');
+assert.equal(stickScope.controllerCameraX,0.85,'no target leaves camera controls intact');
+
+// The actual wheel handler must only cycle when no held selector/menu owns scrolling.
+const wheelStart=game.indexOf('      function handleGameWheel('); // Game wheel priority/target selection function.
+const wheelEnd=game.indexOf("      window.addEventListener('wheel'",wheelStart); // End before DOM listeners.
+assert(wheelStart>=0 && wheelEnd>wheelStart,'wheel router exists');
+const wheelCycles=[]; // Captures wheel-driven target direction.
+let wheelZoomCalls=0; // Counts normal zoom fallback for selectors that block target selection.
+const wheelScope={
+  window:{_desktopSelectionArc:{heldSelectionKind:()=>null,isOpen:()=>false},SocialActionWheel:{isOpen:()=>false},FurniturePlacer:{isOpen:()=>false}},
+  menuOpen:false,farmEditMode:false,isDesktop:true,
+  potionAction3Press:{down:false},desktopHoldKeys:{q:{down:false},e:{down:false},c:{down:false}},
+  cutscenePreviewActive:false,dialogueZoomActive:()=>false,mobileAutoTargetEnabled:()=>true,
+  cycleAutoTarget:direction=>wheelCycles.push(direction),cameraModeConfig:()=>({}),activeCameraMode:'default',
+  desktopControlsConfig:()=>({wheelZoomStep:0.05}),setCameraZoomScale:()=>{wheelZoomCalls++;},s_zoomScale:1,
+}; // Minimal test of the real wheel logic, not a reimplementation.
+vm.createContext(wheelScope);
+vm.runInContext(game.slice(wheelStart,wheelEnd),wheelScope);
+const wheelEvent=(deltaY)=>({deltaY,preventDefault(){}}); // Supplies synthetic mouse wheel direction.
+assert.equal(wheelScope.handleGameWheel(wheelEvent(120),false),true);
+assert.equal(wheelScope.handleGameWheel(wheelEvent(-120),false),true);
+assert.deepEqual(wheelCycles,[1,-1],'wheel direction cycles targets while locked');
+wheelScope.window._desktopSelectionArc.isOpen=()=>true;
+wheelScope.handleGameWheel(wheelEvent(120),false);
+assert.deepEqual(wheelCycles,[1,-1],'open selection arch prevents target cycling');
+assert.equal(wheelZoomCalls,1,'blocked target cycling follows the preexisting zoom fallback');
+assert.equal(wheelScope.handleGameWheel(wheelEvent(120),true),false,'capture-phase wheel does not double-consume target cycling');
+console.log('controller target cycling, wheel precedence and hostile succession checks passed');
 
 console.log('mobile autotarget preference, acquisition, switching, and gesture checks passed');
 
