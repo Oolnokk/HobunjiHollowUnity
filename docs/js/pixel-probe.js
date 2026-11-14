@@ -704,6 +704,8 @@
     if (sleeping?.begins) lines.push(`Bed lie-down: ${JSON.stringify(sleeping)}`);
     const npcBedPoses = window.BedLiePose?.npcDebug?.(window._npcWalkers || []) || []; // Real NPC mattress height, full-body blend and x-ray are inspectable on mobile.
     if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
+    const npcYawns = window.NpcYawnRest?.debugSnapshot?.(); // On-demand, copyable NPC yawn/buff/voice/Koma diagnostics for mobile testers.
+    if (npcYawns) lines.push(`NPC yawns: ${JSON.stringify(npcYawns)}`);
     const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
     if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
     const spouseKiss = window.SpouseKissMotion?.diagnostics?.(); // Mobile-visible contact, reach, cancellation and height-solver readout.
