@@ -390,7 +390,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261114potionAudit1"></script>
+  <script src="js/alchemy-system.js?v=20261114inventoryPerf1"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
@@ -2800,7 +2800,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20261114packbooks1"></script>
-  <script src="js/sprite-recolor.js?v=20261114potionStacks2"></script>
+  <script src="js/sprite-recolor.js?v=20261114inventoryPerf1"></script>
   <script src="js/object-sprite-catalog.js?v=20261114potionAudit2"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
