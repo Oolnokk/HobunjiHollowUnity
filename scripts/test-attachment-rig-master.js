@@ -51,7 +51,7 @@ assert.strictEqual(profiles.characters['mao-ao::male'].handShoulderRule.position
 assert.strictEqual(profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'Mao-ao male posterior must sit 20% of portrait height below its portrait-plane bottom');
 assert.strictEqual(profiles.characters['mao-ao::female'].anatomy.portraitScale, 0.8, 'latest authored Mao-ao female body scale must remain authoritative');
 assert.strictEqual(profiles.characters['mashtzarr::male'].anatomy.portraitScale, 1.18, 'latest authored Mashtzarr male body scale must remain authoritative');
-assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.6813045758748404, 'August 28 Engh-sho shoulder perch must remain authoritative');
+assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.7000103424366998, 'November 14 authored Engh-sho perch matches the right-hand shoulder target');
 
 const expectedPosteriorFloorPercents = {
   'tletingan::male': -5.5,
@@ -119,7 +119,7 @@ old.creatures['voorg-ass'].anchors.saddle.position = { x: -0.0016655977917167481
 const repaired = guard.reconcileProfiles(old);
 assert.strictEqual(repaired.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'zero v9 posterior must repair to the 20%-below-portrait calibration');
 assert(Math.abs(repaired.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'double-scaled v1 shoulder must be repaired to exact v9 authoring');
-assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.2006533796199832, 'stale v9 perch must be repaired');
+assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.22929652083051758, 'stale v9 perch must be repaired to the current right-hand shoulder target');
 assert.strictEqual(repaired.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'stale v9 grip must be repaired');
 for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkaoii', 'puktuk', 'voorg-ass']) {
   assert.deepStrictEqual(repaired.creatures[kind].anchors.saddle.position, profiles.creatures[kind].anchors.saddle.position, `${kind} superseded default saddle must migrate to the October 17 authoring`);
