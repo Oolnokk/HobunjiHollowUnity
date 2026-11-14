@@ -298,7 +298,7 @@
   function probeAfterBase() {
     // The distant static-scene owner shares this already-depth-populated render slot.
     // It performs its own bounded WebGL2 queries without touching actor state.
-    try { window.DistantSceneryViewCull?.probeAfterBase?.(currentRenderer,currentCamera,currentScene); }
+    try { window.DistantSceneryViewCull?.probeAfterBase?.(currentRenderer || window.__hobunjiGameRenderer,currentCamera,currentScene); }
     catch (_) { window.DistantSceneryViewCull?.reset?.(); } // Optional queries fail open.
     if (!enabled || !stats.gpuAvailable || !currentRenderer || !currentCamera || !currentScene || !active.length) return;
     const candidates=active.filter(x=>x.queryAllowed && !x.state.pending && stats.frames >= x.state.nextProbeFrame);
