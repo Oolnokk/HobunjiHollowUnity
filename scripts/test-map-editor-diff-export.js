@@ -8,6 +8,10 @@ const script = fs.readFileSync('docs/js/map-editor-export-fixes.js', 'utf8'); //
 const html = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8'); // Ensures the controller is loaded by the shipped editor.
 new vm.Script(script, { filename: 'map-editor-export-fixes.js' });
 assert(html.includes('<script src="../../js/map-editor-export-fixes.js?'), 'Map Editor must load the diff controller');
+const buildingDoor = fs.readFileSync('docs/js/building-door.js', 'utf8'); // Shared game/editor door module must not inject a second exporter.
+assert(!buildingDoor.includes('data-map-editor-export-fixes'), 'Building Door must not inject duplicate exporter handlers');
+assert.equal((html.match(/<script src="\.\.\/\.\.\/js\/map-editor-export-fixes\.js\?/g) || []).length, 1, 'Map Editor must load exactly one export controller');
+
 
 const original = {
   schema: 'hobunji_map.v1', id: 'map_hobunji_town', name: 'Town', category: 'exterior',
