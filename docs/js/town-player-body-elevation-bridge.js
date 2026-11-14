@@ -321,6 +321,7 @@
       }
     }
     if (Number.isFinite(top)) return top;
+    if (extensionType === 'balcony') return NaN; // A metadata-only rooftop is not a real walkable surface.
     const groundY = finite(piece?.base?.groundY, 0);
     if (extensionType === 'porch') {
       const tile = Math.max(0.001, finite(piece?.tileSize, 1));
@@ -353,6 +354,7 @@
         const localY = finite(cell.y, 0) - minY;
         const rotated = rotateCell(localX, localY, width, depth, options.rotationDeg || 0);
         const topLocalY = topForExtensionCell(piece, cell, extensionType);
+        if (!Number.isFinite(topLocalY)) continue; // Never register an invisible balcony if its top faces were not exported.
         const id = registerBox({
           minX: finite(gridX, 0) + rotated.x,
           maxX: finite(gridX, 0) + rotated.x + 1,
@@ -375,12 +377,14 @@
     for(const balcony of piece?.balconies||[]){
       const hatch=balcony?.access?.openingTile; // One interior ladder authorizes access without opening a ground-level route.
       if(!hatch||balcony.access?.type!=='interiorFurniture')continue;
+      if(!balcony.cells?.some(c=>c.x===hatch.x&&c.y===hatch.y))continue; // The hatch must lie inside the authored deck.
+      const hatchDeckY=topForExtensionCell(piece,hatch,'balcony'); // Uses the actual serialized top face.
+      if(!Number.isFinite(hatchDeckY))continue;
       const localX=finite(hatch.x,NaN)-minX, localY=finite(hatch.y,NaN)-minY;
       if(!Number.isFinite(localX)||!Number.isFinite(localY))continue;
       const rotated=rotateCell(localX,localY,width,depth,options.rotationDeg||0);
       const col=finite(gridX,0)+rotated.x,row=finite(gridZ,0)+rotated.y;
-      const topY=elevationY+(balcony.heightMode==='wall'
-        ? groundLocalY+finite(piece.base?.height,1.4) : finite(balcony.height,groundLocalY+1.4));
+      const topY=elevationY+hatchDeckY; // Exact physical deck top; no inferred teleport height from metadata.
       const id=piece.id+':'+gridX+','+gridZ+':'+balcony.id;
       roofHatches.set(id,{col,row,topY,owner:group,area:options.area||'town',mapId:balcony.access.mapId,balconyId:balcony.id}); // Explicit interior exit must match both this room and its exact balcony.
     }
