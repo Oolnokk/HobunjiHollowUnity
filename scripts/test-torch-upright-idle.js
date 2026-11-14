@@ -100,8 +100,11 @@ const context = vm.createContext({
 const load = path => vm.runInContext(read(path), context, { filename: path }); // Each call evaluates the actual shipped module.
 load('docs/js/tool-world-upright.js');
 const upright = window.ToolWorldUpright;
+assert.equal(upright.apply(holder, plane, THREE, -1), true);
+assert(upDirection(plane).y < -.99999, 'signed-scale hierarchy keeps the downward-authored torch flame pointing up');
 assert.equal(upright.apply(holder, plane, THREE), true);
-assert(upDirection(plane).y > .99999, 'signed-scale hierarchy keeps the PNG tip upward');
+assert(upDirection(plane).y > .99999, 'other world-upright artwork retains its default +Y tip');
+assert.equal(upright.apply(holder, plane, THREE, -1), true); // Return to the torch's authored -Y business end before testing locomotion.
 assert.equal(upright.apply(holder, node(root), THREE), false, 'unrelated visual cannot rotate the held tool');
 const zeroScale = node(holder, [1, 0, 1]);
 assert.equal(upright.apply(holder, zeroScale, THREE), false, 'singular transform is safely rejected');
@@ -127,14 +130,14 @@ holder.updateMatrixWorld();
 let snapshot = window.WeaponToolStances.debugSnapshot();
 assert.equal(snapshot.stanceApplied, true, 'torch starts in its dedicated idle stance');
 assert.equal(snapshot.worldUprightApplied, true, 'torched PNG receives the world-up correction');
-assert(renderedUp.y > .99999, 'rendered idle pose points up, even through mirrored scales');
+assert(renderedUp.y < -.99999, 'rendered torch flame points up, even through mirrored scales');
 for (let i = 0; i < 4; i++) {
   time += 16;
   holder.quaternion.setFromAxisAngle(axis(0, 0, 1), .3 + i * .22); // Walking/turning changes the ordinary holder orientation.
   holder.updateMatrixWorld();
   snapshot = window.WeaponToolStances.debugSnapshot();
   assert.equal(snapshot.stanceApplied, true, 'walking must not activate the ordinary tool fallback');
-  assert(renderedUp.y > .99999, 'torch remains upright throughout locomotion');
+  assert(renderedUp.y < -.99999, 'torch flame remains upright throughout locomotion');
 }
 holder.userData.authoredToolActionActive = true;
 holder.updateMatrixWorld();
@@ -153,4 +156,6 @@ active.slot = 'adventuring';
 holder.updateMatrixWorld();
 assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'torch never inherits a previous tool motion cooldown');
 
-console.log('ok torch upright idle: signed scales, real actions, walking, tool switching');
+assert.match(read('docs/js/weapon-tool-stances.js'), /torchIdle \? -1 : 1/, 'runtime selects the torch-specific authored tip');
+assert.match(read('docs/tools/attack-animation-editor/index.html'), /currentToolKey === 'torch' \? -1 : 1/, 'editor preview selects the same authored tip');
+console.log('ok torch -Y flame upright idle: signed scales, generic sprites, real actions, walking, tool switching');
