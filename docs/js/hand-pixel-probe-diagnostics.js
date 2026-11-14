@@ -46,7 +46,8 @@
     if (xray) {
       lines.push(
         `Held x-ray: mode=${xray.mode || '-'} heldMeshes=${xray.heldMeshes ?? '-'} groundMeshes=${xray.groundMeshes ?? '-'} `
-        + `overlays=${xray.selectiveOverlays ?? '-'} depthReplays=${xray.nonGroundDepthReplays ?? '-'}/${xray.groundDepthRestores ?? '-'}`
+        + `overlays=${xray.selectiveOverlays ?? '-'} depthReplays=${xray.nonGroundDepthReplays ?? '-'}/${xray.groundDepthRestores ?? '-'} `
+        + `nearWater=${xray.nearbyTintCovers ?? '-'} farWaterSkipped=${xray.distantTintCoversSkipped ?? '-'}`
       );
     } else {
       lines.push('Held x-ray: module missing');
