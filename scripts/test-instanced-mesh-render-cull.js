@@ -153,6 +153,34 @@ assert.equal(nearWall.visible, true, 'disabling restores immediately');
 assert.equal(view.suspendForRender(scene, camera), null);
 view.setEnabled(true);
 
+// Distant scenery and instancing share one render finally: no early return
+// or failed instanced-mesh calculation may strand hidden mountains.
+const distantSceneryRock = { visible:true }; // Simulated rock affected only by the distant scenery owner.
+let sceneryRestoreCount = 0; // Counts the restore callbacks provided to the existing instanced render scope.
+let sceneryResetCount = 0; // Counts fail-open resets if the optional distant culler itself throws.
+win.DistantSceneryViewCull = {
+  suspendForRender() {
+    distantSceneryRock.visible = false;
+    return () => { distantSceneryRock.visible = true; sceneryRestoreCount++; };
+  },
+  reset() { distantSceneryRock.visible = true; sceneryResetCount++; },
+};
+const earlyReturnRestore = view.suspendForRender(scene, { ...camera, matrixWorldInverse:null });
+assert.equal(distantSceneryRock.visible,false,'far scenery may be hidden before the instanced culler checks its camera');
+assert.equal(typeof earlyReturnRestore,'function','missing camera matrices must retain the scenery restore');
+earlyReturnRestore();
+assert.equal(distantSceneryRock.visible,true,'early exit restores hidden rocks');
+
+const trackedBounds = win.InstancedMeshBounds; // Production instanced-bounds object restored before the rest of the suite.
+win.InstancedMeshBounds = { ...trackedBounds, forEachTracked(cb) { cb(farWall); throw Error('injected instanced cull failure'); } };
+assert.equal(view.suspendForRender(scene,camera),null,'failed instanced iteration must fail open');
+assert.equal(farWall.visible,true,'failed iteration restores any instanced visuals it already hid');
+assert.equal(distantSceneryRock.visible,true,'failed iteration also restores mountain visuals');
+assert.equal(sceneryResetCount,0,'healthy distant culling is not needlessly reset');
+assert.equal(sceneryRestoreCount,2,'both early-return and exception paths invoke their restore callback');
+win.InstancedMeshBounds=trackedBounds;
+delete win.DistantSceneryViewCull;
+
 // ── GrassBillboardRenderChunks ──────────────────────────────────────────────
 new Function('window', grassSource)(win);
 const chunks = win.GrassBillboardRenderChunks;
