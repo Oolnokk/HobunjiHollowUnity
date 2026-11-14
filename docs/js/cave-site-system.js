@@ -410,7 +410,7 @@
     return [...cuts.values()];
   }
 
-  function findMineableSeparator(mapData, reservedKeys = null, criticalKeys = []) {
+  function findMineableSeparator(mapData, reservedKeys = null, criticalKeys = [], requiredHiddenKey = null) {
     const tiles = floorTiles(mapData);
     const floorSet = new Set(tiles.map(tile => tileKey(tile.col, tile.row))); // Full connected cave footprint used by cut testing.
     const exitCol = Number(mapData?.exitCol) || 0, exitRow = Number(mapData?.exitRow) || 0;
@@ -427,7 +427,8 @@
       const usable = reachable - cut.keys.length;
       if (near.size >= usable) continue;
       const far = new Set([...floorSet].filter(candidate => !blocked.has(candidate) && !near.has(candidate))); // Sealed component revealed after mining through.
-      if (criticalKeys.some(key => far.has(key) || blocked.has(key))) continue; // No den nest, creature spawn or ruin doorway may be gated behind optional rock.
+      if (criticalKeys.some(key => far.has(key) || blocked.has(key))) continue; // Preserve mandatory nest/inhabitant objectives on the entrance side.
+      if (requiredHiddenKey && !far.has(requiredHiddenKey)) continue; // Optional hidden-ruin mode demands an actual wall between the entrance and its authored threshold.
       const farRatio = far.size / Math.max(1, usable); // Portion behind the wall; rejects trivial closets and most-of-map lockouts.
       if (far.size < MIN_HIDDEN_TILES || farRatio < MIN_HIDDEN_RATIO || farRatio > MAX_HIDDEN_RATIO) continue;
       const mid = cut.cells[Math.floor(cut.cells.length / 2)];
@@ -523,19 +524,24 @@
     return candidates.filter(tile => hidden.has(tileKey(tile.col, tile.row)));
   }
 
-  function installMineableSeparator(mapData, rng, blockedKeys, plan) {
+  function installMineableSeparator(mapData, rng, blockedKeys, plan, tryHideRuin = false) {
     const critical = []; // Required encounter/transition centers that must remain reachable without mining the wall.
     if (mapData.nestCol != null && mapData.nestRow != null) {
       for (let dr = 0; dr < 2; dr++) for (let dc = 0; dc < 2; dc++) critical.push(tileKey(mapData.nestCol + dc, mapData.nestRow + dr));
     }
     for (const spawn of mapData.creatureSpawns || []) critical.push(tileKey(spawn.col, spawn.row));
-    if (plan.ruinEntrance) critical.push(tileKey(plan.ruinEntrance.col, plan.ruinEntrance.row));
+    const ruinKey = plan.ruinEntrance ? tileKey(plan.ruinEntrance.col, plan.ruinEntrance.row) : null; // Existing full-sized ruin threshold, not a newly improvised miniature doorway.
     // The outer rim is NOT a competing placed feature: every corridor cut has
     // solid rock at both ends, so including rim keys in distance clearance
     // rejected virtually all realistic chokepoints (the old tests lacked rims).
     const walkable = new Set(floorTiles(mapData).map(tile => tileKey(tile.col, tile.row))); // Authoritative passable cave-floor coordinates.
     const reservations = new Set([...blockedKeys].filter(key => walkable.has(key))); // Dynamic objectives/ores only; protect those without penalizing adjacent cave walls.
-    const separator = findMineableSeparator(mapData, reservations, critical);
+    // Prefer concealing a properly carved ruin portal when the rock cut genuinely
+    // separates it from the player. Otherwise keep the old near-side ruin safety.
+    const hiddenRuinCut = tryHideRuin && ruinKey
+      ? findMineableSeparator(mapData, reservations, critical, ruinKey) : null; // Candidate must have the existing doorway in its unreachable far component.
+    if (ruinKey && !hiddenRuinCut) critical.push(ruinKey);
+    const separator = hiddenRuinCut || findMineableSeparator(mapData, reservations, critical);
     if (!separator) return false;
     const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
     const thickWall = thickenSeparator(separator, mapData.oreRocks || [], reservations); // Shared five-layer blastable barrier for every cave history.
@@ -1002,12 +1008,16 @@
     const wantsRockPuzzle = contents !== TYPES.PUZZLE_CAVE && awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR
       && makeRng(profile.signature + ':puzzle-rock-roll')() < ROCK_PUZZLE_CHANCE; // Independent of ordinary cave contents and inhabitants.
     if (contents !== TYPES.PUZZLE_CAVE && (wantsRockPuzzle || contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
-      installMineableSeparator(mapData, extensionRng, blockedKeys, plan);
+      const hideRuin = contents === TYPES.RUIN_ENTRANCE && !!plan.ruinEntrance
+        && makeRng(`${profile.signature}:secret-ruin-roll`)() < 0.65; // Stable hidden-ruin choice, independent of ordinary cave encounter/loot rolls.
+      installMineableSeparator(mapData, extensionRng, blockedKeys, plan, hideRuin);
     }
+    const hiddenRuin = !!(plan.separator && plan.ruinEntrance
+      && plan.separator.farKeys.includes(tileKey(plan.ruinEntrance.col, plan.ruinEntrance.row))); // The real ruin door itself already fulfills the destructible wall's discovery promise.
     // Reserve the secret destination BEFORE mushrooms, ore, bodies or bandits take its floor.
     // Hidden Puzzle Caves are the existing 80% roll; every other mined partition earns
     // a full chest rather than relying on mundane resource rolls beyond the rock wall.
-    if (wantsRockPuzzle && plan.separator) {
+    if (wantsRockPuzzle && plan.separator && !hiddenRuin) {
       const far = new Set(plan.separator.farKeys); // Only the rock wall's hidden side can contain the secret doorway.
       const rocks = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col,rock.row)));
       const wall = plan.separator.cells; // Existing five-layer mining barrier protects the puzzle entrance.
@@ -1037,7 +1047,7 @@
         blockedKeys.add(tileKey(tile.col,tile.row));
       }
     }
-    if (plan.separator && contents !== TYPES.TRAPPED_CACHE && !plan.puzzleDoor) {
+    if (plan.separator && contents !== TYPES.TRAPPED_CACHE && !plan.puzzleDoor && !hiddenRuin) {
       const rewardRng = makeRng(`${profile.signature}:hidden-separator-cache`); // Independent stream keeps original cave loot and encounter rolls reproducible.
       if (!addCacheLayer(mapData, rewardRng, extensionTiles(allTiles, plan), blockedKeys, plan, true)) {
         discardUnrewardedSeparator(mapData, blockedKeys, plan); // Prefer no wall at all over blasting through stone to an empty chamber.
@@ -1142,7 +1152,7 @@
       shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
-      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:plan.puzzleDoor?'puzzle_cave':plan.cache?'cache':null } : null,
+      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:hiddenRuin?'ruin_entrance':plan.puzzleDoor?'puzzle_cave':plan.cache?'cache':null } : null,
     };
     plansByMapId.set(String(mapId), plan);
     window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.contents}+${profile.inhabitant} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
