@@ -31064,6 +31064,7 @@
         zoneLayouts: _zoneLayouts,
         zoneScenes: _zoneScenes,
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getPlayerTerrainSpeedMul: () => tileSpeedAt(player.x, player.y), // Stationary companion speed uses the player's actual bridge-aware terrain movement.
         tileSurfaceYInArea,
         activeSurfaceYAtWorld,
         // HobunjiAmbientBgs (js/ambient-biome-audio.js) reads the area grid,
