@@ -1,5 +1,24 @@
 # Performance investigation log
 
+## 14 Nov 2026 (later): outdoor JS, not just graphics; failed NPC path searches retried forever
+
+After the sky/grass/replay pass the report was still ~17 FPS outdoors. Per-area CPU profiles (headless, same world):
+the game loop's JavaScript was **45 ms/frame in the western slope vs 23 ms in a building interior** (scene objects:
+4,033 vs 544; town 3,043). About half of that gap is render-side JS (25 vs 14 ms: more objects per traversal, more
+replay work); the largest single non-render item in that window was NPC pathfinding, ~11 ms/frame, absent indoors.
+
+Logging every grid-path start over 150 s in the wilderness found two walkers retrying impossible searches:
+
+- `kaboku_kunji`, simulated in **town while the player was in the wilderness**, failed a path to the carpenter's exit
+  (22,11) 48 times, **~33 ms per failed search** (a failed swept A* explores its whole bounded box).
+- The Nohuknuk stood idle failing a search to a target 150 tiles away (180,104) 136 times, ~5 ms each.
+
+`npc-pathfinding.js` cached a failure for 750 ms keyed on target + start tile, so a walker that is standing still
+repeated the full failed search every 0.75 s forever. Now each further failure with the same key doubles the wait
+(750 ms -> 1.5 s -> ... capped at 12 s); moving to another tile, a new target or any success resets it.
+`debugSnapshot().pathFailureBackoffs` counts lengthened waits. `scripts/test-npc-collision-aware-pathing.js` steps a
+fake clock: the old code re-ran the search 53 times in 40 s of standing still, the new code 8 or fewer.
+
 ## 14 Nov 2026: costs only outdoor maps pay (sky, grass, replays, cave entrances)
 
 Report: never above ~16 FPS outdoors, fine inside caves and buildings. So the target was work that (1) only

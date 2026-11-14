@@ -355,8 +355,10 @@
     };
   }
 
-  function groundKind(object) {
-    const kind = surfaceKindForObject(object);
+  // The optional `kind` lets classifyObject() pass one surfaceKindForObject()
+  // result to all three predicates; each full classification walks the
+  // object's ancestors, and the periodic rescan runs it for every mesh.
+  function groundKind(object, kind = surfaceKindForObject(object)) {
     return surfaceComposer?.getGroundXrayKind
       ? surfaceComposer.getGroundXrayKind(kind)
       : kind === 'path' ? 'road'
@@ -364,15 +366,13 @@
           : kind === 'walkable-floor' ? 'interior-floor' : null;
   }
 
-  function isTintCover(object) {
-    const kind = surfaceKindForObject(object);
+  function isTintCover(object, kind = surfaceKindForObject(object)) {
     return surfaceComposer?.isTintableCover
       ? surfaceComposer.isTintableCover(kind)
       : kind === 'water' || kind === 'slush';
   }
 
-  function isProtectedCover(object) {
-    const kind = surfaceKindForObject(object);
+  function isProtectedCover(object, kind = surfaceKindForObject(object)) {
     return surfaceComposer?.isProtectedCover
       ? surfaceComposer.isProtectedCover(kind)
       : kind === 'water' || kind === 'slush' || kind === 'snow' || kind === 'billboard-grass';
@@ -595,8 +595,9 @@
       if (!hasLayer(object, FRONT_PORTRAIT_MASK_LAYER)) object.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
       frontPortraitRegistry.add(object);
     }
-    if (isProtectedCover(object)) protectedCoverRegistry.add(object);
-    if (isTintCover(object)) {
+    const surfaceKind = surfaceKindForObject(object); // Computed once for the three surface predicates below.
+    if (isProtectedCover(object, surfaceKind)) protectedCoverRegistry.add(object);
+    if (isTintCover(object, surfaceKind)) {
       tintCoverRegistry.add(object);
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
     }
@@ -607,7 +608,7 @@
         waterMeshCount++;
       }
     }
-    const kind = groundKind(object);
+    const kind = groundKind(object, surfaceKind);
     if (kind) markGroundMesh(object, kind);
     if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object); // Clip only upward cave-shell floor triangles in the depth rebuild, preserving walls and ceiling as real occluders.
   }

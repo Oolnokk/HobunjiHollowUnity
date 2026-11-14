@@ -122,6 +122,40 @@ assert.equal(window.NpcPathfinding.debugSnapshot().pathFailuresSkipped, skippedB
 walker.root.position.x = 1.5; walker.root.position.z = 1.5;
 assert.equal(walker._tryStartGridPath({ c: 3, r: 1, routeId: 'test' }), true, 'a reachable target is not held back by an earlier failure');
 
+// A walker standing still with a permanently unreachable target backs off
+// exponentially instead of repeating the full failed search every 750 ms.
+{
+  const realNow = Date.now; let clock = 1e9; Date.now = () => clock;
+  try {
+    let attempts = 0; // Every call that was not answered from the failure cache re-ran the fallback search.
+    const searches = () => attempts - window.NpcPathfinding.debugSnapshot().pathFailuresSkipped;
+    const tryStart = walker._tryStartGridPath.bind(walker);
+    walker._tryStartGridPath = t => { attempts++; return tryStart(t); };
+    const target = { c: 4, r: 4, routeId: 'backoff' };
+    const retryTimes = [];
+    let last = searches();
+    walker._tryStartGridPath(target); // First failure: 750 ms wait.
+    for (let t = 0; t <= 40000; t += 50) {
+      clock = 1e9 + t;
+      walker._tryStartGridPath(target);
+      const now = searches();
+      if (now !== last) { retryTimes.push(t); last = now; }
+    }
+    const gaps = retryTimes.map((t, i) => t - (i ? retryTimes[i - 1] : 0));
+    assert.ok(gaps.length >= 3, 'the walker still retries now and then: ' + gaps);
+    assert.ok(gaps[1] > gaps[0] && gaps[2] > gaps[1], 'each repeat failure waits longer: ' + gaps);
+    assert.ok(Math.max(...gaps) <= 12000 + 50, 'the wait is capped: ' + gaps);
+    assert.ok(retryTimes.length <= 8, 'about 40 s of standing still costs a handful of searches, not ~53: ' + retryTimes.length);
+    walker.root.position.x = 2.5; walker.root.position.z = 2.5;
+    const before = searches();
+    walker._tryStartGridPath(target);
+    assert.equal(searches(), before + 1, 'moving resets the backoff: the new tile searches at once');
+    walker.root.position.x = 1.5; walker.root.position.z = 1.5;
+    assert.equal(walker._tryStartGridPath({ c: 3, r: 1, routeId: 'test' }), true, 'a reachable target is still found immediately');
+    walker._tryStartGridPath = tryStart;
+  } finally { Date.now = realNow; }
+}
+
 const chairEscapeWalker = {
   area: 'interior',
   rec: { id: 'chair_escape_npc' },

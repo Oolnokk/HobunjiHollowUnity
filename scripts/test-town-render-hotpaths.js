@@ -382,7 +382,7 @@ assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.unifor
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
   'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
-assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
+assert.match(heldRender, /function isProtectedCover\(object[^)]*\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
   'held depth classification delegates protected-cover decisions to the shared composer');
 assert.match(heldRender, /surfaceClassificationHints\.baseGround = data\.hachutuGroundRoot === true/,
   'Hachutu floor-root meshes are passed into the shared ground-surface classifier');
