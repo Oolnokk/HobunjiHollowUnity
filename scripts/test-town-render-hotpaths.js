@@ -511,7 +511,7 @@ assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 
 
 const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
-  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_TILE_EDGE_EPSILON = 0.0001, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
+  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_TILE_EDGE_EPSILON = 0.0001, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18, XRAY_VISUAL_GROUND_TOLERANCE = 1.26;
   let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
