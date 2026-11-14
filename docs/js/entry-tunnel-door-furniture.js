@@ -111,11 +111,15 @@
   function rotateAuthoredTileCenter(piece, bldgMinC, bldgMinR, cell, opts = {}) {
     const src = normalizePiece(piece);
     const core = src?.footprint?.cells || [];
+    const ext = src?.footprint?.extensions || {};
+    const placementCells = src?.placementOrigin === 'fullFootprint'
+      ? core.concat(ext.entryTunnels || [], ext.tallEntryTunnels || [], ext.chimneys || [], ext.porches || [], ext.porchStairs || [], ext.railings || [])
+      : core; // Matches HousePieceGen's full-envelope origin so a porch never shifts the door away from its visible jambs.
     const gc = Math.floor((Number(src?.gridSize) || 18) / 2);
-    const minCX = core.length ? Math.min(...core.map(item => Number(item.x))) : gc;
-    const minCZ = core.length ? Math.min(...core.map(item => Number(item.y))) : gc;
-    const maxCX = core.length ? Math.max(...core.map(item => Number(item.x))) : gc;
-    const maxCZ = core.length ? Math.max(...core.map(item => Number(item.y))) : gc;
+    const minCX = placementCells.length ? Math.min(...placementCells.map(item => Number(item.x))) : gc;
+    const minCZ = placementCells.length ? Math.min(...placementCells.map(item => Number(item.y))) : gc;
+    const maxCX = placementCells.length ? Math.max(...placementCells.map(item => Number(item.x))) : gc;
+    const maxCZ = placementCells.length ? Math.max(...placementCells.map(item => Number(item.y))) : gc;
     let x = Number(bldgMinC) + (Number(cell.x) - minCX) + PLACEMENT.x;
     let z = Number(bldgMinR) + (Number(cell.y) - minCZ) + PLACEMENT.z;
     const rotationDeg = Number(opts?.rotationDeg) || 0; // Used to match HousePieceGen.buildGroupFromPiece's authored-building rotation.
@@ -156,6 +160,7 @@
       }
       const gc = Math.floor((Number(src?.gridSize) || 18) / 2); // Converts serialized local face geometry back into its author's grid cells.
       const elevationY = Number.isFinite(Number(opts?.elevationY)) ? Number(opts.elevationY) : 0;
+      const thresholdY = Number(src?.entryDoorRise) || 0; // Raises only explicitly authored entrance doors onto their real porch sill.
       return [...mouths.values()].filter(mouth => Number.isFinite(mouth.minX) && Number.isFinite(mouth.minZ)).map(mouth => {
         const horizontal = mouth.side === 'north' || mouth.side === 'south';
         const widthTiles = Math.max(1, Math.round(horizontal ? mouth.maxX - mouth.minX : mouth.maxZ - mouth.minZ)); // The mouth run's REAL transverse span, not its tunnel depth.
@@ -165,7 +170,7 @@
         return {
           key: `authored:mouth:${mouth.key}`,
           name: paired ? `${DOOR_OBJECT_NAME}_pair_${mouth.key}` : `${DOOR_OBJECT_NAME}_${mouth.key}`,
-          x: transformed.x, y: elevationY + PLACEMENT.y, z: transformed.z,
+          x: transformed.x, y: elevationY + PLACEMENT.y + thresholdY, z: transformed.z,
           rotationDeg: (sideRotationDeg(mouth.side) + transformed.rotationDeg) % 360,
           side: mouth.side, localTile: mouth.localTile,
           worldTile: { col: Math.floor(transformed.x), row: Math.floor(transformed.z) },
