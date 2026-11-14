@@ -375,6 +375,8 @@
     if (saved.source === 'locale') {
       if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales())) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
+      if (!live && (saved.category === 'ruin_entrance'
+          || (saved.category === 'great_fey_shrine' && saved.localeId !== 'locale_banubu_shrine'))) return null; // A site that vanished in the Shift cannot keep its old waypoint.
       if (live?.shiftSecret && !localeIsDiscovered(live, _loadDiscoveredLocales())) return null; // A waypoint cannot reveal a new year's undiscovered secret.
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
