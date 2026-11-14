@@ -166,6 +166,10 @@ async function main() {
   const skeeriHide = windowStub.AnimalHides.groupsFor('skeeriHide',corpseInventory.skeeriHide)[0].hideRecord;
   assert.equal(skeeriHide.appearance.baseColor,skeeriPalette.body,'hide remembers the bird\'s fur');
   assert.equal(skeeriHide.appearance.colors[1].color,skeeriPalette.pattern,'hide remembers its markings');
+  const skeeriWithLegacyGenes={...skeeriCorpse,genotype:{base:{color:'#112233'}}};
+  const dyedHide=windowStub.AnimalHides.makeRecord('skeeriHide',skeeriWithLegacyGenes,26); // Palette wins over any incidental genotype attached by a generic factory.
+  assert.equal(dyedHide.appearance.baseColor,skeeriPalette.body,'the live Skeeri fur, not a generic genotype, determines hide appearance');
+  assert.equal(dyedHide.appearance.colors[1].color,skeeriPalette.pattern,'Skeeri markings survive a preexisting genotype record');
 
   console.log('Wildlife shell, genotype hides and fur-hood crafting integration regression passed.');
 }

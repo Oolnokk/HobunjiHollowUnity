@@ -48,8 +48,8 @@
       ? [{id:'base',label:'Fur',color:skeeriCoat.body}, ...(/^#[0-9a-f]{6}$/i.test(skeeriCoat.pattern || '') ? [{id:'markings',label:'Markings',color:skeeriCoat.pattern}] : [])]
       : []; // Individually dyed fur and markings survive butchering and shipping.
     const appearance = {
-      baseColor: genotype?.base?.color || coatColors[0]?.color || null,
-      colors: clone(traits?.colors || coatColors) || [],
+      baseColor: coatColors[0]?.color || genotype?.base?.color || null,
+      colors: clone(coatColors.length ? coatColors : (traits?.colors || [])) || [],
       patterns: clone((traits?.patterns || []).filter(layer => layer.enabled)) || [],
       colorPoolPaint: clone(genotype?.colorPoolPaint || null),
     }; // Display-ready visible coat summary; complete genetic/paint data also stays in genotype.

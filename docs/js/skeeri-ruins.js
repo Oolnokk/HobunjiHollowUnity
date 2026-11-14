@@ -129,6 +129,7 @@
         if(g<peak*.81 && r>55) {
           pattern.data[i]=pattern.data[i+1]=pattern.data[i+2]=gray; // Dark markings retain shade under the independent dye.
           pattern.data[i+3]=a;
+          pixels.data[i+3]=0; // A pattern pixel belongs to its own tinted layer, never the underlying body as well.
           patternPixels++;
         }
       } else if(Math.max(r,g,b)>48) {

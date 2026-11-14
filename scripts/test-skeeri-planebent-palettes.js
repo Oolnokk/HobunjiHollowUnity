@@ -229,6 +229,7 @@ for(const key of ['flying','perched']) {
   assert.equal(captured.images.glowFlying.pixels[3], 255, 'marked eyes appear in the independent glow mask');
   assert.equal(captured.images.glowPerched.pixels[3], 255);
   assert.equal(captured.images.patternFlying.pixels[11], 255, 'darker green fur pixels are isolated for the pattern dye');
+  assert.equal(captured.images.flying.pixels[11], 0, 'dyed markings do not also render the base fur underneath');
   assert.equal(captured.images.patternFlying.pixels[8], captured.images.patternFlying.pixels[9], 'pattern mask has neutral shading');
   assert(captured.images.patternFlying.pixels[8] < 255, 'dark fur patterns retain authored shadows');
   assert.equal(captured.images.patternPerched.pixels[11], 255);
