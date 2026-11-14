@@ -1526,7 +1526,7 @@
 
     const groups = []; // A batch may remove multiple neighborhoods only when they cannot reveal another holder's parts.
     const cameraY = camera.matrixWorld?.elements?.[13]; // The perspective eye must be above the floor for the height-only fast path.
-    const band = XRAY_ELEVATION_TOLERANCE + XRAY_ELEVATION_GROUP_EPSILON; // Covers any representative elevation chosen for a shared batch.
+    const band = XRAY_VISUAL_GROUND_TOLERANCE + XRAY_ELEVATION_GROUP_EPSILON; // The fast scissor reject must cover every visual ground height accepted by the depth shader.
     for (const region of regions) {
       const { elevation, col, row } = region;
       if (region.meshes.every(canBoundXrayMesh)
@@ -2558,6 +2558,7 @@
     markHeldPlane,
     markWaterOccludedMesh,
     markGroundMesh,
+    markTopFaceGroundMesh, // Lets opt-in walkable furniture register only its actual top faces after its materials are isolated.
     scanScene,
     snapshot,
     debugLogSnapshot,
