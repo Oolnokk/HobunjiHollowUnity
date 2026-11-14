@@ -246,6 +246,42 @@ function testGameplayZoneChangeReplacesStaleOverlay() {
   }
 }
 
+function testSameSceneAuxiliaryAndLiveCameraSwap() {
+  const renderer = new Renderer();
+  const popup = makePopupMesh(); // Shared active text plane that must appear only after the real game's base pass.
+  const scene = makeWorldScene('wilderness-camp-world', popup);
+  scene.scoreNote = popup; // The renderer fixture records whether each nested draw actually sees the popup.
+  const originalCamera = { layers: new Layers(0xFFFFFFFF) }; // Current camera before a cinematic/teleport.
+  const previewCamera = { layers: new Layers(0xFFFFFFFF) }; // A different camera drawing the same scene.
+  windowObject.Combat = { deps: { getActiveCamera: () => originalCamera } }; // Real active camera is authoritative.
+  try {
+    renderBase(renderer, scene, originalCamera);
+    const beforePreview = api.snapshot();
+    renderBase(renderer, scene, previewCamera);
+    assert.equal(api.snapshot().auxiliaryWorldBasePassesPreserved,
+      beforePreview.auxiliaryWorldBasePassesPreserved + 1, 'offscreen alternate cameras preserve the pending overlay');
+    assert.equal(api.snapshot().abandonedWorldTextOverlays,
+      beforePreview.abandonedWorldTextOverlays, 'an auxiliary camera must not abandon the visible world frame');
+    assert.equal(renderer.calls.at(-1).noteVisible, false,
+      'a full-layer preview camera cannot accidentally draw the reserved glyph or popup');
+    assert.equal(popup.visible, true, 'alternate-camera visibility suppression restores the live popup');
+    assert.equal(popup.layers.mask, 1 << 6, 'the original frame retains the reserved overlay layer');
+
+    windowObject.Combat.deps.getActiveCamera = () => previewCamera; // Game adopts the other camera during a cinematic.
+    const beforeSwitch = api.snapshot();
+    renderBase(renderer, scene, previewCamera);
+    assert.equal(api.snapshot().abandonedWorldTextOverlays,
+      beforeSwitch.abandonedWorldTextOverlays + 1, 'a genuine camera handoff retires the prior frame');
+    assert.equal(popup.layers.mask, 1 << 6, 'the newly active camera reserves its own overlay');
+    renderPost(renderer, makePostScene('post-after-camera-switch'), { layers: new Layers(1) });
+    assert.equal(popup.layers.mask, 1, 'presenting the active camera restores the popup to its original layer');
+    assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.mask === (1 << 6)).length, 1,
+      'only the active camera gets the world-popup canvas pass');
+  } finally {
+    delete windowObject.Combat;
+  }
+}
+
 function testPlateGatedScoreAvoidsHiddenFinalPass() {
   const renderer = new Renderer();
   const note = makePopupMesh(); // Uses the same CanvasTexture/depth/renderOrder contract as outdoor Scratchbone clues.
@@ -358,5 +394,6 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
 testFixedPostCameraAndUnrelatedPass();
 testNoShellStillRestoresPopup();
 testGameplayZoneChangeReplacesStaleOverlay();
+testSameSceneAuxiliaryAndLiveCameraSwap();
 testPlateGatedScoreAvoidsHiddenFinalPass();
 console.log('world-text final-overlay regression guard passed');
