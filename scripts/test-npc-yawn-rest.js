@@ -104,7 +104,10 @@ async function main() {
   assert.equal(runtime.debugSnapshot().active.length, 0, '16-hour post-sleep rest buff suppresses fatigue');
   hour = 35; ms = 15000; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
-  assert.equal(ceremonies, 2, 'first next-day yawn repeats the Koma ritual');
+  assert.equal(ceremonies, 1, 'Koma cannot refresh merely because midnight passed');
+  ms = 20500; frame({ timestamp: ms });
+  hour = 37; ms = 21000; frame({ timestamp: ms });
+  assert.equal(ceremonies, 2, 'first eligible yawn after 24 rolling in-game hours repeats Koma');
 
   const noYawnClip = await runtime._test.voiceFor('kenkari', 'female');
   assert.equal(noYawnClip.source, 'breathing x4 duration');
