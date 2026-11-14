@@ -161,7 +161,15 @@
     if (elapsed >= LIE_DURATION + HOLD_DURATION) {
       clear('slept');
       diagnostics.completed++;
+      const beforeSleepHour = window.CalendarSystem?.getAbsoluteGameHour?.(); // Captures actual represented sleep duration before the legacy bed jumps to the next 06:00.
       const result = deps.sleep(); // Existing day-rollover, crops, health/stamina and save behavior stay authoritative.
+      const afterSleepHour = window.CalendarSystem?.getAbsoluteGameHour?.(); // The continuous 24h clock measures elapsed hours across midnight.
+      const sleepHours = Number(afterSleepHour) - Number(beforeSleepHour); // Used to distinguish short sleep from eight-hour Well Rested sleep.
+      if (result?.ok && Number.isFinite(sleepHours) && sleepHours > 0) {
+        window.dispatchEvent?.(new CustomEvent('hobunji-time-passage', {
+          detail: { kind: 'sleep', hours: sleepHours, source: 'legacy-bed' },
+        })); // Reuse the existing Rested/Well Rested authority; no parallel buff or second world-day advance.
+      }
       deps.showToast?.(result.message, result.ok);
     }
   }

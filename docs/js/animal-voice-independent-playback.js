@@ -727,9 +727,9 @@
     if (opts.preserveDurationOnFallback === true && Math.abs(tempo - 1) < 0.0001) {
       setPitchPreservation(audio, true);
       audio.playbackRate = 1; // Stone cues must keep original duration even if independent DSP is unavailable.
-    } else if (Math.abs(pitch) < 0.05) {
+    } else if (opts.preservePitchOnFallback === true || Math.abs(pitch) < 0.05) {
       setPitchPreservation(audio, true);
-      audio.playbackRate = tempo;
+      audio.playbackRate = tempo; // Yawns must preserve their source pitch at 1/4 tempo; native media cannot also apply an independent species transposition.
     } else {
       // Emergency fallback only. The normal Web Audio path keeps speed/pitch
       // independent; browsers without it necessarily couple them here.
