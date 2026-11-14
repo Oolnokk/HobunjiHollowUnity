@@ -423,7 +423,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114wellRested24h1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114perfumes2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -444,7 +444,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261109craftHours1"></script>
+  <script src="js/alchemy-system.js?v=20261114perfumes2"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
@@ -3036,7 +3036,7 @@
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261109fullrig7"></script>
-  <script src="js/romance-system.js?v=20261109ha7681fe"></script>
+  <script src="js/romance-system.js?v=20261114perfumes2"></script>
   <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
