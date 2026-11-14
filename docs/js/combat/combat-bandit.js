@@ -1966,7 +1966,7 @@
     candidates.sort(compareBanditSpacingOrder);
     for (let i = 0; i < candidates.length; i++) {
       const o = candidates[i];
-      if (o === c || o.health <= 0) continue;
+      if (o === c || o.health <= 0 || o.areaId !== c.areaId) continue; // Different zones share coordinates, not physical personal space.
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
       if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
