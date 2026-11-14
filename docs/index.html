@@ -286,9 +286,10 @@
   <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261107mireOutlet1"></script>
+  <script src="js/wilderness-seclusion.js?v=20261114tothalSecretLos1"></script> <!-- Shared bounded LOS for post-Shift hidden locales and cliff Puzzle Caves. -->
+  <script src="js/wilderness-map-generator.js?v=20261114tothalSecretLos1"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20261110banubuNightAudit2"></script>
+  <script src="js/locale-terrain-placement.js?v=20261114tothalSecretLos1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20261107h509318a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20261110cloneaudit2"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -883,7 +884,7 @@
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
   <script src="js/puzzle-cave-entrances.js?v=20261114puzzleCaveVaultAudit2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261114hiddenWallGuaranteedReward1"></script>
+  <script src="js/cave-site-system.js?v=20261114tothalSecretLos1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
