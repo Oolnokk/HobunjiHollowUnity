@@ -376,7 +376,8 @@
   function playerCanYawn(globalCombat) {
     if (globalCombat || window.Combat?.deps?.player?.health <= 0) return false;
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
-    if (window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState) return false;
+    const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // A finished stand transition must not suppress fatigue forever.
+    if (window.PlayerSocialPoses?.active || (seat && seat.phase !== 'out')) return false;
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false;
     return true;
   }
@@ -394,7 +395,10 @@
     const state = stateFor(walker, hour);
     const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
       || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
-    if (state.active && (!playerCanYawn(globalCombat) && !state.active.komaStarted)) finish(state.active, 'player action interrupted');
+    const scriptedPose = window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
+      || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState?.phase === 'active'; // Authored dialogues/bed/sitting interrupt even an active Koma ritual.
+    if (state.active && (scriptedPose || (!playerCanYawn(globalCombat) && !state.active.komaStarted)))
+      finish(state.active, 'player action interrupted');
     if (state.active || playerWakePending || rested || !playerCanYawn(globalCombat)) return;
     if (hour >= state.nextHour) startYawn(walker, state, hour, 'hourly fatigue');
   }
