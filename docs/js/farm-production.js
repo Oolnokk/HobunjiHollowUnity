@@ -17,6 +17,7 @@
     window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory,
       inventoryItems: deps.inventoryItems, loadStorage: deps.loadStorage }); // Existing registries own produce, seeds and cooking effects.
     for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: Math.round(definition.price * 0.4), desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
+    window.HoneyfuzzleHouse?.registerQueenItem?.(deps.ITEM_DEFS); // Register the one-per-hive queen even before wildlife or house state initializes.
     window.MootRegistration?.registerBabyItem?.(deps.ITEM_DEFS); // Converts the Ranch's legacy baby placeholder into real deployable livestock.
     window.MootRegistration?.registerLootItems?.(deps); // Preserve Moot carcass products in the same inventory catalog used by the Farm.
 
@@ -232,7 +233,7 @@
       }
     }
     if (changed) { deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
-    window.HoneyfuzzleHouse?.tick(buildings, now()); // Hatches due eggs; same low-frequency timer, no extra loop.
+    window.HoneyfuzzleHouse?.tick(buildings, now()); // Establishes due queen colonies; same low-frequency timer, no extra loop.
   }
   function collect(id) {
     if (!deps.hasFarmPermission('storage')) return { ok: false, message: 'Storage permission required.' };
