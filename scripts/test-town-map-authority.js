@@ -45,7 +45,7 @@ for (const building of map.buildings) {
     }
   }
 }
-assert.equal(expectedHeights.size, 602, 'Regression fixture: preserved town geometry has 602 raised cells');
+assert.equal(expectedHeights.size, 653, 'Regression fixture: preserved town geometry has 653 raised cells');
 assert.deepEqual(new Set(Object.keys(map.visualHeights)), expectedHeights, 'Every elevation must match a current building footprint and margin');
 assert(Object.values(map.visualHeights).every(value => value === 0.5), 'Building foundations must use the authored half-tile lift');
 assert.equal(map.buildings.length, 12);
@@ -59,8 +59,8 @@ assert.deepEqual(
     const b = map.buildings.find(entry => entry.id === id);
     return [b.gridX, b.gridZ, b.footprintW, b.footprintD];
   }),
-  [[18, 8, 6, 5], [12, 0, 2, 2], [15, 18, 6, 6]],
-  'Carpenter, mine, and IKMC Outpost must retain approved positions with a corrected outpost footprint'
+  [[18, 8, 6, 5], [12, 0, 2, 2], [4, 40, 11, 7]],
+  'Carpenter and mine retain approved positions while the complete IKMC porch relocates to the southwest edge'
 );
 assert.deepEqual(map.rivers[0].nodes[1], [12, 15], 'River must follow the screenshot-approved bend');
 assert.equal(Object.values(map.tiles).filter(tile => tile.type === 'path').length, 601, 'Screenshot-approved road coverage');
@@ -93,7 +93,7 @@ const context = vm.createContext({
 vm.runInContext(editor.slice(normalizationStart, normalizationEnd) + '\n' + editor.slice(importStart, importEnd), context);
 context.importAny({ maps: [town], activeId: town.id });
 assert.equal(testWorkspace.maps.length, 1, 'Workspace import must produce one town');
-assert.equal(Object.keys(testWorkspace.maps[0].visualHeights).length, 602, 'Workspace import must not discard town height stamps');
+assert.equal(Object.keys(testWorkspace.maps[0].visualHeights).length, 653, 'Workspace import must not discard town height stamps');
 assert(Object.hasOwn(testWorkspace.maps[0], 'visualHeightBase'), 'Workspace import must preserve the authoring base height layer');
 assert.equal(Object.keys(testWorkspace.maps[0].visualHeightBase).length, 0);
 const extraTile = { c: 1, r: 1, type: 'grass', crop: '', plateau: 'authored' }; // Round-trip fixture for non-default tile metadata.
@@ -115,7 +115,7 @@ assert.equal(testWorkspace.maps.length, 2, 'Reloading Town must not duplicate it
 assert.equal(testWorkspace.maps.find(map => map.id === town.id).name, 'Reloaded bundled Town', 'Explicitly reloaded Town must replace stale local state');
 assert.equal(testWorkspace.maps.find(map => map.id === unrelatedMap.id), unrelatedMap, 'Unrelated map must survive a Town refresh');
 assert.equal(testWorkspace.activeId, town.id, 'Reloaded Town must become the selected map');
-assert.equal(Object.keys(testWorkspace.maps.find(map => map.id === town.id).visualHeights).length, 602, 'Reloaded Town must use bundled elevation cells');
+assert.equal(Object.keys(testWorkspace.maps.find(map => map.id === town.id).visualHeights).length, 653, 'Reloaded Town must use bundled elevation cells');
 context.importAny({ maps: [{ ...town, name: 'Ignored conflict' }], activeId: town.id }, { mergeIntoWorkspace: true });
 assert.equal(testWorkspace.maps.find(map => map.id === town.id).name, 'Reloaded bundled Town', 'Ordinary workspace merges must still preserve existing maps');
 
