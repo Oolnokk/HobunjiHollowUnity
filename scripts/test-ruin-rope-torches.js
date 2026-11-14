@@ -68,7 +68,9 @@ const effects = {
   activateHead(state,head,images,unit){
     activations++;assert.equal(head.layers.length,4);assert.equal(images.length,4);assert.equal(unit,.001);
     assert.equal(head.layers[2].vfx.type,'fire');assert.equal(head.layers[2].vfx.worldRise,true);
-    state.fireEmitters=[{particles:[]}];
+    const flameGroup=new THREE.Group(); // Simulate the real emitter's child group between fuel and front.
+    state.headRoot.add(flameGroup);
+    state.fireEmitters=[{group:flameGroup,particles:[]}];
   },
   refreshMetal(state){refreshes++;assert.equal(state.itemKey,'ruinRopeTorch')},
   stepFire(state,dt){fireSteps++;assert(dt>=0 && dt<=0.4);assert(state.fireEmitters.length)},
