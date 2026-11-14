@@ -804,8 +804,21 @@
           // indefinitely presenting glyphs from a stale camera after a scene transition.
         }
         if (auxiliaryScene || auxiliaryCamera) {
-          pass = 'other';
           auxiliaryWorldBasePassesPreserved++;
+          if (auxiliaryCamera) {
+            // The auxiliary camera traverses the same scene and may have every
+            // layer enabled. Without this transaction, previously reserved
+            // popup/glyph meshes would leak into its offscreen preview draw.
+            const hidden = []; // Visible pending meshes restored even if the nested render throws.
+            for (const { object } of pending.entries) {
+              if (!object.visible) continue;
+              hidden.push(object);
+              object.visible = false;
+            }
+            try { return originalRender.call(renderer, scene, camera); }
+            finally { for (const object of hidden) object.visible = true; }
+          }
+          pass = 'other';
         }
       }
     }
