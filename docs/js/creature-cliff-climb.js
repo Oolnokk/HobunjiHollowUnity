@@ -23,6 +23,7 @@
 
   const HOP_ACTIVE_S = 0.34;
   const HOP_PAUSE_S = 0.22;
+  const ENTRY_PATH_RETRY_MS = 1200; // Delay before wildlife repeats a failed search for the same climb entry.
   const HOP_BOUNCE_UNITS = 0.35;
   const DESCEND_ACTIVE_S = 0.42; // Going down is one leap, like the player's jump-down.
   const FALL_S = 0.38;
@@ -229,7 +230,7 @@
     return true;
   }
 
-  const entryDebug = { approaches: 0, hops: 0, failures: 0 }; // Mobile snapshot identifies chosen route and navigation stalls.
+  const entryDebug = { approaches: 0, hops: 0, failures: 0, retriesSkipped: 0 }; // Mobile snapshot identifies chosen route and navigation stalls.
 
   function networkForCurrentArea() {
     if (!deps?.isZoneArea?.(deps.getCurrentArea())) return null;
@@ -267,6 +268,7 @@
     if (distance < deps.TILE * 0.36) {
       c._cliffRouteTravel = { route, entry, node: entry, exit: entry === 0 ? route.upperNode : 0 };
       c._cliffEntryPath = null;
+      c._cliffEntryFailure = null;
       c._cliffClimbCooldownT = 0;
       entryDebug.approaches++;
       return true;
@@ -275,6 +277,13 @@
     if (c._cliffEntryKey !== entryKey || !c._cliffEntryPath?.length) {
       const startCol = Math.floor(c.x / deps.TILE), startRow = Math.floor(c.y / deps.TILE);
       const endCol = Math.floor(targetX / deps.TILE), endRow = Math.floor(targetY / deps.TILE);
+      const failure = c._cliffEntryFailure; // Only an unchanged entry and start tile can reuse the failure.
+      const now = performance.now(); // Monotonic time bounds the retry delay.
+      if (failure?.route === route && failure.entry === entry &&
+          failure.col === startCol && failure.row === startRow && now < failure.retryAt) {
+        entryDebug.retriesSkipped++;
+        return false;
+      }
       const component = window.CliffRouteNetwork.componentAt(net, startCol, startRow);
       const path = window.TilePathfinding?.findPath?.(startCol, startRow, endCol, endRow, (col, row) => {
         const tile = grid()?.[row]?.[col];
@@ -289,7 +298,12 @@
       const sameTile = startCol === endCol && startRow === endRow;
       c._cliffEntryPath = path?.length ? path : (sameTile ? [{ col: endCol, row: endRow }] : []);
       c._cliffEntryKey = entryKey;
-      if (!c._cliffEntryPath.length) { entryDebug.failures++; return false; }
+      if (!c._cliffEntryPath.length) {
+        c._cliffEntryFailure = { route, entry, col: startCol, row: startRow, retryAt: now + ENTRY_PATH_RETRY_MS };
+        entryDebug.failures++;
+        return false;
+      }
+      c._cliffEntryFailure = null;
     }
     const waypoint = c._cliffEntryPath?.[0];
     if (!waypoint) return false;
