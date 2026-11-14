@@ -7,6 +7,7 @@
   let lastRenderKey = ''; // Used to avoid rebuilding unchanged icon markup.
   let lastBar = null; // Used to invalidate cached child references if the HUD root is replaced.
   const iconNodes = new Map(); // Used by refresh() to update countdowns without repeated DOM searches.
+  const styleDebug = { refreshes: 0, rebuilds: 0, appliedWrites: 0, skippedWrites: 0 }; // Summarized in the mobile Pixel Probe report.
 
   function registerProvider(sourceId, provider) {
     if (!sourceId || typeof provider !== 'function') return false;
@@ -53,10 +54,12 @@
   function refresh(forceRebuild = false) {
     const bar = document.getElementById('buffBar'); // Used as the existing top-right effect container.
     if (!bar) return;
+    styleDebug.refreshes++;
     const entries = activeEntries(); // Used for both icon markup and countdown fill updates.
     if (bar !== lastBar) { lastBar = bar; lastRenderKey = null; iconNodes.clear(); }
     const renderKey = entries.map(entry => `${entry.domId}:${entry.stacks}:${entry.label}:${entry.icon}:${entry.kind}:${entry.sourceLabel || entry.sourceId}`).join('|');
     if (forceRebuild || renderKey !== lastRenderKey) {
+      styleDebug.rebuilds++;
       lastRenderKey = renderKey;
       bar.innerHTML = entries.map(entry => {
         const sourceLabel = entry.sourceLabel || entry.sourceId; // Used in the accessible tooltip.
@@ -77,15 +80,22 @@
       }
     }
     const display = entries.length ? 'flex' : 'none'; // Used to hide the strip without invalidating style on every refresh.
-    if (bar.style.display !== display) bar.style.display = display;
+    if (bar.style.display !== display) { bar.style.display = display; styleDebug.appliedWrites++; }
+    else styleDebug.skippedWrites++;
     for (const entry of entries) {
       const nodes = iconNodes.get(entry.domId); // Cached until the icon markup changes; includes both countdown and fraction-label nodes.
       if (!nodes) continue;
       const percentage = Math.round(Math.max(0, Math.min(100, entry.remainingS / entry.durationS * 100)) * 10) / 10; // Tenths of a percent avoid subpixel style churn for long buffs.
       const width = `${percentage}%`; // Used as the stable CSS width for unchanged active durations.
-      if (nodes.fill?.style.width !== width) nodes.fill.style.width = width;
+      if (nodes.fill) {
+        if (nodes.fill.style.width !== width) { nodes.fill.style.width = width; styleDebug.appliedWrites++; }
+        else styleDebug.skippedWrites++;
+      }
       const fractionText = entry.fractionLabel || ''; // Used to retain live meal-fraction changes without rebuilding icons.
-      if (nodes.fraction && nodes.fraction.textContent !== fractionText) nodes.fraction.textContent = fractionText;
+      if (nodes.fraction) {
+        if (nodes.fraction.textContent !== fractionText) { nodes.fraction.textContent = fractionText; styleDebug.appliedWrites++; }
+        else styleDebug.skippedWrites++;
+      }
     }
   }
 
@@ -94,5 +104,6 @@
     unregisterProvider,
     refresh,
     getEntries: activeEntries,
+    getDebug: () => ({ ...styleDebug, activeIcons: iconNodes.size }),
   };
 })();
