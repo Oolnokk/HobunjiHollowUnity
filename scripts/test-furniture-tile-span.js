@@ -160,6 +160,15 @@ for(const axis of ['x','z']){
   assert.equal(spec.baseTiles,512,'all authored tile sections fit within maximum footprint');
   assert.equal(spec.totalTiles,512,'total tile count never exceeds supported footprint');
 }
+{
+  const {group,data,middle}=bridge();
+  const original=middle.geometry;
+  stretch.apply(group,data);
+  const stretched=middle.geometry;
+  stretch.release(middle);
+  assert.equal(original.disposed,true,'disposing a stretched mesh also releases its hidden rest geometry');
+  assert.notEqual(stretched.disposed,true,'the ordinary mesh disposer retains ownership of the active geometry');
+}
 // Execute the real preset author, not only a test-made replica of its bridge geometry.
 {
   const inputs=new Map(); // Fake editor controls capture configured tile counts without needing a browser.
