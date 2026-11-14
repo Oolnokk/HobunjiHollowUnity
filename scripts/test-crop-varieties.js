@@ -37,11 +37,7 @@ const storage = { needlegrain: 1 }; // Farm-storage inventory used for the secon
 const calendar = { day: 1, time01: 0, season: 'Coldmuck' }; // Controllable in-game clock for processing and crop growth.
 game.InventoryStacks = { MAX_TOTAL: 999 };
 game.CookingSystem = { registerIngredientItems() {}, recordItemQuality() {} };
-game.HobunjiCookingData = { items: {
-  needlegrain: { id: 'needlegrain', primaryEffect: 'farming', categories: ['grain', 'crop'] },
-  heftroot: { id: 'heftroot', primaryEffect: 'fortitude', categories: ['vegetable', 'crop'] },
-  redberries: { id: 'redberries', primaryEffect: 'speed', categories: ['berry', 'fruit'] },
-} };
+run('docs/js/cooking-data.js');
 game.GameRandom = { random: () => .6 };
 run('docs/js/crop-varieties.js');
 game.CropVarieties.attach({ cropData, ITEM_DEFS: itemDefs, inventory, inventoryItems, loadStorage: () => storage });
@@ -63,7 +59,12 @@ assert.notEqual(east.idealMin, west.idealMin);
 assert.ok(west.seasonGrowth.Coldmuck > east.seasonGrowth.Coldmuck);
 const offspring = game.CropVarieties.breed(east.id, west.id, () => .6); // Predictable recombination without mutation.
 assert.ok(offspring.id.startsWith('cv_needlegrain_'));
-assert.equal(Object.keys(offspring.effects).length, 2);
+assert.deepEqual({ ...offspring.effects }, { fortitude: 1, vigor: 1 });
+const eastHeftroot = game.CropVarieties.ensure('cv_heftroot_222222'); // Fortitude is already the native Heftroot effect.
+assert.deepEqual({ ...eastHeftroot.effects }, { strength: 2 });
+const crossedHeftroot = game.CropVarieties.breed('heftroot', eastHeftroot.id, () => .6); // Mix the local and regional effects that used to collide.
+assert.deepEqual({ ...crossedHeftroot.effects }, { fortitude: 1, strength: 1 });
+assert.match(itemDefs[offspring.seedKey].desc, /fortitude \+ vigor/i);
 assert.ok(itemDefs[offspring.seedKey]);
 assert.equal(itemDefs[offspring.seedKey].seedFor, offspring.id, 'crossbred seeds retain their distinct planting target');
 assert.equal(inventoryItems.find(item => item.key === offspring.seedKey)?.seedFor, offspring.id, 'new hybrid seeds expose Plant in the inventory');
@@ -85,9 +86,10 @@ vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { windo
 const reloadedCrops = { needlegrain: { ...cropData.needlegrain }, heftroot: { ...cropData.heftroot }, redberries: { ...cropData.redberries } }; // Existing native crop definitions only.
 const reloadedItemDefs = Object.fromEntries(Object.entries(itemDefs).filter(([key]) => !key.startsWith('cv_'))); // No hybrid definitions survive memory reset.
 reloadedWindow.CropVarieties.attach({ cropData: reloadedCrops, ITEM_DEFS: reloadedItemDefs,
-  inventory: { [grandchild.seedKey]: 1 }, inventoryItems: [], loadStorage: () => ({}) });
+  inventory: { [grandchild.seedKey]: 1, [offspring.id]: 1 }, inventoryItems: [], loadStorage: () => ({}) });
 assert.equal(reloadedWindow.CropVarieties.colorOf(grandchild.seedKey), grandchild.color, 'fresh runtime restores second-generation pigment solely from saved seed ID');
 assert.equal(reloadedCrops[grandchild.id].varietyColor, grandchild.color, 'restored farm crop mesh uses exactly the saved hybrid color');
+assert.deepEqual({ ...reloadedItemDefs[offspring.id].foodEffects }, { fortitude: 1, vigor: 1 }, 'both buffs restore from the saved harvest key');
 assert.equal(reloadedItemDefs[grandchild.seedKey].seedFor, grandchild.id, 'reloaded seeds regain their planting target from their saved item key');
 
 const lateWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Real boot attaches crops before restoring the world's saved bag.
@@ -183,6 +185,7 @@ assert.ok(inventory.needlegrainSeeds >= 2);
 inventory[east.id] = 1; inventory[west.id] = 1; // Parent harvests are standard bag stacks.
 const hybridBatch = game.FarmProduction.enqueueSeeds(restored.id, { source: 'bag', itemKey: east.id }, { source: 'bag', itemKey: west.id });
 assert.equal(hybridBatch.ok, true, 'seed maker accepts two regional crops of one species');
+assert.match(hybridBatch.message, /fortitude \+ vigor/i, 'Seed Maker reports the actual inherited pair');
 calendar.day = 4; game.FarmProduction.tick(); assert.equal(restored.ready.length, 0, 'hybrid seeds must take two game days');
 calendar.day = 5; game.FarmProduction.tick();
 assert.equal(restored.ready[0].key, offspring.seedKey, 'actual machine breeding produces the same mixed-pigment genotype as the genetics module');
@@ -220,6 +223,53 @@ assert.match(inventoryBridge, /bindCultivarInventory\(injectedDeps\)/,
   'cooking initialization hands its live inventory registry to the cultivar owner');
 assert.match(inventoryBridge, /api\.restore = function inventoryActionMetadataRestore[\s\S]*?bindCultivarInventory\(\)/,
   'cooking restore rehydrates saved varieties through the inventory bridge');
+// Exercise Pack and held-item consumption through the real bridges and food timers.
+context.document = {
+  readyState: 'loading',
+  addEventListener() {},
+  getElementById: id => id === 'hobunjiCookingLayer' ? {} : null,
+  querySelector: () => ({ dataset: { key: offspring.id, stackId: offspring.id + '|stars:5|0' } }),
+};
+context.performance = { now: () => 1000 };
+context.queueMicrotask = () => {};
+game.ResourceSystem = {};
+game.addEventListener = () => {};
+game.FarmCrates = { init() {} };
+game.CalendarSystem = { timeDebugSnapshot: () => ({ rawDay: calendar.day, time01: calendar.time01 }) };
+const foodDeps = { // Shared inventory and HUD dependencies used in both gameplay entry points.
+  ITEM_DEFS: itemDefs, inventory, inventoryItems,
+  getHeldMode: () => 'item', getActiveInventoryItem: () => ({ key: offspring.id }),
+  clampInventoryStack(key) { if (!inventory[key]) delete inventory[key]; },
+  showToast() {}, refreshItemScroll() {}, buildInventoryGrid() {}, refreshActionBar() {}, saveMemberWorldData() {},
+};
+run('docs/js/cooking-system.js');
+run('docs/js/inventory-held-override.js');
+run('docs/js/alcohol-gameplay-bridge.js');
+game.CookingSystem.init(foodDeps);
+game.FarmCrates.init(foodDeps);
+inventory[offspring.id] = 2;
+game.CookingSystem.recordItemQuality(offspring.id, 3, 1);
+game.CookingSystem.recordItemQuality(offspring.id, 5, 1);
+const ingredientBuffs = game.CookingSystem.ingredientEffectTotals(itemDefs[offspring.id], 3); // Hearth ingredient contribution.
+assert.deepEqual({ ...ingredientBuffs }, { fortitude: 1, vigor: 1 });
+assert.equal(game.InventoryHeldOverride.useInventoryItem(offspring.id), true, 'Pack Eat consumes a hybrid through the shared food system');
+assert.equal(game.CookingSystem.availableQualityEntries(offspring.id)[0].stars, 3, 'Pack Eat consumes the selected 5-star serving');
+assert.equal(game.CookingSystem.getFoodEffectStacks('fortitude'), 1);
+assert.equal(game.CookingSystem.getFoodEffectStacks('vigor'), 1);
+assert.equal(game.HobunjiDrunkGameplayBridge.getHeldItemAction().holdToCommit, true, 'cultivars keep the held-food windup');
+assert.equal(game.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true);
+assert.equal(inventory[offspring.id], undefined, 'held consumption spends exactly one remaining serving');
+assert.equal(game.CookingSystem.getFoodEffectStacks('fortitude'), 2);
+assert.equal(game.CookingSystem.getFoodEffectStacks('vigor'), 2);
+assert.equal(game.CookingSystem.eat(offspring.seedKey).ok, false, 'seed packets are never edible');
+const foodSave = JSON.parse(JSON.stringify(game.CookingSystem.serialize())); // Restore both timed buffs after reloading a save.
+game.CookingSystem.restore(foodSave);
+assert.equal(game.CookingSystem.getFoodEffectStacks('fortitude'), 2);
+assert.equal(game.CookingSystem.getFoodEffectStacks('vigor'), 2);
+calendar.day++;
+assert.equal(game.CookingSystem.getFoodEffectStacks('fortitude'), 0);
+assert.equal(game.CookingSystem.getFoodEffectStacks('vigor'), 0);
+
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
@@ -227,4 +277,4 @@ assert.match(fs.readFileSync('docs/js/crop-sprite-art.js', 'utf8'), /hobunjiCrop
 assert.match(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), /hobunjiCropBaseKey/, 'renderer identifies hybrid plants by species, not their new hue');
 new vm.Script(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), { filename: 'docs/js/vegetation-crop-rendering.js' }); // Compile-check for duplicate let/const declarations without a Three.js scene.
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /AuthoredFurniture\.load\(definition\.modelKey \|\| entry\.key\)/);
-console.log('crop-varieties: ok (regional climates, inheritance, processing, seeds, planting, persistence)');
+console.log('crop-varieties: ok (regional climates, inheritance, eating, processing, seeds, planting, persistence)');

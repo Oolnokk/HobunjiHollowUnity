@@ -140,8 +140,12 @@
     const genes = [...code].map(Number); // Used to resolve two alleles in each of the three trait pairs.
     const color = colorHex == null ? mixHex(tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[0]]), tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[1]])) : Number.parseInt(colorHex, 16); // Save-compatible, exact parent-color midpoint.
     const nativeEffect = window.HobunjiCookingData?.items?.[base.cropKey]?.primaryEffect || 'farming'; // Canonical local ingredient buff.
-    const effectA = REGIONAL_EFFECTS[genes[2]] || nativeEffect;
-    const effectB = REGIONAL_EFFECTS[genes[3]] || nativeEffect;
+    const effectForGene = gene => { // Keep every imported allele distinct within the crop's own family.
+      const regionalEffect = REGIONAL_EFFECTS[gene]; // Native alleles always resolve to the crop's authored effect.
+      return regionalEffect === nativeEffect ? 'strength' : regionalEffect || nativeEffect; // Strength is reserved for imports whose usual effect matches the native crop.
+    };
+    const effectA = effectForGene(genes[2]); // First parent's inherited effect.
+    const effectB = effectForGene(genes[3]); // Second parent's inherited effect.
     const effects = effectA === effectB ? { [effectA]: 2 } : { [effectA]: 1, [effectB]: 1 }; // Mixed crops carry both effects, without doubling total buff power.
     const moisture = [genes[4], genes[5]].map(index => REGIONS[index].ideal || [base.idealMin, base.idealMax]);
     const min = clamp((moisture[0][0] + moisture[1][0]) / 2, 0, 1);
@@ -173,6 +177,7 @@
     if (!traits) return null;
     const base = cropData[family];
     const label = traits.region + ' ' + (base.label || family);
+    const buffNames = Object.keys(traits.effects).map(effect => window.CookingSystem?.effectLabel?.(effect) || effect).join(' + '); // Use the food HUD names in seed descriptions.
     cropData[id] = { ...base, label, seedKey: seedKey(id), cropKey: id, baseCrop: family, idealMin: traits.idealMin,
       idealMax: traits.idealMax, growDays: traits.growDays, seasonGrowth: traits.seasonGrowth,
       varietyColor: traits.color, varietyGenes: code, varietyOrigin: traits.region };
@@ -190,15 +195,15 @@
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(id, Number(baseProduce.sellPrice) || 15)
           ?? Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)), // Real sale value reflects modeled scarcity, but keeps the old markup as fallback.
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
-        foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
+        isCultivarProduce: true, foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
-        desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
+        desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. Eat to activate ' + buffNames + '.' };
       itemDefs[seedKey(id)] = { ...baseSeed, seedFor: id, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
         rarityBaseSellPrice: Number(baseSeed.sellPrice) || 4, // Native seed baseline preserved for rarity inspection.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
           ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
-        desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
+        desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water. Harvest buffs: ' + buffNames + '.' };
       syncSeedItem(id, label); // Foreign and crossbred seeds use the same contextual planting action as native seeds.
     }
     const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
@@ -208,7 +213,7 @@
   function ensure(key) {
     const parsed = fromItemKey(key);
     if (!parsed) return null;
-    const wasRegistered = !!cropData?.[idFor(parsed.family, parsed.code)]; // Only freshly restored genomes require another cooking catalog sync.
+    const wasRegistered = !!itemDefs?.[idFor(parsed.family, parsed.code, parsed.colorHex)]; // Only freshly restored genomes require another cooking catalog sync.
     const variety = register(parsed.family, parsed.code, parsed.colorHex);
     if (variety && !wasRegistered) window.CookingSystem?.registerIngredientItems?.();
     return variety;

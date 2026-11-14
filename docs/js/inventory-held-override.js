@@ -198,6 +198,7 @@
     }
     if (techniqueScrollTier(key, def) > 0) return { key, kind: 'techniqueScroll', verb: 'Read', icon: def.icon || '📜', itemLabel: def.label || key, allowed: true };
     if (def.mysteryDyePoolId) return { key, kind: 'mysteryDye', verb: 'Use', icon: def.icon || '🎨', itemLabel: def.label || key, allowed: true };
+    if (def.isCultivarProduce) return { key, kind: 'cultivarProduce', verb: 'Eat', icon: def.icon || '🍽️', itemLabel: def.label || key, allowed: true };
     if (def.isCookedFood) return { key, kind: 'cookedFood', verb: 'Eat', icon: def.icon || '🍲', itemLabel: def.label || key, allowed: true };
     if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, kind: 'rawReagent', verb: 'Eat', icon: def.icon || '🌿', itemLabel: def.label || key, allowed: true };
     if (recipeScrollId(key, def)) return { key, kind: 'recipe', verb: 'Read', icon: def.icon || '📜', itemLabel: def.label || key, allowed: true };
@@ -282,6 +283,10 @@
       result = window.DyeSystem?.useMysteryDye?.(key) || { ok: false, message: 'That dye cannot be used.' };
     } else if (action.kind === 'cookedFood') {
       result = window.CookingSystem?.eat?.(key) || { ok: false, message: 'That meal cannot be eaten.' };
+    } else if (action.kind === 'cultivarProduce') {
+      const selected = document.querySelector?.('#invGrid .inv-item-box.selected[data-key]'); // The Pack's current quality stack owns the direct Eat action.
+      const stars = selected?.dataset?.key === key ? Number(selected.dataset.stackId?.split('|')[1]?.match(/^stars:([1-5])$/)?.[1]) || null : null; // Read the shared InventoryStacks variant ID.
+      result = window.CookingSystem?.eat?.(key, stars) || { ok: false, message: 'That crop cannot be eaten.' };
     } else if (action.kind === 'rawReagent') {
       result = window.AlchemySystem?.consumeRawReagent?.(key) || { ok: false, message: 'That reagent cannot be eaten.' };
     } else if (action.kind === 'recipe') {

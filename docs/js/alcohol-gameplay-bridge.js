@@ -579,6 +579,7 @@
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
     if (def.isCookedFood) return null; // CookingSystem owns generated meals and their stacked effects.
+    if (def.isCultivarProduce) return { key, def, inventory, kind: 'food' }; // Harvests keep the normal held-food animation, including when their name contains a drink term.
     if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, def, inventory, kind: 'rawReagent' };
     const recipeScrollId = recipeScrollIdForHeld(key, def); // Used to keep physical recipes out of drink/food fallbacks even if their wheel metadata is stale.
     if (recipeScrollId) return { key, def, inventory, kind: 'recipe', recipeScrollId };
@@ -717,6 +718,12 @@
       itemDeps.buildInventoryGrid?.();
       itemDeps.refreshActionBar?.();
       itemDeps.saveMemberWorldData?.();
+      return result;
+    }
+
+    if (def.isCultivarProduce) {
+      const result = window.CookingSystem?.eat?.(key); // Activate every inherited buff at the existing held-food strike frame.
+      itemDeps.showToast?.(result?.message || 'Could not eat that crop.', !!result?.ok);
       return result;
     }
 

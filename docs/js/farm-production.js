@@ -401,7 +401,9 @@
       outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
     deps.saveMemberWorldData(); deps.saveFarmLayout();
-    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.' : 'Extracting ' + offspring.label + ' seeds.' };
+    const buffNames = Object.keys(offspring.effects || {}).map(effect => window.CookingSystem?.effectLabel?.(effect) || effect).join(' + '); // Report the actual rolled effects, including mutations.
+    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.'
+      + (buffNames ? ' Harvest buffs: ' + buffNames + '.' : '') : 'Extracting ' + offspring.label + ' seeds.' };
   }
 
   function openSeedMaker(entry) {
@@ -424,7 +426,10 @@
       for (const [itemKey, count] of Object.entries(stock || {})) {
         if (!(count > 0) || !window.CropVarieties?.produceFamily?.(itemKey)) continue;
         window.CropVarieties?.ensure?.(itemKey);
-        available.push({ source, itemKey, count, label: deps.ITEM_DEFS[itemKey]?.label || itemKey });
+        const definition = deps.ITEM_DEFS[itemKey]; // Both imported buff pairs and native cooking traits inform parent selection.
+        const effects = definition?.foodEffects ? Object.keys(definition.foodEffects) : [definition?.cookingPrimaryEffect].filter(Boolean);
+        const buffs = effects.map(effect => window.CookingSystem?.effectLabel?.(effect) || effect).join(' + '); // Names stay readable on the mobile Seed Maker.
+        available.push({ source, itemKey, count, label: definition?.label || itemKey, buffs });
       }
     }
     function selector(label, empty) {
@@ -433,7 +438,7 @@
       if (empty) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No second parent — extract seeds'; select.append(option); }
       for (const item of available) {
         const option = document.createElement('option'); option.value = JSON.stringify({ source: item.source, itemKey: item.itemKey });
-        option.textContent = item.label + ' ×' + item.count + ' · ' + (item.source === 'bag' ? 'Bag' : 'Farm storage'); select.append(option);
+        option.textContent = item.label + ' ×' + item.count + (item.buffs ? ' · ' + item.buffs : '') + ' · ' + (item.source === 'bag' ? 'Bag' : 'Farm storage'); select.append(option);
       }
       title.append(select); return select;
     }
@@ -483,7 +488,8 @@
     const summary = document.createElement('summary'); summary.textContent = 'Seed maker diagnostics'; diagnostics.append(summary);
     const pre = document.createElement('pre'); pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere';
     pre.textContent = JSON.stringify({ mostRecentChange: window.CropVarieties?.lastChange, worldTime: now(),
-      lastError, queue: entry.queue, ready: entry.ready }, null, 2);
+      lastError, lastOffspring: window.CropVarieties?.details?.(window.CropVarieties?.lastBreeding?.offspring),
+      queue: entry.queue, ready: entry.ready }, null, 2);
     diagnostics.append(pre); panel.append(diagnostics); modal.append(panel); document.body.append(modal);
   }
 

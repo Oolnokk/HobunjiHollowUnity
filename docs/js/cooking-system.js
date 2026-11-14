@@ -557,9 +557,10 @@
   }
 
   function eat(key, selectedStars = null) {
-    const definition = deps.ITEM_DEFS[key];
-    if (!definition?.isCookedFood || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
-    const quality = selectedStars ?? availableQualityEntries(key)[0]?.stars ?? definition.foodQuality ?? 3; // Used to consume the best remaining serving first.
+    const definition = deps?.ITEM_DEFS[key]; // Shared definition for cooked meals and raw regional or crossbred harvests.
+    if (!(definition?.isCookedFood || definition?.isCultivarProduce) || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
+    const quality = selectedStars ?? (definition.isCultivarProduce ? peekLowestQuality(key)
+      : availableQualityEntries(key)[0]?.stars ?? definition.foodQuality ?? 3); // Protect better harvests unless a specific tier is selected or held.
     const now = currentGameHour(); // One continuous in-game clock governs expiry, saving and pausing.
     if (!Number.isFinite(now)) return { ok: false, message: 'The game clock is not ready. Try eating again in a moment.' };
     if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
@@ -575,7 +576,8 @@
     deps.buildInventoryGrid();
     deps.refreshActionBar();
     deps.saveMemberWorldData();
-    return { ok: true, message: `Ate ${definition.label}. Food effects last ${FOOD_DURATION_HOURS} in-game hours.` };
+    const buffs = definition.isCultivarProduce ? ingredientBuffText(definition, quality) : ''; // Tell the player which inherited effects became active.
+    return { ok: true, message: `Ate ${definition.label}. ${buffs ? buffs + '. ' : ''}Food effects last ${FOOD_DURATION_HOURS} in-game hours.` };
   }
 
   function foodBuffEntries() {
