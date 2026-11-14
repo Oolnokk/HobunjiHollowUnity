@@ -126,14 +126,15 @@
     return fileProbes.get(url);
   }
   async function findVoiceFile(species, gender) {
-    const variants = [...new Set([species, species.replace(/-/g, '_')])];
+    const variants = [...new Set([species, species.replace(/-/g, '_')])]; // Supports either established species slug spelling.
+    const candidates = []; // Prioritized audio URLs probed together to keep first-time yawns audible on mobile.
     for (const variant of variants) {
       for (const ext of ['ogg', 'm4a', 'mp3']) {
-        const url = YAWN_ROOT + 'sfx_yawn_' + variant + '_' + gender + '.' + ext;
-        if (await probeFile(url)) return url;
+        candidates.push(YAWN_ROOT + 'sfx_yawn_' + variant + '_' + gender + '.' + ext);
       }
     }
-    return null;
+    const exists = await Promise.all(candidates.map(probeFile)); // A missing recording must not cost nine serial HTTP round trips.
+    return candidates.find((url, index) => exists[index]) || null;
   }
   async function voiceFor(species, gender) {
     const key = species + ':' + gender;
