@@ -62,6 +62,12 @@ assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], rost
 pet._downed = false;
 assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 15), null,
   'owner alert radius still constrains both opponents');
+pet.x = 25;
+assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), pet);
+roster.delete(pet); // Swapping/stowing a companion leaves the old entity alive but removes it from the combat roster.
+assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), player,
+  'Beastmaster pets release a despawned companion even when its Health is still positive');
+roster.add(pet);
 
 const ranged = read('docs/js/combat/ranged-weapons.js'); // Canonical projectile sweep, not a second projectile implementation.
 const match = ranged.match(/  function nearestPlayerCompanionHit\([\s\S]*?\n  \}/);
@@ -93,6 +99,8 @@ const game = read('docs/game.js'); // Integration assertion guards the otherwise
 assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget/);
 assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget/);
 assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/);
+assert.match(game, /!companionObjects\.has\(c\.targetPlayer\)/,
+  'ordinary enemy chases release a removed companion rather than chasing its stale entity');
 const expanded = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Loads the actual published bootstrap order.
 assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') > -1, 'target owner must load in the published build');
 assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') < expanded.indexOf('js/combat/ranged-weapons.js'));
