@@ -12,6 +12,11 @@ const layout=Rooms.planRooms({options:{theme:'tothal'},floors:[{
 }]});
 assert.equal(layout.ok,true,layout.errors.join('; '));
 assert.equal(layout.rooms.length,2);
+const v50=Rooms.v50Rooms({cellSize:.5,rooms:[{id:'vestibule',col:2,row:3,w:6,h:8}]},{
+  originX:40,originZ:70,tileScale:2,y:12,prefix:'v50-f1',theme:'kanthic',
+});
+assert.deepEqual(v50.map(r=>[r.id,r.x,r.z,r.w,r.d,r.y]),[['v50-f1:vestibule',42,73,6,8,12]]);
+assert.deepEqual(v50[0].ambient.color,[0,0,0]);
 assert.equal(layout.doors.length,2);
 assert.equal(layout.rooms[1].blocked.length,8,'eleven-cell wall has eight solid cells and one three-cell aperture');
 assert.deepEqual(layout.rooms[1].ambient.color,[6,18,44]);
@@ -41,7 +46,9 @@ const enemy={areaId:ruin,health:10,x:34*TILE,y:14*TILE,homeX:35*TILE,homeY:14*TI
 const hostiles=new Set([enemy]);
 const session=Rooms.mount({layout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
   getHostiles:()=>hostiles,mapId:ruin,tile:TILE});
+session.addRooms(v50);
 session.tick(.31);
+assert.equal(session.snapshot().totalRooms,3);
 assert.equal(session.activeRoomId,room1.id);
 assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin);
 assert.equal(enemy.x,35*TILE,'enemy resets to its recorded home on exit/not-current');
