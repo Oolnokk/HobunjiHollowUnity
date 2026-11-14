@@ -126,7 +126,13 @@ async function testLoomInitialization() {
       layersUseSecondaryDye: layers => layers.some(layer => layer?.paletteKey === 'B'), // Mirrors the production palette-B check used by loom trim controls.
       reweaveFromLoom(_item, _material, _dye, weaving) { submissions++; submittedWeave = weaving; },
     }); // Stubs rendering/material data while preserving the complete production initialization flow.
-    vm.runInContext('function closeLoom() { loomOverlay?.remove(); loomOverlay = null; }\n' + section(source, '  function openLoom(', '  function craftFromLoom('), context);
+    vm.runInContext(
+      'function closeLoom() { loomOverlay?.remove(); loomOverlay = null; }\n'
+      + section(source, '  function weavingUsesCrossDyePatterns(', '  function patternInkHexForLayer(')
+      + section(source, '  function openLoom(', '  function craftFromLoom('),
+      context,
+    ); // Extract the real saved-mode predicate alongside openLoom instead of inventing a test-only duplicate.
+    assert.equal(context.weavingUsesCrossDyePatterns(savedWeave), false, 'legacy saved garments retain independent pattern dye');
     assert.equal(context.openLoom(item.uid), true);
     const overlay = context.loomOverlay; // Keeps the exact overlay and handler that started the pending load.
     const button = overlay.querySelector('[data-act="craft"]'); // Submit button must stay disabled throughout loading.
