@@ -167,7 +167,8 @@
 
   // Called whenever fog newly reveals ground in `zoneId` -- checks every
   // locale instance currently placed there against the just-revealed
-  // radius and flags it discovered forever. Discovery only ever records
+  // radius and records its discovery for this Shift (permanently for fixed
+  // landmarks). Discovery records only
   // *that* a locale was found, never *where* -- the map always draws
   // discovered locales from _allLocaleInstances()'s live current placement,
   // so "current location... if you've discovered them before" holds even
