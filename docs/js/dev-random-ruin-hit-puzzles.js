@@ -1,7 +1,7 @@
 // Dev Random Test Ruin — V50 hit-driven puzzle runtime, batch 2.
 //
 // Owns only the puzzle interactions that must be physical rather than ordinary
-// Interact prompts: projectile glyphs and temporary carried torches/braziers.
+// Hit-driven projectile glyphs, stationary fire sources and permanent adventuring-torch braziers.
 // It loads before the base ruin adapter so its pre-render pass can publish
 // mechanism signal proxies before the adapter resolves moving geometry. A
 // second, delayed post-render-prep pass runs after the base/prototype adapters
@@ -282,6 +282,10 @@
       uniqueSources.push(object);
     }
     torchSources = uniqueSources;
+    for (const source of torchSources) {
+      source.userData = source.userData || {};
+      source.userData.fireHazard = true; // Persistent, lit V50 sources ignite the player's own torch; they are never inventory pickups.
+    }
     lastFrameMs = performance.now();
     window.__farmLog?.(`[random-ruin-hit] glyphs=${glyphTargets.length} ignition=${ignitionTargets.length} torchSources=${torchSources.length}`, 'world');
   }
@@ -633,25 +637,7 @@
   }
 
   function nearestPickupControl() {
-    if (carriedTorch || !root) return null;
-    if(!currentPlayerWorld())return null;
-    let nearest=null;
-    let best=CONTROL_RANGE;
-    for(const source of torchSources){
-      const distance=worldDistanceTo(source);
-      if(distance>best)continue;
-      best=distance;nearest={kind:'torchSource',object:source,
-        label:'Take Lit Torch',onPress:()=>worldDistanceTo(source)<=CONTROL_RANGE&&spawnSourceTorch(source)};
-    }
-    for(const record of temporaryTorches){
-      if(record.status!=='dropped')continue;
-      const distance=worldDistanceTo(record.group);
-      if(distance>best)continue;
-      best=distance;nearest={kind:'droppedTorch',object:record.group,
-        label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',
-        onPress:()=>worldDistanceTo(record.group)<=CONTROL_RANGE&&pickupDroppedTorch(record)};
-    }
-    return nearest;
+    return null; // V50 source braziers no longer dispense temporary torches, even to legacy interaction bindings.
   }
 
   function nearestLadderDistance() {
@@ -768,9 +754,45 @@
     return box?.clone?.().expandByScalar(TORCH_HEAD_RADIUS) || box;
   }
 
+  function igniteIgnitionTarget(target) {
+    if (!target || target.lit) return false;
+    target.lit = true;
+    window.RuinInteractionAudio?.igniteTorch?.();
+    const state = mechanismSignals.get(target.mechanismId);
+    if (state && state.target < 1) {
+      state.target = 1;
+      (window.RuinInteractionAudio?.puzzleComplete?.() || window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
+    }
+    devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
+    window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
+    return true;
+  }
+
+  function isIgnitionSourceAlongSegment(start, end, maxT = 1, radius = .18) {
+    if (!root || currentArea() !== MAP_ID || !start || !end) return false;
+    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
+    // The same exact floor-aware reach and 3D hitboxes as the original torch puzzle.
+    const litSources = [...torchSources, ...ignitionTargets.filter(target => target.lit).map(target => target.object)];
+    return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE
+      && segmentBoxInterval(start, finish, boxFor(object), radius));
+  }
+
+  function contactAdventuringTorchSegment(start, end, maxT = 1, radius = .12) {
+    if (!root || currentArea() !== MAP_ID || !start || !end) return false;
+    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
+    let nearest = null;
+    for (const target of ignitionTargets) {
+      if (target.lit) continue;
+      const interval = segmentBoxInterval(start, finish, boxFor(target.object), radius);
+      if (interval && (!nearest || interval.enter < nearest.t)) nearest = { target, t:interval.enter };
+    }
+    return nearest ? igniteIgnitionTarget(nearest.target) : false;
+  }
+
   function transferFire(target) {
+    // Backward-compatible with the old DEV swing while it is retired from normal play.
     if (!carriedTorch || !target) return false;
-    if (target.kind === 'source') {
+    if (target.kind === 'source' || target.lit) {
       if (!carriedTorch.lit) {
         setTorchLit(carriedTorch, true, true);
         devDeps?.showToast?.('The permanent flame relights the torch.', true);
@@ -778,21 +800,7 @@
       }
       return false;
     }
-    if (carriedTorch.lit && !target.lit) {
-      target.lit = true;
-      window.RuinInteractionAudio?.igniteTorch?.(); // The actual torch or brazier takes fire, not just a puzzle-complete flag.
-      const state = mechanismSignals.get(target.mechanismId);
-      if (state && state.target < 1) { state.target = 1; (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete')); }
-      devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
-      window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
-      return true;
-    }
-    if (!carriedTorch.lit && target.lit) {
-      setTorchLit(carriedTorch, true, true);
-      devDeps?.showToast?.('The lit brazier relights your torch.', true);
-      return true;
-    }
-    return false;
+    return carriedTorch.lit ? igniteIgnitionTarget(target) : false;
   }
 
   function updateTorchSwing(now) {
@@ -959,16 +967,20 @@
       return ticks;
     },
     debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
-    debugPickupTorch:()=>{
+    debugPickupTorch:()=>false, // Removed: puzzle sources no longer supply replacement torches.
+    debugLightAdventuringTorchAtSource:object=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
-      const pickup=nearestPickupControl();
-      return pickup?.kind==='torchSource'&&pickup.onPress()===true; // Use the production range-checked pickup callback, not a forced held-weapon state.
+      return torchSources.includes(object) && worldDistanceTo(object)<=CONTROL_RANGE
+        && window.AdventuringTools?.isHoldingTorch?.()===true && window.AdventuringTools.light()===true;
     },
     debugIgniteTarget:object=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
       const target=ignitionTargets.find(candidate=>candidate.object===object);
-      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE&&transferFire(target); // CI invokes the genuine fire-transfer callback within reach; weapon sweep/aiming is a separate browser test.
+      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE
+        && window.AdventuringTools?.isHoldingTorch?.()===true && window.AdventuringTools?.isLit?.()===true
+        && igniteIgnitionTarget(target); // CI uses the same target transition as physical swing/throw collision.
     },
+    isIgnitionSourceAlongSegment, contactAdventuringTorchSegment, // Ruin-owned source detection and actual V50 puzzle fire transfer.
     distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
     isCarryingTorch:() => !!carriedTorch,
     dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
@@ -989,6 +1001,8 @@
       glyphs:{ total:glyphTargets.length, active:glyphTargets.filter(target => target.active).length },
       ignitionTargets:ignitionTargets.map(target => ({ id:target.id, kind:target.kind, mechanismId:target.mechanismId, lit:target.lit })),
       torchSources:torchSources.length,
+      torchSourceFireHazards:torchSources.filter(source=>source.userData?.fireHazard===true).length,
+      temporaryTorchPickupsDisabled:true, // Exposed to mobile Pixel Probe and V50 browser tests.
       temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnRemainingMs||0)):0 })),
       carryingTorch:carriedTorch?.id || null,
       activeSwing:!!activeSwing,
