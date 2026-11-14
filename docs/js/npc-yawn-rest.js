@@ -69,7 +69,7 @@
       walker, id,
       restedUntil: Number.isFinite(Number(old.restedUntil)) ? Number(old.restedUntil) : -Infinity,
       nextHour: Number.isFinite(Number(old.nextHour)) ? Number(old.nextHour) : hour + HOURLY_GAP,
-      lastKomaDay: Number.isFinite(Number(old.lastKomaDay)) ? Number(old.lastKomaDay) : -Infinity,
+      lastKomaHour: Number.isFinite(Number(old.lastKomaHour)) ? Number(old.lastKomaHour) : -Infinity,
       wasSleeping: !!walker._bedLieActive && walker.currentScheduleTarget?.pose === 'lie',
       wakePending: false, active: null, lastNeckOffset: 0, lastNeckApplied: null,
     };
@@ -80,7 +80,7 @@
     if (!state.id) return;
     saved[state.id] = {
       restedUntil: state.restedUntil, nextHour: state.nextHour,
-      lastKomaDay: state.lastKomaDay,
+      lastKomaHour: state.lastKomaHour,
     };
     rememberChange();
   }
@@ -231,7 +231,6 @@
   }
   function startYawn(walker, state, hour, reason) {
     if (state.active) return false;
-    const day = Math.floor(hour / 24);
     const entry = { walker, state, startedAt: performance.now(), finished: false, komaStarted: false,
       voice: null, voiceClaim: null };
     state.active = entry;
@@ -240,13 +239,13 @@
     checkpoint(state);
     active.add(entry);
     const identity = sourceIdentity(walker);
-    if (SLAGOTHIM.has(identity.species) && state.lastKomaDay !== day
+    if (SLAGOTHIM.has(identity.species) && hour - state.lastKomaHour >= 24
       && walker.area === window.Combat?.deps?.getCurrentArea?.()) {
       const duration = window.NpcDrinkInteraction?.playDailyKoma?.(walker, () => {
         window.ToastNotifications?.showToast?.(KOMA_TOAST, true);
       }, YAWN_DURATION_S) || 0;
       if (duration > 0) {
-        state.lastKomaDay = day;
+        state.lastKomaHour = hour;
         entry.komaStarted = true;
         checkpoint(state);
       }
