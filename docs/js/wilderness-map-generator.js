@@ -3574,7 +3574,7 @@
       return true;
     };
 
-    const shiftSecret = locale.category === 'great_fey_shrine'
+    const shiftSecret = (locale.category === 'great_fey_shrine' || placement.preferSeclusion === true)
       && placement.preferSeclusion !== false && !placement.alwaysVisibleOnMap
       && !placement.sameSectorAsEntry; // Fixed or introductory story spaces retain their authored placement contracts.
     let spot = shiftSecret ? secretLocaleSite(bbox,paddedW,paddedH,clearance,locale,placementFilter) : null;
