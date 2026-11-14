@@ -5,6 +5,7 @@ unrelated PRs editing `docs/index.html`, compatible *late* scripts can move to
 separate manifests in `docs/js/bootstrap/classic-groups/`.
 
 Currently migrated:
+- `pre-game-services.js`: surface occlusion and held-weapon x-ray, HUD/tool icons, inventory item art, mounts, audio and Pixel Probe before dialogue/game.js.
 - `qol.js`: toast, arrival, hotkeys, inventory search.
 - `guild.js`: guild progression, magic checkpoint, vault signal.
 - `render.js`: actor/mesh/grass culling and depth snapshot.
@@ -49,6 +50,25 @@ literally in `index.html`.
 
 This first migration intentionally leaves early startup scripts and inline
 boot handoff scripts in place. They have stronger parser/side-effect coupling.
+
+## Pre-game rendering and inventory boot ownership
+
+The `pre-game-services.js` group occupies the original tool-icon-render position,
+after the main body UI exists and before the dialogue group/game startup. It owns
+16 parser-ordered scripts. The shared `surface-occlusion-composer.js` loads
+immediately before `held-object-render-order.js`; the independent
+`tool-icon-render.js` adapter follows those modules and owns **only** HUD/tool
+icon presentation and its icon children. Do not reintroduce renderer or shader
+loader logic into the HUD adapter, and do not add held-renderer cache bumps to
+`index.html`. Put the new renderer token in this manifest instead.
+
+The rest of the manifest preserves item sprite/color assets, mount and companion
+services, AudioSystem before animal sound/music, and transform-dump helpers
+before Pixel Probe. These still initialize before `game.js` and never use
+async dynamic script insertion. The single per-navigation manifest request is
+an extra parser-blocking request, like the other groups; no additional polling
+or recurring per-frame work is introduced. `scripts/test-pre-game-services-script-group.js`
+guards this exact startup order independently of future unrelated script updates.
 
 ## Dependency notes for migrated festival and NPC systems
 
