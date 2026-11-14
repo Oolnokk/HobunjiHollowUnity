@@ -3,7 +3,7 @@
 
   if (window.BuildingInteriorRuntimeFurniture) return;
 
-  const TILE_SPAN_URL = '../../js/furniture-tile-span.js?v=20261113span1'; // Shared stretch solver required before authored mesh construction.
+  const TILE_SPAN_URL = '../../js/furniture-tile-span.js?v=20261114vertical1'; // Shared stretch solver required before authored mesh construction.
   const AUTHORED_RUNTIME_URL = '../../js/authored-furniture-runtime.js?v=20261114hspan1704'; // Used to load the same authored furniture group builder as gameplay.
   const VESSEL_RUNTIME_URL = '../../js/furniture-vessel-runtime.js?v=20261109htzizv1'; // Used to install gameplay's live procedural-to-authored furniture upgrade wrapper.
   const AUTHORED_CONFIG_BASE = '../../config/furniture-authored/'; // Used to resolve authored furniture JSON correctly from this nested editor page.
