@@ -111,6 +111,7 @@
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
   function entranceLabel(transition, building) {
+    if (transition?.roofAccess === true) return transition.label || 'Descend Ladder'; // Preserve rooftop route identity instead of renaming it to the regular front entrance.
     if (transition?.target !== 'building' && transition?.target !== 'interior') return transition?.label || '';
     const placed = building || (deps?.getTownZone?.()?.buildings || []).find(b => b.id === transition.buildingId || transition.id === 'bldg_entrance_' + b.id); // The placed building label is the Map Editor's name, independent of its house-piece template.
     const name = String(placed?.label || placed?.name || '').trim(); // Used by door prompts and auto-generated entrances.
