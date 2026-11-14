@@ -13,13 +13,14 @@ const targeting = win.EnemyPetTargeting; // Public owner used by the game loop.
 assert(targeting);
 
 const player = { id: 'player', x: 90, y: 0, health: 100, areaId: 'zone' }; // Eligible player opponent.
-const pet = { id: 'pet', isCompanion: true, stableRole: 'companion', x: 25, y: 0, health: 40, areaId: 'zone' }; // Active ground pet.
+const pet = { id: 'pet', isCompanion: true, stableRole: 'companion', master: player, x: 25, y: 0, health: 40, areaId: 'zone' }; // Active player-owned ground pet.
 const shoulder = { ...pet, id: 'shoulder', stableRole: 'shoulderPet', x: 2 }; // Attached pet is not a second target.
 const mount = { ...pet, id: 'mount', stableRole: 'mount', x: 3 }; // Mount is governed by its own system.
 const banditPet = { ...pet, id: 'enemy-pet', banditCompanion: true, x: 4 }; // Enemy-owned pet is an ally.
 const elsewhere = { ...pet, id: 'elsewhere', areaId: 'other', x: 5 }; // Cached actors outside the current zone cannot be attacked.
+const npcHound = { ...pet, id: 'npc-hound', master: { id: 'jubmir' }, x: 1 }; // Jubmir-like NPC-owned companion must not draw the player's enemies.
 const enemy = { id: 'bandit', x: 0, y: 0, health: 100, areaId: 'zone', isBandit: true }; // Hostile selector source.
-const roster = new Set([shoulder, mount, banditPet, elsewhere, pet]); // Mirrors the live companionObjects Set.
+const roster = new Set([shoulder, mount, banditPet, elsewhere, npcHound, pet]); // Mirrors the live companionObjects Set.
 
 assert.equal(targeting.chooseAggroTarget(enemy, [player], roster, 'zone', 100, () => true), pet,
   'the closest independently standing combat companion can draw normal enemy aggro');
@@ -39,6 +40,8 @@ assert.equal(targeting.groundPet(shoulder, 'zone'), false);
 assert.equal(targeting.groundPet(mount, 'zone'), false);
 assert.equal(targeting.groundPet(banditPet, 'zone'), false);
 assert.equal(targeting.groundPet(elsewhere, 'zone'), false);
+assert.equal(targeting.groundPet(npcHound, 'zone', [player]), false,
+  'NPC-owned companions cannot be mistaken for a player-owned pet');
 
 const master = { x: 0, y: 0 }; // Enemy pet's master-centered alert anchor.
 banditPet.x = 0;
@@ -63,7 +66,7 @@ assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], rost
 const ranged = read('docs/js/combat/ranged-weapons.js'); // Canonical projectile sweep, not a second projectile implementation.
 const match = ranged.match(/  function nearestPlayerCompanionHit\([\s\S]*?\n  \}/);
 assert(match, 'enemy shots must use their own companion-aware hitbox sweep');
-const deps = { companionObjects: roster }; // Same live Set consumed by game.js.
+const deps = { player, companionObjects: roster }; // Same player identity and live Set used by the real game.
 const hitboxContext = vm.createContext({
   deps, window: {}, segmentHitboxInterval(start, end, hitbox) { return hitbox?.interval || null; },
   actorHitbox(actor) { return actor.testBox; },
@@ -72,6 +75,7 @@ shoulder.testBox = { interval: { enter: 0.1 } };
 mount.testBox = { interval: { enter: 0.1 } };
 banditPet.testBox = { interval: { enter: 0.1 } };
 elsewhere.testBox = { interval: { enter: 0.1 } };
+npcHound.testBox = { interval: { enter: 0.05 } }; // A nearer NPC hound must not intercept a hostile shot aimed at the player's pet.
 pet.testBox = { interval: { enter: 0.4 } };
 vm.runInContext(match[0], hitboxContext);
 assert.equal(vm.runInContext('nearestPlayerCompanionHit({}, {}, 0, "zone").creature', hitboxContext), pet,
@@ -92,5 +96,6 @@ assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y,
 const expanded = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Loads the actual published bootstrap order.
 assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') > -1, 'target owner must load in the published build');
 assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') < expanded.indexOf('js/combat/ranged-weapons.js'));
-assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') < expanded.indexOf('game.js'));
+assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') < expanded.indexOf('<script src="game.js?v='),
+  'targeting module must be loaded before the actual versioned game entrypoint, not an earlier filename suffix');
 console.log('Enemy aggro, Beastmaster targeting and projectile pet collision tests passed.');
