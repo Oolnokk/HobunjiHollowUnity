@@ -103,6 +103,7 @@
         bboxD: maxY - minY + 1,
         cells: [{ x: authored.x - minX, y: authored.y - minY }],
         psCells: [],
+        doorIsTile: pieceData.placementOrigin === 'fullFootprint', // Full-porch entrances name the actual walkable door tile, not a shell edge needing a one-tile outward offset.
       };
     }
     return derived;
@@ -128,7 +129,12 @@
       if (wr < wBMinR) wBMinR = wr; if (wr > wBMaxR) wBMaxR = wr;
     }
     let eCol, eRow;
-    if (psCells && psCells.length) {
+    if (doorEntrance.doorIsTile) {
+      // Full-footprint authors place footprint.door on the physical threshold.
+      // Applying the legacy south-edge +1 here shifts rotated porch doors one tile away.
+      eCol = wBMinC;
+      eRow = Math.min(clampRow, wBMinR);
+    } else if (psCells && psCells.length) {
       let wPMinC = Infinity, wPMaxC = -Infinity, wPMinR = Infinity, wPMaxR = -Infinity;
       for (const c of psCells) {
         const r = rotateCell(c.x, c.y, bboxW, bboxD, rotDeg);
