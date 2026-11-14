@@ -66,12 +66,17 @@
   function _playDewShovelSfx(volumeScale = 1, pitch = 1) {
     const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {};
     if (audioCfg.enabled === false) return false;
-    const snd = dewShovelSfxPreload?.cloneNode?.(true) || (typeof Audio === 'function' ? new Audio(DEW_SHOVEL_SFX_URL) : null);
-    if (!snd) return false;
-    snd.volume = Math.max(0, Math.min(1, 0.9 * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0)));
-    snd.playbackRate = Math.max(0.3, Number(pitch) || 1);
-    snd.play().catch(() => {});
-    const target = _targetedDewPile();
+    const target = _targetedDewPile(); // The farm reticle identifies the dew pile before its digging mutation.
+    const audio = window.AudioSystem; // Shared object renderer preserves HRTF, distance and the farm's acoustic reverb.
+    const source = target ? audio?.objectSfxSourceAt?.(target.col + .5, target.row + .5, 'farm') : null;
+    if (audio?.playObjectSfx) audio.playObjectSfx({ url: DEW_SHOVEL_SFX_URL, volume: .9 }, volumeScale, pitch, null, source);
+    else {
+      const snd = dewShovelSfxPreload?.cloneNode?.(true) || (typeof Audio === 'function' ? new Audio(DEW_SHOVEL_SFX_URL) : null);
+      if (!snd) return false;
+      snd.volume = Math.max(0, Math.min(1, .9 * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0)));
+      snd.playbackRate = Math.max(.3, Number(pitch) || 1);
+      snd.play().catch(() => {});
+    } // Older diagnostics and headless harnesses still work without the decoupled AudioSystem.
     lastDewShovelSfxDebug = {
       atMs: Math.round(performance.now()),
       target,
@@ -86,9 +91,9 @@
     const audio = window.AudioSystem;
     if (!audio?.playObjectSfxKey || audio.__hobunjiDewShovelSfxOverride) return false;
     const originalPlayObjectSfxKey = audio.playObjectSfxKey.bind(audio); // Preserves every existing keyed cue unchanged outside dew digging.
-    audio.playObjectSfxKey = function dewAwareObjectSfxKey(key, volumeScale = 1, pitch = 1) {
+    audio.playObjectSfxKey = function dewAwareObjectSfxKey(key, volumeScale = 1, pitch = 1, source = null) {
       if (key === 'dig' && _targetedDewPile()) return _playDewShovelSfx(volumeScale, pitch);
-      return originalPlayObjectSfxKey(key, volumeScale, pitch);
+      return originalPlayObjectSfxKey(key, volumeScale, pitch, source); // Never drop a caller's world emitter while passing through this optional override.
     };
     audio.__hobunjiDewShovelSfxOverride = true;
     return true;
