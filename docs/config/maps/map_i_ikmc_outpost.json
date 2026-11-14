@@ -379,7 +379,12 @@
       "spawnCol": 0,
       "spawnRow": 0,
       "direction": "north",
-      "generateDoor": true
+      "generateDoor": true,
+      "outdoorSpawn": {
+        "area": "town",
+        "col": 7,
+        "row": 42
+      }
     },
     {
       "id": "exit_ikmc_roof_ladder",
@@ -400,6 +405,12 @@
         "balconyId": "ikmc_rooftop",
         "pieceId": "3da34777-9c9d-4fd2-b9f9-234fe30392fb",
         "heightMode": "wall"
+      },
+      "outdoorSpawn": {
+        "area": "town",
+        "col": 7,
+        "row": 45,
+        "balconyId": "ikmc_rooftop"
       }
     }
   ],
