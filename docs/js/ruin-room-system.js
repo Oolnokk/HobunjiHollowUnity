@@ -61,6 +61,18 @@
     return {rooms,doors,errors,ok:errors.length===0};
   }
 
+  function v50Rooms(meta,{originX=0,originZ=0,tileScale=2,y=0,prefix='v50',theme='hronal'}={}){
+    const cs=(Number(meta?.cellSize)||.5)*tileScale; // Matches nativeRoom and the original V50 2x horizontal projection, not a second tile grid.
+    const color=theme==='tothal'?[6,18,44]:theme==='hronal'?[20,7,2]:[0,0,0];
+    if(!(cs>0)||!Number.isFinite(cs))return [];
+    return (meta?.rooms||[]).flatMap((raw,index)=>{
+      const x=originX+Number(raw.col)*cs,z=originZ+Number(raw.row)*cs;
+      const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
+      if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
+      return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),
+        y,wingId:null,challenge:null,x,z,w,d,ambient:{darknessOffset:0,color}}];
+    });
+  }
   function floorAudit(room,supportedCells){
     let expected=0,missing=0; // Checks only required floors; a rope pit is a deliberate open volume, not a missing tile.
     for(let z=room.z;z<room.z+room.d;z++)for(let x=room.x;x<room.x+room.w;x++){
@@ -135,7 +147,7 @@
   }
   function mount({layout,getPlayerPosition,getPlayerY,getHostiles,mapId='map_i_dev_random_ruin',tile=64,onRoomChange}={}){
     if(live)live.dispose(); // No room-owned hostiles or compositor masks leak across a ruin reroll.
-    const rooms=layout?.rooms||[],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
+    const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false;
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
@@ -175,6 +187,12 @@
     }
     const session={
       rooms,layout,
+      addRooms(additional){
+        for(const room of additional||[]){
+          if(!room?.id||byId.has(room.id))continue;
+          rooms.push(room);byId.set(room.id,room);
+        }
+      }, // Native V50 upper stories are registered after their meshes are mounted in the same scene.
       get activeRoomId(){return active?.id||null;},
       isRoomActive(id){return !!active&&active.id===id;},
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
@@ -234,7 +252,7 @@
     live=session;
     return session;
   }
-  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,floorAudit,makeShell,roomAt,mount,
+  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,floorAudit,makeShell,roomAt,mount,
     isRoomActive:id=>live?.isRoomActive(id)===true,
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
