@@ -240,6 +240,42 @@
     return promise;
   }
 
+
+  function ceilingFurnitureInScene(scene) {
+    const groups=[]; // Only roots with ceiling-span metadata are resized; no mesh-by-mesh work on regular furniture.
+    scene?.traverse?.(node=>{
+      if(node?.userData?.authoredFurnitureData?.tileSpan?.axis==='y' &&
+        node.userData.authoredFurnitureData.tileSpan.verticalTarget==='ceiling')groups.push(node);
+    });
+    return groups;
+  }
+
+  function fitCeilingFurniture(group, explicitHeight = null) {
+    const span=group?.userData?.authoredFurnitureData?.tileSpan;
+    if(!span?.enabled||span.axis!=='y'||span.verticalTarget!=='ceiling')return Promise.resolve(false);
+    if(!window.AuthoredFurniture?.setTileSpan)return Promise.resolve(false);
+    const editorHeight=IS_INTERIOR_EDITOR?Number(window.__hobunjiInteriorWallHeightOverride):NaN; // Live Interior Editor authoring slider wins in its preview.
+    if(Number.isFinite(explicitHeight)||Number.isFinite(editorHeight)){
+      window.AuthoredFurniture.setTileSpan(group,Number.isFinite(explicitHeight)?explicitHeight:editorHeight);
+      return Promise.resolve(true);
+    }
+    let ownerMapId=null; // Resolve only this furniture's owning interior, never a globally "last opened" room.
+    for(const [mapId,record] of buildingSceneMap||[]){
+      let parent=group; // Walk the changed furniture root upward; scene groups are usually just two ancestors away.
+      while(parent){
+        if(parent===record?.scene){ownerMapId=mapId;break;}
+        parent=parent.parent;
+      }
+      if(ownerMapId)break;
+    }
+    if(!ownerMapId)return Promise.resolve(false);
+    return loadEnvironmentForMap(ownerMapId).then(env=>{
+      if(!group?.parent)return false; // Ignore late finishes for furniture removed while loading.
+      window.AuthoredFurniture?.setTileSpan?.(group,env?.wallHeight??DEFAULT_WALL_HEIGHT);
+      return true;
+    }).catch(error=>{lastError=String(error?.message||error);return false;});
+  }
+
   function applyEnvironmentToScene(mapId, sceneRecord) {
     if (!sceneRecord?.scene) return Promise.resolve(null);
     return loadEnvironmentForMap(mapId).then(environment => {
@@ -268,6 +304,8 @@
         if (needsWallHeight) wallGroups = applyWallHeight(sceneRecord.scene, environment.wallHeight);
         if (needsLighting) lights = applyLighting(sceneRecord, environment.interiorLighting, mapId);
       }
+      for(const furniture of ceilingFurnitureInScene(sceneRecord.scene))
+        fitCeilingFurniture(furniture, environment.wallHeight??DEFAULT_WALL_HEIGHT); // Co-locate the rigid black hatch with the room's actual ceiling.
       lastMapId = mapId;
       lastWallGroupCount = wallGroups;
       lastLightCount = lights;
@@ -531,6 +569,7 @@
     usesOverlayOnlyLighting,
     applyWallHeight,
     applyEnvironmentToScene,
+    fitCeilingFurniture, // Called by authored furniture upgrades after their live parent scene is known.
     debugSnapshot,
   });
   window.__interiorEnvironmentDebug = debugSnapshot;
