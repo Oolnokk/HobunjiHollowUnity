@@ -231,6 +231,19 @@ async function run() {
     throw new Error(`Unexpected runtime repair snapshot: ${JSON.stringify(snapshot)}`);
   }
 
+  // Some terrain builders call the base Object3D.add directly with a Scene
+  // receiver. That bypasses the dedicated Scene.add wrapper, so the nested
+  // hook must still inspect and repair the attached natural surface.
+  const directBaseAdd = makeReportedMesh('rocks'); // Used to reproduce scene attachment through the base prototype.
+  Object3D.prototype.add.call(scene, directBaseAdd.mesh);
+  await new Promise(resolve => setImmediate(resolve));
+  if (directBaseAdd.texture.image.width !== 64 || directBaseAdd.texture.userData.hobunjiAuthoredSurfaceState !== 'authored-png-tinted-repair') {
+    throw new Error('Direct Object3D.add(scene, rock) bypassed the required terrain texture repair');
+  }
+  if (!(windowMock.NaturalSurfaceStretchRuntime.snapshot().nestedAddsInspected > snapshot.nestedAddsInspected)) {
+    throw new Error('Scene receiver bypass did not reach the nested object inspection hook');
+  }
+
   console.log(JSON.stringify({
     direct: {
       source: direct.texture.userData.hobunjiAuthoredSurfacePath,
