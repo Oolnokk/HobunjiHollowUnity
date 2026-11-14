@@ -109,6 +109,15 @@ assert.equal(snap.save(fakeRenderer(incompleteGl, { ...mainTarget }), rect), nul
 // Depth-only math: a "matrix" is a view-space z offset, so depth = -z.
 class Vec3 { constructor() { this.x = 0; this.y = 0; this.z = 0; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } copy(v) { this.z = v.z; return this; } applyMatrix4(m) { this.z += m.z || 0; return this; } }
 class Sphere { constructor(z = 0, radius = 0) { this.center = { z }; this.radius = radius; } copy(s) { this.center = { z: s.center.z }; this.radius = s.radius; return this; } applyMatrix4(m) { this.center.z += m.z || 0; return this; } }
+class Matrix4 { // Only view-space Z translations are needed by this compositing fixture.
+  constructor() { this.elements = new Float64Array(16); }
+  multiplyMatrices(view, world) {
+    this.elements.fill(0);
+    this.elements[10] = 1;
+    this.elements[14] = (view.z || 0) + (world.z || 0);
+    return this;
+  }
+}
 const at = depth => ({ z: -depth, getMaxScaleOnAxis: () => 1 });
 const mesh = (depth, radius = 0.5, extra = {}) => ({ isMesh: true, visible: true, children: [], userData: {}, matrixWorld: at(depth), geometry: { boundingSphere: new Sphere(0, radius) }, ...extra });
 const begin = heldSource.indexOf('  let ordinaryDepthLeavesSkipped =');
@@ -134,7 +143,7 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
     restore(_r, token, rect) { log.push(['restore', rect]); return snapshot !== 'restore-fails'; },
   };
   const scope = {
-    window: { ScissorDepthSnapshot: fake }, THREE: { Sphere, Vector3: Vec3 }, objectProto: { onBeforeRender: undefined }, internalReplay: false, Map, Set, Infinity, Number, Math,
+    window: { ScissorDepthSnapshot: fake }, THREE: { Sphere, Vector3: Vec3, Matrix4 }, objectProto: { onBeforeRender: undefined }, internalReplay: false, Map, Set, Infinity, Number, Math,
     lastBaseStencilBits: 0, replayScissorEnabled: scissored, replayCullEnabled: false, scissorRect: { x: 1, y: 2, z: 3, w: 4 },
     replayScissorRect: () => scissored, setReplayCullFrustum: () => false, scissoredReplayCount: 0, applyElevationScissor: () => false, restoreRendererScissor() {},
     buildXrayGroups: () => ({ groups: [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [] }),
@@ -159,6 +168,32 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
   const counters = vm.runInContext('({ nearReplayFarCulled, nearReplaySnapshots, nearReplayFallbacks })', scope); // Module-level lets are not context properties.
   return { draws, log, nearRock, farMesa, straddling, unbounded, cover, hand, wideFarFloor, wideNearFloor, counters };
 }
+
+// Verify the production affine depth bound against the former eight-corner calculation.
+const helperStart = heldSource.indexOf('  function nearestReplayBoxViewDepth(');
+const helperEnd = heldSource.indexOf('  // Hides candidates whose whole bound', helperStart);
+assert(helperStart >= 0 && helperEnd > helperStart, 'production affine-depth helper exists');
+const nearestBoxDepth = new Function(heldSource.slice(helperStart, helperEnd) + String.fromCharCode(10) + 'return nearestReplayBoxViewDepth;')();
+let seed = 0x5A17C0DE; // Reproducible affine transformations (including reflections and shears).
+const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+for (let sample = 0; sample < 6000; sample++) {
+  const min = { x: random() * 40 - 20, y: random() * 40 - 20, z: random() * 40 - 20 };
+  const box = { min, max: { x: min.x + random() * 80, y: min.y + random() * 80, z: min.z + random() * 80 } };
+  const elements = new Array(16).fill(0);
+  for (const index of [2, 6, 10, 14]) elements[index] = random() * 30 - 15;
+  let reference = Infinity;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = corner & 1 ? box.max.x : box.min.x;
+    const y = corner & 2 ? box.max.y : box.min.y;
+    const z = corner & 4 ? box.max.z : box.min.z;
+    reference = Math.min(reference, -(elements[2] * x + elements[6] * y + elements[10] * z + elements[14]));
+  }
+  const actual = nearestBoxDepth(box, elements);
+  assert(Math.abs(actual - reference) < 1e-8, 'affine depth matches eight corners, sample ' + sample);
+  assert.equal(actual > reference + 0.01, false, 'near object never overculled');
+  assert.equal(actual > reference - 0.01, true, 'far object remains eligible for culling');
+}
+assert.match(heldSource, /replayFrustumIntersects\(object, instanceSphere\)/, 'instanced bounds reused for the intersection');
 
 const near = baseFixture();
 assert.deepEqual(near.draws.map(d => d.mask), [1, 2, 2], 'depth rebuild, held color draw, held depth-only redraw; no world or ground restore draw');
