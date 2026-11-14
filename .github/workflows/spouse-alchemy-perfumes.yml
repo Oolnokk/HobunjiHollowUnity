@@ -1,0 +1,49 @@
+name: Spouse perfume alchemy integration
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/alchemy-system.js'
+      - 'docs/js/romance-system.js'
+      - 'docs/js/npc-gifting.js'
+      - 'docs/js/item-processing.js'
+      - 'docs/js/inventory-held-override.js'
+      - 'docs/js/alcohol-gameplay-bridge.js'
+      - 'scripts/test-inventory-direct-item-use.js'
+      - 'scripts/test-spouse-alchemy-perfumes.js'
+      - 'scripts/test-spouse-kiss.js'
+      - 'scripts/test-npc-gifting-multitrait.js'
+      - 'scripts/test-trait-alchemy-refactor.js'
+      - '.github/workflows/spouse-alchemy-perfumes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  perfume-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse all changed gameplay modules
+        run: |
+          node --check docs/js/alchemy-system.js
+          node --check docs/js/romance-system.js
+          node --check docs/js/npc-gifting.js
+          node --check docs/js/item-processing.js
+          node --check docs/js/inventory-held-override.js
+          node --check docs/js/alcohol-gameplay-bridge.js
+          node --check scripts/test-spouse-alchemy-perfumes.js
+      - name: Exercise alchemy, spouse gift acceptance and the kiss buff
+        run: node scripts/test-spouse-alchemy-perfumes.js
+      - name: Preserve existing chemistry mechanics
+        run: node scripts/test-trait-alchemy-refactor.js
+      - name: Preserve existing spouse kiss and gifting behavior
+        run: |
+          node scripts/test-spouse-kiss.js
+          node scripts/test-npc-gifting-multitrait.js
+          node scripts/test-inventory-direct-item-use.js

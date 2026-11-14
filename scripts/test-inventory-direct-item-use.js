@@ -19,6 +19,7 @@ const inventory = {
   mysteryDyeRed: 1,
   venomFlask: 1,
   breedingGigantism: 1,
+  perfumeBottle: 1, // Ensures a gift-only Alchemy output cannot be eaten through the Inventory panel.
   redberrySeeds: 3,
 }; // Used to exercise every direct-use family plus target-dependent exclusions.
 const ITEM_DEFS = {
@@ -34,6 +35,7 @@ const ITEM_DEFS = {
   mysteryDyeRed: { icon: '🔴', label: 'Red Mystery Dye', mysteryDyePoolId: 'red' },
   venomFlask: { icon: '☠️', label: 'Venom Flask', useMode: 'throw' },
   breedingGigantism: { icon: '🐘', label: 'Breeding Potion of Gigantism', useMode: 'livestock' },
+  perfumeBottle: { icon: '🌸', label: 'Blossom Perfume', cat: 'processed', useMode: 'gift', tags: ['Alchemy', 'Perfume'] },
   redberrySeeds: { icon: '🌱', label: 'Redberry Seeds', cat: 'seed', seedFor: 'redberries' },
 };
 const inventoryItems = Object.entries(ITEM_DEFS).map(([key, def]) => ({ key, label: def.label, icon: def.icon })); // Used by the detail-label resolver fallback.
@@ -90,12 +92,14 @@ const windowStub = {
       healingPotion: { id: 'healingPotion', useMode: 'drink' },
       venomFlask: { id: 'venomFlask', useMode: 'throw' },
       breedingGigantism: { id: 'breedingGigantism', useMode: 'livestock' },
+      perfumeOfBlossoms: { id: 'perfumeOfBlossoms', useMode: 'gift' },
     },
     REAGENT_DEFS: { frostcapMoss: {} },
     POTION_ITEMS: {
       healingPotionBottle: { recipeId: 'healingPotion', potencyTier: 0 },
       venomFlask: { recipeId: 'venomFlask', potencyTier: 0 },
       breedingGigantism: { recipeId: 'breedingGigantism', potencyTier: 0 },
+      perfumeBottle: { recipeId: 'perfumeOfBlossoms', potencyTier: 0 },
     },
     parseBrewedItemKey() { return null; },
     readRecipeItem(key) { recipeReads++; inventory[key]--; return { ok: true, message: 'Learned Healing Potion.' }; },
@@ -104,7 +108,7 @@ const windowStub = {
   },
   HobunjiDrunkGameplayBridge: {
     isPotionOrDrink(key, def) { return def?.useMode === 'drink'; },
-    isFood(def) { return def?.cat === 'food'; },
+    isFood(def) { return ['food', 'processed'].includes(def?.cat); }, // Deliberately aggressive legacy food classifier: explicit gift mode must win.
   },
   CombatProgression: { hasEffectUnlock: () => false, readMasteryItem(key) { if (!(inventory[key] > 0)) return false; inventory[key]--; return true; } },
   TechniqueScrolls: {
@@ -176,6 +180,9 @@ assert.equal(api.getInventoryUseAction('masteryScroll')?.kind, 'masteryUnlock', 
 assert.equal(api.getInventoryUseAction('mysteryDyeRed')?.kind, 'mysteryDye', 'mystery dyes expose direct Use');
 assert.equal(api.getInventoryUseAction('venomFlask'), null, 'throwing flasks remain Hold/aim only');
 assert.equal(api.getInventoryUseAction('breedingGigantism'), null, 'livestock potions remain Hold/target only');
+assert.equal(api.getInventoryUseAction('perfumeBottle'), null, 'gift-only perfume must not expose Eat or Drink despite processed-food fallback');
+assert.equal(api.useInventoryItem('perfumeBottle'), false, 'attempted direct-use cannot consume the perfume');
+assert.equal(inventory.perfumeBottle, 1);
 assert.equal(api.getInventoryUseAction('redberrySeeds'), null, 'seeds remain Hold/world-target only');
 
 // Inventory detail rendering: direct-use items receive one semantic button; target-dependent items do not.
