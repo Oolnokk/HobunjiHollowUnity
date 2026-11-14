@@ -86,6 +86,13 @@ fraction = '1/10';
 buffWindow.EffectBuffBar.refresh();
 assert.equal(buffRoot.markupWrites, 1, 'fraction update does not replace icon markup');
 assert.equal(buffRoot.fractions()[0].textContent, '1/10', 'fraction update retains live text');
+fraction = ''; // Used to check a fraction badge may disappear without losing the underlying effect.
+buffWindow.EffectBuffBar.refresh();
+assert.equal(buffRoot.fractions().length, 0, 'removing a fraction rebuilds icon structure without a stale badge');
+fraction = '3/10'; // Used to check a badge can appear after the initial effect was registered.
+buffWindow.EffectBuffBar.refresh();
+assert.equal(buffRoot.fractions().length, 1, 'newly available fraction creates a real badge node');
+assert.equal(buffRoot.fractions()[0].textContent, '3/10', 'added fraction shows its current value');
 assert(buffWindow.EffectBuffBar.getDebug().skippedWrites > 10, 'mobile diagnostics track skipped writes');
 buffRoot = createBuffRoot();
 buffWindow.EffectBuffBar.refresh();
@@ -173,5 +180,7 @@ const dividerStyleWrites = pill.spItemDiv.writes.filter(entry => entry === 'styl
 hudWindow.HudUpdate.updateHud();
 assert.equal(pill.spItem.writes.filter(entry => entry === 'style.display').length, itemStyleWrites, 'desktop item style does not rewrite every frame');
 assert.equal(pill.spItemDiv.writes.filter(entry => entry === 'style.display').length, dividerStyleWrites, 'desktop item divider style does not rewrite every frame');
+deps.spItemDiv = null; // Condensed HUDs can omit the optional desktop item separator.
+assert.doesNotThrow(() => hudWindow.HudUpdate.updateHud(), 'missing optional desktop separator does not crash the HUD refresh');
 
 console.log('HUD DOM style-write dedup regression checks passed.');
