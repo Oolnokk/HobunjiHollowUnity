@@ -8,9 +8,10 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
+  const MELODY_PERCUSSION_VOLUME=1; // A scored +9-semitone hit is distinct and substantially louder than the numbered stonebeat meter.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
-  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,percussionHits:0,lastPercussionPitchSemitones:null,lastPercussionScheduledAtMs:null,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,percussionHits:0,lastPercussionVolume:0,lastPercussionPitchSemitones:null,lastPercussionScheduledAtMs:null,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function spanFor(object,explicitSize){
     const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
@@ -103,9 +104,9 @@
     const audio=root.AudioSystem;
     const clip=audio?.objectSfxConfig?.()?.stoneBeat2; // Authored second-beat recording is also the tune's rhythm-only percussion sample.
     if(!clip?.url||typeof audio?.playObjectSfxKeyMetronome!=='function')return false;
-    const hit=audio.playObjectSfxKeyMetronome(.36,1,whenMs,9); // +9 semitones; one independent strike per scored note onset.
+    const hit=audio.playObjectSfxKeyMetronome(MELODY_PERCUSSION_VOLUME,1,whenMs,9); // +9 semitones; one loud independent strike per scored note onset.
     if(hit===false){debug.metronomeError='stoneBeat2 percussion unavailable';return false;}
-    debug.percussionHits++;debug.lastPercussionPitchSemitones=9;
+    debug.percussionHits++;debug.lastPercussionVolume=MELODY_PERCUSSION_VOLUME;debug.lastPercussionPitchSemitones=9;
     debug.lastPercussionScheduledAtMs=Number.isFinite(whenMs)?whenMs:null; // Visible in Pixel Probe without a browser console.
     return true;
   }

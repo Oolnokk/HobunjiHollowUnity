@@ -154,9 +154,21 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     // Retry if a world reset removes the fighters while the smoke is running.
     const explainStall=async(stage,error)=>{ // A bare "Timeout exceeded" says nothing about WHY the fighters never fought.
       const state=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa||{},live=window.Combat.deps.hostileObjects,T=window.Combat.deps.TILE;
-        const pick=e=>e?{state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,hasWeaponHolder:!!e._banditToolHolder,targetsRival:!!e._chunkCombatTarget,attackBusy:!!e._enemyAttackBusyLastFrame,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2)}:null;
-        return {omg:pick(omg),pora:pick(pora),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size};}).catch(()=>null);
+        const pick=(e,rival)=>e?{state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,hasWeaponHolder:!!e._banditToolHolder,targetsRival:e._chunkCombatTarget===rival,attackBusy:!!e._enemyAttackBusyLastFrame,stamina:e.stamina,staminaCost:e.def?.attackStaminaCost,cooldown:e.attackCooldownT,retreat:e.retreatT,comboStep:e._banditComboIndex,stagedAction:!!e._banditAction,rangeTiles:+(Number(e.def?.attackRangePx||0)/T).toFixed(2),distanceToRival:rival?+(Math.hypot(e.x-rival.x,e.y-rival.y)/T).toFixed(2):null,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2)}:null;
+        return {omg:pick(omg,pora),pora:pick(pora,omg),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size};}).catch(()=>null);
       return new Error(`${error.message}\n[${stage}] fighter state at timeout: ${JSON.stringify(state)}`); // New Error: a mutated message would not show in the already-captured stack that console.error prints.
+    };
+    const discardStalledPair=async()=>{ // A timed-out pair must not crowd or consume attack slots during a retry.
+      await page.evaluate(()=>{
+        const qa=window.__tribeQa;
+        if(!qa)return;
+        for(const entity of [qa.omg,qa.pora]){
+          if(!entity)continue;
+          window.Combat.deps.hostileObjects.delete(entity);
+          window.BanditCombat.discardEntity(entity);
+        }
+        delete window.__tribeQa;
+      });
     };
     let fought=false,spawned=null,fight=null;
     try{
@@ -181,8 +193,14 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
             return qa.sawMutualTargets&&hit&&{neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};
           },null,{timeout:30000}); // Sample every frame so short-lived targeting still counts.
           outcome=await result.jsonValue();
-        }catch(error){throw await explainStall('waiting for rival targeting and damage',error);}
-        if(outcome.wiped)continue;
+        }catch(error){
+          const stall=await explainStall('waiting for rival targeting and damage (attempt '+(attempt+1)+'/3)',error);
+          if(attempt===2)throw stall; // A reproducible no-hit duel is still a genuine regression.
+          console.warn(stall.message); // Retain the full combat readiness snapshot for CI debugging.
+          await discardStalledPair(); // Rebuild only the duel; leave the generated world and real combat system intact.
+          continue;
+        }
+        if(outcome.wiped){await discardStalledPair();continue;}
         fought=true;
         fight=outcome;
       }

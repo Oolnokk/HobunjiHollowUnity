@@ -79,6 +79,15 @@ for(const filename of ['sfx_ignite_big.m4a','sfx_ignite_small.m4a','sfx_stone_ac
   assert(fs.existsSync(path.join(__dirname,'..','docs','assets','audio','sfx',filename)),
     'referenced recording must exist: '+filename);
 }
+const melodyCalls=[]; // Captures both stonebeat buses without starting actual audio.
+sandbox.AudioSystem.objectSfxConfig=()=>({enabled:true,stoneBeat1:{url:'beat1.mp3'},stoneBeat2:{url:'beat2.mp3'}});
+sandbox.AudioSystem.playObjectSfxKeyMetronome=(...args)=>{melodyCalls.push(args);return true;};
+assert(audio.metronomeTick({downbeat:true,beatIndex:0,whenMs:1000}),'normal downbeat remains available');
+assert(audio.melodyPercussionTick({whenMs:1100}),'melody receives a separate pitched strike');
+assert.equal(melodyCalls[0][0],0.72,'original four-beat meter is not amplified');
+assert.equal(melodyCalls[1][0],1,'+9 semitone melody percussion is substantially louder');
+assert.equal(melodyCalls[1][3],9,'melody pitch remains +9 semitones');
+assert.equal(audio.debugSnapshot().lastPercussionVolume,1,'mobile debug reports the new percussion level');
 const index=read('docs/index.html');
 assert(index.indexOf('js/ruin-interaction-audio.js')>0,'the shared audio adapter is loaded by the game');
 assert(index.indexOf('js/ruin-interaction-audio.js')<index.indexOf('js/furniture-puzzle-runtime.js'),

@@ -63,7 +63,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261110h27565f6',
   'js/alchemy-system.js?v=20261106h3b90df7',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261111flailPose1',
+  'js/combat/combat-bandit.js?v=20261114areaDuel1',
   'js/weapon-tool-stances.js?v=20261111flailPose1',
   'js/combat/enemy-weapon-stances.js?v=20261111flailPose1',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
@@ -82,7 +82,7 @@ const files = [
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
-  'js/combat/ranged-weapon-archetypes.js?v=20261104scent1439c',
+  'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
   'tools/enemy-loadout-editor/source-data.js?v=20261110geomMainMerge1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
