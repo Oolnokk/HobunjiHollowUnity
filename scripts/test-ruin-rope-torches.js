@@ -54,7 +54,7 @@ class Mesh extends Object3D {
 class Sprite extends Object3D {
   constructor(material){super();this.material=material}
 }
-let loads=0,registers=0,activations=0,refreshes=0,fireSteps=0,fireTeardowns=0; // Proves shared asset and VFX lifecycle instead of repainting fire in a second system.
+let loads=0,registers=0,activations=0,refreshes=0,fireSteps=0,fireTeardowns=0,authorMaterials=0; // Proves shared asset and VFX lifecycle instead of repainting fire in a second system.
 const THREE = {
   Group:Object3D, Mesh,Sprite, SpriteMaterial:Material,MeshBasicMaterial:Material,Vector3,
   PlaneGeometry:class{constructor(width,height){this.width=width;this.height=height}dispose(){this.disposed=true}},
@@ -76,7 +76,15 @@ const effects = {
   stepFire(state,dt){fireSteps++;assert(dt>=0 && dt<=0.4);assert(state.fireEmitters.length)},
   dispose(state){fireTeardowns++;state.fireEmitters=[]},
 };
-const win={THREE,HobunjiLayeredWeaponEffects:effects};
+const win={THREE,HobunjiLayeredWeaponEffects:effects,
+  HobunjiSpritePngSurface:{
+    makeMaterial(_three, map, name, options) {
+      authorMaterials++;
+      assert(name.startsWith('ruin-rope-torch-') && options.depthWrite === false && options.side === THREE.DoubleSide);
+      return new Material({map, transparent:true, depthWrite:false, depthTest:true});
+    },
+  },
+};
 const document={createElement(type){
   assert.equal(type,'canvas');
   return {getContext(){return {createRadialGradient(){return {addColorStop(){}}},fillRect(){}}}};
@@ -93,13 +101,18 @@ assert.equal(api.attach(null),null);
 const floor=new Object3D(),marker=new Object3D();floor.add(marker);
 const torch=api.attach(marker),second=api.attach(marker);
 assert(torch && second);
+assert.equal(torch.root.visible,false,'glow must not appear before the four brazier textures load');
 assert.equal(torch.root.parent,marker,'head and halo inherit the real swinging rope bob');
 const camera={getWorldPosition(vector){return vector.set(0,3,5)}};
+api.tick(torch,.02,camera);
+assert.equal(torch.root.visible,false,'a pre-load frame must not show a floating halo');
+assert.equal(fireSteps,0,'unloaded head must not emit particles');
 
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(loads,4,'four shared weapon textures load once even with two separate ropes');
   assert.equal(registers,8,'each head gets its own recolorable four-layer meshes');
+  assert.equal(authorMaterials,8,'every layer uses the canonical authored PNG material builder');
   assert.equal(activations,2,'both ropes emit using the existing Torch-Flail fire effect');
   assert.equal(refreshes,2,'both heads request the shared bronze metal surface treatment');
   assert.equal(torch.headRoot.children.length,5,'four PNG layers plus the shared interleaved fire group');
