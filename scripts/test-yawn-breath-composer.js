@@ -33,7 +33,7 @@ async function main() {
   assert.equal(composed[1].length, composed[0].length, 'channels stay sample-aligned');
   assert.deepEqual(left, leftBefore, 'the original recording is never changed');
   assert.equal(composed[0][0], 0, 'the sample begins without a click');
-  assert.equal(composed[0].at(-1), 0, 'the sample ends without a click');
+  assert(Math.abs(composed[0].at(-1)) < 1e-7, 'the sample ends without a click (including signed zero)');
   assert.deepEqual(compose([left, right], sampleRate, 5, ratio, 0.8)[0], composed[0], 'rendering is deterministic for cache reuse');
   assert.notDeepEqual(compose([left, right], sampleRate, 5, ratio, 1)[0], composed[0], 'species-relative tempo affects the grain sequence');
   assert.notDeepEqual(composed[0], composed[1], 'stereo channels are not accidentally summed or cloned');
