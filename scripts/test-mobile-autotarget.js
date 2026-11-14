@@ -130,6 +130,42 @@ assert.equal(transitions,beforeCancel,'combat ending before the hold timer does 
 assert.equal(timers.size,0,'hidden hold gesture releases its timer');
 buttonHidden=false;
 
+// Exercise the actual controller target-flick arbitration rather than merely inspecting its source.
+const stickStart = game.indexOf('        const horizontalTargetIntent ='); // Isolates production stick ownership after the normalized axes and arch states are resolved.
+const stickEnd = game.indexOf('        if (gamepadState.primeButtonsOnResume)', stickStart); // Ends before unrelated controller button bindings.
+assert(stickStart > 0 && stickEnd > stickStart, 'controller target-flick owner exists');
+const stickTransitions = []; // Records real cycleAutoTarget calls for edge-trigger verification.
+let stickArchOpen = false; // Allows testing a selector closing while the stick remains held.
+let stickTargetAvailable = true; // A target-free stick must remain available to the ordinary camera/bindings.
+const stickScope = {
+  rightStickOwner: 'camera', rx: 0.85, ry: 0.1, menuOpen: false, farmEditMode: false,
+  controllerTargetHorizontalLatch: 0, controllerCameraX: 0.85, controllerCameraY: 0.1,
+  gamepadState: { primeButtonsOnResume: false }, down: new Set(['RightStickRight','RightStickUp']),
+  window: { _desktopSelectionArc: { isOpen: () => stickArchOpen }, SocialActionWheel: { isOpen: () => false }, FurniturePlacer: { isOpen: () => false } },
+  mobileAutoTargetEnabled: () => true, findAutoTarget: () => stickTargetAvailable ? { health: 10 } : null,
+  cycleAutoTarget: direction => stickTransitions.push(direction),
+}; // Executable fixture uses the real game.js decision code, including its physical button suppression.
+vm.createContext(stickScope);
+const pollStick = () => vm.runInContext(game.slice(stickStart, stickEnd), stickScope);
+pollStick();
+assert.deepEqual(stickTransitions, [1], 'first right flick changes target once');
+assert.equal(stickScope.down.size, 0, 'target flick must not invoke mapped right-stick gameplay actions');
+assert.equal(stickScope.controllerCameraX, 0, 'target flick does not rotate the camera');
+pollStick();
+assert.deepEqual(stickTransitions, [1], 'held right stick does not repeatedly cycle');
+stickArchOpen = true; stickScope.rightStickOwner = 'selection';
+pollStick(); assert.deepEqual(stickTransitions, [1], 'open arch owns the stick');
+stickArchOpen = false; stickScope.rightStickOwner = 'camera';
+pollStick(); assert.deepEqual(stickTransitions, [1], 'closing an arch while still held cannot trigger a target swap');
+stickScope.rx = 0; pollStick();
+stickScope.rx = -0.85; stickScope.down = new Set(['RightStickLeft']); pollStick();
+assert.deepEqual(stickTransitions, [1, -1], 'neutral then left flick selects the opposite direction');
+stickTargetAvailable = false; stickScope.rx = 0; pollStick();
+stickScope.rx = 0.85; stickScope.down = new Set(['RightStickRight']); stickScope.controllerCameraX = 0.85;
+pollStick();
+assert(stickScope.down.has('RightStickRight'), 'without a target, existing right-stick bindings remain available');
+assert.equal(stickScope.controllerCameraX, 0.85, 'without a target, camera control remains available');
+
 assert.match(selectionArch, /isOpen\(\) \{ return !!_arcOpen; \}/, 'Item, Tool and entry arches expose shared open state');
 assert.equal((game.match(/!window\._desktopSelectionArc\?\.isOpen\?\.\(\)/g) || []).length, 2, 'controller and wheel target changes require every arch closed');
 assert.equal((game.match(/!window\.SocialActionWheel\?\.isOpen\?\.\(\)/g) || []).length, 2, 'both cycle paths yield to the Social Actions wheel');
