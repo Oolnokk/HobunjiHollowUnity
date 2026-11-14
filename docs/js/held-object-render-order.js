@@ -310,7 +310,6 @@
     // along with untagged rock props and cave walls.
     surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
       || data.hobunjiGroundXray === true // Explicit mesa terrain retains ground identity when Jigsaw replaces its grass material slot.
-      || (data.hobunjiGroundSurface === true && !walkableFloor) // A standalone tagged ground mesh may have a texture unrelated to the base-grass material; keep its walls solid via the face-normal filter.
       || (isTerrainSurface(object) && (
         (data.mapEditorTerrain != null && object.material?.userData?.terrainKey !== 'rock')
         || materialMarksBaseGrass(object?.material)
