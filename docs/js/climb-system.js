@@ -860,7 +860,8 @@
     // normal gravelstep).
     if (hopIndex !== player._climbLastHopIndex) {
       player._climbLastHopIndex = hopIndex;
-      window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep);
+      window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep,1,1,null,
+        {x:player.x,y:player.y,areaId:deps?.getCurrentArea?.()}); // Local climber hop uses the shared positioned object path.
     }
     const withinCycle = player.climbElapsed - hopIndex * cycle;
     const hopActive = withinCycle < hopActiveS;
