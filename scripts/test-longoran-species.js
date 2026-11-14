@@ -184,12 +184,13 @@ const root = {
   },
 };
 assert.equal(compensatedWindow.HobunjiCharacterRigScale.applyHeadCompensation(root, 'longoran', 'male', {}, 0), true);
-const expectedOffset = compensatedWindow.HobunjiCharacterRigScale.ageHunchFraction(.75)
+const authoredHeadOffset = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('longoran', 'male').offsetY; // The new approved -5.5% head nudge composes with, rather than replacing, the permanent hunch drop.
+const expectedOffset = authoredHeadOffset + compensatedWindow.HobunjiCharacterRigScale.ageHunchFraction(.75)
   + spineWindow.HobunjiCharacterSpine.profileFor(.75).shoulderDrop;
 assert(near(headBone.position.y, expectedOffset), 'Longoran portrait must keep bound spine drop after age=0 scale reapplication');
 root.userData.hobunjiSpine = { hunch: .2 }; // Explicit actor spine beats the species' default in the same runtime.
 compensatedWindow.HobunjiCharacterRigScale.applyHeadCompensation(root, 'longoran', 'male', {}, 0);
-const newOffset = compensatedWindow.HobunjiCharacterRigScale.ageHunchFraction(.2)
+const newOffset = authoredHeadOffset + compensatedWindow.HobunjiCharacterRigScale.ageHunchFraction(.2)
   + spineWindow.HobunjiCharacterSpine.profileFor(.2).shoulderDrop;
 assert(near(headBone.position.y, newOffset), 'Explicit spine edits must not accumulate or retain the earlier larger drop');
 
