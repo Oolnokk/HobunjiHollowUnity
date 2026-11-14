@@ -25,6 +25,7 @@
   const visuals = new Map(); // entry.id -> { entry, avatar, group }
   let schedulerRegistered = false;
   let lastFrameMs = 0;
+  let rosterReadError = null; // Last batched livestock read error, available to mobile diagnostics.
 
   function registerQueenItem(itemDefs) {
     if (!itemDefs) return;
@@ -140,10 +141,21 @@
       }
     }
     const occupied = houses.some(entry => !!entry.house?.livestockId);
-    const recordsById = occupied
-      ? new Map(deps.loadWorldLivestock().filter(item => item.kind === KIND).map(item => [item.id, item]))
-      : null; // A single inventory/save read serves all houses, after any new colonies establish.
+    let recordsById = null; // One validated roster snapshot serves all occupied houses this tick.
+    if (occupied) {
+      try {
+        const roster = deps.loadWorldLivestock();
+        if (!Array.isArray(roster)) throw new TypeError('Livestock roster unavailable');
+        recordsById = new Map(roster.filter(item => item?.kind === KIND).map(item => [item.id, item]));
+        rosterReadError = null;
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (rosterReadError !== message) window.__farmLog?.(`[honeyfuzzle] house roster read failed: ${message}`, 'warn');
+        rosterReadError = message; // Preserve existing animals and visuals while the roster is unavailable.
+      }
+    }
     for (const entry of houses) {
+      if (entry.house?.livestockId && !recordsById) continue; // Never erase a saved house occupant on a transient read failure.
       if (entry.house?.livestockId || visuals.has(entry.id)) syncVisual(entry, undefined, recordsById);
     }
   }
@@ -273,6 +285,7 @@
     init, ensure, phase, placeQueen, establish, useTonic, tick, open, syncVisual, removeVisual,
     placeEgg: placeQueen, hatch: establish, // Obsolete API aliases keep older integrations functional.
     visualCount: () => visuals.size,
+    debugSnapshot: () => ({ occupiedVisuals: visuals.size, rosterReadError }), // Inspect degraded farm roster reads without opening mobile devtools.
     forEachAudioSource, // Used by HoneyfuzzleAudio's 350ms source scan; no extra per-frame renderer work.
   };
 })();
