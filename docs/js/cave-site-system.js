@@ -249,7 +249,17 @@
         rankedById.set(entry.shelf.id, entry.visibility);
       }
       ranked.sort((a,b) => b.priority-a.priority || String(a.shelf.id).localeCompare(String(b.shelf.id)));
-      selected = ranked.slice(0, rolled.length).map(entry => entry.shelf);
+      const chosen = []; // Keep secret entrances spatially scattered instead of filling one extremely secluded ledge cluster.
+      for (const entry of ranked) {
+        if (chosen.length >= rolled.length) break;
+        if (chosen.some(previous => Math.hypot(previous.shelf.x-entry.shelf.x, previous.shelf.z-entry.shelf.z) < 7)) continue;
+        chosen.push(entry);
+      }
+      for (const entry of ranked) {
+        if (chosen.length >= rolled.length) break;
+        if (!chosen.includes(entry)) chosen.push(entry); // Keep the established density when terrain has too few separated shelves.
+      }
+      selected = chosen.map(entry => entry.shelf);
     }
     const cycleIdentity = currentStateIdentity(); // New Shift incarnation owns fresh cave map IDs and unopened treasure.
     const sites = selected.map(shelf => {
