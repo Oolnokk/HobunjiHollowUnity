@@ -606,12 +606,25 @@
           try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
         }
         return result;
-      }
-      finally {
-        // Pose composition itself can throw before WebGLRenderer.render starts.
-        // Every temporary foot/body/held transform must still be undone or the
-        // next gameplay frame inherits its render-only orientation indefinitely.
-        for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+      } catch (error) {
+        renderDebug.renderError = String(error?.message || error); // Mobile diagnostics retain the failed compose/draw phase.
+        lastRenderDebug = renderDebug;
+        throw error;
+      } finally {
+        // Pre-render failure must restore all temporary transforms. If one
+        // rollback itself fails, continue restoring the others rather than
+        // letting a single stale attachment leave the feet turned all session.
+        let rollbackIndex = undo.length - 1; // Reverse-order undo index; the normal path has no per-item try/catch cost.
+        try {
+          for (; rollbackIndex >= 0; rollbackIndex--) undo[rollbackIndex]();
+        } catch (error) {
+          renderDebug.rollbackErrors = [String(error?.message || error)]; // Inspect from the existing mobile composer snapshot.
+          for (rollbackIndex--; rollbackIndex >= 0; rollbackIndex--) {
+            try { undo[rollbackIndex](); }
+            catch (nextError) { renderDebug.rollbackErrors.push(String(nextError?.message || nextError)); }
+          }
+          lastRenderDebug = renderDebug;
+        }
       }
     };
     // held-object-render-order.js's internal depth-replay passes need the
