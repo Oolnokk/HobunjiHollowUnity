@@ -322,6 +322,25 @@
     return clone;
   }
 
+  function adoptBundledWorkspaceBaselines(addedIds) {
+    const ws = workspace();
+    if (!ws || !workspaceBaseline || !addedIds) return;
+    for (const [field, ids] of [['plateauGroups', addedIds.plateauGroupIds], ['ramps', addedIds.rampIds]]) {
+      if (!Array.isArray(ids) || !ids.length) continue;
+      const baselineRecords = Array.isArray(workspaceBaseline[field]) ? workspaceBaseline[field] : [];
+      const baselineIds = new Set(baselineRecords.map(record => String(record?.id || '')));
+      for (const rawId of ids) {
+        const id = String(rawId || '');
+        if (!id || baselineIds.has(id)) continue;
+        const record = ws[field]?.find(entry => String(entry?.id || '') === id);
+        if (!record) continue;
+        baselineRecords.push(jsonSafeClone(record));
+        baselineIds.add(id);
+      }
+      workspaceBaseline[field] = baselineRecords; // Preserve other workspace edits while accepting repo-authored groups and ramps.
+    }
+  }
+
   function buildWorkspaceDiffBundle() {
     const ws = workspace();
     if (!ws || !Array.isArray(ws.maps)) throw new Error('No Map Editor workspace is available.');
@@ -441,6 +460,7 @@
       buildWorkspaceDiffBundle,
       captureMapBaseline, // Used after confirmed Town reload; other map baselines must not be erased.
       adoptBundledMapBaselines, // Accepts only newly imported indexed maps, without touching unrelated pending diffs.
+      adoptBundledWorkspaceBaselines, // Accepts only newly imported canonical plateau groups and ramps.
       captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
