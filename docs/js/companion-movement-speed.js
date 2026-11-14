@@ -39,13 +39,18 @@
   }
 
   function playerTerrainMultiplier(player) {
+    // The player's authoritative tileSpeedAt accounts for terrain, traversable
+    // bridge decks and area-specific rules; the fallback supports isolated tools.
+    const authoritative = deps?.getPlayerTerrainSpeedMul?.();
+    if (authoritative != null && Number.isFinite(Number(authoritative))) return Math.max(0, Number(authoritative));
     const tileSize = Math.max(1, Number(deps?.TILE) || 55);
     const grid = deps?.getActiveGrid?.();
     const col = Math.floor((Number(player?.x) || 0) / tileSize);
     const row = Math.floor((Number(player?.y) || 0) / tileSize);
     const tile = grid?.[row]?.[col];
-    if (!tile || tile.incline) return 1;
-    return tile.type === 'river' || tile.type === 'stream' ? 0.5 : 1;
+    if (!tile || tile.incline || deps?.getCurrentArea?.() === 'farm') return 1;
+    if (tile.type === 'river' || tile.type === 'stream') return 0.5;
+    return ({ tilled: 0.85, raised: 0.90, paddy: 0.70, trench: 0.30 })[tile.type] ?? 1;
   }
 
   function playerFootingMultiplier(player) {
