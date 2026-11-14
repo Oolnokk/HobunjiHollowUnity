@@ -628,9 +628,12 @@
   function addCacheLayer(mapData, rng, candidates, blockedKeys, plan, chestOnly = false, allowNearSide = false) {
     // When there is a real sealed extension, the cache must be on the far side.
     // Caves lacking a safe separator preserve the existing accessible deep-cache fallback.
-    if (plan.separator) candidates = allowNearSide
-      ? tilePoolFromKeys(candidates, plan.separator.nearKeys)
-      : extensionTiles(candidates, plan); // A secondary cache's fallback chest, crates and traps all stay on the accessible side of the secret door.
+    if (plan.separator) {
+      if (allowNearSide) {
+        const near = new Set(plan.separator.nearKeys); // Real accessible floor; never silently fall back to a blocked hidden room.
+        candidates = candidates.filter(tile => near.has(tileKey(tile.col, tile.row)));
+      } else candidates = extensionTiles(candidates, plan);
+    } // A secondary cache's fallback chest, crates and traps all remain on the accessible side of the secret door.
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
     const cacheTile = distant.find(tile => hasFeatureClearance(tile, blockedKeys, 2));
     if (!cacheTile) return false;
