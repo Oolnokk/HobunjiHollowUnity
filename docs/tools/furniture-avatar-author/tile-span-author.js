@@ -14,8 +14,14 @@
     const spec = state.tileSpan;
     $('tileSpanEnabled').checked = spec.enabled;
     $('tileSpanAxis').value = spec.axis;
+    $('tileSpanBaseHeight').value = spec.baseHeight;
+    $('tileSpanTargetHeight').value = spec.targetHeight;
+    $('tileSpanTargetMode').value = spec.verticalTarget || 'manual';
+    $('tileSpanVerticalFields').classList.toggle('hidden',spec.axis!=='y');
     for (const [id, value] of [['tileSpanStart', spec.startTiles], ['tileSpanMiddle', spec.middleTiles], ['tileSpanEnd', spec.endTiles], ['tileSpanTotal', spec.totalTiles]]) $(id).value = value;
-    $('tileSpanStatus').textContent = spec.enabled ? 'Minimum '+spec.baseTiles+' tiles; '+(spec.totalTiles-spec.baseTiles)+' added center tile(s)' : 'Ordinary furniture: no tile stretching';
+    $('tileSpanStatus').textContent = !spec.enabled ? 'Ordinary furniture: no stretching' : spec.axis==='y'
+      ? 'Floor fixed; ceiling end at '+spec.targetHeight+' world units ('+(spec.verticalTarget==='ceiling'?'room ceiling target':'fixed preview')+')'
+      : 'Minimum '+spec.baseTiles+' tiles; '+(spec.totalTiles-spec.baseTiles)+' added center tile(s)';
   }
 
   function preview() {
@@ -25,11 +31,11 @@
     const spec = {...state.tileSpan, tileSize:state.tileBase.tileSize};
     const result = global.FurnitureTileSpan.apply(root, {
       tileSpan: spec, parts: state.parts, recognizedSurfaces: editor.recognizedSurfaceExport()
-    }, spec.totalTiles);
+    }, spec.axis==='y' ? spec.targetHeight : spec.totalTiles);
     if ($('tileSpanStatus') && result) {
       const diagnostics = root.userData.tileSpanDiagnostics;
       $('tileSpanStatus').textContent = diagnostics
-        ? diagnostics.startTiles+' fixed start + '+diagnostics.middleTiles+' middle + '+diagnostics.endTiles+' fixed end'+
+        ? (diagnostics.axis==='y' ? 'Floor + '+diagnostics.targetHeight+' high ceiling cap' : diagnostics.startTiles+' fixed start + '+diagnostics.middleTiles+' middle + '+diagnostics.endTiles+' fixed end')+
           (diagnostics.errors.length ? ' · '+diagnostics.errors.join('; ') : ' · all attachment surfaces connected')
         : 'Ordinary furniture: no tile stretching';
     }
@@ -38,9 +44,9 @@
 
   function restOffset(part) {
     const spec = normalize({...editor?.state?.tileSpan,tileSize:editor?.state?.tileBase?.tileSize});
-    const delta = spec.enabled ? (spec.totalTiles-spec.baseTiles)*spec.tileSize : 0; // Offset introduced by the active editor preview.
-    const shift = part?.tileSpanRole==='start' ? -delta/2 : part?.tileSpanRole==='end' ? delta/2 : 0;
-    return {x:spec.axis==='x'?shift:0,z:spec.axis==='z'?shift:0}; // Gizmo writes must convert visual positions to saved base positions.
+    const delta = spec.enabled ? (spec.axis==='y' ? spec.targetHeight-spec.baseHeight : (spec.totalTiles-spec.baseTiles)*spec.tileSize) : 0; // Preview deformation distance.
+    const shift = part?.tileSpanRole==='start' ? (spec.axis==='y'?0:-delta/2) : part?.tileSpanRole==='end' ? (spec.axis==='y'?delta:delta/2) : 0;
+    return {x:spec.axis==='x'?shift:0,y:spec.axis==='y'?shift:0,z:spec.axis==='z'?shift:0}; // Gizmo subtracts this from the rendered rigid cap pose. // Gizmo writes must convert visual positions to saved base positions.
   }
 
   function updateSpan() {
@@ -49,11 +55,13 @@
       ...state.tileSpan, enabled:$('tileSpanEnabled').checked, axis:$('tileSpanAxis').value,
       startTiles:number('tileSpanStart',2), middleTiles:number('tileSpanMiddle',2),
       endTiles:number('tileSpanEnd',2), totalTiles:number('tileSpanTotal',6),
-      tileSize:state.tileBase.tileSize
+      tileSize:state.tileBase.tileSize,
+      baseHeight:number('tileSpanBaseHeight',1.4), targetHeight:number('tileSpanTargetHeight',1.4),
+      verticalTarget:$('tileSpanTargetMode').value==='ceiling'?'ceiling':null
     });
     if (state.tileSpan.enabled) {
       if (state.tileSpan.axis === 'x') state.tileBase.footprintW = state.tileSpan.totalTiles;
-      else state.tileBase.footprintD = state.tileSpan.totalTiles;
+      else if (state.tileSpan.axis === 'z') state.tileBase.footprintD = state.tileSpan.totalTiles; // Vertical furniture preserves its 1x1 footprint.
     }
     $('footprintW').value = state.tileBase.footprintW;
     $('footprintD').value = state.tileBase.footprintD;
@@ -69,7 +77,7 @@
   function selected(part) {
     if (!editor || !part || !$('partTileSpanRole')) return;
     $('partTileSpanRole').value = part.tileSpanRole || 'none';
-    $('partTileSpanRoots').classList.toggle('hidden', part.tileSpanRole !== 'stretch');
+    $('partTileSpanRoots').classList.toggle('hidden', !['stretch','follow'].includes(part.tileSpanRole));
     const roots = part.tileSpanRoots || {};
     for (const side of ['Start','End']) {
       const key = side.toLowerCase(), source = roots[key] || {};
@@ -135,6 +143,32 @@
     editor.log('Bridge preset: 1×2 fixed stair flights and posts, flexible flat deck and rails. 4-tile base, 8×2 preview.','ok');
   }
 
+
+  function ceilingLadder() {
+    const {state,pushPart} = editor;
+    editor.beginPreset(1,1);
+    const sourceHeight = 1.4; // Rest ceiling height that the vertical solver expands from.
+    const wood = {materialRole:'wood',materialTexture:'carved_smooth.png',color:'#8c6748'}; // Wood finish for all ladder components except the dark hatch.
+    const base = pushPart('box',{...wood,name:'Floor-anchored ladder feet',tileSpanRole:'start',
+      transform:{x:0,y:.035,z:0,rx:0,ry:0,rz:0,sx:.85,sy:.07,sz:.22}});
+    const cap = pushPart('box',{name:'Dark ceiling hatch (non-stretching)',tileSpanRole:'end',
+      materialRole:'stone',color:'#050505',
+      transform:{x:0,y:sourceHeight-.014,z:0,rx:0,ry:0,rz:0,sx:.88,sy:.018,sz:.9}});
+    const roots={start:{partId:base.id,face:'max'},end:{partId:cap.id,face:'min'}};
+    for(const x of [-.32,.32]) pushPart('box',{...wood,name:x<0?'Stretchable left stile':'Stretchable right stile',
+      tileSpanRole:'stretch',tileSpanRoots:JSON.parse(JSON.stringify(roots)),
+      transform:{x,y:sourceHeight/2,z:.08,rx:0,ry:0,rz:0,sx:.09,sy:sourceHeight-.09,sz:.09}});
+    for(let i=0;i<7;i++)pushPart('box',{...wood,name:'Rigid sliding rung '+(i+1),tileSpanRole:'follow',
+      tileSpanRoots:JSON.parse(JSON.stringify(roots)),
+      transform:{x:0,y:.2+i*.17,z:.08,rx:0,ry:0,rz:0,sx:.72,sy:.072,sz:.09}});
+    state.tileSpan={version:1,enabled:true,axis:'y',startTiles:1,middleTiles:1,endTiles:1,totalTiles:3,
+      baseHeight:sourceHeight,targetHeight:sourceHeight,verticalTarget:'ceiling',tileSize:state.tileBase.tileSize};
+    editor.setPresetFootprint(1,1);
+    sync();editor.rebuildAll();editor.selectObject('part',cap.id,{force:true});editor.frameFurniture();
+    editor.queueUndoHistory('create ceiling-anchored ladder');
+    editor.log('Ceiling ladder: rigid floor foot and black ceiling patch; stiles stretch vertically, rungs keep their shape.','ok');
+  }
+
   function init(context) {
     if (editor || !context?.state || !global.FurnitureTileSpan) return;
     editor = context;
@@ -143,32 +177,38 @@
     button.textContent = 'Stair Bridge (Stretchable)';
     button.type = 'button';
     button.onclick = stairBridge;
+    const ladderButton=document.createElement('button');
+    ladderButton.type='button'; ladderButton.textContent='Ceiling Ladder (Stretchable)'; ladderButton.onclick=ceilingLadder;
+    presets?.querySelector('.g2')?.appendChild(ladderButton);
     presets?.querySelector('.g2')?.appendChild(button);
     const section = document.createElement('div');
     section.className = 'section';
-    section.innerHTML = '<h2>Stretch across tiles</h2>'+
+    section.innerHTML = '<h2>Stretch across tiles / height</h2>'+
       '<label class="row"><input type="checkbox" id="tileSpanEnabled"> Fixed ends + stretchable center</label>'+
-      '<div class="g2"><div><label>Axis</label><select id="tileSpanAxis"><option value="x">X · width</option><option value="z">Z · depth</option></select></div>'+
+      '<div class="g2"><div><label>Axis</label><select id="tileSpanAxis"><option value="x">X · width</option><option value="z">Z · depth</option><option value="y">Y · ceiling</option></select></div>'+
       '<div><label>Total tiles (preview + export)</label><input id="tileSpanTotal" type="number" min="3" max="512"></div></div>'+
       '<div class="g3"><div><label>Start tiles</label><input id="tileSpanStart" type="number" min="1" max="256"></div>'+
       '<div><label>Base middle tiles</label><input id="tileSpanMiddle" type="number" min="1" max="256"></div>'+
       '<div><label>End tiles</label><input id="tileSpanEnd" type="number" min="1" max="256"></div></div>'+
+      '<div id="tileSpanVerticalFields"><div class="g2"><div><label>Base/rest height</label><input id="tileSpanBaseHeight" type="number" min="0.1" step="0.05"></div>'+ 
+      '<div><label>Target ceiling height (preview)</label><input id="tileSpanTargetHeight" type="number" min="0.1" step="0.05"></div></div>'+ 
+      '<label>Height target</label><select id="tileSpanTargetMode"><option value="ceiling">Follow owning ceiling</option><option value="manual">Fixed height</option></select></div>'+ 
       '<p id="tileSpanStatus" class="muted" role="status"></p>';
     presets?.after(section);
     const partUi = document.createElement('div');
     partUi.id = 'partTileSpanSection';
     partUi.innerHTML = '<hr><h2>Tile-span role / attachments</h2>'+
-      '<label>Piece behavior</label><select id="partTileSpanRole"><option value="none">Unchanged</option><option value="start">Rigid beginning</option><option value="stretch">Stretch between surfaces</option><option value="end">Rigid ending</option></select>'+
+      '<label>Piece behavior</label><select id="partTileSpanRole"><option value="none">Unchanged</option><option value="start">Rigid beginning</option><option value="stretch">Stretch between surfaces</option><option value="follow">Rigid follow (rungs/ornaments)</option><option value="end">Rigid ending</option></select>'+
       '<div id="partTileSpanRoots"><div class="g2"><div><label>Start attached piece</label><select id="partTileSpanStartRoot"></select></div><div><label>End attached piece</label><select id="partTileSpanEndRoot"></select></div></div>'+
       '<div class="g2"><div><label>Start surface</label><select id="partTileSpanStartSurface"></select></div><div><label>End surface</label><select id="partTileSpanEndSurface"></select></div></div>'+
       '<p class="muted">Named surfaces are optional; automatic uses the closest end face along the stretch axis. Attachment surfaces retain their cross-section. Stretch only geometry pieces, not imported GLBs.</p></div>';
     document.querySelector('#partEditor > .section')?.appendChild(partUi);
-    for (const id of ['tileSpanEnabled','tileSpanAxis','tileSpanTotal','tileSpanStart','tileSpanMiddle','tileSpanEnd'])
+    for (const id of ['tileSpanEnabled','tileSpanAxis','tileSpanTotal','tileSpanStart','tileSpanMiddle','tileSpanEnd','tileSpanBaseHeight','tileSpanTargetHeight','tileSpanTargetMode'])
       $(id)?.addEventListener('change',updateSpan);
     for (const id of ['partTileSpanRole','partTileSpanStartRoot','partTileSpanEndRoot','partTileSpanStartSurface','partTileSpanEndSurface'])
       $(id)?.addEventListener('change',updatePart);
     sync();
     if (editor.selectedPart()) selected(editor.selectedPart());
   }
-  global.FurnitureTileSpanAuthor = {init,preview,sync,selected,stairBridge,restOffset};
+  global.FurnitureTileSpanAuthor = {init,preview,sync,selected,stairBridge,ceilingLadder,restOffset};
 })(window);
