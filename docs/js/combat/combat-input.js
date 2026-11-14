@@ -20,6 +20,7 @@
   function makeSlotState() {
     return {
       down: false, downAt: 0, holding: false,
+      pressDeliveryLagMs: 0, releaseDeliveryLagMs: 0, // Measured physical-event delivery lag shown in getState() for mobile diagnostics.
       alignmentRequest: null, // Cancel handle for an offensive hold that is still aligning before windup.
       holdAbility: null, // Ability captured at the hold threshold so loadout swaps cannot change the pending action.
       holdStarted: false, // Distinguishes a real hold windup from one still waiting for alignment.
@@ -32,6 +33,24 @@
 
   function now() {
     return performance.now() / 1000;
+  }
+
+  // Browser input Event.timeStamp is the physical event's monotonic timestamp,
+  // which may predate its JavaScript delivery when a long render blocks the UI
+  // thread. Controller polls have no event timestamp and use arrival time.
+  function inputTimeMs(phase, physicalEvent = null) {
+    const receivedAtMs = performance.now(); // Fallback for gamepads, non-event callers and clocks from an incompatible origin.
+    const event = physicalEvent || window.event; // Explicit event is preferred; the active browser event supports legacy game.js dispatchers.
+    const eventType = String(event?.type || '');
+    const acceptable = phase === 'press'
+      ? /^(keydown|mousedown|pointerdown|touchstart)$/.test(eventType)
+      : /^(keyup|mouseup|pointerup|touchend)$/.test(eventType);
+    if (!acceptable || (!physicalEvent && event?.eventPhase === 0)) return receivedAtMs;
+    let stampedAtMs = Number(event.timeStamp); // Used only for bounded historical onset/release calculations.
+    if (stampedAtMs > 1e12 && Number.isFinite(performance.timeOrigin)) stampedAtMs -= performance.timeOrigin;
+    return Number.isFinite(stampedAtMs) && stampedAtMs >= 0
+      && stampedAtMs <= receivedAtMs + 8 && receivedAtMs - stampedAtMs <= 5000
+      ? Math.min(stampedAtMs, receivedAtMs) : receivedAtMs;
   }
 
   function isAutoTargetEnabled() {
@@ -114,6 +133,8 @@
       releaseQueued: s.releaseQueued,
       attackQueued: queuedAttacks.has(slotIndex),
       downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
+      pressDeliveryLagMs: s.pressDeliveryLagMs,
+      releaseDeliveryLagMs: s.releaseDeliveryLagMs,
       holdThresholdS: HOLD_THRESHOLD_S,
     };
   }
@@ -288,13 +309,15 @@
   }
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
-  function pressStart(slotIndex) {
+  function pressStart(slotIndex, physicalEvent = null) {
     if (window.GameplayInputRouter?.isAttackBlocked?.()) return; // No attack state and no bandage cancellation on a context-owned press.
     window.BandageSystem?.cancel?.('attack');
     const s = slots[slotIndex];
     if (!s || s.down || blockedByActionLock()) return;
+    const pressedAtMs = inputTimeMs('press', physicalEvent); // The same event timestamp follows the input through delayed frame processing.
     s.down = true;
-    s.downAt = now();
+    s.downAt = pressedAtMs / 1000;
+    s.pressDeliveryLagMs = Math.max(0, performance.now() - pressedAtMs);
     s.holding = false;
     s.alignmentRequest?.cancel?.();
     s.alignmentRequest = null;
@@ -305,11 +328,18 @@
   }
 
   // Call on pointerup/touch-end for the given slot.
-  function pressEnd(slotIndex) {
+  function pressEnd(slotIndex, physicalEvent = null) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
     if (blockedByActionLock() || window.GameplayInputRouter?.isAttackBlocked?.()) { abortPress(slotIndex); return; }
+    const releasedAtMs = inputTimeMs('release', physicalEvent); // The real release time disambiguates holds when a frame could not run.
+    s.releaseDeliveryLagMs = Math.max(0, performance.now() - releasedAtMs);
     try {
+      if (!s.holding && releasedAtMs / 1000 - s.downAt >= HOLD_THRESHOLD_S) {
+        s.holding = true; // A full physical hold cannot become a tap merely because the frame update stalled.
+        emitState(slotIndex, 'hold-threshold-on-release');
+        startHold(slotIndex); // Reuse the existing alignment/ability ownership and cancel rules, never synthesize a tap.
+      }
       if (s.holding) endHold(slotIndex);
       else fireTap(slotIndex);
     } finally {
