@@ -8,18 +8,16 @@
   // carpenter's plan all come from js/farm-production.js. Like a processor it
   // is never entered: the player manages it from outside.
   //
-  // The house has one slot, stored on the production entry as
-  //   entry.house = { egg: null | { placedAt, hatchAt }, livestockId: null | id }
-  //   empty  -> place a fertile honeyfuzzle egg in it
-  //   egg    -> wait hatchDays of world time, or feed it a Growth Tonic to hatch it now
-  //   swarm  -> the hatched swarm is an ordinary world-livestock record
+  // One slot per house: a queen settles first, then becomes a live swarm record.
+  // Old house.egg saves migrate in ensure(), without resetting their countdown.
   //             (kind 'honeyfuzzle', houseId = entry.id); it hovers over the house
   //             and can be moved to the personal stable from the Livestock list.
 
   const KEY = 'honeyfuzzleHouse';
   const KIND = 'honeyfuzzle';
-  const EGG_ITEM = 'fertileHoneyfuzzleEgg';
-  const DEFAULT_HATCH_DAYS = 2;
+  const QUEEN_ITEM = 'honeyfuzzleQueen'; // One queen comes from each harvested stump.
+  const LEGACY_EGG_ITEM = 'fertileHoneyfuzzleEgg'; // Existing saved eggs are accepted as queens.
+  const DEFAULT_ESTABLISH_DAYS = 2; // Founding a colony takes the former incubation time.
   const SCHEDULER_ID = 'honeyfuzzle-house-swarms';
   const HOVER_HEIGHT = 0.95; // World units above the farm surface: just over the stump's cap.
 
@@ -28,32 +26,46 @@
   let schedulerRegistered = false;
   let lastFrameMs = 0;
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  function registerQueenItem(itemDefs) {
+    if (!itemDefs) return;
+    const legacy = itemDefs[LEGACY_EGG_ITEM] || {}; // Preserve any authored trade value.
+    itemDefs[QUEEN_ITEM] = {
+      ...legacy, label: 'Honeyfuzzle Queen', icon: '👑', cat: 'livestock',
+      tags: ['Livestock', 'Queen'], desc: 'A wild queen that can establish a swarm in a Honeyfuzzle House.',
+    }; // Shared item registry, used by both the farm and wilderness initializers.
+  }
+  function init(injectedDeps) { deps = injectedDeps; registerQueenItem(deps?.ITEM_DEFS); }
 
   const definition = () => window.FARM_SPECIALIZATIONS_CONFIG?.buildings?.[KEY] || {};
-  const hatchDays = () => Number(definition().hatchDays) || DEFAULT_HATCH_DAYS;
+  const establishDays = () => Number(definition().establishDays ?? definition().hatchDays) || DEFAULT_ESTABLISH_DAYS;
+
   const tonicKey = () => window.ANIMAL_GROWTH_CONFIG?.item?.key || 'growthTonic';
   const isHouse = entry => entry?.key === KEY;
 
-  function ensure(entry) { // Older/foreign entries get an empty slot lazily.
-    if (!entry.house || typeof entry.house !== 'object') entry.house = { egg: null, livestockId: null };
-    if (!('egg' in entry.house)) entry.house.egg = null;
+  function ensure(entry) { // Convert old saved eggs into establishing queens without discarding their inherited coat.
+    if (!entry.house || typeof entry.house !== 'object') entry.house = { queen: null, livestockId: null };
+    if (entry.house.queen == null && entry.house.egg) entry.house.queen = entry.house.egg;
+    if (entry.house.queen && !Number.isFinite(entry.house.queen.readyAt)) {
+      const queen = entry.house.queen;
+      queen.readyAt = Number.isFinite(queen.hatchAt) ? queen.hatchAt : (Number(queen.placedAt) || 0) + establishDays();
+    }
+    delete entry.house.egg;
+    if (!('queen' in entry.house)) entry.house.queen = null;
     if (!('livestockId' in entry.house)) entry.house.livestockId = null;
     return entry.house;
   }
-
-  function swarmRecord(entry) {
+  function swarmRecord(entry, byId = null) {
     const house = ensure(entry);
     if (!house.livestockId || !deps) return null;
-    const record = deps.loadWorldLivestock().find(item => item.id === house.livestockId && item.kind === KIND) || null;
-    if (!record) house.livestockId = null; // Moved to the stable or sold: the house is empty again.
+    const candidate = byId ? byId.get(house.livestockId) : deps.loadWorldLivestock().find(item => item.id === house.livestockId);
+    const record = candidate?.kind === KIND ? candidate : null;
+    if (!record) house.livestockId = null; // A moved/sold colony leaves the house empty.
     return record;
   }
-
   function phase(entry) {
     const house = ensure(entry);
     if (swarmRecord(entry)) return 'swarm';
-    return house.egg ? 'egg' : 'empty';
+    return house.queen ? 'queen' : 'empty';
   }
 
   const bagCount = key => Math.max(0, Number(deps?.inventory?.[key]) || 0); // Missing keys are 0, never NaN.
@@ -66,61 +78,71 @@
 
   // ---- actions --------------------------------------------------------------
 
-  function placeEgg(entry) {
+  function placeQueen(entry) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
     if (phase(entry) !== 'empty') return { ok: false, message: 'This house is already occupied.' };
-    if (bagCount(EGG_ITEM) < 1) return { ok: false, message: 'You have no fertile honeyfuzzle egg.' };
+    const itemKey = bagCount(QUEEN_ITEM) ? QUEEN_ITEM : LEGACY_EGG_ITEM; // Old inventory stacks remain usable.
+    if (bagCount(itemKey) < 1) return { ok: false, message: 'You have no Honeyfuzzle Queen.' };
     const now = window.FarmProduction.now();
-    deps.inventory[EGG_ITEM] = bagCount(EGG_ITEM) - 1;
+    deps.inventory[itemKey] = bagCount(itemKey) - 1;
     const colors = window.HoneyfuzzleColors;
-    const appearance = colors?.takeEggAppearance?.(deps.getWorldId?.()) || null; // New saves carry an inherited genotype; old queues return {color, genotype:null}.
-    const color = appearance?.color || (!colors?.takeEggAppearance ? colors?.takeEggColor?.(deps.getWorldId?.()) : null)
-      || colors?.pickForKey('', 'egg' + Math.random()) || null; // Old bag-only eggs still receive a valid randomized primary pigment.
-    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color,
-      genotype: appearance?.genotype || null }; // Persist the original hive's tailfeathers/spectacles until hatching.
+    const appearance = colors?.takeQueenAppearance?.(deps.getWorldId?.())
+      || (!colors?.takeQueenAppearance ? colors?.takeEggAppearance?.(deps.getWorldId?.()) : null) || null;
+    const color = appearance?.color || (!colors?.takeQueenAppearance && !colors?.takeEggAppearance
+      ? colors?.takeEggColor?.(deps.getWorldId?.()) : null)
+      || colors?.pickForKey('', 'queen' + Math.random()) || null;
+    ensure(entry).queen = { placedAt: now, readyAt: now + establishDays(), color,
+      genotype: appearance?.genotype || null }; // Preserve the hive queen's inherited primary and secondary markings.
     persist();
-    return { ok: true, message: `🥚 The egg is tucked into the house. It hatches in ${hatchDays()} days.` };
+    return { ok: true, message: `👑 The queen is settling into her house. Her colony forms in ${establishDays()} days.` };
   }
 
-  function hatch(entry) {
+  function establish(entry) {
     const house = ensure(entry);
-    if (!house.egg) return { ok: false, message: 'There is no egg to hatch.' };
+    if (!house.queen) return { ok: false, message: 'There is no queen establishing a colony.' };
     const list = deps.loadWorldLivestock();
     const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
     const name = window.CreatureGenetics?.defaultLivestockName?.(KIND) || 'Honeyfuzzle Swarm';
-    const genotype = house.egg.genotype || window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null; // New eggs inherit their hive markings; legacy color-only eggs roll fresh genes.
-    if (genotype?.base && house.egg.color) genotype.base.color = house.egg.color; // Preserve the mother's hive-region primary color.
+    const genotype = house.queen.genotype || window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null;
+    if (genotype?.base && house.queen.color) genotype.base.color = house.queen.color;
     list.push({
       id, kind: KIND, barnId: null, houseId: entry.id, troughIndex: null, releasedAt: Date.now(),
-      lifeStage: 'adult', // barnId:null alone reads as a Nursery baby (livestock-nursery.js isBaby); a hatched swarm is ready to live in its house or be taken as a companion.
-      name, genotype, swarmColor: house.egg.color || null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
+      lifeStage: 'adult', // House colonies enter the stable as adults, not incubator babies.
+      name, genotype, swarmColor: house.queen.color || null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
     });
     deps.saveWorldLivestock(list);
-    house.egg = null;
+    house.queen = null;
     house.livestockId = id;
     syncVisual(entry);
     persist();
-    return { ok: true, message: `🍯 The egg hatched: a ${name} now lives in the house.` };
+    return { ok: true, message: `🍯 The queen established her colony: a ${name} now lives in the house.` };
   }
 
   function useTonic(entry) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-    if (phase(entry) !== 'egg') return { ok: false, message: 'There is no egg waiting to hatch.' };
+    if (phase(entry) !== 'queen') return { ok: false, message: 'There is no queen establishing a colony.' };
     if (bagCount(tonicKey()) < 1) return { ok: false, message: 'You have no Growth Tonic.' };
     deps.inventory[tonicKey()] = bagCount(tonicKey()) - 1;
-    return hatch(entry);
+    return establish(entry); // Growth Tonic speeds colony founding, rather than hatching an adult queen.
   }
 
-  // FarmProduction's one-second timer: hatches every egg whose time has come.
+  // The existing one-second farm timer remains the sole colony scheduler.
   function tick(buildings, now) {
     if (!deps) return;
-    for (const entry of buildings) {
-      if (!isHouse(entry)) continue;
-      if (entry.house?.egg && Number.isFinite(entry.house.egg.hatchAt) && now >= entry.house.egg.hatchAt) {
-        const result = hatch(entry);
+    const houses = buildings.filter(isHouse); // Farm houses only; unrelated production buildings are ignored.
+    for (const entry of houses) {
+      const house = ensure(entry);
+      if (house.queen && Number.isFinite(house.queen.readyAt) && now >= house.queen.readyAt) {
+        const result = establish(entry);
         if (result.ok) deps.showToast(result.message, true);
       }
-      if (entry.house?.livestockId || visuals.has(entry.id)) syncVisual(entry); // Drops the hovering swarm once it has been moved to the stable.
+    }
+    const occupied = houses.some(entry => !!entry.house?.livestockId);
+    const recordsById = occupied
+      ? new Map(deps.loadWorldLivestock().filter(item => item.kind === KIND).map(item => [item.id, item]))
+      : null; // A single inventory/save read serves all houses, after any new colonies establish.
+    for (const entry of houses) {
+      if (entry.house?.livestockId || visuals.has(entry.id)) syncVisual(entry, undefined, recordsById);
     }
   }
 
@@ -156,27 +178,37 @@
     ensureScheduler();
   }
 
-  function syncVisual(entry, size) {
+  function appearanceKey(record) {
+    const g = record?.genotype;
+    return [record?.swarmColor || g?.base?.color || '', g?.tailfeathers?.color || '',
+      g?.tailfeathers?.copies ?? '', g?.tailfeathers?.enabled ?? '',
+      g?.spectacles?.color || '', g?.spectacles?.copies ?? '', g?.spectacles?.enabled ?? ''].join('|');
+  } // Primitive snapshot detects in-place genetics edits without redundant shader writes.
+
+  function syncVisual(entry, size, recordsById = null) {
     if (!deps || !isHouse(entry) || !window.HoneyfuzzleSwarm || !deps.THREE) return;
     let record = null;
-    try { record = entry.house?.livestockId ? swarmRecord(entry) : null; } // A visual must never break loading the building itself.
+    try { record = entry.house?.livestockId ? swarmRecord(entry, recordsById) : null; }
     catch (error) { window.__farmLog?.(`[honeyfuzzle] house ${entry.id} livestock lookup failed: ${error?.message || error}`, 'warn'); }
-    const wants = !!record;
     const existing = visuals.get(entry.id);
-    if (!wants) { if (existing) removeVisual(entry); return; }
+    if (!record) { if (existing) removeVisual(entry); return; }
     const w = size?.w ?? 1, h = size?.h ?? 1;
     const x = entry.col + w / 2, z = entry.row + h / 2;
+    const key = appearanceKey(record); // Only changed primary/secondary pigment should touch GPU color uniforms.
     if (existing) {
       existing.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
-      existing.avatar.setColor(record.swarmColor || record.genotype?.base?.color);
-      existing.avatar.setGenotype(record.genotype); // A changed genotype on a living swarm is visible without rebuilding its GPU geometry.
+      if (existing.appearanceKey !== key) {
+        existing.avatar.setColor(record.swarmColor || record.genotype?.base?.color);
+        existing.avatar.setGenotype(record.genotype);
+        existing.appearanceKey = key;
+      }
       existing.entry = entry;
       return;
     }
     const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0, color: record.swarmColor || record.genotype?.base?.color || undefined, genotype: record.genotype || null });
     avatar.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
     deps.scene.add(avatar.group);
-    visuals.set(entry.id, { entry, avatar, group: avatar.group });
+    visuals.set(entry.id, { entry, avatar, group: avatar.group, appearanceKey: key });
     ensureScheduler();
   }
 
@@ -208,11 +240,12 @@
 
     const current = phase(entry);
     if (current === 'empty') {
-      line('Empty. Set a fertile honeyfuzzle egg inside and wait for it to hatch, or give it a Growth Tonic to hatch it at once.');
-      button(`Place Fertile Egg (${bagCount(EGG_ITEM)} in bag)`, act(() => placeEgg(entry)), bagCount(EGG_ITEM) < 1);
-    } else if (current === 'egg') {
-      const left = Math.max(0, Math.ceil(entry.house.egg.hatchAt - window.FarmProduction.now()));
-      line(`🥚 A fertile egg is warming inside. It hatches in about ${left} day${left === 1 ? '' : 's'}.`);
+      line('Empty. Place one Honeyfuzzle Queen here to establish a swarm, or use a Growth Tonic to speed colony formation.');
+      const available = bagCount(QUEEN_ITEM) + bagCount(LEGACY_EGG_ITEM); // Existing saved eggs remain usable.
+      button(`Place Queen (${available} in bag)`, act(() => placeQueen(entry)), available < 1);
+    } else if (current === 'queen') {
+      const left = Math.max(0, Math.ceil(entry.house.queen.readyAt - window.FarmProduction.now()));
+      line(`👑 A queen is establishing her colony. It forms in about ${left} day${left === 1 ? '' : 's'}.`);
       button(`Use Growth Tonic (${bagCount(tonicKey())} in bag)`, act(() => useTonic(entry)), bagCount(tonicKey()) < 1);
     } else {
       const record = swarmRecord(entry);
@@ -234,8 +267,9 @@
   }
 
   window.HoneyfuzzleHouse = {
-    KEY, KIND, EGG_ITEM,
-    init, ensure, phase, placeEgg, hatch, useTonic, tick, open, syncVisual, removeVisual,
+    KEY, KIND, QUEEN_ITEM, LEGACY_EGG_ITEM, registerQueenItem,
+    init, ensure, phase, placeQueen, establish, useTonic, tick, open, syncVisual, removeVisual,
+    placeEgg: placeQueen, hatch: establish, // Obsolete API aliases keep older integrations functional.
     visualCount: () => visuals.size,
     forEachAudioSource, // Used by HoneyfuzzleAudio's 350ms source scan; no extra per-frame renderer work.
   };
