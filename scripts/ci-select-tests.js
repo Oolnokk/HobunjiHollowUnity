@@ -80,7 +80,7 @@ const FEATURE_WORKFLOWS = Object.freeze({
 function featureWorkflowDependencies(id) {
   const workflow = FEATURE_WORKFLOWS[id]; // Owned workflow from which we discover direct regression-test files.
   const source = fs.readFileSync(path.join(ROOT, workflow), 'utf8');
-  const testFiles = [...source.matchAll(/\bnode\s+(scripts\/[\w/-]+\.js)\b/g)].map(match => match[1]); // Scans only executable test commands, not arbitrary YAML comments.
+  const testFiles = [...source.matchAll(/\bnode\s+(scripts\/[\w/-]+\.js)\b/g)].map(match => match[1]).filter(file => file !== 'scripts/ci-select-tests.js'); // Read the workflow's actual test commands, excluding its selector bootstrap.
   if (!testFiles.length) throw new Error('Cannot discover tests for ' + workflow);
   const dependencies = new Set([workflow]); // Editing the workflow itself always selects its check.
   for (const file of testFiles) {
