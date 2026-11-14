@@ -66,7 +66,9 @@
         samples.sort((a,b)=>distance(a,preferred)-distance(b,preferred));
         const plate={...samples[0],y:shelf.y};
         taken.add(shelf.id);
-        const melody=hash(site.signature+':outdoor-song')%2===0;
+        const kind=root.CaveSiteSystem?.exteriorPuzzleKind?.(site)
+          || (hash(site.signature+':outdoor-song')%2===0?'timedMelody':'cavePressurePlate'); // Share exterior choice with the cavern generator.
+        const melody=kind==='timedMelody';
         out.push({mapId:site.mapId,denId:site.denId,site,shelf,door,plate,entry,
           tangent,normal,requiresSong:melody,difficulty:1+(hash(site.signature+':outdoor-difficulty')%5)});
         break;
@@ -141,7 +143,7 @@
   function hasPortal(area,denId){
     return !!areas.get(safeArea(area))?.portals?.some(r=>String(r.denId)===String(denId));
   }
-  function isGateLocked(portal){return portal.requiresSong&&!portal.solved;}
+  function isGateLocked(portal){return !portal.solved;} // The single-step plate also locks its stone door until completed.
   function frameToShelf(model,portal){
     model.position.set(portal.door.x,portal.door.y,portal.door.z);
     model.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
@@ -411,7 +413,7 @@
     group.name=portalTag+'-'+portal.denId;
     scene.add(group);portal.visualRoot=group;
     // The plate belongs on the registered cap, not at terrain height underneath.
-    if(portal.requiresSong){
+    {
       const plate=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.09,24),
         root.ProceduralFurniture?.makePartMaterial?.({
           materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
@@ -427,6 +429,7 @@
         width:.11,height:.11,idleColor:'#a3dcc2',activeColor:'#ffe18a',
       }); // Small edge rune reports completion without covering the Tankan inscription or recoloring stone.
       if(portal.plateSignal)portal.plateSignal.glyph.position.x=.31; // Center of the glyph sits safely within the circular plate's outer rim.
+      if(portal.solved)portal.plateSignal?.setActive(true); // Persisted music and simple-plate completions light their rune upon re-entry.
     }
     const furniture=root.AuthoredFurniture;
     Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
@@ -488,6 +491,8 @@
         refreshScoreGlow(portal);
       }
     });
+    if(typeof portal.session?.step!=='function'||typeof portal.session?.note!=='function')
+      throw new Error('Exterior melody session did not provide working note and clock handlers.'); // A nominally installed but nonfunctional composer must release the gate to its simple plate.
     portal.noteHandler=e=>{
       if(portal.disposed||portal.solved||deps?.getCurrentArea?.()!==portal.area
         ||e?.detail?.area!==portal.area)return;
@@ -555,19 +560,26 @@
     if(old?.network===network&&old.scene===scene)return old.portals;
     if(old)clear(key);
     const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||root.CaveSiteSystem?.sitesForZone?.(key)||[]; // Independent roll, not the ordinary cave/animal-den pool.
+    const musicReady=typeof root.PuzzleCaveMelody?.generate==='function'&&typeof root.PuzzleCaveMelody?.createSession==='function'; // Missing music runtime falls back to the one-step plate instead of silently auto-opening.
     const portals=plan(network,profiles).map(p=>({
-      ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
+      ...p,requiresSong:p.requiresSong&&musicReady,area:key,disposed:false,solved:false,justSolved:false,
       lastDown:false,openWait:0,
-      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],glyphOuterGlows:[],flashRemaining:0,flashGlyphIndex:-1,scoreSurface:null,visualRoot:null,
+      rise:0,progress:null,glyphs:[],glyphGlows:[],glyphOuterGlows:[],flashRemaining:0,flashGlyphIndex:-1,scoreSurface:null,visualRoot:null,
       blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
     areas.set(key,state);
     for(const portal of portals){
       ensureIndependentTransitions(key,portal); // Creates dedicated transitions in both layout and loaded scene without generating a den.
-      if(portal.requiresSong){
-        const saved=stateFor(portal);portal.solved=!!saved.solved;portal.rise=portal.solved?1:0;
-        attachMusic(portal);
+      const saved=stateFor(portal);portal.solved=!!saved.solved;portal.rise=portal.solved?1:0;
+      if(portal.requiresSong&&!portal.solved){
+        try{attachMusic(portal);}
+        catch(error){
+          if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
+          portal.noteHandler=null;portal.session=null;portal.song=null; // A partial failed composer must not keep a stale score or listen for notes.
+          portal.requiresSong=false; // A malformed score cannot permanently lock the gate: use its visible one-step plate.
+          root.__farmLog?.('[puzzle-cave] exterior music unavailable; using pressure plate: '+error.message,'warn');
+        }
       }
       portal.shelf.puzzleCavePortal=portal.mapId; // Reserve this cap before the shared reward renderer instantiates its ore/chest.
       const den=deps?.zoneLayouts?.get?.(key)?.dens?.find(d=>String(d.id)===String(portal.denId));
@@ -600,17 +612,21 @@
       ensureIndependentTransitions(area,portal); // Late scene copies still get their own player-only portal.
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
       const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // A separate activation circle leaves room to step up to the gate after the final note.
+      root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Both kinds use the same physical stone plate and entry sound.
       if(portal.session){
-        root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Real raised-shelf plate press/release, never a per-frame click.
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
         refreshScoreGlow(portal,dt); // Smooth white-to-yellow color, brightness and halo-radius fades even between note events.
         if(portal.flashRemaining>0){
           portal.flashRemaining=Math.max(0,portal.flashRemaining-Math.max(0,Number(dt)||0));
           if(portal.flashRemaining===0)refreshScoreGlow(portal); // Clear the error without waiting for another beat or another played note.
         }
-        portal.lastDown=!!down;
         if(portal.scoreBoard)portal.scoreBoard.visible=!!down&&!portal.solved&&portal.rise<.95;
+      }else if(!portal.requiresSong&&down&&!portal.lastDown&&!portal.solved){
+        portal.solved=true;portal.openWait=.95; // One footstep latches the gate; walking away never closes it.
+        root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,1); // Same per-cave world-save key as the musical exterior gate.
+        portal.plateSignal?.setActive(true);
       }
+      portal.lastDown=!!down;
       if(portal.solved&&portal.rise<1){
         portal.rise=Math.min(1,portal.rise+Math.max(0,Number(dt)||0)/.95);
         root.RuinInteractionAudio?.watchMovement?.(portal.slab||portal.doorModel,portal.rise,{size:3.5}); // A large stone slab opens only once per solved melody.
@@ -657,6 +673,7 @@
     return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
       portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
+        challengeKind:p.requiresSong?'timedMelody':'cavePressurePlate', // In-game dev diagnostics distinguish the explicit fallback from a missing score.
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
         scoreOcclusion:p.scoreBoard?.userData?.scoreOcclusion||null,
