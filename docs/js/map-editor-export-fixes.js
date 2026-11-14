@@ -272,7 +272,12 @@
       tileChanges: tileChangeCount,
       changedFields: Object.keys(changes),
     };
-    if (!diff.summary.changed) diff._note = 'No edits relative to the captured baseline. Use Map JSON to export the complete current map.';
+    if (!diff.summary.changed) {
+      // A saved workspace can already contain the user's edits on reload. Never give an apparently empty export.
+      diff.mode = 'unchanged-full-map';
+      diff.fullMap = buildStandaloneMapExport(map);
+      diff._note = 'No changes relative to the session baseline; complete current map included instead.';
+    }
     return diff;
   }
 
@@ -297,7 +302,7 @@
     for (const [mapId, map] of currentById) {
       if (!baselineMapIds.has(mapId)) continue;
       const diff = buildDetailedDiff(map);
-      if (diff.mode === 'full-map-fallback' || diff.summary?.changed) mapDiffs.push(diff);
+      if (!diff.baselineAvailable || diff.summary?.changed) mapDiffs.push(diff);
     }
 
     const workspaceChanges = {};
@@ -360,14 +365,14 @@
       const json = JSON.stringify(diff, null, 2);
       if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
       if ($('diffSubtitle')) {
-        if (diff.mode === 'full-map-fallback') {
-          $('diffSubtitle').textContent = `No baseline was available; complete current map included Â· ${json.length.toLocaleString()} chars`;
+        if (diff.mode === 'full-map-fallback' || diff.mode === 'unchanged-full-map') {
+          $('diffSubtitle').textContent = `${diff.mode === 'unchanged-full-map' ? 'No changes vs session baseline' : 'No baseline available'}; complete map included · ${json.length.toLocaleString()} chars`;
         } else {
           $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
-      if (diff.summary && !diff.summary.changed) setStatus('No edits since baseline. Use Map JSON for the full map.');
+      if (diff.mode === 'unchanged-full-map') setStatus('No differences since this session baseline; full map included.');
       if ($('diffModal')) $('diffModal').style.display = 'block';
     } catch (error) {
       console.error('Map diff export failed:', error);
