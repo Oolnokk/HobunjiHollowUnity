@@ -29763,8 +29763,8 @@
           down.delete('RightStickUp'); down.delete('RightStickDown'); // Diagonal flicks remain exclusive to the target selector.
         } else {
           const selectorStillHoldingStick = rightStickOwner !== 'camera' || menuOpen || farmEditMode
-            || !!window._desktopSelectionArc?.isOpen?.() || !!window.SocialActionWheel?.isOpen?.()
-            || !!window.FurniturePlacer?.isOpen?.(); // Every open selector latches a held stick until it returns to neutral.
+            || window._desktopSelectionArc?.isOpen?.() === true || window.SocialActionWheel?.isOpen?.() === true
+            || window.FurniturePlacer?.isOpen?.() === true; // Every open selector latches a held stick until it returns to neutral.
           controllerTargetHorizontalLatch = selectorStillHoldingStick && Math.abs(rx) >= 0.25 ? Math.sign(rx) : Math.abs(rx) < 0.25 ? 0 : controllerTargetHorizontalLatch;
         }
         if (gamepadState.primeButtonsOnResume) {
