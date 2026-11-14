@@ -102,11 +102,17 @@ assert.equal(drink.heldItemTarget(walker.root)?.holder?.name, undefined,
 assert.ok(drink.heldItemTarget(handParent), 'direct NPC hand parent must resolve the leaf; querying only the outer world root does not suffice');
 assert.ok(locks.isLocked('npc:longoran-test', 'tools'), 'the Koma animation locks other tools');
 assert.equal(locks.isLocked('npc:longoran-test', 'movement'), false, 'the yawn movement speed modifier remains authoritative');
-drink.update(3.05);
+walker._moveSpeedTiles = 0.6;
+walker.root.rotation.y = 1.2; // The walker changed direction while slowly moving through its Koma ceremony.
+drink.update(0.2);
+assert.equal(walker.root.rotation.y, 1.2, 'the ceremonial drink must respect current pathing facing, not the pre-yawn facing');
+walker._moveSpeedTiles = 0;
+drink.update(2.85);
 assert.equal(toasts.length, 0, 'do not announce chewing before the real drink strike');
 drink.update(0.1);
 assert.equal(toasts.length, 1, 'apply the Koma effect at the authored drink strike');
 drink.update(2);
+assert.equal(walker.root.rotation.y, 1.2, 'completion preserves the most recent NPC movement direction');
 assert.equal(drink.getDebug().length, 0, 'a completed drink fully clears its runtime state');
 assert.equal(drink.heldItemTarget(handParent), null, 'completed leaf releases nested hand target');
 assert.equal(drink.heldItemTarget(walker.root), null, 'completed leaf releases world-root hand target');
