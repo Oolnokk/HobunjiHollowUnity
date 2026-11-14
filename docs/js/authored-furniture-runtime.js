@@ -78,6 +78,7 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    setTileSpan(group); // Apply rigid end offsets and surface-rooted center deformation before downstream attachments.
     if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
       const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
       for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
@@ -121,14 +122,16 @@
       || !Array.isArray(surface.localNormal) || !Array.isArray(surface.basisU)) return null;
     const anchors = group.userData.payloadAttachmentAnchors ||= new Map();
     const existing = anchors.get(String(surfaceId));
-    if (existing?.parent === partMesh) return existing;
-    existing?.parent?.remove?.(existing);
+    if (existing?.parent !== partMesh) existing?.parent?.remove?.(existing);
     const center = new THREE.Vector3().fromArray(surface.localCentroid);
+    window.FurnitureTileSpan?.mapLocalPoint?.(partMesh, center);
     const normal = new THREE.Vector3().fromArray(surface.localNormal).normalize();
     const u = new THREE.Vector3().fromArray(surface.basisU).normalize();
+    window.FurnitureTileSpan?.mapLocalDirection?.(partMesh, normal, true);
+    window.FurnitureTileSpan?.mapLocalDirection?.(partMesh, u);
     const z = new THREE.Vector3().crossVectors(u, normal).normalize(); // Right-handed local frame: payload Y points out of the recognized face.
     if (z.lengthSq() < .5 || normal.lengthSq() < .5) return null;
-    const anchor = new THREE.Group();
+    const anchor = existing?.parent === partMesh ? existing : new THREE.Group();
     anchor.name = 'payload_attachment_' + String(surfaceId).replace(/[^a-z0-9_-]/gi,'_');
     anchor.position.copy(center).addScaledVector(normal, Math.max(0, Number(normalOffset) || 0));
     anchor.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, normal, z));
@@ -137,7 +140,8 @@
       1 / Math.max(.001, Math.abs(partMesh.scale.y)),
       1 / Math.max(.001, Math.abs(partMesh.scale.z))); // Follow the surface position/orientation without inheriting the host part's animated compression.
     anchor.userData.payloadAttachmentSurfaceId = String(surfaceId);
-    partMesh.add(anchor); // A child of the detected part, so animated mechanisms carry the inserted burden with the surface.
+    anchor.userData.surfaceNormalOffset = Math.max(0, Number(normalOffset) || 0); // Resize preserves the caller's surface clearance.
+    if (anchor.parent !== partMesh) partMesh.add(anchor); // A child of the detected part, so animated mechanisms carry the inserted burden with the surface.
     anchors.set(String(surfaceId), anchor);
     return anchor;
   }
@@ -163,10 +167,16 @@
       if (!surface || !partMesh || (!record.furnitureKey && !png)) continue;
       group.updateWorldMatrix(true, true);
       const relative = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(partMesh.matrixWorld); // Resolve fallback-upgraded child parts into furniture-root space.
-      const center = new THREE.Vector3().fromArray(surface.localCentroid).applyMatrix4(relative);
-      const u = new THREE.Vector3().fromArray(surface.basisU).transformDirection(relative);
-      const v = new THREE.Vector3().fromArray(surface.basisV).transformDirection(relative);
-      const normal = new THREE.Vector3().fromArray(surface.localNormal).transformDirection(relative);
+      const center = new THREE.Vector3().fromArray(surface.localCentroid);
+      const u = new THREE.Vector3().fromArray(surface.basisU);
+      const v = new THREE.Vector3().fromArray(surface.basisV);
+      const normal = new THREE.Vector3().fromArray(surface.localNormal);
+      window.FurnitureTileSpan?.mapLocalPoint?.(partMesh, center); // Surface metadata is authored at minimum span; live geometry may be longer.
+      window.FurnitureTileSpan?.mapLocalDirection?.(partMesh, u);
+      window.FurnitureTileSpan?.mapLocalDirection?.(partMesh, v);
+      window.FurnitureTileSpan?.mapLocalDirection?.(partMesh, normal, true);
+      center.applyMatrix4(relative);
+      u.transformDirection(relative);v.transformDirection(relative);normal.transformDirection(relative);
       const holder = new THREE.Group(); // Keeps normal/u/v placement separate from the item plane's alpha-bottom grounding.
       holder.position.copy(center).addScaledVector(u, Number(record.position?.u) || 0).addScaledVector(v, Number(record.position?.v) || 0).addScaledVector(normal, Number(record.position?.normal) || 0);
       const scale = Math.max(.001, Number(record.scale) || .25); // Authored sprite height in furniture-local units.
@@ -225,6 +235,22 @@
     return layer;
   }
 
+  function setTileSpan(group, totalTiles) {
+    const data = group?.userData?.authoredFurnitureData;
+    const spec = window.FurnitureTileSpan?.normalize(data?.tileSpan);
+    if (spec?.enabled && group?.userData?.activeTileSpanTiles != null) {
+      const target = Math.max(spec.baseTiles, Math.min(512, Math.floor(Number.isFinite(Number(totalTiles)) ? Number(totalTiles) : spec.totalTiles)));
+      if (group.userData.activeTileSpanTiles === target && !(group.userData.tileSpanDiagnostics?.errors?.length))
+        return { enabled: true, totalTiles: target, delta: (target - spec.baseTiles) * spec.tileSize, errors: [] }; // Avoid rebuilding surface items on an unchanged placement size.
+    }
+    const result = window.FurnitureTileSpan?.apply(group, data, totalTiles) || { enabled: false };
+    if (group?.userData?.authoredItemPlacements && Array.isArray(data?.itemPlacements))
+      setItemPlacements(group, data, data.itemPlacements); // Move displayed objects to their newly stretched surface positions.
+    for (const [surfaceId, anchor] of group?.userData?.payloadAttachmentAnchors || [])
+      createSurfaceAnchor(group, surfaceId, anchor.userData?.surfaceNormalOffset ?? .012); // Existing children keep following their relocated anchors.
+    return result;
+  }
+
   function addFurniturePlacement(holder, record, ancestors = [], isCurrent = () => true) {
     const key = String(record.furnitureKey || ''); // Same authored furniture key used by ordinary placed furniture and editor exports.
     if (!key || ancestors.includes(key) || ancestors.length >= 8) return Promise.resolve(null);
@@ -239,6 +265,7 @@
           : buildGroup(data, record.color ?? 0x8b6540);
       } finally { surfaceBuildAncestors = previousAncestors; }
       child.userData.surfaceFurnitureKey = key;
+      if (record.tileSpanTiles != null) setTileSpan(child, record.tileSpanTiles); // Saved placement chooses how many middle tiles to add.
       if (record.liquidColor) child.traverse(node => { if (node.userData?.authoredPart?.kind === 'liquidSurface') node.material?.color?.set?.(record.liquidColor); });
       holder.add(child);
       window.FurnitureTableSystem?.refreshServices?.();
@@ -688,6 +715,7 @@
     load,
     peek,
     buildGroup,
+    setTileSpan,
     setRuntimeValues,
     setItemPlacements,
     addFurniturePlacement,
