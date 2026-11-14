@@ -24,6 +24,7 @@ const document = { readyState: 'complete', getElementById: id => elements[id] ||
 vm.runInNewContext(script, { window, document, location: { pathname: '/tools/map-editor/index.html' }, console, setTimeout: () => { throw Error('Unexpected delayed initialization'); } });
 const api = window.MapEditorExportFixes;
 assert(api, 'Diff controller failed to install');
+assert(!handlers['exportMapBtn:click'], 'Diff controller must not override the existing Map JSON exporter');
 assert.equal(api.buildDetailedDiff(original).summary.changed, false);
 
 const edited = JSON.parse(JSON.stringify(original)); // Simulates replacing the same map ID after importing an edited workspace.
