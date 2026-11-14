@@ -20,6 +20,8 @@ let perceptionMul = 1; // Represents Perception Mode movement, both mounted and 
 let stickyMul = 1; // Represents a live player Soursap Sticky movement effect.
 let festivalMul = 1; // Represents a live Festival movement blessing.
 let npcOwnerMul = 0.75; // Lets the position-only NPC fixture change buffs while paused.
+let siccedTarget = null; // Exercises target selection that bypasses the normal companion combat commitment.
+let downedTarget = null; // Exercises downed-owner focus without a normal committed combat target.
 const schedulerRegistrations = new Map(); // Captures the production pre-game subscription for ordering assertions.
 const player = { x: 64, y: 64, footing: 100, maxFooting: 100 }; // Uses the same pixel-space player position and footing values as the runtime.
 const companionObjects = new Set(); // Mirrors Combat.deps.companionObjects.
@@ -41,6 +43,8 @@ const windowStub = {
   PerceptionMode: { speedMultiplier() { return perceptionMul; } },
   RangedWeapons: { movementSpeedMultiplier() { return stickyMul; } },
   FestivalSystem: { blessingMultiplier() { return festivalMul; } },
+  EnchantmentSystem: { getCurrentSiccedTarget() { return siccedTarget; } },
+  PlayerDowned: { getFocusTarget() { return downedTarget; } },
   Mounts: {
     init(deps) { this.deps = deps; },
     rideState: 'none',
@@ -55,6 +59,7 @@ const deps = {
   MOVE_SPEED: 238,
   TILE: 32,
   getActiveGrid: () => grid,
+  getCurrentArea: () => 'town',
 };
 const context = {
   window: windowStub,
@@ -98,6 +103,21 @@ playerPet.stableRole = 'companion';
 playerPet._companionGroundFollow = { distancePx: 32 * 6 }; // Simulates a ground pet far behind its owner's path.
 assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed * 1.65) < 1e-9,
   'a distant follower gets a bounded catch-up advantage without changing the owner baseline');
+playerPet._companionGroundFollow.distancePx = 32 * 2.2;
+assert.ok(playerPet.def.chaseSpeed > defaultPlayerSpeed,
+  'catch-up begins with an advantage at the real follow threshold, instead of asymptotically stalling there');
+playerPet._companionGroundFollow.distancePx = 32 * 1.1;
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9,
+  'catch-up acceleration drops back to normal inside the near-follow distance');
+playerPet._companionGroundFollow.distancePx = 32 * 6;
+siccedTarget = { areaId: 'town', health: 100 };
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9,
+  'Sicced focus suppresses follow acceleration even without a scored _companionCombatTarget');
+siccedTarget = null;
+downedTarget = { areaId: 'town', health: 100 };
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9,
+  'downed-owner ranged focus suppresses catch-up without a scored _companionCombatTarget');
+downedTarget = null;
 assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9,
   'idle wandering and non-pursuit movement do not gain catch-up speed');
 playerPet._companionCombatTarget = { id: 'hostile', health: 100 };
@@ -193,6 +213,10 @@ assert.ok(Math.abs(npcPet.def.moveSpeed * devMul - 128) < 1e-9,
 windowStub._npcWalkers.delete('npc-owner');
 assert.equal(npcPet.def.moveSpeed, 90,
   'a creature owner with authored movement retains the shared creature-global movement modifier');
+npcOwner.currentMovementSpeedPxS = 240;
+assert.ok(Math.abs(npcPet.def.moveSpeed * devMul - 240) < 1e-9,
+  'a creature owner with explicit live world velocity is not multiplied by the global setting again');
+delete npcOwner.currentMovementSpeedPxS;
 windowStub._npcWalkers.set('npc-owner', {
   rec: { id: 'npc-owner' }, _moveSpeedTiles: 4, root: { position: { x: 2, z: 2 } },
 });
