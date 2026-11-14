@@ -10,7 +10,7 @@
     "js/ruin-layer-playable.js?v=20261114f2wing",
     "js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2",
     "js/ruin-v50-native-floors.js?v=20261110h0efff27",
-    "js/ruin-shaft-connector.js?v=20261114f2connector",
+    "js/ruin-shaft-connector.js?v=20261114upperF2FlatGrid1",
     "js/ruin-v50-vestibule.js?v=20261108h61ad699",
     "js/ruin-wall-coffins.js?v=20261108coffin1",
     "js/ruin-multifloor-v50-style.js?v=20261109ruinTravel1",

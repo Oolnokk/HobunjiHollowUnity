@@ -118,6 +118,62 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     };
   });
 
+  // A live cave ruin has TWO doors on F2, unlike the generic four-doors-
+  // per-story laboratory used by the original shaft tests. Confirm that the
+  // browser's REAL flat movement tiles and height-aware voxel grids agree for
+  // every stone tunnel cell and that a player standing there is not snapped out.
+  const cavePortals=await page.evaluate(async ()=>{
+    const requestedSeed=3687055066; // The reported impassable F2 dungeon seed.
+    await window.DevRandomRuin.generate(requestedSeed,{tier:'cave',theme:'tothal'});
+    const api=window.DevRandomRuin,state=api.getState(),ctx=api.getRuntimeContext();
+    const floor=state?.shaftLayerPlan?.wings?.[1]; // Second story in the actual generated ruin, not a synthetic layout.
+    if(!floor||floor.sides.length!==2)throw new Error('F2 cave must have two doors: '+JSON.stringify(state?.shaftLayerPlan));
+    const tier=window.RuinLayerPlan.tierOptions('cave'),wall=window.RuinLayerPlan.DEFAULTS.shaftWall;
+    const offset=Math.max(1,Math.min(8,Math.floor((tier.shaftSize-1)/2)-Math.floor(tier.shaftSize*.19)-2));
+    const radius=Math.floor((tier.shaftSize+wall*2)/2),anchor=state.shaftLayerPlan.anchor;
+    const section=api.getShaftCollisionMap(1);
+    const open=new Set(section?.open||[]); // The actual F2 3D collision projection, not the flat map alone.
+    const failures=[],probe=[]; // Detailed assertion evidence is returned on failure, useful without browser devtools.
+    const directions={N:[0,-1],E:[1,0],S:[0,1],W:[-1,0]};
+    const sleep=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    for(const side of floor.sides){
+      const [dx,dz]=directions[side],x0=anchor.x+dx*radius+(dx?0:offset);
+      const z0=anchor.z+dz*radius+(dx?offset:0);
+      for(let depth=0;depth<=wall;depth++){
+        const x=x0-dx*depth,z=z0-dz*depth,k=x+','+z;
+        const flat=ctx.grid[z]?.[x]?.type,covered=ctx.floorSet.has(k),voxel=open.has(k);
+        const surface=window.DynamicSurfaces?.sampleSupport?.(x+.5,z+.5,
+          {minY:section.y-.1,maxY:section.y+.12,pad:.02}); // Every passage cell must offer real walkable support to normal player physics, not only an open voxel.
+        const supported=Number.isFinite(surface?.y)&&Math.abs(surface.y-section.y)<.1;
+        const movement=window.MovementBlockDebug?.reasonsAt?.(x+.5,z+.5,.28,section.y,{
+          TILE:window.Combat?.deps?.TILE||64,area:'map_i_dev_random_ruin',
+          tileSpeedAt:window.__climbDebug?.tileSpeedAt,
+        }); // This probes the SAME tile, footprint, door and dynamic blocker authorities ordinary player movement calls.
+        if(!Array.isArray(movement))throw new Error('Live MovementBlockDebug was unavailable for F2 passage validation');
+        if(!covered||flat==='rock'||!voxel||!supported||movement.length)
+          failures.push({side,depth,x,z,flat,covered,voxel,supported,surfaceY:surface?.y??null,movement});
+      }
+      // The inner and outer tunnel endpoints must also survive the actual
+      // player's ruin reconciliation at F2 elevation, not just be clear on maps.
+      for(const depth of [wall,0]){
+        const x=x0-dx*depth+.5,z=z0-dz*depth+.5;
+        const teleported=api.setPlayerWorldPoint({x,z,y:section.y},{grounded:true,snapCamera:false});
+        await sleep();
+        const player=window.Combat?.deps?.player,scale=window.Combat?.deps?.TILE;
+        const collision=api.debugPlayerCollision?.();
+        const held=!!player&&!!scale&&Math.hypot(player.x/scale-x,player.y/scale-z)<.08;
+        const y=api.getPlayerGroundSupportY?.();
+        probe.push({side,depth,teleported,held,y,voxelBlocked:collision?.grid?.blockedHere??null});
+        if(!teleported||!held||Math.abs(y-section.y)>.08||collision?.grid?.blockedHere===true)
+          failures.push({side,depth,teleported,held,y,voxelBlocked:collision?.grid?.blockedHere??null});
+      }
+    }
+    return {seed:state.seed,requestedSeed,portals:floor.sides,checked:floor.sides.length*(wall+1),probe,failures};
+  });
+  assert.deepEqual(cavePortals.failures,[], 'real two-door F2 cave remains physically blocked: '+JSON.stringify(cavePortals));
+
+  console.log('[F2 portal probe passed]',JSON.stringify({seed:cavePortals.seed,portals:cavePortals.portals,checked:cavePortals.checked}));
+
   const puzzlePanel = await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     return {
