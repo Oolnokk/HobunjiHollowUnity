@@ -238,7 +238,13 @@
   function setTileSpan(group, totalTiles) {
     const data = group?.userData?.authoredFurnitureData;
     const spec = window.FurnitureTileSpan?.normalize(data?.tileSpan);
-    if (spec?.enabled && group?.userData?.activeTileSpanTiles != null) {
+    if (spec?.enabled && spec.axis === 'y') {
+      const height=Math.max(.1,Math.min(128,Number.isFinite(Number(totalTiles)) ? Number(totalTiles) : spec.targetHeight)); // Height in local world units, not a tile count.
+      if(group.userData.activeHeightSpan===height && !(group.userData.tileSpanDiagnostics?.errors?.length))
+        return {enabled:true,targetHeight:height,delta:height-spec.baseHeight,errors:[]};
+      totalTiles=height; // Forward the owning ceiling height into the shared surface-rooted solver.
+    }
+    if (spec?.enabled && spec.axis !== 'y' && group?.userData?.activeTileSpanTiles != null) {
       const target = Math.max(spec.baseTiles, Math.min(512, Math.floor(Number.isFinite(Number(totalTiles)) ? Number(totalTiles) : spec.totalTiles)));
       if (group.userData.activeTileSpanTiles === target && !(group.userData.tileSpanDiagnostics?.errors?.length))
         return { enabled: true, totalTiles: target, delta: (target - spec.baseTiles) * spec.tileSize, errors: [] }; // Avoid rebuilding surface items on an unchanged placement size.
