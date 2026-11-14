@@ -477,10 +477,12 @@
       // discards this session-only map; no partially playable network is kept.
       throw error;
     }
-    roomSession=RoomSystem.mount({layout:roomLayout,getPlayerPosition,getPlayerY,
+    const allRooms={...roomLayout,rooms:[...roomLayout.rooms,...(options.initialRooms||[])]}; // Original V50 vestibule participates in light/hostile isolation without rebuilding its authored walls.
+    roomSession=RoomSystem.mount({layout:allRooms,getPlayerPosition,getPlayerY,
       mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
       tile:Number(root.Combat?.deps?.TILE)||64,
       getHostiles:()=>root.Combat?.deps?.hostileObjects}); // Hostiles outside the current room are reset, hidden and skipped by updateHostiles.
+    owner.registerRooms=additional=>roomSession?.addRooms?.(additional); // Native V50 rooms arrive after their reserved story geometry mounts.
     owner.tick=(dt)=>{
       if(owner.disposed)return;
       const player=getPlayerPosition(),y=Number(getPlayerY?.()); // Actor feet elevation disambiguates vertically overlapping room coordinates.
