@@ -41,9 +41,10 @@
     const hit = window.DevRandomRuinHitPuzzles?.snapshot?.() || null;
     const root = activeRoot();
     const alwaysLitEntries = rawUnhandled.filter(entry => entry.activatorType === 'alwaysLitTorch');
-    // Batch 2 discovers one torch source per V50 always-lit reference torch. Requiring
+    // Batch 2 discovers one stationary Fire Hazard per V50 always-lit reference brazier. Requiring
     // at least the same count keeps this from hiding a future source-discovery regression.
-    const hitOwnsReferenceTorches = !!(hit?.active && Number(hit.torchSources) >= alwaysLitEntries.length);
+    const hitOwnsReferenceTorches = !!(hit?.active && hit.temporaryTorchPickupsDisabled === true
+      && Number(hit.torchSourceFireHazards) >= alwaysLitEntries.length);
     const covered = [];
     const effectiveUnhandled = [];
 
@@ -52,7 +53,7 @@
       const data = object?.userData || {};
       let handledBy = null;
       if (entry.activatorType === 'alwaysLitTorch' && data.alwaysLit && hitOwnsReferenceTorches) {
-        handledBy = 'batch2-hit-runtime:timed-torch-fuel-source';
+        handledBy = 'batch2-hit-runtime:persistent-torch-fire-hazard';
       } else if (data.groundedToMovingPlatform && object?.parent) {
         // V50 attaches these display groups directly beneath the moving platform;
         // their world transform therefore follows the platform without another rider adapter.
