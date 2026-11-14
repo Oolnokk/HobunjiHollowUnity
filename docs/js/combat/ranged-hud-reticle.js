@@ -45,6 +45,7 @@
       || !!combatDeps?.isDialogueOpen?.()
       || !!dialogueEl?.classList.contains('open')
       || !!window.MusicMinigame?.state?.active // A player-owned instrument puzzle or performance must never display a combat sight.
+      || !!window.MelodyCameraFraming?.isPlateActive?.(combatDeps?.getCurrentArea?.()) // The score starts on the plate even before the player opens an instrument.
       || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled
       || (!!sitInteraction && sitInteraction.phase !== 'out');
   }
