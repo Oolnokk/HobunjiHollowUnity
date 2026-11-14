@@ -568,6 +568,30 @@ assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && stan
 assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const copiedGroundMaterial = {
+  userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Simulates Three.Material.clone(): metadata is copied but the old compile hook still closes over the source state.
+  onBeforeCompile: groundMaterial.onBeforeCompile,
+  customProgramCacheKey: groundMaterial.customProgramCacheKey,
+  needsUpdate: false,
+};
+const copiedState = installElevationShader(copiedGroundMaterial);
+assert.notEqual(copiedState, groundShaderState, 'a cloned material gets its own tile/elevation uniforms');
+assert.equal(installElevationShader(copiedGroundMaterial), copiedState, 'a live clone is registered only once');
+copiedState.geometryHasNormals = true;
+const copiedShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+// Use the stock shader before its first injection: a clone must inherit the prior hook,
+// not re-inject the source material's elevation declarations a second time.
+copiedGroundMaterial.onBeforeCompile(copiedShader, {});
+assert.equal(copiedShader.uniforms.uHobunjiXrayActorElevation, copiedState.uniforms.elevation,
+  'the cloned ground shader is wired to its own live elevation, not the source material');
+assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
+  'cloned material shader injection must not introduce duplicate GLSL declarations');
+assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
+  'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
 basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
@@ -627,6 +651,12 @@ collect([
 ]);
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
   'a shared unlit ground material fails closed if any registered mesh lacks normals');
+sharedGroundMaterial.needsUpdate = false;
+collect([{ material: sharedGroundMaterial, geometry: drawable({ normal: {} }) }]);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
+  'the live ground with normals regains x-ray after transient/replaced normal-less geometry is removed');
+assert.equal(sharedGroundMaterial.needsUpdate, true,
+  'the recovered ground material recompiles its shader, rather than retaining a stale solid-only variant');
 const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
   { material: chunkedGroundMaterial, geometry: { attributes: {} } },
