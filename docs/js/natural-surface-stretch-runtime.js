@@ -215,7 +215,11 @@
       && signature.includes('|material=' + expectedMaterial + '|')
       && priorReport?.version === 3 && priorReport?.mapping === 'edge-preserving-nine-slice'
       && geometry.userData.naturalSurfaceUvMapping !== 'cliff-face-stretch'; // Used to reject legacy UV overrides and invalidated surface signatures.
-    if (validUv && (existingCrossMesh || currentIsland)) {
+    const ownershipReady = mesh.userData?.terrainJigsawIgnore === true
+      && mesh.userData?.naturalSurfaceUvOwner === 'HobunjiSurfaceStretchUV'; // Used to ensure exclusion-wrapper side effects have already run.
+    const outlineReady = mesh.userData?.retainNaturalSurfaceShellOutline === true
+      || mesh.userData?.facetedSurfaceTextureOutline === true; // Used to preserve the shell decision for rounded stones as well as faceted cliffs.
+    if (validUv && (existingCrossMesh || currentIsland) && ownershipReady && outlineReady) {
       stats.validUvFastPaths++;
       return false;
     }
