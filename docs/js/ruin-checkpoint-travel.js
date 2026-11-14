@@ -232,7 +232,8 @@
         const doc=root.document; // Pointer events from mobile Action 1 remain captured by its original button after the arch opens.
         if(doc?.addEventListener){
           const move=event=>{
-            if(activeTravelWheel===record.id&&event.isPrimary!==false)
+            if(activeTravelWheel===record.id&&event.isPrimary!==false
+            &&root._desktopSelectionArc?.currentMode?.()==='entries:ruin-shaft-travel')
               root._desktopSelectionArc?.movePointer?.(event.clientX,event.clientY);
           };
           doc.addEventListener('pointermove',move,true);
@@ -258,6 +259,7 @@
           if(wheelOpen){
             wheelOpen=false;activeTravelWheel=null;
             travelPointerCleanup?.();travelPointerCleanup=null;
+            if(root._desktopSelectionArc?.currentMode?.()!=='entries:ruin-shaft-travel')return;
             if(valid)root._desktopSelectionArc?.releaseSelection?.();
             else root._desktopSelectionArc?.close?.(); // Canceled input/movement cannot commit a destination.
             return;
@@ -312,7 +314,7 @@
       }
       for(const record of shaftBraziers)
         if(!unlockedShaftIds.has(record.id)&&closeEnough(p,record.at,2.1))igniteShaft(record);
-      if(activeTravelWheel&&!root._desktopSelectionArc?.entryMenuOpen?.()){
+      if(activeTravelWheel&&root._desktopSelectionArc?.currentMode?.()!=='entries:ruin-shaft-travel'){
         activeTravelWheel=null;travelPointerCleanup?.();travelPointerCleanup=null; // Backdrop cancel or Dodge must not strand the held input owner.
       }
       for(const record of records.values())if(record.kind==='small'
@@ -330,7 +332,10 @@
     }
     function dispose(){
       if(disposed)return;disposed=true;
-      if(activeTravelWheel){root._desktopSelectionArc?.close?.();activeTravelWheel=null;}
+      if(activeTravelWheel){
+        if(root._desktopSelectionArc?.currentMode?.()==='entries:ruin-shaft-travel')root._desktopSelectionArc.close();
+        activeTravelWheel=null;
+      }
       travelPointerCleanup?.();travelPointerCleanup=null;
       if(liveOwner===owner)liveOwner=null;
       for(const c of controls){const index=ruin.controls.indexOf(c);if(index>=0)ruin.controls.splice(index,1);}
