@@ -426,6 +426,7 @@
       buildStandaloneMapExport,
       buildDetailedDiff,
       buildWorkspaceDiffBundle,
+      captureMapBaseline, // Used after confirmed Town reload; other map baselines must not be erased.
       captureWorkspaceBaselines,
       debugSnapshot: () => ({
         installed,
