@@ -38,6 +38,8 @@ let showing=false,onPlate=true; // These values simulate note discovery and the 
 const glyphs=tall.map(p=>({position:p,visible:true,material:{opacity:1},parent:{visible:true}}));
 const camera={projectPoint:p=>({x:showing?p.x/5:1.1,y:p.y/8,z:0})}; // A simple projected test view with an initially unseen first clue.
 const release=framing.register({area:'puzzle-cave',plate,glyphs,isActive:()=>onPlate});
+assert.equal(framing.isPlateActive('puzzle-cave'),true,'the occupied plate hides the reticle before any note is discovered or instrument opened');
+assert.equal(framing.isPlateActive('other-map'),false,'a puzzle in another area cannot suppress the current gameplay sight');
 const args={area:'puzzle-cave',playerX:0,playerZ:0,camera,baseTarget:base,
   baseDistance:2.6,azimuth:0,angle:Math.PI/6,fovDeg:42,aspect:1.6};
 framing.update({...args,now:0});
@@ -49,6 +51,7 @@ assert.ok(framing.debugSnapshot().framing.offsetY>0,'the discovered camera shoul
 showing=false;framing.update({...args,now:300});
 assert.equal(framing.debugSnapshot().active,true,'after discovery the full score stays framed even if a clue leaves the original view');
 onPlate=false;framing.update({...args,now:400});
+assert.equal(framing.isPlateActive('puzzle-cave'),false,'leaving the plate restores the reticle');
 assert.equal(framing.debugSnapshot().active,false,'leaving the plate releases the camera');
 onPlate=true;framing.update({...args,now:450});
 assert.equal(framing.debugSnapshot().active,false,'rapid re-entry must not rediscover notes solely because the previous assisted camera has not settled');
@@ -67,6 +70,7 @@ framing.update({...args,now:910});
 assert.equal(framing.debugSnapshot().active,true,'a subsequent normal gameplay frame may discover a visible note');
 release();release();
 assert.equal(framing.debugSnapshot().registered,0,'repeated disposal is safe');
+assert.equal(framing.isPlateActive('puzzle-cave'),false,'disposed puzzles cannot leave the reticle suppressed');
 
 assert.match(game,/MelodyCameraFraming\?\.update\?\.\(/,'gameplay camera calls the registered melody framing module');
 assert.match(game,/if \(applyAuthoredCinematicCamera\(\)\) \{\s*window\.MelodyCameraFraming\?\.reset\?\.\(\)/,'authored camera takeover must disarm the discovery latch');
