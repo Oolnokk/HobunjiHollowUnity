@@ -212,8 +212,8 @@
   nohuknukCharacterRig.anchors.rightHandShoulder = identityAnchor([-0.35, 0.70, 0]); // Nohuknuk's right-hand socket, adjustable in Rig Coordinates.
   const nohuknukPerchPixel = { x: 100, y: 110 }; // Approximate shoulder reference in the 200px portrait preview; later Rig Coordinates authoring may refine it.
   nohuknukCharacterRig.anchors.shoulderPerch = {
-    ...identityAnchor([0, 0.77, 0]), sourcePixel: { ...nohuknukPerchPixel },
-  }; // Independently authored shoulder perch and matching preview pixel.
+    ...identityAnchor([-0.35, 0.70, 0]), sourcePixel: { ...nohuknukPerchPixel },
+  }; // Nohuknuk's own right-hand shoulder location; his bipedal monster's authored attack orbit is 1x, not the Engh-sho donor's 0.7x.
   nohuknukCharacterRig.posteriorRule = {
     ...nohuknukCharacterRig.posteriorRule,
     heightPercentOffset: 0, heightPercentFromFloor: 32,
