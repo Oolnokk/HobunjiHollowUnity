@@ -100,7 +100,7 @@
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20261111trinketSummary2', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261107inactivefit1', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
-    ['js/combat/technique-scrolls.js?v=20261105koma1', () => !!window.TechniqueScrolls],
+    ['js/combat/technique-scrolls.js?v=20261114packbooks1', () => !!window.TechniqueScrolls],
     ['js/combat/combat-vocalizations.js?v=20261110shortCombo3', () => Number(window.CombatVocalizations?.version) >= 5],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
