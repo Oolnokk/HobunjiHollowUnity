@@ -136,7 +136,9 @@ restore();
 assert.equal(visibleRock.visible,true);
 assert.equal(offscreenRock.visible,true,'gameplay visibility must be restored when the render ends');
 
-for(let i=0;i<3;i++) {
+// GPU probes run every eight rendered frames; keep the camera fixed long enough
+// for two independent negative results, not just two consecutive draw frames.
+for(let i=0;i<18;i++) {
   restore=enter();
   cull.probeAfterBase(renderer,camera,scene);
   assert.equal(renderer.autoClear,true,'query pass must restore autoClear');
