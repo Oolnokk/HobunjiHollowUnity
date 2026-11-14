@@ -58,7 +58,7 @@ const xrayHeightStart = heldRender.indexOf('  const XRAY_ELEVATION_TOLERANCE = '
 const xrayHeightEnd = heldRender.indexOf('  const XRAY_ELEVATION_GROUP_EPSILON', xrayHeightStart); // The next stable definition bounds extraction.
 assert.ok(xrayHeightStart > 0 && xrayHeightEnd > xrayHeightStart);
 const xrayHeights = new Function('window', heldRender.slice(xrayHeightStart, xrayHeightEnd)
-  + '\\nreturn { floor: XRAY_ELEVATION_TOLERANCE, visual: XRAY_VISUAL_GROUND_TOLERANCE };')({
+  + '\nreturn { floor: XRAY_ELEVATION_TOLERANCE, visual: XRAY_VISUAL_GROUND_TOLERANCE };')({
     HOBUNJI_CONFIG: { terrain: { subtleHeightMaxDisplacement: 0.6, plateauVerticalUnit: 2.5 } },
   }); // Runs exactly the same calculation as the browser with the actual authored terrain settings.
 assert.equal(xrayHeights.floor, 0.18, 'actual floor/porch heights retain a narrow same-floor tolerance');
@@ -66,7 +66,7 @@ assert.ok(xrayHeights.visual >= 1.2 && xrayHeights.visual < 1.3,
   'adjacent opposite subtle slopes x-ray while actual adjacent cliff tiers remain distinct');
 assert.match(heldRender, /uniform float uHobunjiXraySurfaceTolerance;/,
   'terrain and raised floors use distinct shader tolerance values');
-assert.match(heldRender, /groundKind\\(mesh\\) === 'terrain' \\|\\| roadSurface/,
+assert.match(heldRender, /groundKind\(mesh\) === 'terrain' \|\| roadSurface/,
   'the wider tolerance applies to visual terrain and roads, not porch, cave or interior slabs');
 
 assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\.setLocked\(true\)/,
