@@ -9,6 +9,7 @@
   const WELL_RESTED_DURATION_HOURS = 16; // Existing stronger player buff; only awarded by at least eight actual sleep hours.
   const RESTED_DURATION_HOURS = 3; // Short sleep or seated Wait postpones yawns for three game hours without granting Well Rested stat bonuses.
   const WELL_RESTED_MIN_SLEEP_HOURS = 8; // Enforces real eight-hour sleep, including the legacy animated-bed path.
+  const SLEEP_HOUR_EPSILON = 1e-6; // Absorbs raw calendar-fraction rounding at exact 8h, not genuine short sleep.
   const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew on Anan.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
@@ -476,7 +477,7 @@
     }
     lastRestSource = kind === 'wait' ? 'seated-wait' : (sleepFromBed ? 'player-bed' : 'sleep');
     grantRested();
-    if (kind === 'sleep' && sleepFromBed && duration >= WELL_RESTED_MIN_SLEEP_HOURS) grantWellRested();
+    if (kind === 'sleep' && sleepFromBed && duration + SLEEP_HOUR_EPSILON >= WELL_RESTED_MIN_SLEEP_HOURS) grantWellRested();
   }
 
   function installDebugHook() {
