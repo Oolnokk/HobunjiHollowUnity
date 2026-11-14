@@ -582,9 +582,10 @@ for(const side of ['north','east','south','west']){
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
   const siteSeed=side==='west'?3687055066:23; // The west integration case also covers the player's reported F2 seed.
-  const preplanned=Plan.compose({seed:siteSeed,anchorX:320,anchorZ:320,shaftTraversal:'buttress',
+  const preplanned=Plan.compose({seed:siteSeed,anchorX:320,anchorZ:320,
     ...(side==='west'?Plan.tierOptions('cave'):{}),
-  }); // The reported cave layout has two F2 portals, only one F1 portal; the other cases preserve the generic multiwing audit.
+    shaftTraversal:'buttress',
+  }); // Reproduce the two-door F2 cave footprint while keeping this geometry harness on its already-mocked traversal.
   const connected=Connector.connect({rec,ruin,seed:siteSeed,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
