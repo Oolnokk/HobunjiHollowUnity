@@ -12,9 +12,10 @@
       (!target.areaId || target.areaId === areaId);
   }
 
-  function groundPet(target, areaId) {
+  function groundPet(target, areaId, players = null) {
     return viable(target, areaId) && target.isCompanion === true &&
-      target.banditCompanion !== true && target.stableRole === 'companion';
+      target.banditCompanion !== true && target.stableRole === 'companion' &&
+      (!players || !target.master || players.includes(target.master)); // Match CompanionDowned ownership: NPC hounds are not player-owned pets.
   }
 
   function chooseAggroTarget(enemy, players, companions, areaId, radiusPx, canSee) {
@@ -33,7 +34,7 @@
         }
       }
       for (const person of players || []) consider(person);
-      for (const companion of companions || []) if (groundPet(companion, areaId)) consider(companion);
+      for (const companion of companions || []) if (groundPet(companion, areaId, players)) consider(companion);
       if (!closest) return null;
       if (!canSee || canSee(enemy, closest, radiusPx)) return closest;
       (occluded ||= new Set()).add(closest); // A blocked nearer pet must not conceal a visible player farther back.
@@ -54,10 +55,10 @@
       if (distanceSq < bestDistanceSq) { best = candidate; bestDistanceSq = distanceSq; }
     }
     for (const person of players || []) consider(person);
-    for (const companion of companions || []) if (groundPet(companion, areaId)) consider(companion);
+    for (const companion of companions || []) if (groundPet(companion, areaId, players)) consider(companion);
     const current = enemyPet._beastmasterCombatTarget; // Stores committed target on the instance, not shared creature definitions.
     if (current && current !== best && viable(current, areaId) &&
-        (players?.includes?.(current) || groundPet(current, areaId))) {
+        (players?.includes?.(current) || groundPet(current, areaId, players))) {
       const mdx = current.x - master.x, mdy = current.y - master.y;
       const dx = current.x - enemyPet.x, dy = current.y - enemyPet.y;
       const currentSq = dx * dx + dy * dy;
