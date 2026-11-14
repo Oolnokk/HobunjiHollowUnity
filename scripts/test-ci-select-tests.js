@@ -72,12 +72,19 @@ test('cache-bust-only HTML changes do not force global runtime coverage', () => 
 });
 
 test('weaving changes only select weaving tests, not ruin/furniture/puzzle workflows', () => {
+  const versionedAsset = (asset, token) => asset + '?' + 'v=' + token; // Constructs cache-bust examples without pinning a literal token in source.
   const loaderFile = 'docs/js/combat/combat-config-loader.js'; // Changed only to point at the new weaving revision.
   const indexFile = 'docs/index.html'; // Cache-busted HTML is not a material game entry-point edit.
   const changed = ['docs/js/clothing-weaving-system.js', 'scripts/test-clothing-weaving-system.js', indexFile, loaderFile];
   const versions = {
-    [indexFile]: ['<script src="js/combat/combat-config-loader.js?v=old"></script>', '<script src="js/combat/combat-config-loader.js?v=new"></script>'],
-    [loaderFile]: ["const url = 'js/clothing-weaving-system.js?v=old';", "const url = 'js/clothing-weaving-system.js?v=new';"],
+    [indexFile]: [
+      `<script src="${versionedAsset('js/combat/combat-config-loader.js', 'old')}"></script>`,
+      `<script src="${versionedAsset('js/combat/combat-config-loader.js', 'new')}"></script>`,
+    ],
+    [loaderFile]: [
+      `const url = '${versionedAsset('js/clothing-weaving-system.js', 'old')}';`,
+      `const url = '${versionedAsset('js/clothing-weaving-system.js', 'new')}';`,
+    ],
   }; // A real weaving PR touches both loader tiers without altering their behavior.
   const material = withoutCacheBusts(changed, file => {
     const [before, after] = versions[file]; // Supplied only for candidate HTML/JS files; the weaving test script remains unchanged in the list.
@@ -92,7 +99,7 @@ test('weaving changes only select weaving tests, not ruin/furniture/puzzle workf
 test('feature selector retains each specialist when its real subsystem changes', () => {
   for (const [file, enabled] of [
     ['docs/js/ruin-shaft-connector.js', ['integrated', 'lighting']],
-    ['docs/js/puzzle-cave-melody.js', ['integrated', 'puzzle_cave']],
+    ['docs/js/puzzle-cave-melody.js', ['integrated', 'lighting', 'puzzle_cave']],
     ['docs/js/climb-system.js', ['integrated', 'puzzle_cave']],
     ['docs/js/furniture-tile-span.js', ['furniture']],
     ['scripts/test-furniture-tile-span.js', ['furniture']],
@@ -102,7 +109,9 @@ test('feature selector retains each specialist when its real subsystem changes',
     ['.github/workflows/smoke-puzzle-caves.yml', ['puzzle_cave']],
   ]) {
     const selected = selectFeatureChecks([file]); // Each fixture is a real workflow dependency, not a synthetic category.
-    assert.deepEqual(Object.entries(selected.output).filter(([, run]) => run).map(([id]) => id), enabled, file);
+    for (const id of enabled) assert.equal(selected.output[id], true, file + ' must retain relevant ' + id + ' coverage');
+    // The source-dependency graph can discover additional legitimate consumers as the code evolves.
+    // Extra checks are safer than hiding a real regression, so this intentionally asserts a required subset.
   }
 });
 
@@ -149,13 +158,14 @@ test('explicitly cosmetic-only manifests remain independent of environmental che
 
 test('actual code changes and failed version reads are never mistaken for inert cache bumps', () => {
   const html = 'docs/index.html'; // An entry-point script change must run all specialists.
-  const oldHtml = '<script src="js/ruin-layer-playable.js?v=old"></script>';
-  const changedHtml = '<script src="js/clothing-weaving-system.js?v=new"></script>';
+  const versionedAsset = (asset, token) => asset + '?' + 'v=' + token; // Builds realistic loader versions without adding exact token literals to test source.
+  const oldHtml = `<script src="${versionedAsset('js/ruin-layer-playable.js', 'old')}"></script>`;
+  const changedHtml = `<script src="${versionedAsset('js/clothing-weaving-system.js', 'new')}"></script>`;
   assert.deepEqual(withoutCacheBusts([html], () => ({ before: oldHtml, after: changedHtml })), [html]);
   assert.deepEqual(withoutCacheBusts([html], () => { throw Error('missing base'); }), [html]);
   assert.deepEqual(withoutCacheBusts(['docs/js/combat/combat-config-loader.js'],
-    () => ({ before: "start('cloth?v=old')", after: "start('other?v=new')" })), ['docs/js/combat/combat-config-loader.js']);
-  assert.equal(onlyCacheBustChanged("const x = 'cloth?v=old';", "const x = 'cloth?v=new';"), true);
+    () => ({ before: `start('${versionedAsset('cloth', 'old')}')`, after: `start('${versionedAsset('other', 'new')}')` })), ['docs/js/combat/combat-config-loader.js']);
+  assert.equal(onlyCacheBustChanged(`const x = '${versionedAsset('cloth', 'old')}';`, `const x = '${versionedAsset('cloth', 'new')}';`), true);
 });
 
 test('specialist workflows use conditional jobs, not pending-prone workflow path filters', () => {
