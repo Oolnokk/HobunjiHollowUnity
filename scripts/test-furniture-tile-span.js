@@ -143,6 +143,7 @@ const index=fs.readFileSync('docs/index.html','utf8');
 assert.match(html,/tileSpan:cloneJson\(state\.tileSpan/,'project export preserves tile-span settings');
 assert.match(html,/state\.tileSpan=cloneJson\(data\.tileSpan/,'project import restores tile-span settings');
 assert.match(html,/tileSpanRoots\[end\]\.partId=idMap\.get/,'database imports remap piece attachment IDs');
+assert.match(html,/importedPartIds\.get\(root\.partId\)/,'appended repository furniture remaps stretch-root IDs');
 assert.match(author,/Stair Bridge \(Stretchable\)/,'preset bridge is present in the author');
 assert.match(author,/tileSpanRole:'stretch'/,'bridge has flexible center geometry');
 assert.match(author,/tileSpanRole:role/,'bridge has fixed stair ends');
