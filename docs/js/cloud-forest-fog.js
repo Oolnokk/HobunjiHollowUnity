@@ -881,6 +881,7 @@
 
 
   const ruinGlowProjection = new window.THREE.Vector3(); // Reused world-space center for engraved glow surfaces, avoiding allocation in the 60 Hz compositor.
+  const ruinGlowSource={x:0,y:0,z:0}; // One scratch light for routing engraving masks through room-local clipping.
   const ruinGlowStats = { found:0,drawn:0,scans:0 }; // Mobile darkness diagnostics can confirm that glyph masks were discovered and actually painted.
   let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache only the active scene's glowing pattern meshes; re-check lazy async atlases periodically.
   function drawRuinPatternGlowMasks(scene, now) {
@@ -910,6 +911,8 @@
       else mesh.getWorldPosition?.(ruinGlowProjection);
       if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
         || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
+      ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
+      if(!ruinRoomLightAllowed(ruinGlowSource))continue; // Closed neighboring rooms cannot brighten their engravings through stone.
       const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1; // Sphere bounds are local geometry units, including stretched masonry patches.
       const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale)); // Cover the engraving's face, but never illuminate an entire corridor from one glyph.
       const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
@@ -920,7 +923,8 @@
       gradient.addColorStop(.58,'rgba(0,0,0,.96)');
       gradient.addColorStop(.83,'rgba(0,0,0,.70)');
       gradient.addColorStop(1,'rgba(0,0,0,0)'); // Erase only nearby overlay darkness: glyph pixels remain depth-tested by the original Three.js pass.
-      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=gradient;
+      withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
       ruinGlowStats.drawn++;
     }
     ctx.globalCompositeOperation = 'source-over';
