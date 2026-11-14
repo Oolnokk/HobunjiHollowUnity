@@ -3510,7 +3510,7 @@
 
   function secretLocaleSite(bbox, paddedW, paddedH, clearance, locale, placementFilter) {
     const scorer = typeof globalThis !== 'undefined' ? globalThis.WildernessSeclusion : null; // Browser generation shares the same LOS rule as cave entrances.
-    const fallback = typeof require === 'function' ? require('./wilderness-seclusion.js') : null; // Node headless generator uses that identical scorer.
+    const fallback = !scorer && typeof require === 'function' ? require('./wilderness-seclusion.js') : null; // Node headless generator uses that identical scorer.
     const visibility = scorer || fallback;
     if (!visibility?.sampleVisibility || !map.entry) return null;
     const distances = distanceFieldFrom(map.entry).distances; // Prevent fully enclosed but unreachable locations from winning.
