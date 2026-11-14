@@ -49,7 +49,7 @@
           pit,blocked,entry:{x:p.x,z:p.z,axis:across==='z'?'x':'z',span:DOOR_SPAN,
             line:across==='z'?p.x+.5:p.z+.5,across,centre,lo,hi},
           // Per-room values feed the unified darkness overlay, not additional Three.js lights.
-          ambient:{darkness:.82,color:plan.options?.theme==='tothal'?[6,18,44]
+          ambient:{darknessOffset:source.kind==='brazier-chamber' ? -.035 : 0,color:plan.options?.theme==='tothal'?[6,18,44]
             :plan.options?.theme==='hronal'?[20,7,2]:[0,0,0]},
         };
         rooms.push(room);
@@ -111,7 +111,7 @@
     for(const room of rooms){
       if(!inside(room,x,z))continue;
       const delta=Number.isFinite(y)?Math.abs(y-room.y):0;
-      if(delta<distance&&delta<=2.5){best=room;distance=delta;}
+      if(delta<distance&&delta<=WALL_HEIGHT+.65){best=room;distance=delta;}
     }
     return best;
   }
@@ -177,6 +177,7 @@
       rooms,layout,
       get activeRoomId(){return active?.id||null;},
       isRoomActive(id){return !!active&&active.id===id;},
+      ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
@@ -235,6 +236,7 @@
   }
   return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,floorAudit,makeShell,roomAt,mount,
     isRoomActive:id=>live?.isRoomActive(id)===true,
+    ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
     withLightClip:(ctx,light,project,draw)=>live?live.withLightClip(ctx,light,project,draw):(draw(),true),
     debugSnapshot:()=>live?.snapshot()||{activeRoomId:null,totalRooms:0,sleepingEnemies:0}});
