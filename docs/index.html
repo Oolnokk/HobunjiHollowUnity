@@ -366,7 +366,7 @@
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
        calls window.BountyBoard.init(...) during its own setup. -->
-  <script src="js/bounty-board.js?v=20261008h416634c"></script>
+  <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20261114packbooks1"></script>
@@ -844,8 +844,8 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
-  <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
-  <script src="js/cavern-generator.js?v=20261108hdenreview2"></script>
+  <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
+  <script src="js/cavern-generator.js?v=20261114puzzleCaveVaultAudit2"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
@@ -881,9 +881,9 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261114melodyTempoPer1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261114puzzleCaveVaultAudit2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
+  <script src="js/cave-site-system.js?v=20261114puzzleCaveVaultAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
