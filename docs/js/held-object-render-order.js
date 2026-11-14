@@ -862,7 +862,7 @@
     return states;
   }
 
-  function prepareSubmergedOverlayStencilMaterials(overlayMeshes) {
+  function prepareSubmergedOverlayStencilMaterials(overlayMeshes, stencilRef = 1) {
     const states = new Map();
     for (const object of overlayMeshes) {
       forEachMaterial(object.material, material => {
@@ -877,7 +877,7 @@
         material.stencilWrite = true;
         material.stencilWriteMask = 0x01;
         material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilRef = 1;
+        material.stencilRef = stencilRef; // Wet owners stamp 1; dry owners clear bit 0 even when another actor shares this screen pixel.
         material.stencilFuncMask = 0xFF;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
@@ -1432,21 +1432,22 @@
     let unknown = 0; // Diagnostics count unresolved holders separately from proven ordinary parts.
     let unboundedTintOwners = 0; // Unknown holders with no usable position retain conservative water tint.
     const fallbackTintScopes = []; // Unknown holder roots can still gate distant water by the visible part's world tile.
+    const tintScopeByMesh = new Map(); // Maps each visible held/foot mesh to its owner before tint groups are partitioned.
     for (const mesh of meshes) {
       const scope = actorXrayScope(mesh, scene, actors);
       if (!scope || !Number.isFinite(scope.elevation) || !Number.isFinite(scope.col) || !Number.isFinite(scope.row)) {
         ordinary.push(mesh);
         unknown++;
-        if (Number.isFinite(scope?.col) && Number.isFinite(scope?.row)) {
-          fallbackTintScopes.push(scope);
-        } else {
-          const matrix = mesh.matrixWorld?.elements; // The visible part supplies a safe fallback position for tint only, not ground x-ray.
-          if (Number.isFinite(matrix?.[12]) && Number.isFinite(matrix?.[14])) {
-            fallbackTintScopes.push({ col: Math.floor(matrix[12]), row: Math.floor(matrix[14]), root: mesh });
-          } else unboundedTintOwners++;
-        }
+        const matrix = mesh.matrixWorld?.elements; // The visible part supplies a fallback tint position, never an exemption from solid ground.
+        const tintScope = Number.isFinite(matrix?.[12]) && Number.isFinite(matrix?.[14])
+          ? { col: Math.floor(matrix[12]), row: Math.floor(matrix[14]), root: mesh }
+          : null;
+        if (tintScope) fallbackTintScopes.push(tintScope);
+        else unboundedTintOwners++;
+        tintScopeByMesh.set(mesh, tintScope);
         continue;
       }
+      tintScopeByMesh.set(mesh, scope);
       const tileKey = scope.col + ',' + scope.row; // Exact grid tile identity; elevation still uses the existing epsilon comparison.
       let sameTile = regionsByTile.get(tileKey);
       if (!sameTile) {
@@ -1504,7 +1505,58 @@
     lastUnknownElevationMeshes = unknown;
     lastXrayTileRegions = groups.reduce((count, group) => count + group.regions.length, 0);
     lastXrayOrdinaryMeshes = ordinary.length;
-    return { groups, ordinary, scopes: [...actors.values(), ...fallbackTintScopes], hasUnknownOwner: unboundedTintOwners > 0 };
+    return { groups, ordinary, scopes: [...actors.values(), ...fallbackTintScopes], hasUnknownOwner: unboundedTintOwners > 0, tintScopeByMesh };
+  }
+
+  function splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers) {
+    // Stencil is shared across the viewport, so a wet NPC must not cause
+    // dry player/companion parts to receive that NPC's water color. Partition
+    // already-compatible depth groups by per-owner wet-tile proximity.
+    // Each partition draws once; this also handles shared sprite materials
+    // without relying on per-object stencil flags in one material transaction.
+    const allowedByScope = new Map(); // Reuses the same water decision for every hand/tool owned by one actor.
+    const wetMeshes = new Set(); // Used only to assign the existing depth groups to wet/dry stencil passes.
+    for (const group of groups) {
+      for (const mesh of group.meshes) {
+        const scope = tintScopeByMesh.get(mesh);
+        if (!scope) { wetMeshes.add(mesh); continue; } // Unknown transforms retain the previous conservative tint behavior.
+        if (!allowedByScope.has(scope)) {
+          allowedByScope.set(scope, nearbyTintCovers.some(cover => tintCoverNearActor(cover, [scope])));
+        }
+        if (allowedByScope.get(scope)) wetMeshes.add(mesh);
+      }
+    }
+    const split = [];
+    for (const group of groups) {
+      const wetCount = group.meshes.reduce((n, mesh) => n + (wetMeshes.has(mesh) ? 1 : 0), 0);
+      if (wetCount === 0 || wetCount === group.meshes.length) {
+        group.tintStencilRef = wetCount ? 1 : 0;
+        split.push(group);
+        continue;
+      }
+      // Incompatible owners on a single shared-material group need separate
+      // renders to avoid one material's stencilRef leaking to another owner.
+      const wet = { elevation: group.elevation, regions: [], meshes: [], tiles: new Float32Array(XRAY_MAX_BATCH_TILES * 2), tintStencilRef: 1 };
+      const dry = { elevation: group.elevation, regions: [], meshes: [], tiles: new Float32Array(XRAY_MAX_BATCH_TILES * 2), tintStencilRef: 0 };
+      if (group.regions.length) {
+        for (const region of group.regions) {
+          for (const [partition, selectedWet] of [[wet, true], [dry, false]]) {
+            const matches = region.meshes.filter(mesh => wetMeshes.has(mesh) === selectedWet);
+            if (!matches.length) continue;
+            const at = partition.regions.length * 2;
+            partition.tiles[at] = region.col;
+            partition.tiles[at + 1] = region.row;
+            partition.regions.push({ ...region, meshes: matches });
+            partition.meshes.push(...matches);
+          }
+        }
+      } else {
+        for (const mesh of group.meshes) (wetMeshes.has(mesh) ? wet : dry).meshes.push(mesh);
+      }
+      if (wet.meshes.length) split.push(wet);
+      if (dry.meshes.length) split.push(dry); // Dry visible pixels clear any prior wet actor stencil bit.
+    }
+    return split;
   }
 
   function installGroundElevationShader(material) {
@@ -1790,7 +1842,7 @@
     const overlayMeshes = [...held, ...feet];
     const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
     const groundMeshes = [...ground, ...topFaceGround];
-    const { groups, ordinary, scopes, hasUnknownOwner } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
+    let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
     const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
     if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
@@ -1804,6 +1856,7 @@
     lastDistantTintCovers = tintCovers.length - nearbyTintCovers.length;
     const tintOverlay = lastBaseStencilBits >= 1
       && hasOverlappingHeldCover(renderer, camera, overlayMeshes, nearbyTintCovers);
+    if (tintOverlay) groups = splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers);
     const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
     let scissored = replayScissorEnabled && hasScissorApi && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     lastHeldFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
@@ -1906,7 +1959,7 @@
         // Keep this group's scissor for the held color/stencil draw. Drawing outside
         // the group's reconstructed depth rectangle can reveal weapons through
         // unrelated foreground terrain and stamp invalid water-tint stencil bits.
-        const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(group.meshes) : null;
+        const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
