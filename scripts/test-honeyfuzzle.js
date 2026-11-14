@@ -600,7 +600,7 @@ function hiveWorld({ night = false } = {}) {
 {
   const inventory = { honeyfuzzleQueen: 2, growthTonic: 1 };
   const calendar = { day: 1, time01: 0 };
-  let livestock = [], allowed = true;
+  let livestock = [], allowed = true, rosterUnavailable = false; // Simulates a temporary load failure without destroying an occupied house.
   const context = sandbox();
   context.AuthoredFurniture = { load: async () => ({ parts: [] }), buildGroup: () => ({ userData: {}, position: { set() {} }, traverse() {} }) };
   load(context, 'docs/config/farm-specializations.js');
@@ -629,7 +629,7 @@ function hiveWorld({ night = false } = {}) {
   context.ItemProcessing.init({ ITEM_DEFS: shared.ITEM_DEFS, cropData: {}, getActiveInventoryItem: () => null });
   context.FarmProduction.init(shared);
   const added = [];
-  context.HoneyfuzzleHouse.init({ ...shared, getWorldId: () => 'w1', THREE: fakeThree(), scene: { add: o => added.push(o), remove() {} }, getCamera: () => null, getCurrentArea: () => 'farm', loadWorldLivestock: () => livestock, saveWorldLivestock: list => { livestock = list; }, surfaceY: () => 0, refreshInventory() {} });
+  context.HoneyfuzzleHouse.init({ ...shared, getWorldId: () => 'w1', THREE: fakeThree(), scene: { add: o => added.push(o), remove() {} }, getCamera: () => null, getCurrentArea: () => 'farm', loadWorldLivestock: () => { if (rosterUnavailable) throw new Error('temporary test load failure'); return livestock; }, saveWorldLivestock: list => { livestock = list; }, surfaceY: () => 0, refreshInventory() {} });
   const house = context.HoneyfuzzleHouse;
   const save = [{ id: 'h1', key: 'honeyfuzzleHouse', col: 2, row: 2 }, { id: 'h2', key: 'honeyfuzzleHouse', col: 6, row: 2 }];
   context.FarmProduction.load(save);
@@ -639,8 +639,8 @@ function hiveWorld({ night = false } = {}) {
     base: { color: '#cccccc', copies: 2 },
     tailfeathers: { color: '#804400', copies: 1, enabled: true },
     spectacles: { color: '#55aaee', copies: 1, enabled: true },
-  }; // Hive egg color remains authoritative; secondary markings must not be rerolled on hatching.
-  context.HoneyfuzzleColors.queueEggAppearances('w1', [{ color: '#123a22', genotype: sourceGenes }]);
+  }; // The captured queen retains source-hive markings through colony establishment.
+  context.HoneyfuzzleColors.queueQueenAppearances('w1', [{ color: '#123a22', genotype: sourceGenes }]);
   assert.equal(house.placeQueen(a).ok, true);
   assert.equal(a.house.queen.genotype.tailfeathers.color, '#804400', 'a placed egg retains its source hive genes');
   calendar.day = 2; context.FarmProduction.tick();
@@ -658,6 +658,15 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#804400', 'house swarm displays inherited secondary tail pigment');
   assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#55aaee', 'house swarm displays inherited spectacles pigment');
   assert.equal(house.placeQueen(a).ok, false, 'the swarm fills the house');
+  // A brief failed roster read must not throw, erase the house ID or remove its visible swarm.
+  rosterUnavailable = true;
+  assert.doesNotThrow(() => context.FarmProduction.tick(), 'transient roster failures must not crash the farm timer');
+  assert.equal(a.house.livestockId, livestock[0].id, 'the house keeps its occupant while the roster is unavailable');
+  assert.equal(house.visualCount(), 1, 'a temporary roster error cannot remove the active swarm visual');
+  assert.match(house.debugSnapshot().rosterReadError, /temporary test load failure/, 'mobile diagnostics surface roster failures');
+  rosterUnavailable = false;
+  context.FarmProduction.tick();
+  assert.equal(house.debugSnapshot().rosterReadError, null, 'mobile diagnostics clear after roster recovery');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
   assert.equal(saved.find(r => r.id === 'h1').house.livestockId, livestock[0].id);
