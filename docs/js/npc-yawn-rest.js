@@ -385,7 +385,8 @@
   }
   function playerCanYawn(globalCombat, ongoingEntry = null) {
     const player = window.Combat?.deps?.player; // Shared live combat participant owns prone, dodge, lunge and capture states.
-    if (globalCombat || (Number.isFinite(player?.health) && player.health <= 0)) return false;
+    if (globalCombat || window.ClothingWeavingSystem?.combatActive?.(player) === true
+        || (Number.isFinite(player?.health) && player.health <= 0)) return false; // Recent attack attempts/hits count as combat even without a currently chasing foe.
     if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
       || player?.tzatzulCapturedBy || player?._knockbackLedgeFall) return false; // Never layer a yawn over forced combat/traversal body poses.
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
