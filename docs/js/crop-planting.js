@@ -51,7 +51,8 @@
     tile.cropAge = 0;
     tile.cropReady = false;
     tile.stress = '';
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
+      window.AudioSystem?.objectSfxSourceAt?.(Number(tile.col)+.5,Number(tile.row)+.5,deps?.getCurrentArea?.())); // Use the crop tile when coordinates exist; keep neutral playback for older tile-only callers.
     return { ok: true, message: msg, stars, amount };
   }
 
