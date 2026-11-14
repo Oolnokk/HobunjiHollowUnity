@@ -198,6 +198,56 @@ async function main(){
         group.remove(caveShell);caveShell.geometry.dispose();caveShell.material.dispose();
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');
+        // Exercise the actual cave-site scene constructor: the direct challenge tests
+        // above do not enter buildPuzzleCaveChallenge, where fireAvailable used to throw.
+        const caveSystem=window.CaveSiteSystem;
+        const legacyId='map_i_den_browser_legacy_music'; // Isolated test map, never a player's cave.
+        const caveSignature=Array.from({length:64},(_,i)=>'browser-legacy-cave-'+i)
+          .find(value=>caveSystem.__test.hashSeed(value+':outdoor-song')%2===0);
+        if(!caveSignature)throw Error('Could not prepare a deterministic exterior-music legacy fixture');
+        const legacyProfile={
+          mapId:legacyId,signature:caveSignature,source:'independent_cliff',
+          zoneId:'map_test_wilds',denId:'browser-legacy',contents:'puzzle_cave',inhabitant:'none',
+        }; // The same real profile shape used for save identity and exterior melody selection.
+        const legacyPlan={profile:legacyProfile,puzzleCave:{
+          id:'puzzle-cave:'+legacyId,col:room.x+4,row:room.z+4,
+          kind:'fireSconces',difficulty:2,
+        },puzzleTreasure:null,mushrooms:[]}; // Modern regenerated interior, even when the saved original was music.
+        const legacyMap={id:legacyId,mesh:{vaultCeiling:{topY:roofHeight}},
+          caveTraps:[],caveMushrooms:[],caveProps:[]}; // Real builder needs no fake furniture or extra generated rocks.
+        const legacyScene=new THREE.Group(); // Separate from the direct mechanism test's now-disposed scene.
+        const registry=caveSystem.__test;
+        registry.ensureStateLoaded();
+        registry.sitesByMapId.set(legacyId,legacyProfile);
+        registry.plansByMapId.set(legacyId,legacyPlan);
+        registry.runtimeStateBySignature.set(caveSignature,{
+          discovered:true,outdoorPuzzleSolved:true,puzzleSolved:true,
+          puzzleRewardTier:2,puzzleRewardClaimed:false,
+        }); // A prior solve must reopen the physical slab without consuming the reward.
+        try{
+          await caveSystem.buildInteriorProps(legacyId,legacyMap,legacyScene);
+          const fireInterior=registry.puzzleChallengesByMapId.get(legacyId)?.challenge;
+          if(fireInterior?.kind!=='fireSconces'||!fireInterior.solved||fireInterior.doorRise!==1)
+            throw Error('Real cave-site builder failed to restore a solved exterior-music cave with fire interior');
+          legacyPlan.puzzleCave.kind='timedMelody'; // Simulate the old interior selection behind the same exterior music gate.
+          await caveSystem.buildInteriorProps(legacyId,legacyMap,legacyScene);
+          const adapted=registry.puzzleChallengesByMapId.get(legacyId)?.challenge;
+          if(adapted?.kind!=='cavePressurePlate'||!adapted.solved||adapted.doorRise!==1)
+            throw Error('Real cave-site builder failed to migrate a saved legacy melody to a solved pressure plate');
+          if(!fireInterior.disposed)throw Error('Legacy scene rebuild retained its previous fire challenge');
+          if(!collision.blocksBox(legacyId,room.x+.65,gateZ,.18,roofHeight-1.5))
+            throw Error('Migrated interior lost its tall permanent stone shoulder collision');
+        }finally{
+          registry.puzzleChallengesByMapId.get(legacyId)?.challenge?.dispose?.();
+          registry.puzzleChallengesByMapId.delete(legacyId);
+          registry.plansByMapId.delete(legacyId);
+          registry.sitesByMapId.delete(legacyId);
+          registry.runtimeStateBySignature.delete(caveSignature);
+          window.CaveTripwireTraps?.dispose?.(legacyId);
+          legacyScene.clear();
+        }
+        if(collision.providerIds().length!==countBefore)
+          throw Error('Real cave-site builder leaked a collider after legacy cave reconstruction');
         return {passed:true,automaticInstrumentSessions:opened,gatesSolved:state.solved,sconces:state.lit,bpm:songBpm,tankanPixels:visiblePixels};
       }finally{
         fire?.dispose?.();simple?.dispose?.();music?.dispose?.();
