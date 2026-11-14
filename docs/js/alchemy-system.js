@@ -250,7 +250,7 @@
     const definition = RECIPE_DEFS[recipeId]; // Canonical effect of a saved spouse perfume, independent of inventory ownership.
     if (definition?.application !== 'spousePerfume' || definition.useMode !== 'gift') return null;
     const tier = Math.max(0, Math.min(4, Math.floor(Number(potencyTier) || 0))); // Crafted potency remains fixed after the bottle is gifted.
-    const multiplier = 1 + definition.kissBonus * potencyMultiplier(tier); // Perfume potency affects its kiss blessing, never its lifetime.
+    const multiplier = Math.round((1 + definition.kissBonus * potencyMultiplier(tier)) * 10000) / 10000; // Stable multiplier; perfume potency never changes the kiss lifetime.
     const percentage = Math.round((multiplier - 1) * 1000) / 10; // Human-readable HUD/toast bonus.
     return { recipeId, potencyTier: tier, label: definition.label, icon: definition.icon, stat: definition.kissStat, multiplier, effectLabel: `+${percentage}% ${definition.kissEffectLabel}` };
   }
