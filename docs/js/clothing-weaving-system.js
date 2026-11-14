@@ -192,6 +192,11 @@
     return withForcedOverpass(weaving, patterns, role);
   }
 
+  function dyeRoutedPatterns(weaving, patterns) {
+    if (!weavingUsesCrossDyePatterns(weaving)) return patterns;
+    return patterns.map(pattern => { const routed = { ...pattern }; delete routed.inkColorHex; return routed; }); // In cross mode both primary and overpass motifs inherit their layer's A/B ink; saved custom ink stays intact for unchecked mode.
+  }
+
   function weavingPatternForRole(weaving, role) {
     return weavingPatternsForRole(weaving, role)[0] || null; // Compatibility helper for callers/tests that still ask for only the primary pattern.
   }
@@ -1225,7 +1230,7 @@
             if (patternId === '__custom') return; // The custom overpass is already stored as a snapshot.
             if (!patternId) delete state.overpassPatterns[key];
             else state.overpassPatterns[key] = { ...previous, pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: overpassSelect.selectedOptions[0]?.textContent || 'None' };
-            if (overpassDyeSelect) overpassDyeSelect.disabled = !patternId;
+            if (overpassDyeSelect) overpassDyeSelect.disabled = state.crossDyePatterns || !patternId;
             overpassQuick?.refresh();
             refreshPreview();
           };
@@ -1235,10 +1240,12 @@
           row.appendChild(overpassInkLabel);
           overpassDyeSelect = document.createElement('select');
           overpassDyeSelect.innerHTML = '<option value="">Same as Dye C</option>' + dyeOptionHtml(dyes, state.overpassPatterns[key]?.inkDyeId || '');
+          overpassDyeSelect.dataset.patternRole = key; // Global cross-dye checkbox uses this to disable overpass-specific ink choices.
+          overpassDyeSelect.setAttribute('data-overpass-ink', '');
           const savedInk = state.overpassPatterns[key]?.inkColorHex;
           if (savedInk && state.overpassPatterns[key]?.inkDyeId === '__saved') overpassDyeSelect.add(new Option('Saved dye (' + savedInk + ')','__saved'));
           overpassDyeSelect.value = state.overpassPatterns[key]?.inkDyeId || '';
-          overpassDyeSelect.disabled = !state.overpassPatterns[key];
+          overpassDyeSelect.disabled = state.crossDyePatterns || !state.overpassPatterns[key];
           overpassDyeSelect.onchange = () => {
             const entry = state.overpassPatterns[key];
             if (!entry) return;
@@ -1275,7 +1282,7 @@
           } else {
             state.layerPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: select.selectedOptions[0]?.textContent || 'None', swapPatternColors: keepSwap };
             if (overpassSelect) overpassSelect.disabled = false;
-            if (overpassDyeSelect) overpassDyeSelect.disabled = !state.overpassPatterns[key];
+            if (overpassDyeSelect) overpassDyeSelect.disabled = state.crossDyePatterns || !state.overpassPatterns[key];
             swapCheck.disabled = !!state.crossDyePatterns;
           }
           primaryQuick?.refresh(); overpassQuick?.refresh();
@@ -1420,6 +1427,7 @@
     crossDyeInput.onchange = () => {
       state.crossDyePatterns = !crossDyeInput.disabled && !!crossDyeInput.checked; // Route both motif inks from the existing garment dyes.
       for (const swap of patternLayersEl.querySelectorAll('[data-pattern-swap-role]')) swap.disabled = state.crossDyePatterns || !state.layerPatterns[swap.dataset.patternRole]; // Keep previous per-layer swaps for when mode is unchecked.
+      for (const ink of patternLayersEl.querySelectorAll('[data-overpass-ink]')) ink.disabled = state.crossDyePatterns || !state.overpassPatterns[ink.dataset.patternRole]; // Named overpass inks are retained but ignored while opposite dyes are active.
       refreshPreview();
     };
     trimEnabledInput.onchange = () => { state.trimEnabled = state.trimAvailable && !!trimEnabledInput.checked; refreshPreview(); }; // Optional trim never appears on unsupported variants.
@@ -2067,7 +2075,7 @@
         continue;
       }
       const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
-      const patterns = weavingPatternsForRole(weaving, naturalHoodWeavingRole(role, furHood)); // Custom base weaving also covers the matching hide-derived animal front and back.
+      const patterns = dyeRoutedPatterns(weaving, weavingPatternsForRole(weaving, naturalHoodWeavingRole(role, furHood))); // Cross mode also suppresses explicit per-motif overpass ink without changing saved patterns.
       const pattern = patterns[0] || null; // Retained as the primary-pattern compatibility name used by color/swap code below.
       const swapPatternColors = !furHood && patterns.length > 0 && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and shared pattern dye.
       const clothColorHex = (furTrimColorName && role === 'trim' ? furApi?.trimHexForName?.(furTrimColorName) : null) || furApi?.colorForRole?.(furHood, role) || (paletteKey === 'B' ? secondaryColorHex : primaryColorHex); // A natural trim follows an expressed gene even without a motif; special parts may choose base or pattern.
@@ -3038,7 +3046,7 @@
     // Pixel-dye layers (the mask) extend their tint key with '|pixelDye|<glowOnly>|<rgb>'. The cloth/wood partition (glowOnly=false) is
     // patterned like any layer; the luminous partition (the eyes) is never patterned.
     const descriptor = patternMap?.get(normalizeAssetPath(String(sourceKey).replace(/\|pixelDye\|false\|[^|]*$/, '')));
-    const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(descriptor.role, descriptor.furHood)) : []; // User overweaves cover all hide pieces; each part still retains its own natural-marking role.
+    const patterns = descriptor ? dyeRoutedPatterns(descriptor.weaving, weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(descriptor.role, descriptor.furHood))) : []; // Runtime portrait uses the same cross-dye ink precedence as icons and loom.
     const furApi = window.FurHoodLeatherworking;
     const naturalMarkings = furApi?.markingsFor?.(descriptor?.furHood, descriptor?.role) || []; // Independent animal genes retain independent inks under player weaving.
     const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
@@ -3328,7 +3336,7 @@
     reweaveMaterialCost,
     woolCostForSlot: slot => WOOL_COST_BY_SLOT[slot] || 1, // Commission quotes reuse the loom's actual wool cost per garment slot.
     debugSnapshot,
-    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
