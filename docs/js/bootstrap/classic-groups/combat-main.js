@@ -12,7 +12,7 @@
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261110attackFxInst1",
     "js/combat/combat-attach.js?v=20261101h47c5427",
     "js/combat/combat-loadout.js?v=20261111modToolLoadout2",
-    "js/combat/combat-progression.js?v=20261105koma1",
+    "js/combat/combat-progression.js?v=20261114packbooks1",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261104scent1439c",
     "js/companion-combat-response.js?v=20261110decf5f6ae3",
