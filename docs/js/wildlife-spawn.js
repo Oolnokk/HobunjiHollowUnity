@@ -1471,7 +1471,7 @@
     const mothers = deps?.DEN_MOTHER_DEFS || cfg.wildlife?.denMothers || {};
     const itemKinds = cfg.livestock?.itemKinds || {};
     const otherOffspring = { // Surface nests, hive swarms and open-air herds use their own existing fertility owners.
-      pingdort: 'fertilePingdortEgg', honeyfuzzle: 'fertileHoneyfuzzleEgg',
+      pingdort: 'fertilePingdortEgg', honeyfuzzle: 'honeyfuzzleQueen',
       moot: 'mootBaby', 'voorg-ass': 'voorgAssBaby',
     };
     const nesting = new Set([...Object.keys(mothers), ...Object.keys(otherOffspring), 'drenkirra',
@@ -1491,9 +1491,11 @@
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
       const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // A stale itemKinds mapping alone cannot create a usable egg or baby.
       const tags = Array.isArray(itemDef?.tags) ? itemDef.tags : []; // Authored fertility tags distinguish hatchable eggs from ordinary food eggs.
-      const hatchable = tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile')); // Every non-exempt species must yield a live offspring.
+      const hatchable = kind === 'honeyfuzzle'
+        ? tags.includes('Queen') // A fertile egg alone cannot masquerade as a captured queen.
+        : tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile')); // Other species still require real offspring.
       const offspringMapped = exempt || !!(itemDef?.cat === 'livestock' && hatchable
-        && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Hive eggs hatch in a Honeyfuzzle House instead of the ordinary Stable.
+        && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Honeyfuzzle queens found colonies in a House instead of a Stable.
       const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
       const ok = registered && guardianRegistered && offspringMapped && hasGenetics;
       return { kind, family, guardianKey, itemKey, registered, guardianRegistered,

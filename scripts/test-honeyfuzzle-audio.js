@@ -56,7 +56,13 @@ const fakeHives = { zoneId: world.area, excluded: false, hives: [
 const windowObject = {
   Combat: { deps }, AudioContext: Context,
   AudioSystem: { gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }) },
-  HoneyfuzzleHives: { census: () => fakeHives },
+  HoneyfuzzleHives: {
+    census: () => { throw Error('Audio must not request expensive full hive census'); },
+    forEachStandingHive: visitor => {
+      if (world.area !== fakeHives.zoneId) return;
+      for (const hive of fakeHives.hives) if (hive.standing) visitor(hive.key, hive.col, hive.row);
+    },
+  }, // Fast iterator replaces an unnecessary combat/respawn census every 350 ms.
   HoneyfuzzleHouse: { forEachAudioSource: callback => callback('farm-house', 11, 10) },
 };
 const context = { window: windowObject, performance: { now: () => now }, document: {

@@ -145,40 +145,48 @@
     return palette.length ? palette[hashString(String(key)) % palette.length] : null;
   }
 
-  // Eggs keep their stump's color AND optional markings in the existing per-world FIFO.
-  // Legacy saved entries are hex strings, while new ones include {color, genotype}.
-  // The bag only counts eggs, so the FIFO survives save/reload independently.
-  const EGG_QUEUE_KEY = 'hobunji_honeyfuzzle_egg_colors_v1';
-  function readQueues() {
-    try { return JSON.parse(localStorage.getItem(EGG_QUEUE_KEY) || '{}') || {}; } catch (_) { return {}; }
+  // Keep old egg appearances under their original key. New captured queens use
+  // a separate FIFO so carrying both item types never swaps their inherited genes.
+  const EGG_QUEUE_KEY = 'hobunji_honeyfuzzle_egg_colors_v1'; // Saved legacy eggs still read this unchanged key.
+  const QUEEN_QUEUE_KEY = 'hobunji_honeyfuzzle_queen_appearances_v1'; // Only newly harvested queen appearances go here.
+  function readQueues(storageKey) {
+    try { return JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; }
+    catch (_) { return {}; }
   }
-  function writeQueues(queues) {
-    try { localStorage.setItem(EGG_QUEUE_KEY, JSON.stringify(queues)); } catch (_) { /* storage unavailable: eggs just roll a fresh color */ }
+  function writeQueues(storageKey, queues) {
+    try { localStorage.setItem(storageKey, JSON.stringify(queues)); }
+    catch (_) { /* Unavailable storage: newly placed creatures receive a fallback coat. */ }
   }
-  function queueEggAppearances(worldId, entries) {
-    const queues = readQueues(), id = String(worldId || 'local');
+  function queueAppearances(storageKey, worldId, entries) {
+    const queues = readQueues(storageKey), id = String(worldId || 'local'); // Per-world lineage queue, never shared between saves.
     const accepted = (Array.isArray(entries) ? entries : []).map(entry => {
-      if (typeof entry === 'string') return entry; // Legacy color-only eggs remain exactly as saved.
+      if (typeof entry === 'string') return entry; // Legacy color-only entries remain valid.
       if (!entry || typeof entry.color !== 'string') return null;
-      return { color: entry.color, genotype: entry.genotype || null }; // Preserves a harvested swarm's inherited optional markings.
+      return { color: entry.color, genotype: entry.genotype || null }; // Preserve inherited tail and spectacles alleles.
     }).filter(Boolean);
+    if (!accepted.length) return;
     queues[id] = [...(queues[id] || []), ...accepted].slice(-99);
-    writeQueues(queues);
+    writeQueues(storageKey, queues);
   }
-  function takeEggAppearance(worldId) {
-    const queues = readQueues(), id = String(worldId || 'local');
+  function takeAppearance(storageKey, worldId) {
+    const queues = readQueues(storageKey), id = String(worldId || 'local');
     const stored = (queues[id] || []).shift() || null;
     if (queues[id] && !queues[id].length) delete queues[id];
-    writeQueues(queues);
-    if (typeof stored === 'string') return { color: stored, genotype: null }; // Backward compatibility for existing serialized egg queues.
+    if (stored != null) writeQueues(storageKey, queues); // Don't rewrite storage repeatedly when the bag has no queued appearance.
+    if (typeof stored === 'string') return { color: stored, genotype: null };
     return stored && typeof stored.color === 'string'
       ? { color: stored.color, genotype: stored.genotype || null } : null;
   }
-  function queueEggColors(worldId, colors) { queueEggAppearances(worldId, colors); } // Keeps callers and older tests working.
-  function takeEggColor(worldId) { return takeEggAppearance(worldId)?.color || null; } // Legacy API still consumes one FIFO entry.
+  function queueEggAppearances(worldId, entries) { queueAppearances(EGG_QUEUE_KEY, worldId, entries); } // Legacy item queue.
+  function takeEggAppearance(worldId) { return takeAppearance(EGG_QUEUE_KEY, worldId); } // Legacy item queue.
+  function queueEggColors(worldId, colors) { queueEggAppearances(worldId, colors); } // Historical API contract.
+  function takeEggColor(worldId) { return takeEggAppearance(worldId)?.color || null; } // Historical API contract.
+  function queueQueenAppearances(worldId, entries) { queueAppearances(QUEEN_QUEUE_KEY, worldId, entries); } // New queen harvests only.
+  function takeQueenAppearance(worldId) { return takeAppearance(QUEEN_QUEUE_KEY, worldId); } // New queen houses only.
 
   window.HoneyfuzzleColors = {
     queueEggColors, takeEggColor, queueEggAppearances, takeEggAppearance,
+    queueQueenAppearances, takeQueenAppearance,
     EXCLUDED_ZONES, REGIONS, ZONE_REGION, AUTHORED,
     hexToRgb, hexToHsl, classify, regionPalettes, zonePalette, isExcludedZone, pickForKey,
     resetCache: () => { cache = null; },
