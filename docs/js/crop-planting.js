@@ -51,7 +51,12 @@
     tile.cropAge = 0;
     tile.cropReady = false;
     tile.stress = '';
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+    const aimedTile = deps?.getReticleTile?.() || window.Combat?.deps?.getReticleTile?.(); // The interacted farm tile can be an unlabelled grid record; prefer its real reticle coordinate.
+    const col = Number.isFinite(tile.col) ? tile.col : aimedTile?.col;
+    const row = Number.isFinite(tile.row) ? tile.row : aimedTile?.row;
+    const source = Number.isFinite(col) && Number.isFinite(row)
+      ? window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,deps?.getCurrentArea?.()) : null; // Only emit a position backed by a real grid coordinate.
+    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,source);
     return { ok: true, message: msg, stars, amount };
   }
 

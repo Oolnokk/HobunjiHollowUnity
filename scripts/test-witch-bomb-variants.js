@@ -31,7 +31,7 @@ const THREE = new Proxy({}, { get: () => makeAny() });
 THREE.Vector3 = class { constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } clone() { return new THREE.Vector3(this.x, this.y, this.z); } copy(v) { return this.set(v.x, v.y, v.z); } multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; } };
 
 function world({ theme, mapId = 'map_i_dev_random_ruin' }) {
-  const calls = { blast: [], chain: [], puddle: [], discard: [], afflictions: [], sfx: [], factories: [], reversed: 0 };
+  const calls = { blast: [], chain: [], puddle: [], discard: [], afflictions: [], sfx: [], worldSfx: [], factories: [], reversed: 0 }; // World one-shots retain the exact physical origin and tradition-specific reverse flag.
   const player = { x: 10 * 64, y: 10 * 64, health: 100 };
   const scene = { isScene: true, add() {}, traverse() {} };
   const group = { parent: scene, userData: {}, position: { x: 10.5, y: .5, z: 10.5 }, updateWorldMatrix() {}, getWorldPosition() { return { x: 10.5, y: .5, z: 10.5 }; } };
@@ -52,7 +52,9 @@ function world({ theme, mapId = 'map_i_dev_random_ruin' }) {
     DevRandomRuin: { getRuntimeContext: () => ({ theme }) },
     DevRandomRuinLichThemes: { createPlasmPuddle: (x, z, options) => { calls.puddle.push({ x, z, ...options }); return {}; }, plasmTexture: () => null },
     ResourceSystem: { addAffliction: (actor, id, amount) => calls.afflictions.push({ id, amount }) },
-    AudioSystem: { playObjectSfxKey: key => calls.sfx.push(key), objectSfxConfig: () => ({}), gameAudioConfig: () => ({}) },
+    AudioSystem: { playObjectSfxKey: key => calls.sfx.push(key),
+      playObjectSfxKeyAt: (key,x,z,mapId,y,opts) => calls.worldSfx.push({key,x,z,mapId,y,opts}),
+      objectSfxConfig: () => ({}), gameAudioConfig: () => ({}) },
     AuthoredFurniture: {}, FurniturePatternSurfaces: { setGlowState() {} },
     console, performance: { now: () => now }, Math, Number, Object, Array, Set, Map, String, Promise, JSON,
   };
@@ -76,7 +78,14 @@ function world({ theme, mapId = 'map_i_dev_random_ruin' }) {
     B.tick(.05);
     assert.equal(ctx.calls.blast.length, 1, theme + ' bomb exploded once');
     const blast = ctx.calls.blast[0];
-    assert.ok(ctx.calls.sfx.includes('witchBombBlast') || theme === 'kanthic', 'same bomb recording is played');
+    assert.equal(ctx.calls.sfx.length,0,'physical blasts must not fall back to unpositioned object audio');
+    assert.equal(ctx.calls.worldSfx.length,1,'each exploded burden requests one world-positioned cue');
+    const sound=ctx.calls.worldSfx[0]; // Compare audio origin against the physics/effect blast, including the shaft height.
+    assert.equal(sound.key,'witchBombBlast');
+    assert.equal(sound.x,blast.x);assert.equal(sound.z,blast.z);assert.equal(sound.mapId,blast.map);
+    assert.equal(sound.y,ctx.group.position.y);
+    assert.equal(!!sound.opts?.reverse,theme==='kanthic','only Kanthic plays the same source backwards');
+    assert.equal(sound.opts.earshotTiles,18,'heavy Witch-bomb report carries beyond the short melee earshot');
     if (theme === 'tothal') {
       assert.equal(blast.tag, 'ice');
       assert.ok(blast.knockbackPxS >= 4000, 'insane knockback');

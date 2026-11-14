@@ -440,7 +440,7 @@
       if(victim===deps?.player)deps?.damagePlayer?.(damage,sx,actor.y,tile*12,{footingDamageMultiplier:2,attacker:actor});
       else deps?.damageCreature?.(victim,damage,sx,actor.y,tile*12,{footingDamageMultiplier:2,attacker:actor});
     }
-    window.AudioSystem?.playObjectSfxKey?.('shattercaskExplosion');
+    window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast',1,1,actor); // Imlao's concussive stop uses the actually configured blast and originates at the caster.
     lastEvent='imlao:concussive-stop';
   }
   function rememberPlasm(handle,clock=12) {

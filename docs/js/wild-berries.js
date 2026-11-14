@@ -137,7 +137,8 @@
         const persisted = deps._zoneBerryPersist.get(mapId);
         if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
         deps.refreshItemScroll();
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
+          window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,mapId)); // The berry bush's actual tile is the sound emitter.
         return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
       },
     };

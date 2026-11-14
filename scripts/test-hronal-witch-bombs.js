@@ -137,6 +137,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  const burdens=new Map(),factories=new Map(),glowStates=[];
  let clock=1000,spawns=0,releases=0;
  const playedSfx=[]; // Captures the exact cue emitted when the runtime blast occurs.
+ const positionedSfx=[]; // Captures the actual world-space blast for dispenser, fuse and chain-reaction regression.
  const tube={isObject3D:true,id:'tube-fixture',parent:scene,
   userData:{puzzleInstanceId:'tube-fixture',authoredFurnitureData:{bombTubeExit:{x:0,y:-.88,z:0}}},
   updateWorldMatrix(){},localToWorld(point){return point.add(new RuntimeVector3(2,3,4));}};
@@ -162,7 +163,9 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    applyBlast(){},triggerBurdenBlastAt(){},
   },
   FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
-  AudioSystem:{playObjectSfxKey(key){playedSfx.push(key);}},
+  AudioSystem:{playObjectSfxKey(key){playedSfx.push(key);},playObjectSfxKeyAt(key,x,z,mapId,y,opts){
+    playedSfx.push(key);positionedSfx.push({x,z,mapId,y,reverse:!!opts?.reverse});
+   }},
  };
  runtimeWindow.window=runtimeWindow;
  vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
@@ -198,6 +201,8 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
  assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
  assert.deepEqual(playedSfx,['witchBombBlast'],'each Witch-bomb explosion plays lowblast exactly once, never the Shattercask cue');
+ assert.deepEqual(positionedSfx[0],{x:2,z:4,mapId:'map_witch_bomb_runtime',y:2.12,reverse:false},
+   "a ceiling bomb's real height and impact position reach the shared spatial renderer");
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().blastSfxKey,'witchBombBlast','mobile debugging reports the explosion cue');
  assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().dispensers[0].activeBombId,null,'detonation frees the ceiling tube');
@@ -206,6 +211,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
  assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),true,'a neighboring Witch-bomb blast triggers chain detonation');
  assert.deepEqual(playedSfx,['witchBombBlast','witchBombBlast'],'fuse and chain detonations each emit the lowblast cue once');
+ assert.equal(positionedSfx.length,2,'chained physical blasts remain separately positioned rather than using a global centered sound');
  assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),false,'an already exploded Witch-bomb cannot replay the sound');
  assert.equal(playedSfx.length,2,'duplicate impacts do not duplicate explosion audio');
  for(let frame=0;frame<9;frame++)runtimeWindow.HronalWitchBombs.tick(.1);
