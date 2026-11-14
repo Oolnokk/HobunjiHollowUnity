@@ -54,7 +54,9 @@ async function main() {
   const playbackSource = fs.readFileSync(path.join(root, 'docs/js/animal-voice-independent-playback.js'), 'utf8')
     .replace('window.AnimalVoiceIndependentPlayback = {',
       'window.__yawnTestRenderer = { renderBufferFor }; window.AnimalVoiceIndependentPlayback = {'); // Harness-only private seam; production export remains unchanged.
-  vm.runInNewContext(playbackSource, { window, document, console, setTimeout, clearTimeout, Date, Promise });
+  vm.runInNewContext(playbackSource, { window, document, console, setTimeout, clearTimeout, Date, Promise,
+    performance: { now: () => Date.now() }, // Cooperative DSP fallback needs a clock when no Web Worker exists.
+  });
   const decoded = {
     sampleRate, numberOfChannels: 2, duration: 1,
     getChannelData(index) { return index ? right : left; },
