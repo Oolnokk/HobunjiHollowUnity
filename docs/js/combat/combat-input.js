@@ -40,12 +40,12 @@
   // thread. Controller polls have no event timestamp and use arrival time.
   function inputTimeMs(phase, physicalEvent = null) {
     const receivedAtMs = performance.now(); // Fallback for gamepads, non-event callers and clocks from an incompatible origin.
-    const event = physicalEvent || window.event; // Explicit event is preferred; the active browser event supports legacy game.js dispatchers.
+    const event = physicalEvent; // Only an explicitly routed physical event may backdate a combat press; frame-polled controllers use arrival time.
     const eventType = String(event?.type || '');
     const acceptable = phase === 'press'
       ? /^(keydown|mousedown|pointerdown|touchstart)$/.test(eventType)
       : /^(keyup|mouseup|pointerup|touchend)$/.test(eventType);
-    if (!acceptable || (!physicalEvent && event?.eventPhase === 0)) return receivedAtMs;
+    if (!acceptable) return receivedAtMs;
     let stampedAtMs = Number(event.timeStamp); // Used only for bounded historical onset/release calculations.
     if (stampedAtMs > 1e12 && Number.isFinite(performance.timeOrigin)) stampedAtMs -= performance.timeOrigin;
     return Number.isFinite(stampedAtMs) && stampedAtMs >= 0
