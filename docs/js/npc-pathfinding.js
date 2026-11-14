@@ -38,7 +38,10 @@
     // Every area (especially a wilderness zone) must validate against its own terrain grid, not the farm's.
     const g = typeof deps.npcGridForArea === 'function' ? deps.npcGridForArea(area) : (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
     const tile = g?.[r]?.[c];
-    if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
+    const isWater = tile && (tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM); // Town bridges leave actual water tiles underneath their walkable floor.
+    const onTownBridge = area === 'town' && tile?.bridgeCrossing === true && isWater; // Only bridge-footprint water is walkable.
+    if (!tile || (deps.isSolid(tile.type) && !onTownBridge) || tile.crop || tile.type === deps.TileType.TRENCH
+      || (isWater && !onTownBridge)) return false;
     if (deps.isZoneArea?.(area) && tile.incline) return false; // Cliff faces may be crossed only by selected route-hops.
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;

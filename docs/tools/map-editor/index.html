@@ -564,6 +564,7 @@ const OBJECTS = {
 };
 
 const PROCESSORS = {
+  townStairBridge: { icon:'🌉', label:'Town Stream Bridge', hidden:true }, // The fixed mapped crossing is selectable but not a processing-station palette item.
   pestle:     { icon:'🥣', label:'Pestle Station' },
   squeezer:   { icon:'🧃', label:'Hand Squeezer' },
   handMill:   { icon:'⚙️', label:'Hand Mill' },
@@ -2509,7 +2510,7 @@ function renderPalette() {
       + '<p class="muted" style="margin-top:4px">One of each per map — clicking moves it.</p>';
   } else if (mode === 'furniture') {
     if (m.category !== 'exterior') html = '<p class="muted">Processing furniture is exterior-only.</p>';
-    else html = Object.keys(PROCESSORS).map(k =>
+    else html = Object.keys(PROCESSORS).filter(k => !PROCESSORS[k].hidden).map(k =>
       `<button class="sec palBtn ${brush.furniture===k?'act':''}" data-pal="furniture" data-val="${k}">${PROCESSORS[k].icon} ${PROCESSORS[k].label}</button>`).join('');
   } else if (mode === 'decor') {
     // Map authoring is not inventory placement: exterior town/zone scenes may
@@ -3217,9 +3218,18 @@ function draw() {
     const info = PROCESSORS[f.key]; if (!info) return;
     const p = w2s(f.col, f.row);
     const isSel = selectedPlacement?.kind === 'furniture' && selectedPlacement.id === f.id;
-    ctx.fillStyle = isSel ? 'rgba(250,204,21,.5)' : 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
-    if (isSel) { ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(p.x+1, p.y+1, z-2, z-2); ctx.lineWidth = 1; }
-    if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
+    ctx.fillStyle = isSel ? 'rgba(250,204,21,.5)' : 'rgba(202,164,94,.4)';
+    if (f.authoredFurnitureKey === 'townStairBridge') {
+      const center = w2s(f.col + .5 + (f.postX || 0), f.row + .5 + (f.postZ || 0));
+      ctx.save();ctx.translate(center.x, center.y);ctx.rotate(-(f.rotY || 0)*Math.PI/180);
+      ctx.fillRect(-4*z,-z,8*z,2*z);ctx.strokeStyle=isSel?'#facc15':'#96714b';ctx.lineWidth=isSel?2:1;
+      ctx.strokeRect(-4*z,-z,8*z,2*z);ctx.restore();
+      if(z>9)ctx.fillText(info.icon,center.x,center.y); // Rotated footprint shows the crossing, not just its anchor tile.
+    } else {
+      ctx.fillRect(p.x+1,p.y+1,z-2,z-2);
+      if (isSel) { ctx.strokeStyle='#facc15'; ctx.lineWidth=2;ctx.strokeRect(p.x+1,p.y+1,z-2,z-2);ctx.lineWidth=1; }
+      if(z>9)ctx.fillText(info.icon,p.x+z/2,p.y+z/2);
+    }
   });
   // Decor (with footprints) — from the currently-edited layout if one is
   // selected in the Alternate Layouts panel (see activeDecor), otherwise the
@@ -4476,8 +4486,9 @@ function spawnPreviewPlacements(group, merged) {
     const baseY = TerrainPreview.NORMAL_TOP + tier * TerrainPreview.PLATEAU_UNIT
       + TerrainPreview.sampleVisualHeight(merged.visualHeights, cx, cz, merged.cols, merged.rows);
     const color = kind === 'decor' ? 0x8b6540 : 0x888888;
-    const mesh = window.ProceduralFurniture.buildFurnitureGroup(key, color);
-    window.FestivalProps?.decorate(mesh, record);
+    const isAuthoredBridge = kind === 'furniture' && !!record.authoredFurnitureKey; // The town bridge uses the same authored runtime as the live town.
+    const mesh = isAuthoredBridge ? new THREE.Group() : window.ProceduralFurniture.buildFurnitureGroup(key, color);
+    if (!isAuthoredBridge) window.FestivalProps?.decorate(mesh, record); // Authored bridge is not processing furniture.
     const scale = record.postScale != null ? record.postScale : 1;
     mesh.position.set(cx + (record.postX || 0), baseY + (record.postY || 0), cz + (record.postZ || 0));
     mesh.rotation.y = (record.rotY || 0) * Math.PI / 180;
@@ -4487,8 +4498,16 @@ function spawnPreviewPlacements(group, merged) {
     mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
     group.add(mesh);
     const previewRecord = { ...record, key, area: 'preview:' + map.id, mesh }; // Avoid mutating the authoring record when applying parent-relative geometry.
-    window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, previewRecord, mesh, info); // Preview-only area never registers gameplay NPC stations.
+    if (!isAuthoredBridge) window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, previewRecord, mesh, info); // Never register bridge as a crafting station.
     three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
+    if (isAuthoredBridge && window.AuthoredFurniture?.load) {
+      window.AuthoredFurniture.load(record.authoredFurnitureKey).then(data => {
+        if (three3d.placementMeshes.get(`${kind}:${record.id}`) !== mesh || !data?.parts?.length) return;
+        const authored = window.AuthoredFurniture.buildGroup(data, 0x96714b);
+        if (record.tileSpanTiles != null) window.AuthoredFurniture.setTileSpan?.(authored, record.tileSpanTiles);
+        mesh.add(authored); // Preserve the preview object's selection, rotation and placement gizmo.
+      }).catch(error=>setStatus('Bridge preview: '+String(error?.message||error)));
+    }
   };
   for (const record of map.furniture || []) add('furniture', record);
   for (const record of activeDecor(map)) add('decor', record);

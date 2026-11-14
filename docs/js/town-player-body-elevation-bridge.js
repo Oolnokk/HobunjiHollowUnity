@@ -139,10 +139,37 @@
       sourceId: options.sourceId || null,
       owner: options.owner || null,
       bounds: normalized,
+      bridgeFootprints: Array.isArray(options.bridgeFootprints) ? options.bridgeFootprints : null, // Exact angled walkable faces for the one authored town bridge.
+      bridgeBaseY: Number.isFinite(options.bridgeBaseY) ? options.bridgeBaseY : null, // Ground datum for each stair/deck surface height.
     };
     supports.set(id, entry);
     indexEntry(entry);
     return id;
+  }
+
+  function bridgeFootprintFromPart(mesh) {
+    const geometry = mesh.geometry; // Deformed geometry already includes the bridge's expanded middle.
+    if (!geometry) return null;
+    if (!geometry.boundingBox) geometry.computeBoundingBox?.();
+    const bounds = geometry.boundingBox; // Mesh-local top plane, before the bridge's world yaw.
+    if (!bounds || !mesh.matrixWorld) return null;
+    const corner = (x, z) => new THREE.Vector3(x, bounds.max.y, z).applyMatrix4(mesh.matrixWorld);
+    const a = corner(bounds.min.x, bounds.min.z); // First top corner anchors the oriented rectangle.
+    const b = corner(bounds.max.x, bounds.min.z); // Longitudinal top edge.
+    const c = corner(bounds.min.x, bounds.max.z); // Transverse top edge.
+    const d = corner(bounds.max.x, bounds.max.z); // Last corner supplies conservative deck-top height.
+    const ux = b.x - a.x, uz = b.z - a.z, vx = c.x - a.x, vz = c.z - a.z;
+    const det = ux * vz - uz * vx; // Nonzero projected area permits a cheap inverse 2D transform.
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-6) return null;
+    return { ax: a.x, az: a.z, ux, uz, vx, vz, det, topY: Math.max(a.y, b.y, c.y, d.y) };
+  }
+
+  function containsBridgeFootprint(surface, x, z) {
+    const dx = x - surface.ax, dz = z - surface.az; // Offset from the authored top-plane corner.
+    const u = (dx * surface.vz - dz * surface.vx) / surface.det; // Position along the stair/deck.
+    const v = (surface.ux * dz - surface.uz * dx) / surface.det; // Position across the stair/deck.
+    const edge = SUPPORT_EDGE_EPSILON / Math.max(0.1, Math.min(Math.hypot(surface.ux, surface.uz), Math.hypot(surface.vx, surface.vz)));
+    return u >= -edge && u <= 1 + edge && v >= -edge && v <= 1 + edge;
   }
 
   function registerObject(object, options = {}) {
@@ -158,6 +185,10 @@
       if (box.isEmpty()) return null;
       const baseY = finite(box.min.y, NaN);
       const topY = finite(box.max.y, NaN);
+      const bridgeFootprints = object.userData?.townBridgeCrossing
+        ? supportParts.map(bridgeFootprintFromPart).filter(Boolean) : null; // Stairs keep individual heights; neither railings nor water beside the deck support a character.
+      if (object.userData?.townBridgeCrossing && !bridgeFootprints?.length) return null;
+      const bridgeBaseY = bridgeFootprints ? object.getWorldPosition(new THREE.Vector3()).y : null; // Terrain height below the bridge, not the first tread's bounding-box minimum.
       return registerBox({
         minX: box.min.x,
         maxX: box.max.x,
@@ -165,7 +196,7 @@
         maxZ: box.max.z,
         baseY,
         topY,
-      }, { ...options, owner: object });
+      }, { ...options, owner: object, bridgeFootprints, bridgeBaseY });
     } catch (error) {
       console.warn('[walkable-elevation] furniture bounds failed:', error);
       return null;
@@ -205,7 +236,12 @@
       const b = entry.bounds;
       if (x < b.minX - SUPPORT_EDGE_EPSILON || x > b.maxX + SUPPORT_EDGE_EPSILON
           || z < b.minZ - SUPPORT_EDGE_EPSILON || z > b.maxZ + SUPPORT_EDGE_EPSILON) continue;
-      matches.push(entry);
+      if (entry.bridgeFootprints?.length) {
+        const supported = entry.bridgeFootprints.filter(surface => containsBridgeFootprint(surface, x, z)); // Reject points in the rotated bridge's AABB but outside its true deck.
+        if (!supported.length) continue;
+        const topY = Math.max(...supported.map(surface => surface.topY)); // Neighboring tread edges favor the higher surface.
+        matches.push({ ...entry, bounds: { ...b, baseY: entry.bridgeBaseY, topY } });
+      } else matches.push(entry);
     }
     return matches;
   }
@@ -623,6 +659,7 @@
         sourceKey: entry.sourceKey,
         activeScene: !entry.owner || objectInActiveScene(entry.owner),
         bounds: { ...entry.bounds },
+        bridgeTreads: entry.bridgeFootprints?.length || 0, // Mobile diagnostics show whether oriented bridge support was installed.
       }));
     return {
       ...lastDebug,
