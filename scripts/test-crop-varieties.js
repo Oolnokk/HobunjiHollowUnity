@@ -79,6 +79,37 @@ for (const family of ['heftroot', 'redberries']) {
   const effects = [Object.keys(native)[0], ...imported.map(effect => Object.keys(effect)[0])]; // All six geographic origins must contribute a distinct trait.
   assert.equal(new Set(effects).size, 6, family + ' offers six unique buffs for selective breeding');
 }
+const canonicalContext = { window: {} }; // Independent world with the complete authored cooking catalog instead of this test's three-crop fixture.
+vm.runInNewContext(fs.readFileSync('docs/js/cooking-data.js', 'utf8'), canonicalContext);
+vm.runInNewContext(fs.readFileSync('docs/js/cooking-system.js', 'utf8'), canonicalContext);
+vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), canonicalContext);
+const canonicalGame = canonicalContext.window; // All eleven real crop species and their existing native cooking effects.
+const canonicalCrops = Object.fromEntries(canonicalGame.CropVarieties.FAMILIES.map(family =>
+  [family, { cropKey: family, seedKey: family + 'Seeds', label: family, growDays: 3, idealMin: .2, idealMax: .7 }])); // Minimal crop geometry uses real recipe metadata.
+const canonicalDefs = Object.fromEntries(canonicalGame.CropVarieties.FAMILIES.flatMap(family =>
+  [[family, { label: family, sellPrice: 10, cookingPrimaryEffect: canonicalGame.HobunjiCookingData.items[family].primaryEffect }],
+    [family + 'Seeds', { label: family + ' Seeds', sellPrice: 4 }]])); // Native recipes stay quality-driven; imported variants store fixed multi-effect data.
+canonicalGame.CropVarieties.attach({ cropData: canonicalCrops, ITEM_DEFS: canonicalDefs, inventory: {}, inventoryItems: [] });
+for (const family of canonicalGame.CropVarieties.FAMILIES) {
+  const nativeEffect = canonicalGame.HobunjiCookingData.items[family].primaryEffect; // Actual native food identity for every currently growable crop.
+  const imported = Array.from({ length: 5 }, (_, i) =>
+    canonicalGame.CropVarieties.ensure('cv_' + family + '_' + String(i + 1).repeat(6))); // Five climate imports each resolve to one pure effect.
+  const regionEffects = imported.map(variety => Object.keys(variety.effects)[0]); // Prevent collisions among any of the eleven families, including blueberries and green mushtard.
+  assert.equal(new Set([nativeEffect, ...regionEffects]).size, 6, family + ' has six distinct origin effects');
+  const crossed = canonicalGame.CropVarieties.breed(family, imported[0].id, () => .6); // Native × imported produces an ordinary two-buff cultivar without requiring cross-species mixing.
+  assert.equal(Object.keys(crossed.effects).length, 2, family + ' inherits both parent effects');
+  assert.equal(crossed.effects[nativeEffect], 1, family + ' retains its original native buff in the hybrid');
+  assert.equal(crossed.effects[regionEffects[0]], 1, family + ' gains the foreign regional buff');
+  const ingredient = canonicalDefs[crossed.id]; // Cooking resolves precisely this harvested ingredient definition.
+  assert.equal(Object.keys(canonicalGame.CookingSystem.ingredientEffectTotals(ingredient, 1)).length, 2, family + ' affects actual cooked-food buff totals');
+}
+const nativeCooking = canonicalGame.CookingSystem; // Verify why the Seed Maker must not claim a native ingredient has a fixed buff amount.
+const nativeDef = canonicalDefs.needlegrain;
+assert.notEqual(nativeCooking.ingredientEffectTotals(nativeDef, 1).farming,
+  nativeCooking.ingredientEffectTotals(nativeDef, 5).farming, 'native crop buff strength scales with quality');
+assert.equal(nativeCooking.ingredientEffectTotals(canonicalDefs['cv_needlegrain_111111'], 1).foraging,
+  nativeCooking.ingredientEffectTotals(canonicalDefs['cv_needlegrain_111111'], 5).foraging,
+  'pure imported cultivar retains its fixed base buff when ingredient quality changes');
 const repeated = game.CropVarieties.breed(east.id, east.id, () => .6); // Crossing the same pure strain cannot invent a second trait.
 assert.equal(Object.keys(repeated.effects).length, 1);
 assert.ok(itemDefs[offspring.seedKey]);
