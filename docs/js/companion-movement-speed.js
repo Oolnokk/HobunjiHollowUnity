@@ -8,7 +8,7 @@
   const DEFAULT_OWNER_SPEED_RATIO = 1; // Used when a companion has no explicit owner-speed percentage: 100% of its owner's pace.
   const DEFAULT_PLAYER_MOVE_SPEED = 238; // Matches game.js's ordinary MOVE_SPEED fallback used by the alcohol locomotion bridge.
   const FOOTING_SPEED_MIN = 0.55; // Matches getFootingSpeedMul in game.js for all low-Footing states.
-  const FOLLOW_CATCHUP_START_TILES = 2.2; // Follow acceleration starts at game.js's FOLLOW_FAR_PX threshold.
+  const FOLLOW_CATCHUP_START_TILES = 1.1; // Build recovery speed before the 2.2-tile FOLLOW_FAR_PX activation distance.
   const FOLLOW_CATCHUP_FULL_TILES = 6; // Full recovery pace is available once the pet falls six tiles behind.
   const FOLLOW_CATCHUP_MAX_MUL = 1.65; // Bounded temporary advantage used only while closing distance to the owner.
 
@@ -250,6 +250,18 @@
     const distance = Number(companion._companionGroundFollow?.distancePx);
     if (!Number.isFinite(distance) || distance <= 0) return 1;
     const distanceTiles = distance / Math.max(1, Number(deps?.TILE) || 55);
+    if (distanceTiles <= FOLLOW_CATCHUP_START_TILES) return 1;
+    // The actual combat target can come from Sicced or PlayerDowned rather than
+    // _companionCombatTarget. These orders must never inherit follow acceleration.
+    const owner = companion.master || deps?.player;
+    if (owner === deps?.player && companion.stableRole === 'companion') {
+      const areaId = deps?.getCurrentArea?.();
+      const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
+      if (sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) return 1;
+      const downedFocus = window.PlayerDowned?.getFocusTarget?.();
+      if (downedFocus?.health > 0 && !downedFocus._downed
+        && (!areaId || downedFocus.areaId === areaId)) return 1;
+    }
     const blend = clamp((distanceTiles - FOLLOW_CATCHUP_START_TILES)
       / (FOLLOW_CATCHUP_FULL_TILES - FOLLOW_CATCHUP_START_TILES), 0, 1);
     return 1 + (FOLLOW_CATCHUP_MAX_MUL - 1) * blend;
@@ -260,7 +272,11 @@
     // position-based/walker NPC paces already represent the owner's world speed.
     // Authored creature masters instead need that multiplier on both species.
     const owner = companion?.master || deps?.player;
-    return owner === deps?.player || !owner?.def || !!findNpcWalker(owner);
+    if (owner === deps?.player || !owner?.def || !!findNpcWalker(owner)) return true;
+    // A non-walker owner may still publish an already-global live velocity.
+    // Only purely authored species move/chase stats need their global applied.
+    return [owner.currentMovementSpeedPxS, owner.movementSpeedPxS,
+      owner.moveSpeedPxS, owner.currentSpeedPxS].some(value => Number(value) > 0);
   }
 
   function applyCompanionProxy(companion) {
