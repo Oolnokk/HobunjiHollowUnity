@@ -256,6 +256,17 @@ function testTimedRuinMelodyWiring(){
   assert.match(musicHost,/controllerPuzzlePressMs\(frame\)/,'controller note dispatch keeps the measured hardware input time');
   assert.match(musicHost,/lastPuzzleDisplaySignature/,'unchanged puzzle legends do not rerender on each note');
   assert.match(controller,/frame\.previousNow = lastNow/,'controller input exposes the prior poll boundary');
+
+  const helperStart=musicHost.indexOf('  function controllerPuzzlePressMs(frame) {'); // Run the shipped controller note timestamp helper, not a copied implementation.
+  const helperEnd=musicHost.indexOf('  function publishPuzzleNote(',helperStart); // The following function boundary isolates the pure timing policy from the DOM host.
+  assert(helperStart>=0&&helperEnd>helperStart,'controller puzzle timing helper is present');
+  const controllerPressTime=vm.runInNewContext('(() => { const puzzlePressMs=()=>1100; '+musicHost.slice(helperStart,helperEnd)+' return controllerPuzzlePressMs; })()'); // Uses only a fixed fallback clock.
+  const inputFrame={now:1100,previousNow:1000,padChanged:false,pad:{timestamp:1050}}; // Deliberately late poll with a valid hardware input update.
+  assert.equal(controllerPressTime(inputFrame),1050,'hardware timestamp survives an expensive controller polling gap');
+  assert.equal(controllerPressTime({...inputFrame,pad:{timestamp:900}}),1100,'previously sampled gamepad data cannot backdate a new note');
+  assert.equal(controllerPressTime({...inputFrame,padChanged:true}),1100,'switching gamepads cannot borrow the previous device timestamp');
+  assert.equal(controllerPressTime({...inputFrame,pad:{timestamp:1200}}),1100,'future-dated hardware samples fall back to the current poll');
+  assert.equal(controllerPressTime({...inputFrame,pad:{timestamp:0}}),1100,'browsers without gamepad timestamps use the current poll');
 }
 
 (async()=>{
