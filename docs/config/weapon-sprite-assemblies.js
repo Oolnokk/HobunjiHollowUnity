@@ -38,6 +38,17 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
         motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
       },
     },
+    torch: {
+      label:'Torch', sprite:'assets/toolsprites/torch.png',
+      base: {
+        material:'marker', sourceHex:'#7F00FF', targetHex:'#E7DDC9',
+        vfx: {type:'fire',sourceHex:'#7F00FF',litOnly:true,rate:44,
+          colors:['#FFE6A5','#FFAA3E','#FF5F20'],
+          size:.02,life:.35,speed:.12,worldRise:true,visualScale:4,
+          blendMode:'normal',opacity:.65}
+      },
+      layers:[],
+    }, // Identical torch-staff wrapping treatment; flames run only while the torch is lit.
     hachutuTorchStaff: {
       label: 'Hachutu Torch-Staff',
       sprite: 'assets/toolsprites/hachutu_torch-staff.png',
