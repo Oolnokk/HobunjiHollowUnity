@@ -17,6 +17,7 @@
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
   const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity1.m4a'; // Shared combat-breath recording if no yawn exists.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
+  const activeById = new Map(); // O(1) lookups from each NPC's movement-speed chokepoint, even during crowd-wide yawns.
   const fileProbes = new Map(); // One HEAD lookup per future yawn-asset filename, reused for every NPC.
   const voicePlans = new Map(); // Species+gender-specific resolution promises shared by all actors of that identity.
   let walkerStates = new WeakMap(); // Transient walking/sleeping/wake presentation per instantiated NPC.
@@ -67,9 +68,9 @@
     const old = saved[id] || {};
     state = {
       walker, id,
-      restedUntil: Number.isFinite(Number(old.restedUntil)) ? Number(old.restedUntil) : -Infinity,
-      nextHour: Number.isFinite(Number(old.nextHour)) ? Number(old.nextHour) : hour + HOURLY_GAP,
-      lastKomaHour: Number.isFinite(Number(old.lastKomaHour)) ? Number(old.lastKomaHour) : -Infinity,
+      restedUntil: typeof old.restedUntil === 'number' && Number.isFinite(old.restedUntil) ? old.restedUntil : -Infinity,
+      nextHour: typeof old.nextHour === 'number' && Number.isFinite(old.nextHour) ? old.nextHour : hour + HOURLY_GAP,
+      lastKomaHour: typeof old.lastKomaHour === 'number' && Number.isFinite(old.lastKomaHour) ? old.lastKomaHour : -Infinity, // JSON encodes -Infinity as null; never mistake that for a Koma dose at hour zero.
       wasSleeping: !!walker._bedLieActive && walker.currentScheduleTarget?.pose === 'lie',
       wakePending: false, active: null, lastNeckOffset: 0, lastNeckApplied: null,
     };
@@ -227,6 +228,7 @@
     stopVoice(entry);
     if (entry.komaStarted && reason !== 'complete') window.NpcDrinkInteraction?.stopAutonomous?.(entry.walker, '__daily_koma_leaf__');
     active.delete(entry);
+    if (activeById.get(entry.state.id) === entry) activeById.delete(entry.state.id);
     if (entry.state.active === entry) entry.state.active = null;
   }
   function startYawn(walker, state, hour, reason) {
@@ -238,6 +240,7 @@
     state.nextHour = Math.max(hour, state.restedUntil) + HOURLY_GAP;
     checkpoint(state);
     active.add(entry);
+    activeById.set(state.id, entry);
     const identity = sourceIdentity(walker);
     if (SLAGOTHIM.has(identity.species) && hour - state.lastKomaHour >= 24
       && walker.area === window.Combat?.deps?.getCurrentArea?.()) {
@@ -257,10 +260,7 @@
   }
 
   function movementMultiplier(npcId) {
-    for (const entry of active) {
-      if (!entry.finished && entry.state.id === npcId) return FATIGUE_SPEED_MULTIPLIER;
-    }
-    return 1;
+    return activeById.has(String(npcId || '')) ? FATIGUE_SPEED_MULTIPLIER : 1;
   }
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
@@ -289,6 +289,7 @@
     const globalCombat = combatNow();
     for (const walker of window._npcWalkers || []) {
       if (!walker?.root || !walker.rec?.id || walker.animalDef) continue;
+      if (sourceIdentity(walker).species.endsWith('-skeleton')) continue; // Undead skeletons have no breathing voice or sleep need in CombatVocalizations.
       const state = stateFor(walker, hour);
       const sleepingNow = asleep(walker);
       if (sleepingNow) {
