@@ -757,6 +757,7 @@
   function igniteIgnitionTarget(target) {
     if (!target || target.lit) return false;
     target.lit = true;
+    if (target.object?.userData) target.object.userData.fireHazard = true; // The newly lit brazier becomes a reusable torch-ignition source.
     window.RuinInteractionAudio?.igniteTorch?.();
     const state = mechanismSignals.get(target.mechanismId);
     if (state && state.target < 1) {
@@ -772,7 +773,12 @@
     if (!root || currentArea() !== MAP_ID || !start || !end) return false;
     const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
     // The same exact floor-aware reach and 3D hitboxes as the original torch puzzle.
-    const litSources = [...torchSources, ...ignitionTargets.filter(target => target.lit).map(target => target.object)];
+    const litSources = [
+      ...torchSources,
+      ...ignitionTargets.filter(target => target.lit).map(target => target.object),
+      ...(window.DevRandomRuinDungeonFire?.litSourceObjects?.() || []),
+      ...(window.RuinCheckpointTravel?.litSourceObjects?.() || []),
+    ]; // All ruin fire-hazard sources use the same physical proximity, height and segment tests.
     return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE
       && segmentBoxInterval(start, finish, boxFor(object), radius));
   }
