@@ -168,6 +168,31 @@
     return best;
   }
 
+  function projectHull(room,project){
+    const points=[];
+    for(const y of [room.y-.15,room.y+WALL_HEIGHT+.1])
+      for(const x of [room.x,room.x+room.w])
+        for(const z of [room.z,room.z+room.d]){
+          const v=project(x,y,z);
+          if(Number.isFinite(v?.x)&&Number.isFinite(v?.y))points.push(v);
+        }
+    if(points.length<3)return [];
+    points.sort((a,b)=>a.x-b.x||a.y-b.y);
+    const cross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    const hull=[];
+    for(const p of points){
+      while(hull.length>=2&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
+      hull.push(p);
+    }
+    const lower=hull.length;
+    for(let i=points.length-2;i>=0;i--){
+      const p=points[i];
+      while(hull.length>lower&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
+      hull.push(p);
+    }
+    hull.pop();
+    return hull; // The active room's camera silhouette is identical for all lights in one overlay redraw.
+  }
   function visual(record,show){
     if(show){
       for(const [node,original] of record.hidden||[])node.visible=original;
@@ -195,7 +220,7 @@
     if(live)live.dispose(); // No room-owned hostiles or compositor masks leak across a ruin reroll.
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
-    let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false;
+    let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false,lightHull=null; // One cached projected room silhouette per unified lighting pass.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -272,6 +297,9 @@
       isRoomActive(id){return !!active&&active.id===id;},
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
+      prepareLightClip(project){
+        lightHull=active&&typeof project==='function'?projectHull(active,project):null;
+      }, // Called once by the shared lighting overlay, not once per flame/rune/torch.
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         return active?source?.id===active.id:!source; // Closed rooms and the shaft cannot light each other.
@@ -280,21 +308,8 @@
         if(!session.lightAllowed(light))return false;
         const room=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         if(!room||!ctx?.save||!ctx?.clip||typeof project!=='function'){draw();return true;}
-        // Convex hull of the projected room prism encloses walls as well as the floor.
-        const p=[];
-        for(const y of [room.y-.15,room.y+WALL_HEIGHT+.1])
-          for(const x of [room.x,room.x+room.w])
-            for(const z of [room.z,room.z+room.d]){
-              const v=project(x,y,z);if(Number.isFinite(v?.x)&&Number.isFinite(v?.y))p.push(v);
-            }
-        if(p.length<3){draw();return true;}
-        p.sort((a,b)=>a.x-b.x||a.y-b.y);
-        const cross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-        const hull=[]; // Eight projected corners; avoids expensive mesh/scene searches on the lighting pass.
-        for(const q of p){while(hull.length>=2&&cross(hull[hull.length-2],hull[hull.length-1],q)<=0)hull.pop();hull.push(q);}
-        const lower=hull.length;
-        for(let i=p.length-2;i>=0;i--){const q=p[i];while(hull.length>lower&&cross(hull[hull.length-2],hull[hull.length-1],q)<=0)hull.pop();hull.push(q);}
-        hull.pop();
+        const hull=lightHull||projectHull(room,project);
+        if(hull.length<3){draw();return true;}
         ctx.save();
         try{
           ctx.beginPath();ctx.moveTo(hull[0].x,hull[0].y);
@@ -308,7 +323,7 @@
         const p=getPlayerPosition?.(),y=Number(getPlayerY?.());
         const next=p?lookup(p.x,p.z,y):null;
         if(next?.id!==active?.id){
-          active=next;transitions++;
+          active=next;transitions++;lightHull=null;
           scanHostiles();scanWalkers();clock=0; // Room transitions also freeze off-room civilian NPC walkers immediately.
           onRoomChange?.(active?.id||null);
           root.CloudForestFog?.refreshLightingOverlay?.();
@@ -340,5 +355,6 @@
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
     withLightClip:(ctx,light,project,draw)=>live?live.withLightClip(ctx,light,project,draw):(draw(),true),
+    prepareLightClip:project=>live?.prepareLightClip(project),
     debugSnapshot:()=>live?.snapshot()||{activeRoomId:null,totalRooms:0,sleepingEnemies:0}});
 });
