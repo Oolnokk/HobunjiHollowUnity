@@ -6,7 +6,7 @@
   const VERSION = 4;
   const SAVE_FIELD = 'templePrayerRestBlessings'; // Stored on the active character so prayer/rest timers survive reloads with that character.
   const PRAYER_DURATION_HOURS = 7 * 24; // Used by all three temple prayers: one full in-game week.
-  const WELL_RESTED_DURATION_HOURS = 16; // Existing stronger player buff; only awarded by at least eight actual sleep hours.
+  const WELL_RESTED_DURATION_HOURS = 24; // One full in-game day of stronger player buffs, awarded only after eight actual sleep hours.
   const RESTED_DURATION_HOURS = 3; // Short sleep or seated Wait postpones yawns for three game hours without granting Well Rested stat bonuses.
   const WELL_RESTED_MIN_SLEEP_HOURS = 8; // Enforces real eight-hour sleep, including the legacy animated-bed path.
   const SLEEP_HOUR_EPSILON = 1e-6; // Absorbs raw calendar-fraction rounding at exact 8h, not genuine short sleep.
@@ -14,7 +14,7 @@
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Rested: three in-game hours without yawning after any positive Sleep or seated Wait; Well Rested: existing 16h bonuses only after eight hours of sleep.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Rested: three in-game hours without yawning after any positive Sleep or seated Wait; Well Rested: 24h bonuses only after eight hours of sleep.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -119,7 +119,7 @@
   }
   function isRested() {
     expireState();
-    return !!(state.rested || state.wellRested); // Full Well Rested also suppresses yawns for its entire 16-hour span.
+    return !!(state.rested || state.wellRested); // Full Well Rested also suppresses yawns for its entire 24-hour span.
   }
 
   function activeTemplePrayerDay() {
@@ -270,13 +270,13 @@
   }
   function grantWellRested() {
     expireState();
-    const now = currentGameHour(); // Every qualifying player-bed Sleep refreshes the full 16-hour timer rather than stacking copies.
+    const now = currentGameHour(); // Every qualifying player-bed Sleep refreshes the full 24-hour timer rather than stacking copies.
     if (!Number.isFinite(now)) return false;
     state.wellRested = { startedAtGameHour: now, expiresAtGameHour: now + WELL_RESTED_DURATION_HOURS };
     persistState();
     window.EffectBuffBar?.refresh?.(true);
     window.InventoryCharacterEffects?.refresh?.();
-    window.__farmLog?.('[rest] Well Rested active for 16h: +8% speed, +30% Stamina recovery, +1/3 food/potion buff strength.', 'info');
+    window.__farmLog?.(`[rest] Well Rested active for ${WELL_RESTED_DURATION_HOURS}h: +8% speed, +30% Stamina recovery, +1/3 food/potion buff strength.`, 'info');
     return true;
   }
 

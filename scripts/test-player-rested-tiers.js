@@ -104,9 +104,10 @@ assert.equal(rest.isWellRested(), true, 'eight completed hours from the real bed
 assert.equal(rest.isRested(), true);
 assert.equal(rest.movementSpeedMultiplier(), 1.08, 'existing Well Rested speed bonus is preserved');
 assert.equal(buff('rested')?.durationS, 3 * 3600);
-assert.equal(buff('well-rested')?.durationS, 16 * 3600);
+assert.equal(buff('well-rested')?.durationS, 24 * 3600);
 assert.equal(buff('well-rested')?.label, 'Well Rested');
-assert.equal(buff('well-rested')?.remainingS, 16 * 3600);
+assert.ok(Math.abs(buff('well-rested')?.remainingS - 24 * 3600) < 1e-6,
+  'Well Rested HUD shows a full 24h countdown, within game-clock floating-point precision');
 
 vm.runInNewContext(movementSource, context, { filename: 'devotion-rest-buffs.js' });
 assert.equal(window.DevotionRestBuffs.version, 6);
@@ -119,8 +120,12 @@ assert.ok(Math.abs(window.Combat.getMovementSpeedMul() - .8 * 1.08) < 1e-9);
 hour = 111.1;
 assert.equal(buff('rested'), undefined, 'three-hour Rested badge expires independently');
 assert.equal(rest.isRested(), true, 'active Well Rested still blocks yawning after Rested expires');
-hour = 124.1;
-assert.equal(rest.isWellRested(), false, 'Well Rested expires after 16 actual game hours');
+const wellRestedExpiresAt = JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.wellRested.expiresAtGameHour; // Checks exact expiry against the persisted continuous game-hour deadline.
+assert.ok(Math.abs(wellRestedExpiresAt - (108.01 + 24)) < 1e-9, 'Well Rested persists for a full game day after waking');
+hour = wellRestedExpiresAt - .01;
+assert.equal(rest.isWellRested(), true, 'Well Rested remains active immediately before the 24-hour boundary');
+hour = wellRestedExpiresAt;
+assert.equal(rest.isWellRested(), false, 'Well Rested expires at exactly 24 elapsed game hours');
 assert.equal(rest.isRested(), false);
 assert.ok(Math.abs(window.Combat.getMovementSpeedMul() - .8) < 1e-9, 'full movement speed returns after yawning and Well Rested expire');
 
@@ -129,7 +134,7 @@ assert.equal(rest.isRested(), false, 'zero-hour legacy sleep never grants Rested
 send('sleep', 2, { source: 'legacy-bed' });
 assert.equal(rest.isRested(), true, 'legacy animated beds also grant three-hour Rested');
 assert.equal(rest.isWellRested(), false);
-hour = 127.5;
+hour = wellRestedExpiresAt + 3.5;
 send('sleep', 8, { source: 'legacy-bed' });
 assert.equal(rest.isWellRested(), true, 'legacy beds require the same eight hours for Well Rested');
 assert.equal(rest.isRested(), true);

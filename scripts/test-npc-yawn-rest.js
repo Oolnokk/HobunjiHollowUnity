@@ -282,13 +282,13 @@ async function main() {
     root: { parent: {}, position: { x: 4, z: 4 } }, area: 'farm', state: 'idle',
     neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
     currentScheduleTarget: { pose: 'lie' }, _bedLieActive: true,
-  }; // Deliberately observes an uninterrupted eight-hour sleep to earn full 16h NPC protection.
+  }; // Deliberately observes an uninterrupted eight-hour sleep to earn full 24h NPC protection.
   window._npcWalkers.push(longSleeper);
   hour = 100; ms += 500; frame({ timestamp: ms });
   hour = 108; longSleeper._bedLieActive = false; longSleeper.currentScheduleTarget = { pose: 'stand' };
   ms += 500; frame({ timestamp: ms });
-  assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 124, 'eight hours of NPC sleep grants 16h protection');
-  assert.equal(runtime._test.stateFor(longSleeper, hour).nextHour, 124, 'full NPC Well Rested also resumes fatigue at 16h, not 17h');
+  assert.equal(runtime._test.stateFor(longSleeper, hour).restedUntil, 132, 'eight hours of NPC sleep grants 24h protection');
+  assert.equal(runtime._test.stateFor(longSleeper, hour).nextHour, 132, 'full NPC Well Rested also resumes fatigue at 24h, not 25h');
 
   playerRested = false; // A fresh fatigue cycle lets the test cover excluded player poses.
   window.__hobunjiFurnitureDebug = { sitState: { phase: 'out' } }; // Standing up still owns the body's rig until the seat state is removed.

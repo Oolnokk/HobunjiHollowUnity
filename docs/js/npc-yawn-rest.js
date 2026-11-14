@@ -8,8 +8,8 @@
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
   const RESTED_HOURS = 3; // Short NPC sleeps provide the same three-hour fatigue relief as the player's Rested buff.
-  const WELL_RESTED_HOURS = 16; // Eight-hour NPC sleeps restore the stronger existing sleep protection.
-  const FULL_SLEEP_HOURS = 8; // Required elapsed NPC sleep for the 16-hour Well Rested fatigue grace.
+  const WELL_RESTED_HOURS = 24; // Eight-hour NPC sleeps prevent fatigue for one complete in-game day.
+  const FULL_SLEEP_HOURS = 8; // Required elapsed NPC sleep for the 24-hour Well Rested fatigue grace.
   const PLAYER_YAWN_CHANNEL = 'player-yawn-rest'; // Scoped additive chest lean; cleaned through PlayerBodyTransformComposer.
   const HOURLY_GAP = 1; // An un-rested NPC yawns once per in-game hour.
   const CHECK_INTERVAL_MS = 350; // Only sleep/combat/calendar decisions are polled; active poses still animate per frame.
@@ -455,7 +455,7 @@
         const sleptHours = Number.isFinite(state.sleepStartedHour) ? Math.max(0, hour - state.sleepStartedHour) : 0; // Rested for short sleep; Well Rested for a genuine eight-hour sleep.
         const restHours = sleptHours >= FULL_SLEEP_HOURS ? WELL_RESTED_HOURS : RESTED_HOURS;
         state.restedUntil = hour + restHours;
-        state.nextHour = hour + restHours; // The advertised 3h/16h fatigue grace expires precisely at this hour; no hidden fourth/seventeenth hour.
+        state.nextHour = hour + restHours; // The advertised 3h/24h fatigue grace expires precisely at this hour; no hidden fourth/twenty-fifth hour.
         state.sleepStartedHour = NaN;
         checkpoint(state);
       }
