@@ -33,7 +33,7 @@
   <script src="js/instanced-mesh-bounds.js?v=20261112meshbounds1"></script>
   <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
-  <script src="js/HousePieceGen.js?v=20261114fullporch2&window=20260926rebase1&wallfixtures=20261027templewindows2&walkablerails=20261114physical1"></script>
+  <script src="js/HousePieceGen.js?v=20261114rooftop1&window=20260926rebase1&wallfixtures=20261027templewindows2&walkablerails=20261114physical1"></script>
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261114fullentry2"></script>
@@ -129,7 +129,7 @@
        window.*.init(...) calls — dozens of already-extracted modules also
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20261114physicalwalk2"></script>
+  <script src="js/grid-tile-accessors.js?v=20261114balcony1"></script>
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -261,7 +261,7 @@
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261109statuePiece1"></script>
+  <script src="js/procedural-furniture.js?v=20261114ceilingladder1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261113melodyLoud1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
@@ -274,7 +274,7 @@
   <script src="js/furniture-table-system.js?v=20261110cliffsideMerge1"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/furniture-tile-span.js?v=20261114vertical1"></script> <!-- Shared, on-demand rigid ends + surface-rooted elastic middle. -->
-  <script src="js/authored-furniture-runtime.js?v=20261114hspan1704"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261114ceilingladder1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></script>
@@ -561,7 +561,7 @@
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261114physicalwalkReview1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261114rooftopaccess1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
@@ -676,7 +676,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261114streambridge3"></script>
+  <script src="js/town-zone-buildings.js?v=20261114rooftopaccess1"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20261029maskSlots2&window=20260926rebase1"></script>
