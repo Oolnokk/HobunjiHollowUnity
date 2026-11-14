@@ -37,15 +37,17 @@
       const direction=new THREE.Vector3(ray.direction.x,ray.direction.y,ray.direction.z);
       if (direction.lengthSq()>1e-8) end=start.clone().addScaledVector(direction.normalize(),2.4);
     }
+    const block = start && end ? window.NearbyVolumeCollision?.segmentHit?.(start,end,.12) : null;
+    const maxT = Number.isFinite(block?.t) ? Math.min(1,Math.max(0,block.t)) : 1; // Keep melee fire on the visible side of solid ruin cover.
     const ruinSource=!lit && start && end
-      && window.DevRandomRuinHitPuzzles?.isIgnitionSourceAlongSegment?.(start,end,1,.18);
+      && window.DevRandomRuinHitPuzzles?.isIgnitionSourceAlongSegment?.(start,end,maxT,.18);
     if (!lit && (ruinSource || deps?.isAimedFireHazard?.(col,row))) {
       if (light() && ruinSource) window.RuinInteractionAudio?.igniteTorch?.();
     }
     if (lit) {
       if (start && end) {
-        window.DungeonFire?.contactProjectile?.({team:'player',dungeonFire:true},start,end,1,.20);
-        window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,1,.12);
+        window.DungeonFire?.contactProjectile?.({team:'player',dungeonFire:true},start,end,maxT,.20);
+        window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,maxT,.12,true);
       }
       window.BanditCamps?.igniteAimedTentWithTorch?.();
     }
