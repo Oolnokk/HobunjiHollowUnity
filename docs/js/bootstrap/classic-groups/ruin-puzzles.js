@@ -9,7 +9,7 @@
     "js/ruin-layer-challenges.js?v=20261114puzzleCaveVaultAudit2",
     "js/ruin-room-system.js?v=20261114roomEnclosure2",
     "js/ruin-layer-playable.js?v=20261114roomEnclosure2",
-    "js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2",
+    "js/ruin-v50-native-mechanisms.js?v=20261114roomAudit2",
     "js/ruin-v50-native-floors.js?v=20261114roomEnclosure2",
     "js/ruin-shaft-connector.js?v=20261114roomEnclosure2",
     "js/ruin-v50-vestibule.js?v=20261108h61ad699",
