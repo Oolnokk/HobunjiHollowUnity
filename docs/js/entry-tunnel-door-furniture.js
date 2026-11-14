@@ -5,7 +5,9 @@
 (() => {
   'use strict';
 
-  const FURNITURE_KEY = 'door'; // Used to load the uploaded door through AuthoredFurniture.
+  const FURNITURE_KEY = 'door'; // Regular authored single leaf in a one-tile mouth.
+  const DOUBLE_FURNITURE_KEY = 'doubleWoodenDoor'; // One seven-part carved pair for a fused two-tile mouth.
+  const DOUBLE_FRAME_FIT = 0.82; // Fits the entire double-door assembly uniformly within the 82%-width authored opening.
   const DOOR_OBJECT_NAME = 'entry_tunnel_door'; // Used as the stable name/prefix for generated and authored entry-tunnel doors.
   const SIDE_ROTATION_DEG = Object.freeze({ south: 0, west: 90, north: 180, east: 270 }); // Mirrors HousePieceGen's entry-tunnel orientation map.
   const PLACEMENT = Object.freeze({ x: 0.5, y: 0, z: 0.5 }); // Used to center the authored 1x1 door inside each entry-tunnel tile.
@@ -21,7 +23,7 @@
   function status(target, value, details = null) {
     const data = ensureUserData(target); // Used to expose attachment state to the in-game debug inspector.
     if (!data) return;
-    data.entryTunnelDoorKey = FURNITURE_KEY;
+    data.entryTunnelDoorKey = details?.entryTunnelDoorKey || data.entryTunnelDoorKey || FURNITURE_KEY;
     data.entryTunnelDoorStatus = value;
     if (details) Object.assign(data, details);
   }
@@ -133,28 +135,67 @@
   }
 
   function authoredPlacements(piece, bldgMinC, bldgMinR, opts = {}) {
-    const cells = entryTunnelCells(piece);
+    const src = normalizePiece(piece);
+    const mouthFaces = (src?.base?.faces || []).filter(face =>
+      face?.tag === 'entryTunnel' && face.exteriorEntryOpening && CARDINAL_SIDES.has(face.extensionFace) && Array.isArray(face.v)
+    ); // Authored jambs mark the actual OUTER mouth, never the interior tunnel floor or its connecting depth.
+    if (mouthFaces.length) {
+      const mouths = new Map(); // One record per opening run, regardless of how many jamb/lintel mesh faces it contains.
+      for (const face of mouthFaces) {
+        const side = face.extensionFace;
+        const key = `${side}:${tileKey(face.sourceTile)}`;
+        if (!mouths.has(key)) mouths.set(key, { key, side, localTile: face.sourceTile, minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity });
+        const mouth = mouths.get(key);
+        for (const v of face.v) {
+          if (!Array.isArray(v) || v.length < 3) continue;
+          mouth.minX = Math.min(mouth.minX, Number(v[0]));
+          mouth.maxX = Math.max(mouth.maxX, Number(v[0]));
+          mouth.minZ = Math.min(mouth.minZ, Number(v[2]));
+          mouth.maxZ = Math.max(mouth.maxZ, Number(v[2]));
+        }
+      }
+      const gc = Math.floor((Number(src?.gridSize) || 18) / 2); // Converts serialized local face geometry back into its author's grid cells.
+      const elevationY = Number.isFinite(Number(opts?.elevationY)) ? Number(opts.elevationY) : 0;
+      return [...mouths.values()].filter(mouth => Number.isFinite(mouth.minX) && Number.isFinite(mouth.minZ)).map(mouth => {
+        const horizontal = mouth.side === 'north' || mouth.side === 'south';
+        const widthTiles = Math.max(1, Math.round(horizontal ? mouth.maxX - mouth.minX : mouth.maxZ - mouth.minZ)); // The mouth run's REAL transverse span, not its tunnel depth.
+        const center = { x: gc + (mouth.minX + mouth.maxX) / 2 - 0.5, y: gc + (mouth.minZ + mouth.maxZ) / 2 - 0.5 };
+        const transformed = rotateAuthoredTileCenter(src, bldgMinC, bldgMinR, center, opts);
+        const paired = widthTiles >= 2;
+        return {
+          key: `authored:mouth:${mouth.key}`,
+          name: paired ? `${DOOR_OBJECT_NAME}_pair_${mouth.key}` : `${DOOR_OBJECT_NAME}_${mouth.key}`,
+          x: transformed.x, y: elevationY + PLACEMENT.y, z: transformed.z,
+          rotationDeg: (sideRotationDeg(mouth.side) + transformed.rotationDeg) % 360,
+          side: mouth.side, localTile: mouth.localTile,
+          worldTile: { col: Math.floor(transformed.x), row: Math.floor(transformed.z) },
+          furnitureKey: paired ? DOUBLE_FURNITURE_KEY : FURNITURE_KEY,
+          scale: paired ? DOUBLE_FRAME_FIT * widthTiles / 2 : 1, // All seven parts scale together; no stretched leaf or extra internal doors.
+          widthTiles,
+        };
+      });
+    }
+
+    // Legacy pieces without an authored outer frame still get one door on each painted tunnel tile.
+    const cells = entryTunnelCells(src);
     if (!cells.length) return [];
-    const sideByTile = new Map(); // Used to preserve separate facing directions when one authored piece contains multiple disconnected entry tunnels.
+    const sideByTile = new Map(); // Separate disconnected entry runs can face different cardinal directions.
     for (const component of connectedComponents(cells)) {
-      const side = componentSide(piece, component);
+      const side = componentSide(src, component);
       component.forEach(cell => sideByTile.set(tileKey(cell), side));
     }
     const elevationY = Number.isFinite(Number(opts?.elevationY)) ? Number(opts.elevationY) : 0;
     return cells.map(cell => {
       const side = sideByTile.get(tileKey(cell)) || 'south';
-      const transformed = rotateAuthoredTileCenter(piece, bldgMinC, bldgMinR, cell, opts);
-      const worldRotationDeg = (sideRotationDeg(side) + transformed.rotationDeg) % 360; // Used to rotate the door with both its tunnel direction and the whole authored building.
+      const transformed = rotateAuthoredTileCenter(src, bldgMinC, bldgMinR, cell, opts);
       return {
-        key: `authored:${cell.x},${cell.y}`,
-        name: `${DOOR_OBJECT_NAME}_${cell.x}_${cell.y}`,
-        x: transformed.x,
-        y: elevationY + PLACEMENT.y,
-        z: transformed.z,
-        rotationDeg: worldRotationDeg,
-        side,
-        localTile: { x: cell.x, y: cell.y },
+        key: `authored:${cell.x},${cell.y}`, name: `${DOOR_OBJECT_NAME}_${cell.x}_${cell.y}`,
+        x: transformed.x, y: elevationY + PLACEMENT.y, z: transformed.z,
+        rotationDeg: (sideRotationDeg(side) + transformed.rotationDeg) % 360,
+        side, localTile: { x: cell.x, y: cell.y },
         worldTile: { col: Math.floor(transformed.x), row: Math.floor(transformed.z) },
+        furnitureKey: placement.furnitureKey || FURNITURE_KEY,
+      entryTunnelDoorWidth: placement.widthTiles || 1, scale: 1, widthTiles: 1,
       };
     });
   }
@@ -209,6 +250,7 @@
     door.name = placement.name || DOOR_OBJECT_NAME;
     door.position.set(Number(placement.x), Number(placement.y), Number(placement.z));
     door.rotation.y = -(Number(placement.rotationDeg) || 0) * Math.PI / 180;
+    door.scale?.setScalar?.(Number(placement.scale) || 1); // Uniform group scale keeps paired leaves, header and jambs aligned.
     Object.assign(ensureUserData(door), {
       entryTunnelDoorFurniture: true,
       entryTunnelDoorPlacementKey: placement.key,
@@ -225,6 +267,7 @@
       entryTunnelDoorSide: placement.side,
       entryTunnelDoorTile: placement.worldTile || null,
       entryTunnelDoorRotationDeg: Number(placement.rotationDeg) || 0,
+      entryTunnelDoorKey: placement.furnitureKey || FURNITURE_KEY,
     });
     return door;
   }
@@ -252,7 +295,8 @@
       return null;
     }
 
-    const cached = runtime.peek?.(FURNITURE_KEY); // Used for zero-delay attachment when the door JSON is already cached.
+    const furnitureKey = placement.furnitureKey || FURNITURE_KEY; // A fused mouth loads its own authored pair; a normal mouth keeps its single door.
+    const cached = runtime.peek?.(furnitureKey); // Used for zero-delay attachment when the correct door JSON is cached.
     if (cached) return attachResolvedPlacement(target, cached, placement);
     if (typeof runtime.load !== 'function') {
       status(target, 'loader-unavailable');
@@ -260,7 +304,7 @@
     }
 
     status(target, 'loading');
-    return runtime.load(FURNITURE_KEY)
+    return runtime.load(furnitureKey)
       .then(authoredData => attachResolvedPlacement(target, authoredData, placement))
       .catch(error => {
         status(target, 'error', { entryTunnelDoorError: String(error?.message || error || 'unknown error') });
@@ -344,7 +388,7 @@
     const door = findDoor(target);
     const data = target?.userData || {}; // Used to expose loader/placement state without requiring a console.
     return {
-      key: FURNITURE_KEY,
+      key: data.entryTunnelDoorKey || FURNITURE_KEY,
       status: data.entryTunnelDoorStatus || 'unknown',
       attached: doors.length > 0,
       count: doors.length,
@@ -358,6 +402,9 @@
       doors: doors.map(item => ({
         tile: item.userData?.entryTunnelTile || null,
         localTile: item.userData?.entryTunnelLocalTile || null,
+        furnitureKey: item.userData?.furnitureKey || FURNITURE_KEY,
+        widthTiles: item.userData?.entryTunnelDoorWidth || 1,
+        uniformScale: item.scale?.x ?? 1,
         position: { x: item.position.x, y: item.position.y, z: item.position.z },
         rotationYDeg: item.rotation.y * 180 / Math.PI,
       })),
