@@ -92,6 +92,13 @@ assert.equal(rest.isWellRested(), false, 'seven hours of bed sleep remains too s
 send('sleep', 8); // This generic unowned sleep cannot exploit the previous consumed bed token.
 assert.equal(rest.isWellRested(), false, 'generic eight-hour sleep does not counterfeit a player-owned bed');
 window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+send('sleep', 7.999);
+assert.equal(rest.isWellRested(), false, 'genuinely short sleep must not cross the eight-hour threshold');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+send('sleep', 8 - 1e-10); // Exactly eight hours may round slightly below 8 when raw time01 crosses the dawn boundary.
+assert.equal(rest.isWellRested(), true, 'calendar floating-point error must not deprive an exact eight-hour sleeper');
+hour += .01;
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
 send('sleep', 8);
 assert.equal(rest.isWellRested(), true, 'eight completed hours from the real bed grants Well Rested');
 assert.equal(rest.isRested(), true);
