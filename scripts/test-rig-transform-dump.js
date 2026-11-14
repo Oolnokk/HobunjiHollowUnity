@@ -6,6 +6,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Expand grouped game-only registrations; editors still use their own literal script tags.
 
 // Minimal THREE stand-ins: column-major Matrix4 with the operations the dump uses.
 class V3 { constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } }
@@ -96,7 +97,9 @@ for (const [file, needles] of [
   ['docs/tools/enemy-loadout-editor/index.html', ['dumpRigBtn']],
   ['docs/tools/enemy-loadout-editor/preview.js', ['js/rig-transform-dump.js', 'js/character-dimensions.js']],
 ]) {
-  const text = fs.readFileSync(file, 'utf8');
+  const text = file === 'docs/index.html'
+    ? expandClassicScriptGroups(fs.readFileSync(file, 'utf8'))
+    : fs.readFileSync(file, 'utf8'); // The game registers rig dumping through its pre-game manifest, editors use direct references.
   for (const needle of needles) assert.ok(text.includes(needle), `${file} wires ${needle}`);
 }
 
