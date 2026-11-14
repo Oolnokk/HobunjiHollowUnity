@@ -75,4 +75,19 @@ assert(next.every(site=>!Cave.exteriorPuzzleState(site.mapId).solved),
   'new Shift puzzle doors start unsolved even if their ledge resembles the previous terrain');
 assert.equal(Cave.serialize()?.identity,'seclusion-test-world|2','old puzzle progress is replaced by the new cycle save identity');
 
+// A code update inside an existing Shift must not destroy a solved, pre-update puzzle cave.
+cycle=3;
+const oldShelf=shelves[shelves.length-1]; // Pick a less-concealed shelf to ensure previous progress beats the new visibility preference.
+const oldSignature=zone+':puzzle-cliff:'+oldShelf.id; // Original saved signature, before cycle-specific site identities existed.
+const oldId='map_i_den_'+zone+'_puzzle_cliff_'+Cave.__test.hashSeed(zone+':'+oldShelf.id).toString(36);
+Cave.restore({version:2,identity:'seclusion-test-world|3',sites:{[oldSignature]:{outdoorPuzzleSolved:true,outdoorPuzzleTier:3}}});
+const migrated=Cave.registerOutdoorPuzzleSites(zone,shelves);
+assert(migrated.some(site=>site.mapId===oldId&&site.signature===oldSignature),
+  'pre-upgrade solved cave keeps its original map id and location within the same Tothal Shift');
+assert.equal(Cave.exteriorPuzzleState(oldId).solved,true,'legacy solved gate survives the code upgrade');
+cycle=4;
+const following=Cave.registerOutdoorPuzzleSites(zone,shelves);
+assert(following.every(site=>site.mapId!==oldId),'only the next real Shift retires the migrated cave');
+assert.equal(Cave.__test.sitesByMapId.has(oldId),false,'the old saved cavern is retired on the following Shift');
+
 console.log('Tothal concealed-discovery tests passed');
