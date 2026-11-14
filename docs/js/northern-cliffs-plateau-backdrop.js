@@ -69,7 +69,8 @@
           localMinZ = Math.min(localMinZ, localZ);
           localMaxZ = Math.max(localMaxZ, localZ);
         }
-        geometry.dispose?.(); // Only the temporary stone geometry is owned here; grass may share source attributes.
+        geometry.dispose?.(); // The measured mountain source is temporary; no GPU geometry may survive this bounds pass.
+        built?.grassGeo?.dispose?.(); // The loose-rock builder also allocates an unused grass geometry sharing the source attributes.
       }
       const depth = Math.max(1e-5, localMaxZ - localMinZ);
       const stretchZ = layer.targetLength / depth * layer.scale[2];
