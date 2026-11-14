@@ -76,6 +76,17 @@ clock+=1;input.update(0.001);
 assert.equal(holdStarts,genuineStalledHoldStarts+1,'a still-held delayed press arms as soon as the reconciliation window expires');
 input.pressEnd(1,{type:'pointerup',timeStamp:clock});
 assert.equal(holdActive,false,'reconciled delayed hold releases cleanly');
+
+clock+=100;
+for(const canceledType of ['pointercancel','touchcancel','lostpointercapture']) {
+  const tapsBeforeCanceledPointer=tapCount; // A canceled physical gesture is never an intentional short attack tap.
+  input.pressStart(1,{type:'pointerdown',timeStamp:clock});
+  clock+=75;
+  input.pressEnd(1,{type:canceledType,timeStamp:clock});
+  assert.equal(tapCount,tapsBeforeCanceledPointer,canceledType+' cannot emit an accidental melee tap');
+  assert.equal(input.getState(1).down,false,canceledType+' clears the original held slot');
+  clock+=100;
+}
 assert.match(game,/window\.Combat\.input\.pressStart\(_pressSlot, ev\)/,'mobile arch routes its real pointer timestamp');
 assert.match(game,/window\.Combat\.input\.pressStart\(weaponSlot, physicalEvent\)/,'shared keyboard action routing keeps physical timestamps');
 hold(1);hold(2);throwsOnCancel=true;assert.throws(()=>input.abortAllPresses(),/cancel failed/);assert(!input.getState(1).down && !input.getState(2).down,'both slots reset even when cancellation throws');
