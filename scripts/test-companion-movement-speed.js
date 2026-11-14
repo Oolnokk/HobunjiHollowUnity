@@ -16,7 +16,9 @@ let combatMul = 0.9; // Represents the live Combat movement modifier.
 let alchemyMul = 1.2; // Represents the live Alchemy movement modifier.
 let cookingMul = 1.1; // Represents the live food movement modifier.
 let devMul = 1; // Represents the mutable global speed setting.
-let perceptionMul = 0.5; // Represents the mounted Perception Mode movement modifier.
+let perceptionMul = 1; // Represents Perception Mode movement, both mounted and on foot.
+let stickyMul = 1; // Represents a live player Soursap Sticky movement effect.
+let festivalMul = 1; // Represents a live Festival movement blessing.
 let npcOwnerMul = 0.75; // Lets the position-only NPC fixture change buffs while paused.
 const schedulerRegistrations = new Map(); // Captures the production pre-game subscription for ordering assertions.
 const player = { x: 64, y: 64, footing: 100, maxFooting: 100 }; // Uses the same pixel-space player position and footing values as the runtime.
@@ -37,6 +39,8 @@ const windowStub = {
   AlchemySystem: { getMovementSpeedMultiplier() { return alchemyMul; } },
   ResourceSystem: { getEffectiveMax() { return 100; } },
   PerceptionMode: { speedMultiplier() { return perceptionMul; } },
+  RangedWeapons: { movementSpeedMultiplier() { return stickyMul; } },
+  FestivalSystem: { blessingMultiplier() { return festivalMul; } },
   Mounts: {
     init(deps) { this.deps = deps; },
     rideState: 'none',
@@ -90,6 +94,27 @@ assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9, 'ordina
 assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9, 'chase speed also follows the player’s current effective pace');
 assert.equal(sourceDef.moveSpeed, 100, 'shared species moveSpeed remains unchanged');
 assert.equal(sourceDef.chaseSpeed, 160, 'shared species chaseSpeed remains unchanged');
+playerPet.stableRole = 'companion';
+playerPet._companionGroundFollow = { distancePx: 32 * 6 }; // Simulates a ground pet far behind its owner's path.
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed * 1.65) < 1e-9,
+  'a distant follower gets a bounded catch-up advantage without changing the owner baseline');
+assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9,
+  'idle wandering and non-pursuit movement do not gain catch-up speed');
+playerPet._companionCombatTarget = { id: 'hostile', health: 100 };
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9,
+  'combat pursuit does not inherit the owner catch-up acceleration');
+playerPet._companionCombatTarget = null;
+playerPet.banditCompanion = true;
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9,
+  'enemy Beastmaster pets are never accelerated by player follow distance');
+playerPet.banditCompanion = false;
+playerPet.ownerMovementSpeedPercent = 50;
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed * 0.5) < 1e-9,
+  'a deliberately reduced owner-speed percentage is respected instead of overridden by catch-up');
+playerPet.ownerMovementSpeedPercent = null;
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed * 1.65) < 1e-9,
+  'a null owner-speed percentage is treated as absent rather than as zero');
+playerPet._companionGroundFollow = { distancePx: 0 };
 const playerPetDefinitionProxy = playerPet.def; // Retained to prove the per-frame discovery pass is idempotent.
 api.update();
 assert.strictEqual(playerPet.def, playerPetDefinitionProxy, 'repeated companion scans do not wrap an entity definition more than once');
@@ -110,16 +135,26 @@ assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alc
   'active drunken Footing applies the same current movement penalty as the player');
 player.afflictions = {};
 player.footing = 20;
-assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
-  'low Footing without the drunken affliction does not invent an extra movement penalty');
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * 0.64)) < 1e-9,
+  'ordinary low Footing still slows the player and companion, even without drunkenness');
 player.footing = 100;
 
+stickyMul = 0.8;
+festivalMul = 1.25;
+perceptionMul = 0.6;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * stickyMul * festivalMul * perceptionMul)) < 1e-9,
+  'the stationary player pace includes Soursap Sticky, Festival blessings and Perception Mode');
+stickyMul = 1;
+festivalMul = 1;
+perceptionMul = 1;
+
 devMul = 1.1;
-assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * devMul)) < 1e-9,
-  'the live global movement-speed setting is included');
+assert.ok(Math.abs(playerPet.def.moveSpeed * devMul - (238 * cookingMul * combatMul * alchemyMul * devMul)) < 1e-9,
+  'the creature mover applies the global setting once, rather than squaring it');
 player.vx = 90;
 player.vy = 120;
-assert.equal(playerPet.def.moveSpeed, 150, 'on-foot companion speed follows the owner’s actual current velocity, including partial input and acceleration');
+assert.ok(Math.abs(playerPet.def.moveSpeed * devMul - 150) < 1e-9,
+  'on-foot companion pace follows owner velocity without doubling the global modifier');
 player.vx = 0;
 player.vy = 0;
 
@@ -127,12 +162,12 @@ windowStub.Mounts.rideState = 'mounted';
 windowStub.Mounts.rideEntity = { def: { mountSpeed: 340 } };
 perceptionMul = 0.5;
 const mountedSpeed = 340 * alchemyMul * devMul * perceptionMul;
-assert.ok(Math.abs(playerPet.def.moveSpeed - mountedSpeed) < 1e-9,
-  'a stationary mounted owner transfers the mount’s live top speed and mounted modifiers');
+assert.ok(Math.abs(playerPet.def.moveSpeed * devMul - mountedSpeed) < 1e-9,
+  'a stationary mounted owner transfers the mount’s live top speed without duplicating the global modifier');
 windowStub.Mounts.rideEntity.vx = 90;
 windowStub.Mounts.rideEntity.vy = 120;
-assert.equal(playerPet.def.moveSpeed, 150,
-  'a moving mount transfers its actual current velocity, including acceleration and collision slowdown');
+assert.ok(Math.abs(playerPet.def.moveSpeed * devMul - 150) < 1e-9,
+  'a moving mount transfers its live velocity without duplicating the global modifier');
 windowStub.Mounts.rideEntity.vx = 0;
 windowStub.Mounts.rideEntity.vy = 0;
 windowStub.Mounts.rideState = 'none';
@@ -152,6 +187,16 @@ windowStub._npcWalkers.set('npc-owner', {
   root: { position: { x: 2, z: 2 } },
 });
 assert.equal(npcPet.def.moveSpeed, 128, 'a live NPC walker’s current catch-up pace takes precedence over its static authored species speed');
+devMul = 1.5;
+assert.ok(Math.abs(npcPet.def.moveSpeed * devMul - 128) < 1e-9,
+  'an NPC walker world pace is not multiplied by the global movement setting a second time');
+windowStub._npcWalkers.delete('npc-owner');
+assert.equal(npcPet.def.moveSpeed, 90,
+  'a creature owner with authored movement retains the shared creature-global movement modifier');
+windowStub._npcWalkers.set('npc-owner', {
+  rec: { id: 'npc-owner' }, _moveSpeedTiles: 4, root: { position: { x: 2, z: 2 } },
+});
+devMul = 1;
 
 npcPet.ownerMovementSpeedPercent = 50;
 assert.equal(npcPet.def.moveSpeed, 64, 'an explicit owner-speed percentage scales the owner’s current catch-up speed');
