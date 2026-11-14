@@ -8,6 +8,8 @@ Currently migrated:
 - `qol.js`: toast, arrival, hotkeys, inventory search.
 - `guild.js`: guild progression, magic checkpoint, vault signal.
 - `render.js`: actor/mesh/grass culling and depth snapshot.
+- `festival.js`: ancestor figures, activities, festivals, offering rituals and festive UI.
+- `npc-schedule.js`: NPC agendas, social relations, seating, pathfinding, routes and Nohuknuk wilderness AI.
 
 The stable index entry is:
 ```html
@@ -43,3 +45,11 @@ literally in `index.html`.
 
 This first migration intentionally leaves early startup scripts and inline
 boot handoff scripts in place. They have stronger parser/side-effect coupling.
+
+## Dependency notes for migrated festival and NPC systems
+
+- `festival.js` preserves the existing order from ancestor figures through festival UI. It loads after the combat tutorial modules, before tutorial unlock visitors and before `game.js` initializes festival systems.
+- `npc-schedule.js` preserves the four agenda/activity/planner modules before `npc-scheduling.js`. `npc-scheduling.js` must come before the farm worker bridge and social seating bridge.
+- Authored `config/npcs/social-relations.js` must load before the social seating bridge; both `NpcActivities.resolveDestination` and `NpcScheduling.findStationsByRole` must exist before that bridge executes. `npc-pathfinding.js`, `nohuknuk-wilderness.js` and the route graph load before the cutscene preview handoff and `game.js`.
+- The original long HTML explanations were moved here so no new registration edits are needed in the shared entrypoint. Add or update scripts in one manifest only.
+- `scripts/test-festival-npc-classic-script-groups.js` enforces the original 22-module subsequence. Future modules may be inserted but must not reorder the original required dependencies.

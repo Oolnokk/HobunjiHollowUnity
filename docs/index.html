@@ -2915,17 +2915,8 @@
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
-  <script src="js/festival-ancestor-figures.js?v=20261111h74436ed"></script>
-  <script src="js/festival-props.js?v=20261109festivalMerge2"></script>
-  <script src="js/festival-wheel-dance-runtime.js?v=20261020h3d77f11"></script>
-  <script src="js/npc-festival-dance.js?v=20261020hd350a73"></script>
-  <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
-  <script src="js/festival-potluck-contest.js?v=20261109festRarityMerge2"></script>
-  <script src="js/festival-locale-activities.js?v=20261109festivalMerge2"></script>
-  <script src="js/festival-offering-ritual.js?v=20261110tzkFortune1"></script>
-  <script src="js/festival-system.js?v=20261110tzkFortune1"></script>
-  <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
-  <script src="js/festival-ui.js?v=20261110tzkFortune1"></script>
+  <!-- Festival systems (ancestors, NPC activities, rituals and UI). Maintained in js/bootstrap/classic-groups/festival.js. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="festival"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261112townProgressReadOnly1"></script>
@@ -2972,43 +2963,8 @@
        call time, not parse time) but all four must load before
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
-  <script src="js/npc-agenda.js?v=20261018a"></script>
-  <script src="js/npc-activities.js?v=20261109lazyCaveNpc1"></script>
-  <script src="js/npc-social-stimuli.js?v=20260902a"></script>
-  <script src="js/npc-activity-planner.js?v=20261111communion1"></script>
-  <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
-       checks — window.NpcScheduling) — must load before game.js, which
-       calls window.NpcScheduling.init(...) during its own setup.
-       resolveNpcScheduleTarget itself now bridges into
-       window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261110check8bebafa"></script>
-  <script src="js/npc-farm-plots.js?v=20261109familyaudit2"></script> <!-- Town and family field/trench worker schedules. -->
-  <!-- Authored NPC relationship tags (partner/family/friend) + social
-       seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
-       read lazily at call time by npc-social-seating-bridge.js below, so
-       load order between these two doesn't matter beyond both preceding
-       that bridge. This file existed in the repo with no <script> tag
-       referencing it at all until now — the seating bridge it feeds was
-       consequently always inert in the shipped game (see that file's own
-       header). -->
-  <script src="config/npcs/social-relations.js?v=20261111communion1"></script>
-  <!-- Social seating (window.NpcSocialSeating) — decorates
-       NpcActivities.resolveDestination so a "sit" destination picks the
-       best-scoring free seat (nearby family/partner/friends weighted in)
-       instead of always the exact station a schedule rule names; also
-       backs fixedSeatRoleRedirects (an old fixed stationId treated as "any
-       seat in this area" — see social-relations.js). Must load after both
-       npc-activities.js and npc-scheduling.js (guards on
-       NpcActivities.resolveDestination/NpcScheduling.findStationsByRole
-       existing) — same previously-untagged situation as social-relations.js
-       above. -->
-  <script src="js/npc-social-seating-bridge.js?v=20261111communion1"></script>
-  <!-- NPC walkability/beeline checks + area-graph pathfinding
-       (window.NpcPathfinding) — must load before game.js, which calls
-       window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261110cliffsideMerge1"></script>
-  <script src="js/nohuknuk-wilderness.js?v=20261110nohukWaterCache1"></script> <!-- Western Slope NPC uses the shared schedule, pathing, sight and burrow systems. -->
-  <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
+  <!-- NPC agenda, scheduling, authored social rules, pathfinding and wilderness AI. Maintained in js/bootstrap/classic-groups/npc-schedule.js. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="npc-schedule"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the

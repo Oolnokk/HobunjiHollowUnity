@@ -6,7 +6,7 @@ const vm = require('node:vm'); // Executes the actual canvas-festival module wit
 
 const css = fs.readFileSync('docs/gameplay-ui-theme.css', 'utf8'); // Holds overrides for late-injected gameplay overlays.
 const baseCss = fs.readFileSync('docs/style.css', 'utf8'); // Declares the shared gameplay font stack.
-const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Verifies entry-point cache busting.
+const gameHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Verifies entry-point cache busting.
 const requiredSelectors = [ // Prevents regressions in independently styled dialogs.
   '#townProposalReader', '#townProposalReader .proposal-paper', '#townProposalReader h2',
   '#animalBabyArrivalOverlay input', '#animalBabyArrivalOverlay button',

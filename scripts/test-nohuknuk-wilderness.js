@@ -299,7 +299,7 @@ for (const [kind, setup] of [
 }
 
 const game = read('docs/game.js');
-const index = read('docs/index.html');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 const grehlr = read('docs/js/combat/combat-grehlr-burrow.js');
 const grehlrForaging = read('docs/js/wildlife-grehlr-foraging.js'); // Checks that the shared water index stays exported as a stable dependency.
 const food = read('docs/js/wildlife-food-web.js');
