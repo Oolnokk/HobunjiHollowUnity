@@ -23,7 +23,7 @@
   const hidden = []; // Roots temporarily hidden from rendering, restored before gameplay resumes.
   const stats = { frames:0, candidates:0, frustumHidden:0, occludedHidden:0,
     corpseCandidates:0, corpseFrustumHidden:0, corpseOccludedHidden:0, // Mobile counters distinguish corpse savings from living actors.
-    visible:0, probes:0, results:0, discarded:0, pending:0, gpuAvailable:false, disabledReason:'', facingHidden:0 };
+    visible:0, probes:0, results:0, discarded:0, pending:0, gpuAvailable:false, disabledReason:'' };
   const sphere = THREE ? new THREE.Sphere(new THREE.Vector3(), FRUSTUM_RADIUS_TILES) : null; // Reused camera-volume test.
   const frustum = THREE ? new THREE.Frustum() : null; // Shared frustum for all actors in a frame.
   const viewMatrix = THREE ? new THREE.Matrix4() : null; // Camera projection * inverse-world matrix.
@@ -209,75 +209,8 @@
     } else stats.visible++;
   }
 
-  // Away-facing portrait plane. A BanditCombat humanoid's body is two single-sided
-  // skinned planes back to back (bandit_front_plane / bandit_back_plane); whichever
-  // one faces away from the camera rasterises nothing, but with frustumCulled=false
-  // it is still submitted, skinned and vertex-shaded in every colour, depth, shell
-  // and replay pass. For this render only, the plane turned clearly away is hidden.
-  //  - Decided from the plane's own current world matrix (refreshed here), so a
-  //    sprite that flips 180 degrees this frame never loses its visible side.
-  //  - Only a plane with nothing else drawn beneath it is hidden, and never both.
-  //  - Anyone knocked about or lying down keeps both planes.
-  const FACING_HIDE_COS = -0.35; // About 110 degrees off the view vector: slack for perspective and spine/neck bend.
-  const facingPairs = new WeakMap(); // Rig group -> { front, back, count }; front is null when the rig is not this shape.
-  let facingCullEnabled = true; // A/B switch, independent of the whole-actor culling above.
-  function leafPlaneMesh(pivot) {
-    const mesh = pivot?.children?.find(child => child.isMesh);
-    if (!mesh) return null;
-    let safe = true; // Hiding the mesh must not hide anything else that draws (garments, overlays).
-    mesh.traverse(node => {
-      if (node === mesh || !safe || !node.isMesh) return;
-      for (let up = node; up && up !== mesh; up = up.parent) if (up.visible === false || up.name === 'spine_bone_guides') return;
-      safe = false;
-    });
-    return safe ? mesh : null;
-  }
-  function facingPairFor(group) {
-    const children = Array.isArray(group.children) ? group.children : null;
-    if (!children) return null;
-    const known = facingPairs.get(group);
-    // Re-resolved when the rig's top-level children change (a rebuilt portrait, an added garment).
-    if (known && known.count === children.length && (!known.front || (known.front.parent && known.back.parent))) return known.front ? known : null;
-    const front = leafPlaneMesh(children.find(child => child.name === 'bandit_front_plane'));
-    const back = leafPlaneMesh(children.find(child => child.name === 'bandit_back_plane'));
-    const entry = front && back ? { front, back, count: children.length } : { front: null, back: null, count: children.length };
-    facingPairs.set(group, entry);
-    return entry.front ? entry : null;
-  }
-  function axisFacesAway(e, eyePosition) {
-    const nx = e[8], ny = e[9], nz = e[10]; // PlaneGeometry faces local +Z; a rest-pose bone shares that axis.
-    const dx = eyePosition.x - e[12], dy = eyePosition.y - e[13], dz = eyePosition.z - e[14];
-    const length = Math.hypot(nx, ny, nz) * Math.hypot(dx, dy, dz);
-    return length > 1e-9 && (nx * dx + ny * dy + nz * dz) / length < FACING_HIDE_COS;
-  }
-  function facesAway(mesh, eyePosition) {
-    // The plane is skinned: its neck/head and spine bones can turn part of it
-    // back toward the camera while the plane as a whole faces away (a head
-    // looking over the shoulder is drawn by the "away" plane). So the plane
-    // counts as away only if it and every one of its bones do.
-    const bones = mesh.skeleton?.bones;
-    mesh.updateWorldMatrix(true, !!bones); // Bones are descendants of the plane; refresh them for this frame's pose.
-    if (!axisFacesAway(mesh.matrixWorld.elements, eyePosition)) return false;
-    if (bones) for (const bone of bones) if (!axisFacesAway(bone.matrixWorld.elements, eyePosition)) return false;
-    return true;
-  }
-  function hideAwayFacingPlane(c, eyePosition) {
-    const group = c.avatarRef?.group;
-    if (!facingCullEnabled || !group || group.visible !== true) return;
-    if (c.prone || c.knockbackT > 0 || c._animalSleeping || c._cliffClimb) return;
-    const pair = facingPairFor(group);
-    if (!pair || pair.front.visible !== true || pair.back.visible !== true) return;
-    const frontAway = facesAway(pair.front, eyePosition), backAway = facesAway(pair.back, eyePosition);
-    if (frontAway === backAway) return; // Edge-on, or a pose where both read as away: draw both.
-    const mesh = frontAway ? pair.front : pair.back;
-    mesh.visible = false;
-    hidden.push(mesh);
-    stats.facingHidden++;
-  }
-
   function beginFrame(args) {
     endFrame(); // Unwind any interrupted previous render before touching roots again.
-    stats.facingHidden = 0;
     stats.frames++; stats.candidates=0; stats.frustumHidden=0; stats.occludedHidden=0;
     stats.corpseCandidates=0; stats.corpseFrustumHidden=0; stats.corpseOccludedHidden=0;
     stats.visible=0; stats.probes=0; stats.pending=0;
@@ -337,7 +270,6 @@
       const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
       const radius=Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
       addActor(c.avatarRef?.group,c.areaId,activeScene,player,pos,!combat,radius);
-      hideAwayFacingPlane(c, pos); // Skipped inside when the whole rig was just hidden.
     }
     // Settled, full-rig bodies still cost portrait/limb/depth passes until corpse LOD
     // retires them. Read the canonical death registry; never change loot or AI state.
@@ -428,7 +360,7 @@
   }
 
   function snapshot() {
-    return { ...stats, tracked:states.size, enabled, gpuEnabled, facingCullEnabled, gpuError:queryDisabled,
+    return { ...stats, tracked:states.size, enabled, gpuEnabled, gpuError:queryDisabled,
       queriesPending:[...states.values()].filter(s=>s.pending).length };
   }
 
@@ -447,7 +379,6 @@
     beginFrame:safeBeginFrame,probeAfterBase,endFrame,snapshot,
     reset,
     setEnabled(value){enabled=value!==false;if(!enabled)reset();return enabled;},
-    setFacingCullEnabled(value){facingCullEnabled=value!==false;return facingCullEnabled;},
     setGpuEnabled(value){gpuEnabled=value!==false;queryDisabled=false;stats.disabledReason='';reset();return gpuEnabled;},
   });
 })();

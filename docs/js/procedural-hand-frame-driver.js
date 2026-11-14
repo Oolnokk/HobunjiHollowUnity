@@ -56,7 +56,6 @@
       handAttachY: avatarRoot.userData?.handAttachY,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
-      meshBudget: record.meshBudget,
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralHandRig = rig;
@@ -79,7 +78,6 @@
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
-      meshBudget: options.meshBudget, // 'npc' rigs (town NPCs, every BanditCombat humanoid) take the pre-baked reduced hand model.
       rig: null,
       syncSentinel: null,
       lastToolKey: null,
@@ -805,10 +803,6 @@
       0.0001, 0, 0,
       0, 0.0001, 0,
     ], 3));
-    // The sentinel exists only for its onBeforeRender hook. An empty draw range keeps
-    // the hook (three calls it before looking at the range) and drops the actual GL
-    // draw, which was one draw call per rig in every world, depth and replay pass.
-    geometry.setDrawRange?.(0, 0);
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false });
     material.colorWrite = false;
     const sentinel = new THREE.Mesh(geometry, material);
