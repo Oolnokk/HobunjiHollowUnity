@@ -530,6 +530,7 @@
   }
 
   function startPlayerAction(itemKey, options = {}) {
+    if (window.GameplayInputRouter?.isAttackBlocked?.()) return false; // Shared contextual Action 1/2 replaces ranged firing as well.
     window.BandageSystem?.cancel?.('attack');
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) return false;
     const def = defFor(itemKey);
@@ -590,6 +591,10 @@
     if (!playerAction) return;
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) { cancelPlayerAction(); return; }
     const action = playerAction;
+    if (action.kind === 'fire' && !action.fired && window.GameplayInputRouter?.isAttackBlocked?.()) {
+      cancelPlayerAction(); // A prompt arriving during windup must not release a projectile after its input was claimed.
+      return;
+    }
     action.t += dt;
     if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * fireReleaseFrac(action.def)) {
       action.fired = true;

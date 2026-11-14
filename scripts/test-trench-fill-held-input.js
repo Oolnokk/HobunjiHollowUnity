@@ -48,7 +48,7 @@ const makeFixture = Function('buttons', 'allowed', 'chargeable', [
   "function wouldStartCharge(tool, action) { return chargeable(resolveDigFillAction(tool, action, {col: 2, row: 3})); }",
   "function useActiveAction() { activeAction = resolveDigFillAction(activeTool, activeAction, {col: 2, row: 3}); selected.push(activeAction); }",
   slotPress,
-  "function releaseAction(actionId) { const phase = 'release'; " + releaseBranch + " }",
+  "function releaseAction(actionId, source = 'game-input') { const phase = 'release'; " + releaseBranch + " }",
   "return { press: runActionButtonAtSlot, release: releaseAction, state: () => ({ activeAction, actionHeldDown, heldChargeInputId, selected: selected.slice() }) };",
 ].join('\n'));
 

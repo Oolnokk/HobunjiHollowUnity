@@ -125,7 +125,7 @@ PD.reset();
 
 // Execute the opening guard from the real keyboard/controller dispatcher. Its
 // normal-action body needs the full game, but the downed guard executes first.
-const inputStart = game.indexOf("function runInputAction(actionId, phase = 'press') {");
+const inputStart = game.indexOf("function runInputAction(actionId, phase = 'press', source = 'game-input') {");
 const inputEnd = game.indexOf("if (actionId === 'perceptionMode')", inputStart);
 assert(inputStart >= 0 && inputEnd > inputStart, 'gameplay input has a downed Dodge guard');
 const inputContext = {
