@@ -548,6 +548,7 @@
       heldSelectionKind() { return _heldEntrySelectorKind; },
       close() { _clearArc(); },
       entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
+      currentMode() { return _arcOpen; }, // A held world interaction may only commit the exact selector it opened, never a replacement menu.
       toolMenuOpen() { return _arcOpen === 'tool'; }
     };
     window.SharedSelectionArch = window._desktopSelectionArc; // One configurable arch presenter for tools/items/ammo/potions.
