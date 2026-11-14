@@ -6,10 +6,10 @@
   // FoliageGenerator.buildStumpMesh). Each stump is three things at once:
   //   A. the home of one honeyfuzzle swarm: it comes out at the stump in the
   //      morning, drifts around it all day, and flies back in at dusk;
-  //   B. a fertile-egg nest, and
+  //   B. a single capturable queen, and
   //   C. a natural honey resource.
   // One long hold on the stump (the same hold input/HUD contract as
-  // js/corpse-hold-loot.js) yields 1-3 fertile honeyfuzzle eggs plus honey,
+  // js/corpse-hold-loot.js) yields exactly one honeyfuzzle queen plus honey,
   // after which the stump collapses. A collapsed stump is cleared like a felled
   // tree but only regrows after HIVE_REGROW_DAYS (zone-regrowth.js honours
   // entry.regrowDays), and its swarm is left homeless until then.
@@ -21,10 +21,10 @@
   // check interval.
 
   const SPECIES = 'honeyfuzzle';
-  const EGG_ITEM = 'fertileHoneyfuzzleEgg';
+  const QUEEN_ITEM = 'honeyfuzzleQueen'; // The one living queen recovered from an intact hive.
   const HONEY_ITEM = 'honey';
   const HOLD_SECONDS = 5; // Deliberately longer than a nest take (a stump is a bigger, riskier job).
-  const EGG_MIN = 1, EGG_MAX = 3;
+  const QUEEN_COUNT = 1; // Each harvested hive has exactly one queen, regardless of the honey roll.
   const HONEY_MIN = 3, HONEY_MAX = 6;
   const HIVE_REGROW_DAYS = 28;
   const SPAWN_RADIUS_TILES = 24; // Hives farther than this from the player stay empty until approached.
@@ -41,6 +41,7 @@
   let listeningForDeaths = false; // Records the precise lethal damage frame rather than waiting for a two-second wildlife spawn scan.
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.HoneyfuzzleHouse?.registerQueenItem?.(deps?.ITEM_DEFS); // The inventory item is shared with the House and mobile wildlife audit.
     if (!listeningForDeaths && typeof window.addEventListener === 'function') {
       window.addEventListener('hobunji-resource-change', event => {
         const actor = event?.detail?.entity; // ResourceSystem emits after applying actual Health damage.
@@ -81,13 +82,19 @@
     return true;
   }
 
-  function swarmFor(hiveKey) {
+  function liveSwarmIndex() {
+    const active = new Map(); // Hive key -> living defender, built once per spawn scan or diagnostic census.
     for (const c of deps.hostileObjects) {
-      if (c.hiveKey !== hiveKey) continue;
-      if (c.health > 0 && !c._deathTransitionStarted) return c;
-      recordDefeat(c); // Dead creatures can remain in hostileObjects until corpse cleanup.
+      if (!c?.hiveKey) continue;
+      if (c.health > 0 && !c._deathTransitionStarted) {
+        if (!active.has(c.hiveKey)) active.set(c.hiveKey, c);
+      } else recordDefeat(c); // A corpse can remain in the set; preserve its original defeat timestamp.
     }
-    return null;
+    return active;
+  }
+
+  function swarmFor(hiveKey) { // Rare single-hive interactions also use the same source-of-truth roster.
+    return liveSwarmIndex().get(hiveKey) || null;
   }
 
   // ---- A. swarm lifecycle ---------------------------------------------------
@@ -132,14 +139,16 @@
     const layout = deps.zoneLayouts.get(zoneId);
     const grid = deps.getGrid();
     const hives = hivesInLayout(layout);
-    if (!hives.length || !grid) return;
+    if (!hives.length || !grid || window.HoneyfuzzleColors?.isExcludedZone(zoneId)) return;
+    const active = liveSwarmIndex(); // One hostile-set traversal for all hive stumps, not one traversal per stump.
     const T = deps.TILE, px = deps.player.x, py = deps.player.y, nowMs = clockMs();
+    const spawnRadiusSq = (SPAWN_RADIUS_TILES * T) ** 2; // Squared range avoids repeated square roots across distant stumps.
     for (const h of hives) {
       const hive = { col: h.col, row: h.row, key: hiveKeyFor(zoneId, h.col, h.row) };
       if (!isLiveHiveTile(grid, hive.col, hive.row)) continue; // Collapsed: the swarm is homeless until it regrows.
-      const existing = swarmFor(hive.key);
-      if (existing) continue;
-      if (Math.hypot((hive.col + 0.5) * T - px, (hive.row + 0.5) * T - py) > SPAWN_RADIUS_TILES * T) continue;
+      if (active.has(hive.key)) continue;
+      const dx = (hive.col + 0.5) * T - px, dy = (hive.row + 0.5) * T - py;
+      if (dx * dx + dy * dy > spawnRadiusSq) continue;
       if (!defeatedAt.has(hive.key) && spawnedOnce.has(hive.key)) {
         defeatedAt.set(hive.key, nowMs); // A despawned/missing defender also waits before being replaced...
         unloadedKeys.add(hive.key); // ...but it was never killed (deaths are recorded as they happen), e.g. the zone was left and re-entered.
@@ -151,6 +160,7 @@
       if (isNight() && !defeated) continue; // Fresh wild swarms (and ones that were merely unloaded) still emerge in the morning only.
       const replacement = spawnSwarm(zoneId, hive);
       if (replacement) {
+        active.set(hive.key, replacement); // Guards duplicate entries in legacy/generated hive lists.
         defeatedAt.delete(hive.key);
         unloadedKeys.delete(hive.key);
         if (isNight()) provokeDefender(replacement); // A recently defeated night defender returns to the fight.
@@ -227,7 +237,7 @@
 
   function rollHarvest(rand) {
     return {
-      eggs: EGG_MIN + Math.floor(rand() * (EGG_MAX - EGG_MIN + 1)),
+      queens: QUEEN_COUNT, // Queen count never depends on random honey yield.
       honey: HONEY_MIN + Math.floor(rand() * (HONEY_MAX - HONEY_MIN + 1)),
     };
   }
@@ -255,23 +265,22 @@
   function harvest(zoneId, col, row) {
     const grid = deps.getGrid();
     if (!isLiveHiveTile(grid, col, row)) return { ok: false, message: 'This stump has already collapsed.' };
-    const { eggs, honey } = rollHarvest(deps.rnd);
-    const eggRoom = Math.max(0, (window.InventoryStacks?.MAX_TOTAL ?? 99) - (Number(deps.inventory[EGG_ITEM]) || 0));
-    if (eggRoom < 1) return { ok: false, message: 'No room in your bag for fertile eggs.' };
-    const gotEggs = addToBag(EGG_ITEM, Math.min(eggs, eggRoom));
+    const { queens, honey } = rollHarvest(deps.rnd);
+    const queenRoom = Math.max(0, (window.InventoryStacks?.MAX_TOTAL ?? 99) - (Number(deps.inventory[QUEEN_ITEM]) || 0));
+    if (queenRoom < queens) return { ok: false, message: 'No room in your bag for a Honeyfuzzle Queen.' };
+    const gotQueens = addToBag(QUEEN_ITEM, queens);
     const sourceKey = hiveKeyFor(zoneId, col, row); // Identifies the same deterministic genetic lineage as its live swarm.
-    const eggColor = window.HoneyfuzzleColors?.pickForKey(zoneId, sourceKey);
-    const parentGenotype = swarmFor(sourceKey)?.genotype || hiveGenotype(zoneId, sourceKey, eggColor); // Harvesting an unspawned hive still yields consistent inherited markings.
-    if (eggColor && gotEggs) {
-      const entries = Array.from({ length: gotEggs }, () => ({ color: eggColor, genotype: parentGenotype })); // Saved FIFO serializes these genes, not shared object references.
-      window.HoneyfuzzleColors?.queueEggAppearances?.(deps.getWorldId?.(), entries);
+    const queenColor = window.HoneyfuzzleColors?.pickForKey(zoneId, sourceKey);
+    const parentGenotype = swarmFor(sourceKey)?.genotype || hiveGenotype(zoneId, sourceKey, queenColor); // An unspawned hive retains deterministic queen markings.
+    if (queenColor && gotQueens) {
+      window.HoneyfuzzleColors?.queueQueenAppearances?.(deps.getWorldId?.(), [{ color: queenColor, genotype: parentGenotype }]);
     }
     const gotHoney = addToBag(HONEY_ITEM, honey);
     collapseHive(zoneId, col, row);
-    window.HobunjiActivityEvents?.emit?.('hive_harvested', { area: zoneId, eggs: gotEggs, honey: gotHoney });
+    window.HobunjiActivityEvents?.emit?.('hive_harvested', { area: zoneId, queens: gotQueens, eggs: 0, honey: gotHoney });
     deps.buildInventoryGrid?.(); deps.refreshItemScroll?.(); deps.refreshActionBar?.();
     deps.saveMemberWorldData?.();
-    return { ok: true, eggs: gotEggs, honey: gotHoney, message: `🍯 Took ${gotEggs} fertile honeyfuzzle egg${gotEggs === 1 ? '' : 's'} and ${gotHoney} honey — the hollow stump collapses.` };
+    return { ok: true, queens: gotQueens, honey: gotHoney, message: `🍯 Took one Honeyfuzzle Queen and ${gotHoney} honey — the hollow stump collapses.` };
   }
 
   // The standing stump nearest the reticle tile (within one tile of it, like the
@@ -324,6 +333,16 @@
     return roots;
   }
 
+  function forEachStandingHive(visitor) {
+    if (!deps || typeof visitor !== 'function') return;
+    const zoneId = deps.getCurrentArea();
+    if (!deps.isZoneArea(zoneId) || window.HoneyfuzzleColors?.isExcludedZone(zoneId)) return;
+    const grid = deps.getGrid();
+    for (const h of hivesInLayout(deps.zoneLayouts.get(zoneId))) {
+      if (isLiveHiveTile(grid, h.col, h.row)) visitor(hiveKeyFor(zoneId, h.col, h.row), h.col, h.row);
+    }
+  }
+
   // Every hive stump in the active zone's layout: whether it still stands,
   // and whether its swarm is out right now. Read by the AI snapshot.
   function census() {
@@ -331,17 +350,18 @@
     const zoneId = deps.getCurrentArea();
     const grid = deps.getGrid();
     const excluded = !!window.HoneyfuzzleColors?.isExcludedZone(zoneId);
+    const active = liveSwarmIndex(); // Mobile AI census uses the same linear-time roster as spawning.
     const hives = hivesInLayout(deps.zoneLayouts.get(zoneId)).map(h => {
       const key = hiveKeyFor(zoneId, h.col, h.row);
-      const swarm = swarmFor(key);
+      const swarm = active.get(key);
       return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, respawnInSeconds: defeatedAt.has(key) ? Math.max(0, (RESPAWN_DELAY_MS - (clockMs() - defeatedAt.get(key))) / 1000) : null };
     });
     return { zoneId, excluded, night: isNight(), spawnRadiusTiles: SPAWN_RADIUS_TILES, hives };
   }
 
   window.HoneyfuzzleHives = {
-    SPECIES, EGG_ITEM, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, EGG_MIN, EGG_MAX, HONEY_MIN, HONEY_MAX,
-    RESPAWN_DELAY_MS, init, ensureCurrentZone, control, recordDefeat, onHarvestAttempt, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census,
+    SPECIES, QUEEN_ITEM, QUEEN_COUNT, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, HONEY_MIN, HONEY_MAX,
+    RESPAWN_DELAY_MS, init, ensureCurrentZone, control, recordDefeat, onHarvestAttempt, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, forEachStandingHive, senseTargets, census,
     debugSnapshot: () => ({ defeatedAt: [...defeatedAt], spawned: spawnedOnce.size, activeRespawns: defeatedAt.size }),
   };
 })();
