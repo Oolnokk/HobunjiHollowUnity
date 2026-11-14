@@ -409,8 +409,9 @@
     return (Number(window.CombatVocalizations?.attackStartDelayS?.()) || 0) > 0; // Still in the real windup/strike/hold timeline, even after button release.
   }
   function playerHeldActionBusy() {
-    const holder = window.ProceduralHandAttachments?.gameDeps?.toolHolder
+    const target = window.ProceduralHandAttachments?.gameDeps?.toolHolder
       || window.Combat?.deps?.toolHolder; // Native pick/shovel/hoe and fishing work publishes its authored pose activity on this existing holder.
+    const holder = typeof target === 'function' ? target() : target; // Some combat adapters expose the same scene group as a getter.
     if (holder?.userData?.authoredToolActionActive === true) return true;
     return !!window.RangedWeapons?.playerActionState?.(); // Loading, aiming for release, and firing a ranged weapon must finish before stretching.
   }
