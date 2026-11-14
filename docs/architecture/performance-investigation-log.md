@@ -2,7 +2,7 @@
 
 ## 14 Nov 2026: Harlyao night-march planner and avatar churn
 
-The commander beacon also called `CalendarSystem.timeDebugSnapshot()` through `civilDay()` every render frame. That diagnostics call formats dates and modal previews and scans UI state; `civilDay()` now reads the same live absolute `calendar.day` directly, retaining the diagnostics fallback only before the calendar is wired.
+The commander beacon also called `CalendarSystem.timeDebugSnapshot()` through `civilDay()` every render frame. That diagnostics call formats dates and modal previews and scans UI state; `civilDay()` now reads the same live absolute `calendar.day` directly, retaining the diagnostics fallback only before the calendar is wired. The actual per-frame `commanderTarget()` beacon path now uses only the active-hour check and never resolves the daily route or full calendar snapshot.
 
 The Harlyao army already simulates as twenty data-only agents outside its detailed bubble. A further unnecessary cost was found: while the active march zone was unloaded and no portraits were retained, the 0.2 s controller still replanned every soldier despite abstract positions only advancing every `offChunkTickSeconds` (1 s). The controller now skips those intermediate planning passes, retaining elapsed travel time, daily-route checks and the full 0.2 s wake/combat cadence when near.
 
