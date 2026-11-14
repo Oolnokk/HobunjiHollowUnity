@@ -401,7 +401,7 @@
       outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
     deps.saveMemberWorldData(); deps.saveFarmLayout();
-    const inheritedBuffs = crops.effectsOf?.(offspring.id); // Confirm the actual inherited buff roll after producing seeds.
+    const inheritedBuffs = crops.effectsOf?.(offspring.id || first.itemKey); // Native seed extraction has no generated offspring ID; show the input crop's existing buff.
     const buffLabel = Object.entries(inheritedBuffs || {}).map(([effect, stacks]) => effect + ' +' + stacks).join(', ');
     return { ok: true, message: (second ? 'Crossbreeding ' : 'Extracting ') + offspring.label + ' seeds.' + (buffLabel ? ' Buffs: ' + buffLabel + '.' : '') };
   }
