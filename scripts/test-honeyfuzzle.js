@@ -440,7 +440,7 @@ function hiveWorld({ night = false } = {}) {
   state.night = true; assert.equal(H.control(swarm, 0.1), false, 'a homeless swarm has no hive to return to');
 }
 {
-  // rollHarvest stays inside the 1-3 egg range for every roll.
+  // Every roll yields exactly one queen; only the honey quantity varies.
   const { H } = hiveWorld();
   for (let i = 0; i <= 100; i++) { const r = H.rollHarvest(() => i / 100 * 0.999999); assert(r.queens === 1 && r.honey >= H.HONEY_MIN && r.honey <= H.HONEY_MAX); }
   // A full bag of eggs refuses rather than eating the stump.
@@ -551,6 +551,15 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(inventory.honeyfuzzleQueen, 0);
   assert.equal(house.phase(entry), 'queen');
   assert.equal(house.placeQueen(entry).ok, false, 'an occupied house takes no second queen');
+  const oldHouse = { id: 'legacy-house', key: 'honeyfuzzleHouse',
+    house: { egg: { placedAt: 1, hatchAt: 3, color: '#336633' }, livestockId: null } };
+  assert.equal(house.phase(oldHouse), 'queen', 'old saved in-house eggs migrate to queens');
+  assert.equal(oldHouse.house.queen.readyAt, 3, 'old saved colony countdown remains unchanged');
+  assert.equal('egg' in oldHouse.house, false, 'migrated saves no longer serialize an egg slot');
+  const legacyBagHouse = { id: 'legacy-bag', key: 'honeyfuzzleHouse' };
+  inventory.fertileHoneyfuzzleEgg = 1;
+  assert.equal(house.placeQueen(legacyBagHouse).ok, true, 'old bag eggs still found colonies');
+  assert.equal(inventory.fertileHoneyfuzzleEgg, 0, 'the legacy item is consumed, not duplicated');
 }
 {
   const inventory = { honeyfuzzleQueen: 2, growthTonic: 1 };
