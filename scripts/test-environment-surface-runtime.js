@@ -30,8 +30,9 @@ const snapshot = api.debugSnapshot();
 assert.strictEqual(snapshot.mode, 'none', 'stub builds no surfaces');
 assert.strictEqual(snapshot.pendingJobs, 0, 'stub queues no jobs');
 assert.deepStrictEqual(api.forceRebuild(), snapshot, 'forceRebuild just reports the inert snapshot');
-assert.strictEqual(appended.length, 1, 'late-load path appends the Western Slope backdrop script');
+assert.strictEqual(appended.length, 2, 'late-load path appends both scenery scripts');
 assert.match(appended[0].src, /^js\/western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_.-]+$/);
+assert.match(appended[1].src, /^js\/northern-cliffs-plateau-backdrop\.js\?v=[A-Za-z0-9_.-]+$/);
 
 assert.match(rain, /environment-surface-runtime\.js\?v=[A-Za-z0-9_.-]+/, 'rain bootstrap must synchronously load the environment runtime before game boot');
 assert.match(hub, /data-target="wilderness-generation-lab"/, 'main tool hub must expose the Wilderness + Surface Lab');
