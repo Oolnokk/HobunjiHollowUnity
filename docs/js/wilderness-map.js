@@ -124,7 +124,10 @@
     for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
       const layout = deps._zoneLayouts.get(zoneId);
       for (const inst of (layout?.localeInstances || [])) {
-        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
+        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false,
+          shiftSecret: !!inst.shiftGeneratedSecret || inst.category === 'ruin_entrance'
+            || (inst.category === 'great_fey_shrine' && inst.localeId !== 'locale_banubu_shrine'), // Old cached layouts also obey Shift turnover.
+          alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
       }
     }
     return out;
@@ -132,8 +135,14 @@
 
   const ENTER_ONLY_LOCALE_IDS = new Set(['locale_banubu_shrine']); // Only a successful interior visit may reveal these locales on the map.
 
+  function localeDiscoveryKey(instance) {
+    return instance?.shiftSecret
+      ? `${instance.localeId}:tothal:${deps.currentTothalYear()}`
+      : instance.localeId; // Shift-generated mysteries must be discovered again; fixed story landmarks retain history.
+  }
+
   function localeIsDiscovered(instance, discovered) {
-    const record = discovered[instance.localeId]; // Existing proximity-only discoveries cannot reveal an enter-only cave.
+    const record = discovered[localeDiscoveryKey(instance)]; // Existing proximity-only discoveries cannot reveal an enter-only cave.
     return ENTER_ONLY_LOCALE_IDS.has(instance.localeId) ? record?.entered === true : !!record;
   }
 
@@ -166,10 +175,11 @@
     const discovered = _loadDiscoveredLocales();
     let changed = false;
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId || discovered[inst.localeId] || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
+      const discoveryKey = localeDiscoveryKey(inst); // Rerolled shrine map pins expire naturally with the previous Tothal year.
+      if (inst.zoneId !== zoneId || discovered[discoveryKey] || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
       const dist = Math.hypot(inst.col - pc, inst.row - pr);
       if (dist > FOG_REVEAL_RADIUS) continue;
-      discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
+      discovered[discoveryKey] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
       changed = true;
       deps.showToast(`Discovered: ${inst.name}`, true);
     }
@@ -365,6 +375,7 @@
     if (saved.source === 'locale') {
       if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales())) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
+      if (live?.shiftSecret && !localeIsDiscovered(live, _loadDiscoveredLocales())) return null; // A waypoint cannot reveal a new year's undiscovered secret.
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
     const liveThreat = [...(window.BanditCamps?.perceivedThreats || [])]
