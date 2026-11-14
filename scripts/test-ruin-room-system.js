@@ -27,6 +27,11 @@ assert.equal(Rooms.roomAt(layout.rooms,34,14,10),null,'overlapping vertical stor
 const floorCells=new Set();
 for(let x=10;x<21;x++)for(let z=10;z<21;z++)floorCells.add(x+','+z);
 assert.equal(Rooms.floorAudit(layout.rooms[0],floorCells).missingFloorTiles,0);
+assert.equal(Rooms.projectedFloorArea({positions:new Float32Array([
+  0,0,0, 2,0,0, 2,0,3, 0,0,3,
+  2,0,0, 3,0,0, 3,0,1, 2,0,1,
+])}),7,'visible quads are checked by area, not by number of triangles');
+assert.equal(Rooms.projectedFloorArea({positions:new Float32Array([0,0,0])}),0,'malformed floor meshes fail coverage validation');
 floorCells.delete('18,12');
 assert.equal(Rooms.floorAudit(layout.rooms[0],floorCells).missingFloorTiles,1,'missing support is a generation error');
 const pit={contains:(x,z)=>x>=15&&x<17};
