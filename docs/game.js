@@ -12005,6 +12005,14 @@
       // Transition-spot floor rings (buildTransitionMarkers) now live in
       // js/transition-markers.js — call via window.TransitionMarkers.*.
 
+      function canUseRoofSpot(transition, area) {
+        if (transition?.roofAccess !== true) return true; // Ordinary doors, gates and floor transitions retain their existing rules.
+        if (area !== 'town' || player._freeJump?.phase !== 'supported'
+            || !Number.isFinite(player.physicalFeetY)) return false;
+        return window.HobunjiWalkableElevation?.isBalconyAt?.(
+          player.x / TILE, player.y / TILE, player.physicalFeetY, area) === true; // Never activate a rooftop hatch from the solid building below.
+      }
+
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
@@ -12019,6 +12027,7 @@
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
           (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
+          canUseRoofSpot(x, area) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
         _pendingSpotTransition = t;
         // Deliberately once per frame, not only when the spot changes: nothing
@@ -12056,6 +12065,7 @@
       }
 
       function performTravel(t) {
+        if (!canUseRoofSpot(t, currentArea)) return; // Recheck at action time in case the actor fell since the last HUD refresh.
         if (t.target === 'exit_building') {
           exitBuilding(t); // Preserve the authored exit identity (roof hatch versus ground-level front door).
         } else if (t.target === 'building') {
