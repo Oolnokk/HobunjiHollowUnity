@@ -50,6 +50,57 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 14 Nov 2026: what a camp of barbarians costs to draw, and three cuts
+
+Follow-up to the entry below (which was all JS). Western Slope, standing 8 tiles from a Porakaneki camp, 17 residents
+materialised and inside the view. Headless, exact counts for one frame, attributed per object by wrapping
+`renderer.renderBufferDirect` (so "calls" here are submissions; `renderer.info` agrees except where noted).
+
+**Before, per frame:** whole frame 2.38 M triangles / 2,425 submissions. The 17 barbarians were 433 k triangles and 722
+submissions of that (18% / 30%), about 25 k triangles and 42 submissions each:
+
+| Part of one rig | Triangles | Why it is more than it looks |
+| --- | --- | --- |
+| Two hand GLBs (`CombinedMesh_MaterialSlots`) | 6,240 (3,120 a hand) | Six times the capped portrait plane; drawn in the held overlay, shell and depth passes. The 11 Nov entry's "hands negligible" was about town NPCs' triangle share, not this. |
+| Front + back portrait planes | 2 x 1,040, each drawn about 7 times | Single-sided and back to back, so one of the two never rasterises, but both are skinned and submitted in every pass (`frustumCulled = false`). |
+| Two sentinel meshes (`*_direct_hand_sync`, `*_free_hand_forearm_align`) | 1 each | They exist for `onBeforeRender` only, yet each was a real draw call in 6 passes: 12 draw calls per rig, 204 for the camp. The forearm one also re-solved the alignment in each of those passes. |
+| Feet | 2 x 352 | - |
+
+**Changes.**
+
+- `procedural-hand-attachments.js`: rigs built with `meshBudget: 'npc'` (town NPCs and every `BanditCombat` humanoid;
+  the player only with Settings > "Player uses the NPC mesh cap") load the shipped pre-baked reduced hand GLB
+  (`*_optimized60.glb`, the Geometry Detail "Low" variant from `config/geometry-quality-presets.json`) whatever the
+  player's own Geometry Detail is. No variant, or a failed load, falls back to the ordinary model.
+  `ProceduralHandAttachments.setNpcHandBudgetEnabled(false)` (hands built afterwards) and `npcHandBudgetSnapshot()`.
+  Measured: 6,240 -> 2,496 triangles per rig.
+- `actor-render-occlusion.js`: for the duration of the world render, the portrait plane that faces away from the camera
+  is hidden (`hideAwayFacingPlane`, restored in `endFrame` with the other render-only hides). Decided from this frame's
+  matrices, so a sprite that flips 180 degrees never loses its visible side. A plane only counts as away if it **and
+  every one of its bones** are more than about 110 degrees off the view vector: the first version tested the plane
+  alone and an exact-pixel comparison caught it dropping a head that was turned over the shoulder (the neck bone turns
+  part of the "away" plane back toward the camera). Not applied to prone / knocked-back actors or to a plane with other
+  drawn meshes under it. `ActorRenderOcclusion.setFacingCullEnabled(false)`; `snapshot().facingHidden`.
+- Both sentinels get an empty draw range: three still calls `onBeforeRender`, then returns before the GL draw. The
+  forearm alignment now runs once per frame (same frame-id memo the hand sync already had).
+
+**After (same kind of view, different world, 17-19 barbarians):** portrait planes 240 k -> 146 k triangles and 244 ->
+153 submissions at night with the cull on vs off in the same frame; 193 k -> 146 k by day with 10 of 19 planes hidden.
+Hands 159 k -> 64 k triangles. Sentinels 204 submissions, 0 GL draws. Barbarian total about 433 k -> 240 k triangles and
+722 -> 430 real draw calls.
+
+**Verified:** the facing cull against a same-tick reference (the scene rendered to a target with the cull off, on, off,
+30 camera positions around 6 hunters, twice): in every view where the off/off pair was identical (50 views), on was
+identical too, with 4-12 planes hidden per view. `scripts/test-actor-render-occlusion.js` covers the rule.
+**Not verified:** the reduced hands by eye at dialogue distance, and real-device FPS for any of it.
+
+**The larger part of that frame is not barbarians.** With every barbarian hidden the same view is still about 1.9-2.4 M
+triangles. One frame's top items: `hobunji_environment_surface_micro_plateau_snow` 654 k triangles (63 of its 16-tile
+chunks in view, each drawn about 2.6 times: the snow cap is built for the whole 200x200 zone at full detail, with no
+distance cut), `zone_path_ground` 473 k (33 meshes, about 3 passes each), mesa tiers 138 k, the player 121 k,
+`WesternSlopeMountainBackdrops` 272 submissions for 7.7 k triangles. A distance cut or coarser far tier for the snow cap
+is the next lever on this map and was not attempted here.
+
 ## 14 Nov 2026: barbarian camps: phantom ecology fights, per-frame path searches, off-camera AI cadence
 
 Report: "performance tanks around lots of barbarians, and in open country they are visible well past their simulation
