@@ -1430,11 +1430,21 @@
     const regionsByTile = new Map(); // Indexes only actor-owned floor tiles, avoiding an all-region scan for every NPC weapon.
     const ordinary = []; // Parts with no possible x-ray share a normal-depth path.
     let unknown = 0; // Diagnostics count unresolved holders separately from proven ordinary parts.
+    let unboundedTintOwners = 0; // Unknown holders with no usable position retain conservative water tint.
+    const fallbackTintScopes = []; // Unknown holder roots can still gate distant water by the visible part's world tile.
     for (const mesh of meshes) {
       const scope = actorXrayScope(mesh, scene, actors);
       if (!scope || !Number.isFinite(scope.elevation) || !Number.isFinite(scope.col) || !Number.isFinite(scope.row)) {
         ordinary.push(mesh);
         unknown++;
+        if (Number.isFinite(scope?.col) && Number.isFinite(scope?.row)) {
+          fallbackTintScopes.push(scope);
+        } else {
+          const matrix = mesh.matrixWorld?.elements; // The visible part supplies a safe fallback position for tint only, not ground x-ray.
+          if (Number.isFinite(matrix?.[12]) && Number.isFinite(matrix?.[14])) {
+            fallbackTintScopes.push({ col: Math.floor(matrix[12]), row: Math.floor(matrix[14]), root: mesh });
+          } else unboundedTintOwners++;
+        }
         continue;
       }
       const tileKey = scope.col + ',' + scope.row; // Exact grid tile identity; elevation still uses the existing epsilon comparison.
@@ -1494,7 +1504,7 @@
     lastUnknownElevationMeshes = unknown;
     lastXrayTileRegions = groups.reduce((count, group) => count + group.regions.length, 0);
     lastXrayOrdinaryMeshes = ordinary.length;
-    return { groups, ordinary, scopes: [...actors.values()], hasUnknownOwner: unknown > 0 };
+    return { groups, ordinary, scopes: [...actors.values(), ...fallbackTintScopes], hasUnknownOwner: unboundedTintOwners > 0 };
   }
 
   function installGroundElevationShader(material) {
@@ -1961,25 +1971,25 @@
         // draw excluded distant meshes even when only nearby materials changed.
         const distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
         try {
-        const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
-        try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(tintPerf);
-          waterReplayCount++;
-        } finally {
-          restoreMaterialStates(tintStates);
-        }
-        const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
-        try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(depthPerf);
-        } finally {
-          restoreMaterialStates(coverDepthStates);
-        }
+          const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
+          try {
+            camera.layers.mask = WATER_REPLAY_MASK;
+            const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
+            rawRender.call(renderer, scene, camera);
+            window.PerfProfiler?.end(tintPerf);
+            waterReplayCount++;
+          } finally {
+            restoreMaterialStates(tintStates);
+          }
+          const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
+          try {
+            camera.layers.mask = WATER_REPLAY_MASK;
+            const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
+            rawRender.call(renderer, scene, camera);
+            window.PerfProfiler?.end(depthPerf);
+          } finally {
+            restoreMaterialStates(coverDepthStates);
+          }
         } finally {
           restoreVisibility(distantTintHidden);
         }
