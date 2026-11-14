@@ -66,7 +66,10 @@ assert.match(sleepBridge, /function armOwnedBedSleep\(\)[\s\S]{0,300}source:\s*'
 assert.match(sleepBridge, /function openSharedSleepPassage\(\)[\s\S]{0,300}armOwnedBedSleep\(\)[\s\S]{0,300}open\.call\(window\.CalendarSystem, 'sleep'\)/, 'all bed Sleep input paths arm the same token before opening the shared Sleep passage');
 assert.match(sleepBridge, /function onKeyDown\(event\)[\s\S]{0,1200}consumeEvent\(event\)[\s\S]{0,400}armedKeyCode = code/, 'parser-time Sleep bridge captures the displayed Sleep key before legacy game input');
 assert.match(core, /function consumeOwnedBedSleepToken\(\)[\s\S]{0,500}token\.source !== 'player-bed'/, 'blessing core consumes only the player-bed token');
-assert.match(core, /detail\?\.kind\s*!==\s*'sleep'[\s\S]{0,180}!consumeOwnedBedSleepToken\(\)/, 'generic/debug Sleep passages cannot grant Well Rested');
+assert.match(core, /kind\s*===\s*'sleep'[\s\S]{0,200}consumeOwnedBedSleepToken\(\)/, 'the existing bed token still gates Well Rested');
+assert.match(core, /duration\s*>=\s*WELL_RESTED_MIN_SLEEP_HOURS/, 'Well Rested requires at least eight real sleeping hours');
+assert.match(core, /RESTED_DURATION_HOURS\s*=\s*3/, 'short sleep or a seated Wait earns three hours of ordinary Rested');
+assert.match(core, /function isRested\(\)[\s\S]{0,140}state\.rested\s*\|\|\s*state\.wellRested/, 'both tiers suppress yawns while only Well Rested grants stat bonuses');
 assert.match(core, /movementSpeedMultiplier\(\) \{ return isWellRested\(\) \? 1\.08 : 1; \}/, 'Well Rested defines a small movement-speed bonus');
 assert.match(integration, /getMovementSpeedMul[\s\S]{0,450}movementSpeedMultiplier/, 'Well Rested movement speed is connected to the actual Combat movement multiplier');
 assert.match(core, /staminaRegenPerSec[\s\S]{0,120}\* 1\.30/, 'Well Rested gives a substantial Stamina-recovery bonus');
