@@ -15,7 +15,7 @@ assert.match(
 );
 assert.match(
   game,
-  /const ownedSlot = desktopWeaponPointerSlots\.get\(e\.button\)[\s\S]*?Combat\?\.input\?\.pressEnd\(ownedSlot\)/,
+  /const ownedSlot = desktopWeaponPointerSlots\.get\(e\.button\)[\s\S]*?Combat\?\.input\?\.pressEnd\(ownedSlot,\s*e\)/,
   'release ends the originally pressed slot without consulting the current tool state',
 );
 assert.match(

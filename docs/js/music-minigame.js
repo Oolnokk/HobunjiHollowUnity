@@ -249,6 +249,8 @@
   let unsubscribePuzzleController = null; // Shared music-priority controller subscription, retired when the puzzle closes or changes mode.
   const puzzleHeldActions = new Set(); // Edge-tracks controller buttons so holding a note cannot produce repeats.
   let lastPuzzleSong = null; // Kept for in-game diagnostics and future puzzle/ruin mechanisms.
+  let lastPuzzleInputTiming = null; // Last sounded input edge and transport delay for mobile debugging of stutter.
+  let lastPuzzleDisplaySignature = null; // Avoids rewriting the iframe's control legend every note/frame when the displayed bindings are unchanged.
   function silenceAmbientForPuzzle() {
     // Puzzle input is strictly monophonic; any nearby NPC backing track must
     // also go quiet until Performance mode or normal overworld playback resumes.
@@ -264,14 +266,26 @@
     const timestamp=Number(event?.timeStamp);
     return Number.isFinite(timestamp)&&Math.abs(timestamp-now)<5000?timestamp:now;
   }
+  function controllerPuzzlePressMs(frame) {
+    const nowMs = Number(frame?.now); // The shared input-phase controller poll's actual wall-clock timestamp.
+    const previousMs = Number(frame?.previousNow); // Rejects a pad's stale, pre-poll timestamp rather than backdating unrelated movement.
+    const padMs = Number(frame?.pad?.timestamp); // Gamepad API hardware update timestamp, when exposed by the browser.
+    if (!frame?.padChanged && Number.isFinite(nowMs) && Number.isFinite(previousMs) && previousMs > 0
+      && Number.isFinite(padMs) && padMs > 0 && padMs >= previousMs - 8
+      && padMs <= nowMs + 8 && nowMs - padMs <= 5000) return Math.min(padMs, nowMs);
+    return Number.isFinite(nowMs) && nowMs > 0 ? nowMs : puzzlePressMs();
+  }
   function publishPuzzleNote(index,pressedAtMs) {
     if(playerSession?.instrumentMode!=='puzzle'||playerSession.echoChallenge)return;
     const detail={noteIndex:index,area:playerSession.area,instrumentKey:playerSession.instrumentKey,pressedAtMs};
     window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // Physical inputs can be judged before the iframe's audio or message queue runs.
   }
-  function puzzleNote(index,pressedAtMs=puzzlePressMs()) {
+  function puzzleNote(index,pressedAtMs=puzzlePressMs(),source='unknown') {
     if (playerSession?.instrumentMode !== 'puzzle' || !Number.isInteger(index)
       || index<0 || index>=(window.KurrayaPuzzle?.NOTE_CODES?.length??8)) return;
+    const deliveredAtMs = puzzlePressMs(); // Diagnostic only; never replaces a valid hardware timestamp for actual score judging.
+    lastPuzzleInputTiming = {source,noteIndex:index,pressedAtMs,deliveredAtMs,
+      deliveryLagMs:Math.max(0,deliveredAtMs-pressedAtMs)}; // Accessible from existing MusicMinigame.diagnostics() on mobile.
     publishPuzzleNote(index,pressedAtMs); // Judge the physical edge before any iframe/audio work, even when the iframe has not loaded yet.
     try {
       puzzleView()?.playNote?.(index,{publishInput:false,pressedAtEpochMs:(window.performance?.timeOrigin??Date.now()-puzzlePressMs())+pressedAtMs});
@@ -303,15 +317,21 @@
     return action => Object.prototype.hasOwnProperty.call(bindings,action) ? bindings[action] : defaults[action];
   }
   function showPuzzleInput(device, binding = musicControllerBindings()) {
+    const view = puzzleView(); // Only cache a signature when the iframe exists and can accept the display update.
+    if (!view?.setInputDevice) return;
     const label = code => code ? window.InputBindings?.buttonLabel?.(code) || code : '—'; // Use the same glyph names as the game settings.
     const faces = puzzleFaceActions.map(binding); // The displayed notes follow the same binding snapshot as playback.
     const modifier = binding('musicBank1');
     const upper = faces.map(face => modifier && face ? label(modifier) + ' + ' + label(face) : '—');
-    puzzleView()?.setInputDevice?.(device,faces.map(label).concat(upper),label(binding(puzzleBookAction)));
+    const labels = faces.map(label).concat(upper); // Used in the signature and the actual controls so their contents cannot drift.
+    const bookLabel = label(binding(puzzleBookAction)); // Included when a player's saved bindings change.
+    const signature = JSON.stringify([device, labels, bookLabel]); // One cheap comparison prevents repeated iframe DOM writes in the note path.
+    if (signature === lastPuzzleDisplaySignature) return;
+    view.setInputDevice(device,labels,bookLabel);
+    lastPuzzleDisplaySignature = signature;
   }
   function puzzleKeyboard(event) {
     if (playerSession?.instrumentMode !== 'puzzle') return;
-    showPuzzleInput('desktop');
     if (event.repeat) return;
     if (event.code === 'Escape') {
       event.preventDefault();
@@ -326,13 +346,15 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     if (index < 0) puzzleView()?.toggleSongbook?.();
-    else puzzleNote(index,puzzlePressMs(event));
+    else puzzleNote(index,puzzlePressMs(event),'keyboard');
+    showPuzzleInput('desktop'); // Judge the physical event before writing to the iframe's visual controls.
   }
   function stopPuzzleInputs() {
     window.removeEventListener?.('keydown', puzzleKeyboard, true);
     unsubscribePuzzleController?.();
     unsubscribePuzzleController = null;
     puzzleHeldActions.clear();
+    lastPuzzleDisplaySignature = null;
     if (window.ControllerInput?.owner === 'music-puzzle') window.ControllerInput.setOwner('gameplay');
   }
   function startPuzzleInputs() {
@@ -364,9 +386,9 @@
       }
       if (!ready) return; // Seed held buttons from the shared snapshot so opening the HUD cannot play a note.
       if (exit) { close(); return; }
-      if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding);
       if (book) puzzleView()?.toggleSongbook?.();
-      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0),puzzlePressMs());
+      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0),controllerPuzzlePressMs(frame),'controller');
+      if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding); // Input dispatch precedes nonessential iframe/UI writes.
     }
     const initialFrame = window.ControllerInput?.frame?.(); // Snapshot from the normal controller poller, even if the overlay opened mid-press.
     if (initialFrame) readFrame(initialFrame,false);
@@ -1542,7 +1564,7 @@
       controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
       jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
-      lastPuzzleSong:lastPuzzleSong,puzzleBeatClock, // Mobile diagnostics show the tempo and start timestamp used for flute note-off.
+      lastPuzzleSong:lastPuzzleSong,puzzleBeatClock,lastPuzzleInputTiming, // Mobile diagnostics show the actual physical note timing and audio transport.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
