@@ -130,21 +130,21 @@ async function main() {
   assert.equal(runtime.debugSnapshot().active.length, 0, 'combat prevents new hourly yawns');
   hostiles.clear();
   walker.state = 'alcohol-blackout';
-  ms = 7250; frame({ timestamp: ms });
+  ms = 7400; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().active.length, 0, 'a blacked-out NPC cannot yawn');
   walker.state = 'idle';
   window.FestivalWheelDanceRuntime = { isPartner: () => true };
-  ms = 7350; frame({ timestamp: ms });
+  ms = 7800; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().active.length, 0, 'partner dances must own their body pose');
   window.FestivalWheelDanceRuntime = null;
 
   walker.currentScheduleTarget = { pose: 'lie' };
   walker._bedLieActive = true;
-  ms = 7500; frame({ timestamp: ms });
-  hour = 18; ms = 8000; frame({ timestamp: ms });
+  ms = 8200; frame({ timestamp: ms });
+  hour = 18; ms = 8600; frame({ timestamp: ms });
   walker.currentScheduleTarget = { pose: 'stand' };
   walker._bedLieActive = false;
-  ms = 8500; frame({ timestamp: ms });
+  ms = 9000; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'waking');
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   ms = 14000; frame({ timestamp: ms });
