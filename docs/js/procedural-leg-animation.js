@@ -39,6 +39,16 @@
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
   }
 
+  // World orientations must ignore the PNG avatar's mirrored/uneven scale.
+  // Object3D.getWorldQuaternion decomposes matrixWorld and can introduce a false 180° flip.
+  function worldQuaternionWithoutScale(node, out) {
+    out.identity();
+    for (let ancestor = node; ancestor; ancestor = ancestor.parent) {
+      if (ancestor.quaternion) out.premultiply(ancestor.quaternion);
+    }
+    return out.normalize();
+  }
+
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   }
@@ -1042,7 +1052,10 @@
       chain.calfGuide.position.y = -calfLength * 0.5;
     }
 
-    const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling the foot under a sunk stance.
+    const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling and restoring feet to their complete neutral orientation.
+    function applyFootRollOnly(mesh, roll) {
+      mesh.quaternion.setFromAxisAngle(footAxisX, roll); // Never inherit a stale yaw/half-turn from a previous climbing, paired or recorded pose.
+    }
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -1063,8 +1076,7 @@
         footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
         mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
       } else {
-        mesh.rotation.x = state[`${side}Roll`];
-        if (mesh.rotation.y || mesh.rotation.z) { mesh.rotation.y = 0; mesh.rotation.z = 0; } // Clears any levelling left over from a sunk stance.
+        applyFootRollOnly(mesh, state[`${side}Roll`]);
       }
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
     }
@@ -1394,7 +1406,7 @@
       chain.calf.quaternion.slerp(solved.calfLocalQuaternion, slerpT);
       mesh.position.set(0, -solved.calfLength, 0);
       state[`${side}Roll`] = damp(state[`${side}Roll`], 0, SEATED_POSE_DAMP_RATE, dt);
-      mesh.rotation.x = state[`${side}Roll`];
+      applyFootRollOnly(mesh, state[`${side}Roll`]);
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
       if (!lastSeatedPoseDebug) lastSeatedPoseDebug = {};
       lastSeatedPoseDebug[side] = {
@@ -1439,7 +1451,7 @@
       mesh.position.y = damp(mesh.position.y, -solved.calfLength, 12, dt);
       chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Keeps rigged pants attached during falls and hovering.
       state[`${side}Roll`] = damp(state[`${side}Roll`], (side === 'left' ? -1 : 1) * Math.sin(sidePhase) * 0.12, 6, dt);
-      mesh.rotation.x = state[`${side}Roll`];
+      applyFootRollOnly(mesh, state[`${side}Roll`]);
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
     }
 
@@ -1480,7 +1492,7 @@
         chain.calf.userData.hobunjiCalfLength=solved.calfLength;
         mesh.position.set(0,-solved.calfLength,0);
         // The foot is parented under the calf, so cancel that complete frame rather than only the dancer root.
-        chain.calf.getWorldQuaternion(pairedFootRotation).invert();
+        worldQuaternionWithoutScale(chain.calf, pairedFootRotation).invert(); // Reflected avatar/foot scales must never turn the sole 180°.
         mesh.quaternion.copy(pairedFootRotation);
         if(footWorldQuaternion)mesh.quaternion.multiply(footWorldQuaternion);
         state[`${side}Target`].copy(pairedFootLocal);
@@ -1681,6 +1693,13 @@
       return {
         lastChange: 'Extended-reach portrait contacts bypass pants foot-depth push and retain exact anatomical targets',
         motionMode: state.motionMode,
+        footOrientation: {
+          rootYawDeg: root.rotation.y * 180 / Math.PI,
+          leftHipYawDeg: legChains.left.hip.rotation.y * 180 / Math.PI,
+          rightHipYawDeg: legChains.right.hip.rotation.y * 180 / Math.PI,
+          leftLocalQuaternion: state.left && [state.left.quaternion.x, state.left.quaternion.y, state.left.quaternion.z, state.left.quaternion.w],
+          rightLocalQuaternion: state.right && [state.right.quaternion.x, state.right.quaternion.y, state.right.quaternion.z, state.right.quaternion.w],
+        }, // Captures any persistent half-turn in the existing mobile leg-pose diagnostics.
         externalContact: { active: !!externalFootTargets, extendedReach: externalFootExtendedReach, pantsDepthPushSuppressed: !!externalFootTargets && externalFootExtendedReach }, // Mobile-visible reason for a normally occluded foot to be rendered on the victim.
         lungeLead: state.lungeLead?.side || null,
         lungeReach: {
@@ -1738,7 +1757,7 @@
       chain.calf.position.set(0, -upperLength, 0);
       chain.calf.quaternion.set(record.calfLocalQuaternion.x, record.calfLocalQuaternion.y, record.calfLocalQuaternion.z, record.calfLocalQuaternion.w);
       mesh.position.set(0, -lowerLength, 0);
-      mesh.rotation.x = Number(record.roll) || 0;
+      applyFootRollOnly(mesh, Number(record.roll) || 0);
       applyBoneGuideTransforms(chain, upperLength, lowerLength);
     }
 
@@ -1797,6 +1816,7 @@
 
   window.ProceduralLegAnimation = {
     attach,
+    worldQuaternionWithoutScale, // Scale-independent orientation shared with the climb renderer.
     setShowBones: (visible) => { showLegBoneGuides = !!visible; },
     get showBones() { return showLegBoneGuides; },
   };
