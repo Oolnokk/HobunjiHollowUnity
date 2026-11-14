@@ -1231,6 +1231,11 @@
     } else if (creatureDeathDebug?.lastBegin) {
       lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
     }
+    const buffDom = window.EffectBuffBar?.getDebug?.(); // Mobile report of real writes versus identical-value skips in buff icons.
+    const promptDom = window.ActionPromptUI?.getDebug?.(); // Mobile report of real writes versus identical-value skips in contextual action prompts.
+    if (buffDom || promptDom) {
+      lines.push(`HUD DOM styles: buffs=${buffDom?.appliedWrites ?? 0} writes/${buffDom?.skippedWrites ?? 0} skips, ${buffDom?.rebuilds ?? 0} rebuilds/${buffDom?.refreshes ?? 0} refreshes; prompts=${promptDom?.appliedWrites ?? 0} writes/${promptDom?.skippedWrites ?? 0} skips over ${promptDom?.refreshes ?? 0} refreshes (${promptDom?.visible ? 'visible' : 'hidden'})`);
+    }
     const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
     if (compassDebug) {
       const markerText = compassDebug.markers.map(marker => `${marker.source}:${marker.label}@${marker.distanceTiles}t/${marker.sizePx}px/${marker.bearingDeg}°`).join(' ');
