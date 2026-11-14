@@ -21134,7 +21134,11 @@
         // The visual helper resets pendingAction, so schedule the real torch contact AFTER starting its animation.
         const torchVisual = activeTool === 'adventuring' && activeAction === 'torch_swing'
           ? window.AdventuringTools?.forehandSwingVisual?.() : null; // Only the equipped torch owns the alternate tool swing.
-        if (torchVisual) triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options);
+        if (torchVisual) {
+          const synchronizedSwing = window.Combat?.deps?.triggerWeaponSwingVisual; // Use WeaponToolStances' shared action-clock/hand-grip wrapper when installed.
+          if (typeof synchronizedSwing === 'function') synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options);
+          else triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options); // Defensive fallback before combat hooks finish bootstrapping.
+        }
         // All other actions are queued to fire at the start of the strike phase
         const reticle = getReticleTile();
         pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
