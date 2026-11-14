@@ -220,7 +220,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261114uniformRigStrideMerge1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261114footYaw1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -369,7 +369,7 @@
   <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261114bridgeRailLoader1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261114footYaw1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -563,7 +563,7 @@
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
   <script src="js/player-jump.js?v=20261114physicalwalkReview1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
-  <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
+  <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
