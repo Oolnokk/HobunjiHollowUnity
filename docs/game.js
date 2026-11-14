@@ -5695,6 +5695,13 @@
           return;
         }
         if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
+        const retaliatingPet = dmgOpts?.attacker; // An actual enemy of the player can recognize which ground companion just wounded it.
+        if (window.EnemyPetTargeting?.shouldRetaliateToPetHit?.(c, retaliatingPet, players, currentArea) &&
+            hostileObjects.has(c) && companionObjects.has(retaliatingPet)) {
+          c.targetPlayer = retaliatingPet; // Redirect the next existing chase/attack tick without replacing a committed strike or another faction's target.
+          window.__farmLog?.('[enemy-aggro] ' + (c.id || c.creatureKey || 'enemy') + ' retaliates against ' +
+            (retaliatingPet.id || retaliatingPet.creatureKey || 'pet'), 'combat');
+        }
         // Every attack staggers its target — outright cancels whatever the
         // creature was mid-attack on (a telegraphed bite, a named attack
         // like Pounce) rather than just pausing it through the knockback
@@ -7240,6 +7247,12 @@
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
+          if (c.targetPlayer && window.EnemyPetTargeting &&
+              (!window.EnemyPetTargeting.viable(c.targetPlayer, currentArea) ||
+                (c.targetPlayer.isCompanion && !companionObjects.has(c.targetPlayer)))) { // A swapped/stowed companion is no longer a live opponent even if its old entity retained Health.
+            c.targetPlayer = null; // Dead, downed, departed or unloaded targets must not hold enemy aggro indefinitely.
+            if (c.state === 'chase' || c.state === 'searching') c.state = 'return';
+          }
           window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
           // The den-night/retaliation/chase branches outrank forage animation.
           // Cancel its residual dive/chew pose here rather than waiting for
@@ -7310,11 +7323,21 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && c.state !== 'chase' && c.state !== 'searching' && c.state !== 'fleeing-low-health' && !onFleeCooldown &&
-              distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC &&
-              enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
-            c.state = 'chase';
-            c.targetPlayer = targetPlayer;
+          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
+              c.state !== 'fleeing-low-health' && !onFleeCooldown &&
+              distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
+            const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
+              ? window.EnemyPetTargeting.chooseAggroTarget(c, players, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
+              : (distToPlayer <= def.aggroRangePx && enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx) ? targetPlayer : null); // Legacy player-only fallback for isolated runtimes that omit the new targeting module.
+            if (acquiredTarget) {
+              c.state = 'chase';
+              c.targetPlayer = acquiredTarget; // The existing movement and attack paths use this committed actor directly.
+              targetPlayer = acquiredTarget;
+              dxp = targetPlayer.x - c.x; dyp = targetPlayer.y - c.y;
+              distToPlayer = Math.hypot(dxp, dyp); // An acquired pet must become the active movement/strike target in this tick.
+              window.__farmLog?.('[enemy-aggro] ' + (c.id || c.creatureKey || 'enemy') + ' -> ' +
+                (acquiredTarget.id || acquiredTarget.creatureKey || 'player'), 'combat');
+            }
           }
           // An ecology fight's home is the planner's travel destination, not a
           // leash anchor; leashing to it flipped chase -> return every frame
@@ -7586,18 +7609,14 @@
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
-                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against player (fallback: plain bite telegraph).`, 'wildlife');
+                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against opponent (fallback: plain bite telegraph).`, 'wildlife');
                   window.Combat.telegraph.start(c, {
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
-                      // damagePlayer/respawnPlayer are still hardwired to the
-                      // single local `player` (see their definitions above) —
-                      // making a hit against an arbitrary targetPlayer
-                      // actually land is the per-player-instancing work this
-                      // pass deliberately doesn't take on. Harmless today
-                      // since targetPlayer === player whenever `players` has
-                      // one entry.
+                      // Committed target identity persists through the windup: hit the
+                      // player through damagePlayer or a ground companion through
+                      // damageCreature, preserving both actors' usual hit reactions.
                       const attackTag = def.attackTag || 'sharp'; // Used to tint the hostile's new 3D swipe and preserve its existing affliction type.
                       const enemyAim = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing || 0, 0);
                       const attackHalfConeRad = def.attackHalfConeRad || THREE.MathUtils.degToRad(38); // Shared by this hostile's trail and exact 3D hit test.
@@ -7608,12 +7627,16 @@
                         halfConeRad: attackHalfConeRad,
                         color: trailColor,
                       });
-                      if (window.Combat?.meleeHit?.(c, targetPlayer, {
+                      if (targetPlayer?.health > 0 && !targetPlayer._downed &&
+                          (!targetPlayer.areaId || targetPlayer.areaId === currentArea) &&
+                          window.Combat?.meleeHit?.(c, targetPlayer, {
                         rangePx: def.attackRangePx,
                         halfConeRad: attackHalfConeRad,
                         direction: enemyAim?.direction,
                       })) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c });
+                        const biteDamageOptions = { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c }; // Routes creature targets through their normal resilience/downed pipeline.
+                        if (players.includes(targetPlayer)) damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
+                        else damageCreature(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -9001,8 +9024,12 @@
             if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
           }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
-          const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
-          let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
+          const beastmasterTargeting = window.EnemyPetTargeting?.chooseBeastmasterTarget; // Shared ground-pet and player selector, if loaded.
+          let target = isBanditCompanion
+            ? (beastmasterTargeting
+              ? beastmasterTargeting(c, master, players, companionObjects, currentArea, ALERT_RANGE_PX)
+              : (player.health > 0 && Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX ? player : null))
+            : null; // Preserve player-only behavior if an isolated test omits the new module.
           if (!isBanditCompanion) {
             if (window.CompanionCombatResponse) {
               if (window.CompanionCombatResponse.shouldReevaluate(c, master, currentArea, ALERT_RANGE_PX)) {

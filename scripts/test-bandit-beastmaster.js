@@ -29,7 +29,8 @@ assert.match(campSource, /banditCampInstanceId: rec\.instance\.id/, 'hound must 
 assert.match(campSource, /hound\.def = tunedDef[\s\S]{0,180}hound\.stamina = hound\.maxStamina = tunedDef\.maxStamina/, 'per-instance tuning must update both definition and live resources');
 
 assert.match(gameSource, /if \(c\.banditCompanion\) continue;/, 'hostile AI must not double-tick a hound owned by companion AI');
-assert.match(gameSource, /isBanditCompanion && player\.health > 0 && playerNearBanditMaster \? player : null/, "enemy companion must select the player within its master's normal alert radius");
+assert.match(gameSource, /EnemyPetTargeting\?\.chooseBeastmasterTarget/, 'Beastmaster pets use player-and-ground-companion targeting');
+assert.match(gameSource, /Math\.hypot\(player\.x - master\.x, player\.y - master\.y\) <= ALERT_RANGE_PX/, "Beastmaster's player-only fallback preserves the master's normal alert radius");
 assert.match(gameSource, /if \(target === player\) damagePlayer/, 'fallback companion bites must use the player damage path');
 assert.match(gameSource, /window\.BanditCamps\?\.init\(\{[\s\S]{0,900}makeCreatureEntity,/, 'BanditCamps must receive the shared creature factory');
 

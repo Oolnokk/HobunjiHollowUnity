@@ -16,6 +16,7 @@
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261104scent1439c",
     "js/companion-combat-response.js?v=20261110decf5f6ae3",
+    "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
     "js/combat/combat-input.js?v=20261114hcombatinputtiming1",
     "js/combat/attack-pose-templates.js?v=20261017a",
