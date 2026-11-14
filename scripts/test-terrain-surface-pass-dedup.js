@@ -131,6 +131,8 @@ function checkCompleteBatchBeforeCommit() {
   assert.equal(stats.batches, 1);
   assert.equal(one.userData.terrainJigsawIgnore, true);
   assert.equal(two.userData.naturalSurfaceUvOwner, 'HobunjiSurfaceStretchUV');
+  assert.equal(one.userData.wildernessCliffSurfaceParity, true, 'deferred cliff retains the completed parity marker');
+  assert.equal(two.userData.wildernessCliffUvPatchWorldSize, 6, 'deferred cliff retains the authored rock texture scale');
   assert.equal(one.geometry.getAttribute('uv').getX(0), 0.75, 'the combined solver writes the cliff UV corners');
 }
 
