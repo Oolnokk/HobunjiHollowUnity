@@ -33698,7 +33698,7 @@
           }
         },
       });
-      window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
+      window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, inventoryItems, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
         scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
