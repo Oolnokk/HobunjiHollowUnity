@@ -32644,6 +32644,7 @@
         getCurrentArea: () => currentArea, // Adventuring Tools must use physical 3D contact, never a flat furniture tile, inside multistory ruins.
         getUnlocked: () => window.__hobunjiPlayerProfile?.adventuringToolUnlocks || [],
         getToolHolder: () => toolHolder, getAimRay: currentPlayerInteractionRay,
+        getPerspectiveDirection: origin => currentPlayerPerspectiveDirection(origin), // Reuses the exact melee reticle convergence from the physical torch hand.
         refreshActionBar,
         selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
         isAimedFireHazard: (col,row) => {
