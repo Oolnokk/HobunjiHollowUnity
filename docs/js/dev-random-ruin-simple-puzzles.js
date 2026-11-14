@@ -414,6 +414,7 @@
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
+    for (const rope of state.ropes) window.RuinRopeTorch?.dispose?.(rope.torch); // Retire flames and cloned head textures before removing the whole scene.
     for (const set of state.chordPlateSets) {
       set.releaseMelodyCamera?.(); // The retiring room cannot keep its note-focused shot active.
       set.inscription?.dispose?.(); // Every timed inscription retires with its room; no player instrument session is owned here.
@@ -936,9 +937,10 @@
     marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
     marker.material.colorWrite=false;marker.material.depthWrite=false; // Invisible raycast/prompt target: the PNG brush tip is the only visible rope end.
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
+    const torch=window.RuinRopeTorch?.attach?.(marker)||null; // Existing bob marker carries the authored flaming brazier; no change to grabs, rope arcs or collision.
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
-      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
+      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,torch,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
       yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
       attached:false,braking:false,startPlatform,endPlatform,externalMount:!!mountObject,
       hazard:null,airOnly:!grabPoint,
@@ -947,6 +949,7 @@
   }
 
   function disposeRopeObject(rope) {
+    window.RuinRopeTorch?.dispose?.(rope?.torch); // Removes live/pooled fire and cloned layer textures when a candidate rope is rejected.
     for(const mesh of [rope?.mesh,rope?.marker,rope?.externalMount?null:rope?.mount])disposeObject(mesh);
   }
 
@@ -2550,12 +2553,15 @@
   function updateRopes(now,dt) {
     if(state.lavaMaterial?.uniforms?.uTime)state.lavaMaterial.uniforms.uTime.value=now/1000; // Same animated water shader as ordinary water, recolored for lava.
     updateFlight(dt);
-    if(state.flight)return;
-    for(const rope of state.ropes){
-      if(rope.attached)updateAttachedRope(rope,dt);
-      else updateIdleRope(rope,dt);
+    if(!state.flight){
+      for(const rope of state.ropes){
+        if(rope.attached)updateAttachedRope(rope,dt);
+        else updateIdleRope(rope,dt);
+      }
+      updateRopeHazards(now); // Ground proximity still uses a prompt; PlayerJump invokes catchAirborneRope only while airborne.
     }
-    updateRopeHazards(now); // Ground proximity still uses a prompt; PlayerJump invokes catchAirborneRope only while airborne.
+    const ropeCamera=deps?.getActiveCamera?.()||null; // One camera lookup updates fire while airborne without affecting rope flight ownership.
+    for(const rope of state.ropes)window.RuinRopeTorch?.tick?.(rope.torch,dt,ropeCamera);
   }
 
   function updateBadge(force=false) {
@@ -2564,7 +2570,8 @@
     if(!force&&now-lastBadgeAt<250)return; // Diagnostics are human-readable, not simulation state; 4 Hz is plenty and avoids a layout-affecting DOM mutation every frame.
     lastBadgeAt=now;
     const cp=state.checkpoints;
-    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
+    const torches=window.RuinRopeTorch?.debugSnapshot?.(); // In-game diagnostics expose loaded torch heads and any missing asset on mobile.
+    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1)+(torches?' T'+torches.ready+'/'+torches.total+(torches.lastError?' !torch':''):'');
     window.DevRandomRuin?.setDebugBadgePart?.('simple',segment); // Never compose from a previous badge string.
   }
 
