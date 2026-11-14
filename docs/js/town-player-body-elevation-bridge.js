@@ -245,9 +245,10 @@
     return matches;
   }
 
-  function supportAt(worldX, worldZ, area = activeArea()) {
-    const matches = matchingSupports(worldX, worldZ, area);
-    return matches.sort((a, b) => b.bounds.topY - a.bounds.topY)[0] || null; // The highest real walking surface wins when staggered treads overlap.
+  function supportAt(worldX, worldZ, area = activeArea(), maxTopY = Infinity) {
+    const ceiling = Number.isFinite(maxTopY) ? maxTopY + SUPPORT_EDGE_EPSILON : Infinity; // Optional vertical reach prevents a lower-floor actor from standing on a bridge overhead.
+    const matches = matchingSupports(worldX, worldZ, area).filter(entry => entry.bounds.topY <= ceiling);
+    return matches.sort((a, b) => b.bounds.topY - a.bounds.topY)[0] || null; // Among reachable, staggered treads prefer the highest real walking surface.
   }
 
   function surfaceLiftAt(worldX, worldZ, area = activeArea()) {
@@ -255,8 +256,8 @@
     return entry ? Math.max(0, entry.bounds.topY - entry.bounds.baseY) : 0;
   }
 
-  function worldSurfaceTopAt(worldX, worldZ, fallbackY = 0, area = activeArea()) {
-    const entry = supportAt(worldX, worldZ, area);
+  function worldSurfaceTopAt(worldX, worldZ, fallbackY = 0, area = activeArea(), maxTopY = Infinity) {
+    const entry = supportAt(worldX, worldZ, area, maxTopY); // Normal walking and jump takeoff pass an approach ceiling; cameras can still inspect every overhead deck.
     return entry ? Math.max(finite(fallbackY, 0), entry.bounds.topY) : finite(fallbackY, 0); // Never sink an actor below existing raised terrain.
   }
 
@@ -601,7 +602,8 @@
   }
 
   // NPCs no longer get their support lift stomped onto root.position.y here.
-  // game.js's npcSurfaceY() folds surfaceLiftAt() straight into the height
+  // game.js's npcSurfaceY() resolves an absolute worldSurfaceTopAt() floor
+  // rather than applying the support's relative lift to a second base height.
   // every NPC movement/idle branch already targets, so the existing
   // absolute-set and lerp-toward-ground code paths track furniture "stages"
   // correctly on their own — see npcSurfaceY's own comment. A separate
