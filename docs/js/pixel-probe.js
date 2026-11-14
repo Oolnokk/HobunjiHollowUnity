@@ -714,6 +714,8 @@
     if (Number.isFinite(belovedHours)) lines.push(`Beloved buff: ${belovedHours.toFixed(2)} in-game hours remaining`);
     const npcPathing = window.NpcPathfinding?.debugSnapshot?.(); // Search/blocked-move counters help distinguish a stuck sleeper from a scheduling issue.
     if (npcPathing) lines.push(`NPC pathfinding: ${JSON.stringify(npcPathing)}`);
+    const creatureCliffs = window.CreatureCliffClimb?.debug; // Includes failed entry searches and skipped retries for mobile reports.
+    if (creatureCliffs) lines.push(`Creature cliff navigation: ${JSON.stringify(creatureCliffs)}`);
     const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.
     if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
     const music = window.MusicMinigame?.diagnostics?.();

@@ -94,6 +94,64 @@ assert.notEqual(routes.forGrid(baseGrid, { area: 'western-slope', rebuild: true 
 // Run the live mesa builder, including its displaced stone triangles,
 // cave exclusions and actual decal geometry, without a WebGL dependency.
 const vm = require('node:vm');
+
+// Drive both production movement entry points with a deterministic clock and
+// a goal tile that becomes walkable after the first failed approach.
+for (const kind of ['creature', 'npc']) {
+  let now = 0; // Wall clock for the retry deadline.
+  let blocked = true; // Simulates a temporary obstacle at the entry.
+  let searches = 0; // Records each actual approach search.
+  let edge = { route: { id: 0, nodes: [{ x: 4.5, z: 1.5 }] }, entry: 0 }; // Replaceable topology with stable numeric route IDs.
+  const g = Array.from({ length: 5 }, () => Array.from({ length: 9 }, () => ({ type: 'grass' }))); // Approach from tile 1,1.
+  const deps = {
+    TILE: 1, TileType: {}, getActiveGrid: () => g, npcGridForArea: () => g,
+    getCurrentArea: () => 'slope', isZoneArea: () => true, isBuildingArea: () => false,
+    tileSurfaceYInArea: () => 0, isTownBuildingCollisionTile: () => false,
+    isSolid(tileType) { if (tileType === 'entry') searches++; return tileType === 'entry' && blocked; },
+    creatureCanEnterTile: () => true, furnitureOnlyBlocksMovementAt: () => false, npcMovementConfig: () => ({}),
+  }; // Shared terrain fixture with no other structural or dynamic blockers.
+  const win = {
+    CliffRouteNetwork: { forGrid: () => ({}), toward: () => edge, componentAt: () => 0 },
+    TilePathfinding: {
+      boxAround() {},
+      findPath() { searches++; return blocked ? null : [{ col: 3, row: 1 }]; },
+    },
+  }; // The NPC case uses its real swept A* with a mutable tile.
+  g[1][4].type = 'entry';
+  vm.runInNewContext(kind === 'creature' ? wildlife : npcPath, {
+    window: win, performance: { now: () => now }, Date: { now: () => now },
+  });
+  const creature = { x: 1.5, y: 1.5, areaId: 'slope', health: 10 }; // Wildlife movement state.
+  const walker = { area: 'slope', root: { position: { x: 1.5, z: 1.5 } }, moveToward(x, z) { this.root.position.x = x; this.root.position.z = z; return true; } }; // Scheduled walker movement state.
+  const runtime = kind === 'creature' ? win.CreatureCliffClimb : win.NpcPathfinding; // Runtime being exercised.
+  runtime.init(deps);
+  if (kind === 'npc') runtime.decorateWalkerCollision(walker);
+  const attempt = kind === 'creature'
+    ? () => runtime.navigate(creature, 7.5, 1.5, 1, 0.1)
+    : () => walker.moveToward(7.5, 1.5, 0.1); // Normal gameplay entry points.
+  const retryMs = kind === 'creature' ? 1200 : 750; // Each actor type keeps its own delay.
+
+  assert.equal(attempt(), false, kind + ' waits when the first search fails');
+  now = 100;
+  assert.equal(attempt(), false, kind + ' skips an identical retry');
+  assert.equal(searches, 1);
+  if (kind === 'creature') creature.x = 2.5;
+  else walker.root.position.x = 2.5;
+  assert.equal(attempt(), false, kind + ' searches immediately from a different tile');
+  assert.equal(searches, 2);
+  edge = { ...edge, route: { ...edge.route } };
+  assert.equal(attempt(), false, kind + ' searches immediately after a topology rebuild');
+  assert.equal(searches, 3);
+  blocked = false;
+  now += retryMs - 1;
+  assert.equal(attempt(), false, kind + ' can briefly wait after the obstacle clears');
+  assert.equal(searches, 3);
+  now++;
+  assert.equal(attempt(), true, kind + ' resumes as soon as its retry becomes due');
+  const debug = kind === 'creature' ? runtime.debug : runtime.debugSnapshot().cliffRoutes; // Exposed in navigation diagnostics.
+  assert.equal(debug.retriesSkipped, 2);
+}
+
 class Attribute {
   constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
 }

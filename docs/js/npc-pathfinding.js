@@ -449,7 +449,7 @@
     return false;
   }
 
-  const cliffDebug = { started: 0, completed: 0, replanFailures: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
+  const cliffDebug = { started: 0, completed: 0, replanFailures: 0, retriesSkipped: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
   function cliffNetwork(area) {
     const g = deps?.isZoneArea?.(area) && deps.npcGridForArea(area);
     return g && window.CliffRouteNetwork?.forGrid?.(g, {
@@ -469,6 +469,7 @@
   }
 
   function beginNpcCliff(walker, edge) {
+    walker._npcCliffApproachFailure = null;
     walker._npcCliffClimb = {
       route: edge.route, entry: edge.entry,
       index: edge.entry, exit: edge.entry === 0 ? edge.route.upperNode : 0,
@@ -534,9 +535,19 @@
         // inconvenient mountain. The collision wrapper still validates it.
         const key = this.area + ':' + edge.route.id + ':' + edge.entry;
         if (this._npcCliffApproachKey !== key || !this._npcCliffApproach?.length) {
+          const col = Math.floor(this.root.position.x), row = Math.floor(this.root.position.z); // Start tile for the retry check.
+          const failure = this._npcCliffApproachFailure; // A rebuilt route object permits a fresh search immediately.
+          const now = Date.now(); // Uses the same clock as normal NPC path retries.
+          if (failure?.key === key && failure.route === edge.route &&
+              failure.col === col && failure.row === row && now < failure.retryAt) {
+            cliffDebug.retriesSkipped++;
+            return false;
+          }
+          const path = findNpcPath(this.area, this.root.position.x, this.root.position.z,
+            Math.floor(node.x), Math.floor(node.z), { padding: 12, maxNodes: 7500 }); // Reuse the collision-aware walker planner.
           this._npcCliffApproachKey = key;
-          this._npcCliffApproach = findNpcPath(this.area, this.root.position.x, this.root.position.z,
-            Math.floor(node.x), Math.floor(node.z), { padding: 12, maxNodes: 7500 }) || [];
+          this._npcCliffApproach = path || [];
+          this._npcCliffApproachFailure = path ? null : { key, route: edge.route, col, row, retryAt: now + PATH_FAILURE_RETRY_MS };
         }
         const wp = this._npcCliffApproach[0];
         if (!wp) { cliffDebug.replanFailures++; return false; }
@@ -731,7 +742,7 @@
       ...debugStats,
       cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'NPC path searches skip non-improving sweeps and reuse clear footprints. Area routes still skip generated animal-den entrances.',
+      latestChange: 'Failed cliff-entry searches wait 750 ms before retrying from the same tile. Area routes still skip generated animal-den entrances.',
     };
   }
 
