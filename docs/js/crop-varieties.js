@@ -183,15 +183,17 @@
         foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
         desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
-      itemDefs[seedKey(id)] = { ...baseSeed, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
+      itemDefs[seedKey(id)] = { ...baseSeed, seedFor: id, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
         rarityBaseSellPrice: Number(baseSeed.sellPrice) || 4, // Native seed baseline preserved for rarity inspection.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
           ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
         desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
-      if (Array.isArray(inventoryItems) && !inventoryItems.some(entry => entry.key === seedKey(id))) {
-        inventoryItems.push({ key: seedKey(id), icon: itemDefs[seedKey(id)].icon, label: (label + ' Seeds').toUpperCase(), max: 999 });
-      } // All seeds, including saved hybrids, remain regular inventory objects.
+      if (Array.isArray(inventoryItems)) {
+        const existingSeedItem = inventoryItems.find(entry => entry?.key === seedKey(id)); // Repairs seed entries registered before regional metadata was available.
+        if (existingSeedItem) existingSeedItem.seedFor = id;
+        else inventoryItems.push({ key: seedKey(id), icon: itemDefs[seedKey(id)].icon, label: (label + ' Seeds').toUpperCase(), max: 999, seedFor: id });
+      } // Foreign and crossbred seeds use the same contextual planting action as native seeds.
     }
     const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
     known.add(id); variants.set(id, variant);
