@@ -282,7 +282,7 @@
       voice: null, voiceClaim: null, lastBodyApplied: null, lastBodyOffset: 0, ownsMouth: false, seatId: null }; // Tracks only yawn-owned pose deltas so other animations can safely take over.
     state.active = entry;
     state.wakePending = false;
-    state.nextHour = Math.max(hour, state.restedUntil) + HOURLY_GAP; // Existing NPC grace composes with their remaining sleep buff.
+    state.nextHour = reason === 'waking' ? Math.max(hour + HOURLY_GAP, state.restedUntil) : hour + HOURLY_GAP; // Wake yawns are exempt; the next fatigue yawn starts at buff expiry, not an extra hour after it.
     checkpoint(state);
     active.add(entry);
     activeById.set(state.id, entry);
@@ -450,7 +450,7 @@
         const sleptHours = Number.isFinite(state.sleepStartedHour) ? Math.max(0, hour - state.sleepStartedHour) : 0; // Rested for short sleep; Well Rested for a genuine eight-hour sleep.
         const restHours = sleptHours >= FULL_SLEEP_HOURS ? WELL_RESTED_HOURS : RESTED_HOURS;
         state.restedUntil = hour + restHours;
-        state.nextHour = hour + restHours + HOURLY_GAP;
+        state.nextHour = hour + restHours; // The advertised 3h/16h fatigue grace expires precisely at this hour; no hidden fourth/seventeenth hour.
         state.sleepStartedHour = NaN;
         checkpoint(state);
       }
