@@ -222,7 +222,7 @@ const render = fromSource(post, 'wrappedRender', '  wrappedRender.__hobunjiNatur
   'performance', 'stats', 'jigsawApi', 'chunkApi', 'inspectSceneTerrain',
   'notifyTerrainGeometryReady', 'lastGeometryNoticeAt', 'GEOMETRY_NOTICE_INTERVAL_MS', 'originalRender',
 ], [{ now: () => now }, renderStats, { scanScene: () => 0 }, { scanScene: () => chunked },
-  () => {}, () => { notices++; }, new WeakMap(), 500, { call() { renders++; } }]);
+  () => {}, () => { notices++; }, new WeakMap(), 16, { call() { renders++; } }]);
 const scene = { isScene: true, children: [] }; // Used as one scene rendered during color, depth, and outline passes.
 render(scene, {});
 now = 101; render(scene, {});
