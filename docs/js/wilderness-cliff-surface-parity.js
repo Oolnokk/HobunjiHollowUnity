@@ -216,6 +216,12 @@
     const materialSlot = forcedSlot != null ? forcedSlot : (taggedSlot != null ? Number(taggedSlot) : null);
     makeMaterialMatchFarm(mesh, materialSlot);
     clearCachedSurfaceMapping(mesh);
+    if (mesh.userData?.naturalSurfaceCrossMeshUvOwner) {
+      // A changed or rejected batch cannot keep its former ownership claim:
+      // the central mapper would otherwise short-circuit a later repair.
+      delete mesh.userData.naturalSurfaceCrossMeshUvOwner;
+      delete mesh.userData.naturalSurfaceCrossMeshUvBatch;
+    }
     if (options.deferUvToCrossMesh === true && materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT) {
       stats.crossMeshUvsDeferred++;
       return true; // The later touching-mesa solve owns these UVs; a failed solve explicitly falls back to this normal mapper.
@@ -229,8 +235,16 @@
     }; // Used to give every wilderness cliff the same bounded stretch scale as the farm boundary.
     if (materialSlot != null) mappingOptions.materialIndex = materialSlot;
 
-    const report = mapper.mapMesh(mesh, mappingOptions); // Runs after every synchronous wilderness geometry modifier so this result is authoritative.
+    const report = materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT && typeof mapper.remapNaturalTerrainMesh === 'function'
+      ? mapper.remapNaturalTerrainMesh(mesh, label) // Retains the Jigsaw-exclusion and faceted-outline wrappers on a failed batch.
+      : mapper.mapMesh(mesh, mappingOptions); // Other cliff/rock paths retain their original 6u mapper options.
     if (!report) return false;
+    if (materialSlot === PLATEAU_CLIFF_MATERIAL_SLOT) {
+      mesh.userData = Object.assign({}, mesh.userData || {}, {
+        terrainJigsawIgnore: true,
+        naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV',
+      }); // Explicit ownership is also safe when a test/editor loads the bare mapper without its exclusion adapter.
+    }
     const missingAfter = !hasValidUvs(mesh); // Used by snapshot() to expose any final mapper failure on mobile.
     if (missingAfter) stats.missingUvsAfter++;
     stats.remappedMeshes++;
