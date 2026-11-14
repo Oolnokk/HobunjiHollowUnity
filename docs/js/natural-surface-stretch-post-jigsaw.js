@@ -128,6 +128,8 @@
         naturalSurfaceCrossMeshUvOwner: CROSS_MESH_UV_OWNER,
         naturalSurfaceCrossMeshUvBatch: batchSignature,
         naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV', // Used by runtime repair to recognize a completed authoritative solve.
+        wildernessCliffSurfaceParity: true, // Used to preserve parity's established completed-cliff marker on deferred solves.
+        wildernessCliffUvPatchWorldSize: window.WildernessCliffSurfaceParity?.uvPatchWorldSize || 6, // Used by Pixel Probe to retain the established cliff texture scale diagnostic.
         terrainJigsawIgnore: true,
       });
     }
