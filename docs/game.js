@@ -6153,7 +6153,7 @@
           return null;
         }
         if (!preview && manualAutoTarget && manualAutoTarget.health <= 0) {
-          const threatRange = desktopLockOnActive ? Math.max(autoTargetRange(), TILE * LOCK_ON_ACQUIRE_TILES) : autoTargetRange(); // A desktop lock can reacquire across its original 10-tile radius.
+          const threatRange = autoTargetRetentionRange(); // A pursuing enemy may inherit a fallen lock anywhere the existing lock could still be retained.
           let closestThreat = null, closestDistance = Infinity; // Only enemies pursuing the player inherit a fallen target's lock.
           for (const c of hostileObjects) {
             if (!autoTargetCandidateValid(c, threatRange) || c.denDisplacedPrey || c._porakanekiPlannerControlled === true
@@ -29762,7 +29762,9 @@
           down.delete('RightStickLeft'); down.delete('RightStickRight'); // A target flick must never also trigger a separately mapped gameplay action.
           down.delete('RightStickUp'); down.delete('RightStickDown'); // Diagonal flicks remain exclusive to the target selector.
         } else {
-          const selectorStillHoldingStick = rightStickOwner !== 'camera' || menuOpen || farmEditMode; // A selector-closing held stick is not a new targeting gesture.
+          const selectorStillHoldingStick = rightStickOwner !== 'camera' || menuOpen || farmEditMode
+            || !!window._desktopSelectionArc?.isOpen?.() || !!window.SocialActionWheel?.isOpen?.()
+            || !!window.FurniturePlacer?.isOpen?.(); // Every open selector latches a held stick until it returns to neutral.
           controllerTargetHorizontalLatch = selectorStillHoldingStick && Math.abs(rx) >= 0.25 ? Math.sign(rx) : Math.abs(rx) < 0.25 ? 0 : controllerTargetHorizontalLatch;
         }
         if (gamepadState.primeButtonsOnResume) {
