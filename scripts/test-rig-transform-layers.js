@@ -39,10 +39,13 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
 }
 {
   const node = rig();
+  let firstFrameSlots = null; // Ensures the ledger allocates only during initial registration, not on every walking/seat frame.
   for (let frame = 0; frame < 240; frame++) {
     layers.clear(node, 'drunk-thigh-left'); // Before the procedural solver replaces the thigh.
     node.position.x += (0.4 - node.position.x) * 0.2; // Seated pose damping.
     layers.setPosition(node, 'drunk-thigh-left', { x: 0.2, y: -0.1, z: 0.05 });
+    if (firstFrameSlots === null) firstFrameSlots = layers.getDebug().slotsCreated;
+    else assert.equal(layers.getDebug().slotsCreated, firstFrameSlots, 'thigh layer reuses cached axis records');
   }
   layers.clear(node, 'drunk-thigh-left');
   near(node.position.x, 0.4);

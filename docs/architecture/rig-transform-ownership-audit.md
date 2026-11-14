@@ -50,7 +50,9 @@ and dispose. If another system assigns a different absolute value, the ledger
 drops prior owner claims **without subtracting a stale inverse**.
 
 Mobile debugging: `RigTransformLayers.getDebug()` returns writes, clears,
-externalTakeovers, invalidInputs and activeLayers.
+externalTakeovers, invalidInputs, activeLayers and slotsCreated. Empty per-axis
+records are retained under the node's WeakMap so continuous clear/reapply
+cycles do not allocate a new owner Map each animation frame.
 
 Important limitation: an uncoordinated third-party additive writer that changes
 an axis after the ledger's last write looks like an absolute takeover. That

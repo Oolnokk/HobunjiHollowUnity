@@ -7,7 +7,7 @@
   if (global.RigTransformLayers) return;
 
   const records = new WeakMap(); // Per Object3D axis records; the registry cannot retain disposed rigs.
-  const stats = { writes: 0, clears: 0, externalTakeovers: 0, invalidInputs: 0, activeLayers: 0 }; // Mobile diagnostics expose ownership changes without console access.
+  const stats = { writes: 0, clears: 0, externalTakeovers: 0, invalidInputs: 0, activeLayers: 0, slotsCreated: 0 }; // Mobile diagnostics expose ownership changes without console access.
   const EPSILON = 1e-7; // Float tolerance for detecting another animation writer's absolute overwrite.
 
   function valid(node, property, axis) {
@@ -30,6 +30,7 @@
     if (!slot && create) {
       slot = { key, property, axis, base: node[property][axis], applied: node[property][axis], owners: new Map() };
       slots.set(key, slot);
+      stats.slotsCreated++; // Cumulative allocations: frame-by-frame reapplication should reuse these slot records.
     }
     return slot;
   }
@@ -68,7 +69,8 @@
       if (slot.owners.delete(owner)) stats.activeLayers--;
     } else slot.owners.set(owner, offset);
     write(node, slot);
-    if (slot.owners.size === 0) slotsFor(node, false)?.delete(slot.key);
+    // Keep an empty slot so the same rig axis reuses its Map next frame.
+    // WeakMap ownership does not keep an otherwise disposed Object3D alive.
     return true;
   }
 
@@ -102,7 +104,7 @@
         write(node, slot);
         cleared = true;
       }
-      if (!slot.owners.size) slots.delete(key);
+      // Empty records remain cached on this node for repeated gait/pose releases.
     }
     return cleared;
   }
