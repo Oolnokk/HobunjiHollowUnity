@@ -190,6 +190,11 @@ for(const [theme,def] of Object.entries(families)){
 
 for(const key of ['flying','perched']) {
   const sprite=readRgbaPng(api.SPRITES[key]);
+  for(const [x,y] of [[0,0],[sprite.width-1,0],[0,sprite.height-1],[sprite.width-1,sprite.height-1]]) {
+    const i=(y*sprite.width+x)*4;
+    assert.equal(sprite.pixels[i+3],0,
+      key + ' artwork has an opaque corner matte at ('+x+','+y+') RGBA='+Array.from(sprite.pixels.slice(i,i+4)).join(','));
+  }
   const extracted=api.separateEyeMarker(sprite); // The REAL artist sprite, decoded from disk.
   assert(extracted.marked>15 && extracted.marked<sprite.width*sprite.height*.03,
     key+' must contain a localized purple eye marker');
