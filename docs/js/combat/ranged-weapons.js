@@ -134,7 +134,7 @@
   const CONFIG = {
     torch: { // The adventuring throw uses the ordinary swept projectile/ruin-fire route, not separate physics.
       label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
-      projectileSprite:'assets/toolsprites/torch.png',
+      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'weapon', projectileVisualWidthWorld:.5, // Keep the full torch silhouette rather than arrow-sized default art.
       projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
       projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
       projectileDropStartTiles:3,projectileGravityWorldS2:10,
