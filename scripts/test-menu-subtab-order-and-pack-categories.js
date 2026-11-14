@@ -86,6 +86,7 @@ techniqueAPI(registeredItems);
 const literatureKeys = Object.keys(itemDefs).filter(key => /^mastery(?:Tablet|Scroll):/.test(key)).concat('techniqueScrollTier1', 'combatManualQuick'); // Captures all generated ranks/types plus both secondary literature classes.
 assert.equal(literatureKeys.length, 22, 'five ranks, two forms and two damage types plus technique scroll and combat manual are registered');
 for (const key of literatureKeys) {
+  assert.equal(itemDefs[key].cat, key.startsWith('masteryTablet:') ? 'tablet' : 'scroll', `registered ${key} retains its actual scroll/tablet form`);
   assert(matches('plans', key), `Pack Plans & Scrolls includes ${key}`);
   assert(!matches('other', key), `learnable literature ${key} does not leak into Other`);
   assert(!matches('material', key), `learnable literature ${key} is not sorted as raw materials`);
