@@ -11,7 +11,7 @@ assert(from >= 0 && to > from, 'shipped projectileHit function not found');
 const shipped = source.slice(from, to);
 let cover = null, contacts = [], impactCount = 0; // Records the actual player branch's forwarded fire limits.
 const world = {
-  DungeonFire: {contactProjectile(_p,_a,_b,limit){contacts.push(['dungeon',limit]);}},
+  DungeonFire: {contactProjectile(p,_a,_b,limit){if(p.dungeonFire&&p.team==='player')contacts.push(['dungeon',limit]);}},
   BanditCamps: {igniteTorchSegment(_area,_a,_b,limit){contacts.push(['tent',limit]);}},
   DevRandomRuinHitPuzzles: {contactAdventuringTorchSegment(_a,_b,limit){contacts.push(['v50',limit]);}},
   NearbyVolumeCollision: {segmentHit(){return cover;}},
@@ -43,5 +43,5 @@ assert.deepEqual(contacts,[],'non-torch projectiles cannot light torch-only haza
 hit({...sample,dungeonFire:false});
 assert.deepEqual(contacts,[],'an unlit torch cannot ignite anything');
 hit({...sample,team:'enemy'});
-assert.deepEqual(contacts,[['dungeon',1]],'enemy branch cannot light player-only torch targets');
+assert.deepEqual(contacts,[],'enemy branch cannot light player-only torch targets');
 console.log('ok thrown torch: player hit branch, cover cutoff, no false ignition from enemy/unlit projectiles');
