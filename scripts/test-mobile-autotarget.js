@@ -146,7 +146,7 @@ const stickScope = {
   cycleAutoTarget: direction => stickTransitions.push(direction),
 }; // Executable fixture uses the real game.js decision code, including its physical button suppression.
 vm.createContext(stickScope);
-const pollStick = () => vm.runInContext(game.slice(stickStart, stickEnd), stickScope);
+const pollStick = () => vm.runInContext('(() => {\n' + game.slice(stickStart, stickEnd) + '\n})()', stickScope); // The production const is function-scoped anew for each synthetic controller poll.
 pollStick();
 assert.deepEqual(stickTransitions, [1], 'first right flick changes target once');
 assert.equal(stickScope.down.size, 0, 'target flick must not invoke mapped right-stick gameplay actions');
