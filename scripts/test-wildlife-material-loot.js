@@ -156,6 +156,17 @@ async function main() {
   }
   assert.equal(windowStub.AnimalHides.getDebug().pack.uumkaoiiShell, undefined, 'Shell loot does not create hide metadata');
 
+  const skeeriPalette = {body:'#695168',pattern:'#8f718f',eyes:'#da31ff'}; // Individual encounter dyes persist on butchering.
+  const skeeriCorpse = {id:'test-skeeri',creatureKey:'skeeri-medium',
+    skeeriPalette,def:{label:'Skeeri',lootPool:'creature_skeeri-medium'}};
+  const skeeriLoot = lootCorpseWithSourceDiagnostics(corpseContext.makeCorpseWorldObject(skeeriCorpse));
+  assert.equal(skeeriLoot.ok,true,'Skeeri retain the existing corpse interaction');
+  assert((corpseInventory.skeeriMeat||0)>=2,'Skeeri meat enters Pack');
+  assert.equal(corpseInventory.skeeriHide,1,'Skeeri hide enters Pack');
+  const skeeriHide = windowStub.AnimalHides.groupsFor('skeeriHide',corpseInventory.skeeriHide)[0].hideRecord;
+  assert.equal(skeeriHide.appearance.baseColor,skeeriPalette.body,'hide remembers the bird\'s fur');
+  assert.equal(skeeriHide.appearance.colors[1].color,skeeriPalette.pattern,'hide remembers its markings');
+
   console.log('Wildlife shell, genotype hides and fur-hood crafting integration regression passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

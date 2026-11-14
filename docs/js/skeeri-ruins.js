@@ -36,6 +36,8 @@
     kanthic:Object.freeze(['#8b35ff','#d72aff','#ff4ef0']),
   });
   const EYE_MARKER = '#7F00FF'; // The exact purple source family already used for maskbound mask/lich eye dye.
+  const MEAT_KEY = 'skeeriMeat'; // Shared meat item yielded by all three ruin Skeeri sizes.
+  const HIDE_KEY = 'skeeriHide'; // Shared hide item retains the killed bird's palette through AnimalHides.
   const HATCH_OPEN_SECONDS = .65; // Stone hatch slides upward before the concealed enemies emerge.
   const ACTIVATION_RADIUS = 5; // Concealed proximity compartments now react before the player reaches the wall hatch.
   const MECHANISM_TRIGGER_RADIUS = 9; // Puzzle-triggered hatches react across larger rooms on the same floor.
@@ -85,53 +87,81 @@
     const pattern=patternPool.length?patternPool[Math.floor(patternRoll/4)%patternPool.length]:null;
     const eye=eyes.length?eyes[hash(String(identity)+':eye')%eyes.length]:null;
     const fallback=BODY_GROUPS[family][slot%BODY_GROUPS[family].length];
-    return {theme:family,body:body?.hex||fallback,pattern:pattern?.hex||fallback,
+    return {theme:family,body:body?.hex||fallback,pattern:pattern?.hex||BODY_GROUPS[family][(slot+1)%BODY_GROUPS[family].length],
       eyes:eye?.hex||EYE_GROUPS[family][hash(String(identity)+':eye')%EYE_GROUPS[family].length],
       bodyDyeId:body?.id||null,patternDyeId:pattern?.id||null,eyeDyeId:eye?.id||null}; // Mobile diagnostics expose the exact three independently selected colors.
   }
 
+  function isGreenCoat(r,g,b) {
+    return r>=45 && b>=40 && g>=65 && g>r*1.045 && g>b*1.045; // Only the green fur family; neutral highlights, ink and accents are not coat.
+  }
+  function greenPeak(pixels) {
+    let peak=0; // Use genuine fur highlights, never white linework, as the shade reference.
+    for(let i=0;i<pixels.length;i+=4)
+      if(pixels[i+3]>20 && isGreenCoat(pixels[i],pixels[i+1],pixels[i+2]))
+        peak=Math.max(peak,pixels[i+1]);
+    return peak||255; // Safe fallback for unexpected/missing green artwork.
+  }
+  function shade(g,peak) {return Math.min(255,Math.round(255*g/peak));} // White/gray source reproduces the chosen tint without green-channel multiplication.
   function separateEyeMarker(image) {
-    if(typeof document==='undefined')return {body:image,glow:null,pattern:null,marked:0,patternPixels:0};
-    const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Source-space pixels preserve both authored poses.
+    if(typeof document==='undefined')return {body:image,glow:null,pattern:null,details:null,marked:0,patternPixels:0,detailPixels:0};
+    const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Source-space masks share the pose's geometry exactly.
     const canvas=()=>Object.assign(document.createElement('canvas'),{width,height});
     const body=canvas(),bodyCtx=body.getContext('2d',{willReadFrequently:true});
-    const core=canvas(),coreCtx=core.getContext('2d');
-    const marking=canvas(),markingCtx=marking.getContext('2d');
     bodyCtx.drawImage(image,0,0,width,height);
-    const pixels=bodyCtx.getImageData(0,0,width,height),eyes=coreCtx.getImageData(0,0,width,height);
-    const pattern=markingCtx.getImageData(0,0,width,height);
-    let brightestGreen=0; // Actual authored highlight, not a hand-guessed shade: detects darker green markings in either pose.
-    for(let i=0;i<pixels.data.length;i+=4) {
-      const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
-      if(a>20 && g>r*.98 && g>b*.95 && g>60)brightestGreen=Math.max(brightestGreen,g);
-    }
-    let marked=0,patternPixels=0;
+    const pixels=bodyCtx.getImageData(0,0,width,height);
+    const core=canvas(),coreCtx=core.getContext('2d'),eyes=coreCtx.getImageData(0,0,width,height);
+    const marking=canvas(),markingCtx=marking.getContext('2d'),pattern=markingCtx.getImageData(0,0,width,height);
+    const accents=canvas(),accentCtx=accents.getContext('2d'),details=accentCtx.getImageData(0,0,width,height);
+    const peak=greenPeak(pixels.data); // Ignore white eye/outline highlights when identifying dark fur.
+    let marked=0,patternPixels=0,detailPixels=0;
     for(let i=0;i<pixels.data.length;i+=4) {
       const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
       if(!a)continue;
-      // Purple marker and its shaded variations are extracted first; eye pixels can NEVER enter the fur pattern mask.
       if(b>=50&&r>=b*.28&&r<=b*.75&&g<=b*.24) {
         eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=255;
         eyes.data[i+3]=a;
-        pixels.data[i+3]=0; // Remove purple from the fur plane before drawing independent emissive eyes.
+        pixels.data[i+3]=0; // Eyes are extracted before any fur or detail classification.
         marked++;
-      } else if(g>60 && g<brightestGreen*.81 && g>r*.98 && g>b*.95 && r>55) {
-        // Preserve the illustrator's naturally darker markings as a separate source-space tint mask; no invented pattern geometry.
-        pattern.data[i]=pattern.data[i+1]=pattern.data[i+2]=255;
-        pattern.data[i+3]=a;
-        patternPixels++;
-      }
+      } else if(isGreenCoat(r,g,b)) {
+        const gray=shade(g,peak); // Preserve natural shadow gradients while removing green pigment.
+        pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=gray;
+        if(g<peak*.81 && r>55) {
+          pattern.data[i]=pattern.data[i+1]=pattern.data[i+2]=gray; // Dark markings retain shade under the independent dye.
+          pattern.data[i+3]=a;
+          patternPixels++;
+        }
+      } else if(Math.max(r,g,b)>48) {
+        details.data[i]=r;details.data[i+1]=g;details.data[i+2]=b;details.data[i+3]=a;
+        pixels.data[i+3]=0; // White/colored accents are drawn once, without body tint.
+        detailPixels++;
+      } // Dark ink stays on the original body plane so the silhouette remains crisp.
     }
-    if(!marked&&!patternPixels)return {body:image,glow:null,pattern:null,marked:0,patternPixels:0};
     bodyCtx.putImageData(pixels,0,0);
     if(patternPixels)markingCtx.putImageData(pattern,0,0);
+    if(detailPixels)accentCtx.putImageData(details,0,0);
     if(marked)coreCtx.putImageData(eyes,0,0);
-    const glow=marked?canvas():null,ctx=glow?.getContext('2d'); // Blurred halo and bright core are one shared source-space sprite.
+    const glow=marked?canvas():null,ctx=glow?.getContext('2d'); // Reused eye mask; never rebuilt in the frame loop.
     if(ctx){
       ctx.filter='blur(12px)';ctx.globalAlpha=.8;ctx.drawImage(core,0,0);
       ctx.filter='none';ctx.globalAlpha=1;ctx.drawImage(core,0,0);
     }
-    return {body,glow,pattern:patternPixels?marking:null,marked,patternPixels};
+    return {body,glow,pattern:patternPixels?marking:null,details:detailPixels?accents:null,marked,patternPixels,detailPixels};
+  }
+  function neutralizeWings(image) {
+    if(typeof document==='undefined')return image;
+    const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
+    const canvas=Object.assign(document.createElement('canvas'),{width,height});
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,width,height);
+    const data=ctx.getImageData(0,0,width,height),px=data.data,peak=greenPeak(px);
+    for(let i=0;i<px.length;i+=4){
+      if(!px[i+3])continue;
+      const gray=isGreenCoat(px[i],px[i+1],px[i+2])?shade(px[i+1],peak)
+        :Math.min(255,Math.round((.2126*px[i]+.7152*px[i+1]+.0722*px[i+2])*255/peak));
+      px[i]=px[i+1]=px[i+2]=gray; // One grayscale wing texture shared by all birds of every size.
+    }
+    ctx.putImageData(data,0,0);
+    return canvas;
   }
 
   function register(injected = {}) {
@@ -145,9 +175,21 @@
         defaultSizeClass:entry.size,modelWidth:entry.width,maxHealth:entry.health,
         spriteAspect:1000/1617,isFlyingSpecies:true,attacks:[],
         attackDamage:entry.damage,attackTag:'sharp',attackCooldownS:2.5,
+        lootPool:'creature_'+entry.key, // Never inherit Gar-wolf or Grehlr loot from the baseline predator.
         sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
       if(render)render[entry.key] ||= {prefix:'skeeri',base:{
         idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[]};
+    }
+    const itemDefs=injected.ITEM_DEFS; // Core inventory definition registry used by corpse looting and Pack.
+    const inventoryItems=injected.inventoryItems; // Optional item-arch catalog shared with other new wildlife.
+    const goods={
+      [MEAT_KEY]:{label:'Skeeri Meat',icon:'🥩',cat:'ingredient',sellPrice:16,tags:['Meat','Skeeri'],desc:'Meat recovered from a ruin-dwelling Skeeri.'},
+      [HIDE_KEY]:{label:'Skeeri Hide',icon:'🟫',cat:'material',sellPrice:26,tags:['Material','Hide','Skeeri'],desc:'A Skeeri hide with the original fur and markings colors preserved.'},
+    }; // Size only changes quantity in authored loot pools, not the item identity.
+    if(itemDefs)for(const [key,definition] of Object.entries(goods)){
+      itemDefs[key]={...definition,...(itemDefs[key]||{})};
+      if(Array.isArray(inventoryItems)&&!inventoryItems.some(item=>item?.key===key))
+        inventoryItems.push({key,icon:itemDefs[key].icon,label:itemDefs[key].label.toUpperCase(),max:99});
     }
     return true;
   }
@@ -176,7 +218,8 @@
       if(!flight.marked||!rest.marked)window.__farmLog?.('[skeeri] planebent eye marker absent from a pose ('+EYE_MARKER+')','warn');
       return {rig:window.FlyingAnimalRig.normalize({...raw,
         flying:'creaturesprites/skeeri_planebent_flying.png',perched:'creaturesprites/skeeri_planebent_perched.png'}),
-        images:{flying:flight.body,perched:rest.body,wings,glowFlying:flight.glow,glowPerched:rest.glow,
+        images:{flying:flight.body,perched:rest.body,wings:neutralizeWings(wings),
+          detailFlying:flight.details,detailPerched:rest.details,glowFlying:flight.glow,glowPerched:rest.glow,
           patternFlying:flight.pattern,patternPerched:rest.pattern}};
     }).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
     return rigPromise;

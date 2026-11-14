@@ -103,6 +103,27 @@ vm.runInNewContext(source, {
 }, { filename: 'skeeri-ruins.js' });
 const api = w.SkeeriRuins;
 assert(api, 'shipped Skeeri runtime exports its API');
+const creatureDb = {'gar-wolf':{lootPool:'creature_gar-wolf'}}; // The predator baseline must not leak its loot into Skeeri.
+const itemDefs = {}, inventoryItems = []; // Real wildlife registration should populate the Pack and tool arch.
+assert(api.register({CREATURE_DB:creatureDb,ITEM_DEFS:itemDefs,inventoryItems}));
+const lootPools = JSON.parse(fs.readFileSync(path.join(root,'docs/config/loot/loot-pools.json'),'utf8')).pools;
+const itemIndex = JSON.parse(fs.readFileSync(path.join(root,'docs/config/items/item-index.json'),'utf8'));
+const cooking = fs.readFileSync(path.join(root,'docs/js/cooking-data.js'),'utf8');
+for(const [size,minMeat,maxMeat,hides] of [['small',1,1,1],['medium',2,3,1],['large',4,6,2]]){
+  const id='skeeri-'+size,pool=lootPools['creature_'+id];
+  assert.equal(creatureDb[id].lootPool,'creature_'+id,'Skeeri use species-specific loot, not inherited predator drops');
+  assert.equal(pool.entries.find(entry=>entry.itemKey==='skeeriMeat').min,minMeat);
+  assert.equal(pool.entries.find(entry=>entry.itemKey==='skeeriMeat').max,maxMeat);
+  assert.equal(pool.entries.find(entry=>entry.itemKey==='skeeriHide').min,hides);
+  assert(pool.entries.every(entry=>entry.chance===1),'all sizes yield meat and hides');
+}
+for(const key of ['skeeriHide','skeeriMeat']){
+  assert.equal(itemDefs[key].label,itemIndex[key].label,'item label matches the central index');
+  assert(inventoryItems.some(item=>item.key===key),'new Skeeri items are accessible in the inventory arch');
+}
+assert(itemDefs.skeeriHide.tags.includes('Hide'));
+assert(itemDefs.skeeriMeat.tags.includes('Meat'));
+assert(cooking.includes('"skeeriMeat": {') && cooking.includes('"categories": ["meat"]'),'Skeeri meat is eligible for ordinary cooking');
 assert.equal(api.SPRITES.flying, 'assets/creaturesprites/skeeri_planebent_flying.png');
 assert.equal(api.SPRITES.perched, 'assets/creaturesprites/skeeri_planebent_perched.png');
 assert.equal(api.SPRITES.wings, 'assets/creaturesprites/skeeri_wings.png');
@@ -189,12 +210,22 @@ for(const key of ['flying','perched']) {
   ]);
   assert(captured.images.glowFlying && captured.images.glowPerched, 'each pose has an independent glowing eye overlay');
   assert(captured.images.patternFlying && captured.images.patternPerched, 'each pose retains its authored dark fur pattern as a separate tint layer');
+  assert(captured.images.detailFlying && captured.images.detailPerched, 'both poses retain untinted accent layers');
   assert.equal(captured.images.flying.pixels[3], 0, 'marker pixels are removed from the naturally tinted body');
   assert.equal(captured.images.perched.pixels[3], 0);
-  assert.equal(captured.images.flying.pixels[7], 255, 'ordinary body pixels remain opaque');
+  assert.equal(captured.images.flying.pixels[7], 0, 'neutral accents are removed from the dyed body');
+  assert.equal(captured.images.detailFlying.pixels[7], 255, 'neutral accents remain fully opaque on their own layer');
+  assert.equal(captured.images.detailFlying.pixels[4], 180, 'accent red channel is unchanged');
+  assert.equal(captured.images.detailFlying.pixels[5], 170, 'accent green channel is unchanged');
+  assert.equal(captured.images.flying.pixels[8], captured.images.flying.pixels[9], 'fur color channels are neutral');
+  assert.equal(captured.images.flying.pixels[9], captured.images.flying.pixels[10], 'source green no longer alters the selected dye');
+  assert.equal(captured.images.wings.pixels[8], captured.images.wings.pixels[9], 'wings are neutral too');
+  assert.equal(captured.images.wings.pixels[9], captured.images.wings.pixels[10], 'wings do not tint through green source art');
   assert.equal(captured.images.glowFlying.pixels[3], 255, 'marked eyes appear in the independent glow mask');
   assert.equal(captured.images.glowPerched.pixels[3], 255);
   assert.equal(captured.images.patternFlying.pixels[11], 255, 'darker green fur pixels are isolated for the pattern dye');
+  assert.equal(captured.images.patternFlying.pixels[8], captured.images.patternFlying.pixels[9], 'pattern mask has neutral shading');
+  assert(captured.images.patternFlying.pixels[8] < 255, 'dark fur patterns retain authored shadows');
   assert.equal(captured.images.patternPerched.pixels[11], 255);
   assert.equal(captured.images.patternFlying.pixels[3], 0, 'eye markers cannot be dyed as fur patterns');
   assert.equal(captured.images.patternFlying.pixels[15], 0, 'light body pixels cannot become an unintended fur pattern');

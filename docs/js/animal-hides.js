@@ -43,9 +43,13 @@
     const animalValue = Number.isFinite(Number(value?.amount)) && Number(value.amount) >= 100 ? Number(value.amount) : 100;
     const rarityTier = RARITY_STARS[value?.tier] ? value.tier : 'Common';
     const traits = genotype ? window.CreatureGenetics?.genotypeTraits?.(kind, genotype) : null;
+    const skeeriCoat = /^skeeri-(?:small|medium|large)$/.test(String(rawKind)) ? creature?.skeeriPalette : null; // Encounter palettes replace breeding genotypes for Skeeri.
+    const coatColors = skeeriCoat && /^#[0-9a-f]{6}$/i.test(skeeriCoat.body || '')
+      ? [{id:'base',label:'Fur',color:skeeriCoat.body}, ...(/^#[0-9a-f]{6}$/i.test(skeeriCoat.pattern || '') ? [{id:'markings',label:'Markings',color:skeeriCoat.pattern}] : [])]
+      : []; // Individually dyed fur and markings survive butchering and shipping.
     const appearance = {
-      baseColor: genotype?.base?.color || null,
-      colors: clone(traits?.colors || []) || [],
+      baseColor: genotype?.base?.color || coatColors[0]?.color || null,
+      colors: clone(traits?.colors || coatColors) || [],
       patterns: clone((traits?.patterns || []).filter(layer => layer.enabled)) || [],
       colorPoolPaint: clone(genotype?.colorPoolPaint || null),
     }; // Display-ready visible coat summary; complete genetic/paint data also stays in genotype.
