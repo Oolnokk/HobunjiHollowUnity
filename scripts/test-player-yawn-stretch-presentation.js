@@ -122,6 +122,14 @@ assert.equal(right.position.y, 0, 'right hand also restores its previous pose');
 assert.equal(locks.length, 0, 'cancellation releases the action lock');
 assert.equal(presentation.debugSnapshot().hiddenHeldRoots, 0, 'visibility snapshots are cleared on finish');
 
+right.visible = false;
+const hiddenHandYawn = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } };
+presentation.start(hiddenHandYawn); presentation.update(hiddenHandYawn, 0.5); sentinel.onBeforeRender();
+assert.equal(right.visible, true, 'stretch temporarily reveals a hand hidden by its ordinary grip pose');
+presentation.end(hiddenHandYawn);
+assert.equal(right.visible, false, 'cleanup restores original hand visibility, not just its position');
+right.visible = true; // Restore the normal hand baseline before the separate Koma check.
+
 window.Combat.deps.toolHolder = invisibleTool;
 const komaLock = { owner: 'npc-autonomous-drink', participants: [{ id: 'player', channels: ['tools', 'actions'] }] };
 locks.push(komaLock);
