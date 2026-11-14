@@ -129,7 +129,7 @@ assert.equal(windowStub.CavernGenerator.pickDenMotherKind(restoredMapId), mother
   'an interior loaded before exterior registration still finds the correct home-point species');
 
 // Verify the mobile audit against an actual injected inventory registry. Without
-// ITEM_DEFS, fertile Honeyfuzzle eggs are incorrectly marked unavailable.
+// ITEM_DEFS, Honeyfuzzle queens are incorrectly marked unavailable.
 const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8');
 const initStart = gameSource.indexOf('window.WildlifeSpawn?.init({'); // Production DI seam that exposes the live item catalog.
 const initEnd = gameSource.indexOf('window.CavernGenerator?.init({', initStart);
@@ -151,15 +151,15 @@ W.init({
 const auditRecords = W.nestingSpeciesAudit(); // The real mobile-facing audit, not a separately implemented validator.
 const inspected = kind => auditRecords.find(record => record.kind === kind);
 assert.equal(inspected('puktuk')?.ok, true, 'a registered den guardian with a real baby item passes');
-assert.equal(inspected('honeyfuzzle')?.ok, true, 'a fertile hive egg is valid without a conventional stable itemKinds mapping');
+assert.equal(inspected('honeyfuzzle')?.ok, true, 'a hive queen is valid without a conventional stable itemKinds mapping');
 assert.equal(inspected('tzatzul')?.exempt, true, 'Tzatzuls are not forced to produce hatchable eggs');
 assert.equal(inspected('skeeri-small')?.exempt, true, 'Skeeri are not forced to produce hatchable eggs');
 delete auditItems.honeyfuzzleQueen;
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
-  'a truly absent fertile egg item is detected instead of being silently accepted');
-auditItems.honeyfuzzleQueen = { cat: 'livestock', tags: ['Livestock', 'Egg', 'Fertile'] }; // Unfertilized food eggs cannot pass.
+  'a missing queen item is detected instead of being silently accepted');
+auditItems.honeyfuzzleQueen = { cat: 'livestock', tags: ['Livestock', 'Egg', 'Fertile'] }; // Fertile eggs cannot replace a captured queen.
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
-  'an egg without the Fertile tag fails even when its inventory definition exists');
+  'an egg cannot pass a Queen-only registration audit');
 auditItems.honeyfuzzleQueen.tags.push('Queen');
 delete auditItems.puktukBaby;
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'puktuk')?.ok, false,
