@@ -5203,6 +5203,7 @@ $('loadTownBtn').addEventListener('click', async () => {
     const res = await fetch('../../config/town-workspace-v1.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const obj = await res.json();
+    let canonicalTownLoaded = false; // Only a successfully fetched, indexed Town file can replace the user's locally saved Town.
     // Mirror game.js's _loadTownFromWorkspace: a per-map file registered in
     // config/maps/index.json takes priority over this map's inline data in
     // town-workspace-v1.json (e.g. buildings added straight to
@@ -5223,6 +5224,7 @@ $('loadTownBtn').addEventListener('click', async () => {
               const r = await fetch('../../' + file);
               if (!r.ok) return m;
               const data = await r.json();
+              if (m.id === 'map_hobunji_town' && data?.id === m.id && data.schema === 'hobunji_map.v1') canonicalTownLoaded = true;
               if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
                 return { ...m, buildingInteriorBase: data };
               }
@@ -5232,6 +5234,7 @@ $('loadTownBtn').addEventListener('click', async () => {
         }
       } catch(_) {}
     }
+    if (!canonicalTownLoaded) throw new Error('Cannot verify the indexed game Town map; your local editor workspace was not changed.');
     const existingTown = ws.maps.find(map => map.id === 'map_hobunji_town'); // Guards locally authored town changes before reloading the bundled game map.
     const incomingTown = obj.maps?.find(map => map.id === 'map_hobunji_town'); // Authoritative town data already resolved through the map index above.
     if (existingTown && incomingTown && !confirm('Replace your editor’s existing Town map with the bundled game Town map?\n\nUnsaved and locally saved Town edits will be replaced. Export Map JSON first if you want a backup.\n\nCancel keeps your existing Town unchanged.')) {
