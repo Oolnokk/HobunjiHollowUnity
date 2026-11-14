@@ -18,7 +18,7 @@ const nv = read('docs/js/nearby-volume-collision.js');
 const reticle = read('docs/js/combat/melee-hud-reticle.js');
 const dodge = read('docs/js/combat/combat-enemy-dodge.js');
 const enemySearch = read('docs/js/combat/enemy-search-ai.js');
-const html = read('docs/index.html');
+const html = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 const MathUtils = {
   degToRad: degrees => degrees * Math.PI / 180,

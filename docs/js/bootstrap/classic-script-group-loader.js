@@ -11,13 +11,10 @@
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.HobunjiClassicScriptGroups) {
     const failedGroups = []; // Exposed for the in-game debugger; updated only on manifest failures.
     window.HobunjiClassicScriptGroups = { failedGroups }; // One diagnostic record shared by all group loader invocations.
-    window.addEventListener('error', event => {
-      const source = event?.target?.src || event?.filename || ''; // URL of a failed resource or script evaluation.
-      const failed = String(source).match(/(?:^|\/)js\/bootstrap\/classic-groups\/([a-z][a-z0-9-]*)\.js(?:[?#]|$)/);
-      if (!failed || failedGroups.includes(failed[1])) return;
-      failedGroups.push(failed[1]);
-      if (!document.body || typeof document.createElement !== 'function') return;
-      let notice = document.getElementById('classicScriptLoadFailure'); // Reuse one visible error notice for all failed groups.
+    let noticeQueued = false; // Only one deferred warning is needed while the HTML body is unavailable.
+    function renderFailureNotice() {
+      if (!document.body || typeof document.createElement !== 'function') return false;
+      let notice = document.getElementById('classicScriptLoadFailure'); // Reuse the existing mobile-visible error.
       if (!notice) {
         notice = document.createElement('div');
         notice.id = 'classicScriptLoadFailure';
@@ -29,6 +26,21 @@
       }
       notice.textContent = 'Game startup scripts failed (' + failedGroups.join(', ')
         + '). Refresh this page; if it persists, report these group names.';
+      return true;
+    }
+    window.addEventListener('error', event => {
+      const source = event?.target?.src || event?.filename || ''; // Failed resource URL or script evaluation filename.
+      const failed = String(source).match(/(?:^|\/)js\/bootstrap\/classic-groups\/([a-z][a-z0-9-]*)\.js(?:[?#]|$)/);
+      if (!failed || failedGroups.includes(failed[1])) return;
+      failedGroups.push(failed[1]);
+      if (!renderFailureNotice() && !noticeQueued && typeof document.addEventListener === 'function') {
+        noticeQueued = true;
+        // Early head manifests can fail before document.body exists. Show every accumulated error once it does.
+        document.addEventListener('DOMContentLoaded', () => {
+          noticeQueued = false;
+          renderFailureNotice();
+        }, { once: true });
+      }
     }, true);
   }
 

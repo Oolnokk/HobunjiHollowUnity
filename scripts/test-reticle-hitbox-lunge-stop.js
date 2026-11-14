@@ -11,7 +11,7 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Native player lun
 const comboSource = fs.readFileSync('docs/js/combat/combat-combo.js', 'utf8'); // Player combo hit-confirm must arm aerial chaining only after a real strike hit.
 const quickSource = fs.readFileSync('docs/js/combat/combat-quickattacks.js', 'utf8'); // Quick attacks use the same real-hit aerial chain seam.
 const breakerSource = fs.readFileSync('docs/js/combat/combat-charged-breaker.js', 'utf8'); // Charged Breaker uses the same real-hit aerial chain seam.
-const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Changed lunge/attack runtimes must be cache-busted together.
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Changed lunge/attack runtimes must be cache-busted together.
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,

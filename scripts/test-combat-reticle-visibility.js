@@ -7,7 +7,7 @@ const fs = require('node:fs');
 
 const melee = fs.readFileSync('docs/js/combat/melee-hud-reticle.js', 'utf8'); // Used to verify melee sight suppression and visibility wiring.
 const ranged = fs.readFileSync('docs/js/combat/ranged-hud-reticle.js', 'utf8'); // Used to verify ranged sight suppression and visibility wiring.
-const index = fs.readFileSync('docs/index.html', 'utf8'); // Used to verify both changed HUD modules are cache-invalidated.
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Used to verify both changed HUD modules are cache-invalidated.
 const inputSettings = fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'); // Used to ensure Settings cannot reload a stale unversioned ranged reticle over the parser-loaded module.
 
 for (const [label, source] of [['melee', melee], ['ranged', ranged]]) {

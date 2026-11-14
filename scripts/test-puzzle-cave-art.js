@@ -82,7 +82,7 @@ async function main(){
   const caves=read('docs/js/puzzle-cave-entrances.js');
   const ruin=read('docs/js/ruin-layer-challenges.js');
   const stone=read('docs/js/cavern-ore-rocks.js');
-  const index=read('docs/index.html');
+  const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
   assert(!caves.includes('beginPlayerSession?.('),'cliff melodies may not automatically launch the instrument');
   assert(!ruin.includes('beginPlayerSession?.('),'interior melodies may not automatically launch the instrument');
   assert(!caves.includes('MusicMinigame?.close?.('),'cliff puzzles cannot close a manually opened instrument');

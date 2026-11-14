@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/loadout-weapon-preview.js', 'utf8'); // Exercises the shipped renderer, not a test duplicate.
 const ui = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Guards scroll/focus preservation at the existing UI seam.
 const css = fs.readFileSync('docs/style.css', 'utf8'); // Guards the fixed right half and scroll-only left half.
-const html = fs.readFileSync('docs/index.html', 'utf8'); // Guards single preview markup and the script dependency order.
+const html = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Guards single preview markup and the script dependency order.
 const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the holstered weapon lookup.
 const vfx = fs.readFileSync('docs/js/combat/weapon-enchantment-vfx.js', 'utf8'); // Guards the isolated enchantment particle API.
 

@@ -7,7 +7,7 @@ const rangedSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/
 const archetypeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/ranged-weapon-archetypes.js'), 'utf8');
 const attackValues = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../docs/config/combat/attack-values.json'), 'utf8'));
 const loaderSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/combat-config-loader.js'), 'utf8');
-const indexSource = fs.readFileSync(path.resolve(__dirname, '../docs/index.html'), 'utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);

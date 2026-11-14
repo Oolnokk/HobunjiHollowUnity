@@ -164,7 +164,7 @@ const baseRoster = (gender = 'female') => ({ appearance: { speciesId: 'ghoul', g
   assert.match(bandit, /await window\.GhoulSpecialVariants\?\.style\?\.\(roster, \{ rnd: deps\.rnd, tier,/, 'the roster builder dresses the variants');
   assert.match(bandit, /window\.GhoulSpecialVariants\?\.tick\?\.\(c, deps\?\.TOOL_ITEM_DEFS\)/, 'knights’ weapon particles run every frame');
   assert.match(fs.readFileSync('docs/js/bandit-camps.js', 'utf8'), /window\.GhoulSpecialVariants\?\.lootEnchantedWeapon\?\.\(c\)/, 'the corpse hands over the weapon');
-  assert.match(fs.readFileSync('docs/index.html', 'utf8'), /js\/combat\/ghoul-special-variants\.js\?v=/, 'the game loads the module');
+  assert.match(require('./classic-script-group-index.js').expandClassicScriptGroups(), /js\/combat\/ghoul-special-variants\.js\?v=/, 'the game loads the module');
   assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/combat\/ghoul-special-variants\.js\?v=/, 'the Workshop loads the module');
   assert.match(fs.readFileSync('docs/js/combat/weapon-enchantment-vfx.js', 'utf8'), /function createFixedEmitter\(plane, config\)/, 'enemy weapons use the shared particle emitter');
   console.log('Ghoul variants: wardrobe, tier metals, patterns, colors, enchanted weapons, loot and relic codec verified');

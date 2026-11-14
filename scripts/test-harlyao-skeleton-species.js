@@ -12,7 +12,7 @@ const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // G
 const devSpawnerSource = fs.readFileSync('docs/js/dev-spawner.js', 'utf8'); // Guards Test Arena discoverability, hostile registration, and skeleton-only equipment restrictions.
 const combatBanditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Guards shared humanoid enemy construction and structural-hair neck following.
 const pngPlaneAvatarSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Guards source-layer-aware auto-neck weighting.
-const gameIndexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards runtime cache keys for mobile testing.
+const gameIndexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Guards runtime cache keys for mobile testing.
 const characterStudioSource = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8'); // Guards NPC-only skeleton authoring plus the interactive runtime neck-rig diagnostic.
 
 assert.equal(skeleton.speciesId, 'harlyao-skeleton');

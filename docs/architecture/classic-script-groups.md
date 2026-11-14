@@ -10,10 +10,14 @@ Currently migrated:
 - `render.js`: actor/mesh/grass culling and depth snapshot.
 - `festival.js`: ancestor figures, activities, festivals, offering rituals and festive UI.
 - `npc-schedule.js`: NPC agendas, social relations, seating, pathfinding, routes and Nohuknuk wilderness AI.
+- `combat-main.js`: weapon shape stats, combat runtime, attack abilities, input, progression and enchantments.
+- `combat-enemies.js`: ranged weapons/reticles and authored enemy combat variants.
+- `ruin-puzzles.js`: melody camera/plate systems, V50 mechanisms, puzzles and checkpoints.
+- `dialogue.js`: cinematic/dialogue camera support, text/voice runtime and dialogue content.
 
 The stable index entry is:
 ```html
-<script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="qol"></script>
+<script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="qol"></script>
 ```
 
 The loader runs while the HTML parser is active, writes a uniquely queried
@@ -58,3 +62,16 @@ boot handoff scripts in place. They have stronger parser/side-effect coupling.
 ## Startup load failures (mobile)
 
 The classic-script-group-loader installs one capture-phase error listener when the first group loads. If a manifest fails to download or evaluate, it records the name in window.HobunjiClassicScriptGroups.failedGroups and shows a single on-screen role=alert message. Normal startup adds no DOM elements, no polling, and no duplicate listeners. The new test-classic-script-group-failures.js exercises the actual loader with a simulated browser.
+
+## Combat, dialogue and ruin-puzzle migration (third stage)
+
+- These four groups deliberately occupy their *original* positions in the parser. Combat foundational systems remain after weapon assemblies and before movement collision. Enemy/ranged combat remains after swept movement and before bandit camps; it therefore does not change the bandit/bounty dependency chain.
+- The dialogue group stays after Pixel Probe and before combat tutorial content; cinematic camera, collisions, framing, text, character voice ownership, and dialogue content retain their evaluation order.
+- The ruin-puzzles group stays after ruin-layer defense and before WildernessMap. Melody camera framing must precede puzzle melody, glyphs, and challenges. Native V50 floor modules must precede connector/checkpoint consumers.
+- Ranged reticle and weapon scripts share the `combat-enemies.js` manifest because they are adjacent to the authored enemy combat group and must still precede bandit combat.
+- `scripts/test-combat-dialogue-puzzle-script-groups.js` checks manifest ownership and the original dependency-order anchors, not merely whether a module appears somewhere in the HTML.
+- This stage adds four parser-blocking manifest fetches. A successful static-order test does not measure mobile startup latency; profile it before considering more broad migrations.
+
+### Early parsing failures
+
+Combat and puzzle groups may load in the document head, before `document.body` exists. The manifest-error listener queues exactly one `DOMContentLoaded` callback on the first such failure. It then displays all accumulated failed group names in the existing on-screen alert. Successful loads install no additional listener or UI. `scripts/test-classic-script-group-failures.js` covers head-time failures and duplicate reporting.

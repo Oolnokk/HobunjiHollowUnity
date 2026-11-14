@@ -148,5 +148,5 @@ assert.match(read('docs/game.js'), /targetPlayer = c\.targetPlayer; \/\/ The cho
   'wild animals must actually use the new target during this same AI frame');
 assert.match(read('docs/js/wildlife-spawn.js'), /wildlifeSkirmishFloor: floor/,
   'wildlife skirmish bites carry their nonlethal Health floor into the central payout path');
-assert.match(read('docs/index.html'), /js\/combat\/animal-scent-targeting\.js/);
+assert.match(require('./classic-script-group-index.js').expandClassicScriptGroups(), /js\/combat\/animal-scent-targeting\.js/);
 console.log('scent-marked animal combat tests passed');
