@@ -4,9 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Ensures the authored emoji renderer ships from its parser-ordered service manifest.
 
 const root = path.join(__dirname, '..'); // Base for production modules and ported source artwork.
-const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
+const html = expandClassicScriptGroups(fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'));
 assert.match(html, /js\/scratchbones-emoji-reactions\.js\?v=/);
 for (const icon of ['love', 'disgust', 'alarmed', 'curious', 'gloat_cloud', 'gloat_coin1', 'gloat_coin2', 'gloat_coin3']) {
   assert.ok(fs.existsSync(path.join(root, 'docs/assets/symbols/emoji_' + icon + '.png')), 'missing original symbol: ' + icon);
