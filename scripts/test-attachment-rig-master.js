@@ -119,7 +119,7 @@ old.creatures['voorg-ass'].anchors.saddle.position = { x: -0.0016655977917167481
 const repaired = guard.reconcileProfiles(old);
 assert.strictEqual(repaired.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'zero v9 posterior must repair to the 20%-below-portrait calibration');
 assert(Math.abs(repaired.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'double-scaled v1 shoulder must be repaired to exact v9 authoring');
-assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.22929652083051758, 'stale v9 perch must be repaired to the current right-hand shoulder target');
+assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.28087406205430004, 'stale v9 perch must be repaired to the master right-hand shoulder target');
 assert.strictEqual(repaired.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'stale v9 grip must be repaired');
 for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkaoii', 'puktuk', 'voorg-ass']) {
   assert.deepStrictEqual(repaired.creatures[kind].anchors.saddle.position, profiles.creatures[kind].anchors.saddle.position, `${kind} superseded default saddle must migrate to the October 17 authoring`);
