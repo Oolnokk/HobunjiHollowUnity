@@ -147,6 +147,13 @@
     return {audit,meshes:[roof,wall]};
   }
 
+  function doorNear(player,door,wasOpen=false){
+    if(!player||!door||![player.x,player.z,door.x,door.z].every(Number.isFinite))return false;
+    const floor=Number(door.y),height=Number(player.y);
+    if(Number.isFinite(floor)&&Number.isFinite(height)&&Math.abs(height-floor)>WALL_HEIGHT+1)return false;
+    // Preserve a traversable doorway during vertical jumps and during crossing; the open radius has hysteresis.
+    return Math.hypot(player.x-door.x,player.z-door.z)<(wasOpen?3.5:2.8);
+  }
   function roomAt(rooms,x,z,y){
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
     let best=null,distance=Infinity;
@@ -289,7 +296,8 @@
     live=session;
     return session;
   }
-  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,wallAudit,makeShell,roomAt,mount,
+  return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,wallAudit,makeShell,roomAt,doorNear,mount,
+    mounted:()=>!!live,
     isRoomActive:id=>live?.isRoomActive(id)===true,
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
