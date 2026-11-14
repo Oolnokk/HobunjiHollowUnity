@@ -10,7 +10,7 @@ const ranged = read('docs/js/combat/ranged-weapons.js');
 const bandits = read('docs/js/bandit-camps.js');
 const popup = read('docs/js/world-popup-text.js');
 const foliage = read('docs/js/foliage-generator.js');
-const index = read('docs/index.html');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups();
 const probe = read('docs/js/pixel-probe.js');
 
 assert(volume.includes("algorithm: 'semantic-height'"), 'cover reports the semantic-height algorithm');

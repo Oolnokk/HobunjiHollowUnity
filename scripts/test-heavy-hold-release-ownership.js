@@ -6,7 +6,7 @@ const fs = require('node:fs'); // Used to inspect the browser-only input modules
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Desktop mouse routing under test.
 const combatInput = fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'); // Shared tap/hold state machine under test.
-const index = fs.readFileSync('docs/index.html', 'utf8'); // Browser bootstrap under test.
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Browser bootstrap under test.
 
 assert.match(
   game,

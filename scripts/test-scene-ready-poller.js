@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const pollerSource = fs.readFileSync('docs/js/scene-ready-poller.js', 'utf8');
-const indexSource = fs.readFileSync('docs/index.html', 'utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups();
 assert(!/requestAnimationFrame\(/.test(pollerSource), 'the extracted poller must use a real timer, not requestAnimationFrame');
 assert(pollerSource.includes('global.setTimeout(poll, intervalMs)'), 'the poller must reschedule itself on a timer');
 const pollerAt = indexSource.indexOf('js/scene-ready-poller.js?v=');

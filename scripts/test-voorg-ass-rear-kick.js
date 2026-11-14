@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Test root used for CI and local checkout.
 const game = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8'); // Checks the large closure-private combat AI integration.
-const index = fs.readFileSync(path.join(ROOT, 'docs/index.html'), 'utf8'); // Ensures the attack module is loaded before game.js.
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Ensures the attack module is loaded before game.js.
 const script = fs.readFileSync(path.join(ROOT, 'docs/js/combat/combat-voorg-ass-rear-kick.js'), 'utf8'); // Executed in isolated VM with mock combat deps.
 
 assert.match(index, /combat-voorg-ass-rear-kick\.js/, 'index loads the named kick attack');
