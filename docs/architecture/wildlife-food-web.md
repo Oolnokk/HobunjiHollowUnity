@@ -8,7 +8,7 @@ The wildlife food web extends the existing `updateHostiles` and `WildlifeSpawn` 
 
 - **Nelk:** hunts Puktuk only. It acquires the nearest eligible live Puktuk within 13 tiles at a throttled interval, regardless of foliage-patch assignment. Being a carnivore does not mean it automatically targets every creature or player.
 - **Puktuk:** non-hostile, grouped Western Slope foragers. Their food is *small burrowing animals in snow*, represented by a repeatedly generated nearby dig site, without spawning or allocating an actual prey actor. Puktuk retaliates against Nelk when struck, but retreats after its Health falls to the existing skirmish threshold.
-- **Nazgraku:** non-hunting Northern Cliffs gatherers, in one extra three-to-five-animal forager group, independent of both Voorg-Ass herds. They seek existing wild berry bushes first (using `WildBerries.nearestAvailableBerry`, reservations, and `removeBerryBush`); otherwise, they assign a hidden tuber tile. They fight animals, bandits, and players that approach their food site and stop pursuing after the intruder leaves.
+- **Nazgraku:** non-hunting Northern Cliffs gatherers, in one extra three-to-five-animal forager group, independent of the two daily rotating Moot/Voorg-Ass herd slots. They seek existing wild berry bushes first (using `WildBerries.nearestAvailableBerry`, reservations, and `removeBerryBush`); otherwise, they assign a hidden tuber tile. They fight animals, bandits, and players that approach their food site and stop pursuing after the intruder leaves.
 
 The old `diet` and `wildlifeRole` values remain compatibility hints for barn fodder, earlier species, and Porakaneki faction logic. They do **not** define the new selective hunting relationships.
 
