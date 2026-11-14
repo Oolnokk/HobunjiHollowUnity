@@ -174,7 +174,14 @@
   }
 
   function buildStandaloneMapExport(map) {
-    if (map?.category === 'building_interior') return buildBuildingInteriorExport(map);
+    if (map?.category === 'building_interior') {
+      // The editor's canonical interior serializer retains camera rigs, puzzle wiring, layouts and decorative furniture.
+      if (activeMap()?.id === map.id) {
+        const fromEditor = window._mapEditorBridge?.exportActiveBuildingInterior?.();
+        if (fromEditor?.id === map.id) return jsonSafeClone(fromEditor);
+      }
+      return buildBuildingInteriorExport(map);
+    }
     const clean = mapSnapshot(map);
     clean.tiles = tilesToArray(map?.tiles);
     return clean;
@@ -344,21 +351,6 @@
     event.stopImmediatePropagation();
   }
 
-  function handleMapExport(event) {
-    stopOriginal(event);
-    try {
-      const map = activeMap();
-      if (!map) throw new Error('No active map is available.');
-      const output = buildStandaloneMapExport(map);
-      const suffix = map.category === 'building_interior' ? '.json' : '.map.json';
-      downloadJson(`${fileStem(map.name)}${suffix}`, output);
-      setStatus(map.category === 'building_interior' ? 'Building interior JSON downloaded.' : 'Map JSON downloaded.');
-    } catch (error) {
-      console.error('Map JSON export failed:', error);
-      setStatus(`Map JSON export failed: ${error?.message || error}`);
-    }
-  }
-
   function handleDiffExport(event) {
     stopOriginal(event);
     try {
@@ -406,7 +398,7 @@
     }
     installed = true;
     captureWorkspaceBaselines();
-    $('exportMapBtn')?.addEventListener('click', handleMapExport, { capture: true });
+    // Keep the editor's own Map JSON handler for complete interior export semantics.
     $('exportDiffBtn')?.addEventListener('click', handleDiffExport, { capture: true });
     $('diffDownloadBtn')?.addEventListener('click', handleDiffDownload, { capture: true });
 
