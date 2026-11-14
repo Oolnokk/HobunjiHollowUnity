@@ -605,10 +605,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(ropeChains.length > 0 || compactVestibule,
         'a grid-free multiroom entrance needs a rope chain; a V50 vestibule must connect to actual shaft wings: '+JSON.stringify({entranceRoomCount:active.entranceRoomCount,shaftLayerPlan:active.shaftLayerPlan,simple:active.simple}));
       assert.ok(ropeChains.every(chain => chain.ropeCount >= 2 && chain.checkpoints?.start && chain.checkpoints?.end &&
-        active.simple.ropes.filter(rope => rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
-        'each rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
-      if(ropeChains.length)assert.ok(active.simple.modules.some(module => module.type === 'layerRopeChainAbyss'),
-        'rope-chain traversal must be registered as an authored layer module: '+JSON.stringify(active.simple.modules)); // A single-room V50 shaft vestibule has no rope hallway to register; real chains still require their authored module.
+        active.simple.ropes.filter(rope => rope.roomId === String(chain.hallId) ||
+          rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
+        'each hallway or layer rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
+      assert.ok(ropeChains.every(chain => active.simple.modules.some(module =>
+        String(module.slotId) === String(chain.hallId) &&
+        ((module.slotKind === 'hallway' && module.type === 'ropeChainAbyss') ||
+         (module.slotKind === 'layer' && module.type === 'layerRopeChainAbyss')))),
+        'every generated rope chain must be registered under its actual hallway or layer slot: '+JSON.stringify(active.simple.modules)); // Empty chain lists are valid only for the separately verified single-room V50 vestibule.
     }
     if(!active.simple.ropes.length && !compactVestibule){
       assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
