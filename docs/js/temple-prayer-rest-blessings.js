@@ -1,17 +1,20 @@
 (() => {
   'use strict';
 
-  if (Number(window.TemplePrayerRestBlessings?.version) >= 3) return;
+  if (Number(window.TemplePrayerRestBlessings?.version) >= 4) return;
 
-  const VERSION = 3;
+  const VERSION = 4;
   const SAVE_FIELD = 'templePrayerRestBlessings'; // Stored on the active character so prayer/rest timers survive reloads with that character.
   const PRAYER_DURATION_HOURS = 7 * 24; // Used by all three temple prayers: one full in-game week.
-  const WELL_RESTED_DURATION_HOURS = 16; // Used after a completed farmhouse-bed Sleep passage.
+  const WELL_RESTED_DURATION_HOURS = 16; // Existing stronger player buff; only awarded by at least eight actual sleep hours.
+  const RESTED_DURATION_HOURS = 3; // Short sleep or seated Wait postpones yawns for three game hours without granting Well Rested stat bonuses.
+  const WELL_RESTED_MIN_SLEEP_HOURS = 8; // Enforces real eight-hour sleep, including the legacy animated-bed path.
+  const SLEEP_HOUR_EPSILON = 1e-6; // Absorbs raw calendar-fraction rounding at exact 8h, not genuine short sleep.
   const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew on Anan.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Temple prayer recognizes live benches, restores blessings after character selection, and supports controller Back and Escape; copied diagnostics show eligibility and saved character.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Rested: three in-game hours without yawning after any positive Sleep or seated Wait; Well Rested: existing 16h bonuses only after eight hours of sleep.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -19,7 +22,7 @@
     narshangetic: Object.freeze({ id: 'narshangetic', name: 'Narshangetic Prayer', icon: '🐟', afflictionRecoveryMultiplier: 1.35, dotApplicationMultiplier: 0.70, skillStacks: Object.freeze({ fishing: 3 }), description: '+35% affliction recovery; 30% less DoT buildup; +3 Fishing.' }),
   });
 
-  let state = { prayer: null, wellRested: null }; // Current character-scoped blessing state read by every runtime modifier below.
+  let state = { prayer: null, rested: null, wellRested: null }; // Character-scoped prayer, light fatigue relief and full Well Rested bonus.
   let stateCharacterId = null; // Hydrates late-selected characters once and prevents saving a previous character's blessings into another record.
   let actionSnapshot = null; // Original Action 3 presentation restored when the Pray prompt is no longer valid.
   let actionInjected = false; // Prevents repeated snapshots while the prompt sync loop is active.
@@ -62,6 +65,7 @@
     const next = raw && typeof raw === 'object' ? raw : {};
     return {
       prayer: next.prayer && PRAYERS[next.prayer.id] ? { id: next.prayer.id, startedAtGameHour: finite(next.prayer.startedAtGameHour), expiresAtGameHour: finite(next.prayer.expiresAtGameHour) } : null,
+      rested: next.rested && Number.isFinite(Number(next.rested.expiresAtGameHour)) ? { startedAtGameHour: finite(next.rested.startedAtGameHour), expiresAtGameHour: finite(next.rested.expiresAtGameHour) } : null, // Legacy character saves simply have no Rested entry.
       wellRested: next.wellRested ? { startedAtGameHour: finite(next.wellRested.startedAtGameHour), expiresAtGameHour: finite(next.wellRested.expiresAtGameHour) } : null,
     };
   }
@@ -97,6 +101,7 @@
     if (!Number.isFinite(now)) return false;
     let changed = false;
     if (state.prayer && !(state.prayer.expiresAtGameHour > now)) { state.prayer = null; changed = true; }
+    if (state.rested && !(state.rested.expiresAtGameHour > now)) { state.rested = null; changed = true; }
     if (state.wellRested && !(state.wellRested.expiresAtGameHour > now)) { state.wellRested = null; changed = true; }
     if (changed && persist) persistState();
     if (changed) window.EffectBuffBar?.refresh?.(true);
@@ -111,6 +116,10 @@
   function isWellRested() {
     expireState();
     return !!state.wellRested;
+  }
+  function isRested() {
+    expireState();
+    return !!(state.rested || state.wellRested); // Full Well Rested also suppresses yawns for its entire 16-hour span.
   }
 
   function activeTemplePrayerDay() {
@@ -249,6 +258,16 @@
     return true;
   }
 
+  function grantRested() {
+    expireState();
+    const now = currentGameHour(); // A positive Sleep or seated Wait refreshes, rather than stacks, the three-hour fatigue grace.
+    if (!Number.isFinite(now)) return false;
+    state.rested = { startedAtGameHour: now, expiresAtGameHour: now + RESTED_DURATION_HOURS };
+    persistState();
+    window.EffectBuffBar?.refresh?.(true);
+    window.__farmLog?.('[rest] Rested for 3h: yawns suppressed, no extra Well Rested stat bonuses.', 'info');
+    return true;
+  }
   function grantWellRested() {
     expireState();
     const now = currentGameHour(); // Every qualifying player-bed Sleep refreshes the full 16-hour timer rather than stacking copies.
@@ -385,6 +404,7 @@
         const prayer = PRAYERS[state.prayer.id];
         if (prayer) entries.push({ id: `temple-prayer-${prayer.id}`, icon: prayer.icon, label: prayer.name, sourceLabel: 'Temple Prayer', durationS: PRAYER_DURATION_HOURS * 3600, remainingS: (state.prayer.expiresAtGameHour - now) * 3600 });
       }
+      if (state.rested) entries.push({ id: 'rested', icon: '💤', label: 'Rested', sourceLabel: 'Sleep or seated Wait', durationS: RESTED_DURATION_HOURS * 3600, remainingS: (state.rested.expiresAtGameHour - now) * 3600 });
       if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: 'Well Rested', sourceLabel: 'Sleep', durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
       return entries;
     });
@@ -444,10 +464,20 @@
   }
 
   function onTimePassage(event) {
-    if (event?.detail?.kind !== 'sleep') return;
-    if (!consumeOwnedBedSleepToken()) return; // Debug or other generic Sleep passages must not grant Well Rested.
-    if (event.detail.hours === 0) return; // Cancelling before the first hour consumes the token without granting sleep benefits.
-    grantWellRested();
+    const detail = event?.detail || {};
+    const kind = detail.kind;
+    if (kind !== 'sleep' && kind !== 'wait') return; // Dev-time skips never restore fatigue.
+    const sleepFromBed = kind === 'sleep' && (detail.source === 'legacy-bed' || consumeOwnedBedSleepToken()); // Only a real bed can award the stronger buff.
+    const duration = Number(detail.hours); // Uses hours actually elapsed, not the sleep selector's requested duration.
+    if (!Number.isFinite(duration) || duration <= 0) return; // Cancelled sleeps and waits grant neither buff.
+    if (kind === 'wait') {
+      const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction;
+      const seated = (!!seat && seat.phase !== 'out') || window.CalendarSystem?.timeDebugSnapshot?.()?.seatedWaitReady === true; // Seat ownership, not generic time passage, earns Rested.
+      if (!seated) return;
+    }
+    lastRestSource = kind === 'wait' ? 'seated-wait' : (sleepFromBed ? 'player-bed' : 'sleep');
+    grantRested();
+    if (kind === 'sleep' && sleepFromBed && duration + SLEEP_HOUR_EPSILON >= WELL_RESTED_MIN_SLEEP_HOURS) grantWellRested();
   }
 
   function installDebugHook() {
@@ -474,6 +504,7 @@
       unavailableReason,
       actionButton: button ? { action: button.dataset.action || null, hidden: button.classList.contains('abt-hidden') } : null,
       prayer: state.prayer ? { ...state.prayer, name: PRAYERS[state.prayer.id]?.name || state.prayer.id, remainingHours: Math.max(0, state.prayer.expiresAtGameHour - currentGameHour()) } : null,
+      rested: state.rested ? { ...state.rested, remainingHours: Math.max(0, state.rested.expiresAtGameHour - currentGameHour()) } : null,
       wellRested: state.wellRested ? { ...state.wellRested, remainingHours: Math.max(0, state.wellRested.expiresAtGameHour - currentGameHour()) } : null,
       ownedBedSleepPending: !!window[OWNED_BED_SLEEP_PENDING_KEY], lastRestSource,
       hooks: { resourceHooksInstalled, cookingHookInstalled, alchemyHooksInstalled, hudProviderInstalled },
@@ -517,6 +548,7 @@
     PRAYERS,
     activePrayer,
     isWellRested,
+    isRested,
     skillStackBonus,
     foodBonusStacks,
     movementSpeedMultiplier,
@@ -524,6 +556,6 @@
     debugSnapshot,
     openMenu,
     getPrayerAction,
-    _test: Object.freeze({ choosePrayer, grantWellRested, activeTemplePrayerDay, activeTempleService: activeTemplePrayerDay, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
+    _test: Object.freeze({ choosePrayer, grantRested, grantWellRested, onTimePassage, currentGameHour, activeTemplePrayerDay, activeTempleService: activeTemplePrayerDay, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
   });
 })();
