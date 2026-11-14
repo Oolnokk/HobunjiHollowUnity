@@ -120,7 +120,7 @@
       : census.night ? 'Honeyfuzzles normally tuck into stumps at night.'
       : 'Daytime swarms emerge within ' + deps.esc(census.spawnRadiusTiles) + ' tiles of the player.';
     return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">
-      <div style="font-weight:600">Cloud Forest Honeyfuzzles (little hummingbirds)</div>
+      <div style="font-weight:600">Cloud Forest Honeyfuzzle swarms</div>
       <div>Hive stumps: <b>${hives.length}</b> · standing: <b>${standing}</b> · active swarms: <b>${visible}</b></div>
       <div style="opacity:.8">${note}</div>
     </div>`;
