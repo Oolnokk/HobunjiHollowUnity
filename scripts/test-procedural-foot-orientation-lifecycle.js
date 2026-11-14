@@ -48,10 +48,10 @@ const equalOrientation = (a, b) => Math.abs(Math.abs(
 const worldHelperSource = between(legsSource,
   '  function worldQuaternionWithoutScale(node, out) {', '\n  function normalizeKey(value) {');
 const worldWithoutScale = new Function(worldHelperSource + '\nreturn worldQuaternionWithoutScale;')();
-const sceneRoot = { quaternion: pitch(0.16), parent: null };
-const reflectedAvatar = { quaternion: yaw(0.72), parent: sceneRoot, scale: { x: -1, y: 1, z: 1 } };
-const thigh = { quaternion: pitch(-0.21), parent: reflectedAvatar };
-const calf = { quaternion: yaw(-0.34), parent: thigh };
+const sceneRoot = { isObject3D: true, quaternion: pitch(0.16), parent: null };
+const reflectedAvatar = { isObject3D: true, quaternion: yaw(0.72), parent: sceneRoot, scale: { x: -1, y: 1, z: 1 } };
+const thigh = { isObject3D: true, quaternion: pitch(-0.21), parent: reflectedAvatar };
+const calf = { isObject3D: true, quaternion: yaw(-0.34), parent: thigh };
 const correct = sceneRoot.quaternion.clone().multiply(reflectedAvatar.quaternion)
   .multiply(thigh.quaternion).multiply(calf.quaternion);
 calf.getWorldQuaternion = out => out.copy(yaw(Math.PI).multiply(correct)); // Three's matrix decomposition can reflect the facing basis.
@@ -83,13 +83,17 @@ const counterLegs = new Function(
   counterSource + '\nreturn counterRotateLegRootForRender;'
 )(composerWorldQ, new Q(), new Q(), new Q());
 for (const correction of [-Math.PI * 0.85, 0.7, Math.PI * 0.95]) {
-  const world = { quaternion: pitch(-0.31), parent: null };
-  const body = { quaternion: yaw(1.2), parent: world, scale: { x: -1, y: 1, z: 1 } };
-  const leg = { quaternion: pitch(0.22).multiply(yaw(-0.15)), parent: body };
+  const world = { isObject3D: true, quaternion: pitch(-0.31), parent: null };
+  const body = { isObject3D: true, quaternion: yaw(1.2), parent: world, scale: { x: -1, y: 1, z: 1 } };
+  const leg = { isObject3D: true, quaternion: pitch(0.22).multiply(yaw(-0.15)), parent: body };
   const initialBody = body.quaternion.clone(), initialLeg = leg.quaternion.clone();
   const initialWorldFoot = composerWorldQ(leg, new Q()).clone();
   const visualDelta = yaw(correction); // Render-only camera clamp turns the avatar body.
-  body.quaternion.premultiply(visualDelta);
+  // Apply the same WORLD-space body correction as the production composer's applyWorldDelta:
+  // a pitched scene-root means it cannot be premultiplied directly in body LOCAL space.
+  const worldParent = composerWorldQ(body.parent, new Q());
+  const bodyLocalCorrection = worldParent.clone().invert().multiply(visualDelta).multiply(worldParent);
+  body.quaternion.premultiply(bodyLocalCorrection);
   const undo = [];
   counterLegs(leg, visualDelta, undo);
   assert(equalOrientation(composerWorldQ(leg, new Q()), initialWorldFoot),
