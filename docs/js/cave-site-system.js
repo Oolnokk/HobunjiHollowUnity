@@ -1144,6 +1144,11 @@
       exit.label = 'Back to the cave';
     }
 
+    const secret = hiddenRuin ? plan.ruinEntrance : (plan.puzzleDoor || plan.cache); // Final reward destination chosen before saving the cave plan.
+    plan.hiddenReward = plan.separator && secret ? {
+      id: secret.id, col: secret.col, row: secret.row,
+      type: hiddenRuin ? 'ruin_entrance' : plan.puzzleDoor ? 'puzzle_cave' : 'cache',
+    } : null; // Mobile debug snapshot records an actual reward, not merely the rolled cave contents.
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
     plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
@@ -1153,7 +1158,7 @@
       shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
-      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:hiddenRuin?'ruin_entrance':plan.puzzleDoor?'puzzle_cave':plan.cache?'cache':null } : null,
+      extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:plan.hiddenReward?.type || null } : null,
     };
     plansByMapId.set(String(mapId), plan);
     window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.contents}+${profile.inhabitant} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
@@ -1810,7 +1815,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Hidden cache traps are visible wall-to-wall tripwires that release ceiling-hung physical Shattercasks. They share HangingRopes physics and Shattercasks explosion damage.',
+      latestChange: 'Mineable cave walls now conceal a guaranteed real cache, Puzzle Cave door or safe existing ruin threshold. Inspect currentPlan.hiddenReward on mobile.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
       caveTripwires: window.CaveTripwireTraps?.debugSnapshot?.(currentArea) || null, // Mobile-friendly armed/disarmed/rope state.
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
@@ -1832,6 +1837,8 @@
         shattercasks: plansByMapId.get(currentArea).shattercasks,
         traps: plansByMapId.get(currentArea).traps,
         cache: plansByMapId.get(currentArea).cache,
+        hiddenReward: plansByMapId.get(currentArea).hiddenReward, // Direct mobile diagnostic for the room/door/chest that justifies a destructible barrier.
+        puzzleDoor: plansByMapId.get(currentArea).puzzleDoor,
         coffins: plansByMapId.get(currentArea).coffins,
         ruinEntrance: plansByMapId.get(currentArea).ruinEntrance,
         puzzleCave: plansByMapId.get(currentArea).puzzleCave,
