@@ -114,6 +114,11 @@
     return h || 1;
   }
 
+  function exteriorPuzzleKind(profile) {
+    if (profile?.source !== 'independent_cliff') return null;
+    return hashSeed(String(profile.signature) + ':outdoor-song') % 2 === 0 ? 'timedMelody' : 'cavePressurePlate';
+  } // The cave generator and cliff entrance agree on the one deterministic exterior challenge type.
+
   function fallbackRng(seedText) {
     let a = hashSeed(seedText); // Stateful fallback stream used by deterministic generation helpers outside full game boot.
     return () => {
@@ -579,13 +584,22 @@
     // One compact, carved chamber is reserved before cave sculpting, rather than
     // placing a gate against unknown collision or accidentally clipping the rim.
     const far = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow);
-    const center = far.find(tile => hasFeatureClearance(tile, blockedKeys, 2.2)
-      && Math.hypot(tile.col-mapData.exitCol,tile.row-mapData.exitRow)>=4);
-    if (!center) return false; // Invalid/small cave leaves the normal shell intact.
+    const preferredCenter = far.find(tile => hasFeatureClearance(tile, blockedKeys, 2.2)
+      && Math.hypot(tile.col-mapData.exitCol,tile.row-mapData.exitRow)>=4); // Spacious rooms retain the existing natural puzzle choices.
+    const fallbackTile = !preferredCenter ? far[0] : null; // A cramped or feature-blocked cave still deserves its one solvable challenge.
+    const center = preferredCenter || (fallbackTile
+      ? {col:Math.max(5,fallbackTile.col),row:Math.max(5,fallbackTile.row)}
+      : null); // Keep the nine-tile chamber inside positive map coordinates and attached to the furthest known floor tile.
+    if (!center) return false; // A cave without any walkable floor cannot host an interaction.
     const room = {id:'puzzle-cave-chamber',col:center.col-4,row:center.row-4,width:9,depth:9};
     plan.clearanceFootprints.push(room); // The existing CavernGenerator builds the floor/ceiling/walls in one pass.
+    const shape = window.CavernGenerator?.caveShape?.() || {base:1.5,full:2.5}; // Canonical ordinary height used to demand at least twice as much puzzle headroom.
+    mapData.cavernTallTiles = [[center.col, center.row]]; // Raise the whole 9x9 chamber, then ease the roof back to the regular tunnel height.
+    mapData.cavernPuzzleCeilingScale = Math.max(shape.full, shape.base * 2.5); // Extra headroom plus a raised minimum roof facet guarantees physical clearance, not just nominal volume height.
+    const exteriorMusic = exteriorPuzzleKind(plan.profile) === 'timedMelody'; // A musical cliff gate never leads into a second music challenge.
+    const prefersFire = rng() < .43; // Consume the original seeded puzzle-choice draw, preserving the downstream difficulty and reward layout.
     plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
-      col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody',difficulty:1+Math.floor(rng()*5)}; // Both one-room variants share the save and reward lifecycle.
+      col:center.col,row:center.row,room,kind:!preferredCenter ? 'cavePressurePlate' : (exteriorMusic || prefersFire ? 'fireSconces' : 'timedMelody'),difficulty:1+Math.floor(rng()*5)}; // Tiny caves use one simple plate; normal chambers retain their seeded challenge variety.
     plan.puzzleTreasure={id:'puzzle-cave-reward:'+String(mapData.id||plan.profile.mapId),
       col:center.col,row:center.row+3,tier:2}; // The bronze chest occupies the deep reward alcove, with real walking space behind the unbreakable, puzzle-locked wall.
     mapData.cavePuzzleTreasure=clone(plan.puzzleTreasure); // The chest has a real tile, a visible model and a separately claimable persistent reward.
@@ -839,9 +853,16 @@
     const puzzle=plan.puzzleCave;
     const state=stateFor(profile);
     const room={x:puzzle.col+.5-4.5,z:puzzle.row+.5-4.5,w:9,d:9}; // One 9x9 carved cave chamber, centered on the actual floor tile.
-    try{
-      const challenge=creator({
-        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:puzzle.kind,y:0,area:key,authoredCliffDoor:true,
+    const exteriorMusic = exteriorPuzzleKind(profile) === 'timedMelody'; // Enforce different interior/exterior puzzle mechanics even on restored or legacy maps.
+    const musicAvailable = typeof window.PuzzleCaveMelody?.generate === 'function' && typeof window.PuzzleCaveMelody?.createSession === 'function';
+    let kind = puzzle.kind; // The available runtime may substitute another puzzle without changing the cave's persisted layout seed.
+    if (kind === 'timedMelody' && (exteriorMusic || !musicAvailable)) kind = 'cavePressurePlate'; // Do not substitute fire: melody maps need not contain the two guaranteed flame charges.
+    if (kind === 'fireSconces' && !fireAvailable) kind = 'cavePressurePlate'; // No working fire runtime must never make the cave reward unobtainable.
+    if (!['timedMelody','fireSconces','cavePressurePlate'].includes(kind)) kind = 'cavePressurePlate';
+    try {
+      const compose = challengeKind => creator({
+        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:challengeKind,y:0,area:key,authoredCliffDoor:true,
+        caveRoofHeight:Math.max(9,Number(mapData.mesh?.vaultCeiling?.topY)||0), // Seals the sculpted wall up to the new vaulted ceiling instead of leaving a jumpable gap.
         songOptions:{difficulty:puzzle.difficulty}, // Deterministic 1–2-measure challenge range, not a universal easy one-measure song.
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
         onSolved:()=>{
@@ -858,9 +879,18 @@
         getPlayerY:()=>0, // Cave interiors are flat, level-zero generated slices.
         onMusicUnavailable:()=>wildlifeDeps?.showToast?.('Equip an instrument to attempt the stone song.',false),
       });
+      let challenge;
+      try { challenge = compose(kind); }
+      catch(error) {
+        if (kind === 'cavePressurePlate') throw error;
+        window.__farmLog?.('[puzzle-cave] '+kind+' unavailable; using one-step pressure plate: '+error.message,'warn');
+        kind = 'cavePressurePlate'; // A broken optional puzzle can never make the cave treasure permanently inaccessible.
+        challenge = compose(kind);
+      }
       if(state.puzzleSolved){
         challenge.solved=true;challenge.doorRise=1;
-        challenge.door.position.y+=puzzle.kind==='fireSconces'?3.5:3.6; // Match the authored type's own lift distance on first render, without a one-frame jump.
+        challenge.plateSignal?.setActive?.(true); // Restore the permanently completed plate's indicator, not just the raised physical gate.
+        challenge.door.position.y+=challenge.kind==='timedMelody'?3.6:3.5; // Restore the raised slab immediately, including fallback pressure-plate caves.
         for(const sconce of challenge.sconces||[]){sconce.lit=true;sconce.flame.visible=true;} // Solved fire gates keep their lit torches after re-entry.
         syncPuzzleTreasureVisual(key); // A saved solution reveals an unclaimed chest on re-entry, but never automatically consumes it.
       }
@@ -1180,7 +1210,9 @@
     const site=sitesByMapId.get(String(mapId)); // Exterior cliff-gate and interior loot share the same persistent cave signature.
     if(!site)return {solved:false,tier:1};
     const state=stateFor(site);
-    return {solved:!!state.outdoorPuzzleSolved,tier:Number(state.outdoorPuzzleTier)||1};
+    return {solved:!!state.outdoorPuzzleSolved ||
+      (exteriorPuzzleKind(site)==='cavePressurePlate' && !!state.discovered),
+      tier:Number(state.outdoorPuzzleTier)||1}; // Older non-music doors were automatically open; an already-entered cave stays open after the plate update.
   }
 
   function markExteriorPuzzleSolved(mapId,rewardTier) {
@@ -1768,6 +1800,7 @@
         puzzleCave: plansByMapId.get(currentArea).puzzleCave,
         puzzleTreasure: plansByMapId.get(currentArea).puzzleTreasure, // Mobile diagnostics show the reward chest tile even if a model fails to load.
         puzzleProgress: puzzleChallengesByMapId.get(currentArea)?.challenge?.melodyState||null,
+        puzzleActiveKind: puzzleChallengesByMapId.get(currentArea)?.challenge?.kind||null, // Mobile diagnostics show pressure-plate runtime fallback even when the seeded kind was music/fire.
         mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
@@ -1779,7 +1812,7 @@
     TYPE_LABELS,
     applyWorkspaceProfiles,
     registerOutdoorPuzzleSites,
-    exteriorPuzzleState,markExteriorPuzzleSolved,
+    exteriorPuzzleState,markExteriorPuzzleSolved,exteriorPuzzleKind,
     sitesForZone,
     profileForMapId,
     isAnimalDenSite,
