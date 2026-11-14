@@ -27,7 +27,7 @@ async function host(options = {}) {
   const window = { BanditCombat: combat, BanditCamps: { updateCampBanners() {} }, CalendarSystem: { getHour: () => hour, timeDebugSnapshot: () => ({ rawDay: day }) }, RuntimeFrameScheduler: { register(id, callback, opts) { subscriptions.set(id, { callback, opts }); } }, Ghostify: { apply() {}, restore(root) { restored.push(root); }, registerGlowSource() {} }, requestAnimationFrame: callback => callback() }; // Browser-shaped production integration.
   const sharedContext = { window }; // Use real skeleton equipment generation when materializing ghost soldiers.
   for (const file of ['metal-armor-system.js', 'combat/combat-minion.js']) vm.runInNewContext(fs.readFileSync('docs/js/' + file, 'utf8'), sharedContext);
-  vm.runInNewContext(source, { window, fetch: async () => ({ ok: true, json: async () => structuredClone(config) }), performance, Date });
+  vm.runInNewContext(source, { window, fetch: async () => ({ ok: true, json: async () => ({ ...structuredClone(config), memberCount: options.memberCount ?? config.memberCount }) }), performance, Date });
   await flush(); combat.init(deps);
   return { api: window.HarlyaoNightMarch, made, discarded, deps, subscriptions, world, window, restored,
     setHour(value) { hour = value; }, setDay(value) { day = value; }, setArea(value) { area = value; }, setPaused(value) { paused = value; },
@@ -45,6 +45,8 @@ async function host(options = {}) {
   for (let i = 0; i < 50; i++) h.tick();
   d = h.api.debugSnapshot();
   assert(d.commander.x > initialX && d.commander.x < initialX + 13, 'offscreen speed follows elapsed seconds');
+  assert(d.abstractPlannerSkips >= 35, 'unloaded-zone formation planning runs at coarse cadence rather than every 0.2 seconds');
+  assert(d.coarseTicks >= 8 && d.coarseTicks <= 11, 'the offscreen squad still advances in elapsed-time batches');
   const beforeJump = d.commander.x; // Game-hour changes must not interpolate toward an endpoint.
   h.setHour(5.5); h.tick();
   assert(Math.abs(h.api.commanderTarget().x - beforeJump) < 1.2, 'no clock-driven chunk teleport');
@@ -120,6 +122,24 @@ async function host(options = {}) {
   impassable.setArea('map_northern_cliffs'); impassable.movePlayer(2, 100); impassable.tick(); await flush();
   assert.equal(impassable.deps.hostileObjects.size, 0); assert.equal(impassable.api.debugSnapshot().membersAlive, 20);
   assert.equal(impassable.made[0].avatarRef.group.parent, null);
+  const blockedRetry = await host({ canEnter: () => false, memberCount: 1 }); // One soldier isolates repeated failed builds from the initial twenty-member arrival queue.
+  blockedRetry.setArea('map_northern_cliffs'); blockedRetry.movePlayer(2, 100);
+  for (let i = 0; i < 40; i++) { blockedRetry.tick(); await flush(); }
+  const retryReport = blockedRetry.api.debugSnapshot();
+  assert(blockedRetry.made.length <= 8, 'blocked terrain must not rebuild and dispose an expensive ghost rig at planner frequency');
+  assert(retryReport.blockedBuildSkips > 0 && retryReport.blockedPlacements > 0, 'mobile diagnostics expose failed placements and suppressed retries');
+  const warm = await host(); // Temporarily leaving a rendering bubble in the same zone should reuse fully built spectral rigs.
+  warm.setArea('map_northern_cliffs'); warm.movePlayer(8, 100);
+  for (let i = 0; i < 24; i++) { warm.tick(); await flush(); }
+  assert.equal(warm.made.length, 20);
+  warm.movePlayer(100, 100);
+  for (let i = 0; i < 20; i++) warm.tick();
+  assert.equal(warm.deps.hostileObjects.size, 20, 'temporarily distant marchers keep their parked entities inside the same zone');
+  assert.equal(warm.made[0].avatarRef.group.parent, null, 'cached ghosts still detach their entire hidden Object3D hierarchy');
+  warm.movePlayer(8, 100);
+  for (let i = 0; i < 2; i++) warm.tick();
+  assert.equal(warm.made.length, 20, 'waking before the same-zone grace period performs no new avatar construction');
+  assert.equal(warm.api.debugSnapshot().detailedMembers, 20, 'all cached ghosts wake into native travel without altering squad size');
   for (const day of [1, 2, 3, 4]) { // All four daily directions retain a cohesive data-only army.
     const routeHost = await host(); routeHost.setDay(day); routeHost.tick();
     const start = routeHost.api.commanderTarget(); // Route-specific entry point.
