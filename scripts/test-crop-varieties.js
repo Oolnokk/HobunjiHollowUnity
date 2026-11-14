@@ -218,6 +218,8 @@ assert.ok(bagRestoreAt >= 0 && varietyRebindAt > bagRestoreAt && cookingRestoreA
   'world-specific saved seeds are registered after bag hydration and before cooking/Pack restore');
 assert.match(liveGame.slice(varietyRebindAt, cookingRestoreAt), /getWorldId: _tothalWorldId/,
   'onboarding cultivar rebind uses the actual restored world identity');
+assert.match(liveGame, /inventoryWheelCache\.stacks = getInventoryStackKeys\('all'\)[\s\S]*?itemsByKey\.get\(key\) \|\| \{[\s\S]*?seedFor: ITEM_DEFS\[key\]\.seedFor/,
+  'the fallback item-wheel entry retains canonical seed planting metadata if the scroll registry is missing');
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
