@@ -570,7 +570,8 @@
         const currentStage=record.analysis.stages?.[record.solved];
         const currentId=currentStage?'v50-f'+record.floor+':'+currentStage.id:null;
         const active=!root.RuinRoomSystem?.isRoomActive||!currentId||root.RuinRoomSystem.isRoomActive(currentId);
-        if(active)record.nativeMechanisms?.tick?.(dt); // Only the room the player occupies advances its authored V50 mechanisms.
+        if(active)record.nativeMechanisms?.tick?.(dt); // Current room owns its authored puzzle mechanisms.
+        else record.nativeMechanisms?.tickDoors?.(dt); // Hallway doors must keep opening even while their adjacent puzzles sleep.
         for(const challenge of record.challenges){
           const gate=challenge.gate;
           if(!gate?.unlocked||!player)continue;
