@@ -484,6 +484,26 @@
 
     const statKey = options.statKey || mesh.name; // Used to expose this area's representation cost to mobile/in-game diagnostics.
     mesh.userData.mergedWaterStatKey = statKey;
+    // The held/foot tint compositor must use actual wet tiles, not this merged
+    // mesh's often enormous projected bounding sphere (a distant river can
+    // cover the character on screen without touching the character's tiles).
+    // Full-map floods use one rectangle instead of allocating a tile Set.
+    const waterTileFootprint = options.mapWidePlane
+      ? { bounds: [0, 0, Number(options.cols) || 0, Number(options.rows) || 0], tiles: null }
+      : { bounds: [Infinity, Infinity, -Infinity, -Infinity], tiles: new Set() };
+    if (!options.mapWidePlane) {
+      for (const cell of cells || []) {
+        if (!cell || cell.visible === false || !Number.isFinite(cell.col)
+            || !Number.isFinite(cell.row) || !Number.isFinite(cell.surfaceY)) continue;
+        const col = Math.floor(cell.col), row = Math.floor(cell.row); // Exact tile identity used by the player's water-tint replay.
+        waterTileFootprint.tiles.add(col + ',' + row);
+        waterTileFootprint.bounds[0] = Math.min(waterTileFootprint.bounds[0], col);
+        waterTileFootprint.bounds[1] = Math.min(waterTileFootprint.bounds[1], row);
+        waterTileFootprint.bounds[2] = Math.max(waterTileFootprint.bounds[2], col + 1);
+        waterTileFootprint.bounds[3] = Math.max(waterTileFootprint.bounds[3], row + 1);
+      }
+    }
+    mesh.userData.hobunjiWaterTileFootprint = waterTileFootprint;
     stats[statKey] = {
       tiles: data.tileCount,
       vertices: data.positions.length / 3,
