@@ -156,6 +156,21 @@ async function main() {
   }
   assert.equal(windowStub.AnimalHides.getDebug().pack.uumkaoiiShell, undefined, 'Shell loot does not create hide metadata');
 
+  const skeeriPalette = {body:'#695168',pattern:'#8f718f',eyes:'#da31ff'}; // Individual encounter dyes persist on butchering.
+  const skeeriCorpse = {id:'test-skeeri',creatureKey:'skeeri-medium',
+    skeeriPalette,def:{label:'Skeeri',lootPool:'creature_skeeri-medium'}};
+  const skeeriLoot = lootCorpseWithSourceDiagnostics(corpseContext.makeCorpseWorldObject(skeeriCorpse));
+  assert.equal(skeeriLoot.ok,true,'Skeeri retain the existing corpse interaction');
+  assert((corpseInventory.skeeriMeat||0)>=2,'Skeeri meat enters Pack');
+  assert.equal(corpseInventory.skeeriHide,1,'Skeeri hide enters Pack');
+  const skeeriHide = windowStub.AnimalHides.groupsFor('skeeriHide',corpseInventory.skeeriHide)[0].hideRecord;
+  assert.equal(skeeriHide.appearance.baseColor,skeeriPalette.body,'hide remembers the bird\'s fur');
+  assert.equal(skeeriHide.appearance.colors[1].color,skeeriPalette.pattern,'hide remembers its markings');
+  const skeeriWithLegacyGenes={...skeeriCorpse,genotype:{base:{color:'#112233'}}};
+  const dyedHide=windowStub.AnimalHides.makeRecord('skeeriHide',skeeriWithLegacyGenes,26); // Palette wins over any incidental genotype attached by a generic factory.
+  assert.equal(dyedHide.appearance.baseColor,skeeriPalette.body,'the live Skeeri fur, not a generic genotype, determines hide appearance');
+  assert.equal(dyedHide.appearance.colors[1].color,skeeriPalette.pattern,'Skeeri markings survive a preexisting genotype record');
+
   console.log('Wildlife shell, genotype hides and fur-hood crafting integration regression passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

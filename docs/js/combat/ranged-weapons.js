@@ -1526,6 +1526,23 @@
     return nearest;
   }
 
+  function nearestPlayerCompanionHit(start, end, projectileRadius, areaId) {
+    let nearest = null; // Finds the first player-owned ground companion crossed by this enemy projectile.
+    const combatDeps = window.Combat?.deps; // Shared combat state owns the player and his pets, even if ranged injection omitted them.
+    const companions = deps.companionObjects || combatDeps?.companionObjects; // Reuse the live roster instead of allocating a projectile-specific list.
+    const player = deps.player || combatDeps?.player; // Distinguishes player-owned ground companions from NPC-owned hounds.
+    for (const c of companions || []) {
+      if (c.stableRole !== 'companion' || c.isCompanion !== true || c.banditCompanion ||
+          (c.master && c.master !== player) ||
+          c._downed || c._deathTransitionStarted || c.health <= 0 ||
+          (c.areaId && c.areaId !== areaId)) continue; // Shoulder pets, mounts, NPC hounds, downed pets and enemy allies cannot intercept shots.
+      const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
+      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+      nearest = { creature: c, interval };
+    }
+    return nearest;
+  }
+
   // 1 out to effectiveRangePx (the weapon's tuned range), then a linear
   // taper down to RANGE_FALLOFF_MIN_FRACTION at maxDistancePx (where the
   // projectile actually despawns — see updateProjectiles). A shot that
@@ -1604,6 +1621,11 @@
       : nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
     if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
     let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
+    const petHit = nearestPlayerCompanionHit(start, end, projectileRadius, p.areaId); // Ground companions are separate actors, not part of the player hitbox.
+    if (petHit && petHit.interval.enter <= segmentLimit + AIM_EPSILON &&
+        (!nearest || petHit.interval.enter < nearest.interval.enter)) {
+      nearest = { kind: 'companion', interval: petHit.interval, actor: petHit.creature };
+    }
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
@@ -1620,11 +1642,17 @@
     }
     if (!nearest) return null;
     playProjectileImpactSfx(p, nearest.interval.enter);
-    if (nearest.kind === 'hostile') {
-      friendlyFireHits++;
-      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, friendlyFire: true, attacker: p.owner || undefined, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier });
+    if (nearest.kind === 'hostile' || nearest.kind === 'companion') {
+      const friendlyFire = nearest.kind === 'hostile'; // A ground pet hit is hostile damage, not allied-projectile friendly fire.
+      if (friendlyFire) friendlyFireHits++;
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, {
+        tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId,
+        friendlyFire, attacker: p.owner || undefined, afflictionBonuses: p.afflictionBonuses,
+        attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier,
+      });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
-      lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
+      if (friendlyFire) lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`; // Preserve the established friendly-fire diagnostic format.
+      else lastEvent = `enemy-pet-hit:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'creature'}`; // Separate mobile-readable proof of hits on the player's ground pet.
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
     deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
