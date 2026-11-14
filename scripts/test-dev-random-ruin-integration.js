@@ -429,13 +429,18 @@ const hitSource = read('docs/js/dev-random-ruin-hit-puzzles.js');
 assert(hitSource.startsWith('// Dev Random Test Ruin'), 'decoded hit-puzzle source header must be intact');
 assert(hitSource.includes('window.DevRandomRuinHitPuzzles'), 'decoded hit runtime must export its public API');
 assert(hitSource.includes('debugActivateGlyph(object = null)') && hitSource.includes('return target ? activateGlyph(target) : false'), 'hit runtime diagnostics must exercise the same authoritative glyph state transition as real projectile hits');
-assert(hitSource.includes('TORCH_BURN_MS = 12000'), 'temporary ruin torch must retain its 12-second burn budget');
-assert(hitSource.includes('harpoon_fishingmace.png'), 'temporary ruin torch must reuse the fishing-mace sprite');
-assert(hitSource.includes('glyphObelisk'), 'decoded hit runtime must support projectile glyph targets');
-assert(hitSource.includes('brazier'), 'decoded hit runtime must support physical brazier ignition');
-assert(hitSource.includes('alwaysLitTorch'), 'decoded hit runtime must discover V50 always-lit reference torches as fuel sources');
-assert(hitSource.includes('installRanged'), 'decoded hit runtime must install a ranged-projectile seam');
-assert(hitSource.includes('installCombat'), 'decoded hit runtime must install its torch-sweep combat seam');
+assert(!hitSource.includes('TORCH_BURN_MS') && !hitSource.includes('harpoon_fishingmace.png'),
+  'V50 must not recreate its retired 12-second fishing-mace torch pickup');
+assert(!hitSource.includes('installCombatAbility') && !hitSource.includes('loadout.getSlot ='),
+  'V50 must not patch combat loadouts for the removed temporary-torch attack');
+assert(hitSource.includes('glyphObelisk'), 'hit runtime must support projectile glyph targets');
+assert(hitSource.includes('brazier'), 'hit runtime must support physical brazier ignition');
+assert(hitSource.includes('alwaysLitTorch') && hitSource.includes('source.userData.fireHazard = true'),
+  'V50 always-lit source braziers must be reusable fire hazards, not torch supplies');
+assert(hitSource.includes('isIgnitionSourceAlongSegment') && hitSource.includes('contactAdventuringTorchSegment'),
+  'permanent adventuring-torch swing and throw contacts must ignite V50 physical mechanisms');
+assert(hitSource.includes('temporaryTorchPickupsDisabled:true'), 'diagnostics must report that old puzzle torch supplies are disabled');
+assert(hitSource.includes('installRanged'), 'hit runtime must retain the ranged-projectile glyph seam');
 new vm.Script(hitSource, { filename: 'dev-random-ruin-hit-puzzles.js' });
 new vm.Script(coverage, { filename: 'dev-random-ruin-runtime-coverage.js' });
 

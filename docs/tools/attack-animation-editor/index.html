@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
+<script src="../../js/tool-world-upright.js?v=20261114torch1"></script>
 <title>Hobunji Attack Animation Editor</title>
 <style>
 :root{
@@ -103,12 +104,12 @@ canvas{display:block;width:100%;height:100%}
   .compactGrid{grid-template-columns:1fr}
 }
 </style>
-<script src="../../js/panel-ui.js?v=20261114hspan1704"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261110inkWeapon1"></script>
+<script src="../../js/panel-ui.js?v=20261114torch1747a"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261114torch1747a"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
-<script src="../../js/weapon-layer-effects.js?v=20261109flailFireGC2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261111fishFlailHead1"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261114torch1747a"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261114torch1747a"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -142,6 +143,8 @@ canvas{display:block;width:100%;height:100%}
     <label class="fieldRow"><input type="checkbox" id="headRelative" style="width:auto">Head relative</label>
     <div class="help">Use the visible head as the XYZ origin. Offsets bypass arm/orbit scaling; ranged aim pivots at the head.</div>
     <div class="field"><label>Preview held sprite / weapon</label><select id="toolSpriteSelect"></select></div>
+    <label class="fieldRow"><input type="checkbox" id="worldUpright" style="width:auto">World-up idle rotation (artwork points vertically)</label>
+    <div class="help">Align the actual sprite with world +Y at idle, independent of body facing. Saved with the animation and shared with gameplay.</div>
     <div class="compactGrid">
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
@@ -325,7 +328,7 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261114hc063e44"></script>
+<script src="../../js/held-action-animations.js?v=20261114torch1747a"></script>
 <script src="../../js/kurraya-instrument.js?v=20261112kurrayaParity1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
@@ -977,6 +980,7 @@ const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
   grappleFlail: { label: 'Grapple-Flail (rope sweep)', sprite: '../../assets/toolsprites/grapple-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hachutuTorchFlail: { label: 'Hachutu Torch-Flail (sweep)', sprite: '../../assets/toolsprites/hachutu_torch-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  torch: { label:'Torch — Adventuring (sweep)', sprite:'../../assets/toolsprites/torch.png',animStyle:'sweep',usesWeaponStanceBasis:true },
   hachutuTorchStaff: { label: 'Hachutu Torch-Staff (B\'shuakauitl melee sweep)', sprite: '../../assets/toolsprites/hachutu_torch-staff.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   throwingflask:{ label: 'Throwing Flask (hatchet throw)', sprite: '../../assets/objectsprites/throwing_flask.png', animStyle: 'chop', usesWeaponStanceBasis: true },
@@ -1130,6 +1134,7 @@ let anim = {
   durationS: 0.5,
   headRelative: false, // Selected animation's reference frame, persisted through import/export and history.
   toolEndFlip: false,
+  worldUpright: false, // Persisted per-animation idle orientation.
   spinBasisDeg: 0,
   spinRevolutions: 0,
   projectileSpin: null,
@@ -1555,6 +1560,10 @@ function syncToolEndFlipUi() {
   btn.textContent = `↕ Tool End Flip: ${anim.toolEndFlip ? 'On' : 'Off'}`;
   btn.classList.toggle('active', !!anim.toolEndFlip);
 }
+$('worldUpright').addEventListener('change', () => {
+  anim.worldUpright = $('worldUpright').checked; // Controls the shared world-up neutral rotation.
+  refreshJsonView();
+});
 $('toolEndFlipBtn').onclick = () => {
   anim.toolEndFlip = !anim.toolEndFlip;
   syncToolEndFlipUi();
@@ -1619,6 +1628,13 @@ const TOOL_PRESETS = [
     neutral: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windup: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114), strike: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windupFrac: 0.16, strikeFrac: 0.28 },
+  { id:'torch_idle', label:'Torch — Upright Hold (still)', style:'sweep', toolKey:'torch', still:true, worldUpright:true,
+    neutral:defaultPose(.13,.16,.03,10.31,0,0,0),
+    windup:defaultPose(.13,.16,.03,10.31,0,0,0),
+    strike:defaultPose(.13,.16,.03,10.31,0,0,0),
+    windupFrac:.16,strikeFrac:.28 },
+  { id:'torch_swing', label:'Torch — Swing (sweep)',style:'sweep',toolKey:'torch',still:false,
+    ...sharedAttackPoses('hatchet_swing'),windupFrac:.16,strikeFrac:.28 },
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -1759,6 +1775,8 @@ function applyPreset(preset) {
   anim.headRelative = preset.headRelative === true || preset.neutral?.headRelative === true;
   for (const pose of Object.values(anim.poses)) pose.headRelative = anim.headRelative;
   anim.toolEndFlip = preset.toolEndFlip === true;
+  anim.worldUpright = preset.worldUpright === true;
+  $('worldUpright').checked = anim.worldUpright;
   anim.spinBasisDeg = safeNum(preset.spinBasisDeg, 0);
   anim.spinRevolutions = Math.max(0, safeNum(preset.spinRevolutions, 0));
   anim.projectileSpin = typeof preset.projectileSpin === 'boolean' ? preset.projectileSpin : null;
@@ -1919,6 +1937,8 @@ function applyPoseToRig(pose) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+  if (anim.worldUpright && previewT <= .00001)
+    window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE); // Preview uses the same world-space idle correction as gameplay.
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 
@@ -2457,6 +2477,7 @@ function exportAnimObject() {
     durationS: anim.durationS,
     headRelative: anim.headRelative === true,
     toolEndFlip: anim.toolEndFlip === true,
+    worldUpright: anim.worldUpright === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
   if (anim.spinRevolutions > 0 || anim.spinBasisDeg) {
@@ -2565,6 +2586,8 @@ function loadAnimObject(data) {
   anim.durationS = safeNum(data.durationS, anim.durationS);
   anim.headRelative = (data.headRelative ?? data.poses?.neutral?.headRelative) === true;
   anim.toolEndFlip = data.toolEndFlip === true;
+  anim.worldUpright = data.worldUpright === true;
+  $('worldUpright').checked = anim.worldUpright;
   anim.spinBasisDeg = safeNum(data.spinBasisDeg, safeNum(actionSource?.spinBasisDeg, 0));
   anim.spinRevolutions = Math.max(0, safeNum(data.spinRevolutions, safeNum(actionSource?.spinRevolutions, 0)));
   anim.projectileSpin = typeof data.projectileSpin === 'boolean'

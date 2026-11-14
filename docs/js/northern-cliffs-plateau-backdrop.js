@@ -8,7 +8,9 @@
   const BORDER_WIDTH = 18; // Matches the wilderness scenery skirt built by border-terrain.js.
   const BORDER_CLEARANCE = 6; // Places the entire plateau footprint beyond that skirt, not just beyond playable tiles.
   const HEIGHT_RATIO = 0.7; // The mesa top is seventy percent of the highest Western Slope mountain world-space Y.
-  const LONG_EDGE_SEGMENTS = 20; // Keeps a kilometer-wide silhouette intentionally faceted instead of tessellating it densely.
+  const PLATEAU_ROCK_SEED_OFFSET = 509; // Selects one stable loose-rock mound distinct from the eight Western Slope mountain rocks.
+  const TOP_FLATTEN_START = 0.70; // The rounded upper thirty percent of the scattered-rock source becomes a level plateau crown.
+  const ROCK_SHOULDER_RATIO = 0.84; // Keeps the lower faceted boulder shoulders visible below the deliberately level cap.
   const ROCKS_PER_LAYER = 8; // Matches the Western Slope's eight independently varied rocks per mountain layer.
   const ROCK_SEED_BASE = 1731; // Reproduces the exact procedural source rocks used by the Western Slope backdrop.
   const ignoreRaycast = () => {}; // Background scenery cannot intercept pointer, reticle, or furniture interactions.
@@ -67,7 +69,8 @@
           localMinZ = Math.min(localMinZ, localZ);
           localMaxZ = Math.max(localMaxZ, localZ);
         }
-        geometry.dispose?.(); // Only the temporary stone geometry is owned here; grass may share source attributes.
+        geometry.dispose?.(); // The measured mountain source is temporary; no GPU geometry may survive this bounds pass.
+        built?.grassGeo?.dispose?.(); // The loose-rock builder also allocates an unused grass geometry sharing the source attributes.
       }
       const depth = Math.max(1e-5, localMaxZ - localMinZ);
       const stretchZ = layer.targetLength / depth * layer.scale[2];
@@ -96,67 +99,123 @@
     const mapCols = finiteSize(cols), mapRows = finiteSize(rows);
     const mountain = mountainMetrics(mapCols, mapRows);
     const width = mountain.width; // The single mesa spans the complete visible mountain chain, not just one of its rows.
-    const depth = Math.max(100, mapRows * 0.85); // A huge but finite backdrop footprint; never affects playable world geometry.
+    const depth = Math.max(300, mountain.width * 0.62, mapRows * 2.6); // Makes this one background rock a gigantic landmass with a deep footprint, not a thin billboard.
     const frontZ = -BORDER_WIDTH - BORDER_CLEARANCE; // All plateau vertices remain north of the entire scenic border.
     const topY = mountain.highestY * HEIGHT_RATIO;
     if (!(topY > 0)) throw new Error('Western Slope reference peak must be above world-space zero');
     return { mapCols, mapRows, mountain, width, depth, frontZ, topY, baseY: 0, centerX: mapCols * 0.5 };
   }
 
-  function perimeter(layout, heightFraction, inset) {
-    const points = []; // Paired long north/south rim edges form one uninterrupted mesa, including its two short ends.
-    const edgeCount = LONG_EDGE_SEGMENTS;
-    for (let side = 0; side < 2; side++) for (let i = 0; i <= edgeCount; i++) {
-      const u = side ? 1 - i / edgeCount : i / edgeCount;
-      const x = layout.centerX + (u - 0.5) * layout.width * (1 - inset);
-      const wave = (0.5 + 0.5 * Math.sin(u * Math.PI * 17 + side * 1.8)) * 0.014;
-      const shallow = side === 0 ? (0.015 + wave) : (0.985 - wave);
-      const z = layout.frontZ - layout.depth * (shallow * (1 - inset) + inset * 0.5);
-      points.push([x, layout.baseY + layout.topY * heightFraction, z]);
+  function makeMeshGeometry(layout) {
+    const rockBuilder = window.TerrainGeometry?.buildRockTileGeo; // The same deterministic low-poly rock/mini-plateau geometry used for loose rocks in the playable world.
+    if (typeof rockBuilder !== 'function') throw new Error('Loose-rock terrain geometry is not ready');
+    const built = rockBuilder.call(window.TerrainGeometry, ROCK_SEED_BASE + PLATEAU_ROCK_SEED_OFFSET, ROCK_SEED_BASE * 3 + 71); // One independent source mound, reused as a single enormous backdrop rock.
+    const geometry = built?.stoneGeo?.toNonIndexed?.() || built?.stoneGeo; // Discard unused full-tile vertices; only drawn stone triangles set the giant rock's footprint and cliff silhouette.
+    if (geometry !== built?.stoneGeo) built?.stoneGeo?.dispose?.(); // The original indexed geometry still contains unused grass-grid corners.
+    built?.grassGeo?.dispose?.(); // Loose-rock grass is not part of this pure-stone distant landmark.
+    const pos = geometry?.getAttribute?.('position'); // Used to stretch the source rock in world space before the farm's surface detector measures its actual face sizes.
+    if (!pos?.count) throw new Error('Loose-rock stone geometry has no positions');
+    geometry.computeBoundingBox();
+    const bounds = geometry.boundingBox; // Used to normalize the source stone footprint so the complete boulder matches the requested enormous width/depth.
+    const spanX = bounds.max.x - bounds.min.x, spanZ = bounds.max.z - bounds.min.z; // These normalize the selected low-poly rock rather than assuming the whole original tile is stone.
+    const maxRockY = bounds.max.y; // Used to identify and level the source rock's rounded/uneven upper crown.
+    if (!(spanX > 0 && spanZ > 0 && maxRockY > 0)) {
+      geometry.dispose();
+      throw new Error('Loose-rock source bounds are invalid');
     }
-    return points;
+    const capStartY = maxRockY * TOP_FLATTEN_START; // Raised vertices above this cut join one uninterrupted horizontal tabletop.
+    let capVertices = 0; // Exposed in mobile diagnostics so the flattened crown can be checked without a desktop console.
+    for (let i = 0; i < pos.count; i++) {
+      const sourceY = Math.max(0, pos.getY(i)); // Removes centimeter-scale seam noise along the original rock base.
+      const onCap = sourceY >= capStartY;
+      if (onCap) capVertices++;
+      const slopeFraction = Math.min(1, sourceY / capStartY); // Keeps low-poly cliff shoulders below the level cap.
+      const worldY = onCap
+        ? layout.topY
+        : layout.topY * ROCK_SHOULDER_RATIO * Math.pow(slopeFraction, 1.35);
+      const worldX = layout.centerX + ((pos.getX(i) - bounds.min.x) / spanX - 0.5) * layout.width;
+      const worldZ = layout.frontZ - layout.depth + ((pos.getZ(i) - bounds.min.z) / spanZ) * layout.depth; // Preserve the source rock's triangle winding: mirroring Z would turn every cap normal downward and break top/side recognition.
+      pos.setXYZ(i, worldX, worldY, worldZ);
+    }
+    const capTolerance = Math.max(1e-4, layout.topY * 1e-6); // Float32 world-height tolerance for identifying genuinely flat top triangles.
+    let capTriangles = 0; // Detects real horizontal plateau area, not just several duplicated peak vertices.
+    for (let i = 0; i + 2 < pos.count; i += 3) {
+      if ([i, i + 1, i + 2].every(vertex => Math.abs(pos.getY(vertex) - layout.topY) <= capTolerance)) capTriangles++;
+    }
+    if (capVertices < 3 || capTriangles < 1) {
+      geometry.dispose();
+      throw new Error('Loose-rock source did not produce an actual flat plateau surface');
+    }
+    pos.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return { geometry, capVertices, capTriangles, maxRockY }; // One rock owns every flat-top triangle and faceted cliff shoulder.
   }
 
-  function makeMeshGeometry(T, layout) {
-    const base = perimeter(layout, 0, 0), middle = perimeter(layout, 0.43, 0.045), top = perimeter(layout, 1, 0.13);
-    const positions = [], uvs = []; // Flat-shaded, unindexed triangles: no smoothed mountain-wall normals or subdivided terrain.
-    const addTriangle = (a, b, c, roof = false) => {
-      for (const p of [a, b, c]) {
-        positions.push(p[0], p[1], p[2]);
-        uvs.push(p[0] / 6, (roof ? p[2] : p[1]) / 6);
-      }
-    };
-    const bridge = (lower, upper) => {
-      for (let i = 0; i < lower.length; i++) {
-        const next = (i + 1) % lower.length;
-        addTriangle(lower[i], lower[next], upper[next]);
-        addTriangle(lower[i], upper[next], upper[i]);
-      }
-    };
-    bridge(base, middle);
-    bridge(middle, top);
-    const center = [layout.centerX, layout.topY, layout.frontZ - layout.depth * 0.5];
-    for (let i = 0; i < top.length; i++) addTriangle(center, top[i], top[(i + 1) % top.length], true);
-    const geometry = new T.BufferGeometry();
-    geometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
-    geometry.computeVertexNormals?.();
-    return geometry;
+  function disposeBackdropMaterials(materials) {
+    const slots = Array.isArray(materials) ? materials : [materials]; // Tracks both ridge top and cliff-side slots while allowing a shared material clone.
+    for (const material of new Set(slots)) {
+      if (material?.userData?.northernCliffsDistantPlateau) material.dispose?.(); // Only backdrop-owned clones may be freed; the farm's shared rock material is never ours.
+    }
   }
 
-  function createMaterial(T) {
-    const source = window.OreRockTextures?.materialFor?.(T, 'stone', {});
-    const material = source?.clone?.() || new T.MeshStandardMaterial({
-      map: source?.map || null, color: source?.color || 0x635544, roughness: source?.roughness ?? 0.94,
-    });
-    material.userData = Object.assign({}, material.userData, { northernCliffsDistantPlateau: true, visualOnly: true });
-    delete material.userData.sharedOreRockMaterial;
-    material.side = T.DoubleSide;
-    material.depthTest = true;
-    material.depthWrite = true;
-    material.fog = false;
-    window.WesternSlopeMountainBackdrops?.keepInFrontOfSky?.(material); // Shares the proven mountain depth shader instead of copying it.
-    return material;
+  function makeBackdropMaterials(materials, T) {
+    const slots = Array.isArray(materials) ? materials : [materials]; // Keeps the ridge isolator's top/side grouping intact.
+    const clones = new Map(); // Reuses one backdrop-owned clone where the top and cliff slots reference the same canonical farm material.
+    try {
+      for (const source of slots) {
+        if (!source?.clone) throw new Error('Farm rock material could not be cloned');
+        if (clones.has(source)) continue;
+        const clone = source.clone(); // A unique depth-shader material is required without mutating the shared farm cliff shader.
+        clones.set(source, clone);
+        clone.userData = Object.assign({}, clone.userData, { northernCliffsDistantPlateau: true, visualOnly: true });
+        clone.side = T.DoubleSide;
+        clone.depthTest = true;
+        clone.depthWrite = true;
+        clone.fog = false;
+        window.WesternSlopeMountainBackdrops?.keepInFrontOfSky?.(clone); // The same background depth treatment applies to both material slots.
+      }
+    } catch (error) {
+      disposeBackdropMaterials([...clones.values()]); // A partial failed clone must never leak resources or dispose the source surface.
+      throw error;
+    }
+    const owned = slots.map(source => clones.get(source)); // Preserves the original material slot count and order.
+    return Array.isArray(materials) ? owned : owned[0];
+  }
+
+  function createStoneMesh(T, layout) {
+    const shaped = makeMeshGeometry(layout); // Creates one giant version of the normal scattered boulder with a flat top.
+    const sourceMaterial = new T.MeshBasicMaterial({ color: 0xffffff, side: T.DoubleSide }); // A temporary carrier for the exact farm-rock material factory.
+    const mesh = new T.Mesh(shaped.geometry, sourceMaterial); // Carries natural material and surface-island UV metadata into the existing renderer.
+    try {
+      const natural = window.NaturalSurfaceMaterials; // FarmCliffRockOutline uses this same API to apply the authored rock PNG and sprite-style tint.
+      const mapper = window.HobunjiSurfaceStretchUV; // Detects connected face islands and stretches one full PNG per surface with protected edge bands.
+      if (typeof natural?.naturalizeMesh !== 'function' || typeof mapper?.remapNaturalTerrainMesh !== 'function') {
+        throw new Error('Farm cliff rock material or connected-surface mapper is not ready');
+      }
+      natural.naturalizeMesh(mesh, 'rocks');
+      if (mesh.geometry !== shaped.geometry) shaped.geometry.dispose(); // Natural-surface wrappers can replace geometry to make independent UV seams.
+      const beforeFinalUv = mesh.geometry; // Tracks the geometry returned by the farm material wrapper before the explicit giant-rock surface solve.
+      const surfaceReport = mapper.remapNaturalTerrainMesh(mesh, 'northern-cliffs-giant-rock'); // Preserves the ridge isolator's cliff-only UV slot and its separate flat-top texture coordinates.
+      if (mesh.geometry !== beforeFinalUv) beforeFinalUv.dispose(); // The old UV buffer is never needed again once the final mapper adopts its clone.
+      if (!surfaceReport?.patchCount) throw new Error('Giant plateau rock has no detected texture surfaces');
+      mesh.material = makeBackdropMaterials(mesh.material, T); // Preserves top/cliff material slots while applying the distant shader to owned clones only.
+      mesh.userData = Object.assign({}, mesh.userData, {
+        naturalSurface: 'rocks', backgroundScenery: true, skipOcclusionFade: true,
+        visualOnly: true, nonTraversable: true, terrainJigsawIgnore: true,
+        naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV',
+      });
+      window.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh, 'rocks'); // Farm's faceted cliffs use the PNG edge, not an inverted 3D outline shell.
+      sourceMaterial.dispose(); // The temporary carrier was replaced with the farm's shared material; only the backdrop clone belongs to this root.
+      return { mesh, surfaceReport, capVertices: shaped.capVertices, capTriangles: shaped.capTriangles, sourceRockHeight: shaped.maxRockY };
+    } catch (error) {
+      if (mesh.geometry !== shaped.geometry) mesh.geometry?.dispose?.();
+      shaped.geometry.dispose();
+      if (mesh.material !== sourceMaterial) disposeBackdropMaterials(mesh.material); // Shared natural-surface source materials remain owned by the global material cache.
+      sourceMaterial.dispose();
+      throw error;
+    }
   }
 
   function detach(mapId = NORTH_ID) {
@@ -168,7 +227,7 @@
       if (i !== -1) record.scene.items.splice(i, 1);
     }
     record.mesh.geometry?.dispose?.();
-    record.mesh.material?.dispose?.();
+    disposeBackdropMaterials(record.mesh.material); // Array slots can share one owned material; dispose it only once.
     active.delete(mapId);
     diagnostics.disposals++;
     return true;
@@ -182,20 +241,20 @@
     if (old) detach(mapId);
     try {
       const T = window.THREE, layout = resolveLayout(cols, rows);
-      const geometry = makeMeshGeometry(T, layout), material = createMaterial(T);
-      const mesh = new T.Mesh(geometry, material), root = new T.Group();
+      const rock = createStoneMesh(T, layout); // One giant flattened loose-rock mesh, already finished through the farm's material and surface-mapping path.
+      const mesh = rock.mesh, root = new T.Group();
       root.name = GROUP_NAME;
       root.userData = {
         backgroundScenery: true, skipOcclusionFade: true, northernCliffsDistantPlateau: true,
         visualOnly: true, nonTraversable: true, mapId,
       };
       mesh.name = GROUP_NAME + '_Stone';
-      mesh.frustumCulled = false; // Distant scenery uses the same beyond-camera depth treatment as Western Slope.
+      mesh.frustumCulled = false; // The shared DistantSceneryViewCull performs screen-plane and depth-query culling without clipping the beyond-far-plane backdrop.
       mesh.renderOrder = -102;
       mesh.raycast = ignoreRaycast;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      mesh.userData = { backgroundScenery: true, skipOcclusionFade: true, visualOnly: true, nonTraversable: true };
+      mesh.userData = Object.assign({}, mesh.userData, { backgroundScenery: true, skipOcclusionFade: true, visualOnly: true, nonTraversable: true });
       root.add(mesh);
       scene.add(root);
       if (Array.isArray(scene.items) && !scene.items.includes(root)) scene.items.push(root);
@@ -207,7 +266,13 @@
         northernMapZMin: 0, outsideSceneryClearance: BORDER_CLEARANCE,
         topWorldY: layout.topY, referencePeakWorldY: layout.mountain.highestY,
         heightRatio: HEIGHT_RATIO, referenceMountainChainWidth: layout.mountain.width,
-        triangleCount: geometry.getAttribute('position').count / 3,
+        triangleCount: (mesh.geometry.index?.count || mesh.geometry.getAttribute('position').count) / 3,
+        sourceShape: 'TerrainGeometry.buildRockTileGeo:stoneGeo', flatCapVertices: rock.capVertices,
+        flatCapTriangles: rock.capTriangles, // Mobile diagnostics verify a real continuous tabletop rather than a single high peak.
+        flatCapStartFraction: TOP_FLATTEN_START, sourceRockHeight: rock.sourceRockHeight,
+        materialPath: 'NaturalSurfaceMaterials:rocks', uvPath: 'HobunjiSurfaceStretchUV',
+        detectedSurfaceIslands: rock.surfaceReport.patchCount, uvFallbackIslands: rock.surfaceReport.fallbackCount,
+        cliffMaterialSlot: mesh.userData.naturalSurfaceCliffSlot ?? null, materialSlotCount: Array.isArray(mesh.material) ? mesh.material.length : 1,
       };
       return root;
     } catch (error) {
@@ -276,7 +341,7 @@
   window.NorthernCliffsPlateauBackdrop = Object.freeze({
     installed: true, attach, detach, resolveLayout, getDebugState: debug,
     getActiveRoot: () => active.get(NORTH_ID)?.root || null,
-    constants: Object.freeze({ NORTH_ID, GROUP_NAME, BORDER_WIDTH, BORDER_CLEARANCE, HEIGHT_RATIO, LONG_EDGE_SEGMENTS }),
+    constants: Object.freeze({ NORTH_ID, GROUP_NAME, BORDER_WIDTH, BORDER_CLEARANCE, HEIGHT_RATIO, TOP_FLATTEN_START, ROCK_SHOULDER_RATIO }),
   });
   window.__northernCliffsPlateauBackdropDebug = debug; // Allows a mobile player to inspect height, draw count and map clearance via existing debug tooling.
   deferred('BorderTerrain', patchBorder);

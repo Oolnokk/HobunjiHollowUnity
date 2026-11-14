@@ -568,6 +568,7 @@
   function ensureTool(value) {
     const key = toolKeyFor(value);
     if (!key) return null;
+    if (key === 'torch' && !data.tools.torch) data.tools.torch = clone(ensureTool('harlyaolongsword')); // Copy the live Harlyao Longsword's grip/scale, including any existing authored changes.
     if (!data.tools[key]) data.tools[key] = {};
     const entry = data.tools[key];
     const fallbackEntry = DEFAULT_DATA.tools[key] || {}; // Used when older data does not yet carry the shape's base scale.
