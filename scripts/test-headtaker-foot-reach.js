@@ -53,12 +53,12 @@ const fakeWindow={LegBones:{solveTwoBoneLeg(_three,{foot,foldMaxLength}){
   measured.push({foot:foot.clone(),foldMaxLength});
   return {thighQuaternion:new Quaternion(),calfLocalQuaternion:new Quaternion(),thighLength:.25,calfLength:.25};
 }}};
-const makeFn=new Function('THREE','state','root','legChains','pairedFootLocal','pairedBend','pairedForward','legBend','posteriorY','pairedFootRotation','applyBoneGuideTransforms','window',
+const makeFn=new Function('THREE','state','root','legChains','pairedFootLocal','pairedBend','pairedForward','legBend','posteriorY','pairedFootRotation','applyBoneGuideTransforms','window','worldQuaternionWithoutScale',
   'let pairedBendInternal=pairedBend;'+functionSource.replace('pairedBend ||=', 'pairedBendInternal ||=').replace('pairedBend.set(', 'pairedBendInternal.set(')+
   '\nreturn applyWorldFootTargets;');
 const apply=makeFn(THREE,state,{updateWorldMatrix(){},worldToLocal(p){return p;}},
   {left:leftChain,right:rightChain},new Vector3(),null,new Vector3(),
-  {left:{x:0,z:0},right:{x:0,z:0}},0,new Quaternion(),()=>{},fakeWindow);
+  {left:{x:0,z:0},right:{x:0,z:0}},0,new Quaternion(),()=>{},fakeWindow,(node,out)=>node.getWorldQuaternion(out));
 assert.equal(apply(targets,null,false),true);
 assert(measured.every(({foot})=>Math.hypot(foot.x,foot.y,foot.z) <= .5+.001), 'ordinary legs retain their walking reach cap');
 measured.length=0;

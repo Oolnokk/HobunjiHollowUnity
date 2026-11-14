@@ -71,6 +71,7 @@
     "fullSimulationReleaseRadiusTiles": 24,
     "offChunkTickSeconds": 1,
     "dormantEntityReleaseSeconds": 3,
+    "sameZoneDormantEntityReleaseSeconds": 12,
     "maleOnlyUntilFemaleHeadArt": true
   },
   "zoneAtmosphere": {

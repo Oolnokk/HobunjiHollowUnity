@@ -19,6 +19,12 @@
   let inCrawlRender = false; // Owned hand poses run only in this render scope, never during ordinary pre-render tool sync.
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
+  function worldOrientation(node, out) {
+    // The normal foot rig supplies this scale-free resolver in gameplay; editor fixtures without it can use the old fallback.
+    return window.ProceduralLegAnimation?.worldQuaternionWithoutScale?.(node, out)
+      || node.getWorldQuaternion(out);
+  }
+
   function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)); }
 
   // Read the live owner: either a directional wilderness route or a wall plane.
@@ -252,7 +258,7 @@
     // must match the cliff normal. Using only pitch left it edge-on to many
     // walls; rotating 60 degrees around the tangent also folded it off the
     // rock. Preserve the nearer front/back face to avoid a sudden texture flip.
-    const worldFront = portraitFront.clone().applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
+    const worldFront = portraitFront.clone().applyQuaternion(worldOrientation(mesh, new THREE.Quaternion()));
     worldFront.y = 0;
     if (worldFront.lengthSq() < 1e-8) worldFront.copy(portraitFront); // Degenerate pitch: default to the PNG's authored forward.
     worldFront.normalize();
@@ -265,7 +271,7 @@
     const posedUp = worldUp.clone().multiplyScalar(Math.cos(BODY_LEAN_RAD))
       .addScaledVector(outward, Math.sin(BODY_LEAN_RAD)).normalize(); // Lean outward just enough for planted hands and feet.
     const worldLean = new THREE.Quaternion().setFromUnitVectors(worldUp, posedUp);
-    const parentQ = mesh.parent?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
+    const parentQ = mesh.parent ? worldOrientation(mesh.parent, new THREE.Quaternion()) : new THREE.Quaternion();
     const localPose = parentQ.clone().invert().multiply(worldLean).multiply(worldYaw).multiply(parentQ);
     const oldPosition = mesh.position.clone(), oldQuaternion = mesh.quaternion.clone();
     const bodyShift = bodyNormalShift(state, outward, h); // The whole body follows the same sampled rock face as its planted hands.

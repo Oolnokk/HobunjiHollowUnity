@@ -220,7 +220,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261114uniformRigStrideMerge1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261114footYaw1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -457,7 +457,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261114h9918e17&surfaceUv=20261113terrainpass2"></script>
+  <script src="js/house-pieces.js?v=20261114hprobehouse&surfaceUv=20261113terrainpass2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -563,7 +563,7 @@
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
   <script src="js/player-jump.js?v=20261114rooftopaccess1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
-  <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
+  <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
@@ -737,7 +737,7 @@
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20261112h55e898b"></script>
+  <script src="js/rain-planes.js?v=20261114farCull1"></script>
   <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
        — owns both Western Slope's permanent snow and seasonal Coldmuck
        slush on every other outdoor zone, reading tile height straight from
@@ -2848,7 +2848,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261112longoran1"></script>
+  <script src="js/fishing-minigame.js?v=20261114rooftopTravel3"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2952,7 +2952,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114physicalwalkReview1"></script>
+  <script src="game.js?v=20261114rooftopTravel3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

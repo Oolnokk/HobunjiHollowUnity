@@ -14,7 +14,22 @@ class Vector3 {
   lerp(v, t) { return this.set(this.x + (v.x - this.x) * t, this.y + (v.y - this.y) * t, this.z + (v.z - this.z) * t); }
 }
 class Quaternion {
-  copy() { return this; }
+  constructor(x = 0, y = 0, z = 0, w = 1) { Object.assign(this, { x, y, z, w }); }
+  copy(q) { Object.assign(this, { x: q.x, y: q.y, z: q.z, w: q.w }); return this; }
+  setFromAxisAngle(axis, angle) { // Real foot-roll ownership uses this instead of retaining a stale yaw.
+    const halfSin = Math.sin(angle * .5); // Sets the intended roll quaternion for subsequent gait assertions.
+    return this.copy({ x: axis.x * halfSin, y: axis.y * halfSin, z: axis.z * halfSin, w: Math.cos(angle * .5) });
+  }
+  multiply(q) {
+    const a = new Quaternion(this.x, this.y, this.z, this.w); // Snapshot the left factor before overwriting this scratch quaternion.
+    return this.copy({
+      x: a.w * q.x + a.x * q.w + a.y * q.z - a.z * q.y,
+      y: a.w * q.y - a.x * q.z + a.y * q.w + a.z * q.x,
+      z: a.w * q.z + a.x * q.y - a.y * q.x + a.z * q.w,
+      w: a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z,
+    });
+  }
+  invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
   slerp() { return this; }
 }
 class Group {
