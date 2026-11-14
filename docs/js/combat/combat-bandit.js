@@ -2884,6 +2884,7 @@
     avatarRef.group.userData.portraitModelWidth = originalWidth; // Scene hitboxes apply matrixWorld scale themselves; metadata stays local.
     avatarRef.group.userData.portraitModelHeight = originalHeight;
     avatarRef.rigScale = { x, y, head, offsetY }; // Mobile-readable proof of the actual values applied.
+    avatarRef.group.userData.hobunjiCharacterPartScaleFactors = { x, y }; // Later-built hostile metadata enables uniform hands/feet without second-scaling its parent.
     return true;
   }
 

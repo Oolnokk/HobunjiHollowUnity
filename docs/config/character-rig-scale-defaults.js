@@ -14,8 +14,8 @@
 (() => {
   'use strict';
 
-  const VERSION = 21; // Ships the user-authored Longoran male scale and the same relative changes for females; all other species stay untouched.
-  const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 1.25, y: 1.3333333333333333, z: 1.25 }); // Calculated offline: 1 / 0.8 on X/Z, 1 / 0.75 on Y, for Tletingan-sized hands and feet.
+  const VERSION = 22; // Shared hand/foot body-X/Y averaging for all species.
+  const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),

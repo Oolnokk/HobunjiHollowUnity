@@ -86,8 +86,8 @@ const bridge = w.HobunjiLongoranSpecies;
 assert(bridge, 'Longoran must install its own runtime identity');
 assert.equal(bridge.parentSpecies, 'tletingan');
 assert.equal(bridge.gaitProfile.lurchDegrees, 19);
-assert.equal(bridge.spineProfile.hunch, .75);
-assert.equal(bridge.spineProfile.kyphosis, .8);
+assert.equal(bridge.spineProfile.hunch, .1);
+assert.equal(bridge.spineProfile.kyphosis, 1);
 assert.equal(w.SCRATCHBONES_CONFIG.game.appearanceEditor.species.longoran.parentSpecies, 'tletingan');
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.headUrls.longoran.male, 'back');
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.species.longoran.glb, 'sloth.glb');
@@ -101,7 +101,7 @@ assert.equal(bridge.rollSubspecies(() => .21), 'tletingan');
 
 const spineWindow = { HobunjiLongoranSpecies: bridge }; // Explicit per-character overrides must still be supported.
 vm.runInNewContext(read('docs/js/character-spine.js'), { window: spineWindow });
-assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran' }).hunch, .75);
+assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran' }).hunch, .1);
 assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'tletingan' }).hunch, 0);
 assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', spine: { hunch: .2 } }).hunch, .2);
 const maskbound = read('docs/js/combat/combat-maskbound-guardian.js'); // Existing strongest lurch value is authoritative.
@@ -132,7 +132,7 @@ w.localStorage = {
   removeItem: key => { savedTuning.delete(key); },
 };
 const initial = bridge.tuningSnapshot(); // Checks independent species-wide spine and walking-gait defaults.
-assert.equal(initial.spineProfile.hunch, 0.75);
+assert.equal(initial.spineProfile.hunch, 0.1);
 assert.equal(initial.gaitProfile.lurchDegrees, 19);
 assert.equal(bridge.applyTuning({
   spineProfile: { hunch: .6, kyphosis: .92, sway: 'not-a-number' },
