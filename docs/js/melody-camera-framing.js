@@ -175,11 +175,18 @@
     }
     return output; // Reused value object: no allocation in the camera render loop.
   }
+  function isPlateActive(area=areaKey){
+    const currentArea=String(area||areaKey); // Reticle callers supply the gameplay area; camera updates maintain the fallback area.
+    for(const record of sources){
+      if(record.area===currentArea && record.isActive())return true; // Registered owners retire inactive, solved, or disposed music plates.
+    }
+    return false;
+  }
   function debugSnapshot(){
     return {registered:sources.size,active:!!owner,area:areaKey,triggerNote:visibleTrigger,
       reason:lastReason,fitLimited,framing:{...output},notes:goal?.noteCount||0};
   }
-  return Object.freeze({register,update,solve,debugSnapshot,
+  return Object.freeze({register,update,solve,debugSnapshot,isPlateActive,
     reset:()=>{clear(true);previousNormalFrame=false;nextProbe=0;lastTime=null;}, // Authored cinematic takeover must invalidate its outgoing projection before normal gameplay can rediscover a note.
   });
 });
