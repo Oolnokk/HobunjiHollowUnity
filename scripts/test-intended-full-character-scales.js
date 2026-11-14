@@ -33,6 +33,6 @@ for (const axis of ['x', 'y', 'head']) {
   assert(Math.abs(newFemaleLongoran[axis] - oldFemaleLongoran[axis] * ratio) < 1e-12, `Female Longoran ${axis} must preserve her proportion after male adjustments`);
 }
 assert.equal(newFemaleLongoran.offsetY, oldFemaleLongoran.offsetY - 0.055, 'zero-based head offsets use additive difference, never multiplication');
-assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 21, 'shipping scale revision must change when the Longoran defaults change');
+assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 22, 'shipping scale revision must change when the Longoran defaults change');
 
 console.log('Only the intended Full Character Scale edits and proportional Mammakhbuur female values are applied.');

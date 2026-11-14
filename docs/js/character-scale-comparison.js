@@ -248,8 +248,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <b>Longoran spine — hunch &amp; kyphosis</b>
           <span class="longoranIntro">Hunch lowers the shoulders; kyphosis curls the neck forward. Both are independently authored for males and females.</span>
           <div class="longoranRows">
-            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 75)}
-            ${longoranRow('Kyphosis', 'Kyphosis (%)', 0, 100, 1, 80)}
+            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 10)}
+            ${longoranRow('Kyphosis', 'Kyphosis (%)', 0, 100, 1, 100)}
           </div>
           <div class="longoranTuningActions">
             <button id="maaLongoranWalkPreview" type="button" class="secondary" aria-pressed="false">Preview walk</button>
@@ -492,7 +492,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       const entry = selected;
       entry.feet?.update?.(.05, 3.6, false, null, { speed: 3.6, velocityX: 0, velocityZ: 3.6, combat: false }); // Use the same walking-motion input contract as the enemy preview; enough speed to see the lurch.
       // Only the portrait pitches: the planted feet stay world-horizontal in the preview.
-      if (entry.model) entry.model.rotation.x = -(Number(entry.feet?.getRunLean?.()) || 0);
+      if (entry.model) entry.model.rotation.x = Number(entry.feet?.getRunLean?.()) || 0; // Positive pitch matches the real gameplay body lean, not its backwards mirror.
     }, 50); // Author-only, opt-in 20 Hz preview; disposed on tab exit.
   }
 

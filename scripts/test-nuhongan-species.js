@@ -157,7 +157,7 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.headOffsetY, undefined);
   assert(Number.isFinite(profile.anatomy.handScale), `${gender} Nuhongan must retain Tletingan handScale`);
   assert(Number.isFinite(profile.anatomy.footScale), `${gender} Nuhongan must retain Tletingan footScale`);
-  assert.equal(JSON.stringify(profile.anatomy.handScaleAxes), JSON.stringify({ x: 1.25, y: 1.3333333333333333, z: 1.25 }));
+  assert.equal(JSON.stringify(profile.anatomy.handScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
   assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify(profile.anatomy.handScaleAxes));
 }
 const runtimeDebug = runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot();
