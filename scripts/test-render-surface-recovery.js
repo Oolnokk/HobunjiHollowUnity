@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Checks the browser's effective script list, including grouped Pixel Probe.
 
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -11,7 +12,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const weather = read('docs/js/weather-fx.js');
 const cloudFog = read('docs/js/cloud-forest-fog.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
-const index = read('docs/index.html');
+const index = expandClassicScriptGroups(read('docs/index.html'));
 
 new vm.Script(weather, { filename: 'weather-fx.js' });
 new vm.Script(cloudFog, { filename: 'cloud-forest-fog.js' });
