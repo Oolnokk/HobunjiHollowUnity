@@ -57,6 +57,25 @@ input.pressEnd(1,{type:'keyup',timeStamp:shortPressAt+150});
 assert.equal(tapCount,tapsBeforeStall+1,'a 150 ms physical press remains a tap even if release handling stalls for 300 ms');
 assert.equal(holdStarts,holdStartsBeforeStall+1,'a delayed but physically quick tap cannot start a held ability');
 assert(input.getState(1).releaseDeliveryLagMs>=150,'release latency is retained for mobile diagnostics');
+
+clock+=500;
+const stalledTapAt=clock-600; // The physical tap happened during a blocked frame; the key-up is delivered after a gameplay update.
+const tapsBeforeInterleaving=tapCount, holdsBeforeInterleaving=holdStarts; // Verify input processing order cannot turn this real tap into a held attack.
+input.pressStart(1,{type:'keydown',timeStamp:stalledTapAt});
+clock+=16;input.update(0.016);
+assert.equal(holdStarts,holdsBeforeInterleaving,'a backdated keydown must wait briefly for its queued keyup before arming a hold');
+clock+=4;input.pressEnd(1,{type:'keyup',timeStamp:stalledTapAt+100});
+assert.equal(tapCount,tapsBeforeInterleaving+1,'a 100 ms physical tap stays a tap even when Combat.update runs before its delayed keyup');
+assert.equal(holdStarts,holdsBeforeInterleaving,'stalled short taps never briefly enter a held-attack stance');
+clock+=500;
+const genuineStalledHoldStarts=holdStarts; // A genuinely held input must still arm after the short reconciliation window.
+input.pressStart(1,{type:'pointerdown',timeStamp:clock-500});
+clock+=49;input.update(0.049);
+assert.equal(holdStarts,genuineStalledHoldStarts,'late press waits for pending release through the reconciliation window');
+clock+=1;input.update(0.001);
+assert.equal(holdStarts,genuineStalledHoldStarts+1,'a still-held delayed press arms as soon as the reconciliation window expires');
+input.pressEnd(1,{type:'pointerup',timeStamp:clock});
+assert.equal(holdActive,false,'reconciled delayed hold releases cleanly');
 assert.match(game,/window\.Combat\.input\.pressStart\(_pressSlot, ev\)/,'mobile arch routes its real pointer timestamp');
 assert.match(game,/window\.Combat\.input\.pressStart\(weaponSlot, physicalEvent\)/,'shared keyboard action routing keeps physical timestamps');
 hold(1);hold(2);throwsOnCancel=true;assert.throws(()=>input.abortAllPresses(),/cancel failed/);assert(!input.getState(1).down && !input.getState(2).down,'both slots reset even when cancellation throws');
