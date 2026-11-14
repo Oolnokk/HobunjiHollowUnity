@@ -323,6 +323,10 @@
   const roamingHerdEverSpawned = new Set(); // Used to avoid refilling a partially/wiped herd immediately during the same day.
   const roamingHerdLastKnownAlive = new Map(); // Herd-key -> prior alive state, mirroring denLastKnownAlive.
   const pendingRoamingHerdRespawn = new Set(); // Cleared with the other wildlife respawn gates when a new day begins.
+  const herdSpeciesBySlot = new Map(); // Keeps each herd slot's species stable within a single day, even if a herd is defeated.
+  const deferredHerdTurnover = new Map(); // Herd key -> zone id for herds too close to the player to vanish at midnight.
+  const ROAMING_HERD_VISIBILITY_TILES = 24; // Midnight preserves a whole herd if any living member is within this conservative player radius.
+  let lastRoamingHerdMidnight = null; // World-aware civil-midnight identity; ignores repeated midnight-review callbacks.
 
   function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
 
@@ -903,6 +907,7 @@
     ensureDenTurnoverLoaded();
     const ordinal = Math.floor(Number(midnight)); // Civil midnight ordinal supplied by the shared day-review clock for natural and sleep/wait passage.
     if (!Number.isFinite(ordinal)) return [];
+    rotateRoamingHerdsAtMidnight(ordinal); // Daily herd species reroll is driven by real civil midnight, not the 06:00 den replenishment gate.
     for (const record of denTurnoverByKey.values()) {
       if (record.reviewMidnight === ordinal) continue; // Repeated gate calls and reloads cannot charge another day.
       if (record.enteredCivilDay != null && ordinal >= record.firstMidnight) {
@@ -1176,6 +1181,8 @@
     for (const key of roamingHerdEverSpawned) if (key.startsWith(herdPrefix)) roamingHerdEverSpawned.delete(key);
     for (const key of pendingRoamingHerdRespawn) if (key.startsWith(herdPrefix)) pendingRoamingHerdRespawn.delete(key);
     for (const key of [...roamingHerdLastKnownAlive.keys()]) if (key.startsWith(herdPrefix)) roamingHerdLastKnownAlive.delete(key);
+    for (const key of [...herdSpeciesBySlot.keys()]) if (key.startsWith(herdPrefix)) herdSpeciesBySlot.delete(key);
+    for (const key of [...deferredHerdTurnover.keys()]) if (key.startsWith(herdPrefix)) deferredHerdTurnover.delete(key);
     // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
     // generation, so a fresh Tothal Shift very likely reuses an old
     // den's exact id — without this, that den's cavern would keep
@@ -1196,6 +1203,60 @@
     return false;
   }
 
+
+  function removeRoamingHerdSlot(herdKey) {
+    let removed = 0; // Count used by midnight diagnostics; not required for the ordinary spawn loop.
+    for (const creature of [...deps.hostileObjects]) {
+      if (creature.herdKey !== herdKey || creature.health <= 0) continue; // Leave lootable corpses and unrelated released livestock untouched.
+      deps.hostileObjects.delete(creature);
+      deps.despawnCreature?.(creature); // Use the existing full scene/rig cleanup, never only remove an actor from the Set.
+      removed++;
+    }
+    roamingHerdEverSpawned.delete(herdKey);
+    roamingHerdLastKnownAlive.delete(herdKey);
+    pendingRoamingHerdRespawn.delete(herdKey);
+    herdSpeciesBySlot.delete(herdKey);
+    return removed;
+  }
+
+  function finishDeferredHerdTurnovers(activeZone) {
+    for (const [key, zoneId] of deferredHerdTurnover) {
+      if (zoneId === activeZone) continue; // Nearby wildlife survives midnight until the player actually leaves this map.
+      removeRoamingHerdSlot(key);
+      deferredHerdTurnover.delete(key);
+    }
+  }
+
+  function rotateRoamingHerdsAtMidnight(ordinal) {
+    if (!deps?.EXTERIOR_ZONES || !Number.isFinite(ordinal)) return;
+    const midnightKey = `${currentDenTurnoverIdentity().key}:${ordinal}`; // Includes save identity so switching worlds never inherits an old day's turnover gate.
+    if (lastRoamingHerdMidnight === midnightKey) return;
+    lastRoamingHerdMidnight = midnightKey;
+    let distant = 0, nearby = 0; // Mobile debug log summarizes the two different turnover outcomes without exposing every actor.
+    const activeZone = deps.getCurrentArea?.(); // Map where proximity can protect living herds from instant removal.
+    const player = deps.player; // World-space player position provided by the existing WildlifeSpawn init dependencies.
+    const limitSq = (deps.TILE * ROAMING_HERD_VISIBILITY_TILES) ** 2; // Squared threshold avoids unnecessary square roots.
+    for (const [zoneId, zone] of Object.entries(deps.EXTERIOR_ZONES)) {
+      if (!zone?.roamingHerdSpecies?.length) continue;
+      const herdCount = Math.max(1, Math.floor(Number(zone.roamingHerdCount) || 1)); // Matches the real slot allocation, for all authored herd maps.
+      for (let i = 0; i < herdCount; i++) {
+        const key = roamingHerdKeyFor(zoneId, i); // Identifies only the rotating herd, never Nazgraku's reserved forager group.
+        let close = false; // Any living herd member close to the player preserves the entire herd.
+        if (zoneId === activeZone && player && Number.isFinite(player.x) && Number.isFinite(player.y)) {
+          for (const creature of deps.hostileObjects) {
+            if (creature.herdKey !== key || creature.health <= 0) continue;
+            const dx = creature.x - player.x, dy = creature.y - player.y; // Actor's actual position matters more than its original foliage anchor.
+            if (dx * dx + dy * dy <= limitSq) { close = true; break; }
+          }
+        } else if (zoneId === activeZone && (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y))) {
+          close = isRoamingHerdAlive(key); // Missing player coordinates should never cause visible despawns in a partially initialized scene.
+        }
+        if (close) { deferredHerdTurnover.set(key, zoneId); nearby++; }
+        else { removeRoamingHerdSlot(key); deferredHerdTurnover.delete(key); distant++; }
+      }
+    }
+    window.__farmLog?.(`[herds] midnight=${ordinal} distantSlots=${distant} deferredNearby=${nearby} (nearby herds rotate on map exit)`, 'wildlife');
+  }
 
   function isRoamingHerdAlive(herdKey) {
     for (const c of deps.hostileObjects) if (c.herdKey === herdKey && c.health > 0) return true;
@@ -1265,10 +1326,11 @@
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     const pool = zdef?.roamingHerdSpecies || [];
     if (!pool.length && !speciesOverride) return 0; // Explicit Moot/Nazgraku forager slots need not depend on an unrelated herd pool.
-    const speciesKey = speciesOverride || pool[Math.floor(deps.rnd() * pool.length)]; // Explicit species for each independent surface-forager slot.
+    const speciesKey = speciesOverride || herdSpeciesBySlot.get(herdKey) || pool[Math.floor(deps.rnd() * pool.length)]; // One species per day/slot; foragers retain fixed authored identities.
+    if (!speciesOverride) herdSpeciesBySlot.set(herdKey, speciesKey); // A wiped herd never silently changes species before the next midnight.
     const herdCount = Math.max(1, Math.floor(Number(totalSlotsOverride ?? zdef.roamingHerdCount) || 1));
     const anchor = roamingHerdAnchor(zoneId, herdIndex, herdCount);
-    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Moots and Nazgraku use small groups, not Voorg-ass-sized herds.
+    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Large Moot/Voorg-Ass herds; only dedicated foragers (Nazgraku) use 3-5 actors.
     const zoneData = deps.zoneLayouts.get(zoneId);
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
     const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
@@ -1372,7 +1434,7 @@
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     if (!zdef) return;
     deliverFestivalAnimalReleases(zoneId); // Release rescued young into a native generated wilderness area only.
-    const normalSpecies = zdef.roamingHerdSpecies || []; // Existing Voorg-Ass slots remain unchanged.
+    const normalSpecies = zdef.roamingHerdSpecies || []; // Moots and Voorg-Asses use the same daily rotating slots.
     const normalCount = normalSpecies.length ? Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1)) : 0;
     const foragers = Array.isArray(zdef.roamingForagerSpecies) ? zdef.roamingForagerSpecies : []; // Separate authored slots so Nazgraku never crowds out Voorg-Ass.
     const foragerCount = foragers.length ? Math.max(1, Math.floor(Number(zdef.roamingForagerCount) || 1)) : 0;
@@ -1380,6 +1442,7 @@
     function ensureSlot(key, index, species = null) {
       const alive = isRoamingHerdAlive(key); // Existing day-scoped dead-herd handling applies equally to food gatherers.
       if (alive) { roamingHerdLastKnownAlive.set(key, true); return; }
+      if (deferredHerdTurnover.has(key)) return; // A protected herd that died after midnight still waits until map exit to rotate.
       if (!roamingHerdEverSpawned.has(key)) {
         roamingHerdEverSpawned.add(key);
         roamingHerdLastKnownAlive.set(key, false);
@@ -1897,7 +1960,7 @@
     // wilderness zone map — the combat card's own wolves are added to
     // hostileObjects explicitly (see game.js's runCombat).
     const currentArea = deps.getCurrentArea();
-    if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
+    if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; finishDeferredHerdTurnovers(currentArea); processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
     window.TzatzulLiveVisuals?.tick?.(dt, currentArea);
     window.SkeeriRuins?.update?.(dt); // Advances only mounted ruin Skeeri; ordinary zones remain untouched.
@@ -1928,6 +1991,7 @@
 
   // Leaving a protected wilderness region releases already-queued cave renewals; entry alone never starts a timer.
   function onZoneEntered(mapId) {
+    finishDeferredHerdTurnovers(mapId); // Handles zone exits even when entry happens before the next wildlife update.
     processDueCaves();
     denCheckTimer = 0;
     _zoneEntryAnimalLogPending = mapId;
@@ -2047,13 +2111,17 @@
       for (let index = 0; index < herdCount; index++) {
         const herdKey = roamingHerdKeyFor(zoneId, index);
         let adults = 0, mothers = 0, babies = 0, sleeping = 0;
+        const liveSpecies = new Set(); // Makes the mobile debug census show whether a slot actually contains Moots or Voorg-Asses.
         for (const c of deps.hostileObjects) {
           if (c.herdKey !== herdKey || c.health <= 0) continue;
           adults++;
+          liveSpecies.add(c.isHerdMother ? VOORG_ASS_SPECIES : c.creatureKey);
           if (c.isHerdMother) { mothers++; babies += Math.max(0, Number(c.carriedBabyCount) || 0); }
           if (c._animalSleeping) sleeping++;
         }
-        herds.push({ herdKey, adults, mothers, carriedBabies: babies, sleeping });
+        herds.push({ herdKey, adults, mothers, carriedBabies: babies, sleeping,
+          species: [...liveSpecies].join(', ') || herdSpeciesBySlot.get(herdKey) || 'not yet spawned',
+          pendingTurnover: deferredHerdTurnover.has(herdKey) });
       }
       return { zoneId, configuredHerds: herdCount, species: [...(zdef.roamingHerdSpecies || [])], herds };
     },
