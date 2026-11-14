@@ -10,7 +10,6 @@
   const RESTED_HOURS = 16; // Matches the existing player Well Rested sleep buff.
   const HOURLY_GAP = 1; // An un-rested NPC yawns once per in-game hour.
   const CHECK_INTERVAL_MS = 350; // Only sleep/combat/calendar decisions are polled; active poses still animate per frame.
-  const KOMA_SPRITE = 'assets/leaves/koma_leaf.png'; // Used by NpcDrinkInteraction's shared drink pose.
   const KOMA_TOAST = 'You chew your daily koma leaves so that you may run and jump as the outlanders do.';
   const SLAGOTHIM = new Set(['slagothim', 'tletingan', 'nuhongan', 'longoran']); // All currently playable Slagothim variants share the daily ritual.
   const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v1:'; // Character-scoped key for rested and daily-koma time stamps.
@@ -30,11 +29,15 @@
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
 
   function nowGameHour() {
-    const snapshot = window.CalendarSystem?.timeDebugSnapshot?.();
-    const day = Number(snapshot?.rawDay);
-    const time01 = Number(snapshot?.time01 ?? snapshot?.rawTime01);
-    if (!Number.isFinite(day) || !Number.isFinite(time01)) return NaN;
-    return day * 24 + time01 * 24;
+    const calendar = window.CalendarSystem; // Authoritative 06:00–22:00 represented day, with an eight-hour overnight gap.
+    if (!calendar || calendar.isInitialized?.() === false) return NaN;
+    const absolute = calendar.getAbsoluteGameHour?.();
+    if (Number.isFinite(absolute)) return absolute;
+    const snapshot = calendar.timeDebugSnapshot?.(); // Legacy/editor fallback retains the same 16-hour daytime scale.
+    const day = snapshot?.rawDay;
+    const fraction = snapshot?.time01 ?? snapshot?.rawTime01;
+    if (!Number.isFinite(day) || !Number.isFinite(fraction)) return NaN;
+    return day * 24 + 6 + fraction * 16;
   }
 
   function rememberChange() { dirty = true; } // Marks a checkpoint for the next batched save.
@@ -109,7 +112,7 @@
     const appearance = walker.rec?.appearance || walker.profile?.appearance || {};
     return {
       species: String(appearance.speciesId || walker.rec?.species || 'default').toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-      gender: appearance.gender === 'female' || walker.rec?.gender === 'female' ? 'female' : 'male',
+      gender: (appearance.gender || walker.rec?.gender) === 'female' ? 'female' : 'male', // The actual rendered appearance overrides a stale top-level gender.
     };
   }
   function voiceModulation(species, gender) {
@@ -220,6 +223,18 @@
     }
     state.lastNeckOffset = 0;
     state.lastNeckApplied = null;
+    const body = entry.walker.alcoholPoseGroup; // This torso-only parent is independent of NPC feet and held-item action locks.
+    if (body?.rotation && entry.lastBodyApplied != null
+      && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001) {
+      body.rotation.x -= entry.lastBodyOffset;
+    }
+    entry.lastBodyApplied = null;
+    entry.lastBodyOffset = 0;
+    const composer = window.portraitBreathingComposer;
+    if (entry.ownsMouth && composer?.getExpression?.(entry.seatId) === 'yap') {
+      composer.clearExpression?.(entry.seatId); // Do not clear dialogue or social expressions that replaced the yawn.
+    }
+    entry.ownsMouth = false;
   }
   function finish(entry, reason = 'complete') {
     if (!entry || entry.finished) return;
@@ -234,13 +249,22 @@
   function startYawn(walker, state, hour, reason) {
     if (state.active) return false;
     const entry = { walker, state, startedAt: performance.now(), finished: false, komaStarted: false,
-      voice: null, voiceClaim: null };
+      voice: null, voiceClaim: null, lastBodyApplied: null, lastBodyOffset: 0, ownsMouth: false, seatId: null }; // Tracks only yawn-owned pose deltas so other animations can safely take over.
     state.active = entry;
     state.wakePending = false;
     state.nextHour = Math.max(hour, state.restedUntil) + HOURLY_GAP;
     checkpoint(state);
     active.add(entry);
     activeById.set(state.id, entry);
+    const composer = window.portraitBreathingComposer; // Existing mouth sprites already include a wide-open 'yap' frame for supported species.
+    const seatId = window.DialogueContent?.dialogueSeatId?.(walker) || state.id;
+    const resting = window.DialogueContent?.npcRestingExpression?.(walker.rec) || 'neutral';
+    const existingMouth = composer?.getExpression?.(seatId);
+    if (composer?.setExpression && (existingMouth == null || existingMouth === resting || existingMouth === 'neutral')) {
+      composer.setExpression(seatId, 'yap', YAWN_DURATION_S * 1000);
+      entry.seatId = seatId;
+      entry.ownsMouth = true;
+    }
     const identity = sourceIdentity(walker);
     if (SLAGOTHIM.has(identity.species) && hour - state.lastKomaHour >= 24
       && walker.area === window.Combat?.deps?.getCurrentArea?.()) {
@@ -265,22 +289,33 @@
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
     if (progress >= 1) { finish(entry); return; }
-    const neck = entry.walker.neckJoint;
-    if (!neck?.rotation || entry.walker._bedLieActive) return;
+    if (entry.walker._bedLieActive) return;
     const envelope = Math.sin(Math.PI * progress) ** 2;
-    const offset = -0.28 * envelope + 0.05 * Math.sin(progress * Math.PI * 4) * envelope;
+    const neck = entry.walker.neckJoint;
     const state = entry.state;
-    const base = state.lastNeckApplied != null && Math.abs(neck.rotation.x - state.lastNeckApplied) < 0.0001
-      ? neck.rotation.x - state.lastNeckOffset : neck.rotation.x;
-    neck.rotation.x = base + offset;
-    state.lastNeckOffset = offset;
-    state.lastNeckApplied = neck.rotation.x;
+    if (neck?.rotation) {
+      const offset = -0.28 * envelope + 0.05 * Math.sin(progress * Math.PI * 4) * envelope;
+      const base = state.lastNeckApplied != null && Math.abs(neck.rotation.x - state.lastNeckApplied) < 0.0001
+        ? neck.rotation.x - state.lastNeckOffset : neck.rotation.x;
+      neck.rotation.x = base + offset;
+      state.lastNeckOffset = offset;
+      state.lastNeckApplied = neck.rotation.x;
+    }
+    const body = entry.walker.alcoholPoseGroup; // Visible chest expansion and a slight backward lean distinguish a yawn from ordinary head tracking.
+    if (body?.rotation) {
+      const offset = -0.085 * envelope;
+      const base = entry.lastBodyApplied != null && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001
+        ? body.rotation.x - entry.lastBodyOffset : body.rotation.x;
+      body.rotation.x = base + offset;
+      entry.lastBodyOffset = offset;
+      entry.lastBodyApplied = body.rotation.x;
+    }
   }
 
   function frame(context = {}) {
     if (!syncCharacter()) return;
     const now = Number.isFinite(context.timestamp) ? context.timestamp : performance.now();
-    for (const entry of [...active]) poseFrame(entry, now);
+    for (const entry of active) poseFrame(entry, now); // Deleting the just-finished Set entry during iteration is safe; no per-frame array allocation.
     if (now - lastCheckMs < CHECK_INTERVAL_MS) return;
     lastCheckMs = now;
     const hour = nowGameHour();
