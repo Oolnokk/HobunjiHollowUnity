@@ -7,11 +7,13 @@ on:
       - 'docs/config/furniture-authored/townStairBridge.json'
       - 'docs/config/furniture-authored/index.json'
       - 'docs/js/town-zone-buildings.js'
+      - 'docs/js/terrain-geometry.js'
       - 'docs/js/npc-pathfinding.js'
       - 'docs/js/town-player-body-elevation-bridge.js'
       - 'docs/tools/map-editor/index.html'
       - 'scripts/test-town-map-authority.js'
       - 'scripts/test-town-stream-bridge.js'
+      - 'scripts/test-path-bricks-permanent-water.js'
       - 'scripts/test-walkable-elevation-surfaces.js'
       - '.github/workflows/town-stream-bridge.yml'
   workflow_dispatch:
@@ -33,10 +35,14 @@ jobs:
           node --check docs/js/town-zone-buildings.js
           node --check docs/js/npc-pathfinding.js
           node --check docs/js/town-player-body-elevation-bridge.js
+          node --check docs/js/terrain-geometry.js
+          node --check scripts/test-path-bricks-permanent-water.js
           node --check scripts/test-town-stream-bridge.js
       - name: Check town map authority and latest elevation
         run: node scripts/test-town-map-authority.js
       - name: Check the path, water and bridge end-to-end
         run: node scripts/test-town-stream-bridge.js
-      - name: Check exact rotated walkable stair and deck support
+      - name: Check exact rotated walkable stair, deck support and narrow rail collisions
         run: node scripts/test-walkable-elevation-surfaces.js
+      - name: Check water-aware path bricks without cutting the road spline
+        run: node scripts/test-path-bricks-permanent-water.js
