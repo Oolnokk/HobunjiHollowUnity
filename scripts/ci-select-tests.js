@@ -70,18 +70,52 @@ const FEATURE_PATHS = Object.freeze({
   ]),
 });
 
+const FEATURE_WORKFLOWS = Object.freeze({
+  integrated: '.github/workflows/check-integrated-ruin-puzzles.yml',
+  lighting: '.github/workflows/check-kanthic-shaft-lighting.yml',
+  furniture: '.github/workflows/furniture-tile-span.yml',
+  puzzle_cave: '.github/workflows/smoke-puzzle-caves.yml',
+}); // The workflow's actual invoked tests are the source of truth for its static dependencies.
+
+function featureWorkflowDependencies(id) {
+  const workflow = FEATURE_WORKFLOWS[id]; // Owned workflow from which we discover direct regression-test files.
+  const source = fs.readFileSync(path.join(ROOT, workflow), 'utf8');
+  const testFiles = [...source.matchAll(/\bnode\s+(scripts\/[\w/-]+\.js)\b/g)].map(match => match[1]); // Scans only executable test commands, not arbitrary YAML comments.
+  if (!testFiles.length) throw new Error('Cannot discover tests for ' + workflow);
+  const dependencies = new Set([workflow]); // Editing the workflow itself always selects its check.
+  for (const file of testFiles) {
+    for (const dependency of sourceDependencies(file)) dependencies.add(dependency); // Reuses existing transitive source scanner, including literal read('docs/js/...') references.
+  }
+  return dependencies;
+}
+
+function independentFeatureFile(file) {
+  if (/^scripts\/(?:test-|smoke-|verify-)/.test(file)) return true; // Specific workflow tests are already included in its dependency set.
+  if (/^docs\/js\/(?:clothing-|cosmetic-|appearance-|species-rig-|rig-editor-)/.test(file)) return true; // Cosmetic/weaving implementations cannot affect physical ruin/furniture/puzzle generation.
+  if (/^docs\/(?:config|assets)\/(?:cosmetics|clothing|patterns)\//.test(file)) return true; // Authored clothing art does not trigger the four environmental checks.
+  if (file.startsWith('.github/workflows/')) return true; // Workflow-local changes match FEATURE_PATHS; other workflows do not affect these jobs.
+  return false;
+}
+
 function selectFeatureChecks(changedFiles, options = {}) {
   const files = [...new Set(changedFiles.map(normalize))].sort(); // Deterministic PR reasons for specialist jobs.
   const affected = Object.fromEntries(Object.keys(FEATURE_PATHS).map(id => [id, []])); // Only relevant tests earn a runner.
+  const dependencies = {}; // Contains the workflow's actual test-source edges so cross-system lighting, caves and furniture are not silently missed.
+  let dependencyScanFailed = false; // A missing/invalid workflow or test scan must run every specialist rather than skip an unexamined dependency.
+  for (const id of Object.keys(FEATURE_PATHS)) {
+    try { dependencies[id] = featureWorkflowDependencies(id); }
+    catch (error) { dependencyScanFailed = true; dependencies[id] = new Set(); }
+  }
+  const knownFeatureFile = file => Object.keys(FEATURE_PATHS).some(id =>
+    FEATURE_PATHS[id].some(pattern => pattern.test(file)) || dependencies[id].has(file)); // Includes both broad runtime categories and exact test imports.
   const shared = files.filter(file =>
     file === 'docs/index.html' || file === 'docs/game.js'
     || file === 'scripts/ci-select-tests.js' || file === 'scripts/test-ci-select-tests.js'
-    || (file.startsWith('docs/js/') && categories(file).includes('all')
-      && !Object.values(FEATURE_PATHS).some(patterns => patterns.some(pattern => pattern.test(file))))); // Unclassified runtime dependencies fail open; known garment modules never trigger ruin tests.
-  const full = !!options.full || shared.length > 0; // Manual dispatch runs everything; cache-only files were excluded earlier.
+    || (file.startsWith('docs/') && !knownFeatureFile(file) && !independentFeatureFile(file))); // Unknown gameplay configs, art and runtime modules fail open, but known clothing edits stay isolated.
+  const full = !!options.full || shared.length > 0 || dependencyScanFailed; // Manual or unreadable graphs run all; cache-only files were excluded earlier.
   for (const file of files) {
     for (const [id, patterns] of Object.entries(FEATURE_PATHS)) {
-      if (patterns.some(pattern => pattern.test(file))) affected[id].push(file);
+      if (patterns.some(pattern => pattern.test(file)) || dependencies[id].has(file)) affected[id].push(file);
     }
   }
   const selected = Object.fromEntries(Object.keys(FEATURE_PATHS).map(id => [id, full || affected[id].length > 0])); // Used by GitHub job-level conditions.
@@ -229,4 +263,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { TESTS, FEATURE_PATHS, categories, sourceDependencies, selectTests, selectFeatureChecks, onlyCacheBustChanged, withoutCacheBusts };
+module.exports = { TESTS, FEATURE_PATHS, FEATURE_WORKFLOWS, categories, sourceDependencies, featureWorkflowDependencies, selectTests, selectFeatureChecks, onlyCacheBustChanged, withoutCacheBusts };
