@@ -567,7 +567,10 @@
       for(const fire of nativeFlames)fire.update?.(Math.max(0,Math.min(.05,dt))); // No second render clock.
       const player=getPlayerPosition?.(); // Native V50 solved gates also close when traversed, without a map transition.
       for(const record of owner.records){
-        record.nativeMechanisms?.tick?.(dt); // V50 solution signals and moving-support transforms are applied before gates test completion.
+        const currentStage=record.analysis.stages?.[record.solved];
+        const currentId=currentStage?'v50-f'+record.floor+':'+currentStage.id:null;
+        const active=!root.RuinRoomSystem?.isRoomActive||!currentId||root.RuinRoomSystem.isRoomActive(currentId);
+        if(active)record.nativeMechanisms?.tick?.(dt); // Only the room the player occupies advances its authored V50 mechanisms.
         for(const challenge of record.challenges){
           const gate=challenge.gate;
           if(!gate?.unlocked||!player)continue;
@@ -579,8 +582,8 @@
             setGatePhysical(challenge,!open,true);gate.openPhysical=open;
           }
         }
-        record.challenges[record.solved]?.tick?.(dt);
-        for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
+        if(active)record.challenges[record.solved]?.tick?.(dt);
+        if(active)for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
     };
     owner.serializeProgress=()=>Object.fromEntries(owner.records.map(record=>[
