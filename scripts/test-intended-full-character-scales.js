@@ -23,4 +23,16 @@ assert.deepEqual(JSON.parse(JSON.stringify(values['kenkari::female'])), { x: 1.1
 assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::male'])), { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 });
 assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::female'])), { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 });
 
+const newMaleLongoran = values['longoran::male']; // Must match the uploaded Full Character Scale export exactly.
+const newFemaleLongoran = values['longoran::female']; // Must retain the old female-to-male relative dimensions.
+const oldMaleLongoran = { x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 }; // Previous canonical values, used only for ratio regression.
+const oldFemaleLongoran = { x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 }; // Previous canonical female, before applying male's changes.
+assert.deepEqual(JSON.parse(JSON.stringify(newMaleLongoran)), { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 });
+for (const axis of ['x', 'y', 'head']) {
+  const ratio = newMaleLongoran[axis] / oldMaleLongoran[axis];
+  assert(Math.abs(newFemaleLongoran[axis] - oldFemaleLongoran[axis] * ratio) < 1e-12, `Female Longoran ${axis} must preserve her proportion after male adjustments`);
+}
+assert.equal(newFemaleLongoran.offsetY, oldFemaleLongoran.offsetY - 0.055, 'zero-based head offsets use additive difference, never multiplication');
+assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 21, 'shipping scale revision must change when the Longoran defaults change');
+
 console.log('Only the intended Full Character Scale edits and proportional Mammakhbuur female values are applied.');

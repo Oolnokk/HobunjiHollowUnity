@@ -997,7 +997,7 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
-    const liveLoadingState = window.HobunjiLiveLoadingStatus?.snapshot?.(); // Reports what is still loading without asking players on mobile to open DevTools.
+    const liveLoadingState = window.HobunjiLiveLoadingStatus?.snapshot?.(); // Reports outstanding assets/requests without DevTools.
     if (liveLoadingState) lines.push('Background loading: ' + JSON.stringify(liveLoadingState));
     const caveOverlayState = window.PuzzleCaveEntrances?.debugSnapshot?.().areas?.find(zone => zone.area === currentArea); // One-shot mobile check for the active cliff-score glyph compositor, never a per-frame scan.
     if (caveOverlayState?.portals?.length) {

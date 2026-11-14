@@ -200,7 +200,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261112longoran1"></script>
+  <script src="js/held-action-animations.js?v=20261113longoranscales5"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -1047,7 +1047,7 @@
     <div class="sb-div"></div>
     <span class="sb-gold" id="spGold"><span class="sb-gold-icon">💰</span> <span class="sb-gold-amount" id="spGoldAmount">0</span><span class="sb-gold-suffix">g</span></span>
   </div>
-  <!-- No visible container: only live outstanding work appears beneath the top HUD bar. -->
+  <!-- Bare, event-driven status text only; no loading panel beneath the top HUD. -->
   <output id="liveLoadingStatus" role="status" aria-live="polite" hidden></output>
 
   <div id="navigationCompass" role="navigation" aria-label="Navigation compass">
@@ -2895,7 +2895,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261114h87bc83b"></script>
+  <script src="js/pixel-probe.js?v=20261114h2b25d93"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2943,7 +2943,7 @@
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
   <script src="js/loading-screen-runtime.js?v=20261114h4fa5e67"></script>
-  <!-- Shows only real outstanding fetch/Three.js loads while playing; lives immediately beneath #statusBar. -->
+  <!-- Background requests/assets: no panel or render-loop polling. -->
   <script src="js/live-loading-status.js?v=20261114hf4bb35e"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
