@@ -173,7 +173,7 @@
 
   function suspendForRender(scene,camera) {
     // Restore first even when a previous interrupted render did not reach its finally.
-    if (hidden.length) restore();
+    restore(); // Also clears a previous candidate list after an interrupted render with no hidden meshes.
     if (!enabled || !scene || !camera || !setupCamera(camera)) return null;
     frame++;stats.frames++;stats.candidates=0;stats.submitted=0;
     stats.frustumHidden=0;stats.occludedHidden=0;stats.probes=0;
@@ -267,6 +267,8 @@
   }
 
   function probeAfterBase(renderer,camera,scene) {
+    camera ||= currentCamera; // The GPU depth slot remains available if actor-only culling was disabled in diagnostics.
+    scene ||= currentScene;
     // Called after the normal world base pass (its populated depth is still bound)
     // and before the held/outline replays. Never run a GPU query from the game update.
     if (!enabled || !candidates.length || scene!==currentScene || camera!==currentCamera) return;
