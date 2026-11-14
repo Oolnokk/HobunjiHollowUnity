@@ -1868,62 +1868,6 @@
         "doorwayFramePart": "lowLintel"
       },
       {
-        "id": 165,
-        "v": [
-          [
-            1.82,
-            1.4,
-            -2.18
-          ],
-          [
-            1.82,
-            2.14,
-            0
-          ],
-          [
-            8.18,
-            2.14,
-            0
-          ],
-          [
-            8.18,
-            1.4,
-            -2.18
-          ]
-        ],
-        "tag": "roof",
-        "color": null,
-        "roofFace": "northSlope"
-      },
-      {
-        "id": 166,
-        "v": [
-          [
-            1.82,
-            2.14,
-            0
-          ],
-          [
-            1.82,
-            1.4,
-            2.18
-          ],
-          [
-            8.18,
-            1.4,
-            2.18
-          ],
-          [
-            8.18,
-            2.14,
-            0
-          ]
-        ],
-        "tag": "roof",
-        "color": null,
-        "roofFace": "southSlope"
-      },
-      {
         "id": 167,
         "v": [
           [
@@ -8930,6 +8874,4618 @@
         "railRunTiles": 3,
         "raisedOnPorch": false,
         "extensionFace": "west"
+      },
+      {
+        "id": "balcony_generated_1",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.4,
+            -1
+          ],
+          [
+            3,
+            1.4,
+            -1
+          ],
+          [
+            3,
+            1.4,
+            -2
+          ],
+          [
+            2,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_2",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            3,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            3,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            2,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_3",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            3,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            3,
+            1.4,
+            -2
+          ],
+          [
+            2,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_4",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            2,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            2,
+            1.4,
+            -1
+          ],
+          [
+            2,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "west",
+        "sourceTile": {
+          "x": 11,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_5",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.4,
+            -1
+          ],
+          [
+            4,
+            1.4,
+            -1
+          ],
+          [
+            4,
+            1.4,
+            -2
+          ],
+          [
+            3,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 12,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_6",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            4,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            4,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 12,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_7",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            4,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            4,
+            1.4,
+            -2
+          ],
+          [
+            3,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 12,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_8",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.4,
+            -1
+          ],
+          [
+            5,
+            1.4,
+            -1
+          ],
+          [
+            5,
+            1.4,
+            -2
+          ],
+          [
+            4,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 13,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_9",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            5,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            5,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 13,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_10",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            5,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            5,
+            1.4,
+            -2
+          ],
+          [
+            4,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 13,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_11",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.4,
+            -1
+          ],
+          [
+            6,
+            1.4,
+            -1
+          ],
+          [
+            6,
+            1.4,
+            -2
+          ],
+          [
+            5,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 14,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_12",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            6,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            6,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 14,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_13",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            6,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            6,
+            1.4,
+            -2
+          ],
+          [
+            5,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 14,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_14",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.4,
+            -1
+          ],
+          [
+            7,
+            1.4,
+            -1
+          ],
+          [
+            7,
+            1.4,
+            -2
+          ],
+          [
+            6,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 15,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_15",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            7,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            7,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 15,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_16",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            7,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            7,
+            1.4,
+            -2
+          ],
+          [
+            6,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 15,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_17",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.4,
+            -1
+          ],
+          [
+            8,
+            1.4,
+            -1
+          ],
+          [
+            8,
+            1.4,
+            -2
+          ],
+          [
+            7,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 16,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_18",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            8,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            8,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 16,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_19",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            8,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            8,
+            1.4,
+            -2
+          ],
+          [
+            7,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "north",
+        "sourceTile": {
+          "x": 16,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_20",
+        "tag": "balcony",
+        "v": [
+          [
+            8,
+            1.2799999999999998,
+            -2
+          ],
+          [
+            8,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            8,
+            1.4,
+            -1
+          ],
+          [
+            8,
+            1.4,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "east",
+        "sourceTile": {
+          "x": 16,
+          "y": 7
+        }
+      },
+      {
+        "id": "balcony_generated_21",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.4,
+            0
+          ],
+          [
+            3,
+            1.4,
+            0
+          ],
+          [
+            3,
+            1.4,
+            -1
+          ],
+          [
+            2,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 11,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_22",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            0
+          ],
+          [
+            2,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 11,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_23",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            2,
+            1.2799999999999998,
+            0
+          ],
+          [
+            2,
+            1.4,
+            0
+          ],
+          [
+            2,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "west",
+        "sourceTile": {
+          "x": 11,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_24",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.4,
+            0
+          ],
+          [
+            4,
+            1.4,
+            0
+          ],
+          [
+            4,
+            1.4,
+            -1
+          ],
+          [
+            3,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_25",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            0
+          ],
+          [
+            3,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_26",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.4,
+            0
+          ],
+          [
+            5,
+            1.4,
+            0
+          ],
+          [
+            5,
+            1.4,
+            -1
+          ],
+          [
+            4,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 13,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_27",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            0
+          ],
+          [
+            4,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 13,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_28",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.4,
+            0
+          ],
+          [
+            6,
+            1.4,
+            0
+          ],
+          [
+            6,
+            1.4,
+            -1
+          ],
+          [
+            5,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 14,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_29",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            0
+          ],
+          [
+            5,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 14,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_30",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.4,
+            0
+          ],
+          [
+            7,
+            1.4,
+            0
+          ],
+          [
+            7,
+            1.4,
+            -1
+          ],
+          [
+            6,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 15,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_31",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            0
+          ],
+          [
+            6,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 15,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_32",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.4,
+            0
+          ],
+          [
+            8,
+            1.4,
+            0
+          ],
+          [
+            8,
+            1.4,
+            -1
+          ],
+          [
+            7,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 16,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_33",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            0
+          ],
+          [
+            7,
+            1.2799999999999998,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 16,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_34",
+        "tag": "balcony",
+        "v": [
+          [
+            8,
+            1.2799999999999998,
+            -1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            0
+          ],
+          [
+            8,
+            1.4,
+            0
+          ],
+          [
+            8,
+            1.4,
+            -1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "east",
+        "sourceTile": {
+          "x": 16,
+          "y": 8
+        }
+      },
+      {
+        "id": "balcony_generated_35",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.4,
+            1
+          ],
+          [
+            3,
+            1.4,
+            1
+          ],
+          [
+            3,
+            1.4,
+            0
+          ],
+          [
+            2,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 11,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_36",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            0
+          ],
+          [
+            3,
+            1.2799999999999998,
+            0
+          ],
+          [
+            3,
+            1.2799999999999998,
+            1
+          ],
+          [
+            2,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 11,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_37",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            0
+          ],
+          [
+            2,
+            1.2799999999999998,
+            1
+          ],
+          [
+            2,
+            1.4,
+            1
+          ],
+          [
+            2,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "west",
+        "sourceTile": {
+          "x": 11,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_38",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.4,
+            1
+          ],
+          [
+            4,
+            1.4,
+            1
+          ],
+          [
+            4,
+            1.4,
+            0
+          ],
+          [
+            3,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 12,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_39",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            0
+          ],
+          [
+            4,
+            1.2799999999999998,
+            0
+          ],
+          [
+            4,
+            1.2799999999999998,
+            1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 12,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_40",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.4,
+            1
+          ],
+          [
+            5,
+            1.4,
+            1
+          ],
+          [
+            5,
+            1.4,
+            0
+          ],
+          [
+            4,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 13,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_41",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            0
+          ],
+          [
+            5,
+            1.2799999999999998,
+            0
+          ],
+          [
+            5,
+            1.2799999999999998,
+            1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 13,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_42",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.4,
+            1
+          ],
+          [
+            6,
+            1.4,
+            1
+          ],
+          [
+            6,
+            1.4,
+            0
+          ],
+          [
+            5,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 14,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_43",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            0
+          ],
+          [
+            6,
+            1.2799999999999998,
+            0
+          ],
+          [
+            6,
+            1.2799999999999998,
+            1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 14,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_44",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.4,
+            1
+          ],
+          [
+            7,
+            1.4,
+            1
+          ],
+          [
+            7,
+            1.4,
+            0
+          ],
+          [
+            6,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 15,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_45",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            0
+          ],
+          [
+            7,
+            1.2799999999999998,
+            0
+          ],
+          [
+            7,
+            1.2799999999999998,
+            1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 15,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_46",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.4,
+            1
+          ],
+          [
+            8,
+            1.4,
+            1
+          ],
+          [
+            8,
+            1.4,
+            0
+          ],
+          [
+            7,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 16,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_47",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            0
+          ],
+          [
+            8,
+            1.2799999999999998,
+            0
+          ],
+          [
+            8,
+            1.2799999999999998,
+            1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 16,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_48",
+        "tag": "balcony",
+        "v": [
+          [
+            8,
+            1.2799999999999998,
+            0
+          ],
+          [
+            8,
+            1.2799999999999998,
+            1
+          ],
+          [
+            8,
+            1.4,
+            1
+          ],
+          [
+            8,
+            1.4,
+            0
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "east",
+        "sourceTile": {
+          "x": 16,
+          "y": 9
+        }
+      },
+      {
+        "id": "balcony_generated_49",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.4,
+            2
+          ],
+          [
+            3,
+            1.4,
+            2
+          ],
+          [
+            3,
+            1.4,
+            1
+          ],
+          [
+            2,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 11,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_50",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            1
+          ],
+          [
+            3,
+            1.2799999999999998,
+            2
+          ],
+          [
+            2,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 11,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_51",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            2
+          ],
+          [
+            3,
+            1.2799999999999998,
+            2
+          ],
+          [
+            3,
+            1.4,
+            2
+          ],
+          [
+            2,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 11,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_52",
+        "tag": "balcony",
+        "v": [
+          [
+            2,
+            1.2799999999999998,
+            1
+          ],
+          [
+            2,
+            1.2799999999999998,
+            2
+          ],
+          [
+            2,
+            1.4,
+            2
+          ],
+          [
+            2,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "west",
+        "sourceTile": {
+          "x": 11,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_53",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.4,
+            2
+          ],
+          [
+            4,
+            1.4,
+            2
+          ],
+          [
+            4,
+            1.4,
+            1
+          ],
+          [
+            3,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 12,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_54",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            1
+          ],
+          [
+            4,
+            1.2799999999999998,
+            2
+          ],
+          [
+            3,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 12,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_55",
+        "tag": "balcony",
+        "v": [
+          [
+            3,
+            1.2799999999999998,
+            2
+          ],
+          [
+            4,
+            1.2799999999999998,
+            2
+          ],
+          [
+            4,
+            1.4,
+            2
+          ],
+          [
+            3,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 12,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_56",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.4,
+            2
+          ],
+          [
+            5,
+            1.4,
+            2
+          ],
+          [
+            5,
+            1.4,
+            1
+          ],
+          [
+            4,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 13,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_57",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            1
+          ],
+          [
+            5,
+            1.2799999999999998,
+            2
+          ],
+          [
+            4,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 13,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_58",
+        "tag": "balcony",
+        "v": [
+          [
+            4,
+            1.2799999999999998,
+            2
+          ],
+          [
+            5,
+            1.2799999999999998,
+            2
+          ],
+          [
+            5,
+            1.4,
+            2
+          ],
+          [
+            4,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 13,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_59",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.4,
+            2
+          ],
+          [
+            6,
+            1.4,
+            2
+          ],
+          [
+            6,
+            1.4,
+            1
+          ],
+          [
+            5,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 14,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_60",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            1
+          ],
+          [
+            6,
+            1.2799999999999998,
+            2
+          ],
+          [
+            5,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 14,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_61",
+        "tag": "balcony",
+        "v": [
+          [
+            5,
+            1.2799999999999998,
+            2
+          ],
+          [
+            6,
+            1.2799999999999998,
+            2
+          ],
+          [
+            6,
+            1.4,
+            2
+          ],
+          [
+            5,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 14,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_62",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.4,
+            2
+          ],
+          [
+            7,
+            1.4,
+            2
+          ],
+          [
+            7,
+            1.4,
+            1
+          ],
+          [
+            6,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 15,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_63",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            1
+          ],
+          [
+            7,
+            1.2799999999999998,
+            2
+          ],
+          [
+            6,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 15,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_64",
+        "tag": "balcony",
+        "v": [
+          [
+            6,
+            1.2799999999999998,
+            2
+          ],
+          [
+            7,
+            1.2799999999999998,
+            2
+          ],
+          [
+            7,
+            1.4,
+            2
+          ],
+          [
+            6,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 15,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_65",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.4,
+            2
+          ],
+          [
+            8,
+            1.4,
+            2
+          ],
+          [
+            8,
+            1.4,
+            1
+          ],
+          [
+            7,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "top",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_66",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            2
+          ],
+          [
+            7,
+            1.2799999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "underside",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_67",
+        "tag": "balcony",
+        "v": [
+          [
+            7,
+            1.2799999999999998,
+            2
+          ],
+          [
+            8,
+            1.2799999999999998,
+            2
+          ],
+          [
+            8,
+            1.4,
+            2
+          ],
+          [
+            7,
+            1.4,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "south",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_68",
+        "tag": "balcony",
+        "v": [
+          [
+            8,
+            1.2799999999999998,
+            1
+          ],
+          [
+            8,
+            1.2799999999999998,
+            2
+          ],
+          [
+            8,
+            1.4,
+            2
+          ],
+          [
+            8,
+            1.4,
+            1
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "east",
+        "sourceTile": {
+          "x": 16,
+          "y": 10
+        }
+      },
+      {
+        "id": "balcony_generated_69",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.12,
+            -2.045
+          ],
+          [
+            8,
+            2.12,
+            -2.045
+          ],
+          [
+            8,
+            2.12,
+            -1.955
+          ],
+          [
+            2,
+            2.12,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_70",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            8,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            8,
+            2.0300000000000002,
+            -2.045
+          ],
+          [
+            2,
+            2.0300000000000002,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_71",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            -2.045
+          ],
+          [
+            8,
+            2.0300000000000002,
+            -2.045
+          ],
+          [
+            8,
+            2.12,
+            -2.045
+          ],
+          [
+            2,
+            2.12,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_72",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            2.0300000000000002,
+            -2.045
+          ],
+          [
+            8,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            8,
+            2.12,
+            -1.955
+          ],
+          [
+            8,
+            2.12,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_73",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            2,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            2,
+            2.12,
+            -1.955
+          ],
+          [
+            8,
+            2.12,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_74",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            -1.955
+          ],
+          [
+            2,
+            2.0300000000000002,
+            -2.045
+          ],
+          [
+            2,
+            2.12,
+            -2.045
+          ],
+          [
+            2,
+            2.12,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_75",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.8265999999999998,
+            -2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -1.955
+          ],
+          [
+            2,
+            1.8265999999999998,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_76",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            -1.955
+          ],
+          [
+            8,
+            1.7366,
+            -1.955
+          ],
+          [
+            8,
+            1.7366,
+            -2.045
+          ],
+          [
+            2,
+            1.7366,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_77",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            -2.045
+          ],
+          [
+            8,
+            1.7366,
+            -2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -2.045
+          ],
+          [
+            2,
+            1.8265999999999998,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_78",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            1.7366,
+            -2.045
+          ],
+          [
+            8,
+            1.7366,
+            -1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_79",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            1.7366,
+            -1.955
+          ],
+          [
+            2,
+            1.7366,
+            -1.955
+          ],
+          [
+            2,
+            1.8265999999999998,
+            -1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_80",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            -1.955
+          ],
+          [
+            2,
+            1.7366,
+            -2.045
+          ],
+          [
+            2,
+            1.8265999999999998,
+            -2.045
+          ],
+          [
+            2,
+            1.8265999999999998,
+            -1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_81",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.12,
+            1.955
+          ],
+          [
+            8,
+            2.12,
+            1.955
+          ],
+          [
+            8,
+            2.12,
+            2.045
+          ],
+          [
+            2,
+            2.12,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_82",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            8,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            8,
+            2.0300000000000002,
+            1.955
+          ],
+          [
+            2,
+            2.0300000000000002,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_83",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            1.955
+          ],
+          [
+            8,
+            2.0300000000000002,
+            1.955
+          ],
+          [
+            8,
+            2.12,
+            1.955
+          ],
+          [
+            2,
+            2.12,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_84",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            2.0300000000000002,
+            1.955
+          ],
+          [
+            8,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            8,
+            2.12,
+            2.045
+          ],
+          [
+            8,
+            2.12,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_85",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            2,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            2,
+            2.12,
+            2.045
+          ],
+          [
+            8,
+            2.12,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_86",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            2.0300000000000002,
+            2.045
+          ],
+          [
+            2,
+            2.0300000000000002,
+            1.955
+          ],
+          [
+            2,
+            2.12,
+            1.955
+          ],
+          [
+            2,
+            2.12,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_87",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.8265999999999998,
+            1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            2.045
+          ],
+          [
+            2,
+            1.8265999999999998,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_88",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            2.045
+          ],
+          [
+            8,
+            1.7366,
+            2.045
+          ],
+          [
+            8,
+            1.7366,
+            1.955
+          ],
+          [
+            2,
+            1.7366,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_89",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            1.955
+          ],
+          [
+            8,
+            1.7366,
+            1.955
+          ],
+          [
+            8,
+            1.8265999999999998,
+            1.955
+          ],
+          [
+            2,
+            1.8265999999999998,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_90",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            1.7366,
+            1.955
+          ],
+          [
+            8,
+            1.7366,
+            2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            1.955
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_91",
+        "tag": "railing",
+        "v": [
+          [
+            8,
+            1.7366,
+            2.045
+          ],
+          [
+            2,
+            1.7366,
+            2.045
+          ],
+          [
+            2,
+            1.8265999999999998,
+            2.045
+          ],
+          [
+            8,
+            1.8265999999999998,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_92",
+        "tag": "railing",
+        "v": [
+          [
+            2,
+            1.7366,
+            2.045
+          ],
+          [
+            2,
+            1.7366,
+            1.955
+          ],
+          [
+            2,
+            1.8265999999999998,
+            1.955
+          ],
+          [
+            2,
+            1.8265999999999998,
+            2.045
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_93",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            2.12,
+            -2
+          ],
+          [
+            2.045,
+            2.12,
+            -2
+          ],
+          [
+            2.045,
+            2.12,
+            2
+          ],
+          [
+            1.955,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_94",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            2.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            2.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            1.955,
+            2.0300000000000002,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_95",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            2.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            2.045,
+            2.12,
+            -2
+          ],
+          [
+            1.955,
+            2.12,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_96",
+        "tag": "railing",
+        "v": [
+          [
+            2.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            2.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            2.045,
+            2.12,
+            2
+          ],
+          [
+            2.045,
+            2.12,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_97",
+        "tag": "railing",
+        "v": [
+          [
+            2.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            1.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            1.955,
+            2.12,
+            2
+          ],
+          [
+            2.045,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_98",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            1.955,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            1.955,
+            2.12,
+            -2
+          ],
+          [
+            1.955,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_99",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            2
+          ],
+          [
+            1.955,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_100",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            1.7366,
+            2
+          ],
+          [
+            2.045,
+            1.7366,
+            2
+          ],
+          [
+            2.045,
+            1.7366,
+            -2
+          ],
+          [
+            1.955,
+            1.7366,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_101",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            1.7366,
+            -2
+          ],
+          [
+            2.045,
+            1.7366,
+            -2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            1.955,
+            1.8265999999999998,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_102",
+        "tag": "railing",
+        "v": [
+          [
+            2.045,
+            1.7366,
+            -2
+          ],
+          [
+            2.045,
+            1.7366,
+            2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_103",
+        "tag": "railing",
+        "v": [
+          [
+            2.045,
+            1.7366,
+            2
+          ],
+          [
+            1.955,
+            1.7366,
+            2
+          ],
+          [
+            1.955,
+            1.8265999999999998,
+            2
+          ],
+          [
+            2.045,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_104",
+        "tag": "railing",
+        "v": [
+          [
+            1.955,
+            1.7366,
+            2
+          ],
+          [
+            1.955,
+            1.7366,
+            -2
+          ],
+          [
+            1.955,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            1.955,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_105",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            2.12,
+            -2
+          ],
+          [
+            8.045,
+            2.12,
+            -2
+          ],
+          [
+            8.045,
+            2.12,
+            2
+          ],
+          [
+            7.955,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_106",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            8.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            8.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            7.955,
+            2.0300000000000002,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_107",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            8.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            8.045,
+            2.12,
+            -2
+          ],
+          [
+            7.955,
+            2.12,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_108",
+        "tag": "railing",
+        "v": [
+          [
+            8.045,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            8.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            8.045,
+            2.12,
+            2
+          ],
+          [
+            8.045,
+            2.12,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_109",
+        "tag": "railing",
+        "v": [
+          [
+            8.045,
+            2.0300000000000002,
+            2
+          ],
+          [
+            7.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            7.955,
+            2.12,
+            2
+          ],
+          [
+            8.045,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_110",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            2.0300000000000002,
+            2
+          ],
+          [
+            7.955,
+            2.0300000000000002,
+            -2
+          ],
+          [
+            7.955,
+            2.12,
+            -2
+          ],
+          [
+            7.955,
+            2.12,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_111",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            2
+          ],
+          [
+            7.955,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_112",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            1.7366,
+            2
+          ],
+          [
+            8.045,
+            1.7366,
+            2
+          ],
+          [
+            8.045,
+            1.7366,
+            -2
+          ],
+          [
+            7.955,
+            1.7366,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_113",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            1.7366,
+            -2
+          ],
+          [
+            8.045,
+            1.7366,
+            -2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            7.955,
+            1.8265999999999998,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_114",
+        "tag": "railing",
+        "v": [
+          [
+            8.045,
+            1.7366,
+            -2
+          ],
+          [
+            8.045,
+            1.7366,
+            2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            -2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_115",
+        "tag": "railing",
+        "v": [
+          [
+            8.045,
+            1.7366,
+            2
+          ],
+          [
+            7.955,
+            1.7366,
+            2
+          ],
+          [
+            7.955,
+            1.8265999999999998,
+            2
+          ],
+          [
+            8.045,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_116",
+        "tag": "railing",
+        "v": [
+          [
+            7.955,
+            1.7366,
+            2
+          ],
+          [
+            7.955,
+            1.7366,
+            -2
+          ],
+          [
+            7.955,
+            1.8265999999999998,
+            -2
+          ],
+          [
+            7.955,
+            1.8265999999999998,
+            2
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "rail"
+      },
+      {
+        "id": "balcony_generated_117",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            2.12,
+            -2.063
+          ],
+          [
+            2.063,
+            2.12,
+            -2.063
+          ],
+          [
+            2.063,
+            2.12,
+            -1.937
+          ],
+          [
+            1.937,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_118",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            -1.937
+          ],
+          [
+            2.063,
+            1.4,
+            -1.937
+          ],
+          [
+            2.063,
+            1.4,
+            -2.063
+          ],
+          [
+            1.937,
+            1.4,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_119",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            -2.063
+          ],
+          [
+            2.063,
+            1.4,
+            -2.063
+          ],
+          [
+            2.063,
+            2.12,
+            -2.063
+          ],
+          [
+            1.937,
+            2.12,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_120",
+        "tag": "railing",
+        "v": [
+          [
+            2.063,
+            1.4,
+            -2.063
+          ],
+          [
+            2.063,
+            1.4,
+            -1.937
+          ],
+          [
+            2.063,
+            2.12,
+            -1.937
+          ],
+          [
+            2.063,
+            2.12,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_121",
+        "tag": "railing",
+        "v": [
+          [
+            2.063,
+            1.4,
+            -1.937
+          ],
+          [
+            1.937,
+            1.4,
+            -1.937
+          ],
+          [
+            1.937,
+            2.12,
+            -1.937
+          ],
+          [
+            2.063,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_122",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            -1.937
+          ],
+          [
+            1.937,
+            1.4,
+            -2.063
+          ],
+          [
+            1.937,
+            2.12,
+            -2.063
+          ],
+          [
+            1.937,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_123",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            2.12,
+            -2.063
+          ],
+          [
+            8.063,
+            2.12,
+            -2.063
+          ],
+          [
+            8.063,
+            2.12,
+            -1.937
+          ],
+          [
+            7.937,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_124",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            -1.937
+          ],
+          [
+            8.063,
+            1.4,
+            -1.937
+          ],
+          [
+            8.063,
+            1.4,
+            -2.063
+          ],
+          [
+            7.937,
+            1.4,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_125",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            -2.063
+          ],
+          [
+            8.063,
+            1.4,
+            -2.063
+          ],
+          [
+            8.063,
+            2.12,
+            -2.063
+          ],
+          [
+            7.937,
+            2.12,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_126",
+        "tag": "railing",
+        "v": [
+          [
+            8.063,
+            1.4,
+            -2.063
+          ],
+          [
+            8.063,
+            1.4,
+            -1.937
+          ],
+          [
+            8.063,
+            2.12,
+            -1.937
+          ],
+          [
+            8.063,
+            2.12,
+            -2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_127",
+        "tag": "railing",
+        "v": [
+          [
+            8.063,
+            1.4,
+            -1.937
+          ],
+          [
+            7.937,
+            1.4,
+            -1.937
+          ],
+          [
+            7.937,
+            2.12,
+            -1.937
+          ],
+          [
+            8.063,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_128",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            -1.937
+          ],
+          [
+            7.937,
+            1.4,
+            -2.063
+          ],
+          [
+            7.937,
+            2.12,
+            -2.063
+          ],
+          [
+            7.937,
+            2.12,
+            -1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_129",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            2.12,
+            1.937
+          ],
+          [
+            2.063,
+            2.12,
+            1.937
+          ],
+          [
+            2.063,
+            2.12,
+            2.063
+          ],
+          [
+            1.937,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_130",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            2.063
+          ],
+          [
+            2.063,
+            1.4,
+            2.063
+          ],
+          [
+            2.063,
+            1.4,
+            1.937
+          ],
+          [
+            1.937,
+            1.4,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_131",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            1.937
+          ],
+          [
+            2.063,
+            1.4,
+            1.937
+          ],
+          [
+            2.063,
+            2.12,
+            1.937
+          ],
+          [
+            1.937,
+            2.12,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_132",
+        "tag": "railing",
+        "v": [
+          [
+            2.063,
+            1.4,
+            1.937
+          ],
+          [
+            2.063,
+            1.4,
+            2.063
+          ],
+          [
+            2.063,
+            2.12,
+            2.063
+          ],
+          [
+            2.063,
+            2.12,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_133",
+        "tag": "railing",
+        "v": [
+          [
+            2.063,
+            1.4,
+            2.063
+          ],
+          [
+            1.937,
+            1.4,
+            2.063
+          ],
+          [
+            1.937,
+            2.12,
+            2.063
+          ],
+          [
+            2.063,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_134",
+        "tag": "railing",
+        "v": [
+          [
+            1.937,
+            1.4,
+            2.063
+          ],
+          [
+            1.937,
+            1.4,
+            1.937
+          ],
+          [
+            1.937,
+            2.12,
+            1.937
+          ],
+          [
+            1.937,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_135",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            2.12,
+            1.937
+          ],
+          [
+            8.063,
+            2.12,
+            1.937
+          ],
+          [
+            8.063,
+            2.12,
+            2.063
+          ],
+          [
+            7.937,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_136",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            2.063
+          ],
+          [
+            8.063,
+            1.4,
+            2.063
+          ],
+          [
+            8.063,
+            1.4,
+            1.937
+          ],
+          [
+            7.937,
+            1.4,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_137",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            1.937
+          ],
+          [
+            8.063,
+            1.4,
+            1.937
+          ],
+          [
+            8.063,
+            2.12,
+            1.937
+          ],
+          [
+            7.937,
+            2.12,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_138",
+        "tag": "railing",
+        "v": [
+          [
+            8.063,
+            1.4,
+            1.937
+          ],
+          [
+            8.063,
+            1.4,
+            2.063
+          ],
+          [
+            8.063,
+            2.12,
+            2.063
+          ],
+          [
+            8.063,
+            2.12,
+            1.937
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_139",
+        "tag": "railing",
+        "v": [
+          [
+            8.063,
+            1.4,
+            2.063
+          ],
+          [
+            7.937,
+            1.4,
+            2.063
+          ],
+          [
+            7.937,
+            2.12,
+            2.063
+          ],
+          [
+            8.063,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
+      },
+      {
+        "id": "balcony_generated_140",
+        "tag": "railing",
+        "v": [
+          [
+            7.937,
+            1.4,
+            2.063
+          ],
+          [
+            7.937,
+            1.4,
+            1.937
+          ],
+          [
+            7.937,
+            2.12,
+            1.937
+          ],
+          [
+            7.937,
+            2.12,
+            2.063
+          ]
+        ],
+        "balconyGenerated": true,
+        "color": null,
+        "extensionType": "balcony",
+        "balconyId": "ikmc_rooftop",
+        "extensionFace": "post"
       }
     ]
   },
@@ -8967,7 +13523,8 @@
     "peakRotateFalloff": 0,
     "highlandInterlockOffset": 0.25,
     "shingleSource": "",
-    "crossGableSections": []
+    "crossGableSections": [],
+    "style": "flat-balcony"
   },
   "assets": [],
   "wallStyle": "logs",
@@ -8984,8 +13541,125 @@
     "porches": 42,
     "porchStairs": 3,
     "railings": 20,
-    "generatedAt": "2026-11-14T00:00:00.000Z"
+    "generatedAt": "2026-11-14T00:00:00.000Z",
+    "balconies": 1
   },
   "placementOrigin": "fullFootprint",
-  "entryDoorRise": 0.09482
+  "entryDoorRise": 0.09482,
+  "balconies": [
+    {
+      "id": "ikmc_rooftop",
+      "cells": [
+        {
+          "x": 11,
+          "y": 7
+        },
+        {
+          "x": 12,
+          "y": 7
+        },
+        {
+          "x": 13,
+          "y": 7
+        },
+        {
+          "x": 14,
+          "y": 7
+        },
+        {
+          "x": 15,
+          "y": 7
+        },
+        {
+          "x": 16,
+          "y": 7
+        },
+        {
+          "x": 11,
+          "y": 8
+        },
+        {
+          "x": 12,
+          "y": 8
+        },
+        {
+          "x": 13,
+          "y": 8
+        },
+        {
+          "x": 14,
+          "y": 8
+        },
+        {
+          "x": 15,
+          "y": 8
+        },
+        {
+          "x": 16,
+          "y": 8
+        },
+        {
+          "x": 11,
+          "y": 9
+        },
+        {
+          "x": 12,
+          "y": 9
+        },
+        {
+          "x": 13,
+          "y": 9
+        },
+        {
+          "x": 14,
+          "y": 9
+        },
+        {
+          "x": 15,
+          "y": 9
+        },
+        {
+          "x": 16,
+          "y": 9
+        },
+        {
+          "x": 11,
+          "y": 10
+        },
+        {
+          "x": 12,
+          "y": 10
+        },
+        {
+          "x": 13,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 10
+        },
+        {
+          "x": 15,
+          "y": 10
+        },
+        {
+          "x": 16,
+          "y": 10
+        }
+      ],
+      "heightMode": "wall",
+      "height": 1.4,
+      "railings": true,
+      "railHeight": 0.72,
+      "access": {
+        "type": "interiorFurniture",
+        "mapId": "map_i_ikmc_outpost",
+        "furnitureId": "f_ikmc_roof_ladder",
+        "openingTile": {
+          "x": 13,
+          "y": 8
+        }
+      }
+    }
+  ]
 }
