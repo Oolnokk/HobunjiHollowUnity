@@ -100,14 +100,14 @@
 
   function stairBridge() {
     const {state, pushPart} = editor;
-    editor.beginPreset(6,1);
+    editor.beginPreset(4,2);
     const tile = Math.max(.01, state.tileBase.tileSize); // Tile-scale source for every bridge piece.
     const wood = {materialRole:'wood',materialTexture:'carved_smooth.png',color:'#96714b'};
     const step = (role, index) => {
       const height = (index+1)*tile*.22; // Rises toward the central flat deck.
-      const x = (role==='start' ? -2.75+index*.5 : 2.75-index*.5)*tile;
+      const x = (role==='start' ? -1.875+index*.25 : 1.875-index*.25)*tile; // Four risers compressed into one tile along X.
       return pushPart('box',{...wood,name:(role==='start'?'Start':'End')+' staircase '+(index+1),
-        tileSpanRole:role,transform:{x,y:height/2,z:0,rx:0,ry:0,rz:0,sx:tile*.5,sy:height,sz:tile*.94},
+        tileSpanRole:role,transform:{x,y:height/2,z:0,rx:0,ry:0,rz:0,sx:tile*.25,sy:height,sz:tile*1.8},
         topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1});
     };
     let startLanding, endLanding;
@@ -116,9 +116,9 @@
     const roots = {start:{partId:startLanding.id,face:'max'},end:{partId:endLanding.id,face:'min'}};
     const deck = pushPart('box',{...wood,name:'Flat bridge deck (stretchable)',
       tileSpanRole:'stretch',tileSpanRoots:JSON.parse(JSON.stringify(roots)),
-      transform:{x:0,y:.81*tile,z:0,rx:0,ry:0,rz:0,sx:2*tile,sy:.14*tile,sz:.94*tile},
+      transform:{x:0,y:.81*tile,z:0,rx:0,ry:0,rz:0,sx:2*tile,sy:.14*tile,sz:tile*1.8},
       topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1});
-    for (const z of [-.42,.42]) {
+    for (const z of [-.8,.8]) {
       for (const side of ['start','end']) pushPart('legSquare',{...wood,
         name:(side==='start'?'Start':'End')+' railing post',
         tileSpanRole:side,transform:{x:(side==='start'?-1:1)*tile,y:1.1*tile,z:z*tile,
@@ -128,11 +128,11 @@
         transform:{x:0,y:1.35*tile,z:z*tile,rx:0,ry:0,rz:0,sx:2*tile,sy:.12*tile,sz:.12*tile},
         topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1});
     }
-    state.tileSpan = {version:1,enabled:true,axis:'x',startTiles:2,middleTiles:2,endTiles:2,totalTiles:8,tileSize:tile};
-    editor.setPresetFootprint(8,1);
+    state.tileSpan = {version:1,enabled:true,axis:'x',startTiles:1,middleTiles:2,endTiles:1,totalTiles:8,tileSize:tile};
+    editor.setPresetFootprint(8,2);
     sync();editor.rebuildAll();editor.selectObject('part',deck.id,{force:true});editor.frameFurniture();
     editor.queueUndoHistory('create stretchable stair bridge');
-    editor.log('Bridge preset: fixed stairs and posts, flexible flat deck and rails. 6-tile base, 8-tile preview.','ok');
+    editor.log('Bridge preset: 1×2 fixed stair flights and posts, flexible flat deck and rails. 4-tile base, 8×2 preview.','ok');
   }
 
   function init(context) {
