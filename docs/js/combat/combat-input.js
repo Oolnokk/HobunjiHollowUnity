@@ -333,6 +333,10 @@
   function pressEnd(slotIndex, physicalEvent = null) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
+    if (/^(pointercancel|touchcancel|lostpointercapture)$/.test(String(physicalEvent?.type || ''))) {
+      abortPress(slotIndex); // Losing physical ownership must never turn a canceled touch or pointer into a melee attack.
+      return;
+    }
     if (blockedByActionLock() || window.GameplayInputRouter?.isAttackBlocked?.()) { abortPress(slotIndex); return; }
     const releasedAtMs = inputTimeMs('release', physicalEvent); // The real release time disambiguates holds when a frame could not run.
     s.releaseDeliveryLagMs = Math.max(0, performance.now() - releasedAtMs);
