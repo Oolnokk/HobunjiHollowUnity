@@ -90,4 +90,17 @@ assert.equal(testWorkspace.maps[1].visualHeights['1,1'], 0.5, 'Standalone import
 assert.equal(testWorkspace.maps[1].tiles['1,1'].plateau, 'authored', 'Standalone import must retain authored tile properties');
 assert(Object.hasOwn(testWorkspace.maps[1], 'visualHeightBase'), 'Standalone import must preserve foundation base metadata');
 
-console.log('Town runtime/editor data and map-import elevation round trips passed.');
+const staleTown = testWorkspace.maps.find(map => map.id === town.id); // Simulates a user's saved Town that differs from the bundled game map.
+staleTown.name = 'Locally edited Town';
+const unrelatedMap = testWorkspace.maps.find(map => map.id !== town.id); // Must survive a bundled Town refresh unchanged.
+const replacementTown = { ...town, name: 'Reloaded bundled Town' }; // Represents the canonical Town fetched by the Load Town button.
+context.importAny({ maps: [replacementTown], activeId: town.id }, { mergeIntoWorkspace: true, replaceMapIds: [town.id] });
+assert.equal(testWorkspace.maps.length, 2, 'Reloading Town must not duplicate it or discard unrelated editor maps');
+assert.equal(testWorkspace.maps.find(map => map.id === town.id).name, 'Reloaded bundled Town', 'Explicitly reloaded Town must replace stale local state');
+assert.equal(testWorkspace.maps.find(map => map.id === unrelatedMap.id), unrelatedMap, 'Unrelated map must survive a Town refresh');
+assert.equal(testWorkspace.activeId, town.id, 'Reloaded Town must become the selected map');
+assert.equal(Object.keys(testWorkspace.maps.find(map => map.id === town.id).visualHeights).length, 609, 'Reloaded Town must use bundled elevation cells');
+context.importAny({ maps: [{ ...town, name: 'Ignored conflict' }], activeId: town.id }, { mergeIntoWorkspace: true });
+assert.equal(testWorkspace.maps.find(map => map.id === town.id).name, 'Reloaded bundled Town', 'Ordinary workspace merges must still preserve existing maps');
+
+console.log('Town runtime/editor data, map-import elevations, and explicit Town reload passed.');
