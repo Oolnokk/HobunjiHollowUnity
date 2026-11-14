@@ -607,8 +607,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(ropeChains.every(chain => chain.ropeCount >= 2 && chain.checkpoints?.start && chain.checkpoints?.end &&
         active.simple.ropes.filter(rope => rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
         'each rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
-      assert.ok(active.simple.modules.some(module => module.type === 'layerRopeChainAbyss'),
-        'rope-chain traversal must be registered as an authored layer module: '+JSON.stringify(active.simple.modules));
+      if(ropeChains.length)assert.ok(active.simple.modules.some(module => module.type === 'layerRopeChainAbyss'),
+        'rope-chain traversal must be registered as an authored layer module: '+JSON.stringify(active.simple.modules)); // A single-room V50 shaft vestibule has no rope hallway to register; real chains still require their authored module.
     }
     if(!active.simple.ropes.length && !compactVestibule){
       assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
