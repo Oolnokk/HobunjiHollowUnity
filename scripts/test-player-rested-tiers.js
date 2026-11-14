@@ -106,7 +106,8 @@ assert.equal(rest.movementSpeedMultiplier(), 1.08, 'existing Well Rested speed b
 assert.equal(buff('rested')?.durationS, 3 * 3600);
 assert.equal(buff('well-rested')?.durationS, 24 * 3600);
 assert.equal(buff('well-rested')?.label, 'Well Rested');
-assert.equal(buff('well-rested')?.remainingS, 24 * 3600);
+assert.ok(Math.abs(buff('well-rested')?.remainingS - 24 * 3600) < 1e-6,
+  'Well Rested HUD shows a full 24h countdown, within game-clock floating-point precision');
 
 vm.runInNewContext(movementSource, context, { filename: 'devotion-rest-buffs.js' });
 assert.equal(window.DevotionRestBuffs.version, 6);
