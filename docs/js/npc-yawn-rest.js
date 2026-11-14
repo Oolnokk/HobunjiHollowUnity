@@ -374,10 +374,14 @@
     return playerWalker;
   }
   function playerCanYawn(globalCombat) {
-    if (globalCombat || window.Combat?.deps?.player?.health <= 0) return false;
+    const player = window.Combat?.deps?.player; // Shared live combat participant owns prone, dodge, lunge and capture states.
+    if (globalCombat || (Number.isFinite(player?.health) && player.health <= 0)) return false;
+    if (player?.prone || player?.dodging || player?.lunging || player?.somersaultRecovering
+      || player?.tzatzulCapturedBy || player?._knockbackLedgeFall) return false; // Never layer a yawn over forced combat/traversal body poses.
     if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
-    const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // A finished stand transition must not suppress fatigue forever.
-    if (window.PlayerSocialPoses?.active || (seat && seat.phase !== 'out')) return false;
+    const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
+    if (window.PlayerSocialPoses?.active || seat) return false;
+    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted') return false; // Tool modes and mounted rider poses own their own locomotion.
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return false;
     return true;
   }
@@ -395,8 +399,13 @@
     const state = stateFor(walker, hour);
     const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
       || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
-    const scriptedPose = window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
-      || window.PlayerSocialPoses?.active || (() => { const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; return !!seat && seat.phase !== 'out'; })(); // Authored dialogues/bed/sitting interrupt even an active Koma ritual.
+    const player = window.Combat?.deps?.player; // Active forced player poses interrupt even a Koma ceremony that owns its own action lock.
+    const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
+      || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState
+      || window.__hobunjiFurnitureDebug?.sitInteraction || window.Fishing?.state?.active
+      || window.MusicMinigame?.state?.active || window.Mounts?.rideState === 'mounted'
+      || player?.prone || player?.dodging || player?.lunging || player?.tzatzulCapturedBy
+      || player?._knockbackLedgeFall); // No lingering slow/pose over a completed seat or new combat/traversal animation.
     if (state.active && (scriptedPose || (!playerCanYawn(globalCombat) && !state.active.komaStarted)))
       finish(state.active, 'player action interrupted');
     if (state.active || playerWakePending || rested || !playerCanYawn(globalCombat)) return;
