@@ -225,6 +225,13 @@ const floodWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, [],
 assert.equal(floodWaterMesh.userData.hobunjiWaterTileFootprint.tiles, null,
   'full-map flood uses bounds rather than allocating one entry for every wet tile');
 assert.deepEqual(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [0, 0, 40, 40]);
+assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopeCount.value, 0,
+  'ordinary water shading is never clipped');
+assert.match(testedWaterMaterial.vertexShader, /vWaterWorldXZ = \(modelMatrix \* vec4\(position, 1\.0\)\)\.xz/,
+  'water fragments use transformed world-space positions instead of merged bounds');
+assert.match(testedWaterMaterial.fragmentShader, /uHobunjiWaterReplayClipScopeCount > 0\.5[\s\S]*?if \(!nearOwner\) discard/,
+  'remote merged-water fragments are excluded only during held/foot replay');
+
 
 class TestWaterWorldBounds {
   copy(source) { this.min = source.min; this.max = source.max; return this; }
@@ -234,8 +241,14 @@ const waterProximityStart = heldRender.indexOf('  const WATER_TINT_TILE_RADIUS =
 const waterProximityEnd = heldRender.indexOf('  const footTintScreenRect =', waterProximityStart);
 assert.ok(waterProximityStart >= 0 && waterProximityEnd > waterProximityStart,
   'extract the production per-actor water proximity guard');
-const { tintCoverNearActor } = new Function('THREE', heldRender.slice(waterProximityStart, waterProximityEnd)
-  + '\nreturn { tintCoverNearActor };')({ Box3: TestWaterWorldBounds });
+let lastWaterClipScopes = 0; // Tracks replay scope count when the production helper runs in this unit test.
+let lastWaterClipOverflow = 0; // Tracks the conservative crowded-scene fallback in this unit test.
+const { tintCoverNearActor, beginWaterReplayClip, endWaterReplayClip } = new Function(
+  'THREE', 'forEachMaterial', 'lastWaterClipScopes', 'lastWaterClipOverflow',
+  heldRender.slice(waterProximityStart, waterProximityEnd)
+  + '\nreturn { tintCoverNearActor, beginWaterReplayClip, endWaterReplayClip };'
+)({ Box3: TestWaterWorldBounds }, (material, fn) => (Array.isArray(material) ? material : [material]).forEach(fn),
+  lastWaterClipScopes, lastWaterClipOverflow);
 const actorRoot = {}; // Cached neighborhood keys are rebuilt when this holder crosses a tile.
 const scope = (col, row) => ({ col, row, root: actorRoot });
 assert.equal(tintCoverNearActor(sparseWaterMesh, [scope(18, 18)]), false,
@@ -255,8 +268,34 @@ assert.equal(tintCoverNearActor(distantSceneryCover, [scope(6, 6)]), false,
   'untagged scenery water and slush also reject distant world bounds');
 assert.equal(tintCoverNearActor({ geometry: null }, [scope(6, 6)]), true,
   'unknown cover geometry falls back conservatively rather than removing water tint');
-assert.match(heldRender, /hideObjects\(tintCovers\.filter\(cover => !nearbyTintCovers\.includes\(cover\)\)\)/,
-  'distant water must be hidden from the shared-material tint replay');
+const originalClipCoords = testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopes.value.slice(); // Check shared water state is restored after replay.
+const clipStates = beginWaterReplayClip([sparseWaterMesh], [scope(6, 6), scope(18, 18), scope(34, 34)], false);
+assert.equal(clipStates.size, 1, 'sparse river shares one material transaction');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopeCount.value, 2,
+  'a distant dry actor does not expand the clip to remote water');
+assert.deepEqual(Array.from(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopes.value.slice(0, 4)),
+  [6, 6, 34, 34], 'wet river segments get physically separate actor neighborhoods');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipRadius.value, 3.5,
+  'GPU fragment radius matches CPU tile-neighborhood radius');
+endWaterReplayClip(clipStates);
+assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopeCount.value, 0,
+  'shared water shader exits replay clip mode');
+assert.deepEqual(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopes.value, originalClipCoords,
+  'shared water uniforms are fully restored for the next world draw');
+assert.equal(beginWaterReplayClip([sparseWaterMesh], [scope(6, 6)], true).size, 0,
+  'unknown owners preserve water tint conservatively');
+assert.equal(beginWaterReplayClip([floodWaterMesh], Array.from({ length: 13 }, (_, i) => scope(i, 4)), false).size, 0,
+  'crowded owner overflow preserves legitimate flood tint');
+
+assert.match(heldRender, /distantTintHidden = hideObjects\(tintCovers\.filter\(cover => !nearbyTintCovers\.includes\(cover\)\)\)/,
+  'distant water is hidden from every selective depth and tint pass');
+assert.ok(heldRender.indexOf('distantTintHidden = hideObjects(', heldRender.indexOf('  function replaySelectiveHeldOverlay('))
+  < heldRender.indexOf('const cutoutDepthMeshes =', heldRender.indexOf('  function replaySelectiveHeldOverlay(')),
+  'far water cannot leave irregular alpha depth in the held/foot mask');
+assert.match(heldRender, /if \(waterReplayClipStates\) endWaterReplayClip\(waterReplayClipStates\)/,
+  'water uniforms are restored on exceptional replay exits');
+assert.match(heldRender, /if \(distantTintHidden\) restoreVisibility\(distantTintHidden\)/,
+  'water visibility is restored on exceptional replay exits');
 assert.match(heldRender, /prepareOverlayCoverTintMaterials\(nearbyTintCovers\)/,
   'only nearby covers may be selected for the translucent tint pass');
 
