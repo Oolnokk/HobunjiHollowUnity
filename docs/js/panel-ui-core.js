@@ -553,7 +553,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   function loadIdleStanceEditor() {
     if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
     const script = document.createElement('script'); // Same existing editor module, now with a recoverable load lifecycle.
-    script.src = '../../js/attack-idle-stance-editor.js?v=20261111flailPose1';
+    script.src = '../../js/attack-idle-stance-editor.js?v=20261114torch1747a';
     script.defer = true;
     pendingIdleStanceScript = script;
     function endAttempt() {
@@ -616,7 +616,7 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
 // a tool-specific extension instead of duplicating/restructuring that editor.
 if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname)) {
   const npcWardrobeScript = document.createElement('script'); // Used to add instance-level npcWardrobeFor authoring to the selected-furniture inspector.
-  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261114rooftopWard2';
+  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261114rooftopWard3';
   npcWardrobeScript.defer = true;
   document.head.appendChild(npcWardrobeScript);
 }

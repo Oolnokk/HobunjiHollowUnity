@@ -251,14 +251,12 @@
       if (route.prerequisiteGateId && !solved.has(route.prerequisiteGateId)) return { ok:false, reason:`torch prerequisite ${route.prerequisiteGateId} unsolved` };
       const source = worldFromRootPoint(route.source);
       if (!reachableNearPoint(source, reachable, 1.55)) return { ok:false, reason:'torch source unreachable' };
-      for (const node of route.route || []) {
-        const point = worldFromRootPoint(node);
-        if (!reachable.has(tileKeyAtPoint(point)) && !reachableNearPoint(point, reachable, .8)) return { ok:false, reason:'torch carry route crosses unreachable floor' };
-      }
-      const burnSeconds = Number(route.burnSeconds) || 0;
-      const estimated = Number(route.estimatedSeconds) || 0;
-      if (burnSeconds > 0 && estimated >= burnSeconds) return { ok:false, reason:'torch route exceeds burn duration' };
-      return { ok:true, reason:'torch source and carry route reachable' };
+      // The carried 12-second torch has been retired. The permanent torch may
+      // traverse ladders and wait for other mechanisms, but the source and
+      // target must each be reachable on the actual floor graph.
+      if (!reachableNearPoint(objectCenter(object), reachable, 1.65))
+        return { ok:false, reason:'brazier target unreachable with the adventuring torch' };
+      return { ok:true, reason:'persistent torch can reach lit source and brazier' };
     }
 
     function destinationBlockInfo(key, ignoreSource) {

@@ -13,6 +13,7 @@
   let combatVisualState = null;
   let lastDebugSignature = '';
   let stanceApplied = false;
+  let worldUprightApplied = false; // Mobile stance diagnostics: confirms the actual sprite-plane upright correction ran.
   let stanceConfigRequest = null; // Shares the in-flight JSON fetch across repeated init/reload calls.
   let stanceConfigLoaded = false; // Prevents repeated fetches after a successful committed-config load.
   let stanceRetryTimer = null; // Retries transient fetch failures without requiring a page reload.
@@ -54,6 +55,7 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+    torchHold: Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Upright artwork, regardless of player yaw.
     topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -69,6 +71,7 @@
   const idleStances = {
     tool: { ...DEFAULT_IDLE_STANCES.tool },
     hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
+    torchHold: { ...DEFAULT_IDLE_STANCES.torchHold }, // Stable editable tool-neutral reference.
     topHeavyTool: { ...DEFAULT_IDLE_STANCES.topHeavyTool },
     longHaftedTool: { ...DEFAULT_IDLE_STANCES.longHaftedTool },
     heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
@@ -98,6 +101,7 @@
         Object.assign(normalized, DEFAULT_IDLE_STANCES.topHeavyTool); // An untouched saved default should receive the working Pick-Shovel copy; user edits remain untouched.
       }
       Object.assign(idleStances[key], normalized);
+      idleStances[key].worldUpright = typeof incoming?.worldUpright === 'boolean' ? incoming.worldUpright : !!baseline?.worldUpright; // Preserve authored world-space rotation metadata lost by numeric pose normalization.
     }
     stanceConfigSource = sourceLabel;
     return true;
@@ -210,6 +214,7 @@
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
+      if (activeSlot === 'adventuring' && itemKey === 'torch') return idleStances.torchHold; // Dedicated idle state only for a held torch.
       if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
       if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
@@ -520,6 +525,7 @@
     holder.updateMatrixWorld = function weaponToolStanceUpdateMatrixWorld(force) {
       installCombatVisualHooks();
       stanceApplied = false;
+      worldUprightApplied = false;
 
       const now = performance.now();
       const visual = advanceCombatVisual(now);
@@ -528,7 +534,13 @@
       // Weapon attacks are explicitly tracked by the combat wrappers, so never let
       // their real holder rotation poison the tool-motion idle suppression timer.
       const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // The game has already posed a held tool/fishing attack against the selected Neutral.
-      const holderMoving = activeSlot === 'weapon' ? false : (authoredToolActionActive || holderIsMoving(now)); // Do not double-rebase a stage that already incorporates its tool-slot Neutral.
+      const torchIdle = activeSlot === 'adventuring' && itemKey === 'torch'; // Starter torch keeps its authored upright stance through ordinary walking/turning.
+      const holderMoving = activeSlot === 'weapon' ? false
+        : (torchIdle ? authoredToolActionActive : (authoredToolActionActive || holderIsMoving(now))); // Only actual authored torch actions interrupt its hold; other tools retain motion suppression.
+      if (torchIdle) {
+        lastRelativeHolderQuaternion = null; // Clear old angular samples before switching back to another tool.
+        holderMotionBusyUntil = 0; // Locomotion must never leave a 650ms fallback timer on the torch.
+      }
       const idleDualState = !attackInProgress ? window.HobunjiHandToolGrips?.currentDualWieldAnimationState?.() : null;
       const idleDualWield = !!idleDualState && idleDualState.source === 'dual-wield-idle' && idleDualState.influence > 0.0001;
       const targetPose = targetPoseFor(activeSlot, itemKey, def, { dualWield: idleDualWield });
@@ -564,6 +576,7 @@
         }
       }
 
+      if (stanceApplied && targetPose?.worldUpright) worldUprightApplied = window.ToolWorldUpright?.apply?.(this, toolPlane, THREE) === true; // Correct the actual sprite tip after the sweep-plane neutral twist.
       const stateLabel = attackInProgress
         ? `attack-neutral=${visual?.progress?.toFixed?.(2) ?? '0'}`
         : stanceApplied ? 'idle-holder' : holderMoving ? 'tool-motion' : 'default';
@@ -636,6 +649,7 @@
       toolWorkStyle: state.def?.modular ? window.ToolActivityStages?.workStyleFor?.(state.activeSlot) || state.def.animStyle : null, // Reports the live head/shaft work style without opening a console.
       sourceAnimStyle: state.def?.animStyle || null,
       stanceApplied,
+      worldUprightApplied, // Existing mobile debug inspector can distinguish corrected torch art from an absent sprite plane.
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
       holderMotionBasis: playerMesh ? 'player-body-relative' : 'composer-body-missing',
       holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
@@ -665,6 +679,7 @@
       poses: {
         tool: { ...idleStances.tool },
         hoeTool: { ...idleStances.hoeTool },
+        torchHold: { ...idleStances.torchHold }, // Expose the authored upright mode in mobile stance diagnostics.
         topHeavyTool: { ...idleStances.topHeavyTool },
         longHaftedTool: { ...idleStances.longHaftedTool },
         heavyWeapon: { ...idleStances.heavyWeapon },

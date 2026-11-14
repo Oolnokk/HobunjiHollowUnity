@@ -17,6 +17,23 @@ async function main(){
   const page=await browser.newPage({viewport:{width:800,height:600}});
   const errors=[]; // Printed on a headless failure so mobile testers do not need a devtools console.
   const missingResources=[]; // Keeps the actual 404 URLs for startup troubleshooting instead of generic console text.
+  async function waitForPuzzleFlag(flag,label) {
+    // Software WebGL may starve animation-frame polling; use a timer but keep
+    // the actual runtime link/ready condition mandatory.
+    try {
+      await page.waitForFunction(key=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.[key]===true,
+        flag,{timeout:LAB_REGEN_TIMEOUT_MS,polling:250});
+    } catch(error) {
+      const state=await page.evaluate(()=>({
+        area:window.GridTileAccessors?.getCurrentArea?.(),
+        generation:window.DevRandomRuin?.getGenerationProgress?.(),
+        trial:window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge||null,
+        projectileTargets:window.DevRandomRuinSimplePuzzles?.listProjectileTargets?.()?.length??null,
+        activeRuinState:window.DevRandomRuinSimplePuzzles?.hasActiveRuinState?.()??null,
+      })).catch(reason=>({inspectionFailed:String(reason)}));
+      throw new Error('Single-room '+label+' not ready: '+JSON.stringify(state),{cause:error});
+    }
+  }
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   page.on('response',r=>{if(r.status()===404&&missingResources.length<12)missingResources.push(r.url());});
@@ -82,7 +99,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'glyphObelisk',
     }),0x51a7cafe);
     assert.equal(forced,true,'V50 glyph lab must enter successfully');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.linked===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
+    await waitForPuzzleFlag('linked','glyph projectile registry');
     let info=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),runtime:window.DevRandomRuin.getRuntimeContext(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
@@ -103,7 +120,7 @@ async function main(){
       return {ok,expected};
     });
     assert.equal(weighted.ok,true,'weighted lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
+    await waitForPuzzleFlag('ready','weighted challenge');
     info=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),runtime:window.DevRandomRuin.getRuntimeContext(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
@@ -125,7 +142,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'ropeChain',
     }),0x2468ace0);
     assert.equal(rope,true,'rope-chain lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ropeLinked===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
+    await waitForPuzzleFlag('ropeLinked','rope controller');
     const ropeInfo=await page.evaluate(()=>{
       const runtime=window.DevRandomRuin.getRuntimeContext();
       const simple=window.DevRandomRuinSimplePuzzles.snapshot();
@@ -157,7 +174,7 @@ async function main(){
       singleRoomTrial:true,puzzleType:'nativeStackedObelisk',
     }),0x4ed17f2a);
     assert.equal(native,true,'native V50 obelisk lab must enter');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:LAB_REGEN_TIMEOUT_MS});
+    await waitForPuzzleFlag('ready','native V50 mechanism');
     const nativeInfo=await page.evaluate(()=>({
       state:window.DevRandomRuin.getState(),
       puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,

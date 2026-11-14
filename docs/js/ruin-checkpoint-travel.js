@@ -64,6 +64,7 @@
     function render(record,lit){
       if(!record||record.lit===lit)return;
       record.lit=lit;record.anchor.visible=lit;record.light.active=lit;
+      record.holder.userData.fireHazard = lit; // Lit shaft/wing/checkpoint braziers can light the held adventuring torch.
       root.CloudForestFog?.refreshLightingOverlay?.();
     }
     function remember(){
@@ -252,6 +253,7 @@
       group.parent?.remove(group);
     }
     const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
+      litSourceObjects:()=>disposed?[]:[...records.values()].filter(record=>record.lit).map(record=>record.holder), // Reuse the actual live furniture geometry instead of 2D tile lookups.
       getState:()=>({shaftLit,activeCheckpoint:activeId,ignitionSources:ignitionSources.map(r=>({id:r.id,x:r.at.x,z:r.at.z,y:r.at.y})),
        shaftIgnitionAvailable:tothal,checkpoints:[...records.values()].filter(r=>r.kind!=='source').map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
@@ -259,5 +261,6 @@
   }
   return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,
     isActive:()=>liveOwner?.isActive?.()===true,activeRespawnPoint:()=>liveOwner?.isActive?.()?liveOwner.activeRespawnPoint():null,
-    lightSources:()=>liveOwner?.lightSources?.()||[]});
+    lightSources:()=>liveOwner?.lightSources?.()||[],
+    litSourceObjects:()=>liveOwner?.isActive?.()?liveOwner.litSourceObjects():[]});
 });

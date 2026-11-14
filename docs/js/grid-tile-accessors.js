@@ -171,8 +171,8 @@
   // same collision rules apply to a building placed on a plateau zone map.
   function isTownBuildingCollisionTile(col, row, area, worldY = null) {
     area = area || 'town';
-    if (Number.isFinite(worldY) && window.HobunjiWalkableElevation?.isBalconyAt?.(col+.5,row+.5,worldY,area))
-      return false; // Mini-cliff-like support: the solid building remains blocked below its roof.
+    if (Number.isFinite(worldY) && window.HobunjiWalkableElevation?.isAboveBalconyAt?.(col+.5,row+.5,worldY,area))
+      return false; // Movement at or above a walkable deck never collides with its building shell.
     if (area === 'town') {
       // Building-entrance transition tiles are always walkable (they ARE the door approach)
       if (deps.getWorldTownTransitions().some(t => t.target === 'building' && t.col === col && t.row === row)) return false;

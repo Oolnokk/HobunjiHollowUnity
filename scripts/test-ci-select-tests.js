@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
-const { selectTests, sourceDependencies, onlyCacheBustChanged } = require('./ci-select-tests.js');
+const { selectTests, selectFeatureChecks, featureWorkflowDependencies, sourceDependencies, onlyCacheBustChanged, withoutCacheBusts } = require('./ci-select-tests.js');
 
 // The selector must neither silently omit unknown changes nor overrun every
 // browser smoke for an unrelated narrowly scoped ruin file.
@@ -69,6 +69,120 @@ test('cache-bust-only HTML changes do not force global runtime coverage', () => 
   assert.equal(onlyCacheBustChanged(before, after), true);
   assert.equal(onlyCacheBustChanged(before, after.replace('script', 'style')), false);
   assert.equal(onlyCacheBustChanged(before, before), false);
+});
+
+test('weaving changes only select weaving tests, not ruin/furniture/puzzle workflows', () => {
+  const versionedAsset = (asset, token) => asset + '?' + 'v=' + token; // Constructs cache-bust examples without pinning a literal token in source.
+  const loaderFile = 'docs/js/combat/combat-config-loader.js'; // Changed only to point at the new weaving revision.
+  const indexFile = 'docs/index.html'; // Cache-busted HTML is not a material game entry-point edit.
+  const changed = ['docs/js/clothing-weaving-system.js', 'scripts/test-clothing-weaving-system.js', indexFile, loaderFile];
+  const versions = {
+    [indexFile]: [
+      `<script src="${versionedAsset('js/combat/combat-config-loader.js', 'old')}"></script>`,
+      `<script src="${versionedAsset('js/combat/combat-config-loader.js', 'new')}"></script>`,
+    ],
+    [loaderFile]: [
+      `const url = '${versionedAsset('js/clothing-weaving-system.js', 'old')}';`,
+      `const url = '${versionedAsset('js/clothing-weaving-system.js', 'new')}';`,
+    ],
+  }; // A real weaving PR touches both loader tiers without altering their behavior.
+  const material = withoutCacheBusts(changed, file => {
+    const [before, after] = versions[file]; // Supplied only for candidate HTML/JS files; the weaving test script remains unchanged in the list.
+    return { before, after };
+  });
+  assert.deepEqual(material, changed.slice(0, 2));
+  const selected = selectFeatureChecks(material);
+  assert.equal(selected.full, false);
+  assert.deepEqual(selected.output, { integrated: false, lighting: false, furniture: false, puzzle_cave: false });
+});
+
+test('feature selector retains each specialist when its real subsystem changes', () => {
+  for (const [file, enabled] of [
+    ['docs/js/ruin-shaft-connector.js', ['integrated', 'lighting']],
+    ['docs/js/puzzle-cave-melody.js', ['integrated', 'lighting', 'puzzle_cave']],
+    ['docs/js/climb-system.js', ['integrated', 'puzzle_cave']],
+    ['docs/js/furniture-tile-span.js', ['furniture']],
+    ['scripts/test-furniture-tile-span.js', ['furniture']],
+    ['docs/tools/furniture-avatar-author/tile-span-author.js', ['furniture']],
+    ['scripts/test-puzzle-cave-fire.js', ['integrated', 'puzzle_cave']],
+    ['docs/js/ruin-rope-torches.js', ['integrated', 'lighting']],
+    ['.github/workflows/smoke-puzzle-caves.yml', ['puzzle_cave']],
+  ]) {
+    const selected = selectFeatureChecks([file]); // Each fixture is a real workflow dependency, not a synthetic category.
+    for (const id of enabled) assert.equal(selected.output[id], true, file + ' must retain relevant ' + id + ' coverage');
+    // The source-dependency graph can discover additional legitimate consumers as the code evolves.
+    // Extra checks are safer than hiding a real regression, so this intentionally asserts a required subset.
+  }
+});
+
+test('specialist impact detection follows test imports rather than guessing from filenames', () => {
+  const lighting = featureWorkflowDependencies('lighting'); // The overlay light regression actually imports shared furniture/ambient modules.
+  for (const file of [
+    'docs/js/furniture-light-registry.js',
+    'docs/js/farmhouse-flat-lighting.js',
+    'docs/js/daylight-window-runtime.js',
+    'docs/js/cloud-forest-fog.js',
+  ]) assert(lighting.has(file), 'Kanthic lighting must rerun when its overlay regression dependency changes: ' + file);
+  const cavern = 'docs/js/cavern-ore-rocks.js'; // The integrated puzzle-cave art test reads the cavern rendering code through its own read() helper.
+  assert(featureWorkflowDependencies('integrated').has(cavern), 'integrated puzzle coverage retains the cavern artwork source dependency');
+  assert.equal(selectFeatureChecks(['docs/js/furniture-light-registry.js']).selected.lighting, true,
+    'furniture lighting bridge changes do not silently skip the shaft-lighting test');
+  assert.equal(selectFeatureChecks(['docs/js/daylight-window-runtime.js']).selected.lighting, true,
+    'daylight changes retain Kanthic overlay-light coverage');
+  assert.equal(selectFeatureChecks([cavern]).selected.integrated, true,
+    'cavern rendering changes retain the integrated puzzle art regression');
+});
+
+test('unknown gameplay assets and configuration fail open instead of falsely skipping all tests', () => {
+  for (const file of ['docs/config/loot/loot-pools.json', 'docs/config/patterns/pattern_shared_motif.json', 'docs/assets/environments/new-tile.png', 'docs/js/unknown-shared-module.js']) {
+    const result = selectFeatureChecks([file]);
+    assert.equal(result.full, true, file + ' could affect the specialist game environment');
+    assert(Object.values(result.selected).every(Boolean), file + ' must not suppress all coverage');
+  }
+});
+
+test('uncertain game-wide edits and manual dispatch fail open to every specialist', () => {
+  for (const files of [['docs/game.js'], ['docs/index.html'], ['docs/js/new-unclassified-runtime.js'], ['scripts/ci-select-tests.js']]) {
+    const selected = selectFeatureChecks(files);
+    assert.equal(selected.full, true, files.join(', '));
+    assert(Object.values(selected.output).every(Boolean));
+  }
+  assert(Object.values(selectFeatureChecks([], { full: true }).output).every(Boolean), 'manual dispatch runs all checks');
+});
+
+test('explicitly cosmetic-only manifests remain independent of environmental checks', () => {
+  for (const file of ['docs/config/patterns/clothing-trims.json', 'docs/config/patterns/fur-hoods.json', 'docs/config/cosmetics/fine_hood.json']) {
+    assert(Object.values(selectFeatureChecks([file]).selected).every(enabled => !enabled), file + ' does not alter physical puzzles or furniture');
+  }
+});
+
+test('actual code changes and failed version reads are never mistaken for inert cache bumps', () => {
+  const html = 'docs/index.html'; // An entry-point script change must run all specialists.
+  const versionedAsset = (asset, token) => asset + '?' + 'v=' + token; // Builds realistic loader versions without adding exact token literals to test source.
+  const oldHtml = `<script src="${versionedAsset('js/ruin-layer-playable.js', 'old')}"></script>`;
+  const changedHtml = `<script src="${versionedAsset('js/clothing-weaving-system.js', 'new')}"></script>`;
+  assert.deepEqual(withoutCacheBusts([html], () => ({ before: oldHtml, after: changedHtml })), [html]);
+  assert.deepEqual(withoutCacheBusts([html], () => { throw Error('missing base'); }), [html]);
+  assert.deepEqual(withoutCacheBusts(['docs/js/combat/combat-config-loader.js'],
+    () => ({ before: `start('${versionedAsset('cloth', 'old')}')`, after: `start('${versionedAsset('other', 'new')}')` })), ['docs/js/combat/combat-config-loader.js']);
+  assert.equal(onlyCacheBustChanged(`const x = '${versionedAsset('cloth', 'old')}';`, `const x = '${versionedAsset('cloth', 'new')}';`), true);
+});
+
+test('specialist workflows use conditional jobs, not pending-prone workflow path filters', () => {
+  for (const [filename, job, key] of [
+    ['check-integrated-ruin-puzzles.yml', 'integration', 'integrated'],
+    ['check-kanthic-shaft-lighting.yml', 'lighting', 'lighting'],
+    ['furniture-tile-span.yml', 'tile-span', 'furniture'],
+    ['smoke-puzzle-caves.yml', 'puzzle-cave-browser', 'puzzle_cave'],
+  ]) {
+    const yaml = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/', filename), 'utf8'); // Inspects the actual published check wiring.
+    assert.match(yaml, /\n  pull_request:\s*\n  workflow_dispatch:/, filename + ' always creates a PR check');
+    assert.match(yaml, /run: node scripts\/ci-select-tests\.js --suite=feature/, filename + ' calls the shared selector');
+    assert(yaml.includes("node-version: '22'"), filename + ' runs impact detection under the pinned Node toolchain');
+    assert(yaml.includes('steps.select.outputs.' + key), filename + ' routes its correct feature flag');
+    assert(yaml.includes('  ' + job + ':\n    needs: impact\n    if:'), filename + ' uses a job-level skip condition');
+    assert(yaml.includes("needs.impact.result != 'success'"), filename + ' fails open after a selector failure');
+  }
 });
 
 test('manual and main events always choose the full suite', () => {
