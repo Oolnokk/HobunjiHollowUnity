@@ -641,7 +641,7 @@ assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.
   'the elevation rebuild retains ground while excluding held meshes and deferred translucent covers');
 assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
   'the ground shader receives the owning actor surface height for each replay group');
-assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
+assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1\s*&& hasOverlappingHeldCover\(renderer, camera, overlayMeshes, nearbyTintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
@@ -731,10 +731,10 @@ for (const phrase of [
 const selectiveReplayStart = heldRender.indexOf('  function replaySelectiveHeldOverlay(');
 const depthClearAt = heldRender.indexOf('renderer.clearDepth();', selectiveReplayStart);
 const depthDrawAt = heldRender.indexOf('rawRender.call(renderer, scene, camera)', depthClearAt);
-const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes)', depthDrawAt);
+const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef)', depthDrawAt);
 const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
-const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
-const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
+const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);');
+const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);');
 const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates =', heldDrawAt);
 assert.ok(depthClearAt >= 0 && depthClearAt < depthDrawAt && depthDrawAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
   'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
@@ -763,7 +763,7 @@ assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?
   'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
 assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
   'translucent water and slush render through their dedicated private layer');
-assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes\)/,
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef\)/,
   'each actor-elevation group stamps its visible held/hand/foot silhouettes into the shared stencil bit');
 assert.match(heldRender, /material.depthTest = true;\s*material.depthWrite = true;\s*material.stencilWrite = true/,
   'temporary held depth writes ensure water behind a PNG cannot tint it');
