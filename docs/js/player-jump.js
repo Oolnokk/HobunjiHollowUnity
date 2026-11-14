@@ -124,7 +124,7 @@
     if (window.InteriorDoorTiles?.blocksBox?.(area, x, z, CONFIG.radius)) return 'closed interior door';
     for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
       if (area === 'farm' && (access?.isHouseFootprint?.(col, row) || access?.isFarmBuildingCollisionTile?.(col, row))) return 'farm building';
-      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area)) return 'town building';
+      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area, feetY)) return 'town building';
     }
     // Clearing one low piece of cover does not exempt any other blocker.
     if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05))
@@ -133,7 +133,8 @@
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,
     })) return 'dynamic blocker';
     if (deps.canPlayerOccupyAtHeight) {
-      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY))
+      const onBalcony=window.HobunjiWalkableElevation?.isBalconyAt?.(x,z,feetY,area); // Building's ground-level block cannot veto its rooftop support.
+      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY) && !onBalcony)
         return 'world collision';
     } else {
       // Non-game test owners fail closed, rather than granting global passage
@@ -428,9 +429,40 @@
     setElevation(player, state);
   }
 
+  let lastObservedArea = null; // Area-change edge used to admit only real building-ladder exits.
+  let pendingRoofArrival = null; // Short-lived source interior and timeout, never a standing-at-hatch teleport.
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
-    if (!state) return false;
+    const area=deps?.getCurrentArea?.(); // The same authoritative area used by movement and the interior exit system.
+    if (area && area!==lastObservedArea) {
+      pendingRoofArrival=(lastObservedArea?.startsWith('map_i_') && area==='town')
+        ? {source: lastObservedArea,remaining:10} : null;
+      lastObservedArea=area;
+    }
+    if(pendingRoofArrival) {
+      pendingRoofArrival.remaining-=Math.max(0,Math.min(1,Number(dt)||0));
+      if(pendingRoofArrival.remaining<=0 || area!=='town')pendingRoofArrival=null;
+    }
+    if (!state) {
+      // A ladder-triggered building exit arrives on an upper roof without an airborne state.
+      // Never grant access to someone standing beneath the hatch or arriving from an unrelated interior.
+      if (player && area==='town' && pendingRoofArrival && !player.climbing && !player.onBranch && player.health>0) {
+        const x=player.x/deps.TILE,z=player.y/deps.TILE; // Tile-space arrival shared with the rotated house and mini-cliff support.
+        pendingRoofArrival.spawn ||= {x,z}; // Preserve arrival coordinates: walking from a normal door must never trigger a later roof climb.
+        if(Math.hypot(x-pendingRoofArrival.spawn.x,z-pendingRoofArrival.spawn.z)>.33)pendingRoofArrival=null;
+        const hatch=pendingRoofArrival && window.HobunjiWalkableElevation?.roofHatchAt?.(x,z,'town'); // Exact authored hatch, not a broad building-footprint match.
+        if(hatch && hatch.mapId===pendingRoofArrival.source && Number.isFinite(hatch.topY)) {
+          const roofState={area:'town',phase:'supported',feetY:hatch.topY,launchGround:hatch.topY,
+            vy:0,elapsed:0,source:'roof ladder',safeX:x,safeZ:z,lastX:x,lastZ:z};
+          player._freeJump=roofState;
+          setElevation(player,roofState); // Shares native jump, ledge walk-off and fall physics.
+          pendingRoofArrival=null;
+          debug.lastEvent='entered rooftop via ceiling ladder';
+          return true;
+        }
+      }
+      return false;
+    }
     if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
