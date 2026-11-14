@@ -94,6 +94,29 @@ assert.match(ambientDialogue, /portraitBreathingComposer\?\.triggerYap\(event\.s
 assert.match(ambientDialogue, /setTimeout\(\(\) => \{[\s\S]{0,220}visibleText \+= unit\.text[\s\S]{0,100}\}, unit\.revealAtMs\)/, 'ambient syllables use independent wall-clock timers instead of render-loop progress');
 assert.doesNotMatch(ambientDialogue, /filter\(unit => unit\.revealAtMs <= elapsedMs\)/, 'ambient text reveal is no longer frame-loop driven');
 
+const omgurkuWarningLines = JSON.parse(read('docs/config/omgurku-camp.json')).reputation.initialWarnings; // New territorial warning fixtures for wrapping and duration.
+const wrapStart = ambientDialogue.indexOf('  function wrappedTextRanges('); // Use the shipped wrap helper itself.
+const wrapEnd = ambientDialogue.indexOf('  function textPlane(', wrapStart); // End of the wrap helper source.
+assert(wrapStart >= 0 && wrapEnd > wrapStart, 'ambient dialogue exposes a stable premeasured multiline layout helper');
+const wrappedTextRanges = vm.runInNewContext('(' + ambientDialogue.slice(wrapStart, wrapEnd).trim() + ')'); // Test the real helper without Three.js.
+const monospacedCanvas = { measureText: value => ({ width: value.length * 35 }) }; // Deterministic approximation of a 58px monospace canvas font.
+assert.equal(wrappedTextRanges(monospacedCanvas, 'Hello there!').length, 1, 'short ambient greetings retain the single-line layout');
+for (const warning of omgurkuWarningLines) {
+  const ranges = wrappedTextRanges(monospacedCanvas, warning); // One-time layout reused during the whole syllable sequence.
+  assert(ranges.length > 1, 'long Omgurku territorial warning wraps into multiple lines');
+  assert(ranges.every(range => monospacedCanvas.measureText(warning.slice(range.start, range.end)).width <= 950), 'each wrapped line fits the target canvas width');
+  assert.equal(ranges.map(range => warning.slice(range.start, range.end)).join(' '), warning, 'wrapping preserves exact authored text and punctuation');
+  const fullSchedule = Array.from(cadence.buildSchedule(warning, window.SCRATCHBONES_CONFIG.game.npcDialogue.text.typewriter)); // Real shared syllable cadence.
+  const lastReveal = fullSchedule.at(-1)?.revealAtMs || 0; // Final deadline before the text can begin fading.
+  const readableMs = Math.max(4200, warning.length * 42 + 1800, lastReveal / 0.75 + 1000); // Same duration formula as ambient dialogue.
+  assert(readableMs > lastReveal, 'long speech stays visible after the final syllable');
+}
+assert.match(ambientDialogue, /canvas\.height = singleLineHeight \+ \(lines\.length - 1\) \* lineAdvance/, 'wrapped speech gains vertically stacked canvas lines');
+assert.match(ambientDialogue, /visibleText\.slice\(line\.start, line\.end\)/, 'typewriter events reveal text without shifting line positions');
+assert.match(ambientDialogue, /lastSyllableAtMs \/ 0\.75 \+ 1000/, 'ambient duration outlasts speech cadence');
+assert.match(ambientDialogue, /textPart\.geometry\.parameters\.height \* state\.settings\.textWorldHeight/, 'off-screen bubble bounds include all wrapped lines');
+
+
 const configText = read('docs/config/scratchbones-config.js');
 assert.match(configText, /"npcDialogue"[\s\S]{0,500}"maxFps": 30/, 'dialogue portraits may sample the absolute yap clock at 30 FPS');
 
