@@ -36,6 +36,13 @@
     return result;
   }
 
+  function restOffset(part) {
+    const spec = normalize({...editor?.state?.tileSpan,tileSize:editor?.state?.tileBase?.tileSize});
+    const delta = spec.enabled ? (spec.totalTiles-spec.baseTiles)*spec.tileSize : 0; // Offset introduced by the active editor preview.
+    const shift = part?.tileSpanRole==='start' ? -delta/2 : part?.tileSpanRole==='end' ? delta/2 : 0;
+    return {x:spec.axis==='x'?shift:0,z:spec.axis==='z'?shift:0}; // Gizmo writes must convert visual positions to saved base positions.
+  }
+
   function updateSpan() {
     const {state} = editor;
     state.tileSpan = normalize({
@@ -163,5 +170,5 @@
     sync();
     if (editor.selectedPart()) selected(editor.selectedPart());
   }
-  global.FurnitureTileSpanAuthor = {init,preview,sync,selected,stairBridge};
+  global.FurnitureTileSpanAuthor = {init,preview,sync,selected,stairBridge,restOffset};
 })(window);
