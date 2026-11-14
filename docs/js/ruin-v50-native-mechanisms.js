@@ -282,6 +282,7 @@
       const threshold=center(panel); // Cached world X/Z avoids a per-frame Box3 allocation for every automatic doorway.
       const state={door,panel,open:0,target:0,closed,height,openingSide:0,crossingAxis,
         center:{x:threshold.x,z:threshold.z},floorY:levelAt(door)}; // One floor-height-aware source for visual motion and exact collision.
+      state.proximityDoor={x:state.center.x,z:state.center.z,y:state.floorY}; // The authored slab's cached threshold drives proximity without Box3 allocations.
       trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
       solids?.scan(panel,'door',{force:true,enabled:()=>state.open<.88});
       control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
@@ -311,9 +312,7 @@
       const playerY=Number(getPlayerY?.());
       for(const state of inventory.transitDoors){
         if(automatic){
-          state.target=host.RuinRoomSystem.doorNear(player&&{...player,y:playerY},{
-            x:state.center.x,z:state.center.z,y:state.floorY,
-          },state.target>.5)?1:0;
+          state.target=host.RuinRoomSystem.doorNear(player,state.proximityDoor,state.target>.5,playerY)?1:0;
           state.openingSide=0;
         }
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
