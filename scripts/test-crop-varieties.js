@@ -187,7 +187,7 @@ assert.equal(duplicate.ok, false);
 assert.equal(inventory.needlegrain, 1);
 const crossing = game.FarmProduction.enqueueSeeds(maker.id, { source: 'bag', itemKey: 'needlegrain' }, { source: 'storage', itemKey: 'needlegrain' });
 assert.equal(crossing.ok, true);
-assert.ok(crossing.message.includes('Buffs: farming +2'), 'single-native harvest seed extraction reports its actual cooking buff');
+assert.ok(crossing.message.includes('Farming (native; cooking strength depends on quality)'), 'native seed extraction never claims its quality-scaled buff is fixed at +2');
 assert.equal(inventory.needlegrain, 0);
 assert.equal(storage.needlegrain, 0);
 calendar.day = 2; game.FarmProduction.tick(); assert.equal(maker.ready.length, 0);
@@ -201,7 +201,7 @@ assert.ok(inventory.needlegrainSeeds >= 2);
 inventory[east.id] = 1; inventory[west.id] = 1; // Parent harvests are standard bag stacks.
 const hybridBatch = game.FarmProduction.enqueueSeeds(restored.id, { source: 'bag', itemKey: east.id }, { source: 'bag', itemKey: west.id });
 assert.equal(hybridBatch.ok, true, 'seed maker accepts two regional crops of one species');
-assert.ok(hybridBatch.message.includes('fortitude +1') && hybridBatch.message.includes('vigor +1'), 'crossbreed result reports both inherited cooking buffs');
+assert.ok(hybridBatch.message.includes('Fortitude +1') && hybridBatch.message.includes('Vigor +1'), 'crossbreed result reports both inherited cooking buffs');
 calendar.day = 4; game.FarmProduction.tick(); assert.equal(restored.ready.length, 0, 'hybrid seeds must take two game days');
 calendar.day = 5; game.FarmProduction.tick();
 assert.equal(restored.ready[0].key, offspring.seedKey, 'actual machine breeding produces the same mixed-pigment genotype as the genetics module');
@@ -243,6 +243,7 @@ const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Possible offspring buffs/, 'mobile seed maker previews ordinary multi-buff inheritance');
+assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /nativePair[^\n]*firstItem/, 'native-only breeding previews identify cooking buffs as quality-dependent');
 assert.match(fs.readFileSync('docs/js/crop-sprite-art.js', 'utf8'), /hobunjiCropVarietyColor/, 'authored garlink\/ongyums sprite bridge carries hybrid pigment');
 assert.match(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), /hobunjiCropBaseKey/, 'renderer identifies hybrid plants by species, not their new hue');
 new vm.Script(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), { filename: 'docs/js/vegetation-crop-rendering.js' }); // Compile-check for duplicate let/const declarations without a Three.js scene.
