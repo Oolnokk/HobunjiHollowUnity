@@ -291,6 +291,7 @@
     return []
       .concat(piece?.footprint?.cells || [])
       .concat(piece?.footprint?.extensions?.entryTunnels || [])
+      .concat(piece?.footprint?.extensions?.tallEntryTunnels || [])
       .concat(piece?.footprint?.extensions?.chimneys || [])
       .concat(piece?.footprint?.extensions?.porches || [])
       .concat(piece?.footprint?.extensions?.porchStairs || [])
@@ -334,7 +335,7 @@
     const stairs = piece?.footprint?.extensions?.porchStairs || [];
     const balconies = (piece?.balconies || []).flatMap(b=>b.cells||[]); // Height-aware roof deck cells (never ground-level porches).
     if (!porches.length && !stairs.length && !balconies.length) return [];
-    const allCells = allPieceCells(piece);
+    const allCells = piece?.placementOrigin === 'fullFootprint' ? allPieceCells(piece) : (piece?.footprint?.cells || []); // Keep support rotation rooted at precisely the same authored origin as HousePieceGen.
     if (!allCells.length) return [];
     const minX = Math.min(...allCells.map(cell => finite(cell.x, 0)));
     const minY = Math.min(...allCells.map(cell => finite(cell.y, 0)));
