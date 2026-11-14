@@ -179,6 +179,7 @@
     const townScene = deps.getTownScene();
     const townMap = deps.getTownZone();
     for (const mesh of _townDecorFurnitureGroups) {
+      window.HobunjiWalkableElevation?.unregisterFurnitureRails?.(mesh); // Remove old indexed rails before the geometry is disposed.
       townScene?.remove(mesh);
       window.FestivalProps?.dispose?.(mesh);
       mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
@@ -265,6 +266,7 @@
           deps.markOutline(group); deps.markFurnitureEdgeId(group);
           townScene.add(group);
           _townDecorFurnitureGroups.push(group);
+          if (f.bridgeCrossing) window.HobunjiWalkableElevation?.registerFurnitureRails?.(group); // Final tile-span/yaw geometry supplies precise collision only once at spawn.
           window.HobunjiWalkableElevation?.refreshFurniture?.(); // Update the walkable bridge support after async authored geometry arrives.
           window.BuildingGrassSuppression?.refreshTown?.();
         }).catch(error => deps.debugLog('Town authored furniture ' + key + ': ' + String(error?.message || error), 'warn'));
