@@ -87,10 +87,10 @@ const creatureDb = { 'uumkaoii-wild': {
 } }; // Existing herbivore baseline for overworld locomotion and threat reaction.
 const zone = {
   roamingHerdSpecies: ['voorg-ass'], roamingHerdCount: 2,
-  roamingForagerSpecies: ['nazgraku'], roamingForagerCount: 1,
+  roamingForagerSpecies: ['nazgraku', 'moot'], roamingForagerCount: 2,
   herbivoreSpecies: ['uumkaoii-wild', 'moot'],
   denSpecies: ['grehlr', 'moot'],
-}; // Verifies that neither Voorg-Ass herds nor Nazgraku foragers are displaced.
+}; // Includes a pre-migration Moot forager slot, which registration must convert without displacing Nazgraku.
 const itemDefs = { mootBaby: { label: 'Baby Moot', cat: 'material', sellPrice: 0 } }; // Legacy placeholder from existing saves.
 const inventoryItems = []; // Must receive meat/hide exactly once even across repeated registration.
 const deps = {
@@ -117,9 +117,10 @@ assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.patterns.length, 0);
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.fullBaseRecolor, false, 'Moot must not tint claws, teeth, hooves or outlines');
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.baseRecolorKeyHex, '#9CBD9E', 'Moot coat tint uses only its mint-green authored pigment family');
 
-assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingHerdSpecies)), ['voorg-ass']);
-assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingForagerSpecies)), ['nazgraku', 'moot']);
-assert.equal(zone.roamingForagerCount, 2, 'Each grazing/foraging species gets its own stable exterior slot');
+assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingHerdSpecies)), ['voorg-ass', 'moot'], 'Moot joins Voorg-Ass in the daily herd species pool');
+assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingForagerSpecies)), ['nazgraku'], 'Nazgraku keeps its own dedicated forager slot');
+assert.equal(zone.roamingForagerCount, 1, 'Moots must not reserve a permanent small forager slot');
+assert.equal(zone.roamingHerdCount, 2, 'Two herd slots now rotate between Voorg-Ass and Moot');
 assert.deepEqual(JSON.parse(JSON.stringify(zone.denSpecies)), ['grehlr']);
 assert.deepEqual(JSON.parse(JSON.stringify(zone.herbivoreSpecies)), ['uumkaoii-wild']);
 assert.equal(deps.DEN_MOTHER_DEFS.moot, undefined);
@@ -129,7 +130,7 @@ assert(itemDefs.mootBaby.tags.includes('Baby'));
 assert.equal(itemDefs.mootHide.cat, 'material');
 assert.equal(itemDefs.mootMeat.cat, 'ingredient');
 assert.deepEqual(inventoryItems.map(item => item.key).sort(), ['mootHide', 'mootMeat']);
-assert(log.some(x => /\[moot\].*northernCliffs=ok/.test(x.message)), 'In-game debug log makes Moot registration visible on mobile');
+assert(log.some(x => /\[moot\].*northernCliffs=ok.*herds=\[voorg-ass,moot\]/.test(x.message)), 'In-game debug log names both herd species on mobile');
 
 vm.runInContext(read('docs/js/creature-genetics.js'), context, { filename: 'creature-genetics.js' });
 windowStub.CreatureGenetics.init({ CREATURE_DB: creatureDb, clamp: (v, a, b) => Math.max(a, Math.min(b, v)) });
