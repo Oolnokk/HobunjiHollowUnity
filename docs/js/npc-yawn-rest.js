@@ -29,7 +29,8 @@
   let lastVoice = null; // Included in mobile diagnostics to verify actual clip and fallback modulation.
   let lastYawn = null; // Included in mobile diagnostics to verify each scheduled wake or hourly trigger.
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
-  let playerWakePending = false; // Set by the real Sleep passage event; consumed when the player's avatar/actions become ready.
+  let playerWakePending = false; // Set by a real Sleep passage or finished bed lie; consumed when the player's avatar/actions become ready.
+  let lastBedSleepCount = null; // Tracks completed legacy bed animations without touching BedLiePose's private sleep/rollover logic.
 
   function nowGameHour() {
     const calendar = window.CalendarSystem; // The installed full-day sky clock advances continuously from 06:00 through midnight to 06:00.
@@ -66,6 +67,7 @@
     walkerStates = new WeakMap();
     voicePlans.clear();
     playerWakePending = false; // A pending wake from another selected character must not animate the new one.
+    lastBedSleepCount = null; // BedLiePose counters are runtime-global, not per save character.
     dirty = false;
     return true;
   }
@@ -357,6 +359,11 @@
     lastCheckMs = now;
     const hour = nowGameHour();
     if (!Number.isFinite(hour)) return;
+    const completedBedSleeps = window.BedLiePose?.debug?.()?.completed; // Legacy bed animation calls game.js sleepInBed without emitting the newer Sleep passage event.
+    if (Number.isFinite(completedBedSleeps)) {
+      if (lastBedSleepCount !== null && completedBedSleeps > lastBedSleepCount) playerWakePending = true;
+      lastBedSleepCount = completedBedSleeps;
+    }
     const area = window.Combat?.deps?.getCurrentArea?.();
     const globalCombat = combatNow();
     for (const entry of active) {
@@ -410,7 +417,7 @@
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, lastYawn, lastVoice, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, lastBedSleepCount, lastYawn, lastVoice, lastError,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),
     _test: Object.freeze({ frame, nowGameHour, stateFor, voiceFor, sourceIdentity, finish, combatNow }),
