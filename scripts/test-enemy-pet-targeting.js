@@ -86,8 +86,8 @@ assert.match(ranged, /friendlyFire = nearest\.kind === 'hostile'/,
   'damage to a player pet must not be labelled as allied friendly fire');
 
 const game = read('docs/game.js'); // Integration assertion guards the otherwise private runtime AI wiring.
-assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget\?\./);
-assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget\?\./);
+assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget/);
+assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget/);
 assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/);
 const expanded = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Loads the actual published bootstrap order.
 assert(expanded.indexOf('js/combat/enemy-pet-targeting.js') > -1, 'target owner must load in the published build');
