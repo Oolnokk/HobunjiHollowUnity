@@ -81,7 +81,6 @@ for (const family of ['heftroot', 'redberries']) {
 }
 const canonicalContext = { window: {} }; // Independent world with the complete authored cooking catalog instead of this test's three-crop fixture.
 vm.runInNewContext(fs.readFileSync('docs/js/cooking-data.js', 'utf8'), canonicalContext);
-vm.runInNewContext(fs.readFileSync('docs/js/cooking-system.js', 'utf8'), canonicalContext);
 vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), canonicalContext);
 const canonicalGame = canonicalContext.window; // All eleven real crop species and their existing native cooking effects.
 const canonicalCrops = Object.fromEntries(canonicalGame.CropVarieties.FAMILIES.map(family =>
@@ -90,6 +89,8 @@ const canonicalDefs = Object.fromEntries(canonicalGame.CropVarieties.FAMILIES.fl
   [[family, { label: family, sellPrice: 10, cookingPrimaryEffect: canonicalGame.HobunjiCookingData.items[family].primaryEffect }],
     [family + 'Seeds', { label: family + ' Seeds', sellPrice: 4 }]])); // Native recipes stay quality-driven; imported variants store fixed multi-effect data.
 canonicalGame.CropVarieties.attach({ cropData: canonicalCrops, ITEM_DEFS: canonicalDefs, inventory: {}, inventoryItems: [] });
+vm.runInNewContext(fs.readFileSync('docs/js/cooking-system.js', 'utf8'), canonicalContext); // Check real cooking totals after cultivar setup, not during an uninitialized cooking registration.
+canonicalGame.CookingSystem.registerIngredientItems = () => {}; // The pure-effect harness has no full inventory or DOM; prevent unrelated recipe-picker boot work during breeding.
 for (const family of canonicalGame.CropVarieties.FAMILIES) {
   const nativeEffect = canonicalGame.HobunjiCookingData.items[family].primaryEffect; // Actual native food identity for every currently growable crop.
   const imported = Array.from({ length: 5 }, (_, i) =>
