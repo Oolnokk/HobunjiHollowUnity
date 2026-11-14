@@ -22,6 +22,16 @@ assert.equal(layout.rooms[1].blocked.length,8,'eleven-cell wall has eight solid 
 assert.deepEqual(layout.rooms[1].ambient.color,[6,18,44]);
 assert.equal(layout.rooms[1].ambient.darknessOffset,-.035);
 assert.equal(Rooms.roomAt(layout.rooms,34,14,0).id,room2.id);
+assert.equal(Rooms.roomAt([
+  {...room2,y:6,id:'upper'}, {...room2,y:0,id:'lower'},
+],34,14,4).id,'lower','jumping under another floor cannot switch rooms');
+assert.equal(Rooms.roomAt([{...room2,y:6}],34,14,4),null,'a floor above the player must not activate from below');
+assert.equal(Rooms.roomAt([room2,{...room2,id:'nested',x:33,z:13,w:3,d:3}],34,14,0).id,
+  'nested','smaller nested authored V50 puzzle rooms take precedence');
+assert.equal(Rooms.doorNear({x:30,z:15},{x:30,z:15,y:0},false,4),true,
+  'an upward jump through a doorway cannot close the door');
+assert.equal(Rooms.doorNear({x:30,z:15},{x:30,z:15,y:0},false,7),false,
+  'a different story cannot activate a lower door');
 assert.equal(Rooms.roomAt(layout.rooms,34,14,10),null,'overlapping vertical stories cannot activate from an incorrect elevation');
 
 const floorCells=new Set();
@@ -56,8 +66,10 @@ const enemy={areaId:ruin,health:10,x:34*TILE,y:14*TILE,homeX:35*TILE,homeY:14*TI
   vx:20,vy:-10,state:'chase',targetPlayer:player,
   avatarRef:{group:{visible:true,position:{x:34,y:0,z:14}}}};
 const hostiles=new Set([enemy]);
+const walker={area:ruin,root:{visible:true,position:{x:34,y:0,z:14}}};
+const walkers=[walker]; // A civilian NPC's update loop follows the same area guard as hostiles.
 const session=Rooms.mount({layout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
-  getHostiles:()=>hostiles,mapId:ruin,tile:TILE});
+  getHostiles:()=>hostiles,getWalkers:()=>walkers,mapId:ruin,tile:TILE});
 session.addRooms(v50);
 session.tick(.31);
 assert.equal(session.snapshot().totalRooms,3);
@@ -66,6 +78,8 @@ assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin);
 assert.equal(enemy.x,35*TILE,'enemy resets to its recorded home on exit/not-current');
 assert.equal(enemy.state,'idle');
 assert.equal(enemy.avatarRef.group.visible,false);
+assert.equal(walker.area,'__ruin_room_sleep__:'+ruin);
+assert.equal(walker.root.visible,false,'civilian NPC walker is hidden while its room sleeps');
 assert.equal(session.lightAllowed({x:34,y:1,z:14}),false);
 assert.equal(session.lightAllowed({x:14,y:1,z:14}),true);
 player.x=34;player.z=14;
@@ -73,6 +87,8 @@ session.tick(.31);
 assert.equal(session.activeRoomId,room2.id);
 assert.equal(enemy.areaId,ruin,'reentering a room wakes its enemies');
 assert.equal(enemy.avatarRef.group.visible,true);
+assert.equal(walker.area,ruin);
+assert.equal(walker.root.visible,true,'civilian NPC walker wakes with its room');
 assert.equal(session.ambient().darknessOffset,-.035);
 let fills=0,clips=0,draws=0;
 const ctx={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){clips++;}};
@@ -84,6 +100,8 @@ assert.equal(draws,0,'neighboring room light never paints over this room');
 player.x=24;session.tick(.31);
 assert.equal(session.activeRoomId,null,'hallways are seamless transition space, not an extra sealed room');
 assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin,'leaving the room immediately breaks pursuit');
+assert.equal(walker.area,'__ruin_room_sleep__:'+ruin,'civilian NPCs also stop when the player leaves');
 session.dispose();
 assert.equal(enemy.areaId,ruin,'disposing a dungeon never leaves stale sleeping actors');
+assert.equal(walker.area,ruin,'no NPC remains assigned to a sleeping synthetic area after cleanup');
 console.log('ruin-room-system: enclosure, door IDs, floor holes, lighting and enemy resets OK');
