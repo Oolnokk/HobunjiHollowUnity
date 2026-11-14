@@ -54,6 +54,8 @@ class Mesh extends Node3D{
 const THREE={Mesh,Group,MeshBasicMaterial:Material,DoubleSide:2};
 const sources=[]; // Tracks all stone and grass source allocations across mountain measurements and scene rebuilds.
 const calls={natural:0,map:0,sky:0,shell:0}; // Ensures the farm cliff render pipeline actually runs.
+const canonicalFarmRock = new Material({ map: 'carved_smooth.png', userData: { naturalSurface: 'rocks' } }); // Must remain shared and undisposed after backdrop unload.
+let splitRidge = true; // Tests both real farm ridge-slot output and the unsplit single-material fallback.
 function buildRockTileGeo(){
   const positions=[],indices=[];
   for(let r=0;r<6;r++)for(let c=0;c<6;c++){
@@ -81,12 +83,18 @@ const window={
   TerrainGeometry:{buildRockTileGeo},
   NaturalSurfaceMaterials:{naturalizeMesh(mesh,surface){
     assert.equal(surface,'rocks');calls.natural++;
-    mesh.material=mesh.material.clone();mesh.material.map='carved_smooth.png';
-    mesh.material.userData.naturalSurface='rocks';mesh.userData.naturalSurface='rocks';return mesh;
+    mesh.material=splitRidge?[canonicalFarmRock,canonicalFarmRock]:canonicalFarmRock; // Mirrors NaturalSurfaceCliffRidgeIsolation's material [top, side] when a cap exists.
+    mesh.userData.naturalSurface='rocks';
+    if(splitRidge){
+      mesh.userData.naturalSurfaceCliffSlot=1; // The shared mapper must only remap steep side faces, leaving the tabletop alone.
+      mesh.geometry.groups=[{start:0,count:6,materialIndex:0},{start:6,count:mesh.geometry.getAttribute('position').count-6,materialIndex:1}];
+    }
+    return mesh;
   }},
-  HobunjiSurfaceStretchUV:{mapMesh(mesh,options){
-    assert.equal(options.label,'northern-cliffs-giant-rock');calls.map++;
-    return mesh.geometry.userData.hobunjiSurfaceStretch={patchCount:2,fallbackCount:0};
+  HobunjiSurfaceStretchUV:{remapNaturalTerrainMesh(mesh,label){
+    assert.equal(label,'northern-cliffs-giant-rock');calls.map++;
+    if(splitRidge)assert.equal(mesh.userData.naturalSurfaceCliffSlot,1,'ridge side UV mapping must preserve the flat top');
+    return mesh.geometry.userData.hobunjiSurfaceStretch={patchCount:2,fallbackCount:0,materialIndex:mesh.userData.naturalSurfaceCliffSlot??null};
   }},
   FacetedNaturalSurfaceShellReduction:{suppressMesh(mesh){calls.shell++;mesh.userData.noOutline=true;}},
   BorderTerrain:{buildZoneBorderTerrain(scene,cols,rows,mapId){return {scene,cols,rows,mapId};}},
@@ -111,9 +119,16 @@ assert.equal(calls.natural,1,'farm rock material factory used');
 assert.equal(calls.map,1,'connected-surface mapping used');
 assert.equal(calls.sky,1,'distant sky-depth shader used');
 assert.equal(calls.shell,1,'natural rock edge outline policy used');
-assert.equal(mesh.material.map,'carved_smooth.png');
-assert.equal(mesh.material.userData.northernCliffsDistantPlateau,true);
-assert.equal(mesh.material.userData.naturalSurface,'rocks');
+assert(Array.isArray(mesh.material)&&mesh.material.length===2,'ridge isolator must retain two material slots');
+assert.strictEqual(mesh.material[0],mesh.material[1],'both slots share one backdrop-owned clone, not extra GPU materials');
+assert.notStrictEqual(mesh.material[0],canonicalFarmRock,'backdrop depth shader cannot mutate the farm rock cache');
+assert.equal(mesh.material[0].map,'carved_smooth.png');
+assert.equal(mesh.material[0].userData.northernCliffsDistantPlateau,true);
+assert.equal(mesh.material[0].userData.naturalSurface,'rocks');
+assert.equal(layout.materialSlotCount,2);
+assert.equal(layout.cliffMaterialSlot,1);
+assert.equal(mesh.geometry.groups.length,2,'keep the top and side material groups');
+assert.equal(mesh.geometry.userData.hobunjiSurfaceStretch.materialIndex,1,'flat cap UVs must survive cliff-only mapping');
 assert.equal(mesh.userData.naturalSurfaceUvOwner,'HobunjiSurfaceStretchUV');
 assert.equal(layout.detectedSurfaceIslands,2);
 assert.equal(layout.uvFallbackIslands,0);
@@ -142,8 +157,18 @@ assert.equal(sources.length,18,'duplicate attach must not rebuild');
 window.WildernessChunks.destroyZone('map_northern_cliffs');
 assert.equal(scene.children.length,0,'zone destruction removes rock');
 assert.equal(scene.items.length,0,'zone destruction removes scene-item ownership');
-assert(mesh.geometry.disposed&&mesh.material.disposed,'zone destruction disposes owned GPU resources');
+assert(mesh.geometry.disposed&&mesh.material[0].disposed,'zone destruction disposes the owned cliff material and geometry');
+assert.equal(canonicalFarmRock.disposed,false,'zone destruction must never dispose shared farm rock materials');
 assert.equal(api.getDebugState().attached,false);
+splitRidge=false; // The same renderer must also work when no ridge-material split was necessary.
 window.BorderTerrain.buildZoneBorderTerrain(scene,200,200,'map_northern_cliffs');
 assert.equal(scene.children.length,1,'re-entering zone rebuilds just one rock');
-console.log('Northern Cliffs giant rock shape, farm material, UV fitting, culling, clearance, and lifecycle tests passed.');
+const single=scene.children[0].children[0]; // Exercises the no-ridge fallback after the grouped-cliff path.
+assert.equal(Array.isArray(single.material),false,'unsplit rock retains the normal single material contract');
+assert.equal(single.material.userData.northernCliffsDistantPlateau,true);
+assert.equal(api.getDebugState().lastLayout.materialSlotCount,1);
+assert.equal(api.getDebugState().lastLayout.cliffMaterialSlot,null);
+window.WildernessChunks.destroyZone('map_northern_cliffs');
+assert(single.material.disposed,'single-material backdrop must clean up too');
+assert.equal(canonicalFarmRock.disposed,false,'shared farm rock material must survive both teardown paths');
+console.log('PASS Northern Cliffs giant flat rock: two-slot ridge, cliff-only UVs, farm material ownership, single-slot fallback, culling, clearance, lifecycle.');
