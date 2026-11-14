@@ -299,6 +299,7 @@
     holder.add(bottlePlane); walker.root.add(holder);
     const interaction = { walker,itemKey,holder,bottlePlane,lockHandle,onDrink,autonomous:true,
       phase:'drink',elapsed:0,durationS:Math.max(.1,Number(options.durationS)||Number(animation.durationS)||.95),effectApplied:false,finished:false,
+      allowWalking: !!options.allowWalking, // Only the daily Koma ceremony permits moving during an otherwise stationary drink clip.
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
     applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
     publishHandTarget(walker.root, holder, bottlePlane, walker.avatarGroup);
@@ -361,6 +362,9 @@
       const progress = deps.clamp(interaction.elapsed / interaction.durationS, 0, 1);
       const pose = deps.poseAt(animation, progress);
       applyHolderPose(interaction, pose);
+      if (interaction.allowWalking && interaction.walker._moveSpeedTiles > 0.05) {
+        interaction.baseNpcFacing = interaction.walker.root.rotation.y; // Follow real NPC movement facing; never restore the stale pre-Koma direction.
+      }
       interaction.walker.root.rotation.y = interaction.baseNpcFacing + deps.THREE.MathUtils.degToRad(pose.bodyYaw);
       if (progress >= (Number(animation.strikeFrac) || 0.62)) applyDrinkEffect(interaction);
       if (progress >= 1) finish(interaction);
