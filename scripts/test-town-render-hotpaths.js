@@ -440,14 +440,14 @@ const playerRoot = actorAt('player_mesh', -0.1, 1, 3.95);
 const playerHandRoot = actorAt('player_hand_external_root', 13, 0, 14);
 const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) } };
 const resolveScope = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorXrayScope;')(elevationWindow);
-const playerScope = { elevation: 1.3, col: -1, row: 3 };
+const playerScope = { elevation: 1.3, col: -1, row: 3, root: playerRoot };
 assert.deepEqual(resolveScope({ parent: playerRoot }, actorScene, new Map()), playerScope, 'world tile uses floor, including negative coordinates');
 assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), playerScope, 'detached rig parts inherit the holder tile and standing elevation');
 elevationWindow.DevRandomRuin = { getPlayerGroundSupportY: () => 6 };
 assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), { ...playerScope, elevation: 6 }, 'ruin support height remains authoritative');
 const npcRoot = actorAt('npc_walker_test', 4, 2.5, 6);
 const animalVisual = { name: 'animal_avatar_visual', position: { y: 8 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 13: 8 }) }, parent: npcRoot, userData: { namedAnimalNpc: true } };
-assert.deepEqual(resolveScope({ parent: animalVisual }, actorScene, new Map()), { elevation: 2.5, col: 4, row: 6 },
+assert.deepEqual(resolveScope({ parent: animalVisual }, actorScene, new Map()), { elevation: 2.5, col: 4, row: 6, root: npcRoot },
   'named-animal visual offsets defer to the enclosing floor-level walker root');
 assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot = true'),
   'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
