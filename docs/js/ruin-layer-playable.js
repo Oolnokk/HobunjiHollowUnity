@@ -323,9 +323,8 @@
             }
           }
           door.update=(dt,player,py)=>{
-            const near=player&&Number.isFinite(py)&&Math.abs(py-door.y)<1.25
-              &&Math.hypot(player.x-door.x,player.z-door.z)<(door.opening?3.2:2.65);
-            const opening=!door.locked&&!!near;
+            const near=RoomSystem.doorNear(player&&{...player,y:py},door,door.opening);
+            const opening=!door.locked&&near;
             if(opening!==door.opening){
               door.opening=opening;
               root.RuinInteractionAudio?.mechanism?.(door.object,{size:3}); // Only one sound for a genuine transition.
