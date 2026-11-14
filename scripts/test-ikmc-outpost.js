@@ -17,14 +17,15 @@ assert.equal(piece.roof.style, 'flat-balcony', 'the IKMC must have a flat roofto
 assert.equal(piece.base.faces.some(face => face.tag === 'roof'), false, 'no sloping roof faces may survive beneath the rooftop deck');
 const balcony = piece.balconies.find(entry => entry.id === 'ikmc_rooftop'); // The authored 6×4 structural footprint, excluding the preserved 42-tile porch.
 assert(balcony, 'IKMC needs its named roof balcony');
-assert.equal(balcony.heightMode, 'wall', 'the top surface follows the outpost wall height');
+assert.equal(balcony.heightMode, 'custom', 'the raised outpost rooftop uses its own deck height independent of wall-log geometry');
+assert.equal(balcony.height,1.75,'the rooftop stands clear of the upper log courses');
 assert.deepEqual(balcony.cells, piece.footprint.cells, 'roof deck must match the entire structural shell tile-for-tile');
 assert.equal(balcony.access.furnitureId, 'f_ikmc_roof_ladder', 'the balcony must be entered through its interior ladder');
 assert.equal(balcony.access.openingTile.x, 13);
 assert.equal(balcony.access.openingTile.y, 8);
 const roofDeck = piece.base.faces.filter(face => face.balconyGenerated && face.tag === 'balcony' && face.extensionFace === 'top'); // One walkable surface per painted roof tile.
 assert.equal(roofDeck.length, 24, 'one roof surface exists for each shell tile');
-assert(roofDeck.every(face=>face.v.every(vertex=>Math.abs(vertex[1] - piece.base.height) < 1e-8)), 'deck top is exactly the authored wall height');
+assert(roofDeck.every(face=>face.v.every(vertex=>Math.abs(vertex[1] - balcony.height) < 1e-8)), 'deck top matches the authored balcony height, not the shorter wall height');
 assert(piece.base.faces.some(face=>face.balconyGenerated && face.tag === 'railing'), 'balcony edges must receive fine-colliding railing geometry');
 assert(piece.base.faces.some(face=>face.balconyGenerated && face.tag === 'doorOpening' && face.extensionFace === 'hatch'), 'roof access must show the dark hatch patch');
 const mouthFaces = piece.base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening); // Physical framing at the outside end of the covered tunnel.

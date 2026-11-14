@@ -67,7 +67,10 @@
 
   function highestSupport(x, z, maxY) {
     const floorY = groundAt(x, z, maxY); // Landing cannot pick a higher porch/bridge surface until the descending feet actually reach it.
-    let best = floorY != null && floorY <= maxY ? { y: floorY, kind: 'ground' } : null;
+    let best = floorY != null && floorY <= maxY ? {
+      y: floorY,
+      kind: window.HobunjiWalkableElevation?.isBalconyAt?.(x, z, floorY, deps.getCurrentArea()) ? 'balcony' : 'ground',
+    } : null; // Keep a roof landing supported until the next jump or real fall-off.
     const dynamic = window.DynamicSurfaces?.sampleSupport?.(x, z, { maxY, minY: -Infinity });
     if (dynamic && (!best || dynamic.y > best.y)) best = { y: dynamic.y, kind: 'dynamic', id: dynamic.id };
     const c0 = Math.floor(x - CONFIG.radius), c1 = Math.floor(x + CONFIG.radius);
@@ -133,9 +136,14 @@
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,
     })) return 'dynamic blocker';
     if (deps.canPlayerOccupyAtHeight) {
-      const onBalcony=window.HobunjiWalkableElevation?.isBalconyAt?.(x,z,feetY,area); // Building's ground-level block cannot veto its rooftop support.
-      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY) && !onBalcony)
-        return 'world collision';
+      const aboveBalcony=window.HobunjiWalkableElevation?.isAboveBalconyAt?.(x,z,feetY,area); // Airborne roof movement may ignore its building shell.
+      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY)) {
+        if (!aboveBalcony) return 'world collision';
+        // The native probe also includes furniture/table blockers. The balcony exemption
+        // bypasses only the building's coarse shell, not any independent obstacle atop it.
+        if (window.FurnitureTableSystem?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05)
+            || deps.furnitureBlocksMovementAt?.(area, x, z, feetY + 0.05)) return 'furniture';
+      }
     } else {
       // Non-game test owners fail closed, rather than granting global passage
       // because a semantically unrelated rock or table is below the feet.
