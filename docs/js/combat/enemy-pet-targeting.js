@@ -41,6 +41,18 @@
     }
   }
 
+  function shouldRetaliateToPetHit(enemy, attacker, players, areaId) {
+    if (!groundPet(attacker, areaId, players) || !viable(enemy, areaId) ||
+        enemy.def?.hostile === false || enemy.banditCompanion ||
+        enemy._chunkCombatTarget || enemy._scentTarget ||
+        enemy.state !== 'chase' || enemy.targetPlayer === attacker) return false;
+    const radius = Math.max(0, Number(enemy.def?.aggroRangePx) || 0); // Uses existing normal sight/aggro reach, not unlimited awareness.
+    const leash = Math.max(0, Number(enemy.def?.leashRangePx) || 0); // A pet cannot lure its pursuer beyond the existing home boundary.
+    return radius > 0 && leash > 0 &&
+      Math.hypot(attacker.x - enemy.x, attacker.y - enemy.y) <= radius &&
+      Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY) <= leash;
+  }
+
   function chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx) {
     if (!enemyPet?.banditCompanion || !master || !(alertRangePx > 0)) return null;
     let best = null; // Nearest player-side combatant inside the Beastmaster's alert circle.
@@ -74,7 +86,7 @@
   }
 
   window.EnemyPetTargeting = Object.freeze({
-    viable, groundPet, chooseAggroTarget, chooseBeastmasterTarget,
+    viable, groundPet, chooseAggroTarget, shouldRetaliateToPetHit, chooseBeastmasterTarget,
     snapshot: enemy => ({
       target: enemy?.targetPlayer?.id || enemy?.targetPlayer?.creatureKey || null,
       targetIsPet: !!enemy?.targetPlayer?.isCompanion && !enemy?.targetPlayer?.banditCompanion,
