@@ -95,6 +95,12 @@ const ctx={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){
 assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{fills++;}),true);
 assert.equal(clips,1);
 assert.equal(fills,1);
+let projections=0;
+session.prepareLightClip((x,y,z)=>{projections++;return {x:x*2,y:z+y};});
+assert.equal(projections,8,'active-room clip is projected once per unified lighting pass');
+session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('cached light clip must not reproject per light');},()=>{fills++;});
+assert.equal(fills,2);
+assert.equal(projections,8,'second light reuses the already-projected clip');
 assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{draws++;}),false);
 assert.equal(draws,0,'neighboring room light never paints over this room');
 player.x=24;session.tick(.31);
