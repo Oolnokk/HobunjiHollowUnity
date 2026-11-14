@@ -28019,6 +28019,8 @@
           const eligible = eligibleWorldButtons(rubbleButtons);
           if (eligible.length) return eligible;
         }
+        if (heldMode === 'tool' && activeTool === 'adventuring' && !_pendingSpotTransition)
+          return adventuringToolActionButtons(); // Fire-hazard furniture interactions cannot replace the torch's own swing/throw buttons.
         const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
         const directFurnitureButtons = directFurniture?.getButtons?.() || [];
         if (directFurnitureButtons.length) {
