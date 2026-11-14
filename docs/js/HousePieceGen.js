@@ -1497,7 +1497,7 @@
     var matCanvas = opts.matCanvas || new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
     var matDoorOpening = opts.matDoorOpening || new THREE.MeshBasicMaterial({ color: 0x080808, side: THREE.DoubleSide });
 
-    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1 };
+    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1, balcony: 1 }; // Shared natural wood finish for roof terraces.
     var STONE_TAGS = { chimney: 1 };
 
     var group       = new THREE.Group();
