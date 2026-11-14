@@ -191,9 +191,10 @@
       entity.avatarRef.group.position.z=home.y/home.tile;
     }
   }
-  function mount({layout,getPlayerPosition,getPlayerY,getHostiles,mapId='map_i_dev_random_ruin',tile=64,onRoomChange}={}){
+  function mount({layout,getPlayerPosition,getPlayerY,getHostiles,getWalkers,mapId='map_i_dev_random_ruin',tile=64,onRoomChange}={}){
     if(live)live.dispose(); // No room-owned hostiles or compositor masks leak across a ruin reroll.
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
+    const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false;
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
@@ -229,6 +230,34 @@
         if((Number(enemy.health)||0)<=0||!hostiles.has?.(enemy)){ownership.delete(enemy);continue;}
         if(record.id===active?.id)wake(record);
         else sleep(record);
+      }
+    }
+    function scanWalkers(){
+      const collection=getWalkers?.()||root._npcWalkers||[];
+      const walkers=typeof collection.values==='function'?collection.values():collection;
+      if(!walkers?.[Symbol.iterator])return;
+      const alive=new Set(); // Removes deleted walker references from this small ruin-only ownership set.
+      for(const walker of walkers){
+        if(!walker?.root?.position)continue;
+        alive.add(walker);
+        if(walkersOwnership.has(walker)||walker.area!==mapId)continue;
+        const p=walker.root.position,room=lookup(Number(p.x),Number(p.z),Number(p.y));
+        if(!room)continue;
+        walkersOwnership.set(walker,{id:room.id,area:walker.area,
+          originallyVisible:walker.root.visible!==false,sleeping:false});
+      }
+      for(const [walker,record] of walkersOwnership){
+        if(!alive.has(walker)){walkersOwnership.delete(walker);continue;}
+        if(walker.area!==record.area&&walker.area!==sleepingArea){
+          if(record.sleeping)walker.root.visible=record.originallyVisible;
+          walkersOwnership.delete(walker);continue; // Respect an authored transfer to another map.
+        }
+        const shouldWake=record.id===active?.id;
+        if(shouldWake&&record.sleeping){
+          walker.area=record.area;walker.root.visible=record.originallyVisible;record.sleeping=false;
+        }else if(!shouldWake&&!record.sleeping){
+          walker.area=sleepingArea;walker.root.visible=false;record.sleeping=true;
+        }
       }
     }
     const session={
@@ -280,20 +309,26 @@
         const next=p?lookup(p.x,p.z,y):null;
         if(next?.id!==active?.id){
           active=next;transitions++;
-          scanHostiles();clock=0; // Crossing a doorway breaks pursuit immediately; idle scans remain throttled.
+          scanHostiles();scanWalkers();clock=0; // Room transitions also freeze off-room civilian NPC walkers immediately.
           onRoomChange?.(active?.id||null);
           root.CloudForestFog?.refreshLightingOverlay?.();
         }
         clock+=Math.max(0,Number(dt)||0);
-        if(clock>=PROBE_PERIOD){clock=0;scanHostiles();}
+        if(clock>=PROBE_PERIOD){clock=0;scanHostiles();scanWalkers();}
       },
       dispose(){
         if(disposed)return;disposed=true;
         for(const record of ownership.values())if(record.sleeping)wake(record);
-        ownership.clear();if(live===session)live=null;
+        ownership.clear();
+        for(const [walker,record] of walkersOwnership){
+          if(!record.sleeping)continue;
+          walker.area=record.area;walker.root.visible=record.originallyVisible;
+        }
+        walkersOwnership.clear();if(live===session)live=null;
       },
       snapshot(){return {activeRoomId:active?.id||null,totalRooms:rooms.length,
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
+        sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[]};},
     };
     live=session;
