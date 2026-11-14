@@ -1085,6 +1085,8 @@
       for (const fire of burningVfxDebug.entities || []) lines.push(`  Fire ${fire.entity}: Burning=${fire.burning} Kindling=${fire.kindling} particles=${fire.visible == null ? '?' : (fire.visible ? 'visible' : 'hidden')}`);
       if (burningVfxDebug.latestChange) lines.push(`  Latest change: ${burningVfxDebug.latestChange}`);
     }
+    const adventuringDebug = window.AdventuringTools?.debug; // On-demand mobile inspection: torch lit, held, unlocks and last action.
+    if (adventuringDebug) lines.push('Adventuring Tools: ' + JSON.stringify(adventuringDebug));
     const dungeonFireDebug = window.DungeonFire?.debugSnapshot?.(); // Mobile-readable status for player-held charges and live world-upright projectile particles.
     if (dungeonFireDebug) {
       lines.push(`Dungeon Fire: armed=${dungeonFireDebug.armed ? 'yes' : 'no'} held=${dungeonFireDebug.heldFire ? dungeonFireDebug.heldWeaponKey : 'none'} source=${dungeonFireDebug.heldAnchorKind || '-'} projectiles=${dungeonFireDebug.activeVisuals} targets=${dungeonFireDebug.reactiveTargets}`);
