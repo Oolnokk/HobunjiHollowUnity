@@ -1,5 +1,9 @@
 # Performance investigation log
 
+## 14 Nov 2026: failed cliff-entry searches have a retry delay
+
+A failed climb-entry search can be requested every movement update. For the same entry and start tile, scheduled NPCs wait 750 ms and creatures wait 1.2 seconds before repeating the search. A different entry, different start tile, or rebuilt route can search immediately. Pixel Probe reports skipped retries, and the cliff-route test exercises recovery when an obstacle clears.
+
 ## 14 Nov 2026: hand pose callbacks without GPU draws
 
 The direct hand sync and free-hand forearm alignment meshes use empty draw ranges. Three.js r128 calls their pose hooks in render order and skips the two invisible triangle draws per rig in each pass that processes both meshes. The dance render hook can reset wrist rotations on a later pass, so forearm alignment still runs after it on eligible passes.
