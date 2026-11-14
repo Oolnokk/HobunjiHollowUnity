@@ -54,6 +54,7 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+    torchHold: Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Upright artwork, regardless of player yaw.
     topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -69,6 +70,7 @@
   const idleStances = {
     tool: { ...DEFAULT_IDLE_STANCES.tool },
     hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
+    torchHold: { ...DEFAULT_IDLE_STANCES.torchHold }, // Stable editable tool-neutral reference.
     topHeavyTool: { ...DEFAULT_IDLE_STANCES.topHeavyTool },
     longHaftedTool: { ...DEFAULT_IDLE_STANCES.longHaftedTool },
     heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
@@ -98,6 +100,7 @@
         Object.assign(normalized, DEFAULT_IDLE_STANCES.topHeavyTool); // An untouched saved default should receive the working Pick-Shovel copy; user edits remain untouched.
       }
       Object.assign(idleStances[key], normalized);
+      idleStances[key].worldUpright = typeof incoming?.worldUpright === 'boolean' ? incoming.worldUpright : !!baseline?.worldUpright; // Preserve authored world-space rotation metadata lost by numeric pose normalization.
     }
     stanceConfigSource = sourceLabel;
     return true;
@@ -210,6 +213,7 @@
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
+      if (activeSlot === 'adventuring' && itemKey === 'torch') return idleStances.torchHold; // Dedicated idle state only for a held torch.
       if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
       if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
@@ -543,6 +547,7 @@
         savedQuaternion = this.quaternion.clone();
         try {
           const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (targetPose.worldUpright) window.ToolWorldUpright?.apply?.(this, toolPlane, THREE); // World-up is active only at idle, never during a swing or throw.
           if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
@@ -665,6 +670,7 @@
       poses: {
         tool: { ...idleStances.tool },
         hoeTool: { ...idleStances.hoeTool },
+        torchHold: { ...idleStances.torchHold }, // Expose the authored upright mode in mobile stance diagnostics.
         topHeavyTool: { ...idleStances.topHeavyTool },
         longHaftedTool: { ...idleStances.longHaftedTool },
         heavyWeapon: { ...idleStances.heavyWeapon },
