@@ -12,6 +12,7 @@
   const key=(x,z)=>x+','+z;
   const SIDES={N:{dx:0,dz:-1},E:{dx:1,dz:0},S:{dx:0,dz:1},W:{dx:-1,dz:0}};
   const MAX_MAP_CELLS=300000; // Guard against malformed seeds making a giant 2D occupancy allocation.
+  const RoomSystem=root.RuinRoomSystem||(typeof require==='function'?require('./ruin-room-system.js'):null); // Reuse room ownership in the browser and headless fixtures.
   function rectangleTiles(r,add){
     for(let z=r.z;z<r.z+r.d;z++)for(let x=r.x;x<r.x+r.w;x++)add(x,z);
   }
@@ -58,6 +59,14 @@
       ||!DS?.registerSurface||!CG?.create||!Corridors?.rectangles||!Challenges?.compose||!Defense?.create
       ||typeof makeTile!=='function'||typeof getPlayerPosition!=='function')
       throw new Error('Ruin layer physical runtime dependencies are missing.');
+    if(!RoomSystem?.planRooms)throw new Error('Seamless ruin room system must load before playable wings.');
+    const roomLayout=RoomSystem.planRooms(plan,Challenges.ropePitForRoom); // Deterministic room/door IDs and a structural blueprint shared by lighting, collision and AI.
+    if(!roomLayout.ok)throw new Error('Ruin room enclosure invalid: '+roomLayout.errors.join('; '));
+    const descriptors=new Map(roomLayout.rooms.map(room=>[room.id,room])); // Used by each wing's shell and automatic entrance door.
+    const plannedDoors=new Map(roomLayout.doors.map(door=>[door.roomId,door])); // Stable doorway links also replace the old single-use puzzle gate.
+    const roomDoors=new Map(); // Owns each live auto-door state without creating another game-world scene.
+    const roomAudits=[]; // Published in the mobile ruin debug snapshot for missing floors/ceilings/partitions.
+    let roomSession=null; // Disposed with this ruin, never installed as an unrelated global frame loop.
     const extent=projectedExtent(plan); // Verifies 2D slices have nonnegative world positions before any mutation.
     const cols=Math.max(rec.cols,Math.ceil(extent.maxX)+2),rows=Math.max(rec.rows,Math.ceil(extent.maxZ)+2);
     if(extent.minX<1||extent.minZ<1||cols*rows>MAX_MAP_CELLS)
@@ -115,6 +124,7 @@
     };
     owner.dispose=()=>{
       if(liveOwner===owner)liveOwner=null;
+      roomSession?.dispose?.(); // Wake sleepers before an exit/reroll tears down the shared scene.
       if(owner.disposed)return;owner.disposed=true;
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
       for(const flame of wingFlameVisuals)flame.dispose?.(); // No stale authored GPU particles after a dungeon reroll.
@@ -149,7 +159,7 @@
     // engraving atlas per mesh, so each must be a connected wall, and the count is capped to bound GPU memory). Atlases
     // are capped at 512 px, so a long corridor wall is cut into pieces of at most WING_FEATURE_MAX units first: one
     // engraving over 86 units would get a few pixels per unit and read as mush.
-    const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=2.3,WALL_THICKNESS=.14,PATCH={h:6,v:6};
+    const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=RoomSystem.WALL_HEIGHT,WALL_THICKNESS=.14,PATCH={h:6,v:6};
     function masonry(wingName,y,floorCells,wallsX,wallsZ){
       const Faces=root.RuinWallFaces;
       const add=(name,data,parent=activeRoot)=>{
@@ -192,6 +202,13 @@
     }
     function setGate(record,blocked,silent=false){
       if(!record?.gate)return;
+      if(record.gate.autoDoor){
+        const door=record.gate.autoDoor;
+        const changed=door.locked!==blocked;
+        door.locked=blocked; // A solved progression gate becomes a normal self-closing door; it never consumes the puzzle's saved completion.
+        if(changed&&!silent)root.RuinInteractionAudio?.mechanism?.(door.object,{size:4});
+        return;
+      }
       for(const [x,z] of record.gate.tiles){
         const c=record.grid.xToCol(x+.5),r=record.grid.zToRow(z+.5);
         record.grid.set(c,r,0,blocked?CG.KIND.SOLID:CG.KIND.AIR);
@@ -223,7 +240,7 @@
           minX:Math.min(a.minX,x),maxX:Math.max(a.maxX,x),minZ:Math.min(a.minZ,z),maxZ:Math.max(a.maxZ,z)
         }),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
         const grid=CG.create({originX:localBounds.minX-1,originZ:localBounds.minZ-1,baseY:floor.y,
-          cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:3});
+          cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:5}); // All four wall voxel layers match the enclosed 3.6-unit room walls.
         const side=SIDES[wing.side],portal=portalAt(floor.floor,wing.side); // Source of truth for the physical mouth shared with the shaft.
         const portalMouth=new Set((portal.mouth||[]).map(([x,z])=>key(x,z))); // Used by both wing voxel borders and rendered face walls.
         if(portalMouth.size!==plan.options.corridorWidth||[...portalMouth].some(cell=>!tiles.has(cell)))
@@ -243,7 +260,7 @@
         }
         for(const next of border){
           const [x,z]=next.split(',').map(Number),c=grid.xToCol(x+.5),r=grid.zToRow(z+.5);
-          grid.fillBox(c,r,0,c,r,1,CG.KIND.SOLID); // Exactly two wall cells tall; no invisible ceiling.
+          grid.fillBox(c,r,0,c,r,3,CG.KIND.SOLID); // Solid stone rises to the room ceiling; no whole-room invisible collision fill.
         }
         // The wing portal shares the shaft's outward threshold on the proper story; avoid closing its inward face.
         const wallsX=[],wallsZ=[];
@@ -261,6 +278,58 @@
           if(slab)slab.userData.hobunjiGroundTopFacesOnly=true;
           instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
           instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
+        }
+        const supportedSet=new Set(supportedCells.map(([x,z])=>key(x,z))); // One floor-support authority for per-room audits, including intentional rope pits.
+        for(const source of wing.rooms){
+          const room=descriptors.get(source.id);
+          if(!room)throw new Error('Missing generated room descriptor: '+source.id);
+          const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
+            material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
+          if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
+          owner.geometryCount+=shell.meshes.length;
+          roomAudits.push(shell.audit);
+          const doorPlan=plannedDoors.get(room.id);
+          if(!doorPlan)throw new Error('Missing room door: '+room.id);
+          const doorTiles=Array.from({length:doorPlan.span},(_,j)=>[
+            doorPlan.axis==='x'?Math.floor(doorPlan.x):Math.floor(doorPlan.x)+j-1,
+            doorPlan.axis==='z'?Math.floor(doorPlan.z):Math.floor(doorPlan.z)+j-1,
+          ]);
+          if(!doorTiles.every(([x,z])=>tiles.has(key(x,z))))
+            throw new Error('Room doorway spills outside its real wing floor: '+room.id);
+          const authored=root.DevRandomRuinFurniturePieces?.buildPassageGate?.({
+            span:3,height:2.4,normalAxis:doorPlan.axis,parent:activeRoot,name:'ruin-room-door-'+room.id,
+            position:{x:doorPlan.x,y:room.y,z:doorPlan.z},
+          });
+          const object=authored?.object||mesh('ruin-room-door-'+room.id,
+            new THREE.BoxGeometry(doorPlan.axis==='x'?1.1:3,2.4,doorPlan.axis==='z'?1.1:3),
+            gateMat,doorPlan.x,room.y+1.2,doorPlan.z);
+          const door={...doorPlan,tiles:doorTiles,object,grid,locked:doorPlan.initiallyLocked,
+            raised:0,blocked:null,opening:false,baseY:object.position.y};
+          roomDoors.set(room.id,door);
+          function stampDoor(blocked){
+            if(door.blocked===blocked)return;
+            door.blocked=blocked;
+            for(const [x,z] of door.tiles){
+              const c=grid.xToCol(x+.5),r=grid.zToRow(z+.5);
+              for(let level=0;level<4;level++)grid.set(c,r,level,blocked?CG.KIND.SOLID:CG.KIND.AIR);
+            }
+          }
+          door.update=(dt,player,py)=>{
+            const near=player&&Number.isFinite(py)&&Math.abs(py-door.y)<1.25
+              &&Math.hypot(player.x-door.x,player.z-door.z)<(door.opening?3.2:2.65);
+            const opening=!door.locked&&!!near;
+            if(opening!==door.opening){
+              door.opening=opening;
+              root.RuinInteractionAudio?.mechanism?.(door.object,{size:3}); // Only one sound for a genuine transition.
+            }
+            const step=Math.min(1,Math.max(0,Number(dt)||0)*3.5);
+            door.raised+=((opening?1:0)-door.raised)*step;
+            if(Math.abs(door.raised-(opening?1:0))<.004)door.raised=opening?1:0;
+            stampDoor(door.locked||door.raised<.92);
+            door.object.position.y=door.baseY-2.7*door.raised;
+            door.object.visible=door.raised<.998;
+          };
+          stampDoor(true);
         }
         const rectangles=Corridors.rectangles(supportedCells); // The abyss has NO physical floor and NO DynamicSurfaces standing rectangle.
         rectangles.forEach((r,i)=>{
@@ -324,19 +393,14 @@
           challenge.restoreSolved=()=>{roomLight.active=true;if(gateLight)gateLight.active=true;setGate(challenge,false,true);}; // A reload opens the same real voxel gate without repeating puzzle audio.
           const next=wing.corridors[i+1];
           if(next){
-            const {dx,dz}=side,cx=next.end.x,cz=next.end.z;
-            const gateTiles=Array.from({length:3},(_,j)=>[cx+(dz*(j-1)),cz+(dx*(j-1))]);
-            if(!gateTiles.every(([x,z])=>tiles.has(key(x,z))))
-              throw new Error('Challenge gate cannot span its entire hallway: '+room.id);
-            const authoredGate=root.DevRandomRuinFurniturePieces?.buildPassageGate?.({ // Carved door with one seal; the plain box below is only the fallback until its JSON has loaded.
-              span:3,height:2.4,normalAxis:dx?'x':'z',parent:activeRoot,name:'ruin-challenge-gate-'+room.id,
-              position:{x:cx+.5,y:floor.y,z:cz+.5}});
-            const gate=authoredGate?authoredGate.object:mesh('ruin-challenge-gate-'+room.id,
-              new THREE.BoxGeometry(dx?1.1:3,2.4,dz?1.1:3),gateMat,cx+.5,floor.y+1.2,cz+.5);
-            challenge.gate={tiles:gateTiles,object:gate};
-            gateLight={x:cx+.5,y:floor.y+1.4,z:cz+.5,floorY:floor.y,floorTolerance:3,radius:5.5,strength:.95,color:roomRgb,active:false};
+            const nextRoom=wing.rooms[i+1],door=roomDoors.get(nextRoom?.id);
+            if(!door)throw new Error('Challenge has no self-closing destination door: '+room.id);
+            challenge.gate={tiles:door.tiles,object:door.object,autoDoor:door};
+            gateLight={x:door.x,y:floor.y+1.4,z:door.z,floorY:floor.y,floorTolerance:3,
+              radius:5.5,strength:.95,color:roomRgb,active:false};
             roomLights.push(gateLight);
-            challenge.grid=grid;setGate(challenge,true);
+            challenge.grid=grid;
+            setGate(challenge,true,true); // Locked until this stage solves; afterward proximity controls it.
           }
           record.challenges.push(challenge);
         }
@@ -413,10 +477,16 @@
       // discards this session-only map; no partially playable network is kept.
       throw error;
     }
+    roomSession=RoomSystem.mount({layout:roomLayout,getPlayerPosition,getPlayerY,
+      mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
+      tile:Number(root.Combat?.deps?.TILE)||64,
+      getHostiles:()=>root.Combat?.deps?.hostileObjects}); // Hostiles outside the current room are reset, hidden and skipped by updateHostiles.
     owner.tick=(dt)=>{
       if(owner.disposed)return;
       const player=getPlayerPosition(),y=Number(getPlayerY?.()); // Actor feet elevation disambiguates vertically overlapping room coordinates.
       if(!player||!Number.isFinite(y))return;
+      roomSession.tick(dt);
+      for(const door of roomDoors.values())door.update(dt,player,y); // One ownership tick, no independent rAF or duplicated 2D collision overlay.
       // When on the ground floor, an upper floor's stone deck would otherwise
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
@@ -459,6 +529,9 @@
         .map(c=>({id:c.id,linked:!!c.ropeLinked,count:c.ropesRequested||0,
           geometry:c.ropeGeometry||null,error:c.error||null}))), // Mobile getState shows baseline range, rope offsets and puzzle linkage without devtools.
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
+      roomEnclosures:{...roomSession?.snapshot(),audits:roomAudits,
+        closedDoors:[...roomDoors.values()].filter(d=>d.blocked).length,
+        doorCount:roomDoors.size}, // Mobile debug includes room ID, structural audit and suspended NPC totals.
       defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
         .map(c=>({id:c.id,error:c.error,attempts:c.attempts}))),
       findBlocks:states.flatMap(r=>r.challenges.filter(c=>c.kind==='findBlocks')
