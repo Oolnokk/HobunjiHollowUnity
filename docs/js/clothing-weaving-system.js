@@ -1765,8 +1765,9 @@
       try {
         const cfg = await cosmeticConfig(descriptor.baseCosmeticId);
         const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null; // Used by runtime color swapping to choose the exact base-vs-trim dye for each sprite layer.
+        const spritePaletteKeys = paletteKeysForCosmeticSprites(cfg); // Some older authored roles lack map entries but declare A/B on the image itself.
         for (const [url, role] of collectPatternImageUrls(cfg)) {
-          const paletteKey = role && paletteLayerMap ? paletteLayerMap[role] : null; // Stored only in the transient portrait descriptor; it is not garment save data.
+          const paletteKey = spritePaletteKeys.get(url) || (role && paletteLayerMap ? paletteLayerMap[role] : null); // Matches loom/icon layer classification for portrait textures.
           const variantKey = weavingHasOptionalTrim(descriptor.weaving) ? variantKeyForSourceUrl(cfg, url) : null; // Connects this raster to its exact species/gender trim authoring record.
           const trimPattern = variantKey ? authoredTrimPatternFromManifest(trimManifest, descriptor.baseCosmeticId, variantKey, view) : null;
           if (!descriptor.furHood && !(descriptor.furTrimColorName && role === 'trim') && !weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length && !trimPattern && !window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length) continue; // Every natural fur layer enters the runtime tint map, even when no drawn motif exists.
@@ -1797,6 +1798,25 @@
     return [...new Set([hyphen, under, species])].map(form => `${form}_${genderKey}`);
   }
 
+  function spriteLayerPaletteKey(layer, paletteLayerMap) {
+    const mappedRole = layer?.layerRole && paletteLayerMap ? paletteLayerMap[layer.layerRole] : null; // The author's palette map wins when present.
+    const declaredColors = layer?.image?.colors; // Legacy cosmetic sprites sometimes name their single A/B dye here instead of on the layer role.
+    const soleImageColor = Array.isArray(declaredColors) && declaredColors.length === 1 ? declaredColors[0] : null;
+    return mappedRole || layer?.paletteColorKey || (soleImageColor === 'A' || soleImageColor === 'B' ? soleImageColor : null);
+  }
+
+  function paletteKeysForCosmeticSprites(cfg) {
+    const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null; // Mirrors the preview's authored palette map.
+    const paletteByUrl = new Map(); // Indexed by raster URL for the portrait compatibility path, which only knows a sprite URL and role.
+    const allParts = [cfg?.parts, ...Object.values(cfg?.speciesVariants || {}).map(variant => variant?.parts)]; // Both default and species-specific art can supply different A/B metadata.
+    for (const parts of allParts) {
+      for (const layer of collectLayerImageUrls(parts, paletteLayerMap, [])) {
+        if (layer.paletteKey === 'A' || layer.paletteKey === 'B') paletteByUrl.set(layer.url, layer.paletteKey);
+      }
+    }
+    return paletteByUrl;
+  }
+
   function collectLayerImageUrls(partsNode, paletteLayerMap, into) {
     if (!partsNode || typeof partsNode !== 'object') return into;
     for (const [partName, part] of Object.entries(partsNode)) {
@@ -1805,7 +1825,7 @@
       for (const [layerName, layer] of Object.entries(layers)) {
         const role = layer?.layerRole || null; // Used with the cosmetic's palette map to identify BODY/NONE overlays, and (below) to key this layer's own pattern separately from its siblings.
         const mappedRole = role && paletteLayerMap ? paletteLayerMap[role] : null;
-        const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
+        const paletteKey = spriteLayerPaletteKey(layer, paletteLayerMap); // Single source of truth for A/B in loom icons and runtime portrait pattern descriptors.
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
         if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), behindUrl: layer?.behindImage?.url ? normalizeAssetPath(layer.behindImage.url) : null, // The game's rear-view renderer can swap a layer by its own config rather than the global URL rules.
@@ -3341,7 +3361,7 @@
     reweaveMaterialCost,
     woolCostForSlot: slot => WOOL_COST_BY_SLOT[slot] || 1, // Commission quotes reuse the loom's actual wool cost per garment slot.
     debugSnapshot,
-    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, spriteLayerPaletteKey, paletteKeysForCosmeticSprites, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
