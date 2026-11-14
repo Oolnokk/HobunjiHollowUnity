@@ -260,7 +260,6 @@
     // This map is tiny (typically one per building); checking only on a player's first unsupported town tick avoids per-frame scans.
     for(const hatch of roofHatches.values()){
       if(hatch.area!==area || hatch.col!==col || hatch.row!==row || !objectInActiveScene(hatch.owner))continue;
-      if(Math.hypot(worldX-(col+.5),worldZ-(row+.5))>.38)continue;
       return hatch;
     }
     return null;
