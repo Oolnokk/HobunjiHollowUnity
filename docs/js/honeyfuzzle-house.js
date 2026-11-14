@@ -86,10 +86,12 @@
     const now = window.FarmProduction.now();
     deps.inventory[itemKey] = bagCount(itemKey) - 1;
     const colors = window.HoneyfuzzleColors;
-    const appearance = colors?.takeQueenAppearance?.(deps.getWorldId?.())
-      || (!colors?.takeQueenAppearance ? colors?.takeEggAppearance?.(deps.getWorldId?.()) : null) || null;
-    const color = appearance?.color || (!colors?.takeQueenAppearance && !colors?.takeEggAppearance
-      ? colors?.takeEggColor?.(deps.getWorldId?.()) : null)
+    const worldId = deps.getWorldId?.(); // Inventory metadata is scoped to the same persisted world as the House.
+    const appearance = itemKey === QUEEN_ITEM
+      ? (colors?.takeQueenAppearance?.(worldId) || (!colors?.takeQueenAppearance ? colors?.takeEggAppearance?.(worldId) : null))
+      : (colors?.takeEggAppearance?.(worldId) || (!colors?.takeEggAppearance ? colors?.takeEggColor?.(worldId) : null));
+    // An untracked queen should roll a fresh coat, never steal a queued legacy egg genotype.
+    const color = typeof appearance === 'string' ? appearance : appearance?.color
       || colors?.pickForKey('', 'queen' + Math.random()) || null;
     ensure(entry).queen = { placedAt: now, readyAt: now + establishDays(), color,
       genotype: appearance?.genotype || null }; // Preserve the hive queen's inherited primary and secondary markings.
