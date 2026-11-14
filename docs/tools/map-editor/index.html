@@ -4925,6 +4925,7 @@ function importAny(obj, options = {}) { // Options are used by explicit authorit
     const merge = options.mergeIntoWorkspace === true || ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
     const doMerge = options.mergeIntoWorkspace === true || (merge && confirm(
       `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`));
+    const previousMapIds = new Set(ws.maps.map(map => map.id)); // Keep pre-import IDs to baseline only new/reloaded maps during an explicit Town refresh.
     // Sanitise incoming maps
     const incoming = obj.maps.map(src => {
       const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
@@ -4984,7 +4985,12 @@ function importAny(obj, options = {}) { // Options are used by explicit authorit
     undoStack.length = 0; redoStack.length = 0;
     migrateSubmapAnchors();
     sanitizePlateauGaps();
-    ws.maps.forEach(captureBaseline);
+    if (options.replaceMapIds?.length) {
+      const replacedIds = new Set(options.replaceMapIds); // Only reloaded Town (plus newly imported maps) may establish new baselines.
+      for (const map of incoming) if (replacedIds.has(map.id) || !previousMapIds.has(map.id)) captureBaseline(map);
+    } else {
+      ws.maps.forEach(captureBaseline);
+    }
     updateAll(); fitView();
     return;
   }
@@ -5200,7 +5206,7 @@ $('importBtn').addEventListener('click', () => $('importFile').click());
 $('loadTownBtn').addEventListener('click', async () => {
   try {
     setStatus('Fetching town workspace…');
-    const res = await fetch('../../config/town-workspace-v1.json');
+    const res = await fetch('../../config/town-workspace-v1.json', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const obj = await res.json();
     let canonicalTownLoaded = false; // Only a successfully fetched, indexed Town file can replace the user's locally saved Town.
@@ -5212,7 +5218,7 @@ $('loadTownBtn').addEventListener('click', async () => {
     // a stale/incomplete town that doesn't match what the game renders.
     if (Array.isArray(obj.maps)) {
       try {
-        const idxRes = await fetch('../../config/maps/index.json');
+        const idxRes = await fetch('../../config/maps/index.json', { cache: 'no-store' });
         if (idxRes.ok) {
           const idx = await idxRes.json();
           const mapFileIndex = {};
@@ -5221,7 +5227,7 @@ $('loadTownBtn').addEventListener('click', async () => {
             const file = mapFileIndex[m.id];
             if (!file) return m;
             try {
-              const r = await fetch('../../' + file);
+              const r = await fetch('../../' + file, { cache: 'no-store' });
               if (!r.ok) return m;
               const data = await r.json();
               if (m.id === 'map_hobunji_town' && data?.id === m.id && data.schema === 'hobunji_map.v1') canonicalTownLoaded = true;
@@ -5273,7 +5279,7 @@ $('loadTownBtn').addEventListener('click', async () => {
       ws.activeId = townM.id;
       editingLayoutId = null;
       updateAll(); fitView();
-      window.MapEditorExportFixes?.captureWorkspaceBaselines?.(); // The confirmed bundled reload establishes a new, explicit diff baseline.
+      window.MapEditorExportFixes?.captureMapBaseline?.(townM); // Only Town is rebaselined; unrelated editor edits must remain visible in workspace diffs.
       setStatus('Bundled game Town loaded into the editor. Future diffs compare against this reloaded Town.');
     }
   } catch(e) { setStatus('Load Town failed: ' + e.message); }
