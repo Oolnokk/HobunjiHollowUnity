@@ -117,6 +117,7 @@
         const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, qty, 'shipping', shipPrice(key) || 1, bin[key], null, { eligibleCount: qty }) : null; // The actual deposited coats determine the sale price.
         if (hideSale && !hideSale.ok) continue;
         bin[key] -= qty;
+        window.AlchemySystem?.reconcilePotionContainer?.(key, shippingBoxInstance?.getPotionProvenance?.(), bin[key]); // Sold bottles must leave the shipping stock's ingredient ledger.
         sold += qty;
         const subtotal = hideSale ? hideSale.total : qty * (shipPrice(key) || 0);
         earned += window.TownMine?.applySaleBonus?.(subtotal) ?? subtotal; // Town Value sale bonus after individual valuation.
@@ -344,6 +345,7 @@
     const object = objectCfg();
     const fallbackCfg = object.fallback;
     const bin = Object.fromEntries(Object.keys(deps.BASE_PRICES).map(key => [key, 0]));
+    const potionProvenance = {}; // Companion ingredient ledger for this in-memory Shipping Box; no non-item keys in bin.
     const position = { col, row };
     const furniture = window.ProceduralFurniture;
     const sourceRecipe = furniture?.CATALOG?.[fallbackCfg.sourceCatalogKey];
@@ -474,6 +476,7 @@
           const originalCount = deps.inventory[item.key]; // Used to transfer exact coat metadata before the bag count changes.
           const hideMove = window.AnimalHides?.isHide?.(item.key) ? window.AnimalHides.transfer(item.key, 1, 'pack', 'shipping', originalCount, shipPrice(item.key)) : null;
           if (hideMove && !hideMove.ok) return { ok: false, message: 'This hide is no longer available.' };
+          if (window.AlchemySystem?.parseBrewedItemKey?.(item.key) && !window.AlchemySystem.movePotionProvenance(item.key, 1, 'deposit', potionProvenance, bin[item.key] || 0)) return { ok: false, message: 'Could not transfer potion ingredients.' };
           deps.inventory[item.key]--;
           deps.clampInventoryStack(item.key);
           bin[item.key] = (bin[item.key] || 0) + 1;
@@ -488,6 +491,7 @@
         return { ok: false, message: labels.unknownAction };
       },
       getContents() { return bin; },
+      getPotionProvenance() { return potionProvenance; }, // Allows midnight sales to reconcile the non-inventory recipe records.
       getTotalItems() { return totalItems(); },
       depositItem(key, qty) {
         if (shipPrice(key) === undefined) return 0;
@@ -496,6 +500,7 @@
         const originalCount = deps.inventory[key]; // Source count must include the units being moved for legacy/untracked hide handling.
         const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'pack', 'shipping', originalCount, shipPrice(key)) : null;
         if (hideMove && !hideMove.ok) return 0;
+        if (window.AlchemySystem?.parseBrewedItemKey?.(key) && !window.AlchemySystem.movePotionProvenance(key, moved, 'deposit', potionProvenance, bin[key] || 0)) return 0;
         deps.inventory[key] -= moved;
         bin[key] = (bin[key] || 0) + moved;
         syncVisualTransform(Number(object.lidLiftWhenOccupied));
@@ -515,6 +520,7 @@
         const originalCount = bin[key]; // The Shipping Box owns the source counts until the return succeeds.
         const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'shipping', 'pack', originalCount, shipPrice(key), { pendingFirst: pendingSaleCounts[key] || 0 }) : null;
         if (hideMove && !hideMove.ok) return 0;
+        if (window.AlchemySystem?.parseBrewedItemKey?.(key) && !window.AlchemySystem.movePotionProvenance(key, moved, 'withdraw', potionProvenance, bin[key] || 0)) return 0;
         bin[key] -= moved;
         if ((pendingSaleCounts[key] || 0) > 0) {
           pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
@@ -530,6 +536,7 @@
       },
       reset() {
         Object.keys(bin).forEach(key => { bin[key] = 0; });
+        Object.keys(potionProvenance).forEach(key => { delete potionProvenance[key]; }); // A reset Shipping Box cannot retain phantom bottle batches.
         clearPendingSales();
         window.AnimalHides?.clearShipping?.(); // Reset the transit records whenever the in-memory Shipping Box resets.
         lastObservedDay = currentCalendarDay();

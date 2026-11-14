@@ -152,7 +152,7 @@ assert.strictEqual(ikmcDebug.count, 1, 'full wraparound porch must have exactly 
 assert.strictEqual(ikmcDebug.doors[0].furnitureKey, 'door', 'one-tile IKMC tunnel must retain the regular door');
 assert.strictEqual(ikmcDebug.doors[0].tile.col, 7);
 assert.strictEqual(ikmcDebug.doors[0].tile.row, 42);
-assert(Math.abs(ikmcDebug.doors[0].position.y - 0.68) < 1e-9, 'door sill must rise by the 0.18-tile porch height above the building elevation');
+assert(Math.abs(ikmcDebug.doors[0].position.y - (0.5 + ikmcPiece.entryDoorRise)) < 1e-9, 'door attachment must apply only its authored sill offset above the building elevation');
 assert(Math.abs(ikmcDebug.doors[0].rotationYDeg + 180) < 1e-9, 'south-facing authored entrance must rotate north toward the new town road');
 assert(ikmcGroup.children[0]?.userData?.entryTunnelDoorFurniture, 'visible authored IKMC door must actually attach to building group');
 

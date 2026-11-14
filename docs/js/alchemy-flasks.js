@@ -337,7 +337,8 @@
     if (!aimState || aimState.phase !== 'releasing') return false;
     const state = aimState; // Captured aim state becomes immutable projectile data.
     if ((deps.inventory?.[state.itemKey] || 0) < 1) { cancelAim(); return false; }
-    deps.inventory[state.itemKey]--; deps.clampInventoryStack?.(state.itemKey); // Exactly-once consumption at authored release.
+    // Build the flight sprite before debiting the inventory: a throw that changes the
+    // stack's majority must retain the color of the bottle that was thrown.
     const origin = deps.getHeldWorldPosition?.() || { x: deps.getPlayer().x / (deps.TILE || 64), y: 1, z: deps.getPlayer().y / (deps.TILE || 64) }; // Hand/source transform.
     const tile = deps.TILE || 64; // Target conversion.
     const finalAim = coveredTarget(state.requestedX ?? state.targetX, state.requestedY ?? state.targetY, origin); // Release-frame socket is authoritative even if the held animation moved.
@@ -347,6 +348,7 @@
     const flaskmasterPower = window.TrinketSystem?.combatMultiplier?.('flaskPower') || 1; // Captured at the wearer's throw release; swapping trinkets mid-flight cannot change the payload.
     const flaskmasterRadius = window.TrinketSystem?.combatMultiplier?.('flaskRadius') || 1; // Keeps the flight's impact footprint equal to its authored release-time bonus.
     projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target, flaskmasterPower, flaskmasterRadius }));
+    deps.inventory[state.itemKey]--; deps.clampInventoryStack?.(state.itemKey); // Debit only after the thrown sprite has captured the outgoing majority tint.
     emitSfx('release', { itemKey: state.itemKey, recipeId: state.definition.id, x: origin.x, y: origin.y, z: origin.z });
     aimState = null;
     if (targetRing) targetRing.visible = false;

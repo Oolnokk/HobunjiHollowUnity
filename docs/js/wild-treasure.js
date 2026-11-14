@@ -303,7 +303,9 @@
           parts.push('💰' + loot.gold + 'g');
         }
         if (loot.potionKey) {
-          deps.inventory[loot.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[loot.potionKey] || 0) + 1);
+          const beforePotion = Math.max(0, Number(deps.inventory[loot.potionKey]) || 0); // Before-count for clipped treasure grants.
+          deps.inventory[loot.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, beforePotion + 1);
+          window.AlchemySystem?.recordPotionAcquisition?.(loot.potionKey, deps.inventory[loot.potionKey] - beforePotion); // Found bottles use the stable real-reagent recipe.
           parts.push((deps.ITEM_DEFS[loot.potionKey]?.icon || '🧪') + ' ' + (deps.ITEM_DEFS[loot.potionKey]?.label || 'Potion'));
         }
         if (loot.recipeItemKey) {

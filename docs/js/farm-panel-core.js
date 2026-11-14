@@ -1730,9 +1730,14 @@
     if (!deps.hasFarmPermission('storage')) return;
     const n = Math.min(amount, deps.inventory[key] || 0);
     if (n <= 0) return;
+    const store = deps._loadWorldStorage(); // World-level stock holds provenance even when another character withdraws it.
+    const potion = window.AlchemySystem?.parseBrewedItemKey?.(key); // Only authored alchemy stacks require the provenance sidecar.
+    if (potion) {
+      const batches = store.__alchemyPotionBatches || (store.__alchemyPotionBatches = {}); // Reserved world-storage metadata ignored by ordinary item rows.
+      if (!window.AlchemySystem.movePotionProvenance(key, n, 'deposit', batches, store[key] || 0)) return;
+    }
     deps.inventory[key] -= n;
     deps.clampInventoryStack(key);
-    const store = deps._loadWorldStorage();
     store[key] = (store[key] || 0) + n;
     deps._saveWorldStorage(store);
     deps.saveMemberWorldData();
@@ -1742,8 +1747,14 @@
   function withdrawFromFarmStorage(key, amount) {
     if (!deps.hasFarmPermission('storage')) return;
     const store = deps._loadWorldStorage();
-    const n = Math.min(amount, store[key] || 0);
+    const room = Math.max(0, (window.InventoryStacks?.MAX_TOTAL || 9999) - (deps.inventory[key] || 0)); // Do not discard bottles when a bag is already full.
+    const n = Math.min(amount, store[key] || 0, room);
     if (n <= 0) return;
+    const potion = window.AlchemySystem?.parseBrewedItemKey?.(key); // Restore the original colors instead of treating returned potions as newly found.
+    if (potion) {
+      const batches = store.__alchemyPotionBatches || (store.__alchemyPotionBatches = {}); // Persist the shared stock's remaining ingredient counts.
+      if (!window.AlchemySystem.movePotionProvenance(key, n, 'withdraw', batches, store[key] || 0)) return;
+    }
     store[key] -= n;
     if (store[key] <= 0) delete store[key];
     deps._saveWorldStorage(store);
