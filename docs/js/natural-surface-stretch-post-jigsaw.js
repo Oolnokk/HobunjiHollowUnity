@@ -220,12 +220,17 @@
   function formatPixelProbePerimeterDiagnostics() {
     const surface = window.HobunjiSurfaceStretchUV?.snapshot?.(); // Used as the authoritative live mapping state for mobile-visible verification.
     if (!surface) return '';
+    const parity = window.WildernessCliffSurfaceParity?.snapshot?.() || {}; // Used to display individual solves avoided and material factory reuse on mobile.
+    const repair = window.NaturalSurfaceStretchRuntime?.snapshot?.() || {}; // Used to display how often valid UV islands skip expensive repair.
+    const post = window.NaturalSurfaceStretchPostJigsaw?.snapshot?.() || {}; // Used to display geometry-owner notifications avoided across auxiliary render passes.
     const lines = [
       '',
       '=== Natural surface edge-preserving stretch diagnostics ===',
       `Installed=${!!window.HobunjiSurfaceStretchUV?.installed} loaderGeneration=${window.HobunjiNaturalSurfaceUvLoaderVersion || '-'} mapping=${surface.mapping || '-'} sourcePNGEdge=${((surface.edgeSourceFraction || 0) * 100).toFixed(1)}% nativePNGWorldSize=${Number(surface.edgeReferenceWorldSize || 0).toFixed(2)} protectedEdgeWorld=${Number(surface.edgeWorldSize || 0).toFixed(3)}`,
       `Central mapper: geometries=${surface.mappedGeometries || 0} meshes=${surface.mappedMeshes || 0} surfaces=${surface.patches || 0} fallbacks=${surface.fallbacks || 0}`,
-      `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures}`,
+      `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures} fallbackMeshes=${crossMeshStats.perMeshFallbacks}`,
+      `Terrain pass savings: deferredUV=${parity.crossMeshUvsDeferred || 0} materialCacheHits=${parity.farmMaterialCacheHits || 0} validUVSkips=${repair.validUvFastPaths || 0} sceneDuplicateSkips=${repair.sceneAddDuplicateInspectionsAvoided || 0}`,
+      `Render notice scans: performed=${post.geometryNoticeScans || 0} avoided=${post.geometryNoticeScansAvoided || 0} terrainNotifications=${post.terrainGeometryNotifications || 0}`,
     ]; // Used as a compact self-contained readout that can be pasted back without DevTools.
     const recent = Array.isArray(surface.recent) ? surface.recent.slice(-6) : []; // Used to show which natural surfaces most recently passed through the central mapper.
     if (!recent.length) {
