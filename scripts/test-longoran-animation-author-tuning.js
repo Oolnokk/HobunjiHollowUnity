@@ -35,17 +35,34 @@ function makeContext(pathname) {
   return win;
 }
 
+// Previously stored default slider values must not override a newly approved repository posture.
+state.set('hobunjiLongoranSpeciesTuning.v1', JSON.stringify({ spineProfile: { hunch: .75, sway: 0, kyphosis: .8 }, gaitProfile: { cadence: .66 } }));
+state.set('hobunjiLongoranAuthorTuning.v1', JSON.stringify({
+  male: { spine: { hunch: .37, sway: 0, kyphosis: .8 }, gait: { lurchDegrees: 22 } },
+  female: { spine: { hunch: .75, sway: 0, kyphosis: .8 }, gait: { lurchDegrees: 19 } },
+}));
+const migrated = makeContext('/index.html');
+assert.equal(migrated.HobunjiLongoranSpecies.spineProfile.hunch, .1, 'old global default hunch migrates without changing explicit gait');
+assert.equal(migrated.HobunjiLongoranSpecies.spineProfile.kyphosis, 1);
+assert.equal(migrated.HobunjiLongoranSpecies.gaitProfile.cadence, .66);
+assert.equal(migrated.HobunjiLongoranSpecies.spineFor('female').hunch, .1, 'former female author defaults migrate');
+assert.equal(migrated.HobunjiLongoranSpecies.spineFor('female').kyphosis, 1);
+assert.equal(migrated.HobunjiLongoranSpecies.spineFor('male').hunch, .37, 'user-customized male posture survives default migration');
+assert.equal(migrated.HobunjiLongoranSpecies.gaitFor('male').lurchDegrees, 22, 'independently customized gait survives');
+assert.equal(JSON.parse(state.get('hobunjiLongoranAuthorTuning.v1')).female.spine.hunch, .1, 'migration persists across reloads');
+state.clear();
 const author = makeContext('/tools/animation-author/index.html');
 const api = author.HobunjiLongoranSpecies;
 assert(api, 'Longoran bridge must load in Animation Author');
 for (const gender of ['male','female']) {
   assert(author.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::' + gender], 'Longoran ' + gender + ' needs a rig descriptor in the full-character lineup');
   assert.equal(api.gaitFor(gender).lurchDegrees, 19);
-  assert.equal(api.spineFor(gender).hunch, .75);
+  assert.equal(api.spineFor(gender).hunch, .1);
+  assert.equal(api.spineFor(gender).kyphosis, 1); // Canonical 100% hook applies to both genders.
 }
 assert.equal(api.setAuthorTuning('male', { spine: { hunch: .91, kyphosis: .94 }, gait: { lurchDegrees: 22.5, cadence: .59, dragSide: 'left' } }), true);
 assert.equal(api.spineFor('male').hunch, .91);
-assert.equal(api.spineFor('female').hunch, .75, 'The female profile must not inherit male editor changes');
+assert.equal(api.spineFor('female').hunch, .1, 'The female profile must not inherit male editor changes');
 assert.equal(api.gaitFor('male').lurchDegrees, 22.5);
 assert.equal(api.gaitFor('male').dragSide, 'left');
 assert.equal(api.gaitFor('female').lurchDegrees, 19);
@@ -88,7 +105,7 @@ assert(bones.at(-1).position.y < 0, 'Hunch must lower the neck alongside the for
 
 vm.runInNewContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), { window: gameplay });
 assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'male' }).hunch, .91);
-assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'female' }).hunch, .75);
+assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'female' }).hunch, .1);
 assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'male', spine: { hunch: .2 } }).hunch, .2, 'Explicit NPC/Maskbound posture must win');
 
 assert(authored.includes("longoranRow('Hunch'") && authored.includes("longoranRow('Kyphosis'"), 'Full Character Scale matches Enemy Loadout Editor spine controls');
@@ -104,4 +121,17 @@ assert(authored.includes('rebuildLongoranFeet'), 'Gait changes must rebuild the 
 assert(authored.includes('toggleLongoranWalk'), 'Walking pose must be previewable in the author');
 assert(authored.includes('stopLongoranWalk();'), 'Closing the tool must dispose the opt-in preview');
 assert(fs.readFileSync('docs/game.js', 'utf8').includes("this._npcRunning || appearance.speciesId === 'longoran'"), 'Ordinary walking Longoran NPCs must apply the same body pitch as their feet');
+// Cross-editor cache version parity prevents stale meshes or feet after runtime integration.
+const liveEntry = fs.readFileSync('docs/index.html', 'utf8'); // Current live gameplay script references.
+const attackEntry = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Attack author's shared script references.
+const enemyEntry = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'); // Enemy preview's shared script references.
+const sharedScriptToken = (source, name) => source.match(new RegExp(name + '\\.js\\?v=([A-Za-z0-9_-]+)'))?.[1] || null; // Looks up each script's cache token across live and authoring contexts.
+for (const name of ['held-action-animations', 'procedural-leg-animation']) {
+  const liveToken = sharedScriptToken(liveEntry, name); // One canonical runtime version consumed by all previews.
+  assert.ok(liveToken, `game needs a cache-versioned ${name} runtime`);
+  for (const [label, entry] of [['animation author', authorHtml], ['attack editor', attackEntry], ['enemy preview', enemyEntry]]) {
+    assert.equal(sharedScriptToken(entry, name), liveToken, `${label} must use the same ${name} revision as gameplay`);
+  }
+}
+
 console.log('Longoran male/female Animation Author tuning, persistence, gameplay posture and walking preview: PASS');

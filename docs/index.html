@@ -200,7 +200,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261113longoranscales5"></script>
+  <script src="js/held-action-animations.js?v=20261114uniformRigStrideMerge1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -218,7 +218,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261112longoran1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261114uniformRigStrideMerge1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -387,8 +387,8 @@
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <script src="js/combat/ranged-weapons.js?v=20261113inputrouter1"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20261110checkcd5b1b7"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20261114musicReticleMerge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -397,7 +397,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261114areaDuel1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261114uniformRigAreaDuelMerge1"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -636,7 +636,7 @@
   <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
-  <script src="js/melody-camera-framing.js?v=20261112dynamicMelodyAudit3"></script><!-- Plate-discovered, geometry-fitted camera framing; loaded before every score producer. -->
+  <script src="js/melody-camera-framing.js?v=20261114musicReticleMerge1"></script><!-- Plate-discovered, geometry-fitted camera framing; loaded before every score producer. -->
   <script src="js/puzzle-cave-melody.js?v=20261114melodyTempoPer1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
@@ -2915,7 +2915,7 @@
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
-  <!-- Festival systems (ancestors, NPC activities, rituals and UI). Maintained in js/bootstrap/classic-groups/festival.js. -->
+  <!-- Festival scripts are maintained in their manifest. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="festival"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
@@ -2963,7 +2963,7 @@
        call time, not parse time) but all four must load before
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
-  <!-- NPC agenda, scheduling, authored social rules, pathfinding and wilderness AI. Maintained in js/bootstrap/classic-groups/npc-schedule.js. -->
+  <!-- NPC scheduling, social policy, and pathing scripts are maintained in their manifest. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups1" data-classic-group="npc-schedule"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when

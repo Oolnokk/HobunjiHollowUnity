@@ -7,7 +7,14 @@
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Longoran system.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const DEFAULT_GAIT_PROFILE = Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }); // Bulwark's strongest existing forward lurch.
-  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.75, sway: 0, kyphosis: 0.8 }); // Default standing curl, independent of the walking lean.
+  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.1, sway: 0, kyphosis: 1 }); // User-exported male/female posture; independent of walking gait.
+  const LEGACY_SPINE_DEFAULT = Object.freeze({ hunch: 0.75, sway: 0, kyphosis: 0.8 }); // Identifies untouched author saves from before the canonical posture update.
+  function migrateUnchangedSpine(value) {
+    if (!value || typeof value !== 'object') return value;
+    if (Number(value.hunch) !== LEGACY_SPINE_DEFAULT.hunch || Number(value.kyphosis) !== LEGACY_SPINE_DEFAULT.kyphosis
+        || (value.sway != null && Number(value.sway) !== LEGACY_SPINE_DEFAULT.sway)) return value;
+    return { ...value, ...DEFAULT_SPINE_PROFILE }; // Only stale defaults migrate; custom spine settings and gait values remain intact.
+  }
   const GAIT_PROFILE = { ...DEFAULT_GAIT_PROFILE }; // Mutable shared object: new avatars and the Animation Author read the same tuned values.
   const SPINE_PROFILE = { ...DEFAULT_SPINE_PROFILE }; // Mutable shared object: CharacterSpine uses these values on build and on preview refresh.
   const TUNING_STORAGE_KEY = 'hobunjiLongoranSpeciesTuning.v1'; // Same-origin authoring override, read back by gameplay on the next load.
@@ -56,7 +63,12 @@
   }
   try {
     const saved = window.localStorage?.getItem(TUNING_STORAGE_KEY); // Authoring edits made on this origin carry through into gameplay on reload.
-    if (saved) applyTuning(JSON.parse(saved), { persist: false });
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const spine = migrateUnchangedSpine(parsed?.spineProfile);
+      applyTuning({ ...parsed, spineProfile: spine }, { persist: false });
+      if (spine !== parsed?.spineProfile) window.localStorage?.setItem(TUNING_STORAGE_KEY, JSON.stringify({ ...parsed, spineProfile: spine }));
+    }
   } catch (error) { console.warn('[LongoranSpecies] ignored invalid saved tuning:', error); }
   const POPULATION_WEIGHTS = Object.freeze({ tletingan: 95 * 5 / 6, nuhongan: 95 / 6, longoran: 5 }); // Per-Slagothim roll: 5% Longoran, Nuhongan at 20% of Tletingan.
   function rollSubspecies(random = Math.random) {
@@ -117,7 +129,13 @@
   {
     try {
       const parsed = JSON.parse(window.localStorage?.getItem(AUTHOR_STORAGE_KEY) || '{}');
-      for (const gender of GENDERS) if (parsed[gender]) authorOverrides[gender] = { spine: normalizedSpine(parsed[gender].spine), gait: normalizedGait(parsed[gender].gait) };
+      let migrated = false; // Only re-save profiles that still had the former canonical spine values.
+      for (const gender of GENDERS) if (parsed[gender]) {
+        const spine = migrateUnchangedSpine(parsed[gender].spine);
+        if (spine !== parsed[gender].spine) { parsed[gender].spine = spine; migrated = true; }
+        authorOverrides[gender] = { spine: normalizedSpine(spine), gait: normalizedGait(parsed[gender].gait) };
+      }
+      if (migrated) window.localStorage?.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(parsed));
     } catch (_) { /* Editor remains usable with defaults if storage is unavailable. */ }
   }
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
