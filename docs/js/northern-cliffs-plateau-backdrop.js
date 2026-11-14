@@ -134,7 +134,7 @@
         ? layout.topY
         : layout.topY * ROCK_SHOULDER_RATIO * Math.pow(slopeFraction, 1.35);
       const worldX = layout.centerX + ((pos.getX(i) - bounds.min.x) / spanX - 0.5) * layout.width;
-      const worldZ = layout.frontZ - ((pos.getZ(i) - bounds.min.z) / spanZ) * layout.depth;
+      const worldZ = layout.frontZ - layout.depth + ((pos.getZ(i) - bounds.min.z) / spanZ) * layout.depth; // Preserve the source rock's triangle winding: mirroring Z would turn every cap normal downward and break top/side recognition.
       pos.setXYZ(i, worldX, worldY, worldZ);
     }
     const capTolerance = Math.max(1e-4, layout.topY * 1e-6); // Float32 world-height tolerance for identifying genuinely flat top triangles.
