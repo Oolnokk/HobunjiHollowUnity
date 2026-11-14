@@ -99,6 +99,9 @@ for(const axis of ['x','z']){
   assert.equal(first.geometry,originalFirst,'start stair geometry and cross-section unchanged');
   assert.equal(last.geometry,originalLast,'end stair geometry and cross-section unchanged');
   const [start,end]=extrema(middle.geometry,axis);
+  const surfacePoint=new Vector3(axis==='x'?.5:0,0,axis==='z'?.5:0);
+  stretch.mapLocalPoint(middle,surfacePoint);
+  near(surfacePoint[axis],1,'named deck surface coordinates follow the stretched mesh');
   near(start,-2,'deck starts flush against left landing');
   near(end,2,'deck ends flush against right landing');
   assert.equal(group.userData.tileSpanDiagnostics.errors.length,0);
@@ -115,6 +118,9 @@ for(const axis of ['x','z']){
   near(first.position[axis],-1.25,'minimum footprint restores start');
   near(last.position[axis],1.25,'minimum footprint restores end');
   assert.equal(middle.geometry,originalDeck,'minimum footprint restores original geometry');
+  const restoredPoint=new Vector3(axis==='x'?.5:0,0,axis==='z'?.5:0);
+  stretch.mapLocalPoint(middle,restoredPoint);
+  near(restoredPoint[axis],.5,'surface mapping resets with the original shape');
   data.tileSpan.enabled=false;
   stretch.apply(group,data);
   assert.equal(group.userData.tileSpanDiagnostics,undefined,'disabling removes active span diagnostics');
@@ -240,5 +246,8 @@ assert.match(author,/tileSpanRole:'stretch'/,'bridge has flexible center geometr
 assert.match(author,/tileSpanRole:role/,'bridge has fixed stair ends');
 assert.match(runtime,/setTileSpan\(group\)/,'runtime invokes span deformation');
 assert.match(runtime,/record\.tileSpanTiles/,'placed instances can specify the saved span length');
+assert.match(runtime,/setItemPlacements\(group, data, data\.itemPlacements\)/,'live resizing refreshes attached item positions');
+assert.match(runtime,/createSurfaceAnchor\(group, surfaceId, anchor\.userData/,'live resizing updates cached surface anchors');
+assert.match(html,/FurnitureTileSpan\?\.mapLocalPoint/,'editor recognized surfaces follow the preview deformation');
 assert.ok(index.indexOf('js/furniture-tile-span.js')<index.indexOf('js/authored-furniture-runtime.js'),'game loads stretch solver before authored furniture');
 console.log('Furniture tile-span tests passed: rigid stair ends, two-axis surface-rooted deck, preview resizing, restore, broken roots and integration.');
