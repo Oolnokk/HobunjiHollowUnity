@@ -37,21 +37,39 @@ function extractFunction(name) {
 
 const harness = `
   ${extractFunction('positiveModulo')}
+  ${extractFunction('isInitialized')}
+  ${extractFunction('getAbsoluteGameHour')}
   ${extractFunction('setTime01Raw')}
   ${extractFunction('activeClockHours')}
   ${extractFunction('previewAfterHours')}
   ${extractFunction('advanceOnePassageHour')}
-  global.__test = { advanceOnePassageHour, setTime01Raw };
+  global.__test = { advanceOnePassageHour, setTime01Raw, getAbsoluteGameHour };
 `;
 
-function buildFixture(calendar) {
-  const sandbox = { deps: { calendar, NIGHT_HOUR: 22, MORNING_HOUR: 6 }, performance, setTimeout, Math, Number, global: {} };
+function buildFixture(calendar, nightHour = 22) {
+  const sandbox = { deps: { calendar, NIGHT_HOUR: nightHour, MORNING_HOUR: 6 }, performance, setTimeout, Math, Number, global: {} };
   vm.createContext(sandbox);
   vm.runInContext(harness, sandbox, { filename: 'calendar-system-extract.js' });
   return sandbox.global.__test;
 }
 
 async function main() {
+  // --- Full 24-hour day: absolute timers must not reverse at midnight ------
+  {
+    const calendar = { day: 5, time01: .74 }; // 23:45, before the visible clock wraps to 00:00.
+    const test = buildFixture(calendar, 30);
+    const before = test.getAbsoluteGameHour();
+    calendar.time01 = .76; // 00:15 of the same calendar raw day; the sky clock visually wraps.
+    const after = test.getAbsoluteGameHour();
+    assert(after > before, 'absolute hour may NEVER move backward at visible midnight');
+    assert(Math.abs((after - before) - .48) < 1e-9, 'the new midnight crossing is exactly 0.48 represented hours');
+    calendar.time01 = 1 - 1e-8; // Just before 06:00 raw-day rollover.
+    const dawnBefore = test.getAbsoluteGameHour();
+    calendar.day++; calendar.time01 = 0;
+    const dawnAfter = test.getAbsoluteGameHour();
+    assert(dawnAfter > dawnBefore && dawnAfter - dawnBefore < 1e-6,
+      'the 06:00 day rollover follows continuous time instead of inserting an eight-hour gap');
+  }
   // --- Same-day advance: resolves without ever entering the poll loop ------
   {
     const test = buildFixture({ day: 5, time01: 0.1 });
