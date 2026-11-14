@@ -224,7 +224,10 @@
         }),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
         const grid=CG.create({originX:localBounds.minX-1,originZ:localBounds.minZ-1,baseY:floor.y,
           cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:3});
-        const side=SIDES[wing.side],entryKey=key(wing.entry.x,wing.entry.z);
+        const side=SIDES[wing.side],portal=portalAt(floor.floor,wing.side); // Source of truth for the physical mouth shared with the shaft.
+        const portalMouth=new Set((portal.mouth||[]).map(([x,z])=>key(x,z))); // Used by both wing voxel borders and rendered face walls.
+        if(portalMouth.size!==plan.options.corridorWidth||[...portalMouth].some(cell=>!tiles.has(cell)))
+          throw new Error('Wing passage mouth does not match its corridor: '+wing.id);
         // A thin voxel boundary matches the actually drawn stone walls.
         // Filling the entire room's rectangular allocation with SOLID created
         // enormous INVISIBLE walls/roofs that swallowed projectiles passing
@@ -234,7 +237,7 @@
           added.add(key(x,z));
           for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
             if(tiles.has(key(x+dx,z+dz)))continue;
-            if(key(x,z)===entryKey&&dx===-side.dx&&dz===-side.dz)continue; // Open the direct shaft-to-wing portal.
+            if(portalMouth.has(key(x,z))&&dx===-side.dx&&dz===-side.dz)continue; // Leave every shaft-to-wing passage lane unobstructed.
             border.add(key(x+dx,z+dz));
           }
         }
@@ -246,10 +249,10 @@
         const wallsX=[],wallsZ=[];
         for(const [x,z] of walkCells){
           // The third entry is the way the wall faces: toward the walkable cell that owns it.
-          if(!tiles.has(key(x-1,z))&&!(key(x,z)===entryKey&&side.dx===1))wallsZ.push([x,z+.5,1]);
-          if(!tiles.has(key(x+1,z))&&!(key(x,z)===entryKey&&side.dx===-1))wallsZ.push([x+1,z+.5,-1]);
-          if(!tiles.has(key(x,z-1))&&!(key(x,z)===entryKey&&side.dz===1))wallsX.push([x+.5,z,1]);
-          if(!tiles.has(key(x,z+1))&&!(key(x,z)===entryKey&&side.dz===-1))wallsX.push([x+.5,z+1,-1]);
+          if(!tiles.has(key(x-1,z))&&!(portalMouth.has(key(x,z))&&side.dx===1))wallsZ.push([x,z+.5,1]);
+          if(!tiles.has(key(x+1,z))&&!(portalMouth.has(key(x,z))&&side.dx===-1))wallsZ.push([x+1,z+.5,-1]);
+          if(!tiles.has(key(x,z-1))&&!(portalMouth.has(key(x,z))&&side.dz===1))wallsX.push([x+.5,z,1]);
+          if(!tiles.has(key(x,z+1))&&!(portalMouth.has(key(x,z))&&side.dz===-1))wallsX.push([x+.5,z+1,-1]);
         }
         const wingName='floor'+floor.floor+'-'+wing.side;
         if(root.RuinWallFaces)masonry(wingName,floor.y,supportedCells,wallsX,wallsZ);

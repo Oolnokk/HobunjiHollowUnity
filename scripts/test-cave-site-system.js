@@ -428,6 +428,78 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   if (contents === 'mushroom_cave') assert(extended.caveMushrooms.some(far), 'hidden grotto includes a pickable Duskcap');
 }
 
+// Mineable partitions must ALWAYS conceal an actual destination, not a vacant
+// chamber or only ordinary mine/mushroom/crypt decoration. The doorway is
+// reserved before those layers, and the backup chest uses normal lockpicking.
+{
+  let rockDoors = 0; // Count hidden puzzle-cave portals exercised across independent deterministic seeds.
+  let surpriseCaches = 0; // Count chest-only fallbacks on non-cache cave histories.
+  let walledChambers = 0; // Number of generated side chambers that must all have a real payoff.
+  for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave', 'ruin_entrance', 'trapped_cache']) {
+    for (let index = 0; index < 14; index++) {
+      const map = extendedCave(profile(`map_i_rewarded_wall_${contents}_${index}`, contents));
+      const plan = Cave.__test.plansByMapId.get(map.id);
+      if (!plan.separator) {
+        assert(!map.oreRocks.some(rock => rock.caveSeparator), 'an omitted side chamber leaves no false mineable wall');
+        continue;
+      }
+      walledChambers++;
+      const hidden = new Set(plan.separator.farKeys);
+      const hiddenRuin = !!(plan.ruinEntrance && hidden.has(plan.ruinEntrance.col + ',' + plan.ruinEntrance.row));
+      const reward = hiddenRuin ? plan.ruinEntrance : (plan.puzzleDoor || plan.cache);
+      assert(reward, `${map.id}: breakable walls never hide a rewardless chamber`);
+      assert(hidden.has(reward.col + ',' + reward.row), `${map.id}: the reward is physically behind the barrier`);
+      assert.equal(map.caveSitePlan.extension?.rewardType,
+        hiddenRuin ? 'ruin_entrance' : plan.puzzleDoor ? 'puzzle_cave' : 'cache', `${map.id}: diagnostics disclose the actual destination`);
+      assert(map.floor.some(([col,row]) => col === reward.col && row === reward.row),
+        `${map.id}: destination stands on carved floor, not empty rock`);
+      if (hiddenRuin) {
+        assert(map.caveRuinEntrance?.id === reward.id, `${map.id}: the real full-size ruin threshold is retained`);
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'ruinEntranceDoor'),
+          `${map.id}: ruin destination uses the existing modeled ruin doorway`);
+      } else if (plan.puzzleDoor) {
+        rockDoors++;
+        assert(map.exits.some(exit => exit.id === reward.id && exit.targetMap === reward.targetMapId),
+          `${map.id}: puzzle doorway has a working native cave transition`);
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'cliffDoor'),
+          `${map.id}: the destination has a visible modeled door`);
+      } else {
+        if (contents !== 'trapped_cache') surpriseCaches++;
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'ruinDungeonChestT2'),
+          `${map.id}: backup destination is a visible physical chest`);
+        assert(map.caveCache?.id === reward.id, `${map.id}: cache has the existing saved lockpicking identity`);
+      }
+    }
+  }
+  assert(walledChambers > 0, 'regression fixture exercises at least one destructible wall');
+  assert(rockDoors > 0, 'spacious hidden chambers can contain genuine Puzzle Cave entrances');
+  assert(surpriseCaches > 0, 'non-cache histories also generate the guaranteed secret cache outcome');
+}
+
+// A trapped-cache cave can have BOTH a sealed independent Puzzle Cave door and
+// its normal cache. The optional chest must fall back to reachable cave floor,
+// not remove the valid mined wall when the secret room is too crowded for both.
+{
+  const map = baseMap('bonus_cache_constrained_hidden_door');
+  const plan = { separator:null, cache:null, traps:[] }; // Real builder fields needed for an extra lockpickable chest.
+  const blocked = new Set(map.oreRocks.map(rock => rock.col + ',' + rock.row)); // Keep original ore out of chest footprints.
+  assert(Cave.__test.installMineableSeparator(map, rngFactory('constrained-hidden-door'), blocked, plan),
+    'fixture has a mineable wall separating substantial rooms');
+  const far = new Set(plan.separator.farKeys); // All hidden tiles intentionally reserved by the independent door's other fixtures.
+  for(const key of far) blocked.add(key);
+  const allFloor = Cave.__test.floorTiles(map);
+  assert.equal(Cave.__test.addCacheLayer(map, rngFactory('cache-behind-door'), allFloor, blocked, plan), false,
+    'extra cache is impossible in a fully reserved hidden room');
+  assert(Cave.__test.addCacheLayer(map, rngFactory('cache-near-side'), allFloor, blocked, plan, false, true),
+    'normal chest can be placed on the accessible side without erasing the sealed Puzzle Cave destination');
+  assert(plan.separator && map.oreRocks.some(rock => rock.caveSeparator),
+    'the reward-protecting destructible wall still exists after the chest fallback');
+  assert(plan.separator.nearKeys.includes(plan.cache.col + ',' + plan.cache.row),
+    'the bonus cache is reachable without requiring an extra secret-room slot');
+  assert(map.caveProps.some(prop => prop.id === plan.cache.id && prop.key === 'ruinDungeonChestT2'),
+    'the accessible fallback is a physical lockpickable chest, not invisible loot');
+}
+
 // Ruin-door caves are also eligible, provided the extension doesn't wall off the
 // mandatory doorway. Use an explicit near-side doorway fixture to isolate that
 // safety rule from the more restrictive full SDF ruin-door placement.
@@ -439,6 +511,15 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   assert(Cave.__test.installMineableSeparator(ruinSide, rngFactory('ruin-side'), reserved, plan), 'near-side ruin door permits a mined annex');
   assert(plan.separator.nearKeys.includes('3,3'), 'the original ruin door remains accessible before any rock is broken');
   assert(!plan.separator.farKeys.includes('3,3'), 'the ruin doorway is never sealed behind the annex wall');
+
+  const concealedRuin=baseMap('ruin_hidden_extension'); // Full doorway already occupies the far chamber of a connected two-room cave.
+  const hiddenPlan={ruinEntrance:{col:9,row:3},separator:null}; // Existing fully generated ruin doorway; the wall is not allowed to fabricate one.
+  assert(Cave.__test.installMineableSeparator(concealedRuin,rngFactory('ruin-hidden'),new Set(),hiddenPlan,true),
+    'hidden-ruin mode can install a separator without inventing or relocating the doorway');
+  assert(hiddenPlan.separator.farKeys.includes('9,3'),
+    'the authentic ruin threshold can deliberately lie on the mined side when space permits');
+  assert(!hiddenPlan.separator.nearKeys.includes('9,3'),
+    'the full-size door cannot be reached before blasting the wall in hidden-ruin mode');
 
   // An animal Den-Mother and her eggs must never be locked inside a pocket:
   // the optional extension adds loot, it must not alter the boss encounter.

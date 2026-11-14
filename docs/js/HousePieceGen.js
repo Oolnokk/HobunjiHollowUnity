@@ -1445,8 +1445,9 @@
     var faces   = (piece.base && piece.base.faces) ? piece.base.faces : [];
     var pcells  = (piece.footprint && piece.footprint.cells) ? piece.footprint.cells : [];
     var extensions = piece.footprint && piece.footprint.extensions || {};
+    var balconyCells = (piece.balconies || []).flatMap(function(b) { return b.cells || []; }); // Custom balcony footprints contribute to a full-footprint building's rotation envelope.
     var anchorCells = piece.placementOrigin === 'fullFootprint'
-      ? pcells.concat(extensions.entryTunnels || [], extensions.tallEntryTunnels || [], extensions.chimneys || [], extensions.porches || [], extensions.porchStairs || [], extensions.railings || [])
+      ? pcells.concat(extensions.entryTunnels || [], extensions.tallEntryTunnels || [], extensions.chimneys || [], extensions.porches || [], extensions.porchStairs || [], extensions.railings || [], balconyCells)
       : pcells; // Full-footprint pieces include outward porches in their placement bounding box; legacy houses still anchor on the structural shell.
     var gc      = Math.floor((piece.gridSize || 18) / 2);
     var minCX   = anchorCells.length ? Math.min.apply(null, anchorCells.map(function(c) { return c.x; })) : gc;
@@ -1497,7 +1498,7 @@
     var matCanvas = opts.matCanvas || new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
     var matDoorOpening = opts.matDoorOpening || new THREE.MeshBasicMaterial({ color: 0x080808, side: THREE.DoubleSide });
 
-    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1 };
+    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1, balcony: 1 }; // Shared natural wood finish for roof terraces.
     var STONE_TAGS = { chimney: 1 };
 
     var group       = new THREE.Group();

@@ -13,7 +13,20 @@ const structuralFaces = piece.base.faces.filter(face => face.outpostFace); // Th
 assert(structuralFaces.every(face => face.tag === 'wall'), 'structural Outpost walls must retain stacked-log tags');
 assert.deepEqual(new Set(structuralFaces.map(face => face.outpostFace)), new Set(['bottom','top','south','north','west','east']));
 assert.equal(structuralFaces.filter(face => face.outpostFace === 'south').length, 3, 'south wall must have two solid jamb runs and an overhead lintel');
-assert(piece.base.faces.some(face => face.tag === 'roof'), 'the Outpost must have a visible pitched roof');
+assert.equal(piece.roof.style, 'flat-balcony', 'the IKMC must have a flat rooftop rather than a gabled shingle roof');
+assert.equal(piece.base.faces.some(face => face.tag === 'roof'), false, 'no sloping roof faces may survive beneath the rooftop deck');
+const balcony = piece.balconies.find(entry => entry.id === 'ikmc_rooftop'); // The authored 6×4 structural footprint, excluding the preserved 42-tile porch.
+assert(balcony, 'IKMC needs its named roof balcony');
+assert.equal(balcony.heightMode, 'wall', 'the top surface follows the outpost wall height');
+assert.deepEqual(balcony.cells, piece.footprint.cells, 'roof deck must match the entire structural shell tile-for-tile');
+assert.equal(balcony.access.furnitureId, 'f_ikmc_roof_ladder', 'the balcony must be entered through its interior ladder');
+assert.equal(balcony.access.openingTile.x, 13);
+assert.equal(balcony.access.openingTile.y, 8);
+const roofDeck = piece.base.faces.filter(face => face.balconyGenerated && face.tag === 'balcony' && face.extensionFace === 'top'); // One walkable surface per painted roof tile.
+assert.equal(roofDeck.length, 24, 'one roof surface exists for each shell tile');
+assert(roofDeck.every(face=>face.v.every(vertex=>Math.abs(vertex[1] - piece.base.height) < 1e-8)), 'deck top is exactly the authored wall height');
+assert(piece.base.faces.some(face=>face.balconyGenerated && face.tag === 'railing'), 'balcony edges must receive fine-colliding railing geometry');
+assert(piece.base.faces.some(face=>face.balconyGenerated && face.tag === 'doorOpening' && face.extensionFace === 'hatch'), 'roof access must show the dark hatch patch');
 const mouthFaces = piece.base.faces.filter(face => face.tag === 'entryTunnel' && face.exteriorEntryOpening); // Physical framing at the outside end of the covered tunnel.
 assert(mouthFaces.length > 0 && mouthFaces.every(face => face.extensionFace === 'south'), 'the visible doorframe must face the approach');
 assert.deepEqual(piece.footprint.door, { x: 13, y: 11 }, 'authored doorway belongs outside the shell, within its covered entry tunnel');

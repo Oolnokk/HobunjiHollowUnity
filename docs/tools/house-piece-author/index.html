@@ -50,7 +50,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
-<script src="../../js/panel-ui.js?v=20261114hspan1704"></script>
+<script src="../../js/panel-ui.js?v=20261114rooftopPanel2"></script>
 <script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <!-- Classic global-THREE (r128) build, loaded alongside the ES-module three
@@ -82,7 +82,8 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <script src="../../js/clothing-weaving-system.js?v=20261104hPatternQuick1435a"></script>
 <script src="../../js/furniture-pattern-surfaces.js?v=20261109shellaudit1"></script>
 <script src="../../js/house-wall-fixtures.js?v=20261027h412254d"></script>
-<script src="../../js/HousePieceGen.js?v=20261114fullporch2"></script>
+<script src="../../js/house-balconies.js?v=20261114roofbalcony1"></script>
+<script src="../../js/HousePieceGen.js?v=20261114rooftop1"></script>
 </head>
 <body>
 <div class="app" id="hpaApp">
@@ -128,6 +129,23 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
       </div>
       <div class="row"><button id="applyGridBtn" type="button">Apply grid</button><button id="clearFootprintBtn" class="danger" type="button">Clear footprint</button></div>
       <canvas id="gridCanvas" width="900" height="900"></canvas>
+      <div class="section" id="balconyAuthorPanel">
+        <h2>Raised balconies</h2>
+        <div class="row"><select id="balconySelect" aria-label="Active balcony" style="flex:1"></select>
+          <button id="addBalconyBtn" type="button">+ Balcony</button><button id="deleteBalconyBtn" type="button">Delete</button></div>
+        <div class="grid2"><div class="field"><label>Deck height</label><select id="balconyHeightMode">
+          <option value="wall">Top of walls</option><option value="custom">Custom height</option></select></div>
+          <div class="field"><label>Custom deck Y (above local origin)</label><input id="balconyHeight" type="number" step="0.05" value="1.4"></div></div>
+        <div class="row"><label><input id="balconyRails" type="checkbox" checked> Rail exposed edges</label>
+          <label><input id="balconyFlatRoof" type="checkbox"> Replace gabled roof with rooftop balcony</label></div>
+        <div class="grid2">
+          <div class="field"><label>Interior map ID</label><input id="balconyAccessMap" placeholder="map_i_building"></div>
+          <div class="field"><label>Entrance furniture ID</label><input id="balconyAccessFurniture" placeholder="f_roof_ladder"></div>
+          <div class="field"><label>Interior ladder column</label><input id="balconyAccessCol" type="number" min="0" step="1" value="0"></div>
+          <div class="field"><label>Interior ladder row</label><input id="balconyAccessRow" type="number" min="0" step="1" value="0"></div>
+        </div>
+        <p class="hint" id="balconyStatus">Add a balcony, paint its footprint, then paint a hatch tile within it. The linked interior furniture interaction provides access; no outdoor staircase is generated.</p>
+      </div>
       <div class="row">
         <button id="toolFootprint" class="active" type="button">Paint footprint</button>
         <button id="toolDoor" type="button">Mark door <span class="qhelp" data-help="hpa-door">?</span></button>
@@ -136,6 +154,8 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
         <button id="toolTallEntryTunnel" type="button">Tall entry tunnel (150%)</button>
         <button id="toolChimney" type="button">Chimney</button>
         <button id="toolPorch" type="button">Porch</button>
+        <button id="toolBalcony" type="button">Balcony footprint</button>
+        <button id="toolBalconyHatch" type="button">Balcony hatch</button>
         <button id="toolPorchStair" type="button">Porch stair</button>
         <button id="toolRailing" type="button">Fence/railing</button>
         <button id="toolErase" type="button">Erase</button>
@@ -417,7 +437,7 @@ const state = {
   library: []
 };
 function makeBlankPiece(){
-  return { id: newId('piece'), name:'highland_room_01', type:'room', preset:'highland', gridSize:18, tileSize:1, footprint:{cells:[], door:null, connectors:[], extensions:{entryTunnels:[], tallEntryTunnels:[], chimneys:[], porches:[], porchStairs:[], railings:[]}}, base:{height:2, wallThickness:.15, groundY:0, faces:[]}, roof:{tubeRadius:0.08,tubeSpacing:0.4,overhang:1,wallOriginReach:false,direction:'u',lift:0.04,flipX:true,flipY:false,flipZ:true,shingleScaleX:1.2,shingleScaleY:1.2,shingleScaleZ:2,shingleRotX:-10,shingleRotZ:0,peakRotateAway:false,secondLayer:true,secondLayerAcross:0.25,secondLayerLift:0.15,secondLayerOverhang:1,secondLayerWallOriginReach:false,secondLayerShingleScaleX:1.2,secondLayerShingleScaleY:1.2,secondLayerShingleScaleZ:2,secondLayerShingleRotX:0,secondLayerPeakRotateAway:true,secondLayerFlipX:true,secondLayerFlipY:false,secondLayerFlipZ:true,peakRotate:true,peakRotateStrength:0.05,peakRotateFalloff:0,highlandInterlockOffset:0.25,shingleSource:''}, assets:[] };
+  return { id: newId('piece'), name:'highland_room_01', type:'room', preset:'highland', gridSize:18, tileSize:1, footprint:{cells:[], door:null, connectors:[], extensions:{entryTunnels:[], tallEntryTunnels:[], chimneys:[], porches:[], porchStairs:[], railings:[]}}, base:{height:2, wallThickness:.15, groundY:0, faces:[]}, roof:{tubeRadius:0.08,tubeSpacing:0.4,overhang:1,wallOriginReach:false,direction:'u',lift:0.04,flipX:true,flipY:false,flipZ:true,shingleScaleX:1.2,shingleScaleY:1.2,shingleScaleZ:2,shingleRotX:-10,shingleRotZ:0,peakRotateAway:false,secondLayer:true,secondLayerAcross:0.25,secondLayerLift:0.15,secondLayerOverhang:1,secondLayerWallOriginReach:false,secondLayerShingleScaleX:1.2,secondLayerShingleScaleY:1.2,secondLayerShingleScaleZ:2,secondLayerShingleRotX:0,secondLayerPeakRotateAway:true,secondLayerFlipX:true,secondLayerFlipY:false,secondLayerFlipZ:true,peakRotate:true,peakRotateStrength:0.05,peakRotateFalloff:0,highlandInterlockOffset:0.25,shingleSource:''}, assets:[], balconies:[] };
 }
 function cellKey(x,y){ return `${x},${y}`; }
 function parseCellKey(k){ const [x,y]=k.split(',').map(Number); return {x,y}; }
@@ -439,6 +459,8 @@ const chimneySet = new Set(); // Used by the gray grid tool and generated chimne
 const porchSet = new Set(); // Used by the brown grid tool and generated porch deck slabs.
 const porchStairSet = new Set(); // Used by the tan grid tool and generated porch stair blocks.
 const railingSet = new Set(); // Used by the fence/railing grid tool; generates posts and automatic horizontal connectors.
+const balconySet = new Set(); // Painted tiles belonging only to the selected elevated balcony.
+let activeBalconyId = null; // Selects the balcony whose cells and height are being edited.
 
 const HISTORY_LIMIT = 80;
 const history = { undo: [], redo: [], pending: null };
@@ -553,6 +575,7 @@ function ensureFootprintExtensions(piece=state.piece){
   if(!piece.footprint) piece.footprint = { cells:[], door:null, connectors:[] };
   if(!piece.footprint.extensions) piece.footprint.extensions = {};
   for(const key of ['entryTunnels','tallEntryTunnels','chimneys','porches','porchStairs','railings']) if(!Array.isArray(piece.footprint.extensions[key])) piece.footprint.extensions[key]=[];
+  if(!Array.isArray(piece.balconies)) piece.balconies=[]; // Older piece JSON has no balcony layer.
   return piece.footprint.extensions;
 }
 function syncSetsFromPiece(){
@@ -572,6 +595,8 @@ function syncSetsFromPiece(){
   for(const c of ext.porches||[]) porchSet.add(cellKey(c.x,c.y));
   for(const c of ext.porchStairs||[]) porchStairSet.add(cellKey(c.x,c.y));
   for(const c of ext.railings||[]) railingSet.add(cellKey(c.x,c.y));
+  activeBalconyId = state.piece.balconies.find(b=>b.id===activeBalconyId)?.id || state.piece.balconies[0]?.id || null;
+  balconySet.clear(); for(const c of (state.piece.balconies.find(b=>b.id===activeBalconyId)?.cells||[])) balconySet.add(cellKey(c.x,c.y));
 }
 function syncPieceFromSets(){
   state.piece.footprint.cells = fromSet(footprintSet);
@@ -585,6 +610,8 @@ function syncPieceFromSets(){
   ext.porches = fromSet(porchSet);
   ext.porchStairs = fromSet(porchStairSet);
   ext.railings = fromSet(railingSet);
+  const active=state.piece.balconies?.find(b=>b.id===activeBalconyId);
+  if(active) active.cells=fromSet(balconySet); // Selected elevated footprint is saved separately from the structural shell.
 }
 
 const gridCanvas = $('gridCanvas');
@@ -1012,6 +1039,11 @@ function drawGrid(){
     if(chimneySet.has(k)){ gridCtx.fillStyle='rgba(165,174,184,.88)'; gridCtx.fillRect(px+cell*.14,py+cell*.14,cell*.72,cell*.72); }
     if(porchSet.has(k)){ gridCtx.fillStyle='rgba(139,91,49,.88)'; gridCtx.fillRect(px+cell*.08,py+cell*.08,cell*.84,cell*.84); }
     if(porchStairSet.has(k)){ gridCtx.fillStyle='rgba(218,184,128,.92)'; gridCtx.fillRect(px+cell*.12,py+cell*.12,cell*.76,cell*.76); }
+    if(balconySet.has(k)){ gridCtx.fillStyle='rgba(197,128,248,.77)'; gridCtx.fillRect(px+cell*.12,py+cell*.12,cell*.76,cell*.76); }
+    if(activeBalcony()?.access?.openingTile?.x===x && activeBalcony()?.access?.openingTile?.y===y){
+      gridCtx.fillStyle='#060606';gridCtx.fillRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56);
+      gridCtx.strokeStyle='#ffffff';gridCtx.lineWidth=2;gridCtx.strokeRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56);
+    }
     if(railingSet.has(k)){ gridCtx.fillStyle='rgba(91,70,48,.96)'; gridCtx.beginPath(); gridCtx.arc(px+cell*.5, py+cell*.5, Math.max(3,cell*.16), 0, Math.PI*2); gridCtx.fill(); }
     if(doorCell && doorCell.x===x && doorCell.y===y){ gridCtx.fillStyle='rgba(255,184,77,.95)'; gridCtx.fillRect(px+cell*.2,py+cell*.2,cell*.6,cell*.6); }
     if(connectorSet.has(k)){ gridCtx.strokeStyle='rgba(139,255,166,.95)'; gridCtx.lineWidth=Math.max(2,cell*.10); gridCtx.strokeRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56); }
@@ -1033,10 +1065,17 @@ function paintCell(ev){
   if(state.tool==='tallEntryTunnel'){ entryTunnelSet.delete(k); tallEntryTunnelSet.add(k); }
   if(state.tool==='chimney') chimneySet.add(k);
   if(state.tool==='porch') porchSet.add(k);
+  if(state.tool==='balcony' && activeBalconyId) balconySet.add(k);
+  if(state.tool==='balconyHatch'){
+    const balcony=activeBalcony(); // Hatch must belong to that balcony's accessible walking footprint.
+    if(!balcony || !balconySet.has(k)) {log('Paint the balcony deck beneath the hatch first.','warn');return;}
+    balcony.access={...balcony.access,type:'interiorFurniture',openingTile:{x:c.x,y:c.y}};
+  }
   if(state.tool==='porchStair') porchStairSet.add(k);
   if(state.tool==='railing') railingSet.add(k);
-  if(state.tool==='erase'){ footprintSet.delete(k); if(doorCell && doorCell.x===c.x && doorCell.y===c.y) doorCell=null; connectorSet.delete(k); entryTunnelSet.delete(k); tallEntryTunnelSet.delete(k); chimneySet.delete(k); porchSet.delete(k); porchStairSet.delete(k); railingSet.delete(k); }
-  syncPieceFromSets(); drawGrid(); rebuildFootprintOverlay(); refreshExport();
+  if(state.tool==='erase'){ footprintSet.delete(k); if(doorCell && doorCell.x===c.x && doorCell.y===c.y) doorCell=null; connectorSet.delete(k); entryTunnelSet.delete(k); tallEntryTunnelSet.delete(k); chimneySet.delete(k); porchSet.delete(k); porchStairSet.delete(k); railingSet.delete(k); balconySet.delete(k);if(activeBalcony()?.access?.openingTile?.x===c.x&&activeBalcony()?.access?.openingTile?.y===c.y)
+      delete activeBalcony().access.openingTile; }
+  syncPieceFromSets(); if(['balcony','balconyHatch','erase'].includes(state.tool)) refreshBalconyGeometry(); drawGrid(); rebuildFootprintOverlay(); refreshExport();
 }
 let painting=false; gridCanvas.addEventListener('pointerdown',ev=>{pushUndo('Paint grid footprint');painting=true;gridCanvas.setPointerCapture(ev.pointerId);paintCell(ev)}); gridCanvas.addEventListener('pointermove',ev=>{if(painting)paintCell(ev)}); gridCanvas.addEventListener('pointerup',()=>painting=false); gridCanvas.addEventListener('pointercancel',()=>painting=false);
 
@@ -1109,7 +1148,7 @@ if (typeof ResizeObserver !== 'undefined') {
 }
 function animate(){ requestAnimationFrame(animate); try{ controls.update(); renderer.render(scene,camera); }catch(err){ log('RENDER ERROR: '+(err?.message||err),'error'); } }
 
-function faceMaterial(face){ if(state.selectedFaceIds.has(face.sourceWallFaceId ?? face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; if(face.tag==='canvas') return matCanvas; if(face.tag==='doorOpening') return matDoorOpening; return matFace; }
+function faceMaterial(face){ if(state.selectedFaceIds.has(face.sourceWallFaceId ?? face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='balcony') return matPorch; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; if(face.tag==='canvas') return matCanvas; if(face.tag==='doorOpening') return matDoorOpening; return matFace; }
 function faceNormal(face){ const a=new THREE.Vector3(...face.v[0]), b=new THREE.Vector3(...face.v[1]), c=new THREE.Vector3(...face.v[2]); return b.clone().sub(a).cross(c.clone().sub(a)).normalize(); }
 function faceCenter(face){ const c=new THREE.Vector3(); for(const v of face.v)c.add(new THREE.Vector3(...v)); return c.multiplyScalar(1/face.v.length); }
 function faceBasis(face){
@@ -1140,6 +1179,7 @@ function rebuildFootprintOverlay(){
   for(const k of tallEntryTunnelSet) addOverlayCell(k, matTallEntryOverlay, .019, .82);
   for(const k of chimneySet) addOverlayCell(k, matChimneyOverlay, .020, .76);
   for(const k of porchSet) addOverlayCell(k, matPorchOverlay, .018, .88);
+  for(const k of balconySet) addOverlayCell(k, matPorchOverlay, .03, .63);
   for(const k of porchStairSet) addOverlayCell(k, matStairOverlay, .022, .78);
   for(const k of railingSet) addOverlayCell(k, matRailingOverlay, .026, .64);
 }
@@ -1591,6 +1631,8 @@ function addHouseExtensionsToFaces(faces, info, y0, baseHeight, roofHeight){
   const porchCount=addPorchExtensions(faces, info, y0);
   const stairCount=addPorchStairExtensions(faces, info, y0);
   const railingCount=addRailingExtensions(faces, info, y0);
+  if(state.piece.roof?.style==='flat-balcony') for(let i=faces.length-1;i>=0;i--) if(faces[i].tag==='roof'||faces[i].roofRidgeCap) faces.splice(i,1);
+  if(window.HouseBalconies) faces.push(...window.HouseBalconies.generateFaces(state.piece));
   state.piece.extensionGeneration={ entryTunnelGroups:entryCount, tallEntryTunnelGroups:tallEntryCount, chimneyGroups:chimneyCount, porches:porchCount, porchStairs:stairCount, railings:railingCount, generatedAt:new Date().toISOString() };
 }
 function generatePlainBaseFromFootprint(recordUndo=true){
@@ -1617,8 +1659,12 @@ function generateOutpostBaseFromFootprint(recordUndo=true){
     addFace([p(info.minX,y0,info.minZ),p(info.minX,y0,info.maxZ),p(info.minX,y1,info.maxZ),p(info.minX,y1,info.minZ)], 'wall', {outpostFace:'west'}),
     addFace([p(info.maxX,y0,info.maxZ),p(info.maxX,y0,info.minZ),p(info.maxX,y1,info.minZ),p(info.maxX,y1,info.maxZ)], 'wall', {outpostFace:'east'}),
   ];
+  // Outposts may have porch/rail/entry-tunnel extensions; preserve the shared generator instead of reverting to a bare six-face box.
+  const currentInfo=footprintInfo();
+  if(currentInfo) addHouseExtensionsToFaces(state.piece.base.faces,currentInfo,y0,y1-y0,0);
+  window.HouseBalconies?.regenerate(state.piece);
   state.selectedFaceIds.clear(); rebuildFaceMeshes(); rebuildRoofPreview(); frameScene(); refreshExport();
-  log('Generated Outpost: exactly six wall-tagged prism faces; stacked generated logs are the preset default.');
+  log('Generated Outpost prism and attached extensions; rooftop balconies remain independently editable.');
   return true;
 }
 function generateFlatSlabFromFootprint(recordUndo=true){
@@ -2386,7 +2432,7 @@ function renderAssetList(){ const el=$('assetList'); el.innerHTML=''; for(const 
 function rebuildAssetsFromMetadata(){ assetGroup.clear(); assetMeshes.clear(); transform.detach(); for(const a of state.piece.assets){ const placeholder=new THREE.Mesh(new THREE.BoxGeometry(.8,.8,.8), new THREE.MeshStandardMaterial({color:0xffd26e,transparent:true,opacity:.55})); placeholder.name=a.name||a.source||a.id; placeholder.userData.assetId=a.id; placeholder.position.set(a.position.x,a.position.y,a.position.z); placeholder.rotation.set(deg(a.rotation.x),deg(a.rotation.y),deg(a.rotation.z)); placeholder.scale.set(a.scale.x,a.scale.y,a.scale.z); assetGroup.add(placeholder); assetMeshes.set(a.id,placeholder); } renderAssetList(); }
 
 function saveCurrentPiece(){ pushUndo('Save current piece to library'); syncPieceFromInputs(); const copy=deepCleanPiece(state.piece); const existing=state.library.findIndex(p=>p.id===copy.id); if(existing>=0) state.library[existing]=copy; else state.library.push(copy); state.selectedPieceId=copy.id; renderPieceList(); refreshExport(); log(`Saved ${copy.name} to piece library.`); }
-function loadPiece(piece){ state.piece=JSON.parse(JSON.stringify(piece)); state.gridSize=state.piece.gridSize; state.tileSize=state.piece.tileSize; $('gridSize').value=state.gridSize; $('tileSize').value=state.tileSize; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value=state.piece.preset || 'custom'; $('baseHeight').value=state.piece.base.height; $('wallThickness').value=state.piece.base.wallThickness; $('groundY').value=state.piece.base.groundY; $('wallStyle').value=state.piece.wallStyle||''; const loadedLogWall=state.piece.logWall||{}; $('logWallSeed').value=loadedLogWall.seed||'cabin-log-1'; $('logWallDiameter').value=finite(loadedLogWall.logDiameter,.34); $('logWallWonk').value=finite(loadedLogWall.trunkWonk,.18); $('logWallGap').value=finite(loadedLogWall.courseGap,-.03); state.selectedFaceIds.clear(); state.selectedAssetId=null; transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; syncSetsFromPiece(); syncRoofInputsFromPiece(); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildAssetsFromMetadata(); rebuildRoofPreview(); frameScene(); log(`Loaded piece ${state.piece.name}.`); }
+function loadPiece(piece){ state.piece=JSON.parse(JSON.stringify(piece)); state.gridSize=state.piece.gridSize; state.tileSize=state.piece.tileSize; $('gridSize').value=state.gridSize; $('tileSize').value=state.tileSize; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value=state.piece.preset || 'custom'; $('baseHeight').value=state.piece.base.height; $('wallThickness').value=state.piece.base.wallThickness; $('groundY').value=state.piece.base.groundY; $('wallStyle').value=state.piece.wallStyle||''; const loadedLogWall=state.piece.logWall||{}; $('logWallSeed').value=loadedLogWall.seed||'cabin-log-1'; $('logWallDiameter').value=finite(loadedLogWall.logDiameter,.34); $('logWallWonk').value=finite(loadedLogWall.trunkWonk,.18); $('logWallGap').value=finite(loadedLogWall.courseGap,-.03); state.selectedFaceIds.clear(); state.selectedAssetId=null; transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; syncSetsFromPiece(); renderBalconyControls(); syncRoofInputsFromPiece(); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildAssetsFromMetadata(); rebuildRoofPreview(); frameScene(); log(`Loaded piece ${state.piece.name}.`); }
 function renderPieceList(){ const el=$('pieceList'); el.innerHTML=''; for(const p of state.library){ const div=document.createElement('div'); div.className='listItem'+(p.id===state.selectedPieceId?' selected':''); div.innerHTML=`<span><b>${escapeHtml(p.name)}</b><br><span class="chip">${p.type} · ${p.footprint.cells.length} cells · ${p.base.faces.length} faces · ${p.assets.length} assets</span></span><button type="button">Load</button>`; div.onclick=()=>{state.selectedPieceId=p.id;renderPieceList();}; div.querySelector('button').onclick=(ev)=>{ev.stopPropagation(); pushUndo(`Load library piece ${p.name}`); state.selectedPieceId=p.id; loadPiece(p); renderPieceList();}; el.appendChild(div); } if(!state.library.length) el.innerHTML='<div class="hint">No saved pieces yet.</div>'; }
 function duplicateSelectedPiece(){ const p=state.library.find(x=>x.id===state.selectedPieceId); if(!p){log('Select a library piece first.','warn');return;} pushUndo('Duplicate library piece'); const copy=JSON.parse(JSON.stringify(p)); copy.id=newId('piece'); copy.name=`${copy.name}_copy`; state.library.push(copy); state.selectedPieceId=copy.id; renderPieceList(); refreshExport(); log(`Duplicated ${p.name}.`); }
 function deleteSelectedPiece(){ const p=state.library.find(x=>x.id===state.selectedPieceId); if(!p){log('Select a library piece first.','warn');return;} pushUndo('Delete library piece'); state.library=state.library.filter(x=>x.id!==p.id); state.selectedPieceId=null; renderPieceList(); refreshExport(); log(`Deleted library piece ${p.name}.`); }
@@ -2415,11 +2461,94 @@ function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pu
 function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',door:'toolDoor',connector:'toolConnector',entryTunnel:'toolEntryTunnel',tallEntryTunnel:'toolTallEntryTunnel',chimney:'toolChimney',porch:'toolPorch',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
-$('toolFootprint').onclick=()=>setTool('footprint'); $('toolDoor').onclick=()=>setTool('door'); $('toolConnector').onclick=()=>setTool('connector'); $('toolEntryTunnel').onclick=()=>setTool('entryTunnel'); $('toolTallEntryTunnel').onclick=()=>setTool('tallEntryTunnel'); $('toolChimney').onclick=()=>setTool('chimney'); $('toolPorch').onclick=()=>setTool('porch'); $('toolPorchStair').onclick=()=>setTool('porchStair'); $('toolRailing').onclick=()=>setTool('railing'); $('toolErase').onclick=()=>setTool('erase');
+
+function activeBalcony() { return state.piece.balconies?.find(b=>b.id===activeBalconyId) || null; }
+function renderBalconyControls() {
+  const select=$('balconySelect'), current=activeBalcony();
+  if(!select) return;
+  select.replaceChildren(new Option('No balcony selected',''));
+  for(const balcony of state.piece.balconies||[]) select.add(new Option(balcony.id,balcony.id));
+  select.value=activeBalconyId||'';
+  const access=current?.access||{}; // Authoring record for the linked interior ladder and its roof opening.
+  $('balconyAccessMap').value=access.mapId||'';
+  $('balconyAccessFurniture').value=access.furnitureId||'';
+  $('balconyAccessCol').value=access.interiorTile?.col??0;
+  $('balconyAccessRow').value=access.interiorTile?.row??0;
+  $('balconyHeightMode').value=current?.heightMode==='custom'?'custom':'wall';
+  $('balconyHeight').value=current?.height ?? state.piece.base.height;
+  $('balconyHeight').disabled=!current || current.heightMode!=='custom';
+  $('balconyRails').checked=current?.railings!==false;
+  $('balconyFlatRoof').checked=state.piece.roof?.style==='flat-balcony';
+  $('balconyStatus').textContent=current
+    ? current.id+': '+balconySet.size+' tiles · '+(current.heightMode==='custom'?('Y '+current.height):'wall top')+' · select Balcony footprint to paint'
+    : 'Add a balcony to paint an independently elevated footprint.';
+}
+function refreshBalconyGeometry() {
+  if(!window.HouseBalconies) { log('Shared balcony generator failed to load.', 'error'); return; }
+  window.HouseBalconies.regenerate(state.piece);
+  rebuildFaceMeshes(); // Authoritative preview: the same serialized tagged faces game.js renders.
+  renderBalconyControls();
+}
+$('balconySelect').addEventListener('change',e=>{
+  syncPieceFromSets();activeBalconyId=e.target.value||null;balconySet.clear();
+  for(const cell of (activeBalcony()?.cells||[])) balconySet.add(cellKey(cell.x,cell.y));
+  renderBalconyControls();drawGrid();rebuildFootprintOverlay();
+});
+$('addBalconyBtn').onclick=()=>{
+  pushUndo('Add rooftop balcony'); syncPieceFromSets();
+  const id='balcony_'+newId('deck'); // Stable ID for this editor-authored elevated deck.
+  state.piece.balconies.push({id,cells:[],heightMode:'wall',height:state.piece.base.height,railings:true,railHeight:.72});
+  activeBalconyId=id; balconySet.clear();setTool('balcony');refreshBalconyGeometry();drawGrid();refreshExport();
+};
+$('deleteBalconyBtn').onclick=()=>{
+  if(!activeBalconyId)return;pushUndo('Delete rooftop balcony');
+  state.piece.balconies=state.piece.balconies.filter(b=>b.id!==activeBalconyId);
+  activeBalconyId=state.piece.balconies[0]?.id||null;balconySet.clear();
+  for(const cell of (activeBalcony()?.cells||[])) balconySet.add(cellKey(cell.x,cell.y));
+  refreshBalconyGeometry();drawGrid();refreshExport();
+};
+for(const id of ['balconyHeightMode','balconyHeight','balconyRails']){
+  $(id).addEventListener('change',()=>{
+    const current=activeBalcony(); if(!current)return;pushUndo('Edit rooftop balcony height or railings');
+    current.heightMode=$('balconyHeightMode').value;
+    current.height=Math.max(0.05,finite($('balconyHeight').value,state.piece.base.height));
+    current.railings=$('balconyRails').checked;
+    refreshBalconyGeometry();refreshExport();
+  });
+}
+for(const id of ['balconyAccessMap','balconyAccessFurniture','balconyAccessCol','balconyAccessRow']){
+  $(id).addEventListener('change',()=>{
+    const balcony=activeBalcony();if(!balcony)return;
+    pushUndo('Set balcony interior access');
+    balcony.access={...balcony.access,
+      type:'interiorFurniture',
+      mapId:$('balconyAccessMap').value.trim(),
+      furnitureId:$('balconyAccessFurniture').value.trim(),
+      interiorTile:{col:Math.max(0,Math.floor(finite($('balconyAccessCol').value,0))),
+                    row:Math.max(0,Math.floor(finite($('balconyAccessRow').value,0)))}
+    }; // Serialized with the house piece for the same native transition as the IKMC roof ladder.
+    refreshBalconyGeometry();refreshExport();
+  });
+}
+$('balconyFlatRoof').addEventListener('change',()=>{
+  pushUndo('Change rooftop roof type');
+  const roof=state.piece.roof; // Stores the original sloping faces for nondestructive roof-type toggles.
+  if($('balconyFlatRoof').checked){
+    roof.preBalconyFaces=state.piece.base.faces.filter(f=>f.tag==='roof'||f.roofRidgeCap).map(f=>JSON.parse(JSON.stringify(f)));
+    roof.style='flat-balcony';
+  } else {
+    delete roof.style;
+    if(Array.isArray(roof.preBalconyFaces)) state.piece.base.faces.push(...roof.preBalconyFaces);
+    delete roof.preBalconyFaces;
+  }
+  refreshBalconyGeometry();refreshExport(); // Preserve custom doors, IKMC log walls, wraparound porches and authored attachments.
+});
+
+function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',door:'toolDoor',connector:'toolConnector',entryTunnel:'toolEntryTunnel',tallEntryTunnel:'toolTallEntryTunnel',chimney:'toolChimney',porch:'toolPorch',balcony:'toolBalcony',balconyHatch:'toolBalconyHatch',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
+$('toolFootprint').onclick=()=>setTool('footprint'); $('toolDoor').onclick=()=>setTool('door'); $('toolConnector').onclick=()=>setTool('connector'); $('toolEntryTunnel').onclick=()=>setTool('entryTunnel'); $('toolTallEntryTunnel').onclick=()=>setTool('tallEntryTunnel'); $('toolChimney').onclick=()=>setTool('chimney'); $('toolPorch').onclick=()=>setTool('porch'); $('toolBalcony').onclick=()=>setTool('balcony'); $('toolBalconyHatch').onclick=()=>setTool('balconyHatch'); $('toolPorchStair').onclick=()=>setTool('porchStair'); $('toolRailing').onclick=()=>setTool('railing'); $('toolErase').onclick=()=>setTool('erase');
 ['wallStyle','logWallSeed','logWallDiameter','logWallWonk','logWallGap'].forEach(function(id){ const el=$(id); if(el) el.addEventListener('change',function(){ pushUndo('Change wall construction'); syncPieceFromInputs(); rebuildFaceMeshes(); refreshExport(); }); });
 $('applyGridBtn').onclick=()=>{ pushUndo('Apply grid settings'); state.gridSize=THREE.MathUtils.clamp(Math.round(finite($('gridSize').value,18)),4,80); state.tileSize=Math.max(.05,finite($('tileSize').value,1)); state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Applied grid settings.'); };
-$('clearFootprintBtn').onclick=()=>{ pushUndo('Clear footprint markers'); footprintSet.clear(); doorCell=null; connectorSet.clear(); entryTunnelSet.clear(); tallEntryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); syncPieceFromSets(); drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Cleared all grid markers.'); };
+$('clearFootprintBtn').onclick=()=>{ pushUndo('Clear footprint markers'); footprintSet.clear(); doorCell=null; connectorSet.clear(); entryTunnelSet.clear(); tallEntryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); balconySet.clear(); syncPieceFromSets(); refreshBalconyGeometry(); drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Cleared all grid markers.'); };
 $('generateBaseBtn').onclick=generateBaseFromFootprint; $('applyPresetBtn').onclick=()=>applyBasePreset($('basePreset').value,true); $('resetBaseBtn').onclick=()=>{ pushUndo('Reset base faces'); state.piece.base.faces=[]; state.selectedFaceIds.clear(); rebuildFaceMeshes(); log('Cleared editable base faces.'); };
 $('multiSelectBtn').onclick=()=>{ state.multi=!state.multi; $('multiSelectBtn').textContent=state.multi?'Multi on':'Multi off'; $('multiSelectBtn').classList.toggle('active',state.multi); };
 $('subdivide2Btn').onclick=()=>subdivideSelected(2,2); $('subdivide3Btn').onclick=()=>subdivideSelected(3,3); $('extrudeBtn').onclick=extrudeSelected; $('moveFaceBtn').onclick=moveSelected; $('scaleFaceBtn').onclick=scaleSelected; $('markWallBtn').onclick=()=>setSelectedTag('wall'); $('markDoorBtn').onclick=()=>setSelectedTag('door'); $('markRoofBtn').onclick=()=>setSelectedTag('roof'); $('markRoofBtn2').onclick=()=>setSelectedTag('roof'); $('clearFaceTagBtn').onclick=()=>setSelectedTag(''); $('markCanvasBtn').onclick=()=>setSelectedTag('canvas'); $('markDoorOpeningBtn').onclick=()=>setSelectedTag('doorOpening');
@@ -2432,7 +2561,7 @@ for(const id of ['roofTubeRadius','roofTubeSpacing','roofTubeOverhang','roofWall
 $('removeAssetBtn').onclick=removeSelectedAsset; $('applyAssetTransformBtn').onclick=applyAssetTransform; $('snapAssetGroundBtn').onclick=snapAssetGround;
 for(const id of ['modeTranslate','modeRotate','modeScale']) $(id).onclick=()=>{ const mode=id.replace('mode','').toLowerCase(); transform.setMode(mode); for(const bid of ['modeTranslate','modeRotate','modeScale']) $(bid).classList.toggle('active',bid===id); };
 $('savePieceBtn').onclick=saveCurrentPiece; $('duplicatePieceBtn').onclick=duplicateSelectedPiece; $('deletePieceBtn').onclick=deleteSelectedPiece;
-$('newPieceBtn').onclick=()=>{ pushUndo('Start new piece'); state.piece=makeBlankPiece(); state.gridSize=18; state.tileSize=1; $('gridSize').value=18; $('tileSize').value=1; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value='highland'; state.selectedFaceIds.clear(); state.selectedAssetId=null; footprintSet.clear(); doorCell=null; connectorSet.clear(); entryTunnelSet.clear(); tallEntryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); faceGroup.clear(); assetGroup.clear(); roofGroup.clear(); faceMeshes.clear(); assetMeshes.clear(); transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; applyBasePreset('highland', false); renderAssetList(); refreshExport(); log('Started a new Highland architecture piece.'); };
+$('newPieceBtn').onclick=()=>{ pushUndo('Start new piece'); state.piece=makeBlankPiece(); state.gridSize=18; state.tileSize=1; $('gridSize').value=18; $('tileSize').value=1; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value='highland'; state.selectedFaceIds.clear(); state.selectedAssetId=null; footprintSet.clear(); doorCell=null; connectorSet.clear(); entryTunnelSet.clear(); tallEntryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); balconySet.clear(); activeBalconyId=null; renderBalconyControls(); faceGroup.clear(); assetGroup.clear(); roofGroup.clear(); faceMeshes.clear(); assetMeshes.clear(); transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; applyBasePreset('highland', false); renderAssetList(); refreshExport(); log('Started a new Highland architecture piece.'); };
 $('undoBtn').onclick=undo; $('redoBtn').onclick=redo;
 window.addEventListener('keydown', ev=>{ const key=(ev.key||'').toLowerCase(); if((ev.ctrlKey||ev.metaKey) && key==='z'){ ev.preventDefault(); if(ev.shiftKey) redo(); else undo(); } if((ev.ctrlKey||ev.metaKey) && key==='y'){ ev.preventDefault(); redo(); } });
 $('copyLibEntryBtn').onclick=async()=>{ const p=state.piece; const hid=(p.id||'house_'+p.name||'house_custom').toLowerCase().replace(/[^a-z0-9_]+/g,'_'); const entry={ [hid]:{ label:p.name||hid, wbOpts:{ unitMult:parseFloat($('gwUnitMult').value)||0.35, rockScale:parseFloat($('gwRockScale').value)||1.5, preScale:[1,1,parseFloat($('gwPreScaleZ').value)||0.6], brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03} }, wbGableOpts:{ unitMult:parseFloat($('gwGableUnitMult').value)||0.22, rockScale:parseFloat($('gwGableRockScale').value)||1.1 } } }; const txt=JSON.stringify(entry,null,2); try{ await navigator.clipboard.writeText(txt); log('Copied library entry for "'+hid+'" — paste into map editor House Library.'); }catch{ log('Copy failed.','warn'); } };

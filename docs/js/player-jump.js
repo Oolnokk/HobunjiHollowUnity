@@ -124,7 +124,7 @@
     if (window.InteriorDoorTiles?.blocksBox?.(area, x, z, CONFIG.radius)) return 'closed interior door';
     for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
       if (area === 'farm' && (access?.isHouseFootprint?.(col, row) || access?.isFarmBuildingCollisionTile?.(col, row))) return 'farm building';
-      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area)) return 'town building';
+      if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area, feetY)) return 'town building';
     }
     // Clearing one low piece of cover does not exempt any other blocker.
     if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05))
@@ -133,7 +133,8 @@
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,
     })) return 'dynamic blocker';
     if (deps.canPlayerOccupyAtHeight) {
-      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY))
+      const onBalcony=window.HobunjiWalkableElevation?.isBalconyAt?.(x,z,feetY,area); // Building's ground-level block cannot veto its rooftop support.
+      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY) && !onBalcony)
         return 'world collision';
     } else {
       // Non-game test owners fail closed, rather than granting global passage
@@ -428,6 +429,21 @@
     setElevation(player, state);
   }
 
+  function enterRoofSupport(hatch) {
+    const player = deps?.player;
+    if (!player || deps?.getCurrentArea?.() !== 'town' || player.health <= 0
+        || !Number.isFinite(hatch?.topY) || !Number.isInteger(hatch.col) || !Number.isInteger(hatch.row)) return false;
+    const x=player.x/deps.TILE,z=player.y/deps.TILE; // Exact tile of the confirmed interior-to-roof arrival.
+    if (Math.floor(x)!==hatch.col || Math.floor(z)!==hatch.row) return false;
+    if (player._freeJump) reset(player,'entering roof via ladder');
+    const roofState={area:'town',phase:'supported',feetY:hatch.topY,launchGround:hatch.topY,
+      supportId:hatch.balconyId,vy:0,elapsed:0,source:'roof ladder',safeX:x,safeZ:z,lastX:x,lastZ:z}; // Normal raised-platform walking and fall-off are the only movement owners.
+    player._freeJump=roofState;
+    setElevation(player,roofState);
+    debug.lastEvent='entered rooftop via confirmed interior ladder';
+    return true;
+  }
+
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
     if (!state) return false;
@@ -523,6 +539,7 @@
   window.PlayerJump = Object.freeze({
     init(injected) { deps = injected; },
     start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl,
+    enterRoofSupport, // Only the explicit interior exit action may put a grounded actor on a high rooftop.
     canOccupyAir: (x, z, feetY) => blockingReason(x, z, feetY) === null,
     syncExternalFlight: flight => {
       const player = deps?.player;
