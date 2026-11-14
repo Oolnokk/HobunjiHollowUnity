@@ -158,5 +158,13 @@
     return direction.transformDirection(deformation);
   }
 
-  global.FurnitureTileSpan = { normalize, roleOf, transformFor, mapLocalPoint, mapLocalDirection, apply };
+  function release(mesh) {
+    const pose = sourcePoses.get(mesh);
+    if (!pose) return;
+    if (pose.stretchedGeometry && pose.stretchedGeometry !== mesh.geometry) pose.stretchedGeometry.dispose?.();
+    if (pose.geometry && pose.geometry !== mesh.geometry) pose.geometry.dispose?.();
+    sourcePoses.delete(mesh); // Clean up the original GPU geometry after a stretched mesh is permanently removed.
+  }
+
+  global.FurnitureTileSpan = { normalize, roleOf, transformFor, mapLocalPoint, mapLocalDirection, apply, release };
 })(typeof window !== 'undefined' ? window : globalThis);
