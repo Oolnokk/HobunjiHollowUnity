@@ -27917,6 +27917,21 @@
       function eligibleWorldButtons(buttons) {
         return (buttons || []).filter(button => window.GameplayInputRouter?.canOfferWorldAction?.(button) !== false); // Combat-ineligible holds must relinquish their action slot to the normal weapon/tool actions.
       }
+      function adventuringToolActionButtons() {
+        const reticle = getReticleTile(); // Independent of the targeted world object or an underground floor tile.
+        const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col];
+        return (toolActions.adventuring || []).map((action, i) => {
+          const [fallbackIcon] = actionLabels[action];
+          return {
+            icon: attackActionIconHTML('adventuring', action, fallbackIcon),
+            label: window.HudUpdate.contextualActionLabel(action, tile),
+            action, inputAction: i === 0 ? 'action1' : 'action2',
+            style: i === 0 ? 'primary' : 'secondary',
+            allowed: canUseAction('adventuring', action, reticle.col, reticle.row),
+          };
+        });
+      }
+
       function computeActionButtonsImpl() {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
@@ -28051,6 +28066,7 @@
           // against farm-placed objects at those same numeric coordinates.
           const iObj = getInteriorInteractableAt(reticle.col, reticle.row);
           if (iObj) btns.push({ icon: iObj.interactIcon || '🔔', label: iObj.interactLabel || 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          if (!nearExit && heldMode === 'tool' && activeTool === 'adventuring') return adventuringToolActionButtons();
           return btns;
         }
 
@@ -28071,6 +28087,7 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
+          if (heldMode === 'tool' && activeTool === 'adventuring') return adventuringToolActionButtons(); // Torch fire takes priority over contextual ruin buttons, so swinging can ignite mechanisms.
           // Corpses settle in dens, mine floors and the test ruin too, but
           // this early-return branch never asked for them, so indoor kills
           // (skeletons, liches, bandits, den creatures) were never lootable.
@@ -28184,6 +28201,7 @@
           return btnsSpot;
         }
 
+        if (heldMode === 'tool' && activeTool === 'adventuring') return adventuringToolActionButtons(); // Tent hold and resource prompts cannot suppress the torch swing.
         // A branch nest claims Action 1 only while its 3D volume is under
         // the centered reticle and its Nestmother is no longer guarding it.
         const zoneNest = _isZoneArea(currentArea) && window.GameplayInputRouter?.canOfferWorldAction?.('nest_take') !== false
