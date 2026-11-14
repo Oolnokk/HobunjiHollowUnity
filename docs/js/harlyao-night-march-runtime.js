@@ -34,10 +34,13 @@
   const chunkCount = tiles => Math.max(1, Math.ceil(Math.max(1, num(tiles, 1)) / chunkTiles()));
   const expectedMemberCount = () => Math.max(1, Math.floor(num(cfg?.memberCount, 20)));
   function civilDay() {
-    const rawDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Absolute day survives the civil-midnight bridge.
-    if (Number.isFinite(rawDay)) return Math.max(1, Math.floor(rawDay));
-    const fallback = Number(deps?.calendar?.day ?? window.calendar?.day ?? 1); // Startup/test fallback.
-    return Math.max(1, Math.floor(Number.isFinite(fallback) ? fallback : 1));
+    // CalendarSystem.timeDebugSnapshot() formats dates, previews and checks UI; the beacon calls this accessor every render frame.
+    // Its rawDay is the same calendar.day value, so prefer the live source without running the diagnostics pipeline.
+    const liveDay = deps?.calendar?.day ?? window.calendar?.day; // Canonical absolute represented day, including the civil-midnight bridge.
+    const numericDay = Number(liveDay); // Avoid treating a missing/null calendar as raw day zero.
+    if (liveDay != null && Number.isFinite(numericDay)) return Math.max(1, Math.floor(numericDay));
+    const snapshotDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Parser-time/test fallback before combat dependencies exist.
+    return Math.max(1, Math.floor(Number.isFinite(snapshotDay) ? snapshotDay : 1));
   }
 
   function gameHour() {
