@@ -121,4 +121,17 @@ assert(authored.includes('rebuildLongoranFeet'), 'Gait changes must rebuild the 
 assert(authored.includes('toggleLongoranWalk'), 'Walking pose must be previewable in the author');
 assert(authored.includes('stopLongoranWalk();'), 'Closing the tool must dispose the opt-in preview');
 assert(fs.readFileSync('docs/game.js', 'utf8').includes("this._npcRunning || appearance.speciesId === 'longoran'"), 'Ordinary walking Longoran NPCs must apply the same body pitch as their feet');
+// Cross-editor cache version parity prevents stale meshes or feet after runtime integration.
+const liveEntry = fs.readFileSync('docs/index.html', 'utf8'); // Current live gameplay script references.
+const attackEntry = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Attack author's shared script references.
+const enemyEntry = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'); // Enemy preview's shared script references.
+const sharedScriptToken = (source, name) => source.match(new RegExp(name + '\\.js\\?v=([A-Za-z0-9_-]+)'))?.[1] || null; // Looks up each script's cache token across live and authoring contexts.
+for (const name of ['held-action-animations', 'procedural-leg-animation']) {
+  const liveToken = sharedScriptToken(liveEntry, name); // One canonical runtime version consumed by all previews.
+  assert.ok(liveToken, `game needs a cache-versioned ${name} runtime`);
+  for (const [label, entry] of [['animation author', authorHtml], ['attack editor', attackEntry], ['enemy preview', enemyEntry]]) {
+    assert.equal(sharedScriptToken(entry, name), liveToken, `${label} must use the same ${name} revision as gameplay`);
+  }
+}
+
 console.log('Longoran male/female Animation Author tuning, persistence, gameplay posture and walking preview: PASS');
