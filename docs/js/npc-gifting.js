@@ -448,6 +448,9 @@
       deps.clampInventoryStack?.(held.key);
     }
 
+    if (kept && held.kind !== 'clothing') {
+      window.RomanceSystem?.acceptSpousePerfumeGift?.(walker.rec.id, held.key); // Only a successful, consumed gift to the actual spouse changes their worn perfume.
+    }
     window.NpcRapport?.markGiftedToday?.(npcId); // Persist the daily flag in the same save as consumption and the return item.
 
     const reactionMsg = kept
