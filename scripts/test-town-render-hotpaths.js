@@ -206,6 +206,60 @@ assert.equal(meshWaterStats['scope-regression'].depthAlphaThreshold,
   surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD,
   'water mesh diagnostics read the exact threshold configured on its material');
 
+const waterTiles = [ // Sparse wet tiles can be far apart within one huge merged water mesh.
+  { col: 4, row: 4, surfaceY: 0.2 },
+  { col: 35, row: 35, surfaceY: 0.2 },
+];
+const waterFixtureThree = {
+  BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
+  BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
+}; // Exercise the production water mesh builder without a GPU.
+const sparseWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, waterTiles,
+  { statKey: 'sparse-water-proximity' });
+assert.equal(sparseWaterMesh.userData.hobunjiWaterTileFootprint.tiles.size, 2,
+  'merged water caches the actual occupied tiles instead of filling its bounding rectangle');
+assert.deepEqual(sparseWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [4, 4, 36, 36],
+  'the merged water footprint also has cheap conservative world-tile bounds');
+const floodWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, [],
+  { statKey: 'flood-water-proximity', mapWidePlane: true, cols: 40, rows: 40 });
+assert.equal(floodWaterMesh.userData.hobunjiWaterTileFootprint.tiles, null,
+  'full-map flood uses bounds rather than allocating one entry for every wet tile');
+assert.deepEqual(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [0, 0, 40, 40]);
+
+class TestWaterWorldBounds {
+  copy(source) { this.min = source.min; this.max = source.max; return this; }
+  applyMatrix4() { return this; }
+} // Covers the non-merged scenery/slush fallback without WebGL.
+const waterProximityStart = heldRender.indexOf('  const WATER_TINT_TILE_RADIUS =');
+const waterProximityEnd = heldRender.indexOf('  const footTintScreenRect =', waterProximityStart);
+assert.ok(waterProximityStart >= 0 && waterProximityEnd > waterProximityStart,
+  'extract the production per-actor water proximity guard');
+const { tintCoverNearActor } = new Function('THREE', heldRender.slice(waterProximityStart, waterProximityEnd)
+  + '\nreturn { tintCoverNearActor };')({ Box3: TestWaterWorldBounds });
+const actorRoot = {}; // Cached neighborhood keys are rebuilt when this holder crosses a tile.
+const scope = (col, row) => ({ col, row, root: actorRoot });
+assert.equal(tintCoverNearActor(sparseWaterMesh, [scope(18, 18)]), false,
+  'remote water does not tint the avatar merely because its mesh spans the screen');
+assert.equal(tintCoverNearActor(sparseWaterMesh, [scope(6, 6)]), true,
+  'water actually near the avatar still tints submerged hands, feet and tools');
+assert.equal(tintCoverNearActor(sparseWaterMesh, [scope(34, 34)]), true,
+  'moving near another wet patch refreshes the cached tile neighborhood');
+assert.equal(tintCoverNearActor(floodWaterMesh, [scope(18, 18)]), true,
+  'genuine map-wide flooding still tints the character');
+assert.equal(tintCoverNearActor(floodWaterMesh, [scope(60, 60)]), false,
+  'floodwater outside its map bounds cannot tint a distant character');
+const distantSceneryCover = { geometry: { boundingBox: {
+  min: { x: 40, z: 40 }, max: { x: 50, z: 50 },
+} }, matrixWorld: {} };
+assert.equal(tintCoverNearActor(distantSceneryCover, [scope(6, 6)]), false,
+  'untagged scenery water and slush also reject distant world bounds');
+assert.equal(tintCoverNearActor({ geometry: null }, [scope(6, 6)]), true,
+  'unknown cover geometry falls back conservatively rather than removing water tint');
+assert.match(heldRender, /hideObjects\(tintCovers\.filter\(cover => !nearbyTintCovers\.includes\(cover\)\)\)/,
+  'distant water must be hidden from the shared-material tint replay');
+assert.match(heldRender, /prepareOverlayCoverTintMaterials\(nearbyTintCovers\)/,
+  'only nearby covers may be selected for the translucent tint pass');
+
 assert.match(testedWaterMaterial.fragmentShader,
   /uHobunjiSurfaceOcclusionDepthOnly > 0\.5[\s\S]*?alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
   'the production water shader discards only faint fragments during depth-only replay');
