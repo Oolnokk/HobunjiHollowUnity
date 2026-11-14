@@ -21,25 +21,37 @@ async function main() {
   const pendingChews = new Map(); // Models the drink-strike callback being withheld until a leaf is actually chewed.
   const storage = new Map(); // Mimics per-character localStorage persistence.
   const hostiles = new Set(); // The actual Combat.deps hostile set gates NPC yawns.
+  const listeners = {}; // Captures the real sleep-completion event listener added by NpcYawnRest.
+  let playerKomaOptions = null; // Records action-lock and facing ownership on the player ceremony.
   const walker = {
     rec: { id: 'test-npc', appearance: { speciesId: 'tletingan', gender: 'female' } },
     root: { parent: {}, position: { x: 2, z: 3 } },
     area: 'farm', neckJoint: { rotation: { x: 0 } }, alcoholPoseGroup: { rotation: { x: 0 } },
     state: 'idle', currentScheduleTarget: { pose: 'stand' }, _bedLieActive: false,
   }; // Same public shape as game.js's makeNpcWalker.
+  const playerRoot = { parent: {}, position: { x: 1, z: 1 }, rotation: { x: 0, y: 0 } }; // Same outer world root as game.js playerMesh.
+  const playerAvatar = { parent: playerRoot, userData: { neckRig: { neckJoint: { rotation: { x: 0 } } } } }; // WorldPortraitLife exposes the current player portrait.
   const window = {
     _npcWalkers: [walker],
-    __hobunjiPlayerProfile: { characterId: 'character-a' },
+    __hobunjiPlayerProfile: { characterId: 'character-a', appearance: { speciesId: 'mao-ao', gender: 'female' } },
+    WorldPortraitLife: { getPlayerAvatar: () => ({ group: playerAvatar }) },
     CalendarSystem: {
       isInitialized: () => true,
-      getAbsoluteGameHour: () => hour, // Includes the 06:00–22:00 clock with its eight-hour overnight gap.
-      timeDebugSnapshot: () => ({ rawDay: Math.floor(hour / 24), time01: (hour % 24) / 24 }),
+      getAbsoluteGameHour: () => hour, // Full-day clock remains monotonic at midnight and at the 06:00 rollover.
+      constants: { FULL_DAY_CYCLE: true, DAY_ROLLOVER_HOUR: 6 },
+      timeDebugSnapshot: () => ({ rawDay: Math.floor(hour / 24), time01: (hour % 24) / 24, fullDayClock: true, dayRolloverHour: 6 }),
     },
     RuntimeFrameScheduler: { register: (id, cb, options) => { assert.equal(id, 'npc-yawn-rest'); assert.equal(options.phase, 'pre-render'); frame = cb; } },
-    Combat: { deps: { TILE: 64, hostileObjects: hostiles, getCurrentArea: () => 'farm' } },
+    Combat: { deps: { TILE: 64, player: { id: 'real-player' }, hostileObjects: hostiles, getCurrentArea: () => 'farm' } },
     NpcDrinkInteraction: {
-      playDailyKoma: (actor, onDrink, durationS) => {
+      playDailyKoma: (actor, onDrink, durationS, options = {}) => {
         ceremonies++; assert.equal(durationS, 5);
+        if (actor.rec.id === '__player_daily_koma__') {
+          playerKomaOptions = options;
+          assert.equal(options.participantId, 'player', 'the real player actions must be locked, never npc:player');
+          assert.equal(options.preserveFacing, true);
+          assert.equal(options.allowWalking, false);
+        }
         if (actor.rec.id === 'longoran-retry') pendingChews.set(actor.rec.id, onDrink);
         else onDrink();
         return 5000;
@@ -71,7 +83,7 @@ async function main() {
       playIndependent: (_url, opts) => { audioOptions = opts; return { stop() {} }; },
     },
     CharacterVoiceOwner: { request: () => ({}), bindStop() {}, release() {} },
-    __farmLog() {}, addEventListener() {},
+    __farmLog() {}, addEventListener(name, callback) { listeners[name] = callback; },
   };
   const localStorage = {
     getItem: key => storage.get(key) || null,
@@ -92,15 +104,19 @@ async function main() {
   assert.ok(initial > 12 && initial <= 13 && another > 12 && another <= 13);
   const authoritativeHour = window.CalendarSystem.getAbsoluteGameHour;
   window.CalendarSystem.getAbsoluteGameHour = null;
-  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .5 });
-  assert.equal(runtime._test.nowGameHour(), 3 * 24 + 6 + 8, 'old calendar fallback must map normalized 12:00 to actual 14:00');
+  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .5, fullDayClock: true, dayRolloverHour: 6 });
+  assert.equal(runtime._test.nowGameHour(), 3 * 24 + 6 + 12, '24h fallback maps a half-day to 18:00 after the 06:00 rollover');
+  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .75, fullDayClock: true });
+  const midnight = runtime._test.nowGameHour();
+  window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: 3, time01: .76, fullDayClock: true });
+  assert.ok(runtime._test.nowGameHour() > midnight, 'absolute time never jumps backward as the sky clock wraps past midnight');
   window.CalendarSystem.timeDebugSnapshot = () => ({ rawDay: null, time01: null });
   assert.ok(Number.isNaN(runtime._test.nowGameHour()), 'uninitialized calendar must not seed fake fatigue clocks');
   window.CalendarSystem.getAbsoluteGameHour = authoritativeHour;
   hour = 13; ms = 500; frame({ timestamp: ms });
   assert.equal(runtime.movementMultiplier('test-npc'), 0.25);
   assert.equal(ceremonies, 1, 'first Slagothim yawn of day chews Koma');
-  assert.deepEqual(toasts, ['You chew your daily koma leaves so that you may run and jump as the outlanders do.']);
+  assert.deepEqual(toasts, [], 'an NPC Koma chew must NEVER display a toast addressed to the player');
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue');
   assert.equal(expressions.get('test-npc'), 'yap', 'use the existing mouth-open sprite during a yawn');
   assert.ok(storage.has('hobunji_npc_yawn_rest_v1:character-a'));
@@ -193,8 +209,37 @@ async function main() {
   assert.equal(ceremonies, 4, 'interrupted Koma is retried at the next yawn, not suppressed for 24 hours');
   assert.ok(pendingChews.has('longoran-retry'));
   pendingChews.get('longoran-retry')();
-  assert.equal(toasts.at(-1), 'You chew your daily koma leaves so that you may run and jump as the outlanders do.');
-  console.log('NPC yawns, absolute-hour rest, voice playback, combat, handoff and Koma retries: OK');
+  assert.equal(toasts.length, 0, 'no NPC toast even when an interrupted ceremony is successfully retried');
+
+  const sleepEvent = listeners['hobunji-time-passage'];
+  assert.equal(typeof sleepEvent, 'function', 'the system must listen for actual player sleep completion');
+  sleepEvent({ detail: { kind: 'wait', hours: 8 } });
+  hour = 41; ms = 39000; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().playerWakePending, false, 'waiting does not make the player yawn');
+
+  sleepEvent({ detail: { kind: 'sleep', hours: 8 } });
+  hour = 42; ms = 40000; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().lastYawn.reason, 'player waking');
+  assert.equal(ceremonies, 4, 'Mao-ao players never chew ceremonial Koma');
+  assert.equal(toasts.length, 0, 'Mao-ao player has no Koma toast');
+  assert.equal(expressions.get('player'), 'yap', 'the player wakes with the existing mouth-open yawn expression');
+  ms = 46000; frame({ timestamp: ms });
+  assert.equal(expressions.has('player'), false, 'player mouth expression clears after the yawn');
+
+  for (const species of ['tletingan', 'nuhongan', 'longoran']) {
+    window.__hobunjiPlayerProfile.appearance.speciesId = species; // Simulates each playable subspecies in turn without rebuilding the harness.
+    sleepEvent({ detail: { kind: 'sleep', hours: 8 } });
+    hour += 25; ms += 6500; frame({ timestamp: ms });
+    assert.equal(toasts.length, ['tletingan', 'nuhongan', 'longoran'].indexOf(species) + 1, 'each eligible player subspecies receives exactly its own successful-chew toast');
+    assert.equal(toasts.at(-1), 'You chew your daily koma leaves so that you may run and jump as the outlanders do.');
+    assert.equal(playerKomaOptions.participantId, 'player');
+    ms += 5100; frame({ timestamp: ms });
+  }
+  window.__hobunjiPlayerProfile.appearance.speciesId = 'slagothim';
+  sleepEvent({ detail: { kind: 'sleep', hours: 8 } });
+  hour += 25; ms += 6500; frame({ timestamp: ms });
+  assert.equal(toasts.length, 3, 'generic Slagothim are not an eligible player subspecies');
+  console.log('NPC yawns, full-day clock, silent NPC Koma, player-only subspecies toast and combat retries: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
