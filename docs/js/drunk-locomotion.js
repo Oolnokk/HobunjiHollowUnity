@@ -286,8 +286,8 @@
         sideState.x = damp(sideState.x, xTarget, 8.5, dt);
         sideState.y = damp(sideState.y, yTarget, 10.5, dt);
         sideState.z = damp(sideState.z, zTarget, 8.0, dt);
-        if (global.RigTransformLayers?.setPosition) {
-          global.RigTransformLayers.setPosition(entry.thigh, 'drunk-thigh-' + entry.key, sideState); // Named contribution survives seated/paired IK mode changes without being compounded.
+        if (window.RigTransformLayers?.setPosition) {
+          window.RigTransformLayers.setPosition(entry.thigh, 'drunk-thigh-' + entry.key, sideState); // Named contribution survives seated/paired IK mode changes without being compounded.
         } else {
           entry.thigh.position.x += sideState.x;
           entry.thigh.position.y += sideState.y;
@@ -312,7 +312,7 @@
     }
 
     function clearPreviousThighSway() {
-      const layers = global.RigTransformLayers; // The shared ledger owns this handle's optional thigh XYZ offsets across all solver modes.
+      const layers = window.RigTransformLayers; // The shared ledger owns this handle's optional thigh XYZ offsets across all solver modes.
       if (!layers?.clear) return;
       for (const side of ['left', 'right']) layers.clear(legPart(handle.group, side + '_thigh'), 'drunk-thigh-' + side);
     }
