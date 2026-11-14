@@ -1609,6 +1609,12 @@
       if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
       const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
       window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Fire-reactive mechanisms obey the same swept, occlusion-capped projectile path.
+      if (p.itemKey === 'torch' && p.dungeonFire) {
+        // Player projectiles return from this branch. Torch contacts must run here,
+        // before cover/actor early returns, and only up to the first physical hit.
+        window.BanditCamps?.igniteTorchSegment?.(p.areaId,start,end,fireLimit,projectileRadius);
+        window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,fireLimit,projectileRadius);
+      }
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
         playProjectileImpactSfx(p, coverHit.t, true);
         return { kind: 'cover', t: coverHit.t, coverHit };
@@ -1650,10 +1656,6 @@
     }
     const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
     window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Enemy-held Dungeon Fire remains visual-only; the module rejects non-player projectiles.
-    if (p.itemKey === 'torch' && p.dungeonFire && p.team === 'player') {
-      window.BanditCamps?.igniteTorchSegment?.(p.areaId,start,end,fireLimit,projectileRadius); // Ignite canvas tents only before the first projectile blocker.
-      window.DevRandomRuinHitPuzzles?.contactAdventuringTorchSegment?.(start,end,fireLimit,projectileRadius); // The same live swept projectile can light real V50 puzzle targets.
-    }
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t, true);
       return { kind: 'cover', t: coverHit.t, coverHit };
