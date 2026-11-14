@@ -26,7 +26,7 @@
     const sourceStart = Math.floor(sourceLength * 0.23); // The steady-state middle of the original breath supplies texture.
     const sourceEnd = Math.max(sourceStart + 32, Math.floor(sourceLength * 0.77));
     const available = sourceEnd - sourceStart;
-    const grainLength = Math.max(32, Math.min(available, Math.round(rate * 0.24 * pitch / pace))); // Short, non-periodic excerpts avoid a repeated long WSOLA cycle.
+    const grainLength = Math.max(16, Math.min(available, Math.round(rate * 0.24 * pitch / pace))); // Short, non-periodic excerpts avoid a repeated long WSOLA cycle.
     const grainHop = Math.max(12, Math.round(grainLength * 0.38)); // Overlapping Hann-like grains keep the sustained part continuous.
 
     function add(sourceOffset, targetOffset, count, weightAt) {
