@@ -456,6 +456,7 @@
     window.FestivalProps?.onAuthoredFurnitureReady?.(target); // Applies intrinsic arch span only after final authored mesh ownership is known.
     if (target.userData.instanceSurfacePlacements) authoredRuntime.setItemPlacements(target, data, target.userData.instanceSurfacePlacements); // Instance arrangements survive the same asynchronous upgrade as authored furniture.
     window.FurniturePatternSurfaces?.applyOverrides?.(target, target.userData?.patternOverrides); // Instance decorations survive asynchronous replacement of the procedural placeholder.
+    window.InteriorEnvironmentRuntime?.fitCeilingFurniture?.(target); // Asynchronously upgraded ladders reach the correct ceiling, even if the scene was already built.
     window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data, data.key || target.userData?.authoredFurnitureKey); // Reattaches part-bound ambient VFX only after the real authored mesh map exists.
     return true;
   }
