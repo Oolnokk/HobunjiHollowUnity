@@ -9,7 +9,7 @@ const bootstrap = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
 assert.match(snapshot, /2026-09-04T02:12:48\.704Z/, 'latest authored snapshot must identify the supplied export');
 assert.match(snapshot, /"mao-ao::male"[\s\S]*"leftHandShoulder":\{"x":0\.18901455966160707,"y":0\.6441947637751073,"z":0\}/,
   'Mao-ao male must use the supplied latest left shoulder');
-assert.match(snapshot, /"mao-ao::male"[\s\S]*"rightHandShoulder":\{"x":-0\.21163248394065837,"y":0\.6455541403639915,"z":0\}/,
+assert.match(snapshot, /"mao-ao::male"[\s\S]*"rightHandShoulder":\{"x":-0\.22929652083051758,"y":0\.6455541403639915,"z":0\}/,
   'Mao-ao male must use the supplied latest right shoulder');
 assert.match(snapshot, /zeroPosition\(anchor\.position\)/,
   'export guard must recognize zero posterior placeholders');

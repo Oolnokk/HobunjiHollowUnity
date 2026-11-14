@@ -65,7 +65,7 @@ assert.match(avatarSource, /-modelWidth \/ 2 \+ \(renderedPixelX \/ pixelWidth\)
 assert.match(avatarSource, /avatarRoot\?\.traverse\?\.\(candidate =>/,
   'authored source-pixel placement searches below an outer player root for the live PNG portrait rig');
 // Bind-space, weighted skinning, output reuse and world-transform behavior execute in test-skinned-pixel-output.js.
-assert.match(attachmentRigSource, /shoulderPerch: \{ \.\.\.identityAnchor\(perch\), sourcePixel: \{ \.\.\.shoulderPerchRule\.sourcePixel \} \}/,
+assert.match(attachmentRigSource, /shoulderPerch: \{ \.\.\.identityAnchor\(perch\), scale: \{ x: perch\[3\], y: perch\[3\], z: perch\[3\] \}, sourcePixel: \{ \.\.\.shoulderPerchRule\.sourcePixel \} \}/,
   'the gameplay-facing shoulder-perch anchor carries the same authored pixel used by its rule');
 assert.match(avatarSource, /for \(const texture of trackedPortraitTextures\) applyPortraitTextureFlip\(texture\)/,
   'changing the setting updates already-spawned PNG character portraits immediately');

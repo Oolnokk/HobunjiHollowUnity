@@ -51,7 +51,25 @@ assert.strictEqual(profiles.characters['mao-ao::male'].handShoulderRule.position
 assert.strictEqual(profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'Mao-ao male posterior must sit 20% of portrait height below its portrait-plane bottom');
 assert.strictEqual(profiles.characters['mao-ao::female'].anatomy.portraitScale, 0.8, 'latest authored Mao-ao female body scale must remain authoritative');
 assert.strictEqual(profiles.characters['mashtzarr::male'].anatomy.portraitScale, 1.18, 'latest authored Mashtzarr male body scale must remain authoritative');
-assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.6813045758748404, 'August 28 Engh-sho shoulder perch must remain authoritative');
+assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.7000103424366998, 'November 14 authored Engh-sho perch matches the right-hand shoulder target');
+
+// Each species/gender's shoulder-perch XYZ matches its approved right-hand shoulder target.
+const authoredOrbitScales = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/combat/species-pose-orbit-scales.json'), 'utf8')).species; // Independent attack-authoring scales for all ten standard character profiles.
+for (const species of ['mao-ao', 'engh-sho', 'kenkari', 'mashtzarr', 'tletingan']) {
+  for (const gender of ['male', 'female']) {
+    const key = `${species}::${gender}`;
+    const profile = profiles.characters[key];
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(profile.anchors.shoulderPerch.position)), JSON.parse(JSON.stringify(profile.anchors.rightHandShoulder.position)), `${key} shoulder perch must match the right-hand shoulder XYZ`);
+    for (const axis of ['x', 'y', 'z']) {
+      assert.strictEqual(profile.anchors.shoulderPerch.scale[axis], authoredOrbitScales[species][gender], `${key} ${axis} grip scale must equal the attack orbit multiplier`);
+    }
+  }
+}
+
+// Nohuknuk has an independent male bipedal-monster rig and a native 1x attack orbit.
+const nohuknukRig = profiles.characters['nohuknuk::male'];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nohuknukRig.anchors.shoulderPerch.position)), JSON.parse(JSON.stringify(nohuknukRig.anchors.rightHandShoulder.position)), 'Nohuknuk shoulder pet grip must match his own right shoulder');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nohuknukRig.anchors.shoulderPerch.scale)), { x: 1, y: 1, z: 1 }, 'Nohuknuk must not inherit the Engh-sho 0.7x grip scale');
 
 const expectedPosteriorFloorPercents = {
   'tletingan::male': -5.5,
@@ -119,7 +137,7 @@ old.creatures['voorg-ass'].anchors.saddle.position = { x: -0.0016655977917167481
 const repaired = guard.reconcileProfiles(old);
 assert.strictEqual(repaired.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'zero v9 posterior must repair to the 20%-below-portrait calibration');
 assert(Math.abs(repaired.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'double-scaled v1 shoulder must be repaired to exact v9 authoring');
-assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.2006533796199832, 'stale v9 perch must be repaired');
+assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.28087406205430004, 'stale v9 perch must be repaired to the master right-hand shoulder target');
 assert.strictEqual(repaired.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'stale v9 grip must be repaired');
 for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkaoii', 'puktuk', 'voorg-ass']) {
   assert.deepStrictEqual(repaired.creatures[kind].anchors.saddle.position, profiles.creatures[kind].anchors.saddle.position, `${kind} superseded default saddle must migrate to the October 17 authoring`);

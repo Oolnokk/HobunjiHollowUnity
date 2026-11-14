@@ -182,7 +182,7 @@ assert.match(rigSource,
   /\['uumkaoii'[\s\S]{0,180}\[0,-0\.2057328849409156,-0\.004605298975405354\]/,
   'Uumkaoii uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\['kenkari::female'[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
+  /\['kenkari::female'[\s\S]{0,100}\[-0\.16564616738866406,0\.25011972083640993,0,0\.4\]/,
   'Kenkari female uses the supplied shoulderPerch');
 assert.match(rigSource,
   /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)/,
