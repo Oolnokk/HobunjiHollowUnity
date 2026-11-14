@@ -64,6 +64,11 @@
     return true;
   }
 
+  function firstYawnHour(npcId, hour) {
+    let hash = 2166136261; // Stable per-NPC scheduling offset avoids dozens of simultaneous town yawns on initial spawn.
+    for (const character of String(npcId)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    return hour + 0.15 + ((hash >>> 0) / 4294967296) * 0.85;
+  }
   function stateFor(walker, hour) {
     let state = walkerStates.get(walker);
     if (state) return state;
@@ -72,7 +77,7 @@
     state = {
       walker, id,
       restedUntil: typeof old.restedUntil === 'number' && Number.isFinite(old.restedUntil) ? old.restedUntil : -Infinity,
-      nextHour: typeof old.nextHour === 'number' && Number.isFinite(old.nextHour) ? old.nextHour : hour + HOURLY_GAP,
+      nextHour: typeof old.nextHour === 'number' && Number.isFinite(old.nextHour) ? old.nextHour : firstYawnHour(id, hour),
       lastKomaHour: typeof old.lastKomaHour === 'number' && Number.isFinite(old.lastKomaHour) ? old.lastKomaHour : -Infinity, // JSON encodes -Infinity as null; never mistake that for a Koma dose at hour zero.
       wasSleeping: !!walker._bedLieActive && walker.currentScheduleTarget?.pose === 'lie',
       wakePending: false, active: null, lastNeckOffset: 0, lastNeckApplied: null,
@@ -178,17 +183,22 @@
   }
   async function startVoice(entry) {
     const walker = entry.walker;
-    const identity = sourceIdentity(walker);
-    const plan = await voiceFor(identity.species, identity.gender);
-    if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
+    if (walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
     const audioConfig = window.AudioSystem?.gameAudioConfig?.() || {};
     if (audioConfig.enabled === false || Number(audioConfig.sfxVolume ?? 1) <= 0) return;
     const tile = Number(window.Combat?.deps?.TILE) || 64;
     const actor = {
-      x: walker.root.position.x * tile, y: walker.root.position.z * tile,
-      areaId: walker.area, rec: walker.rec,
-    };
-    const spatial = window.AudioSystem?.combatAudioSpatial?.(actor, { earshotTiles: 14 }) || {};
+      get x() { return walker.root.position.x * tile; },
+      get y() { return walker.root.position.z * tile; },
+      get areaId() { return walker.area; },
+      rec: walker.rec,
+    }; // Voice renderer follows the live NPC position rather than a frozen spawn-point snapshot.
+    const audioSpatial = window.AudioSystem?.combatAudioSpatial;
+    if (Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // No audio asset probes for inaudible/off-area NPCs.
+    const identity = sourceIdentity(walker);
+    const plan = await voiceFor(identity.species, identity.gender);
+    if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
+    const spatial = audioSpatial?.(actor, { earshotTiles: 14 }) || {};
     if (Number(spatial.gain ?? 1) < 0.002) return;
     const owner = window.CharacterVoiceOwner;
     const claim = owner?.request?.(walker, {
