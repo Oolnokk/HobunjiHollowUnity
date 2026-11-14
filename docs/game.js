@@ -7240,7 +7240,9 @@
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
-          if (c.targetPlayer && window.EnemyPetTargeting && !window.EnemyPetTargeting.viable(c.targetPlayer, currentArea)) {
+          if (c.targetPlayer && window.EnemyPetTargeting &&
+              (!window.EnemyPetTargeting.viable(c.targetPlayer, currentArea) ||
+                (c.targetPlayer.isCompanion && !companionObjects.has(c.targetPlayer)))) { // A swapped/stowed companion is no longer a live opponent even if its old entity retained Health.
             c.targetPlayer = null; // Dead, downed, departed or unloaded targets must not hold enemy aggro indefinitely.
             if (c.state === 'chase' || c.state === 'searching') c.state = 'return';
           }
