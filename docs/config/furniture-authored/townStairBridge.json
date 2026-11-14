@@ -4,7 +4,7 @@
   "sourceSchema": "hobunji_furniture_surface_author.v58",
   "footprint": {
     "w": 8,
-    "d": 2
+    "d": 3
   },
   "tileSpan": {
     "version": 1,
@@ -25,13 +25,13 @@
       "transform": {
         "x": -1.875,
         "y": 0.0556,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.1372,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -72,13 +72,13 @@
       "transform": {
         "x": -1.625,
         "y": 0.1242,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.2745,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -119,13 +119,13 @@
       "transform": {
         "x": -1.375,
         "y": 0.1928,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.4117,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -166,13 +166,13 @@
       "transform": {
         "x": -1.125,
         "y": 0.2614,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.5491,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -213,13 +213,13 @@
       "transform": {
         "x": 1.875,
         "y": 0.0556,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.1372,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -260,13 +260,13 @@
       "transform": {
         "x": 1.625,
         "y": 0.1242,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.2745,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -307,13 +307,13 @@
       "transform": {
         "x": 1.375,
         "y": 0.1928,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.4117,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -354,13 +354,13 @@
       "transform": {
         "x": 1.125,
         "y": 0.2614,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 0.25,
         "sy": 0.5491,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -401,13 +401,13 @@
       "transform": {
         "x": 0,
         "y": 0.4922,
-        "z": 0.002,
+        "z": 0.502,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 2,
         "sy": 0.0873,
-        "sz": 1.8001
+        "sz": 2.8001
       },
       "color": "#96714b",
       "segments": 4,
@@ -495,7 +495,8 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "tileSpanRole": "start"
+      "tileSpanRole": "start",
+      "railingCollision": true
     },
     {
       "id": "part_mwfzbxkr_ql1oe",
@@ -541,7 +542,8 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "tileSpanRole": "end"
+      "tileSpanRole": "end",
+      "railingCollision": true
     },
     {
       "id": "part_mwfzbxkr_iw6ze",
@@ -597,7 +599,8 @@
           "partId": "part_mwfzbxkr_lrn59",
           "face": "min"
         }
-      }
+      },
+      "railingCollision": true
     },
     {
       "id": "part_mwfzbxkr_jiomc",
@@ -606,7 +609,7 @@
       "transform": {
         "x": -1,
         "y": 0.6733,
-        "z": 0.8063,
+        "z": 1.8063,
         "rx": 0,
         "ry": 0,
         "rz": 0,
@@ -643,7 +646,8 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "tileSpanRole": "start"
+      "tileSpanRole": "start",
+      "railingCollision": true
     },
     {
       "id": "part_mwfzbxkr_a61oi",
@@ -652,7 +656,7 @@
       "transform": {
         "x": 1,
         "y": 0.6733,
-        "z": 0.8063,
+        "z": 1.8063,
         "rx": 0,
         "ry": 0,
         "rz": 0,
@@ -689,7 +693,8 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "tileSpanRole": "end"
+      "tileSpanRole": "end",
+      "railingCollision": true
     },
     {
       "id": "part_mwfzbxkr_tcc6w",
@@ -698,7 +703,7 @@
       "transform": {
         "x": 0,
         "y": 0.8293,
-        "z": 0.8063,
+        "z": 1.8063,
         "rx": 0,
         "ry": 0,
         "rz": 0,
@@ -745,7 +750,8 @@
           "partId": "part_mwfzbxkr_lrn59",
           "face": "min"
         }
-      }
+      },
+      "railingCollision": true
     }
   ]
 }
