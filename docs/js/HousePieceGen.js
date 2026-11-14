@@ -1444,9 +1444,13 @@
     var generatedLogMode = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(authoredWallStyle) && !!global.StackedLogWalls?.buildGroup; // True only when the real generated-log renderer is available.
     var faces   = (piece.base && piece.base.faces) ? piece.base.faces : [];
     var pcells  = (piece.footprint && piece.footprint.cells) ? piece.footprint.cells : [];
+    var extensions = piece.footprint && piece.footprint.extensions || {};
+    var anchorCells = piece.placementOrigin === 'fullFootprint'
+      ? pcells.concat(extensions.entryTunnels || [], extensions.tallEntryTunnels || [], extensions.chimneys || [], extensions.porches || [], extensions.porchStairs || [], extensions.railings || [])
+      : pcells; // Full-footprint pieces include outward porches in their placement bounding box; legacy houses still anchor on the structural shell.
     var gc      = Math.floor((piece.gridSize || 18) / 2);
-    var minCX   = pcells.length ? Math.min.apply(null, pcells.map(function(c) { return c.x; })) : gc;
-    var minCZ   = pcells.length ? Math.min.apply(null, pcells.map(function(c) { return c.y; })) : gc;
+    var minCX   = anchorCells.length ? Math.min.apply(null, anchorCells.map(function(c) { return c.x; })) : gc;
+    var minCZ   = anchorCells.length ? Math.min.apply(null, anchorCells.map(function(c) { return c.y; })) : gc;
     var offX    = bldgMinC + (gc - minCX);
     var offZ    = bldgMinR + (gc - minCZ);
     var offY    = opts.elevationY || 0;
@@ -1457,8 +1461,8 @@
     var cosR = 1, sinR = 0, pivX = 0, pivZ = 0, txAdj = 0, tzAdj = 0;
     if (rotDeg) {
       cosR = Math.cos(rotRad); sinR = Math.sin(rotRad);
-      var maxCXp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.x;})) : gc + 3;
-      var maxCZp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.y;})) : gc + 3;
+      var maxCXp = anchorCells.length ? Math.max.apply(null, anchorCells.map(function(c){return c.x;})) : gc + 3;
+      var maxCZp = anchorCells.length ? Math.max.apply(null, anchorCells.map(function(c){return c.y;})) : gc + 3;
       var fw0 = maxCXp - minCX + 1, fd0 = maxCZp - minCZ + 1;
       pivX = bldgMinC + fw0 / 2;
       pivZ = bldgMinR + fd0 / 2;
