@@ -12,6 +12,7 @@
     meshes: 0,
     uvVertices: 0,
     failures: 0,
+    perMeshFallbacks: 0,
     recent: [],
   }; // Used by Pixel Probe and snapshot() to verify the remaining cross-mesh adapter without duplicating stretch policy.
 
@@ -158,7 +159,25 @@
   function schedulePlateauCrossMeshBatch(meshes, label) {
     const candidates = (meshes || []).filter(mesh => mesh?.isMesh); // Used to freeze the builder result before later unrelated scene additions occur.
     if (candidates.length < 2) return;
-    const run = () => mapTouchingPlateauCliffBatch(candidates, label); // Used after WildernessCliffSurfaceParity's own per-mesh microtask so this batch solve is authoritative.
+    const run = () => {
+      let mapped = false; // Used to select the ordinary per-mesh mapper when the shared solve cannot complete.
+      try {
+        mapped = mapTouchingPlateauCliffBatch(candidates, label); // Runs after the parity material-only microtask so each cliff gets one combined UV solve.
+      } catch (error) {
+        crossMeshStats.failures++;
+        debugLog(label + ': cross-mesh solve failed (' + String(error?.message || error) + '); using individual UV mapping.', 'warn');
+      }
+      if (mapped) return;
+      const fallback = window.WildernessCliffSurfaceParity?.applyFinalSurfacePass; // Used to preserve textured cliff UVs when a combined solve fails or becomes ineligible.
+      if (typeof fallback !== 'function') {
+        debugLog(label + ': cross-mesh solve unavailable and no cliff fallback was installed.', 'warn');
+        return;
+      }
+      for (const [index, mesh] of candidates.entries()) {
+        if (!mesh?.isMesh || !Array.isArray(mesh.material) || !mesh.material[PLATEAU_CLIFF_MATERIAL_SLOT]) continue;
+        if (fallback(mesh, label + ':fallback:' + (mesh.name || index), { materialSlot: PLATEAU_CLIFF_MATERIAL_SLOT })) crossMeshStats.perMeshFallbacks++;
+      }
+    };
     if (typeof queueMicrotask === 'function') queueMicrotask(run);
     else Promise.resolve().then(run);
   }
@@ -255,8 +274,12 @@
   const runtime = window.NaturalSurfaceStretchRuntime; // Used to repair stranded textures and restore central surface-island UVs before chunking/render.
   if (typeof originalRender !== 'function' || !jigsawApi?.scanScene || !chunkApi?.scanScene || !runtime?.inspectObject) return;
 
+  const lastGeometryNoticeAt = new WeakMap(); // Used to avoid rescanning all terrain owners on every outline/depth render pass.
+  const GEOMETRY_NOTICE_INTERVAL_MS = 500; // Used to discover late geometry-ready callbacks even when no jigsaw/chunk mutation occurred.
   const stats = {
     renderPasses: 0,
+    geometryNoticeScans: 0,
+    geometryNoticeScansAvoided: 0,
     jigsawMutations: 0,
     postJigsawInspections: 0,
     chunkMutations: 0,
@@ -307,7 +330,14 @@
 
     const chunksMade = Number(chunkApi.scanScene(scene, now)) || 0; // Runs only after the central natural-surface mapper has reclaimed final texture and UV ownership.
     if (chunksMade) stats.chunkMutations += chunksMade;
-    notifyTerrainGeometryReady(scene);
+    const lastNotice = scene?.isScene ? lastGeometryNoticeAt.get(scene) : undefined; // Used to preserve eventual notifications while bypassing duplicate auxiliary passes.
+    if (scene?.isScene && (jigsawMade || chunksMade || lastNotice == null || now - lastNotice >= GEOMETRY_NOTICE_INTERVAL_MS)) {
+      lastGeometryNoticeAt.set(scene, now);
+      stats.geometryNoticeScans++;
+      notifyTerrainGeometryReady(scene);
+    } else {
+      stats.geometryNoticeScansAvoided++;
+    }
     return originalRender.call(this, scene, camera);
   }
 
