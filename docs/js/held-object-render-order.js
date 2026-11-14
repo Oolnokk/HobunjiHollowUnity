@@ -1009,7 +1009,6 @@
   let lastReplayKeptCount = 0; // Cullable renderables still drawn by the last scissored replay.
   let lastReplayInstancedCulled = 0, lastReplayInstancedKept = 0; // Instanced wall/path brick meshes hidden from, and kept in, the last scissored replay.
   let lastReplayInertCount = 0; // Sky shells skipped by the last scissored replay because they cannot write depth.
-  let instancedReplaySphereReuses = 0; // Counts costly instanced-world-bounds queries reused by the frustum cull.
 
   function setReplayCullFrustum(camera, rect, width, height) {
     const x0 = Math.max(0, rect.x - CULL_EXTRA_MARGIN_PX), y0 = Math.max(0, rect.y - CULL_EXTRA_MARGIN_PX);
@@ -1038,6 +1037,8 @@
     const geometry = object.geometry;
     return !!geometry && !geometry.morphAttributes?.position?.length;
   }
+
+  let instancedReplaySphereReuses = 0; // Counts costly instanced-world-bounds queries reused by the frustum cull.
 
   function hasAlternateReplayPose(object) {
     // A fresh hand/foot parity snapshot can be the transform used by a later
@@ -1600,7 +1601,7 @@
   let lastNearReplayFarDepth = 0; // View-space depth of the last group's farthest held part (Infinity = unknown, no far cull).
   const NEAR_REPLAY_MARGIN = 1.5; // World units behind the farthest held part that still count as "near": shell extrusion, sway, pose slack.
   let nearScratchSphere = null, nearScratchPoint = null; // Created on first use.
-  const nearReplayViewMatrix = new THREE.Matrix4(); // Reused for view-space depth bounds in near-only replay culling.
+  let nearReplayViewMatrix = null; // Lazy per-module matrix, used only when near-only replay culling sees boxed geometry.
   let nearReplayBoxTests = 0; // Counts eight-corner bounding-box depth checks replaced by the affine fast path.
 
   function nearReplaySupport(canLockColorMask) {
@@ -1681,6 +1682,7 @@
       if (box && box.min.x <= box.max.x) {
         // Box corners, not the sphere: a wide flat floor or snow chunk has a
         // sphere that reaches the camera long after its real surface is behind the parts.
+        if (!nearReplayViewMatrix) nearReplayViewMatrix = new THREE.Matrix4();
         const view = nearReplayViewMatrix.multiplyMatrices(camera.matrixWorldInverse, object.matrixWorld).elements;
         nearest = nearestReplayBoxViewDepth(box, view);
         nearReplayBoxTests++;
