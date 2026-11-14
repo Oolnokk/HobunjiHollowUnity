@@ -104,4 +104,41 @@ for (const correction of [-Math.PI * 0.85, 0.7, Math.PI * 0.95]) {
   assert(equalOrientation(composerWorldQ(leg, new Q()), initialWorldFoot),
     'next simulation frame starts without a retained half-turn');
 }
-console.log('PASS: mirrored foot contacts, stance/climb reset, and render-only body yaw preserve foot facing');
+
+// Exercise the production render wrapper, including the case where pose composition
+// fails BEFORE WebGLRenderer.render (which used to bypass the late finally guard).
+const wrapperSource = between(composerSource,
+  '    proto.render = function composedPlayerBodyRender(scene, camera) {',
+  '    // held-object-render-order.js'); // The actual render owner, not a reimplementation.
+let temporaryYaw = 0; // Represents a render-scoped visual rotation that must never persist.
+let failDuringPose = false; // Deliberately throws after the visual correction has registered its undo.
+let failDuringDraw = false; // Also checks the existing WebGL error path.
+let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
+const renderWrapper = new Function(
+  'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
+  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'postHeadAimHooks',
+  'let renderSequence = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
+    + wrapperSource + '\nreturn proto.render;'
+)(
+  () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
+  {}, (_camera, undo) => {
+    temporaryYaw += 1;
+    undo.push(() => { temporaryYaw -= 1; });
+    if (failDuringPose) throw new Error('synthetic pose failure');
+  },
+  () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
+  { now: () => 1000 }, []
+);
+assert.equal(renderWrapper({}, {}), 'drawn', 'normal render completes');
+assert.equal(temporaryYaw, 0, 'normal render restores the temporary orientation');
+failDuringPose = true;
+assert.throws(() => renderWrapper({}, {}), /synthetic pose failure/);
+assert.equal(temporaryYaw, 0, 'pre-render pose failure rolls back temporary orientation');
+assert.equal(drawCalls, 1, 'render was never reached after the pose failure');
+failDuringPose = false;
+failDuringDraw = true;
+assert.throws(() => renderWrapper({}, {}), /synthetic render failure/);
+assert.equal(temporaryYaw, 0, 'renderer failure rolls back temporary orientation');
+assert.equal(drawCalls, 2, 'renderer was reached before the draw failure');
+
+console.log('PASS: mirrored foot contacts, stance/climb reset, and render-only body yaw preserve foot facing and rollback failed renders');
