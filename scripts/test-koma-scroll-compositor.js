@@ -4,6 +4,7 @@ const fs = require('node:fs'); // Reads the shipped SpriteRecolor implementation
 const vm = require('node:vm'); // Runs the real browser module against a small observable canvas surface.
 
 const images = []; // Captures unique PNG source requests to enforce sharing between icon uses.
+const brokenPaths = new Set(); // Forces one image-load failure to test retrying missing mobile sprites.
 const tints = []; // Captures the exact two shade-fill targets, paper and binding.
 const paint = []; // Captures compositing modes and alpha for source clipping and layering.
 let nextCanvas = 0; // Stable identity makes the returned cached canvas observable.
@@ -12,7 +13,7 @@ class FakeImage {
   set src(value) {
     this.url = value;
     images.push(value);
-    queueMicrotask(() => this.onload?.()); // Mimics image decode completion after the caller installs onload.
+    queueMicrotask(() => brokenPaths.has(value) ? this.onerror?.() : this.onload?.()); // Mimics asynchronous success/failure after callbacks are installed.
   }
   get src() { return this.url; }
 }
@@ -66,6 +67,25 @@ const api = window.SpriteRecolor; // Runtime public texture API called by both i
   assert.deepEqual(tints.slice(-2), [[231, 213, 175], [255, 79, 216]]);
   assert.equal(images.filter(path => path.endsWith('scroll.png')).length, 1, 'All bindings share one source-paper decode');
   assert.equal(images.filter(path => path.endsWith('scroll_binding.png')).length, 1, 'All bindings share one ribbon image decode');
+
+  const bottlePath = 'assets/objectsprites/bottle_potion.png'; // Real Pack/HUD potion sprite shared by multiple icons.
+  const canvasCountBeforeBottle = nextCanvas; // Counts expensive canvas/pixel passes, not just image decodes.
+  const pendingBottle = api.getRecoloredCanvas(bottlePath, 0x4477cc, 'keyed');
+  const duplicateBottle = api.getRecoloredCanvas(bottlePath, 0x4477cc, 'keyed');
+  assert.strictEqual(duplicateBottle, pendingBottle, 'two simultaneous potion icons must share the in-flight recolor promise');
+  const bottle = await pendingBottle;
+  assert.equal(nextCanvas, canvasCountBeforeBottle + 1, 'only one recolor canvas is allocated for concurrent icons');
+  assert.strictEqual(await api.getRecoloredCanvas(bottlePath, 0x4477cc, 'keyed'), bottle, 'later HUD draws reuse the finished tinted bottle');
+  const otherBottle = await api.getRecoloredCanvas(bottlePath, 0xcc7744, 'keyed');
+  assert.notStrictEqual(otherBottle, bottle, 'changing the dominant ingredient tint creates distinct liquid art');
+  assert.equal(images.filter(path => path === bottlePath).length, 1, 'both ingredient palettes share the decoded bottle PNG');
+
+  const failedPath = 'assets/objectsprites/retry-potion.png'; // Simulates a temporarily unavailable on-device texture.
+  brokenPaths.add(failedPath);
+  await assert.rejects(api.getRecoloredCanvas(failedPath, 0x4477cc, 'keyed'), /Failed to load recolorable sprite/, 'failed decode rejects instead of caching a broken canvas');
+  brokenPaths.delete(failedPath);
+  assert.ok(await api.getRecoloredCanvas(failedPath, 0x4477cc, 'keyed'), 'failed texture can load and recolor on a later retry');
+  assert.equal(images.filter(path => path === failedPath).length, 2, 'retry starts a fresh PNG load after the prior failure');
 
   const powder = await api.getRecoloredCanvas('assets/objectsprites/powder.png', 0xF8F6F5, 'direct-sheen');
   assert.equal(powder.width, 8);
