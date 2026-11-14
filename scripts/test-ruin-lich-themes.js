@@ -531,7 +531,7 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
     interiorSource.indexOf('  function getPlayerGroundSupportY()'))+'\n({getPlayerSupportY,setPresentationSink});',{
     ruin:{},deps:{getCurrentArea:()=> 'ruin'},MAP_ID:'ruin',lastPresentationElevation:0,
   }); // Execute the real presentation offset, with a stale cached stand height on purpose.
-  const renderStandY=new Function('window','player',gameSource.slice(gameSource.indexOf('        const supportedJump ='),
+  const renderStandY=new Function('window','player','currentArea','wx','wz',gameSource.slice(gameSource.indexOf('        const supportedJump ='),
     gameSource.indexOf('        const standY = knockbackVisualSurfaceY'))+'\nreturn ordinaryStandY;');
   const renderWindow={DevRandomRuin:getSupport};
   const jumpWindow={}; // Load the real PlayerJump reset used by checkpoint recovery.
