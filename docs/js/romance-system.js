@@ -663,6 +663,12 @@
     return custom || { recipeId: null, label: 'Beloved', icon: '💗', stat: 'staminaRegen', multiplier: KISS_STAMINA_REGEN_MULTIPLIER, effectLabel: '+10% Stamina recovery' };
   }
 
+  function activeKissPerfumeEffect() {
+    if (remainingKissHours() <= 0 || !state.spouse?.perfume) return null; // Non-resource Alchemy getters apply perfume only during the player's active kiss blessing.
+    const worn = state.spouse.perfume; // Permanent gift choice remains independent of the temporary 24-hour kiss window.
+    return window.AlchemySystem?.getPerfumeEffect?.(worn.recipeId, worn.potencyTier) || null;
+  }
+
   function acceptSpousePerfumeGift(npcId, itemKey) {
     if (!npcId || state.spouse?.npcId !== npcId) return false; // Other NPCs may receive perfume as ordinary gifts but cannot change this marriage.
     const perfume = window.AlchemySystem?.perfumeFromItemKey?.(itemKey); // Reject unrelated gifts and unrecognized item keys.
@@ -718,7 +724,8 @@
       window.ResourceSystem.registerStatModifierProvider((entity, key) => {
         if (entity !== window.Combat?.deps?.player || remainingKissHours() <= 0) return 1; // No spouse buffs for NPCs or after expiry.
         const effect = currentKissEffect(); // Exactly one stat channel is active, even when a new perfume replaces an old one mid-kiss.
-        return key === effect.stat ? effect.multiplier : 1;
+        const resourceStat = !effect.recipeId || window.AlchemySystem?.isResourceKissStat?.(effect.stat); // Other potion buffs use Alchemy's existing gameplay getter instead.
+        return resourceStat && key === effect.stat ? effect.multiplier : 1;
       });
       kissBuffStatsRegistered = true;
     }
@@ -843,6 +850,7 @@
     completeSpouseKiss, // Exposed for deterministic gameplay/test contact assertions.
     acceptSpousePerfumeGift, // Called only after the shared NPC gift transaction consumes an accepted bottle.
     currentKissEffect, // UI/debug reads use the same formula as the ResourceSystem provider.
+    activeKissPerfumeEffect, // Alchemy getter integration excludes default and expired kiss buffs.
     getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
