@@ -554,7 +554,7 @@
     const maxRejected = Math.max(0, Number(options.maxRejectedDiagnostics) || 48);
     let best = null; // Highest authored-probe score wins normally; isolated locales instead use the least-populated remoteness rank.
     const placement = compiled.locale.placement || {}; // Opt-outs preserve authored landmarks and entry-adjacent story stages.
-    const secret = ['ruin_entrance', 'great_fey_shrine', 'story_poi'].includes(compiled.locale.category)
+    const secret = (placement.preferSeclusion === true || ['ruin_entrance', 'great_fey_shrine', 'story_poi'].includes(compiled.locale.category))
       && !placement.sameSectorAsEntry && !placement.alwaysVisibleOnMap && !placement.preferIsolation
       && placement.preferSeclusion !== false;
     const scorer = secret ? seclusionScorer() : null; // Bounded LOS is generation-only, never a per-frame calculation.
