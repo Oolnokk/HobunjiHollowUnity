@@ -3529,8 +3529,8 @@
       const y = Math.floor(rng() * (settings.height - paddedH + 1));
       if (!areaFree(x,y,paddedW,paddedH) || !placementFilter(x,y,paddedW,paddedH)) continue;
       const connector = locale.connectors?.[0]; // Player-visible approach point, not the center of a shrine's building.
-      const cx = x + clearance - bbox.minC + (Number(connector?.col) || bbox.minC + bbox.w/2);
-      const cy = y + clearance - bbox.minR + (Number(connector?.row) || bbox.minR + bbox.h/2);
+      const cx = x + clearance - bbox.minC + (connector?.col != null ? Number(connector.col) : bbox.minC + bbox.w/2);
+      const cy = y + clearance - bbox.minR + (connector?.row != null ? Number(connector.row) : bbox.minR + bbox.h/2);
       if (!distances.has(keyXY(Math.floor(cx), Math.floor(cy)))) continue;
       const sight = visibility.sampleVisibility(options,cx,cy);
       const entryDistance = Math.hypot(cx-map.entry.x,cy-map.entry.y);
@@ -3706,6 +3706,7 @@
         category: locale.category,
         alwaysVisible: !!placement.alwaysVisibleOnMap,
         seclusion: spot.seclusion || null, // Shift map exports preserve mobile-visible concealment diagnostics.
+        shiftGeneratedSecret: shiftSecret, // Map discovery records reset with a Tothal Shift.
         interior: locale.interior ? clonePlain(locale.interior) : null, // Used after Tothal shifting/scaling to export a walkable locale entrance transition without hard-coded world coordinates.
         anchorX, anchorY,
         w: bbox.w, h: bbox.h,
@@ -8929,6 +8930,7 @@
           category: meta.category,
           alwaysVisible: !!meta.alwaysVisible,
           seclusion: meta.seclusion || null, // Expose scored hidden-site placement without a runtime line-of-sight pass.
+          shiftGeneratedSecret: !!meta.shiftGeneratedSecret, // Existing save's prior shrine discovery no longer reveals this incarnation.
           x: Math.round(meta.anchorX * localeScale),
           y: Math.round(meta.anchorY * localeScale),
           w: meta.w * localeScale,
