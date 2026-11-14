@@ -30,6 +30,15 @@ assert.equal(initiallyUnchanged.summary.changed, false);
 assert.equal(initiallyUnchanged.mode, 'unchanged-full-map', 'An unchanged map must never export a data-free diff');
 assert.equal(initiallyUnchanged.fullMap.id, original.id);
 assert.equal(initiallyUnchanged.fullMap.tiles[0].type, 'grass');
+const sameTiles = JSON.parse(JSON.stringify(original)); // A game map can omit default grass while the editor materializes all cells.
+sameTiles.tiles = [{ c: 0, r: 0, type: 'grass', crop: '' }, { c: 1, r: 0, type: 'grass', crop: '' }];
+assert.equal(api.buildDetailedDiff(sameTiles).summary.tileChanges, 0, 'Sparse and complete default-grass grids must be equivalent');
+const onlyReordered = JSON.parse(JSON.stringify(original)); // Object key order must not create false authored diffs.
+onlyReordered.tiles['0,0'] = { crop: '', type: 'grass' };
+assert.equal(api.buildDetailedDiff(onlyReordered).summary.changed, false, 'Reordered tile fields are not a change');
+const painted = JSON.parse(JSON.stringify(original));
+painted.tiles['0,0'] = { type: 'path', crop: '' };
+assert.equal(api.buildDetailedDiff(painted).summary.tileChanges, 1, 'Actual paint changes must still count');
 workspace.activeId = original.id;
 const emptyBundle = api.buildWorkspaceDiffBundle();
 assert.equal(emptyBundle.maps.length, 0, 'Unchanged maps must not inflate the workspace diff bundle');
