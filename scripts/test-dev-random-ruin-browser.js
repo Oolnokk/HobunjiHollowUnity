@@ -145,8 +145,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const surface=window.DynamicSurfaces?.sampleSupport?.(x+.5,z+.5,
           {minY:section.y-.1,maxY:section.y+.12,pad:.02}); // Every passage cell must offer real walkable support to normal player physics, not only an open voxel.
         const supported=Number.isFinite(surface?.y)&&Math.abs(surface.y-section.y)<.1;
-        if(!covered||flat==='rock'||!voxel||!supported)
-          failures.push({side,depth,x,z,flat,covered,voxel,supported,surfaceY:surface?.y??null});
+        const movement=window.MovementBlockDebug?.reasonsAt?.(x+.5,z+.5,.28,section.y,{
+          TILE:window.Combat?.deps?.TILE||64,area:'map_i_dev_random_ruin',
+          tileSpeedAt:window.__climbDebug?.tileSpeedAt,
+        }); // This probes the SAME tile, footprint, door and dynamic blocker authorities ordinary player movement calls.
+        if(!Array.isArray(movement))throw new Error('Live MovementBlockDebug was unavailable for F2 passage validation');
+        if(!covered||flat==='rock'||!voxel||!supported||movement.length)
+          failures.push({side,depth,x,z,flat,covered,voxel,supported,surfaceY:surface?.y??null,movement});
       }
       // The inner and outer tunnel endpoints must also survive the actual
       // player's ruin reconciliation at F2 elevation, not just be clear on maps.
