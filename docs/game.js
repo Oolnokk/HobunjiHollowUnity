@@ -13579,6 +13579,7 @@
             return false;
           },
           update(dt) {
+            window.RigTransformLayers?.clear(root, 'npc-move-bob'); // Remove last frame's visual bounce before any movement mode or early return.
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
             if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
@@ -13810,7 +13811,7 @@
                 root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
-                  root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+                  window.RigTransformLayers?.setAxis(root, 'npc-move-bob', 'position', 'y', Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort));
                 }
                 groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               }
@@ -13971,7 +13972,7 @@
             // rather than a flat distance whenever it's walking at all.
             if (!this.animalDef && this._moveSpeedTiles > 0.05) {
               const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
-              root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              window.RigTransformLayers?.setAxis(root, 'npc-move-bob', 'position', 'y', Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort));
             }
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
           },

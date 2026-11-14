@@ -265,14 +265,18 @@
   function restorePose(entry) {
     const state = entry.state;
     const neck = entry.walker.neckJoint;
-    if (neck?.rotation && state.lastNeckApplied != null
+    if (window.RigTransformLayers?.clear) {
+      window.RigTransformLayers.clear(neck, 'npc-yawn-neck'); // Named release handles an interrupted gesture without subtracting another animator's angle.
+    } else if (neck?.rotation && state.lastNeckApplied != null
       && Math.abs(neck.rotation.x - state.lastNeckApplied) < 0.0001) {
       neck.rotation.x -= state.lastNeckOffset;
     }
     state.lastNeckOffset = 0;
     state.lastNeckApplied = null;
     const body = entry.walker.alcoholPoseGroup; // This torso-only parent is independent of NPC feet and held-item action locks.
-    if (body?.rotation && entry.lastBodyApplied != null
+    if (window.RigTransformLayers?.clear) {
+      window.RigTransformLayers.clear(body, 'npc-yawn-body'); // Release only this yawn's torso pitch after other pose ownership changes.
+    } else if (body?.rotation && entry.lastBodyApplied != null
       && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001) {
       body.rotation.x -= entry.lastBodyOffset;
     }
@@ -351,11 +355,15 @@
     const state = entry.state;
     if (neck?.rotation) {
       const offset = -0.28 * envelope + 0.05 * Math.sin(progress * Math.PI * 4) * envelope;
-      const base = state.lastNeckApplied != null && Math.abs(neck.rotation.x - state.lastNeckApplied) < 0.0001
-        ? neck.rotation.x - state.lastNeckOffset : neck.rotation.x;
-      neck.rotation.x = base + offset;
-      state.lastNeckOffset = offset;
-      state.lastNeckApplied = neck.rotation.x;
+      if (window.RigTransformLayers?.setAxis) {
+        window.RigTransformLayers.setAxis(neck, 'npc-yawn-neck', 'rotation', 'x', offset); // Recompose from the live neck base, never accumulate a previous yawn frame.
+      } else {
+        const base = state.lastNeckApplied != null && Math.abs(neck.rotation.x - state.lastNeckApplied) < 0.0001
+          ? neck.rotation.x - state.lastNeckOffset : neck.rotation.x;
+        neck.rotation.x = base + offset;
+        state.lastNeckOffset = offset;
+        state.lastNeckApplied = neck.rotation.x;
+      }
     }
     if (entry.isPlayer) {
       window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
@@ -366,11 +374,15 @@
     const body = entry.walker.alcoholPoseGroup; // NPC chest lean uses the existing torso group, independent of the player compositor.
     if (body?.rotation) {
       const offset = -0.085 * envelope;
-      const base = entry.lastBodyApplied != null && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001
-        ? body.rotation.x - entry.lastBodyOffset : body.rotation.x;
-      body.rotation.x = base + offset;
-      entry.lastBodyOffset = offset;
-      entry.lastBodyApplied = body.rotation.x;
+      if (window.RigTransformLayers?.setAxis) {
+        window.RigTransformLayers.setAxis(body, 'npc-yawn-body', 'rotation', 'x', offset); // Body bend is independent from the player's own composer channel.
+      } else {
+        const base = entry.lastBodyApplied != null && Math.abs(body.rotation.x - entry.lastBodyApplied) < 0.0001
+          ? body.rotation.x - entry.lastBodyOffset : body.rotation.x;
+        body.rotation.x = base + offset;
+        entry.lastBodyOffset = offset;
+        entry.lastBodyApplied = body.rotation.x;
+      }
     }
   }
 

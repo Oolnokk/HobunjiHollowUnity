@@ -644,6 +644,7 @@
     const outdoors = !softInterior; // Outdoor player/watch lanterns obey the wilderness visibility fade; enclosed rooms retain their existing behavior.
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
     for (const carrier of carriers) {
+      if(!ruinRoomLightAllowed(carrier))continue;
       const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
       if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
@@ -667,7 +668,7 @@
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
-      withRuinShadowClip(ctx,shadows,()=>{
+      withRuinRoomLightClip(ctx,carrier,()=>withRuinShadowClip(ctx,shadows,()=>{
         ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();
         if(ruinTradition!=='kanthic')return; // Tothal's suppression and Hronal's original lantern behavior are deliberately untouched.
         // A rope's projected top and bottom can lie outside the floor-height lantern disk even
@@ -693,13 +694,14 @@
             ctx.fillStyle=glow;ctx.beginPath();ctx.arc(projected.x,projected.y,Math.max(.01,radius),0,Math.PI*2);ctx.fill();
           }
         }
-      });
+      }));
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
       for (const carrier of carriers) {
+        if(!ruinRoomLightAllowed(carrier))continue;
         const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Weather tint follows the same faded visibility as the matching darkness cutout.
         if (visibility <= 0) continue;
         const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
@@ -717,9 +719,9 @@
           lanternTuning.softTransitionFraction,
         );
         ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-        ctx.fill();
+        withRuinRoomLightClip(ctx,carrier,()=>{ctx.beginPath();
+          ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+          ctx.fill();});
       }
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -746,6 +748,7 @@
     const outdoors = !softInterior; // Only world-exterior furniture masks get limited by player-to-source distance.
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand the physical light radius.
     for (const light of lightingDeps.getFurnitureLightSources()) {
+      if(!ruinRoomLightAllowed(light))continue;
       const visibility = outdoors ? outdoorLightVisibility(light.x, light.y, light.z, light.distance) : 1; // Bound remote campfire/torch glows by their actual world positions.
       if (outdoors) {
         outdoorLightStats.considered++;
@@ -776,7 +779,7 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
+      withRuinRoomLightClip(ctx,light,()=>withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();}));
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
@@ -796,7 +799,7 @@
           0.3,
         );
         ctx.fillStyle = grad;
-        withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
+        withRuinRoomLightClip(ctx,light,()=>withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();}));
       }
     }
 
@@ -813,11 +816,19 @@
       } else glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = glow;
-      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,glowR,0,Math.PI*2);ctx.fill();});
+      withRuinRoomLightClip(ctx,light,()=>withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,glowR,0,Math.PI*2);ctx.fill();}));
     }
   }
 
   const EMPTY_LIGHT_LIST = Object.freeze([]);
+  function ruinRoomLightAllowed(source){
+    return lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'
+      ||window.RuinRoomSystem?.lightAllowed?.(source)!==false; // Sealed rooms do not share light sources.
+  }
+  function withRuinRoomLightClip(ctx,source,draw){
+    if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'||!window.RuinRoomSystem?.withLightClip)return draw();
+    return window.RuinRoomSystem.withLightClip(ctx,source,(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),draw);
+  }
   const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
     ruinFireMaskStats.sources=lights.length;
@@ -828,6 +839,7 @@
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
     for (const light of lights) {
       if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
+      if(!ruinRoomLightAllowed(light))continue;
       const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
       const floorTolerance = Number.isFinite(light.floorTolerance) ? light.floorTolerance : 10; // Per-room lights stay on their own story.
       if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
@@ -848,7 +860,7 @@
       else grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
       grad.addColorStop(1,'rgba(0,0,0,0)'); // Special-ruin light now shares the enclosed-room eased edge.
       ctx.fillStyle=grad;
-      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+      withRuinRoomLightClip(ctx,light,()=>withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();}));
       ruinFireMaskStats.drawn++; // A destination-out mask was actually submitted this frame.
     }
     ctx.globalCompositeOperation='source-over';
@@ -863,12 +875,13 @@
       } else grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
       grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
       ctx.fillStyle=grad;
-      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+      withRuinRoomLightClip(ctx,light,()=>withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();}));
     }
   }
 
 
   const ruinGlowProjection = new window.THREE.Vector3(); // Reused world-space center for engraved glow surfaces, avoiding allocation in the 60 Hz compositor.
+  const ruinGlowSource={x:0,y:0,z:0}; // One scratch light for routing engraving masks through room-local clipping.
   const ruinGlowStats = { found:0,drawn:0,scans:0 }; // Mobile darkness diagnostics can confirm that glyph masks were discovered and actually painted.
   let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache only the active scene's glowing pattern meshes; re-check lazy async atlases periodically.
   function drawRuinPatternGlowMasks(scene, now) {
@@ -898,6 +911,8 @@
       else mesh.getWorldPosition?.(ruinGlowProjection);
       if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
         || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
+      ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
+      if(!ruinRoomLightAllowed(ruinGlowSource))continue; // Closed neighboring rooms cannot brighten their engravings through stone.
       const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1; // Sphere bounds are local geometry units, including stretched masonry patches.
       const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale)); // Cover the engraving's face, but never illuminate an entire corridor from one glyph.
       const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
@@ -908,7 +923,8 @@
       gradient.addColorStop(.58,'rgba(0,0,0,.96)');
       gradient.addColorStop(.83,'rgba(0,0,0,.70)');
       gradient.addColorStop(1,'rgba(0,0,0,0)'); // Erase only nearby overlay darkness: glyph pixels remain depth-tested by the original Three.js pass.
-      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=gradient;
+      withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
       ruinGlowStats.drawn++;
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -1095,6 +1111,8 @@
     lastUnifiedLightingScene = activeScene;
 
     const ctx = lightingDeps.lctx;
+    if(currentArea==='map_i_dev_random_ruin')
+      window.RuinRoomSystem?.prepareLightClip?.((x,y,z)=>lightingDeps.worldToOverlay(x,y,z)); // One camera projection per room per redraw, shared by every light.
     ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
@@ -1112,10 +1130,14 @@
     if (enclosed && !undergroundFog) {
       const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Existing mine/den/room darkness policy, preserved for every area.
       const effectiveDarknessAlpha = farmhouseSceneActive ? INTERIOR_DARKNESS_OVERLAY_ALPHA : darknessAlpha; // The farmhouse uses 80% base darkness regardless of a lagging outdoor area id.
+      const roomAmbient = currentArea==='map_i_dev_random_ruin' ? window.RuinRoomSystem?.ambient?.() : null; // Room-specific ambient settings preserve the user's darkness preference.
+      const roomAlpha=clamp01(effectiveDarknessAlpha+(roomAmbient?.darknessOffset||0));
       lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: effectiveDarknessAlpha, at: now }; // Mobile diagnostics reflect the painted base, not a hypothetical calculation.
       ctx.globalCompositeOperation = 'source-over';
       const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
-      ctx.fillStyle = ruinTradition === 'tothal' ? 'rgba(6,18,44,'+effectiveDarknessAlpha+')' : ruinTradition === 'hronal' ? 'rgba(20,7,2,'+effectiveDarknessAlpha+')' : 'rgba(0,0,0,'+effectiveDarknessAlpha+')';
+      ctx.fillStyle = roomAmbient?.color ? 'rgba('+roomAmbient.color.join(',')+','+roomAlpha+')'
+        :ruinTradition === 'tothal' ? 'rgba(6,18,44,'+effectiveDarknessAlpha+')'
+        :ruinTradition === 'hronal' ? 'rgba(20,7,2,'+effectiveDarknessAlpha+')' : 'rgba(0,0,0,'+effectiveDarknessAlpha+')';
       ctx.fillRect(0, 0, rect.width, rect.height);
       drawLanternMasksCompat(1);
       if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.

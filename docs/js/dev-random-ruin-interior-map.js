@@ -570,12 +570,16 @@
       const box=boxFor(panel),size=box?.getSize?.(new THREE.Vector3())||new THREE.Vector3(1,1,1),center=centerFor(door);
       state.crossingAxis=size.x<=size.z?'x':'z'; // Thin world axis is the direction a player crosses through the doorway.
       state.center={x:center.x,z:center.z}; // Exposed in mobile/browser diagnostics so closed-door collision and popup range can be verified without devtools.
+      state.floorY=Number(box?.min?.y)||0; // Vertical gate proximity uses the real stone-slab base, never another stacked story.
+      state.proximityDoor={x:state.center.x,z:state.center.z,y:state.floorY}; // Reused across frame ticks; no per-door temporary objects.
       ruin.transitDoorStates.push(state);
       // No separate DynamicSurfaces blocker here: DevRandomRuinTileOccupancy reads state.open and folds this panel into the ruin's one aggregate gameplay blocker.
       ruin.controls.push({
         kind:'transitDoor',object:door,promptRoot:door,range:1.9,touchIcon:'✋',priority:24,claimAction1:true,
+        available:()=>!window.RuinRoomSystem?.mounted?.(), // Active room doors open automatically; manual fallback stays usable in standalone V50 previews.
         label:()=>state.target>.5?'Close Hallway Door':'Open Hallway Door',
         onPress:()=>{
+          if(window.RuinRoomSystem?.mounted?.())return;
           const opening=state.target<=.5;
           state.target=opening?1:0;
           if(opening){
@@ -2029,13 +2033,19 @@
   function updateTransitDoors(dt){
     const player=deps?.player&&deps?.TILE?{x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}:null;
     for(const state of ruin.transitDoorStates||[]){
+      const automatic=window.RuinRoomSystem?.mounted?.()===true;
+      if(automatic){
+        const near=window.RuinRoomSystem.doorNear(player,state.proximityDoor,state.target>.5,Number(ruin.supportY));
+        state.target=near?1:0; // Existing occupancy and rooted stone animation retain sole ownership of closed-door blocking.
+        state.openingSide=0;
+      }
       state.open+=clamp(state.target-state.open,-dt*2.4,dt*2.4);
       window.RuinInteractionAudio?.watchMovement?.(state.panel,state.open); // Audible when the physical stone door starts or reverses its travel.
       if(Math.abs(state.open-state.target)<.001)state.open=state.target;
       const eased=state.open*state.open*(3-2*state.open);
       if(state.door.rootGrowthBinding)state.door.rootGrowthBinding.setProgress(state.open);
       else state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
-      if(state.target>.5&&state.open>.9&&player&&state.openingSide){
+      if(!automatic&&state.target>.5&&state.open>.9&&player&&state.openingSide){
         const center=centerFor(state.door),signed=(state.crossingAxis==='x'?player.x-center.x:player.z-center.z);
         if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
           state.target=0; // Authored transit behavior: once the player has crossed the threshold, the plain hallway door retracts back closed behind them.

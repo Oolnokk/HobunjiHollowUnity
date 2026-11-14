@@ -81,4 +81,20 @@ left.position.y = restingY; // Next frame: the ordinary hand driver rewrites the
 sentinel.onBeforeRender();
 assert.ok(Math.abs(left.position.y - colourY) < 1e-9, 'a fresh ordinary baseline produces the same single punch');
 
-console.log('NPC dance hand repeat-pass replay: ok');
+walker.currentScheduleTarget = {}; // A dance may end without another ordinary hand-driver tick.
+sentinel.onBeforeRender();
+assert.ok(Math.abs(left.position.y - restingY) < 1e-9, 'cancel restores dance-owned left socket');
+assert.ok(Math.abs(right.position.y - restingY) < 1e-9, 'cancel restores dance-owned right socket');
+assert.ok(Math.abs(left.quaternion.x) < 1e-8, 'cancel restores the neutral hand twist after a position-only driver refresh');
+
+walker.currentScheduleTarget = { socialDance: { stimulusId: 'return', style: 'loose-sway', armStyle: 'overhead-punch' } };
+sentinel.onBeforeRender();
+assert.ok(left.position.y > restingY + reach, 'new dance starts from the ordinary baseline');
+left.position.y = 42; // New action owns hand position.
+left.quaternion.copy(new Quaternion(0.4, 0, 0, Math.sqrt(1 - 0.16))); // New forearm writer owns rotation.
+walker.currentScheduleTarget = {};
+sentinel.onBeforeRender();
+assert.equal(left.position.y, 42, 'cancel never undoes a new hand position owner');
+assert.ok(Math.abs(left.quaternion.x - 0.4) < 1e-9, 'cancel never undoes a new forearm owner');
+
+console.log('NPC dance hand repeat-pass and ownership release: ok');

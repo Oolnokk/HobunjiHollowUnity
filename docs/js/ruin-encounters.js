@@ -113,7 +113,7 @@
     const id = String(options.id || ('encounter_' + (++serial)));
     if (encounters.has(id)) remove(id);
     const enc = {
-      id, mapId: String(options.mapId || window.GridTileAccessors?.getCurrentArea?.() || ''), objective: { fragileStatue: true, ...options.objective },
+      id, roomId:String(options.roomId||''), mapId: String(options.mapId || window.GridTileAccessors?.getCurrentArea?.() || ''), objective: { fragileStatue: true, ...options.objective },
       spawners: (options.spawners || []).map((s, i) => ({ index: i, x: Number(s.x), z: Number(s.z), facing: s.facing || null })),
       schedule: [...(options.schedule || [])].sort((a, b) => a.t - b.t), tier: Number(options.tier) || 0, maxAlive: Number(options.maxAlive) || CONFIG.maxAlive,
       surfaceY: options.surfaceY || null, retry: options.retry !== false, noLoot:options.noLoot===true, // An encounter only suppresses loot when explicitly requested.
@@ -210,7 +210,14 @@
   function tick(dt = 0) {
     if (!encounters.size) return;
     const step = Math.min(0.1, Math.max(0, Number(dt) || 0)), mapId = String(window.GridTileAccessors?.getCurrentArea?.() || '');
-    for (const enc of encounters.values()) if (enc.mapId === mapId) tickEncounter(enc, step);
+    for (const enc of encounters.values()) {
+      if(enc.mapId!==mapId)continue;
+      if(enc.roomId&&window.RuinRoomSystem?.isRoomActive&&!window.RuinRoomSystem.isRoomActive(enc.roomId)){
+        if(enc.state==='running')stop(enc,'room-exit'); // A closed door breaks pursuit and disposes this wave; the plinth can re-arm on re-entry.
+        continue;
+      }
+      tickEncounter(enc,step);
+    }
   }
 
   // Any blast that reaches the statue destroys it (an explosion near a plinth is what the demolitionists are for).
