@@ -6,12 +6,13 @@
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const tiles = (value, fallback) => Math.max(1, Math.min(256, Math.floor(finite(value, fallback))));
   const roleOf = part => ['start', 'stretch', 'end'].includes(part?.tileSpanRole) ? part.tileSpanRole : 'none';
+  const sourcePoses = new WeakMap(); // Mesh-local rest shapes for reversible resizing, kept out of serialized Three.js userData.
 
   function normalize(value) {
     const s = value && typeof value === 'object' ? value : {};
     const startTiles = tiles(s.startTiles, 2); // Fixed tile count at the beginning.
-    const endTiles = tiles(s.endTiles, 2); // Fixed tile count at the far end.
-    const middleTiles = tiles(s.middleTiles, 1); // Original number of tiles occupied by the flexible middle.
+    const endTiles = Math.min(tiles(s.endTiles, 2), 511 - startTiles); // Reserve at least one middle tile.
+    const middleTiles = Math.min(tiles(s.middleTiles, 1), 512 - startTiles - endTiles); // Keep the complete footprint within the supported limit.
     const baseTiles = startTiles + endTiles + middleTiles; // Minimum overall footprint.
     return {
       version: 1, enabled: s.enabled === true,
@@ -33,15 +34,15 @@
   }
 
   function sourcePose(mesh) {
-    let pose = mesh.userData.tileSpanSource;
-    if (!pose || pose.geometry !== mesh.geometry && !pose.stretchedGeometry) {
+    let pose = sourcePoses.get(mesh);
+    if (!pose || (mesh.geometry !== pose.geometry && mesh.geometry !== pose.stretchedGeometry)) {
       mesh.updateMatrix();
       pose = {
         geometry: mesh.geometry, position: mesh.position.clone(),
         quaternion: mesh.quaternion.clone(), scale: mesh.scale.clone(),
         matrix: mesh.matrix.clone(), stretchedGeometry: null,
       }; // Original mesh shape and rest pose for repeated preview/runtime resizing.
-      mesh.userData.tileSpanSource = pose;
+      sourcePoses.set(mesh, pose);
     }
     return pose;
   }
@@ -66,7 +67,10 @@
     if (!mesh) return NaN;
     const pose = sourcePose(mesh);
     const surface = (data.recognizedSurfaces || []).find(s => s.id === root?.surfaceId && s.partId === root?.partId);
-    if (surface && Array.isArray(surface.localCentroid) && surface.localCentroid.length === 3) {
+    if (root?.surfaceId) {
+      // Explicitly named attachments must never quietly fall back to another face after import or editing.
+      if (!surface || !Array.isArray(surface.localCentroid) || surface.localCentroid.length !== 3
+        || !surface.localCentroid.every(Number.isFinite)) return NaN;
       return new global.THREE.Vector3(...surface.localCentroid).applyMatrix4(pose.matrix)[axis];
     }
     const geometry = pose.geometry;
@@ -85,7 +89,7 @@
   function apply(group, data, requestedTiles) {
     const spec = normalize(data?.tileSpan);
     if (!spec.enabled || !Array.isArray(data?.parts)) {
-      for (const mesh of group?.userData?.meshById?.values?.() || []) if (mesh.userData.tileSpanSource) resetMesh(mesh);
+      for (const mesh of group?.userData?.meshById?.values?.() || []) if (sourcePoses.has(mesh)) resetMesh(mesh);
       if (group?.userData) { delete group.userData.activeTileSpanTiles; delete group.userData.tileSpanDiagnostics; }
       return { enabled: false };
     }
@@ -93,6 +97,7 @@
     const totalTiles = Math.max(spec.baseTiles, Math.min(512, Math.floor(finite(requestedTiles, spec.totalTiles))));
     const delta = (totalTiles - spec.baseTiles) * spec.tileSize; // Only extra middle tiles add length.
     const errors = [];
+    const partById = new Map(data.parts.map(part => [part.id, part])); // Validate each root against the correct rigid end section.
     for (const part of data.parts) {
       const mesh = meshes.get(part.id);
       if (mesh) resetMesh(mesh);
@@ -104,12 +109,18 @@
       let mapping;
       if (role === 'stretch') {
         const roots = part.tileSpanRoots || {};
+        if (roleOf(partById.get(roots.start?.partId)) !== 'start'
+          || roleOf(partById.get(roots.end?.partId)) !== 'end') {
+          errors.push(part.id + ': roots must reference rigid beginning and ending pieces');
+          continue;
+        }
         const start = anchorPosition(data, roots.start, meshes, spec.axis, roots.start?.face === 'min' ? 'min' : 'max');
         const end = anchorPosition(data, roots.end, meshes, spec.axis, roots.end?.face === 'max' ? 'max' : 'min');
         mapping = transformFor(role, start, end, delta);
         if (part.kind === 'glb') { errors.push(part.id + ': GLB pieces must be rigid ends'); continue; }
-        if (!mapping) { errors.push(part.id + ': missing or reversed attachment surfaces'); continue; }
-        if (delta !== 0 && mesh.geometry?.clone) {
+        if (!mapping) { errors.push(part.id + ': missing, invalid or reversed attachment surfaces'); continue; }
+        if (delta !== 0 && !mesh.geometry?.clone) { errors.push(part.id + ': stretch geometry unavailable'); continue; }
+        if (delta !== 0) {
           const three = global.THREE;
           const stretch = new three.Matrix4().makeScale(spec.axis === 'x' ? mapping.scale : 1, 1, spec.axis === 'z' ? mapping.scale : 1);
           stretch.setPosition(spec.axis === 'x' ? mapping.offset : 0, 0, spec.axis === 'z' ? mapping.offset : 0);
