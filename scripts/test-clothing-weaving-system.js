@@ -162,6 +162,18 @@ assert.equal(sixUnitOutline[48 * outlineProbeSize + 8], 0, 'the doubled outline 
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'base'), true, 'base layer can independently swap cloth and pattern colors');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'trim'), false, 'trim layer keeps its own independent swap state');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ pattern: {} }, null), false, 'legacy single-pattern saves default to unswapped colors');
+const oppositeDyes = { crossDyePatterns: true, layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {}, swapPatternColors: true } } }; // Exercise both authored cloth roles and precedence over stored swaps.
+assert.equal(api.__test.weavingUsesCrossDyePatterns(oppositeDyes), true, 'new cross-dye mode lives on the garment, not the library motif');
+assert.equal(api.__test.weavingUsesCrossDyePatterns({ layers: oppositeDyes.layers }), false, 'old layered garments retain the independent pattern dye by default');
+assert.equal(api.__test.weavingSwapsPatternColorsForRole(oppositeDyes, 'base'), false, 'cross-dye mode overrides the old base-layer swap without erasing its saved flag');
+assert.equal(api.__test.weavingSwapsPatternColorsForRole(oppositeDyes, 'trim'), false, 'cross-dye mode overrides the old trim-layer swap while active');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'base', 'A', '#123456', '#fedcba', '#111111'), '#fedcba', 'base motifs use Dye B even if Dye C was formerly set');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'trim', 'B', '#123456', '#fedcba', '#111111'), '#123456', 'trim motifs use Dye A even if Dye C was formerly set');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'wrap', 'B', '#123456', '#fedcba', '#111111'), '#123456', 'authored B-palette parts use Dye A even if their role is not literally trim');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'trim', null, '#123456', '#fedcba', '#111111'), '#123456', 'trim role remains a fallback for legacy sprites without palette metadata');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'base', null, '#123456', null, '#111111'), '#123456', 'missing optional Dye B falls back safely without breaking older dye data');
+assert.equal(api.__test.patternInkHexForLayer({ layers: oppositeDyes.layers }, 'base', 'A', '#123456', '#fedcba', '#111111'), '#111111', 'unchecked mode keeps Dye C as the pattern color');
+assert.notEqual(api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: oppositeDyes }), api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: { layers: oppositeDyes.layers } }), 'changing cross-dye mode invalidates previously cached inventory portraits');
 assert.equal(api.__test.weavingHasOptionalTrim({ trim: { enabled: true, dyeSlot: 'C' } }), true, 'trim metadata is recognized without fabricating a reusable pattern');
 assert.equal(api.__test.weavingHasAnyDecoration({ trim: { enabled: true, dyeSlot: 'A' } }), true, 'trim-only garments enter the shared decorated render/save path');
 assert.equal(api.hasWovenPattern({ weaving: { trim: { enabled: true, dyeSlot: 'B' } } }), true, 'trim-only inventory icons are treated as fully composited so legacy tinting cannot wash them out');
