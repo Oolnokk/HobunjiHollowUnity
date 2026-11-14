@@ -133,6 +133,8 @@
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
+  let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
+  let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
   let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
   let fullscreenReplayCount = 0; // Replays that fell back to full-framebuffer passes (see replayScissorRect).
   let lastReplayScissorCoverage = 1; // Fraction of the framebuffer the last replay's passes touched.
@@ -1258,6 +1260,57 @@
     renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
   }
 
+  const WATER_TINT_TILE_RADIUS = 3; // Permits long tools and adjacent banks while excluding remote waterways.
+  const waterTintWorldBounds = new THREE.Box3(); // Reused for non-merged water/slush geometry without tile metadata.
+  const waterActorTileNeighborhoods = new WeakMap(); // Cached 7×7 tile keys per actor root; updated only when its tile changes.
+
+  function nearbyWaterTileKeys(scope) {
+    const root = scope.root;
+    const old = root && waterActorTileNeighborhoods.get(root);
+    if (old && old.col === scope.col && old.row === scope.row) return old.keys;
+    const keys = []; // Used only against wet-tile footprints, avoiding repeated string allocation per water mesh per frame.
+    for (let row = scope.row - WATER_TINT_TILE_RADIUS; row <= scope.row + WATER_TINT_TILE_RADIUS; row++) {
+      for (let col = scope.col - WATER_TINT_TILE_RADIUS; col <= scope.col + WATER_TINT_TILE_RADIUS; col++) {
+        keys.push(col + ',' + row);
+      }
+    }
+    if (root) waterActorTileNeighborhoods.set(root, { col: scope.col, row: scope.row, keys });
+    return keys;
+  }
+
+  function tintCoverNearActor(cover, scopes) {
+    const footprint = cover.userData?.hobunjiWaterTileFootprint;
+    if (Array.isArray(footprint?.bounds)) {
+      const [minCol, minRow, maxCol, maxRow] = footprint.bounds;
+      for (const scope of scopes) {
+        if (!Number.isFinite(scope.col) || !Number.isFinite(scope.row)) return true; // Unknown coordinates fail open to preserve real water coverage.
+        if (scope.col + WATER_TINT_TILE_RADIUS + 1 < minCol
+            || scope.col - WATER_TINT_TILE_RADIUS > maxCol
+            || scope.row + WATER_TINT_TILE_RADIUS + 1 < minRow
+            || scope.row - WATER_TINT_TILE_RADIUS > maxRow) continue;
+        if (!footprint.tiles) return true; // A genuine map-wide flood occupies this entire rectangle.
+        for (const key of nearbyWaterTileKeys(scope)) if (footprint.tiles.has(key)) return true;
+      }
+      return false;
+    }
+    // Scenery water and slush do not have per-tile footprints. Their world
+    // bounds can safely exclude distant surfaces; uncertain meshes stay eligible.
+    const geometry = cover.geometry;
+    if (!geometry?.boundingBox) geometry?.computeBoundingBox?.();
+    if (!geometry?.boundingBox || !cover.matrixWorld) return true;
+    waterTintWorldBounds.copy(geometry.boundingBox).applyMatrix4(cover.matrixWorld);
+    const { min, max } = waterTintWorldBounds;
+    if (![min.x, min.z, max.x, max.z].every(Number.isFinite)) return true;
+    for (const scope of scopes) {
+      if (!Number.isFinite(scope.col) || !Number.isFinite(scope.row)) return true;
+      if (max.x >= scope.col - WATER_TINT_TILE_RADIUS
+          && min.x <= scope.col + WATER_TINT_TILE_RADIUS + 1
+          && max.z >= scope.row - WATER_TINT_TILE_RADIUS
+          && min.z <= scope.row + WATER_TINT_TILE_RADIUS + 1) return true;
+    }
+    return false;
+  }
+
   const footTintScreenRect = new THREE.Vector4(); // Reused scratch: no per-frame allocation.
   function hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers) {
     if (!overlayMeshes.length || !tintCovers.length) return false;
@@ -1335,7 +1388,7 @@
     if (actor.isPlayer) {
       const ruinFloor = window.DevRandomRuin?.getPlayerGroundSupportY?.(); // The active ruin owns physical footing, independent of rig animation and plasm sink.
       if (Number.isFinite(ruinFloor)) {
-        const scope = { elevation: ruinFloor, col, row }; // Keep the floor height and tile tied to the same holder.
+        const scope = { elevation: ruinFloor, col, row, root }; // Keep the floor height and tile tied to the same holder.
         cache.set(root, scope);
         return scope;
       }
@@ -1351,7 +1404,7 @@
         elevation += Number(channel.translation?.y) || 0;
       }
     }
-    const scope = { elevation, col, row }; // Reused by every weapon or rig part owned by this root.
+    const scope = { elevation, col, row, root }; // Reused by every weapon or rig part owned by this root.
     cache.set(root, scope);
     return scope;
   }
@@ -1441,7 +1494,7 @@
     lastUnknownElevationMeshes = unknown;
     lastXrayTileRegions = groups.reduce((count, group) => count + group.regions.length, 0);
     lastXrayOrdinaryMeshes = ordinary.length;
-    return { groups, ordinary };
+    return { groups, ordinary, scopes: [...actors.values()], hasUnknownOwner: unknown > 0 };
   }
 
   function installGroundElevationShader(material) {
@@ -1727,11 +1780,20 @@
     const overlayMeshes = [...held, ...feet];
     const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
     const groundMeshes = [...ground, ...topFaceGround];
-    const { groups, ordinary } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
+    const { groups, ordinary, scopes, hasUnknownOwner } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
     const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
     if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
-    const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
+    // Screen-space overlap alone is insufficient: a long merged river can
+    // project over the player's silhouette even when every wet tile is far away.
+    // An unresolved owner falls back to the original conservative behavior.
+    const nearbyTintCovers = !hasUnknownOwner && scopes.length
+      ? tintCovers.filter(cover => tintCoverNearActor(cover, scopes))
+      : tintCovers;
+    lastNearbyTintCovers = nearbyTintCovers.length;
+    lastDistantTintCovers = tintCovers.length - nearbyTintCovers.length;
+    const tintOverlay = lastBaseStencilBits >= 1
+      && hasOverlappingHeldCover(renderer, camera, overlayMeshes, nearbyTintCovers);
     const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
     let scissored = replayScissorEnabled && hasScissorApi && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     lastHeldFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
@@ -1895,7 +1957,11 @@
       }
 
       if (tintOverlay) {
-        const tintStates = prepareOverlayCoverTintMaterials(tintCovers);
+        // A shared water material and replay camera layer would otherwise
+        // draw excluded distant meshes even when only nearby materials changed.
+        const distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
+        try {
+        const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
           const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
@@ -1905,7 +1971,7 @@
         } finally {
           restoreMaterialStates(tintStates);
         }
-        const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);
+        const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
           const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
@@ -1913,6 +1979,9 @@
           window.PerfProfiler?.end(depthPerf);
         } finally {
           restoreMaterialStates(coverDepthStates);
+        }
+        } finally {
+          restoreVisibility(distantTintHidden);
         }
       }
 
@@ -2267,6 +2336,8 @@
       translucentCoverMeshes: tintCoverRegistry.all.size,
       waterOccludedMeshes: waterOccludedMeshCount,
       waterReplays: waterReplayCount,
+      nearbyTintCovers: lastNearbyTintCovers,
+      distantTintCoversSkipped: lastDistantTintCovers,
       stencilBits: lastBaseStencilBits,
       missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
       scissoredReplays: scissoredReplayCount,
