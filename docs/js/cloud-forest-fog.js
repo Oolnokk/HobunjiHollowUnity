@@ -1111,6 +1111,8 @@
     lastUnifiedLightingScene = activeScene;
 
     const ctx = lightingDeps.lctx;
+    if(currentArea==='map_i_dev_random_ruin')
+      window.RuinRoomSystem?.prepareLightClip?.((x,y,z)=>lightingDeps.worldToOverlay(x,y,z)); // One camera projection per room per redraw, shared by every light.
     ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
