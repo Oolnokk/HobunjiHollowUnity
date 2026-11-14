@@ -191,6 +191,9 @@ assert.equal(game.CropPlanting.plantCrop(blendedTile, offspring.id).ok, true);
 assert.equal(blendedTile.crop, offspring.id);
 assert.equal(cropData[blendedTile.crop].varietyColor, expectedPigment, 'world renderer uses the exact blended offspring color');
 
+const liveGame = fs.readFileSync('docs/game.js', 'utf8'); // Guards the production-only inventory registry injection missing from the original implementation.
+assert.match(liveGame, /window\.FarmProduction\.init\(\{ getPlayerData:[^\n]+calendar, inventory, inventoryItems, ITEM_DEFS, cropData/,
+  'the live farm initializer receives inventoryItems so imported seeds become selectable');
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
