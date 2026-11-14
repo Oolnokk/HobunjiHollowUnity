@@ -438,8 +438,11 @@
         const sourcePiece=piece?.currentPiece||piece; // Authored shell and balcony markers for this placed building.
         const roofCells=sourcePiece?.footprint?.cells||[]; // Structural shell cells establish the same full-footprint origin as HousePieceGen.
         const roofExt=sourcePiece?.footprint?.extensions||{}; // Exterior porch cells affect the building's rotated placement pivot.
-        const allRoofCells=roofCells.concat(roofExt.entryTunnels||[],roofExt.tallEntryTunnels||[],
-          roofExt.chimneys||[],roofExt.porches||[],roofExt.porchStairs||[],roofExt.railings||[]);
+        const allRoofCells=sourcePiece.placementOrigin==='fullFootprint'
+          ? roofCells.concat(roofExt.entryTunnels||[],roofExt.tallEntryTunnels||[],
+            roofExt.chimneys||[],roofExt.porches||[],roofExt.porchStairs||[],roofExt.railings||[],
+            (sourcePiece.balconies||[]).flatMap(entry=>entry.cells||[]))
+          : roofCells; // Exactly mirror HousePieceGen's full-footprint/legacy anchor rule.
         if(allRoofCells.length){
           const minX=Math.min(...allRoofCells.map(c=>c.x)), minZ=Math.min(...allRoofCells.map(c=>c.y));
           const width=Math.max(...allRoofCells.map(c=>c.x))-minX+1;
