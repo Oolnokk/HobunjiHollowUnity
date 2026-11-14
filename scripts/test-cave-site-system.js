@@ -433,6 +433,7 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
 // reserved before those layers, and the backup chest uses normal lockpicking.
 {
   let rockDoors = 0; // Count hidden puzzle-cave portals exercised across independent deterministic seeds.
+  let ruinDoors = 0; // Count existing full-sized ruin thresholds safely concealed by an optional wall.
   let surpriseCaches = 0; // Count chest-only fallbacks on non-cache cave histories.
   let walledChambers = 0; // Number of generated side chambers that must all have a real payoff.
   for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave', 'ruin_entrance', 'trapped_cache']) {
@@ -445,14 +446,20 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
       }
       walledChambers++;
       const hidden = new Set(plan.separator.farKeys);
-      const reward = plan.puzzleDoor || plan.cache;
+      const hiddenRuin = !!(plan.ruinEntrance && hidden.has(plan.ruinEntrance.col + ',' + plan.ruinEntrance.row));
+      const reward = hiddenRuin ? plan.ruinEntrance : (plan.puzzleDoor || plan.cache);
       assert(reward, `${map.id}: breakable walls never hide a rewardless chamber`);
       assert(hidden.has(reward.col + ',' + reward.row), `${map.id}: the reward is physically behind the barrier`);
       assert.equal(map.caveSitePlan.extension?.rewardType,
-        plan.puzzleDoor ? 'puzzle_cave' : 'cache', `${map.id}: diagnostics disclose the actual destination`);
+        hiddenRuin ? 'ruin_entrance' : plan.puzzleDoor ? 'puzzle_cave' : 'cache', `${map.id}: diagnostics disclose the actual destination`);
       assert(map.floor.some(([col,row]) => col === reward.col && row === reward.row),
         `${map.id}: destination stands on carved floor, not empty rock`);
-      if (plan.puzzleDoor) {
+      if (hiddenRuin) {
+        ruinDoors++;
+        assert(map.caveRuinEntrance?.id === reward.id, `${map.id}: the real full-size ruin threshold is retained`);
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'ruinEntranceDoor'),
+          `${map.id}: ruin destination uses the existing modeled ruin doorway`);
+      } else if (plan.puzzleDoor) {
         rockDoors++;
         assert(map.exits.some(exit => exit.id === reward.id && exit.targetMap === reward.targetMapId),
           `${map.id}: puzzle doorway has a working native cave transition`);
@@ -468,6 +475,7 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   }
   assert(walledChambers > 0, 'regression fixture exercises at least one destructible wall');
   assert(rockDoors > 0, 'spacious hidden chambers can contain genuine Puzzle Cave entrances');
+  assert(ruinDoors >= 0, 'hidden ruin count is collected when a valid full-size doorway can be concealed');
   assert(surpriseCaches > 0, 'non-cache histories also generate the guaranteed secret cache outcome');
 }
 
@@ -482,6 +490,15 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   assert(Cave.__test.installMineableSeparator(ruinSide, rngFactory('ruin-side'), reserved, plan), 'near-side ruin door permits a mined annex');
   assert(plan.separator.nearKeys.includes('3,3'), 'the original ruin door remains accessible before any rock is broken');
   assert(!plan.separator.farKeys.includes('3,3'), 'the ruin doorway is never sealed behind the annex wall');
+
+  const concealedRuin=baseMap('ruin_hidden_extension'); // Full doorway already occupies the far chamber of a connected two-room cave.
+  const hiddenPlan={ruinEntrance:{col:9,row:3},separator:null}; // Existing fully generated ruin doorway; the wall is not allowed to fabricate one.
+  assert(Cave.__test.installMineableSeparator(concealedRuin,rngFactory('ruin-hidden'),new Set(),hiddenPlan,true),
+    'hidden-ruin mode can install a separator without inventing or relocating the doorway');
+  assert(hiddenPlan.separator.farKeys.includes('9,3'),
+    'the authentic ruin threshold can deliberately lie on the mined side when space permits');
+  assert(!hiddenPlan.separator.nearKeys.includes('9,3'),
+    'the full-size door cannot be reached before blasting the wall in hidden-ruin mode');
 
   // An animal Den-Mother and her eggs must never be locked inside a pocket:
   // the optional extension adds loot, it must not alter the boss encounter.
