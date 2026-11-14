@@ -71,11 +71,11 @@
     $('partTileSpanRole').value = part.tileSpanRole || 'none';
     $('partTileSpanRoots').classList.toggle('hidden', part.tileSpanRole !== 'stretch');
     const roots = part.tileSpanRoots || {};
-    const choices = [{value:'',label:'Choose rigid piece'}].concat(editor.state.parts
-      .filter(other=>other.id!==part.id)
-      .map(other=>({value:other.id,label:other.name})));
     for (const side of ['Start','End']) {
-      const source = roots[side.toLowerCase()] || {};
+      const key = side.toLowerCase(), source = roots[key] || {};
+      const choices = [{value:'',label:'Choose rigid '+key+' piece'}].concat(editor.state.parts
+        .filter(other=>other.id!==part.id && (other.tileSpanRole===key || other.id===source.partId))
+        .map(other=>({value:other.id,label:other.name+(other.tileSpanRole!==key?' (invalid end role)':'')})));
       options('partTileSpan'+side+'Root', choices, source.partId);
       const surfaces = [{value:'',label:'Automatic outer face'}].concat([...editor.surfaceGroups.values()]
         .filter(surface=>surface.partId===source.partId)
