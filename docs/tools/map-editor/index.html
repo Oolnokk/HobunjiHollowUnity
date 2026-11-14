@@ -3222,8 +3222,9 @@ function draw() {
     if (f.authoredFurnitureKey === 'townStairBridge') {
       const center = w2s(f.col + .5 + (f.postX || 0), f.row + .5 + (f.postZ || 0));
       ctx.save();ctx.translate(center.x, center.y);ctx.rotate(-(f.rotY || 0)*Math.PI/180);
-      ctx.fillRect(-4*z,-z,8*z,2*z);ctx.strokeStyle=isSel?'#facc15':'#96714b';ctx.lineWidth=isSel?2:1;
-      ctx.strokeRect(-4*z,-z,8*z,2*z);ctx.restore();
+      // Three-wide bridge grows one tile west (+local Z), keeping its original eastern (-local Z) edge fixed.
+      ctx.fillRect(-4*z,-z,8*z,3*z);ctx.strokeStyle=isSel?'#facc15':'#96714b';ctx.lineWidth=isSel?2:1;
+      ctx.strokeRect(-4*z,-z,8*z,3*z);ctx.restore();
       if(z>9)ctx.fillText(info.icon,center.x,center.y); // Rotated footprint shows the crossing, not just its anchor tile.
     } else {
       ctx.fillRect(p.x+1,p.y+1,z-2,z-2);
