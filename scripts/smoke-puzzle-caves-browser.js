@@ -235,8 +235,8 @@ async function main(){
           if(adapted?.kind!=='cavePressurePlate'||!adapted.solved||adapted.doorRise!==1)
             throw Error('Real cave-site builder failed to migrate a saved legacy melody to a solved pressure plate');
           if(!fireInterior.disposed)throw Error('Legacy scene rebuild retained its previous fire challenge');
-          if(!collision.blocksBox(legacyId,room.x+.65,gateZ,.18,roofHeight-1.5))
-            throw Error('Migrated interior lost its tall permanent stone shoulder collision');
+          if(!adapted.rockSurround?.geometry?.getAttribute?.('position'))
+            throw Error('Migrated interior lost the permanent stone gate surround'); // The fixture is deliberately inactive: physical blocking is tested above with the active-area composer.
         }finally{
           registry.puzzleChallengesByMapId.get(legacyId)?.challenge?.dispose?.();
           registry.puzzleChallengesByMapId.delete(legacyId);
