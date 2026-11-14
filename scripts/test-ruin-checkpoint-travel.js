@@ -41,10 +41,10 @@ globalThis.RuinJumpShaft=Jump;
 let rangedEquipped=true; // Fire prompts are available only with a ranged weapon.
 globalThis.RangedWeapons={equippedRangedKey:()=>rangedEquipped?'test-bow':null};
 globalThis.DungeonFire={armNextProjectile:()=>{if(!rangedEquipped)return false;fireArms++;return true;}};
-function spawn(withNative=false,withTothal=false){
+function spawn(withNative=false,withTothal=false,withHachutu=false){
   const scene=new Node(),controls=[]; // The actual ruin interaction list is injected, not replaced.
   currentScene=scene;
-  const ruin={controls,seed:77,theme:withTothal?'tothal':'hronal',spawn:{x:2,z:3},shaftGrids:new Map([
+  const ruin={controls,seed:77,theme:withTothal?'tothal':'hronal',hachutu:withHachutu,spawn:{x:2,z:3},shaftGrids:new Map([
     ['wing',{grid:{xToCol:n=>Math.floor(n),zToRow:n=>Math.floor(n),yToLevel:n=>n,inBounds:()=>true,canStand:()=>true},contains:()=>true}]
   ])};
   const manual={kind:'layerBrazier',object:new Node(),floorY:0,range:1.7,lit:()=>true};
@@ -157,6 +157,11 @@ try{
   assert.equal(frozen.ruin.shaftObeliskRuntime.columns.get(platform.id).holder.children.length,0,
     'platform fixture is detached on teardown');
   rangedEquipped=true;
+  const temple=spawn(false,true,true); // Hachutu uses the shaft but never borrows Tothal fire puzzles.
+  assert.equal(temple.controls.some(c=>c.kind==='dungeonFireSource'),false,
+    'exclusive Hachutu temples must not acquire Tothal fire controls');
+  assert.equal(temple.owner.getState().shaftIgnitionAvailable,false);
+  temple.owner.dispose();
   assert(lightRefreshes>=4);
   console.log('Ruin shaft / small braziers, Action 1 holds, Action 2, world restore: PASS');
 }finally{
