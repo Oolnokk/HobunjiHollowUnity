@@ -428,6 +428,49 @@ for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
   if (contents === 'mushroom_cave') assert(extended.caveMushrooms.some(far), 'hidden grotto includes a pickable Duskcap');
 }
 
+// Mineable partitions must ALWAYS conceal an actual destination, not a vacant
+// chamber or only ordinary mine/mushroom/crypt decoration. The doorway is
+// reserved before those layers, and the backup chest uses normal lockpicking.
+{
+  let rockDoors = 0; // Count hidden puzzle-cave portals exercised across independent deterministic seeds.
+  let surpriseCaches = 0; // Count chest-only fallbacks on non-cache cave histories.
+  let walledChambers = 0; // Number of generated side chambers that must all have a real payoff.
+  for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave', 'ruin_entrance', 'trapped_cache']) {
+    for (let index = 0; index < 14; index++) {
+      const map = extendedCave(profile(`map_i_rewarded_wall_${contents}_${index}`, contents));
+      const plan = Cave.__test.plansByMapId.get(map.id);
+      if (!plan.separator) {
+        assert(!map.oreRocks.some(rock => rock.caveSeparator), 'an omitted side chamber leaves no false mineable wall');
+        continue;
+      }
+      walledChambers++;
+      const hidden = new Set(plan.separator.farKeys);
+      const reward = plan.puzzleDoor || plan.cache;
+      assert(reward, `${map.id}: breakable walls never hide a rewardless chamber`);
+      assert(hidden.has(reward.col + ',' + reward.row), `${map.id}: the reward is physically behind the barrier`);
+      assert.equal(map.caveSitePlan.extension?.rewardType,
+        plan.puzzleDoor ? 'puzzle_cave' : 'cache', `${map.id}: diagnostics disclose the actual destination`);
+      assert(map.floor.some(([col,row]) => col === reward.col && row === reward.row),
+        `${map.id}: destination stands on carved floor, not empty rock`);
+      if (plan.puzzleDoor) {
+        rockDoors++;
+        assert(map.exits.some(exit => exit.id === reward.id && exit.targetMap === reward.targetMapId),
+          `${map.id}: puzzle doorway has a working native cave transition`);
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'cliffDoor'),
+          `${map.id}: the destination has a visible modeled door`);
+      } else {
+        if (contents !== 'trapped_cache') surpriseCaches++;
+        assert(map.caveProps.some(prop => prop.id === reward.id && prop.key === 'ruinDungeonChestT2'),
+          `${map.id}: backup destination is a visible physical chest`);
+        assert(map.caveCache?.id === reward.id, `${map.id}: cache has the existing saved lockpicking identity`);
+      }
+    }
+  }
+  assert(walledChambers > 0, 'regression fixture exercises at least one destructible wall');
+  assert(rockDoors > 0, 'spacious hidden chambers can contain genuine Puzzle Cave entrances');
+  assert(surpriseCaches > 0, 'non-cache histories also generate the guaranteed secret cache outcome');
+}
+
 // Ruin-door caves are also eligible, provided the extension doesn't wall off the
 // mandatory doorway. Use an explicit near-side doorway fixture to isolate that
 // safety rule from the more restrictive full SDF ruin-door placement.
