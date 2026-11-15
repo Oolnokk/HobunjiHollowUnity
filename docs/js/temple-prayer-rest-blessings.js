@@ -405,7 +405,7 @@
         if (prayer) entries.push({ id: `temple-prayer-${prayer.id}`, icon: prayer.icon, label: prayer.name, sourceLabel: 'Temple Prayer', description: prayer.description, durationS: PRAYER_DURATION_HOURS * 3600, remainingS: (state.prayer.expiresAtGameHour - now) * 3600 });
       }
       if (state.rested) entries.push({ id: 'rested', icon: '💤', label: 'Rested', sourceLabel: 'Sleep or seated Wait', description: 'Prevents hourly fatigue yawns. Does not grant the additional Well Rested stat bonuses.', durationS: RESTED_DURATION_HOURS * 3600, remainingS: (state.rested.expiresAtGameHour - now) * 3600 });
-      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: 'Well Rested', sourceLabel: 'Sleep', description: '+8% movement speed, +30% Stamina recovery, stronger food and potion benefits, and no hourly fatigue yawns.', durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
+      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: 'Well Rested', sourceLabel: 'Sleep', description: '+8% movement speed; +30% Stamina recovery; food and potion strength gains 1 extra stack per 3 stacks (rounded down); prevents hourly fatigue yawns.', durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
       return entries;
     });
     hudProviderInstalled = true;
