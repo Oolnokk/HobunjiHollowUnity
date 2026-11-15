@@ -21,8 +21,9 @@ Follow-ups the same day: the label drops the resource word the bar already impli
 of each SVG-shaped segment (brittle / drip / starved / balloon / crenellated) is repeated in a second stroke-only SVG
 (`.vb-outline-svg`, z-index 42) layered over the label (41) so the outline occludes the text. The opaque black backing
 rect around the shape deliberately stays under the label (a first version masked it too and hid the name on pinched
-shapes). Known consequence: a *starved* (pinched) segment such as Winded Stamina leaves only a couple of pixels between
-its two outline strokes, so its name is mostly hidden by the outline. Plain bordered segments needed nothing: their
+shapes). A *starved* (pinched) segment such as Winded Stamina originally closed to 1/3 of the bar, leaving a couple of pixels
+between its two outline strokes, so its name was mostly hidden; the pinch is now `STARVED_PINCH = 3.33` of the 40
+viewBox units per side (a throat of ~5/6, still visibly concave, label fully readable; 13.33 restores the old shape). Plain bordered segments needed nothing: their
 label already sits inside the border's padding box.
 
 Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,

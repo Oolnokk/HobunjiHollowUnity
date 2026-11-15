@@ -203,8 +203,16 @@
   // every tick; the short jagged shapes are seeded, stable and memoized.
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const SVG_HEIGHT = 40;
-  // Severely pinched throat: 13.34 of 40 units, or ~1/3 normal height.
-  const STARVED_PATH = 'M 0 0 C 7 10.5 16 13.33 34 13.33 L 66 13.33 C 84 13.33 93 10.5 100 0 L 100 40 C 93 29.5 84 26.67 66 26.67 L 34 26.67 C 16 26.67 7 29.5 0 40 Z';
+  // Pinched throat of a capacity-reduced ("starved") band: each side closes in by STARVED_PINCH of the 40 viewBox units,
+  // leaving 40 - 2 * STARVED_PINCH open in the middle. It was 13.33 (a throat of ~1/3 of the bar), which left almost no
+  // room between the two outline strokes for the affliction name; 3.33 (a throat of ~5/6) is a subtle pinch that still
+  // reads as a pinch and leaves room for the label. The curve control points keep the original 0.7875 ratio of the inset.
+  const STARVED_PINCH = 3.33;
+  const starvedY = value => Number(value.toFixed(2));
+  const STARVED_PATH = 'M 0 0 C 7 ' + starvedY(STARVED_PINCH * 0.7875) + ' 16 ' + starvedY(STARVED_PINCH) + ' 34 ' + starvedY(STARVED_PINCH)
+    + ' L 66 ' + starvedY(STARVED_PINCH) + ' C 84 ' + starvedY(STARVED_PINCH) + ' 93 ' + starvedY(STARVED_PINCH * 0.7875) + ' 100 0'
+    + ' L 100 40 C 93 ' + starvedY(40 - STARVED_PINCH * 0.7875) + ' 84 ' + starvedY(40 - STARVED_PINCH) + ' 66 ' + starvedY(40 - STARVED_PINCH)
+    + ' L 34 ' + starvedY(40 - STARVED_PINCH) + ' C 16 ' + starvedY(40 - STARVED_PINCH) + ' 7 ' + starvedY(40 - STARVED_PINCH * 0.7875) + ' 0 40 Z';
   const jaggedPaths = new Map();
 
   function stableSeed(text) {

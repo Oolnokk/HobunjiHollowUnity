@@ -240,7 +240,7 @@ const windedSpan = elements.get('vbStaminaSegments').children.find(span => span.
 assert(windedSpan?.className.includes('vb-effect-starved'), 'flasker Winding affliction uses a genuinely pinched band');
 assert.equal(windedSpan.style.backgroundColor, 'transparent', 'starved band draws the SVG fill rather than a rectangular fill');
 assert.equal(windedSpan.children[0].id, 'svg', 'starved band owns an inline SVG');
-assert.equal(windedSpan.children[0].children[1].getAttribute('d'), congealedShape, 'band uses the same one-third-height starved spline as the missing cap');
+assert.equal(windedSpan.children[0].children[1].getAttribute('d'), congealedShape, 'band uses the same starved spline as the missing cap');
 player.afflictions.windedStamina = 0;
 player.stamina = 100;
 player.afflictions.poisonedHealth = 20;
@@ -369,7 +369,7 @@ assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its drop
 assert(css.includes('vb-fluid-drop 1.45s linear infinite'), 'droplets fall constantly on a fast loop');
 assert(css.includes('animation-delay: -.725s'), 'drip emitters stagger by half a cycle');
 assert.equal(bleedingSpan.children[0].children[1].children[0].getAttribute('dur'), '1.45s', 'SVG neck follows the faster droplet cycle');
-assert(congealedShape.includes('13.33') && congealedShape.includes('26.67'), 'starved throat is one-third of normal height');
+assert(congealedShape.includes(' 3.33 ') && congealedShape.includes(' 36.67 '), 'starved throat is a subtle pinch: 3.33 of 40 units closed in per side, leaving ~5/6 of the height open');
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
 assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');
