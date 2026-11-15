@@ -63,6 +63,7 @@
       kind: 'bane',
       sourceLabel: 'Harlyao Presence',
       description: `Movement speed -${Math.round((1 - movementMultiplierFor()) * 100)}%; lantern radius decreases and unlit areas grow darker.`,
+      timeBasis: 'conditional', remainingLabel: 'While nearby', // This proximity effect has no countdown.
       stacks,
       durationS: 1,
       remainingS: 1,
