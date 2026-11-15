@@ -43,6 +43,27 @@ const deps = {
   refreshActionBar() {}, selectTorch() { activeTool = 'adventuring'; },
 };
 torch.init(deps);
+vm.runInNewContext(read('docs/js/combat/attack-pose-templates.js'), { window: world }); // Run the actual shared attack template helper used by both gameplay and editor.
+world.WeaponToolStances = { poses: { torchHold: { x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 } } }; // Fixture for the runtime's authored torch carry, not its longsword-derived hand grip.
+const forehand = world.AttackPoseTemplates.poseFor('hatchet_swing');
+const torchVisual = torch.forehandSwingVisual();
+assert(torchVisual, 'equipped torch provides its own forehand animation');
+assert.equal(torchVisual.options.toolSlot, 'adventuring');
+assert.equal(torchVisual.options.anim, 'sweep');
+assert.equal(torchVisual.options.dirSign, 1);
+assert.equal(torchVisual.durationS, 0.415);
+assert.equal(torchVisual.options.windupFrac, 0.345 / 0.415);
+assert.equal(torchVisual.options.strikeFrac, 1);
+assert.equal(torchVisual.options.holdS, 0.43);
+assert.equal(torchVisual.options.pose.neutral.x, 0.13, 'torch starts from its authored carry');
+assert.equal(torchVisual.options.pose.neutral.y, 0.16);
+assert.equal(torchVisual.options.pose.neutral.z, 0.03);
+assert.equal(torchVisual.options.pose.windup.bodyYaw, forehand.windup.bodyYaw, 'same forehand winding body turn');
+assert.equal(torchVisual.options.pose.strike.bodyYaw, forehand.strike.bodyYaw, 'same forehand follow-through');
+assert.equal(torchVisual.options.pose.strike.x, 0.13, 'forehand is translated without snapping to hatchet origin');
+assert.equal(torchVisual.options.pose.strike.z, 0.03);
+assert.equal(torchVisual.options.pose.neutral.worldUpright, undefined, 'world-up correction must not be an attack pose setting');
+assert.equal(torchVisual.options.lungeMul, undefined, 'torch does not inherit the combat lunge');
 assert.deepEqual(Array.from(torch.entries(), entry => entry.id), ['torch']);
 assert.equal(torch.isLit(), false);
 assert.equal(torch.canThrow(), false);
@@ -82,6 +103,14 @@ heldMode = 'item';
 assert.equal(torch.canThrow(), false);
 
 const game = read('docs/game.js');
+const torchActionStart = game.indexOf("const torchVisual = activeTool === 'adventuring'"); // The central action dispatch must start the forehand before queuing the physical contact.
+const torchActionQueued = game.indexOf('pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };', torchActionStart);
+assert(torchActionStart >= 0 && torchActionQueued > torchActionStart, 'torch action queues contact after selecting its visual');
+const torchDispatch = game.slice(torchActionStart, torchActionQueued);
+assert(torchDispatch.includes('synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options)'), 'torch uses the shared hand-grip/visual clock when available');
+assert(torchDispatch.includes('else triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options)'), 'fallback is present before combat hooks initialize');
+assert(game.includes("toolSwingT > 0 && (!!combatSwingPose || activeTool === 'adventuring')"), 'all torch actions suppress world-upright correction while active');
+assert(game.includes("opts.toolSlot === 'adventuring'"), 'visual trigger only permits explicitly tagged adventuring poses');
 const arc = read('docs/js/action-arc-ui.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
 const bandits = read('docs/js/bandit-camps.js');

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<script src="../../js/tool-world-upright.js?v=20261114torchIdleMove2"></script>
+<script src="../../js/tool-world-upright.js?v=20261114torchTipMinusY1"></script>
 <title>Hobunji Attack Animation Editor</title>
 <style>
 :root{
@@ -335,7 +335,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
 <script src="../../js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
-<script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
+<script src="../../js/combat/attack-pose-templates.js?v=20261114torchForehand1"></script>
 <script src="../../js/festival-ancestor-figures.js?v=20261111h74436ed"></script> <!-- Shared carved_smooth portrait recoloring; the Statue Author reuses the exact Tzizkhanash mask. -->
 <script type="module">
 import * as THREE from 'three';
@@ -1633,8 +1633,9 @@ const TOOL_PRESETS = [
     windup:defaultPose(.13,.16,.03,10.31,0,0,0),
     strike:defaultPose(.13,.16,.03,10.31,0,0,0),
     windupFrac:.16,strikeFrac:.28 },
-  { id:'torch_swing', label:'Torch — Swing (sweep)',style:'sweep',toolKey:'torch',still:false,
-    ...sharedAttackPoses('hatchet_swing'),windupFrac:.16,strikeFrac:.28 },
+  { id:'torch_swing', label:'Torch — Forehand Swing (no lunge)',style:'sweep',toolKey:'torch',still:false,worldUpright:false,
+    ...sharedAttackPoses('hatchet_swing'), // Test-friendly fallback: applyPreset translates the shared forehand onto the authored torch neutral.
+    windupFrac:.345/.99025,strikeFrac:.415/.99025,holdFrac:.845/.99025,durationS:.99025 }, // .415s windup+strike, .43s hold and .14525s automatic return.
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -1741,6 +1742,12 @@ async function loadWeaponIdlePresets() {
 }
 void loadWeaponIdlePresets();
 function applyPreset(preset) {
+  if (preset.id === 'torch_swing') {
+    const authoredTorchRest = window.AttackIdleStanceEditor?.getConfig?.()?.stances?.torchHold
+      || TOOL_PRESETS.find(entry => entry.id === 'torch_idle')?.neutral; // Prefer local/fetched torch carry; static torch idle is the safe editor fallback.
+    const torchForehand = window.AttackPoseTemplates?.torchForehandPose?.(authoredTorchRest); // Shared runtime/editor pose math remains optional for isolated editor test harnesses.
+    if (torchForehand) preset = { ...preset, ...torchForehand };
+  }
   if (gizmoMode !== 'off') setGizmoMode('off'); // Switching Actions cannot leave the previous instrument's endpoint/hand gizmo attached.
   if (preset.name) {
     anim.name = preset.name;
@@ -1938,7 +1945,7 @@ function applyPoseToRig(pose) {
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
   if (anim.worldUpright && previewT <= .00001)
-    window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE); // Preview uses the same world-space idle correction as gameplay.
+    window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE, currentToolKey === 'torch' ? -1 : 1); // Torch's -Y flame axis matches gameplay; other sprites retain +Y.
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 

@@ -28,6 +28,21 @@
     if (lit || !isHoldingTorch()) return false;
     lit=true; lastEvent='lit from fire-hazard furniture'; deps?.refreshActionBar?.(); return true;
   }
+  function forehandSwingVisual() {
+    if (!isHoldingTorch()) return null;
+    const pose = window.AttackPoseTemplates?.torchForehandPose?.(window.WeaponToolStances?.poses?.torchHold); // Shared with the editor: exact Forehand deltas from the active torch rest, grip untouched.
+    if (!pose) { lastEvent='forehand pose missing'; return null; }
+    const durationS = 0.345 + 0.07; // Forehand windup/strike timing, without entering the combat lunge system.
+    lastEvent='stationary torch forehand'; // Existing Pixel Probe exposes which swing was selected.
+    return {
+      durationS,
+      options: {
+        toolSlot: 'adventuring', anim: 'sweep', dirSign: 1, power: 1,
+        windupFrac: 0.345 / durationS, strikeFrac: 1, holdS: 0.43,
+        pose,
+      },
+    };
+  }
   function swingAtAim(col,row) {
     if (!isHoldingTorch()) return {ok:false,message:'No torch equipped.'};
     const ray=deps?.getAimRay?.(), THREE=deps?.THREE, holder=deps?.getToolHolder?.();
@@ -65,7 +80,7 @@
     return {ok:true,message:''};
   }
   window.AdventuringTools=Object.freeze({
-    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,swingAtAim,throwLit,
+    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,forehandSwingVisual,swingAtAim,throwLit,
     get debug() {
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.

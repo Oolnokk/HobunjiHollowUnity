@@ -576,7 +576,7 @@
         }
       }
 
-      if (stanceApplied && targetPose?.worldUpright) worldUprightApplied = window.ToolWorldUpright?.apply?.(this, toolPlane, THREE) === true; // Correct the actual sprite tip after the sweep-plane neutral twist.
+      if (stanceApplied && targetPose?.worldUpright) worldUprightApplied = window.ToolWorldUpright?.apply?.(this, toolPlane, THREE, torchIdle ? -1 : 1) === true; // Torch's flame is authored at PNG -Y; correct that end only, without editing grip data.
       const stateLabel = attackInProgress
         ? `attack-neutral=${visual?.progress?.toFixed?.(2) ?? '0'}`
         : stanceApplied ? 'idle-holder' : holderMoving ? 'tool-motion' : 'default';
