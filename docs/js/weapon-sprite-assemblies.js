@@ -126,8 +126,10 @@
     map.needsUpdate = true;
     const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit; // Use the same unlit PNG material pipeline as the game's other sprites.
     const material = surface?.makeMaterial
-      ? surface.makeMaterial(THREE, map, 'weapon-assembly-layer', { side: THREE.DoubleSide, depthWrite: false })
-      : new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+      ? surface.makeMaterial(THREE, map, 'weapon-assembly-layer', { side: THREE.DoubleSide, depthWrite: true })
+      : new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: true });
+    material.depthWrite = true; // Visible head/layer pixels participate in held-object depth replay like the haft.
+    material.alphaTest = Math.max(0.08, Number(material.alphaTest) || 0); // Discard transparent sprite fringes before writing depth.
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set((Number(offset?.x) || 0) * unit, -(Number(offset?.y) || 0) * unit, 0);
     mesh.renderOrder = order;
@@ -560,7 +562,7 @@
     map.needsUpdate = true;
     const material = new THREE.MeshBasicMaterial({
       map, color: '#FFFFFF', side: THREE.DoubleSide, // Pixel colors are already adjusted; do not multiply the whole shaded PNG again.
-      transparent: true, alphaTest: 0.035, depthWrite: false, toneMapped: false,
+      transparent: true, alphaTest: 0.12, depthWrite: true, toneMapped: false, // Solid rope pixels write depth; translucent fringes do not.
     }); // Same unlit, transparent, double-sided rendering as DungeonRopeArt.
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(aspect, 1), material);
     mesh.name = 'flail_ruin_rope_sprite';
