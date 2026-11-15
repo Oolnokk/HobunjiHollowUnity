@@ -28,6 +28,7 @@ assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
 assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');
 assert.strictEqual(X.get('weapon.followHandLayer'), 'on', 'weapons inherit their gripping hand priority by default');
+assert.strictEqual(X.get('shoulderPet.presentation'), 'authored', 'pet player-body compositing uses authored pose by default');
 let heard = null;
 X.onChange((k, v, prev) => { heard = [k, v, prev]; });
 assert.strictEqual(X.set('hand.frontPlaneMask', 'bogus'), false, 'rejects values outside the rule options');
@@ -90,6 +91,10 @@ assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.opti
 assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
+assert.ok(view.rows.some(r => r[0] === 'Shoulder pet compositor'), 'the same panel reports the shoulder-pet compositor');
+assert.ok(X.DIAGNOSTIC_PRESETS.some(p => p.id === 'shoulder-player-over'), 'pet/player priority is a reproducible preset');
+assert.ok(!view.actions.some(a => a.id === 'set' && a.args?.key === 'shoulderPet.presentation'),
+  'shoulder-pet presentation is selected through presets, not a competing independent control');
 assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
 assert.ok(X.moveLayerInStage('item.weapons', 'actor.feet') === true, 'linked weapons can move within the held stage');
 X.reset();
@@ -123,7 +128,7 @@ assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-st
   'full reset restores stage selection');
 
 // Diagnostic hypothesis presets: each experiment is a fresh, reversible config, not a stack of overrides.
-assert.equal(X.DIAGNOSTIC_PRESETS.length, 10, 'ten grounded A/B diagnostic setups are available');
+assert.equal(X.DIAGNOSTIC_PRESETS.length, 13, '13 A/B diagnostic setups include three shoulder-pet presentations');
 const presetPicker = panel.render().actions.find(action => action.id === 'focus-preset');
 assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all experiments appear in one mobile dropdown');
 assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
@@ -170,7 +175,7 @@ assert.ok(panel.render().actions.some(action => action.id === 'restore-original'
 const savedOriginal = JSON.parse(store['hobunji.xrayHierarchy.diagnostics.v1']);
 assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets retain the original rules, not the previous preset');
 assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
-assert.equal(savedOriginal.active, 'portrait-water-off', 'last applied experiment survives browser reload');
+assert.equal(savedOriginal.active, 'shoulder-world-depth', 'last applied experiment survives browser reload');
 X.set('hand.frontPlaneMask', 'off');
 assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(modified manually)')),
   'editing one rule after applying a preset is reported, not silently treated as the preset');
