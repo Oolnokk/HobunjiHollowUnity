@@ -133,12 +133,16 @@ for (let i=0;i<300;i++) {
   npcLegs.update(.016,seated ? 0 : 2,false,seated);
   layers.setAxis(neck,'npc-yawn-neck','rotation','x',Math.sin(i/9)*.12);
   layers.setAxis(root,'npc-yawn-body','rotation','x',Math.sin(i/12)*.05);
-  assert.ok(layers.getDebug().activeLayers<=8,'named thigh+yawn offsets never multiply on each frame');
+  assert.equal(layers.getDebug().activeLayers,10,'three axes per thigh plus two drunken torso and two yawn owners remain stable');
 }
+const sharedTorsoPitch = root.rotation.x; // Measured before releasing yawn, while drunken torso pitch also owns X.
 layers.clear(neck,'npc-yawn-neck');
 layers.clear(root,'npc-yawn-body');
 nearly(neck.rotation.x,0,'yawn neck returns to authored rest');
-nearly(root.rotation.x,0,'yawn torso returns to authored rest');
+nearly(root.rotation.x,sharedTorsoPitch - Math.sin(299/12)*.05,'yawn release preserves the concurrent drunken torso');
+layers.clear(root,'npc-drunk-body');
+nearly(root.rotation.x,0,'removing both yawn and drunk restores the shared torso X');
+nearly(root.rotation.z,0,'removing drunken roll restores shared torso Z');
 
 // Recompose a fresh walking frame, then make a new IK/knockdown owner claim the
 // foot and body before the drunken decorator releases its previous contribution.
@@ -147,12 +151,16 @@ const externalFoot = new Quaternion().setFromAxisAngle({x:1,y:0,z:0},1.24); // N
 const externalBody = new Quaternion().setFromAxisAngle({x:0,y:0,z:1},-.88); // New carrier/impact absolute torso orientation.
 parts.get('left_foot').quaternion.copy(externalFoot);
 root.quaternion.copy(externalBody);
+root.rotation.x = .44; // A real Three.js quaternion takeover also rewrites its linked Euler.
+root.rotation.z = -.88; // Our lightweight double has independent fields, so model both linked writes explicitly.
 npcLegs.dispose();
 sameRotation(parts.get('left_foot').quaternion,externalFoot,'new foot pose survives drunken disposal');
 sameRotation(root.quaternion,externalBody,'new body pose survives drunken disposal');
 sameRotation(parts.get('right_foot').quaternion,new Quaternion(),'still-owned other foot restores its original quaternion');
 assert.ok(w.HobunjiDrunkWalk.getDebug().poseHandoffs.foot>0,'offscreen diagnostics count superseded foot poses');
-assert.ok(w.HobunjiDrunkWalk.getDebug().poseHandoffs.body>0,'offscreen diagnostics count superseded body poses');
+nearly(root.rotation.x,.44,'new absolute torso pitch survives drunken owner release');
+nearly(root.rotation.z,-.88,'new absolute torso roll survives drunken owner release');
+assert.ok(layers.getDebug().externalTakeovers>=2,'shared ledger identifies the newer torso ownership without stale inverse');
 assert.equal(layers.getDebug().activeLayers,0,'all procedural thigh and yawn offsets released on disposal');
 assert.equal(legDisposeCount,1,'one independent NPC leg handle disposed');
 
