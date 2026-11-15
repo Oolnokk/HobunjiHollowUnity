@@ -375,7 +375,7 @@
           const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
           const roomHex=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
           const roomRgb=[1,3,5].map(n=>parseInt(String(roomHex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220); // The lich's colour, washed toward white: a lit room, not a coloured spotlight.
-          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,active:false};
+          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,roomBound:true,active:false};
           roomLights.push(roomLight);
           let gateLight=null; // Lights the doorway the solve is about to open (assigned below once the gate is known).
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
@@ -460,9 +460,9 @@
           if(flameVisual)wingFlameVisuals.push({...flameVisual,roomId:goal.id}); // Uses the exact player-placeable campfire emitter recipe.
         }
         const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
-        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),active:false}; // Kanthic's goal room is already lit by its brazier record below.
+        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),roomBound:true,active:false}; // Kanthic's goal room is already lit by its brazier record below.
         if(goalLight)roomLights.push(goalLight);
-        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
+        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,roomBound:true,
           color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
