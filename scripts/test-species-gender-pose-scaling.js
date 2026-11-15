@@ -150,7 +150,9 @@ assert.match(editor, /character-rig-scale-defaults\.js/, 'Attack Editor must con
 assert.match(helperSource, /let loadGeneration = 0/, 'pose-orbit config loader must version concurrent source requests');
 assert.match(helperSource, /loaded && generation === loadGeneration/, 'only the newest repo\/LocalDB request may replace live orbit config');
 assert.match(helperSource, /get ready\(\) \{ return readyPromise; \}/, '.ready must always expose the newest selected-source load rather than the parser-time fetch');
-assert.doesNotMatch(helperSource, /Math\.hypot|lengthSq|setLength/, 'shared pose scaler must remain direct per-axis mapping, not a reach clamp');
+assert.match(helperSource, /shoulderGap = Math\.hypot\(/, 'sphere diameter must measure the true 3D separation between shoulder targets');
+assert.match(helperSource, /diameter = 2 \* finalArmLength \+ shoulderGap/, 'shoulder sphere must fit twice the final arm reach plus shoulder separation');
+assert.doesNotMatch(helperSource, /\.setLength\(|\.clampLength\(|lengthSq\(\)/, 'shared pose scaler must not clamp authored attack animation paths to a sphere surface');
 assert.match(helperSource, /A numeric species orbit scale then scales the resulting X\/Y\/Z/, 'shared helper must document isotropic 3D scaling after body-height mapping');
 assert.match(helperSource, /head scale\/Y offset, age hunch, hand[\s\S]*foot scale/i, 'vertical weapon scaling must explicitly exclude head-only and attachment-only scale controls');
 assert.doesNotMatch(heldActions, /HobunjiSpeciesPoseScale/, 'timing/rotation action data must remain independent of translation scaling');
