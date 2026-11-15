@@ -105,11 +105,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261115hbabb493"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261115hbeb620e"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261115torchFlame1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
-<script src="../../js/weapon-layer-effects.js?v=20261115h36cd595"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261115hbeb620e"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261115torchFlame1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261115torchFlame1"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -1629,9 +1629,9 @@ const TOOL_PRESETS = [
     windup: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114), strike: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id:'torch_idle', label:'Torch — Upright Hold (still)', style:'sweep', toolKey:'torch', still:true, worldUpright:true,
-    neutral:defaultPose(.13,.16,.03,10.31,0,0,0),
-    windup:defaultPose(.13,.16,.03,10.31,0,0,0),
-    strike:defaultPose(.13,.16,.03,10.31,0,0,0),
+    neutral:defaultPose(.13,0,.03,10.31,0,0,0),
+    windup:defaultPose(.13,0,.03,10.31,0,0,0),
+    strike:defaultPose(.13,0,.03,10.31,0,0,0),
     windupFrac:.16,strikeFrac:.28 },
   { id:'torch_swing', label:'Torch — Forehand Swing (no lunge)',style:'sweep',toolKey:'torch',still:false,worldUpright:false,
     ...sharedAttackPoses('hatchet_swing'), // The same forehand as the longsword, with its Light attack neutral baked below.
