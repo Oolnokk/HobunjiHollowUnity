@@ -322,7 +322,7 @@
     let yaw = 0, pitch = 0;
     const pads = navigator.getGamepads?.() || [];
     for (const pad of pads) {
-      if (!pad || !Array.isArray(pad.axes)) continue;
+      if (!pad || !pad.axes || pad.axes.length < 4) continue;
       panX += axis(pad.axes[0]); panZ += axis(pad.axes[1]);
       yaw += axis(pad.axes[2]); pitch += axis(pad.axes[3]);
     }
@@ -344,6 +344,15 @@
 
   function installControls() {
     const canvas = $('world');
+    const returnLink = $('returnLink'); // Preserve the previous startup selection screen on the way back.
+    returnLink?.addEventListener('click', event => {
+      try {
+        if (!document.referrer || new URL(document.referrer).origin !== location.origin
+          || !/\/index\.html(?:[?#]|$)/.test(document.referrer)) return;
+        event.preventDefault();
+        history.back();
+      } catch (_) { /* The ordinary href remains a reliable fallback. */ }
+    });
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(type, onPointerUp);
