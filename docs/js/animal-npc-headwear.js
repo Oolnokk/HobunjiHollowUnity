@@ -109,11 +109,11 @@
 
   function normalizeAttachment(raw, fallbackRig = null) {
     const fallback = deriveAttachmentFromHeadRig(fallbackRig);
-    if (!raw || raw.enabled === false) return raw?.enabled === false ? { ...fallback, enabled: false } : fallback;
+    if (!raw) return fallback; // Disabled attachments still carry their authored geometry for future re-enabling.
     const anchor = raw.anchor || raw.point || {};
     const artAnchor = raw.artAnchor || raw.sourceAnchor || {};
     return {
-      enabled: true,
+      enabled: raw.enabled !== false,
       coordinateSpace: 'sprite-normalized-top-left',
       anchor: {
         x: clamp(anchor.x ?? raw.x ?? fallback.anchor.x),
