@@ -691,6 +691,7 @@
       mountAngle += deps.clamp(diff, -turnRate * dt, turnRate * dt);
     } else {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt);
+      window.GroundObstacleAvoidance?.reset('mounted'); // Releasing the reins discards any cached detour; inertia still decelerates normally.
     }
 
     const stepStartX = m.x, stepStartY = m.y;
