@@ -872,7 +872,7 @@
       function combatConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.combat || {};
       }
-      function weaponAbility(action) {
+      function weaponAbility(action, weaponKey = equipmentSlots.weapon) {
         // docs/config/combat/attack-values.json (authored via the Attack
         // Editor) is the real source of truth once it's loaded — falls back
         // to scratchbones-config.js's copy (the original, still-synchronous
@@ -883,7 +883,7 @@
         // effective metal tier (see toolMetalMultiplier) — reinforcement-
         // aware, so a reinforced tool fights at the reinforcing metal's
         // power even though its own base-metal identity never changes.
-        const metalMul = toolMetalMultiplier(equipmentSlots.weapon);
+        const metalMul = toolMetalMultiplier(weaponKey);
         return {
           damage: (Number(cfg.damage) || 0) * metalMul,
           halfConeRad: (Number(cfg.halfConeDeg) || 0) * Math.PI / 180,
@@ -2546,14 +2546,14 @@
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
-        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
+        hearth:        { fireHazard: true, itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
         // A portable camp, not ordinary decor — customPlace opts it out of
         // the generic tile-grid "Place" button/canPlaceDecorativeFurnitureAt
         // path (computeActionButtons/firePendingAction give it its own
         // "Set Up Campfire" button and window.WildernessCampfire.placeFromKit
         // instead), since only one can ever be placed and it's aimed
         // anywhere in the wild rather than snapped to farm/interior tiles.
-        campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
+        campfire:      { fireHazard: true, itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Simple Loom',          modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A compact loom for ordinary single-pattern weaving.' },
         advancedLoom:  { itemKey: 'advancedLoomFurniture',  icon: '🧶', name: 'Advanced Loom',        modelFile: 'loom_small.glb',               price: 72, fw: 1, fd: 2, color: 0x76502f, area: 'interior', desc: 'A full-sized loom that can weave a second overpass pattern.', moteOnly: true, masteryUnlockId: 'advancedLoomBlueprint' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
@@ -5651,7 +5651,8 @@
         // Bandit/tribe actor-vs-actor hits name their attacker; standing near
         // the player must not turn them into the player's own swing.
         const actorAttacker = dmgOpts?.attacker && dmgOpts.attacker !== player ? dmgOpts.attacker : null;
-        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        const activeMeleeStrike = activeTool === 'weapon' || (activeTool === 'adventuring' && dmgOpts?.abilityId === 'torch_swing'); // The stationary torch shares the final player melee reach gate.
+        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeMeleeStrike && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
@@ -20648,7 +20649,6 @@
       }
 
       function applyAction(tool, action, col, row) {
-        if (tool === 'adventuring') return action === 'torch_swing' ? window.AdventuringTools.swingAtAim(col,row) : window.AdventuringTools.throwLit();
         if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${window.FormatUtils.actionName(action)} cannot be used on that tile.` };
         const tile = window.GridTileAccessors.getActiveGrid()[row][col];
 
@@ -21099,6 +21099,11 @@
           return;
         }
 
+        if (activeTool === 'adventuring' && (pendingAction?.tool === 'adventuring'
+            || (activeAction === 'torch_throw' && combatSwingAnim && toolSwingT > 0))) return; // Finish the active strike before accepting another torch action.
+        const torchVisual = activeTool === 'adventuring' && activeAction === 'torch_swing'
+          ? window.AdventuringTools?.forehandSwingVisual?.() : null;
+        if (activeTool === 'adventuring' && activeAction === 'torch_swing' && !torchVisual) return;
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         // Ordinary one-swing terrain work also uses the equipped tool's efficacy.
@@ -21133,8 +21138,6 @@
 
         // Adventuring torch borrows the authored forehand pose and timing without triggering the combat lunge.
         // The visual helper resets pendingAction, so schedule the real torch contact AFTER starting its animation.
-        const torchVisual = activeTool === 'adventuring' && activeAction === 'torch_swing'
-          ? window.AdventuringTools?.forehandSwingVisual?.() : null; // Only the equipped torch owns the alternate tool swing.
         if (torchVisual) {
           const synchronizedSwing = window.Combat?.deps?.triggerWeaponSwingVisual; // Use WeaponToolStances' shared action-clock/hand-grip wrapper when installed.
           if (typeof synchronizedSwing === 'function') synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options);
@@ -21179,7 +21182,9 @@
         }
 
         if (tool === 'adventuring') {
-          const result = applyAction(tool, action, col, row); // World-space torch attacks also work with the reticle outside the tile grid.
+          const result = action === 'torch_swing'
+            ? window.AdventuringTools?.swingAtAim(combatSwingCone)
+            : window.AdventuringTools?.throwLit(); // Torch strikes use the exact geometry shown by their melee trail.
           if (result?.message) showToast(result.message, result.ok !== false);
           refreshActionBar();
           return;
@@ -24220,11 +24225,12 @@
         combatSwingSequenceHoldFrac = null;
         combatSwingAfflictionIds = opts.afflictionIds || [];
         combatSwingAfflictionMuls = opts.afflictions || {};
-        setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
+        setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle, opts.conePitch);
       }
 
-      function getWeaponAttackTimeline() {
-        if (activeTool !== 'weapon' || !combatSwingAnim || !(toolSwingT > 0)) return null;
+      function getWeaponAttackTimeline(includeTorch = false) {
+        if (!combatSwingAnim || !(toolSwingT > 0)) return null;
+        if (activeTool !== 'weapon' && !(includeTorch && activeTool === 'adventuring' && combatSwingAnim === 'sweep')) return null;
         const elapsedS = Math.max(0, toolSwingDur - toolSwingT); // Shared animation clock includes additive strike hold and automatic return easing.
         const holdEndFrac = combatSwingHoldS > 0 // Match updateToolMesh's explicit or proportional hold endpoint.
           ? Math.min(0.99, combatSwingStrikeFrac + combatSwingHoldS / toolSwingDur)
@@ -25450,7 +25456,8 @@
         toolHolder.scale.setScalar(1);
 
         // Use logical facing for game-logic vectors; sweep will additively rotate the body.
-        const θ      = playerFacing;
+        const θ = activeTool === 'adventuring' && combatSwingAnim === 'sweep' && combatSwingCone
+          ? Math.PI / 2 - combatSwingCone.angle : playerFacing; // The torch animates toward the same committed bearing as its melee volume.
         const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
         const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
         // True local +X → world transform (the same standard Three.js Y-rotation the
@@ -27772,7 +27779,16 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
-        if (activeTool === 'adventuring' && tool !== 'adventuring') window.AdventuringTools?.stow?.();
+        if (activeTool === 'adventuring' && tool !== 'adventuring') {
+          if (pendingAction?.tool === 'adventuring') pendingAction = null;
+          if (combatSwingAnim && toolSwingT > 0) {
+            (window.Combat?.deps?.cancelWeaponSwingHold || cancelWeaponSwingHold)();
+            combatSwingAnim = null;
+            combatSwingPose = null;
+            combatSwingCone = null;
+          }
+          window.AdventuringTools?.stow?.();
+        }
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         heldMode = 'tool';
         activeTool = tool;
@@ -32659,18 +32675,10 @@
         getEquippedTool: () => equipmentSlots.adventuring,
         getCurrentArea: () => currentArea, // Adventuring Tools must use physical 3D contact, never a flat furniture tile, inside multistory ruins.
         getUnlocked: () => window.__hobunjiPlayerProfile?.adventuringToolUnlocks || [],
-        getToolHolder: () => toolHolder, getAimRay: currentPlayerInteractionRay,
-        getPerspectiveDirection: origin => currentPlayerPerspectiveDirection(origin), // Reuses the exact melee reticle convergence from the physical torch hand.
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getMeleeAimDirection: currentPlayerMeleeAimDirection,
         refreshActionBar,
         selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
-        isAimedFireHazard: (col,row) => {
-          const target = window.FurnitureTableSystem?.objectAt?.(currentArea,col,row)
-            || getAimedFarmInteractionObject(col,row) || getWorldObjectAt(col,row);
-          if (!target) return false;
-          const key = target.furnitureKey || target.defKey || target.key || target.itemKey || target.type;
-          return target.fireHazard === true || target.def?.fireHazard === true || target.definition?.fireHazard === true
-            || DECORATIVE_FURNITURE_DEFS[key]?.fireHazard === true || PROCESSING_FURNITURE_DEFS[key]?.fireHazard === true;
-        },
       };
       window.AdventuringTools?.init?.(adventuringToolDeps);
       window.ActionArcUI.init({

@@ -57,8 +57,8 @@ assert.match(gameSource, /candleTable:\s*\{\s*fireHazard:\s*true/,
   'Candle Table is explicitly marked as a Fire Hazard in the runtime furniture definition');
 assert.match(gameSource, /campfireFurniture:\s*\{\s*fireHazard:\s*true[\s\S]{0,700}bonfireFurniture:\s*\{\s*fireHazard:\s*true/,
   'Campfire and Bonfire fixtures are explicitly marked as Fire Hazards');
-assert.doesNotMatch(gameSource, /hearth:\s*\{\s*fireHazard:\s*true/,
-  'Hearth is not a Fire Hazard merely because it has flame visuals');
+assert.match(gameSource, /hearth:\s*\{\s*fireHazard:\s*true/,
+  'Hearth is explicitly marked as a Fire Hazard in the runtime furniture definition');
 assert.match(gameSource, /tile\?\.incline[\s\S]{0,180}kind: 'stone'/,
   'cliff-side collision is assigned the stone profile');
 assert.match(gameSource, /tile\?\.type === TileType\.SHRUB[\s\S]{0,500}kind: 'wood'/,
@@ -115,7 +115,7 @@ assert.doesNotMatch(editorSource, /state\.fireHazard=!!\(data\.fireHazard\|\|/,
   'furniture author no longer promotes visual fire emitters into gameplay hazards');
 assert.equal(candleTable.fireHazard, true, 'Candle Table is explicitly authored as a Fire Hazard');
 assert.equal(campfire.fireHazard, true, 'Campfire is explicitly authored as a Fire Hazard');
-assert.notEqual(hearth.fireHazard, true, 'Hearth authored data remains non-hazardous unless explicitly changed');
+assert.equal(hearth.fireHazard, true, 'Hearth is explicitly authored as a Fire Hazard');
 assert.match(scratchConfigSource, /"knockbackCollision"\s*:\s*\{[\s\S]{0,1000}"burningDodgeRecovery"\s*:\s*12/,
   'collision effect strengths and dodge recovery remain centrally tunable');
 

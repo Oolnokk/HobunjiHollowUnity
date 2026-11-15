@@ -3,7 +3,7 @@
   // combat-main: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
     "js/combat/weapon-shape-stats.js?v=20261109grappledonor1",
-    "js/combat/combat-core.js?v=20261114h7523051",
+    "js/combat/combat-core.js?v=20261115h07ca528",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28",
@@ -11,7 +11,7 @@
     "js/combat/combat-animal-attacks.js?v=20261110attackFxInst1",
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261110attackFxInst1",
     "js/combat/combat-attach.js?v=20261101h47c5427",
-    "js/combat/combat-loadout.js?v=20261114torchForehand1",
+    "js/combat/combat-loadout.js?v=20261115hd548ce4",
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261104scent1439c",
@@ -19,7 +19,7 @@
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
     "js/combat/combat-input.js?v=20261114hcombatinputtiming1",
-    "js/combat/attack-pose-templates.js?v=20261114torchForehand1",
+    "js/combat/attack-pose-templates.js?v=20261115h01bf772",
     "js/combat/combat-combo.js?v=20261107combo1501a",
     "js/combat/combat-quickattacks.js?v=20261110quickreach2",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",

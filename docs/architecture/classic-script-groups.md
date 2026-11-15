@@ -12,6 +12,7 @@ Currently migrated:
 - `qol.js`: toast, arrival, hotkeys, inventory search.
 - `guild.js`: guild progression, magic checkpoint, vault signal.
 - `render.js`: actor/mesh/grass culling and depth snapshot.
+- `farm-buildings.js`: barn construction, barn troughs and the modular house bootstrap. The house bootstrap and its natural-surface UV stack retain separate cache versions.
 - `festival.js`: ancestor figures, activities, festivals, offering rituals and festive UI.
 - `npc-schedule.js`: NPC agendas, social relations, seating, pathfinding, routes and Nohuknuk wilderness AI.
 - `combat-main.js`: weapon shape stats, combat runtime, attack abilities, input, progression and enchantments.
@@ -56,33 +57,28 @@ boot handoff scripts in place. They have stronger parser/side-effect coupling.
 
 ## Stable feature entrypoints (buff-menu conflict prevention)
 
-These five entrypoint modules are now loaded at their original parser positions
-by separate, single-child manifests rather than by cache-version URLs in
-`docs/index.html`:
+These frequently changed entrypoints now live in parser-ordered manifests;
+their cache-version bumps do not require changes to `docs/index.html`:
 
-| Manifest | Module | Required position |
+| Manifest | Child module | Position |
 | --- | --- | --- |
-| `combat-config.js` | `combat/combat-config-loader.js` | After the bounty board, before shared buff/skill systems |
-| `cooking-runtime.js` | `cooking-system.js` | After food processing, before key-item registration |
-| `alchemy-runtime.js` | `alchemy-system.js` | After cooking/key items, before tea grinder |
-| `house-runtime.js` | `house-pieces.js` | After farm troughs, before creature death |
+| `combat-config.js` | `combat/combat-config-loader.js` | After bounty board, before buff/skill systems |
+| `cooking-runtime.js` | `cooking-system.js` | After food processing, before key items |
+| `alchemy-runtime.js` | `alchemy-system.js` | After key items, before tea grinder |
+| `farm-buildings.js` (existing on main) | `house-pieces.js` | After farm troughs, before creature death |
 | `romance-runtime.js` | `romance-system.js` | After spouse kiss motion, before NPC command wheel |
 
-Update the respective manifest's child `?v=` token when changing one of
-these modules. **Do not change the shared index page just to refresh their
-cache.** The `house-runtime.js` manifest additionally owns `surfaceUv=`,
-which must stay equal to the default natural-surface generation declared by
-`house-pieces.js` when that mapper stack changes. HTML writers escape this as
-`&amp;surfaceUv`; the browser restores `&surfaceUv` in the script URL.
+**Update the respective manifest's child `?v=` token, not the shared index page.**
+The existing `farm-buildings.js` group also owns farm buildings and troughs.
+Its house URL retains a separate `surfaceUv=` generation, equal to
+`house-pieces.js`'s default. Emitted HTML uses `&amp;surfaceUv`, which
+the browser decodes into a second URL parameter.
 
-The independent manifests preserve parser-blocking execution order and the
-loader's existing on-screen startup failure notice. The tradeoff is five tiny
-fresh manifest fetches during initial load; unlike cache-busting entire modules
-every time, their versioned children stay browser-cacheable. If mobile startup
-profiling shows these fetches are significant, consolidate only after proving
-the affected parser-order constraints. Check
-`scripts/test-active-buff-entrypoint-groups.js` for the exact-order contract
-and `scripts/test-natural-surface-loader-cache.js` for `surfaceUv` parity.
+Four new tiny parser-blocking manifests are fetched fresh per navigation.
+HousePieces reuses the existing farm-buildings manifest rather than adding
+another request. Child scripts remain cacheable and the existing mobile
+startup-failure display applies. See `scripts/test-active-buff-entrypoint-groups.js`
+and `scripts/test-natural-surface-loader-cache.js` for regression checks.
 
 ## Independently owned pre-game startup manifests
 

@@ -4,11 +4,11 @@ const path = require('path');
 
 const root = path.join(__dirname, '..'); // Used to resolve shipped loader/runtime files from this regression test.
 const house = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8'); // Used to verify natural-surface child scripts share one cache generation.
-const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Uses the effective parser order: HousePieces now lives in its own manifest rather than index.html.
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Verifies the shipped HousePieces tag after the parser manifest runs.
 const post = fs.readFileSync(path.join(root, 'docs/js/natural-surface-stretch-post-jigsaw.js'), 'utf8'); // Used to verify mobile-visible diagnostics expose the loaded generation.
 
-const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&amp;surfaceUv=([^"'\s<]+)/); // Escaped HTML ampersand is decoded by the browser before the house loader reads its independent UV generation.
-assert(parentMatch, 'expanded house-runtime manifest must load house-pieces.js with independent bootstrap and surface cache generations');
+const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&amp;surfaceUv=([^"'\s<]+)/); // The emitted HTML escapes the query separator so the browser reads two parameters.
+assert(parentMatch, 'game startup must load house-pieces.js with independent bootstrap and surface cache generations');
 const parentVersion = parentMatch[1]; // Used to prove unrelated HousePieces edits can refresh the bootstrap itself.
 const surfaceVersion = parentMatch[2]; // Used to prove the changed mapper reaches players through a coherent child generation.
 assert.match(parentVersion, /^[A-Za-z0-9_-]+$/, 'house-pieces bootstrap must carry its own cache-bust token for the den-aware child loader');

@@ -15,7 +15,6 @@ const required = [
   ['combat-config', 'js/combat/combat-config-loader.js', 'js/bounty-board.js', 'js/effect-buff-bar.js'],
   ['cooking-runtime', 'js/cooking-system.js', 'js/food-processing.js', 'js/key-item-system.js'],
   ['alchemy-runtime', 'js/alchemy-system.js', 'js/key-item-system.js', 'js/tea-grinder.js'],
-  ['house-runtime', 'js/house-pieces.js', 'js/farm-troughs.js', 'js/creature-death.js'],
   ['romance-runtime', 'js/romance-system.js', 'js/spouse-kiss-motion.js', 'js/npc-command-wheel.js'],
 ]; // Each independent owner stays between its original evaluation-time dependencies.
 
@@ -39,6 +38,26 @@ for (const [group, child, before, after] of required) {
   assert.throws(() => vm.runInNewContext(source, { document: { readyState: 'complete', write() {} } }),
     /must run during parsing/, group + ' must never async-inject an initialization dependency');
 }
+const farmTag = 'data-classic-group="farm-buildings"'; // The existing manifest groups farm building, trough and house dependency order.
+assert.equal(index.split(farmTag).length - 1, 1, 'farm/house startup owns a single parser position');
+assert(!index.includes('data-classic-group="house-runtime"'), 'no duplicate house-runtime loader');
+assert(!fs.existsSync(path.join(root, 'docs/js/bootstrap/classic-groups/house-runtime.js')), 'remove the obsolete competing house manifest');
+const farmSource = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-groups/farm-buildings.js'), 'utf8');
+const farmWrites = []; // Actual document.write output is tested, not a separately maintained script list.
+vm.runInNewContext(farmSource, { document: { readyState: 'loading', write: html => farmWrites.push(html) } });
+assert.equal(farmWrites.length, 1);
+const farmUrls = farmWrites[0].split('\n').map(line => line.match(/src="([^"]+)"/)?.[1]).filter(Boolean);
+assert.deepEqual(farmUrls.map(url => url.split('?')[0]),
+  ['js/farm-buildings.js', 'js/farm-troughs.js', 'js/house-pieces.js'],
+  'farm construction, troughs, and house load once in their established order');
+assert.throws(() => vm.runInNewContext(farmSource, { document: { readyState: 'complete', write() {} } }), /must run during parsing/);
+const at = script => expanded.indexOf('src="' + script + '?v=');
+assert(at('js/farm-animals.js') < at('js/farm-buildings.js')
+  && at('js/farm-buildings.js') < at('js/farm-troughs.js')
+  && at('js/farm-troughs.js') < at('js/house-pieces.js')
+  && at('js/house-pieces.js') < at('js/creature-death.js'),
+  'house startup preserves the original parser-time dependency order');
+assert.equal(expanded.split('src="js/house-pieces.js?v=').length - 1, 1, 'house is not loaded twice');
 const uv = expanded.match(/js\/house-pieces\.js\?v=([A-Za-z0-9_-]+)&amp;surfaceUv=([A-Za-z0-9_-]+)/); // House still has independently authored natural-surface and bootstrap generations.
 assert(uv, 'house manifest must preserve the separate natural-surface UV query key');
 assert.match(uv[1], /^[A-Za-z0-9_-]+$/, 'house bootstrap has its own valid cache key; the UV generation is verified separately');

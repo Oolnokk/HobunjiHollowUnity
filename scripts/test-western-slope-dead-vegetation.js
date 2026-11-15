@@ -125,7 +125,7 @@ for (const name of ['buildDeadTreeMesh', 'buildDeadBushMesh']) {
 }
 console.log('Western Slope leafless trunks/bushes use crowned-pine stretch UVs, tint, and cached bark PNG: PASS');
 
-const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Effective runtime HTML includes the feature-owned house loader and foliage cache revisions.
+const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Runtime HTML includes versioned foliage and house loaders after manifest expansion.
 const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // The house loader must in turn request the new NaturalSurfaceMaterials wrapper.
 const foliageVersion = indexHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the actual procedural leafless geometry builder.
 const houseVersion = indexHtml.match(/js\/house-pieces\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the authoritative natural-surface child loader.

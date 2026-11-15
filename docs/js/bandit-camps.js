@@ -221,6 +221,7 @@
 
   function buildBanditCampfireMesh() {
     const group = window.ProceduralFurniture?.buildFurnitureGroup?.('campfire', 0x6b4a28) || new THREE.Group();
+    group.userData.fireHazard = true; // This camp-owned fire may use a procedural or unloaded furniture visual.
     group.add(buildBanditFireEffect(1.15));
     return group;
   }
@@ -1261,6 +1262,15 @@
     return true;
   }
 
+  function igniteTorchMelee(zoneId, matches) {
+    if (!deps?.isZoneArea(zoneId) || zoneId !== deps.getCurrentArea()) return false;
+    const meshes = _banditCampMeshes.get(zoneId);
+    const tent = _banditZoneTents(zoneId).find(prop => !prop.destroyed && !prop.burning && matches(meshes?.get(prop.id)?.mesh));
+    if (!tent) return false;
+    burnBanditTent(zoneId, tent);
+    return true;
+  }
+
   function igniteTorchSegment(zoneId,start,end,maxT=1,radius=0) {
     if (!deps || zoneId !== deps.getCurrentArea() || !deps.isZoneArea(zoneId) || !start || !end) return false;
     const limit=Math.max(0,Math.min(1,Number(maxT) || 0));
@@ -1502,7 +1512,7 @@
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,
-    igniteAimedTentWithTorch, igniteTorchSegment, // Shared instant ignition for held and thrown lit torches.
+    igniteAimedTentWithTorch, igniteTorchMelee, igniteTorchSegment, // Shared instant ignition for held and thrown lit torches.
     hasNearbyTent,
     getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,

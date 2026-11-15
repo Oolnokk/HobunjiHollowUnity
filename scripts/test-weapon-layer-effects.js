@@ -78,10 +78,18 @@ class Vector3 {
   set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
   copy(other){return this.set(other.x,other.y,other.z);}
   clone(){return new Vector3(this.x,this.y,this.z);}
+  applyMatrix4(matrix){return matrix.inverted ? matrix.node.worldToLocal(this) : matrix.node.localToWorld(this);}
+  setFromMatrixScale(matrix){return matrix.node.getWorldScale(this);}
+}
+class Matrix4 {
+  constructor(node){this.node=node;this.inverted=false;}
+  copy(matrix){this.node=matrix.node;this.inverted=matrix.inverted;return this;}
+  invert(){this.inverted=!this.inverted;return this;}
 }
 class Object3D {
   constructor(){
     this.children=[]; this.layers={mask:1}; this.userData={}; this.parent=null;
+    this.matrixWorld=new Matrix4(this); // The planar fixture resolves matrices on demand from the current rig.
     this.position=new Vector3(); this.scale=new Vector3(1,1,1); this.rotation={z:0}; // Planar test transform simulates a swung flail/staff including translation and scaled child pivots.
     this.scale.setScalar=v=>{this.scale.set(v,v,v);};
   }
@@ -107,7 +115,7 @@ class Object3D {
 }
 class Group extends Object3D {}
 const THREE={
-  Group, Vector3,
+  Group, Vector3, Matrix4,
   CanvasTexture: class{constructor(canvas){this.image=canvas;}},
   SpriteMaterial:class{constructor(options){Object.assign(this,options);this.color={set(v){this.value=v;}};}dispose(){}},
   Sprite:class extends Object3D{
