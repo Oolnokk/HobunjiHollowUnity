@@ -99,19 +99,26 @@
     }
     return changed;
   }
+  function needsNamedHeart(theme) {
+    const relics=window.LichHeartSystem; // The character's Key Items, not world completion, decide whether a retired tomb must offer its missing heart.
+    return !!relics?.forType?.(theme)&&relics.has?.(theme)===false;
+  }
   function authoredRecordForVisit(visit,store=progressStore()) {
-    const record=store.authored?.[visit?.theme]; // Named guardians use their original identity/seed even after a new buried entrance appears.
-    return record?.siteId===visit?.id&&!record.completed ? record : null;
+    const record=store.authored?.[visit?.theme]; // Named guardians keep their original seed and completion even when revisited for a character's missing relic.
+    return record?.siteId===visit?.id&&(!record.completed||visit?.specialBoss===true) ? record : null;
   }
   function activeRuinProgress() {
     if(!activeVisit||activeVisit.kind==='story-vault')return null;
     const store=progressStore();
-    return authoredRecordForVisit(activeVisit,store)?.progress || store.sites[activeVisit.id] || null;
+    const authored=authoredRecordForVisit(activeVisit,store);
+    if(authored?.completed)return {version:1,seed:authored.seed,bossDefeated:true}; // A retired tomb can be revisited for its heart, but its defeated guardian must never respawn.
+    return authored?.progress || store.sites[activeVisit.id] || null;
   }
   function saveActiveRuinProgress(snapshot) {
     if(!activeVisit||activeVisit.kind==='story-vault'||!snapshot||snapshot.version!==1)return false;
     const store=progressStore(); // Do not store scene meshes, mechanisms or player coordinates in world metadata.
     const authored=authoredRecordForVisit(activeVisit,store);
+    if(authored?.completed)return true; // A relic-only return is read-only: no checkpoint or loot state may overwrite the world-completed tomb.
     const previous=authored?.progress || store.sites[activeVisit.id];
     const next=previous?.version===1&&Number(previous.seed)===Number(snapshot.seed)
       ?{...previous,...snapshot}:snapshot; // Preserve opened chests when a puzzle/waystone writes its next snapshot.
@@ -122,6 +129,8 @@
     return ok;
   }
   function isActiveRuinChestOpened(id,seed){
+    const authored=activeVisit&&authoredRecordForVisit(activeVisit); // Previously cleared tombs can be revisited for hearts, never their old treasure.
+    if(authored?.completed&&Number(authored.seed)===Number(seed))return true;
     const snapshot=activeRuinProgress(); // Stable chest IDs never carry between sites or changed generated seeds.
     return !!id&&snapshot?.version===1&&Number(snapshot.seed)===Number(seed)
       &&Array.isArray(snapshot.openedChests)&&snapshot.openedChests.includes(String(id));
@@ -129,6 +138,7 @@
   function markActiveRuinChestOpened(id,seed){
     if(!activeVisit||activeVisit.kind==='story-vault'||!id||!Number.isFinite(seed))return false;
     const store=progressStore(),authored=authoredRecordForVisit(activeVisit,store);
+    if(authored?.completed)return false; // Failed/accidental chest interactions cannot mint loot from a completed tomb.
     const previous=authored?.progress || store.sites[activeVisit.id];
     const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
     const opened=new Set(Array.isArray(snapshot.openedChests)?snapshot.openedChests:[]); // Stable chest IDs, not reward contents, stop re-looting after re-entry.
@@ -147,6 +157,7 @@
   function markActiveRuinBossDefeated(seed){
     if(!activeVisit||activeVisit.kind==='story-vault'||!Number.isFinite(Number(seed)))return false;
     const store=progressStore(),authored=authoredRecordForVisit(activeVisit,store);
+    if(authored?.completed)return true; // Already defeated; do not create a second progress snapshot for the relic-only visit.
     const previous=authored?.progress || store.sites[activeVisit.id];
     const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
     if(authored) authored.progress={...snapshot,bossDefeated:true};
@@ -157,6 +168,7 @@
   }
   function completeActiveRuinProgress(visit) {
     const store=progressStore(),authored=authoredRecordForVisit(visit,store); // All completion state goes into one canonical world-save write.
+    if(authored?.completed)return true; // Character returned for a heart; completed world ruin remains retired, without an unnecessary save write.
     if(visit.specialBoss&&!authored)return false; // Never drop a named tomb's checkpoint if its unique assignment cannot be found.
     if(authored&&!visit.specialBoss)return false; // A generic ruin exit cannot mark an unfinished named boss tomb completed.
     if(authored){authored.completed=true;delete authored.progress;}
@@ -268,12 +280,15 @@
     }
     return candidates.slice(0,160);
   }
-  function authoredBuriedSites(zoneId) {
+  function authoredBuriedSites(zoneId, includeActiveRelic = false) { // An active relic-recovery visit also needs its relocated exit after the player picks up the heart.
     const store=progressStore(),zi=deps?._zoneScenes?.get?.(zoneId);
     const layout=deps?._zoneLayouts?.get?.(zoneId);
     let changed=false;
+    const accessible=(theme,record)=>!record.completed||needsNamedHeart(theme)
+      ||(includeActiveRelic&&activeVisit?.relicReturn===true&&activeVisit.theme===theme&&activeVisit.id===record.siteId); // A just-claimed heart cannot invalidate a mid-shift escape from inside its tomb.
     for(const [theme,record] of Object.entries(store.authored)) {
-      if(!record||record.completed||record.zoneId!==zoneId||record.cycle===cycle()||(!zi?.grid&&!layout?.tiles?.length))continue;
+      if(!record||record.zoneId!==zoneId||!accessible(theme,record)
+        ||(record.cycle===cycle()&&(record.buried||!record.completed))||(!zi?.grid&&!layout?.tiles?.length))continue; // Completed tombs only reappear for missing character relics; old entrances become a new dig spot.
       const avoided=[...(layout?.dens||[]),...(layout?.buildings||[]),...(layout?.localeInstances||[]),
         ...(deps?._zoneTreasurePersist?.get?.(zoneId)?.placements||[]),
         ...Object.values(state().holes||{}),
@@ -308,7 +323,7 @@
       debug.authoredRelocationError='Named tomb relocation could not be saved';
       return []; // Never show a relocated marker that the canonical world save failed to retain.
     }
-    return Object.entries(store.authored).filter(([,record])=>record&&!record.completed&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
+    return Object.entries(store.authored).filter(([theme,record])=>record&&accessible(theme,record)&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
       .map(([theme,record])=>({...record,theme}));
   }
   function authoredDigSpots(zoneId) {
@@ -767,8 +782,9 @@
     const theme=visit.kind==='authored' ? visit.theme : types[regularSeed%types.length];
     const store=progressStore(),record=store.authored?.[theme];
     const priorOwner=state().bossSites?.[theme];
+    const relicReturn=visit.kind==='authored'&&record?.completed===true&&record.siteId===visit.id&&needsNamedHeart(theme); // Restores defeated sanctum and its unclaimed relic, not the boss or treasure.
     const specialBoss=visit.kind==='authored'
-      ? !!record&&!record.completed&&record.siteId===visit.id
+      ? !!record&&record.siteId===visit.id&&(!record.completed||relicReturn)
       : record ? !record.completed&&record.siteId===visit.id
         : !priorOwner||priorOwner===visit.id; // Original named entrance stays authored on re-entry; every other site stays generic.
     if(visit.kind==='authored'&&!specialBoss)return false;
@@ -780,8 +796,8 @@
         debug.progressSaveError='Named tomb reservation could not be saved';return false;
       }
     }
-    activeVisit = { ...visit, theme, specialBoss };
-    debug.lastEnter = { ...visit, theme, specialBoss, at:Date.now() };
+    activeVisit = { ...visit, theme, specialBoss, relicReturn };
+    debug.lastEnter = { ...visit, theme, specialBoss, relicReturn, at:Date.now() };
     const returnAnchor = { area:visit.zoneId, x:visit.returnAt.x * deps.TILE, y:visit.returnAt.z * deps.TILE };
     const tier = specialBoss ? 'lich' : visit.kind === 'cave' ? 'cave' : 'hole'; // Rarity sets size (RuinLayerPlan.TIERS): named lich tombs largest; cliff-entrance ruins and dug-hole ruins share the middle tier; CaveSiteSystem supplies the smallest tier when entering from inside a cave.
     const rollback=()=>{
@@ -825,13 +841,14 @@
     if(!visit||!R?.exitTo)return false;
     const exit=randomExit(visit.zoneId); // A failed exit lookup must not consume a checkpoint or complete a named tomb.
     if(!exit)return false;
-    if(!completeActiveRuinProgress(visit))return false; // Never allow re-entry to mint loot again after a failed save.
-    if(visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
-    else if(visit.kind==='hole'){
+    const unclaimedHeart = visit.specialBoss === true && !!window.LichHeartSystem?.forType?.(visit.theme) && !window.LichHeartSystem.has(visit.theme); // Leaving a named tomb must not forfeit the relic.
+    if(!unclaimedHeart&&!completeActiveRuinProgress(visit))return false; // Only seal a tomb when its character-bound pickup has been claimed.
+    if(!unclaimedHeart&&visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
+    else if(!unclaimedHeart&&visit.kind==='hole'){
       const entry=state();
       if(entry.holes[visit.id]){entry.holes[visit.id].state='cleared';saveState(entry);}
     }
-    if(visit.specialBoss&&visit.kind==='authored'){
+    if(!unclaimedHeart&&visit.specialBoss&&visit.kind==='authored'){
       const record=progressStore().authored?.[visit.theme];
       if(record?.siteId===visit.id&&record.dug){
         const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
@@ -843,14 +860,14 @@
       } // The completed tomb's excavated entrance seals; the unique guardian never respawns.
     }
     syncMapMarkers();
-    debug.lastExit={visit,exit,at:Date.now()};
+    debug.lastExit={visit,exit,unclaimedHeart,at:Date.now()};
     activeVisit=null;
     window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
     R.exitTo(()=>Promise.resolve(deps.enterZone(exit.zoneId,exit.col??undefined,exit.row??undefined)).then(()=>{
       const zi=deps._zoneScenes?.get?.(visit.zoneId);
       if(zi)buildZoneMeshes(zi.scene,zi.grid,visit.zoneId); // Completed hole or cliff doorway disappears.
     }));
-    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.',true);
+    deps?.showToast?.(unclaimedHeart ? 'You left the Lich-heart behind. Its tomb remains accessible until you claim it.' : 'You climb out into daylight somewhere unfamiliar.',true);
     return true;
   }
 
@@ -859,11 +876,11 @@
     const visit=activeVisit;
     if(!visit?.specialBoss)return null;
     let record=progressStore().authored?.[visit.theme];
-    if(!record||record.completed||record.siteId!==visit.id)return null;
+    if(!record||(record.completed&&!visit.relicReturn)||record.siteId!==visit.id)return null;
     if(record.cycle!==cycle()&&!deps?._zoneScenes?.get?.(record.zoneId)?.grid){
       deps?.buildZoneScene?.(record.zoneId); // Relocation needs actual current-cycle diggable terrain, not guessed map pixels.
     }
-    const site=authoredBuriedSites(record.zoneId).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
+    const site=authoredBuriedSites(record.zoneId,visit.relicReturn===true).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
     if(!site)return null;
     if(!site.dug){
       const store=progressStore();

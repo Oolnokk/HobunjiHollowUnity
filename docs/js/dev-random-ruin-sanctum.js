@@ -1087,6 +1087,58 @@
     entity.avatarRef?.dispose?.();
   }
 
+  function removeLichHeart(owner = s) {
+    if (!owner?.heart) return; // The physical pickup and its controls share this one disposal path.
+    const group = owner.heart.group; // Authored furniture keeps shared decal textures, but owns its glow-material and decal meshes.
+    for (const glow of group.userData?.staticGlowEmitterVisuals || []) glow?.dispose?.(); // Dispose per-instance halo sprites without disposing the global texture.
+    for (const decal of group.userData?.authoredDecalMeshes || []) {
+      decal.geometry?.dispose?.();
+      decal.material?.dispose?.(); // Materials are instance-specific; their cached image textures remain shared.
+    }
+    for (const part of group.userData?.meshById?.values?.() || []) {
+      if (part.userData?.authoredPart?.kind !== 'transparentBillboardSurface') continue;
+      part.geometry?.dispose?.();
+      part.material?.dispose?.(); // Each heart's invisible authored billboard plane is also an owned GPU allocation.
+    }
+    group.parent?.remove?.(group);
+    owner.heart = null;
+  }
+
+  function syncLichHeart() {
+    if (!s?.built || !s.isSpecialBoss || !s.bossDefeated || !s.sanctumRoot) return; // Ordinary liches never drop authored heart relics.
+    const heart = window.LichHeartSystem?.forType?.(s.bossType); // Shared registry maps each named guardian to one real furniture piece.
+    if (!heart || window.LichHeartSystem?.has?.(s.bossType)) {
+      removeLichHeart(); // Ownership is authoritative on load and after pickup.
+      return;
+    }
+    if (s.heart) return; // Repeated update ticks never instantiate duplicates.
+    const group = authoredPiece(heart.furnitureKey); // Assets load asynchronously; retry until the full glyph and glow exist.
+    if (!group) return;
+    const arena = s.layout.arena, floorY = Number(s.context.meta?.floorSurfaceY) || 0; // Center on the arena rather than the boss's offset spawn.
+    group.name = 'dev_ruin_lich_heart_' + s.bossType;
+    group.position.set((arena.minX + arena.maxX) / 2, floorY, (arena.minZ + arena.maxZ) / 2);
+    group.traverse(node => { node.userData.devRuinFootprintIgnore = true; }); // The floating decal/halo is visual, not solid furniture.
+    group.userData.interactive3D = true;
+    group.userData.devRuinInteractionType = 'lichHeart';
+    s.sanctumRoot.add(group);
+    const owner = s; // A stale controller cannot change another ruin after a shift/rebuild.
+    const control = {
+      kind:'lichHeart', object:group, promptRoot:group, floorY, range:2.2, priority:24, claimAction1:true, touchIcon:'💠', // A floor-local pickup must not be claimable through a stacked ruin room.
+      label:'Claim ' + heart.label,
+      onPress:() => {
+        if (s !== owner || owner.heart?.group !== group) return false;
+        const result = window.LichHeartSystem?.collect?.(owner.bossType); // Persist the character key BEFORE removing this one-time world pickup.
+        if (!result?.ok || !window.LichHeartSystem?.has?.(owner.bossType)) {
+          deps?.showToast?.(result?.message || 'Could not save the Lich-heart. Try again.', false);
+          return false;
+        }
+        removeLichHeart(owner); // Includes authored static glow cleanup; no stale prompt or GPU material survives collection.
+        return true;
+      },
+    };
+    s.heart = { group, control, furnitureKey:heart.furnitureKey };
+  }
+
   function updateBoss(now) {
     if (!s?.boss || s.bossDefeated) return;
     const boss = s.boss;
@@ -1174,6 +1226,7 @@
       updateDoorVisual(s.door, now, dt, allLit);
       updateDoorVisual(s.returnDoor, now, dt, true);
       updateBoss(now);
+      syncLichHeart(); // Also rehydrates unclaimed rewards when returning after a persisted boss victory.
       updateRoomGuards(kit); // Room sentinels spawn once on first entry, keeping large ruins efficient on mobile.
       updateRearDoor(dt);
       updateCoffins(dt);
@@ -1186,6 +1239,7 @@
       if (s.returnDoor) out.push(s.returnDoor.control);
       for (const control of window.DevRandomRuinDungeonChests?.controlsFor?.(s.vaultChests) || []) out.push(control);
       if (s.ladderControl) out.push(s.ladderControl);
+      if (s.heart?.control) out.push(s.heart.control);
       return out;
     },
     snapshot() {
@@ -1197,7 +1251,7 @@
         door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, attachedToShaft:!!s.door.attachedToShaft, shaftSide:s.door.site?.side||null, decals:s.door.decals.length } : null,
         bgs:!!s.bgs, layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
-        bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
+        bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
         inSanctum:s.inSanctum,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
@@ -1206,6 +1260,7 @@
     clear() {
       if (!s) return;
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
+      removeLichHeart(); // Old pickup and its glow material must not survive ruin teardown.
       if (s.boss) { for (const minion of s.boss._lichSummons || []) disposeActor(minion); disposeActor(s.boss); }
       for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
       if (s.boss) window.SpecialHarlyaoLiches?.applyPlasmSkin?.(s.boss,false); // Temporary charge-retexture materials never survive a reroll.

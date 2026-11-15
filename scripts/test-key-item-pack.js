@@ -78,25 +78,27 @@ assert.equal(api.grant('personal_test_key').granted,true);
 const writesBeforeRepeat = metadataWrites; // Regranting a saved key must not serialize the world again.
 assert.equal(api.grant('delversStone').granted,false,'repeated grants cannot duplicate key chips');
 assert.equal(metadataWrites, writesBeforeRepeat, 'repeated grants must not cause a redundant full-save write');
-assert.equal(keyList.children.length,4,'all four acquired keys are shown in Key Items');
-const delvers = keyList.children.find(node => node.dataset.keyItemId === 'delversStone'); // Targeted mobile interaction check.
+const chips = () => keyList.children.filter(node => node.className === 'inv-key-chip'); // Save-scope headings are separate UI elements, not additional keys.
+assert.equal(chips().length,4,'all four acquired keys are shown in Key Items');
+assert.equal(keyList.children.filter(node => node.className === 'inv-key-scope-heading').length,2,'character and world keys have distinct labeled sections');
+const delvers = chips().find(node => node.dataset.keyItemId === 'delversStone'); // Targeted mobile interaction check.
 assert(delvers.children.some(node => node.textContent === "Delver's Stone"), 'authored key label is visible');
 delvers.click();
 assert.equal(delvers.getAttribute('aria-expanded'),'true','tap expands an in-game description');
-const personal = keyList.children.find(node => node.dataset.keyItemId === 'personal_test_key');
+const personal = chips().find(node => node.dataset.keyItemId === 'personal_test_key');
 personal.click();
 assert.equal(delvers.getAttribute('aria-expanded'),'false','only one description should be expanded');
 assert.equal(personal.getAttribute('aria-expanded'),'true');
 
 assert.equal(api.revoke('azgarlu_key_stone').removed,true);
-assert(!keyList.children.some(node => node.dataset.keyItemId === 'azgarlu_key_stone'),'used lich keys disappear immediately');
+assert(!chips().some(node => node.dataset.keyItemId === 'azgarlu_key_stone'),'used lich keys disappear immediately');
 assert.equal(api.revoke('azgarlu_key_stone').removed,false,'repeated consumption is safe');
 profile.worldId = 'worldB'; // World-bound keys must disappear when the character moves to another world.
 listeners.get('hobunjiPlayerReady')();
-assert.deepEqual(keyList.children.map(node => node.dataset.keyItemId), ['personal_test_key']);
+assert.deepEqual(chips().map(node => node.dataset.keyItemId), ['personal_test_key']);
 profile.worldId = 'worldA';
 listeners.get('hobunjiPlayerReady')();
-assert.equal(keyList.children.length,3,'world keys reappear when re-entering the same world');
+assert.equal(chips().length,3,'world keys reappear when re-entering the same world');
 assert.equal(api.has('color_pools_key'),true,'Banubu Color Pools Key remains accessible');
 assert.equal(api.has('delversStone'),true);
 assert.equal(api.has('azgarlu_key_stone'),false);
