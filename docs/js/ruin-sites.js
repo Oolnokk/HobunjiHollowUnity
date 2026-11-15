@@ -194,6 +194,8 @@
       if (avoid.some(point => Math.hypot(point.col - col, point.row - row) < 6)) return false;
       if ((deps?._zoneTreasurePersist?.get?.(zoneId)?.placements || []).some(p => p.col === col && p.row === row)) return false;
       if (Object.values(state().holes || {}).some(hole => hole.zoneId === zoneId && hole.state === 'open' && hole.col === col && hole.row === row)) return false;
+      if(Object.values(progressStore().authored).some(record=>record?.zoneId===zoneId&&record?.cycle===cycle()&&!record.completed&&record.buried
+        &&record.col===col&&record.row===row))return false; // Story and named Lich burrows must never share a buried entrance tile.
       return true;
     });
     let viable = viableFrom(picks);
@@ -246,7 +248,8 @@
       const avoided=[...(layout?.dens||[]),...(layout?.buildings||[]),...(layout?.localeInstances||[]),
         ...(deps?._zoneTreasurePersist?.get?.(zoneId)?.placements||[]),
         ...Object.values(state().holes||{}),
-        ...Object.values(store.authored).filter(other=>other?.cycle===cycle()&&!other.completed&&other.zoneId===zoneId)];
+        ...Object.values(store.authored).filter(other=>other?.cycle===cycle()&&!other.completed&&other.zoneId===zoneId),
+        ...[window.DelversGuild?.vaultSite?.()].filter(other=>other?.cycle===cycle()&&other.zoneId===zoneId)]; // Keep the unique story vault separate.
       const avoid=avoided.map(o=>({col:Number(o.col??o.x??o.gridX),row:Number(o.row??o.y??o.gridZ)}))
         .filter(o=>Number.isFinite(o.col)&&Number.isFinite(o.row));
       if(Number.isInteger(record.col)&&Number.isInteger(record.row))avoid.push({col:record.col,row:record.row}); // Never pick its previous buried site twice.
@@ -405,6 +408,7 @@
       if(tile&&tile.type!==deps.TileType?.TRENCH){ // Saved excavations are kept open on reload, just like the Guild vault.
         tile.type=deps.TileType.TRENCH;tile.depth=1;
         deps.recordWildernessChunkTileDelta?.(zoneId,record.col,record.row);
+        setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId,record.col,record.row),0); // Restore the visible open shaft after reloading a dug tomb.
       }
     }
     const storySite = storyVaultSite(zoneId);
@@ -791,6 +795,13 @@
       const store=progressStore(),record=store.authored[visit.theme];
       if(record?.siteId===visit.id){record.completed=true;delete record.progress;
         if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store))debug.progressSaveError='Named tomb completion could not be saved';
+        if(visit.kind==='authored'&&record.dug){
+          const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
+          if(tile?.type===deps.TileType?.TRENCH){tile.type=deps.TileType.GRASS;tile.depth=0;
+            deps.recordWildernessChunkTileDelta?.(record.zoneId,record.col,record.row);
+            setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,record.col,record.row),0);
+          }
+        } // The completed tomb's surface burrow seals, unlike unfinished recoverable entrances.
       }
     }
     syncMapMarkers();
