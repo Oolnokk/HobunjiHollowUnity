@@ -140,16 +140,12 @@ async function main() {
   assert.equal(h.grid()[35][32].type,'trench');
   assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east','second shift retains progress');
 
-  h.setExitsAvailable(false);
-  assert.equal(ruins.completeActiveRuin(),false,'missing random exit does not delete checkpoints');
-  assert.equal(h.saved().authored.tothal.completed,false);
-  assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
-  h.setExitsAvailable(true);
   h.setWritable(false);
   assert.equal(ruins.completeActiveRuin(),false,'failed world save does not complete the tomb');
   assert.equal(h.saved().authored.tothal.completed,false);
   assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
   h.setWritable(true);
+  h.setExitsAvailable(false); // No random tile should fall back to the zone's safe entry, not consume progression early.
   assert.equal(ruins.completeActiveRuin(),true);
   assert.equal(h.saved().authored.tothal.completed,true,'completion retires the unique tomb');
   assert.equal(h.saved().authored.tothal.progress,undefined);
