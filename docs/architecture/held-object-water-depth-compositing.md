@@ -227,6 +227,26 @@ while another dry NPC is on screen. Source-level regressions cover sparse merged
 water, broad floods, scenery bounds, and mixed wet/dry shared-material groups;
 a real GPU screenshot is still required to validate final pixels.
 
+## Central x-ray hierarchy config and the dev-companion tool
+
+Every layering rule in this document that is a *choice* (not a physical fact) is a named rule in
+`docs/js/xray-hierarchy.js` (`window.XrayHierarchy`): `actors.order`, `pants.sortWithActor`,
+`weapon.frontPlaneMask`, `hand.frontPlaneMask` and `portrait.waterTint`. Each has a shipped default and a fixed
+set of options, and the renderer reads it through `XrayHierarchy.get()` every frame, so a change applies on the
+next frame. Add new rules there (default + options + the read where the behaviour lives) instead of hard-coding
+another switch in the compositor.
+
+The Dev Companion has an **X-ray hierarchy** card: the ordered hierarchy with live values and renderer counters,
+one dropdown per rule, *Export diff* (copies the changes against the shipped defaults plus the full effective
+hierarchy) and *Reset all*. Dev overrides persist per browser only (`localStorage`), never in a save. To make a
+proven setting the default, change `RULES[<key>].default` and run `scripts/test-xray-hierarchy.js`.
+
+`hand.frontPlaneMask` (default `behind`): a procedural hand whose centre sits behind its holder's front portrait
+plane, with the camera on the front side, joins the front-art stencil mask and loses its shell outline layer
+for that frame (`updateFrontPlaneHands`); a parrot hand's separate wing-continuation sub-mesh (the portrait-occluded wing layer, whose outline is the loops around a gripping kenkari hand) is hidden with it. "Behind" means any part of the hand's geometry box reaches more than 3 cm behind the plane (a gripping hand straddles the card, so its centre alone is not enough). Hands in front of the plane are untouched. `always` masks every hand
+like a weapon; `off` restores the old behaviour. `HeldObjectRenderOrder.snapshot().handsBehindFrontPlane` reports
+the live count.
+
 ## Actor draw order: portraits and worn pants sort together
 
 `nearbyPortraitOrder()` orders every visible player/NPC portrait by its actor's camera depth (far to near) and

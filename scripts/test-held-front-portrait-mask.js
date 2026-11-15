@@ -19,7 +19,7 @@ const production = [
   section('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
 const THREE = { LessEqualDepth: 1, AlwaysStencilFunc: 2, NotEqualStencilFunc: 3,
-  KeepStencilOp: 4, ReplaceStencilOp: 5 }; // Fake GL constants verify equal/not-equal and write masks.
+  KeepStencilOp: 4, ReplaceStencilOp: 5, Matrix4: class {}, Vector3: class {} }; // Fake GL constants verify equal/not-equal and write masks; math stand-ins for module-scope scratch objects.
 const scene = { isScene: true, name: 'world' }; // Owner lookup stops before the active scene.
 const root = (name,parent=scene,tag={}) => ({ name, parent, userData:tag }); // Shared player/NPC hierarchy matching production actor roots.
 const player = root('player_avatar');
@@ -128,7 +128,7 @@ failRender=false;
 const hand=mesh('hand',mat('hand'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralHand:true}});
 const foot=mesh('foot',mat('foot'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralFoot:true}});
 const cask=mesh('cask',mat('physical'),player,{tags:{}});
-assert.equal(runtime.isPortraitMaskedGear(hand),false,'procedural hands are unmasked');
+assert.equal(runtime.isPortraitMaskedGear(hand),false,'procedural hands are unmasked unless the hand rule selects them this frame');
 assert.equal(runtime.isPortraitMaskedGear(foot),false,'procedural feet are unmasked');
 assert.equal(runtime.isPortraitMaskedGear(cask),false,'physical carryables are unmasked');
 let state=runtime.preparePortraitGearStencilMaterials([playerWeapon,npcWeapon,hand,foot,cask],assigned.gearIds);
