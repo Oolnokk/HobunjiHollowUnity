@@ -38,7 +38,8 @@ const T = 64;
 const grid = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => ({ type: 'grass' })));
 grid[6][6] = { type: 'rock', projectileCoverHeightTiles: .45 }; // A pair of low wilderness rocks, both shorter than the mounted hop.
 grid[6][7] = { type: 'rock', projectileCoverHeightTiles: .45 };
-const rockCells = new Set(['6,6', '7,6']);
+grid[6][8] = { type: 'rock', projectileCoverHeightTiles: .45 }; // Proves a three-tile cluster is crossable in one hop.
+const rockCells = new Set(['6,6', '7,6', '8,6']);
 function canOccupy(x, y) {
   if (x < T || y < T || x > 15 * T || y > 15 * T) return false;
   const radius = 11;
@@ -120,10 +121,10 @@ for (let frame = 0; frame < 300; frame++) {
   assert.equal(player.x, mount.x, 'rider stays pinned to the true mount X');
   assert.equal(player.y, mount.y, 'rider stays pinned to the true mount Y');
   if (!mount._mountHop) assert(canOccupy(mount.x, mount.y), 'a grounded mount never occupies a rock');
-  if (mount.x > 8.5 * T) break;
+  if (mount.x > 9.5 * T) break;
 }
 assert(autoHopSeen && lifted, 'autonomous mount hops across the low rock patch with visible vertical travel');
-assert(mount.x > 8.5 * T, 'rock patch does not permanently obstruct forward riding');
+assert(mount.x > 9.5 * T, 'three-rock patch does not permanently obstruct forward riding');
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, 1, 'rock cluster is crossed with one airborne leap');
 
 const boost = claims['mount-riding'].find(x => x.actionId === 'dodge');
