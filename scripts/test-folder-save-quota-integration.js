@@ -388,5 +388,14 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal(missingCanonical.action, 'load-blocked-missing-canonical-layout');
   assert.match(missingCanonical.message, /restore one copy as hollow.json/);
 
+  // The manifest retains the expected canonical layout count even if someone
+  // removes every backup too: never turn an incomplete folder into a blank farm.
+  await layoutDir.removeEntry('hollow (1).json');
+  await layoutDir.removeEntry('hollow(3).json');
+  const deletedCanonical = await externalSession.window.LocalSaveFolder.loadFromFolder();
+  assert.equal(deletedCanonical.ok, false, 'missing layout with no backups is also refused');
+  assert.equal(deletedCanonical.action, 'load-blocked-missing-canonical-layout');
+  assert.match(deletedCanonical.message, /manifest.json: expected 1 canonical farm layout/);
+
   console.log('folder quota integration: actual gameplay/farm serializers, linked-window quota failure, zero-write capture, manual/campfire/travel/autosync/quit, browser mirror errors, reloads, and real capture/disk errors verified');
 })().catch(error => { console.error(error); process.exitCode = 1; });
