@@ -33,10 +33,10 @@ assert.match(farm,/npcStationId: obj\.npcStationId/);
 const tableSystem=fs.readFileSync('docs/js/furniture-table-system.js','utf8');
 assert.match(tableSystem,/seat\.furnitureId/);
 // Execute the farm restore loop with the real table registry and transform code.
-const restoreDecor = new vm.Script(farm.slice(
-  farm.indexOf('(layout.decor || []).forEach'),
-  farm.indexOf('// House pieces — initWorldObjects()')
-));
+const decorRestoreStart = farm.indexOf('(layout.decor || []).forEach'); // Exact start of the decor loop in FarmEditor.
+const decorRestoreEnd = farm.indexOf('// Manual entrances/chimneys recovered by removal', decorRestoreStart); // End marker remains after the decor loop even when house setup moves earlier.
+assert.ok(decorRestoreStart >= 0 && decorRestoreEnd > decorRestoreStart, 'decor restore section can be isolated from farm-editor');
+const restoreDecor = new vm.Script(farm.slice(decorRestoreStart, decorRestoreEnd));
 for (const tableFirst of [true, false]) {
   const restoreWindow = { THREE: { Vector3 } };
   const context = vm.createContext({ window: restoreWindow });
