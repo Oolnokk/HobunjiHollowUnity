@@ -45,9 +45,10 @@
   }
   function rollTreasureTier(random) {
     let roll = Math.max(0, Math.min(0.999999999, Number(random()) || 0)); // Separate seed stream ensures existing scatter positions do not change.
+    let cumulativeWeight = 0; // Preserve exact 62%, 25%, 10%, 3% rarity boundaries without subtraction rounding at each tier.
     for (const [tier, config] of Object.entries(TREASURE_TIERS)) {
-      roll -= config.weight;
-      if (roll < 0) return Number(tier);
+      cumulativeWeight += config.weight;
+      if (roll < cumulativeWeight) return Number(tier);
     }
     return 4;
   }
