@@ -144,10 +144,12 @@ assert(html.indexOf('js/skeeri-livestock-registration.js')<html.indexOf('js/crea
 const farmWindow = {
   SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
   CreatureGenetics:genetic,
-}; // Exact production FarmAnimals implementation with only UI/graphics dependencies omitted.
-vm.runInNewContext(read('docs/js/farm-animals.js'),{
-  window:farmWindow,performance:{now:()=>1000},console,
-});
+}; // FarmAnimals and its texture cache share the same genuine production runtime.
+const farmRuntime = {window:farmWindow,performance:{now:()=>1000},console}; // Loads production modules without browser-only rendering paths.
+vm.runInNewContext(read('docs/js/creature-texture-cache.js'),farmRuntime);
+assert.equal(typeof farmWindow.CreatureTextureCache.create,'function',
+  'the actual farm texture-cache dependency must load before FarmAnimals');
+vm.runInNewContext(read('docs/js/farm-animals.js'),farmRuntime);
 const realFarm=farmWindow.FarmAnimals;
 const farms=[],personalStable=[]; // World-shared vs individual animal ownership is asserted separately.
 const farmBag={fertileSkeeriEgg:2,skeeriEgg:1}; // Ordinary food eggs must remain inedible as livestock.
