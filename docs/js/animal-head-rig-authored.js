@@ -25,17 +25,27 @@
       || normalized;
   };
 
-  // Dabinggi Hound intentionally keeps its own head pivot/head paint, but uses
-  // Gar-wolf's exact shoulder presentation: separator, shoulder paint and all
-  // seven BEFORE/AFTER vertices.
+  // Separate editable snapshots from the uploaded Puktuk shoulder rig.
+  // Changes to one species do not affect other species' curves or paint.
+  const INDEPENDENT_SHOULDER_RESTS = Object.freeze({
+    'puktuk': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+    'gar-wolf': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+    'dabinggi-hound': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+    'moot': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+    'nelk': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+    'drenkirra': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
+  });
+  // Moot has no committed head paint yet; a body-only rig enables the shoulder pose without fake head deformation.
+  const BODY_ONLY_HEAD_RIG = Object.freeze({
+    enabled: true, coordinateSpace: 'sprite-normalized-top-left', pivot: { x: 0.5, y: 0.5 },
+    weightMap: { width: 2, height: 2, encoding: 'rle-u9', unsetValue: 256, data: [4, 0] },
+    minDeg: -30, maxDeg: 30, restDeg: 0, turnSpeedDeg: 120, meshResolution: 48,
+  });
+
   const authored = { ...EXPORTED_HEAD_RIGS };
-  const dabinggiBase = renderer.ANIMAL_HEAD_RIGS?.['dabinggi-hound'];
-  const garShoulder = EXPORTED_HEAD_RIGS['gar-wolf']?.shoulderRest;
-  if (dabinggiBase && garShoulder) {
-    authored['dabinggi-hound'] = {
-      ...clone(dabinggiBase),
-      shoulderRest: clone(garShoulder),
-    };
+  for (const [kind, shoulderRest] of Object.entries(INDEPENDENT_SHOULDER_RESTS)) {
+    const headRig = authored[kind] || renderer.ANIMAL_HEAD_RIGS?.[kind] || BODY_ONLY_HEAD_RIG; // Preserve the original head pivot and paint.
+    authored[kind] = { ...clone(headRig), shoulderRest: clone(shoulderRest) }; // Deep-clone per species for independent edits.
   }
   const AUTHORED_HEAD_RIGS = Object.freeze(authored);
 
@@ -99,9 +109,9 @@
   }
 
   window.HobunjiAuthoredAnimalHeadRigs = Object.freeze({
-    version: '2026-09-18-uploads2',
+    version: '2026-11-15-uploads3-independent-shoulders',
     rigs: AUTHORED_HEAD_RIGS,
     get: kind => AUTHORED_HEAD_RIGS[baseSpeciesFor(kind)] || null,
   });
-  window.__farmLog?.('[head-rig] Uploaded Grehlr, Puktuk, Gar-wolf and Voorg-Ass rigs installed; Dabinggi Hound mirrors Gar-wolf shoulder spline.', 'wildlife');
+  window.__farmLog?.('[head-rig] Independent Puktuk shoulder poses installed for Puktuk, Gar-wolf, Dabinggi-hound, Moot, Nelk and Drenkirra; other species unchanged.', 'wildlife');
 })();
