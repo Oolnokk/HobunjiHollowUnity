@@ -403,18 +403,18 @@
     return !!a && !!b && a.size === b.size && a.modified === b.modified;
   }
 
-  // A full first save streams the files individually. Only later saves build
-  // a delta; changed JSON strings are released as soon as they reach disk.
+  // Full and incremental saves serialize one entity at a time. Fingerprint
+  // comparisons retain only short hashes, not duplicate multi-MB JSON strings.
   function prepareChangedFiles(meta, layouts) {
     if (!_committedFileState) return null;
     const digests = new Map(); // Expected canonical filenames and content fingerprints, including deletion detection.
-    const changedText = new Map(); // Only strings for changed files, reused by the actual writer.
+    let changed = false; // True if any canonical file's JSON changed or its filename is new.
     const visit = (dirName, filename, value) => {
       const key = fileKey(dirName, filename);
       const raw = JSON.stringify(value);
       const digest = contentFingerprint(raw);
       digests.set(key, digest);
-      if (_committedFileState.get(key)?.digest !== digest) changedText.set(key, raw);
+      if (_committedFileState.get(key)?.digest !== digest) changed = true;
     };
     for (const character of meta.characters || []) {
       if (character?.id) visit(CHARACTERS_DIR, slugify(character.nickname) + '-' + character.id + '.json', character);
@@ -426,14 +426,15 @@
       if (!world?.id || !Object.prototype.hasOwnProperty.call(layouts, world.id)) continue;
       visit(FARM_LAYOUTS_DIR, farmLayoutFilename(world.id), { worldId: world.id, layout: layouts[world.id] });
     }
-    return { digests, changedText, changed: changedText.size > 0 || digests.size !== _committedFileState.size };
+    return { digests, changed: changed || digests.size !== _committedFileState.size };
   }
 
   async function writeTrackedFile(dirHandle, dirName, filename, payload, delta, next, work) {
     const key = fileKey(dirName, filename);
     const old = _committedFileState?.get(key);
     const digest = delta?.digests.get(key);
-    let raw = delta?.changedText.get(key);
+    // Changed payloads are serialized only when written; no full JSON buffer
+    // survives the delta scan while disk safety guards perform asynchronous I/O.
     const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
     if (old && digest === old.digest && old.stamp) {
       // A deleted or externally modified disk file cannot be called saved just
@@ -446,7 +447,7 @@
         return;
       }
     }
-    if (raw === undefined) raw = JSON.stringify(payload);
+    const raw = JSON.stringify(payload); // Only the single file currently being committed occupies a JSON string.
     const writable = await fileHandle.createWritable();
     await writable.write(raw);
     await writable.close();
@@ -454,7 +455,6 @@
     try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
     next.set(key, { digest: digest || contentFingerprint(raw), stamp });
     work.written++;
-    delta?.changedText.delete(key);
   }
 
   // A fast metadata pass is sufficient only for known, untouched farm files.
@@ -1185,6 +1185,8 @@
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Use the same minimal picker invocation as the proven normal folder chooser; no stale-handle-derived options or recovery-specific picker state.
       _handle = handle;
+      _committedFileState = null; // Recovery-only folder switches also invalidate the old primary save's file catalog.
+      _lastManifestStamp = null; // The new folder cannot inherit the previous folder's verified manifest.
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
