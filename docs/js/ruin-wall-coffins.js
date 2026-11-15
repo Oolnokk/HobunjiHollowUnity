@@ -12,6 +12,7 @@
   const MAP_ID='map_i_dev_random_ruin';
   const COUNT=Object.freeze({cave:2,hole:4,lich:6}); // More coffins in rarer, larger ruins.
   const WAKE_RADIUS=2.7,WAKE_HEIGHT=2.4,LID_SECONDS=.8;
+  const OPEN_ROCK_SFX='breakRock',OPEN_SCREAM_SFX='ruinCoffinShriek'; // Shared spatial object-SFX keys fired once when the lid begins to fall.
   const hash=text=>{let h=2166136261;for(const ch of String(text))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;};
   // Chooses which candidate wall sites become coffins: deterministic per seed, spread over stories.
   function pick(sites,{seed=1,tier='hole'}={}){
@@ -69,6 +70,7 @@
           const base=Number.isFinite(Number(support?.y))?Number(support.y):c.site.floorY;
           return base-.7*Math.max(0,1-(performance.now()-born)/1100);
         };
+        root.CombatVocalizations?.suppressSkeletonCoffinSpawnAlert?.(minion); // The coffin already screamed on activation; combat detection must not play a second alarm.
         hostile?.add?.(minion);c.skeleton=minion;c.spawnedAt=born;
       }catch(error){console.warn?.('[ruin wall coffin] skeleton spawn failed',error);}
     }
@@ -81,6 +83,11 @@
           if(busy||!p||!Number.isFinite(py))continue; // One at a time: stay shut while another occupant lives.
           if(Math.abs(py-c.site.floorY)>WAKE_HEIGHT||Math.hypot(p.x-c.site.x,p.z-c.site.z)>WAKE_RADIUS)continue;
           c.state='falling';c.wall.visible=true;c.floor.visible=true;
+          const playAt=root.AudioSystem?.playObjectSfxKeyAt; // Both cues originate at the opening on its actual ruin story.
+          if(typeof playAt==='function'){
+            playAt(OPEN_ROCK_SFX,c.site.x,c.site.z,mapId,c.site.floorY+.9,{earshotTiles:14});
+            playAt(OPEN_SCREAM_SFX,c.site.x,c.site.z,mapId,c.site.floorY+.9,{earshotTiles:14});
+          }
         }
         if(c.state==='falling'){
           c.t=Math.min(1,c.t+dt/LID_SECONDS);
