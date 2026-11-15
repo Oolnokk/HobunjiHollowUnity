@@ -743,6 +743,7 @@
 
   // ── Entering / leaving ────────────────────────────────────────────────────
   function enterSite(visit) {
+    if(activeVisit) return false; // A second interaction while generation is in flight must not steal the first ruin's checkpoint/save owner.
     if (visit.kind === 'story-vault') {
       if (!window.DelversGuild?.hasTalisman?.()) return false;
       const R = window.DevRandomRuin;
@@ -1009,6 +1010,7 @@
 
   function sourceCensus(zoneId = null) {
     const saved = state();
+    const authoredOwners=progressStore().authored; // One world-metadata read, rather than cloning the whole world per registered site.
     const themes = ['tothal','hronal','kanthic'];
     const byTheme = {tothal:0,hronal:0,kanthic:0};
     const unspentByTheme = {tothal:0,hronal:0,kanthic:0}; // Separate access to remaining entrances from their original world-generation frequencies.
@@ -1018,7 +1020,7 @@
       if (zoneId != null && String(zoneId) !== area) continue;
       for (const site of roster) {
         const theme = themes[seedFor(site.id) % themes.length];
-        const owner = progressStore().authored?.[theme]?.siteId || saved.bossSites?.[theme] || null;
+        const owner = authoredOwners?.[theme]?.siteId || saved.bossSites?.[theme] || null;
         const tier = owner == null ? 'undetermined' : owner === site.id ? 'lich' : 'hole';
         byTheme[theme]++;
         byTier[tier]++;
