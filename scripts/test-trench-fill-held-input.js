@@ -39,7 +39,7 @@ const releaseBranch = braceBlockAt(game, releaseStart);
 const makeFixture = Function('buttons', 'allowed', 'chargeable', [
   "let activeTool = 'shovel', activeAction = 'dig', actionHeldDown = false, heldChargeInputId = null;",
   "const selected = [];",
-  "const heldMode = 'tool', flaskActionPresses = new Set(), visibleWeaponContextPresses = new Set(), heldItemActionPresses = new Set();",
+  "const heldMode = 'tool', flaskActionPresses = new Set(), visibleWeaponContextPresses = new Set(), heldItemActionPresses = new Set(), torchThrowActionPresses = new Set();", // The isolated fixture supplies all production release ownership sets.
   "const window = {};",
   "function weaponActionSlot() { return null; }",
   "function actionButtonForPhysicalSlot(index) { return buttons[index] || null; }",
