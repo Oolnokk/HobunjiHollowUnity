@@ -1379,15 +1379,21 @@
   function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds, portraitOrder) {
     if (!portraits.length) return false;
     const originalMask = camera.layers.mask; // Restores the caller's world mask even on an interrupted render.
+    const selected = new Set(portraits); // The stencil camera layer is present on every registered front, not just current gear owners.
+    const unrelatedFronts = suppressDraws(
+      collectVisible(frontPortraitRegistry, scene).filter(mesh => !selected.has(mesh)),
+      FRONT_PORTRAIT_MASK,
+    ); // Prevent unselected NPC/pet portraits from drawing full COLOR during a private owner-mask stamp.
     const states = prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene);
     try {
       camera.layers.mask = FRONT_PORTRAIT_MASK;
-      withPortraitDrawOrder(renderer, portraitOrder, () => rawRender.call(renderer, scene, camera)); // One stamp for all owners.
+      withPortraitDrawOrder(renderer, portraitOrder, () => rawRender.call(renderer, scene, camera)); // Only selected owner silhouettes may draw.
       frontPortraitMaskPassCount++;
       return true;
     } finally {
       camera.layers.mask = originalMask;
       restoreMaterialStates(states);
+      restoreDraws(unrelatedFronts);
     }
   }
 
