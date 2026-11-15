@@ -746,6 +746,12 @@
     playPain(entity, 'dot', Number(detail.delta) || 0, atMs);
   }
 
+  function suppressSkeletonCoffinSpawnAlert(entity) {
+    if (!hasSkeletonVoice(entity)) return false;
+    skeletonAlarmActiveByEntity.set(entity, true); // Wall coffins already play their one activation shriek before the actor is created.
+    return true;
+  }
+
   function onHostileAlertState(entity, active) {
     if (!hasSkeletonVoice(entity)) return null; // Other humanoids and Maskbound Guardians retain their own voice systems.
     if (!active || !(Number(entity.health) > 0)) {
@@ -1476,6 +1482,7 @@ function beginCharge(options = {}) {
     prewarmStrikeGrunt,
     playDodge,
     onHostileAlertState, // Called by the shared hostile combat-state transition, not by damage callbacks.
+    suppressSkeletonCoffinSpawnAlert, // Prevents a late, duplicate alarm on a coffin's emerging skeleton.
     attackStartDelayS,
     attackQueueOpen,
     chargeRatePlan,
