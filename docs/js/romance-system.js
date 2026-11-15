@@ -88,6 +88,12 @@
   // Continuous in-game hours since day 0, robust to the represented clock
   // not spanning a full 24h (a skipped night just reads as elapsed time).
   function hourStamp() { return rawDay() * 24 + hourOfDay(); }
+  function outingHourStamp() {
+    const absolute = Number(window.CalendarSystem?.getAbsoluteGameHour?.()); // The official monotonic clock remains stable when civil time wraps at midnight.
+    if (Number.isFinite(absolute)) return absolute;
+    const hour = clockHour(); // Headless tests and pre-init fallbacks still model the game's 06:00 raw-day rollover.
+    return rawDay() * 24 + hour + (hour < 6 ? 24 : 0);
+  }
   function inHourWindow(hour, start, end) { return start <= end ? hour >= start && hour < end : (hour >= start || hour < end); }
 
   // ── NPC lookups ───────────────────────────────────────────────────────
@@ -502,7 +508,7 @@
     return (kind === 'communion' || kind === 'festival') && !window.SpouseSocialLife?.outingAvailable?.(kind);
   }
   function activeSpouseOuting() {
-    return state.outing && state.spouse?.npcId === state.outing.npcId && hourStamp() < num(state.outing.endHour, -Infinity) && !outingEventEnded()
+    return state.outing && state.spouse?.npcId === state.outing.npcId && outingHourStamp() < num(state.outing.endHour, -Infinity) && !outingEventEnded()
       ? { ...state.outing, target: { ...state.outing.target } } : null;
   }
   function startSpouseOuting(kind, target) {
@@ -510,7 +516,7 @@
     if (window.RomanceFamily?.spouseHoldingEgg?.() || window.RomanceFamily?.isAssignedToVat?.(state.spouse.npcId) || state.date?.npcId === state.spouse.npcId) return false; // Never accept a trip the spouse's higher-priority family duties prevent.
     if (!window.SpouseSocialLife?.outingAvailable?.(kind)) return false; // Invitations must still be eligible when accepted.
     state.outing = {
-      npcId: state.spouse.npcId, kind, target: { ...target }, startedHour: hourStamp(), endHour: hourStamp() + 4,
+      npcId: state.spouse.npcId, kind, target: { ...target }, startedHour: outingHourStamp(), endHour: outingHourStamp() + 4,
     }; // Shared journey expires after four game hours; the player's position and controls are never commandeered.
     persist();
     return true;
@@ -674,7 +680,7 @@
       }
     }
     maybeStartWedding();
-    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || hourStamp() >= num(state.outing.endHour, -Infinity) || outingEventEnded())) endSpouseOuting(); // End time-bound events when their venue closes, not four hours into an empty venue.
+    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || outingHourStamp() >= num(state.outing.endHour, -Infinity) || outingEventEnded())) endSpouseOuting(); // End time-bound events when their venue closes, not four hours into an empty venue.
     installKissBuffProviders();
     if (state.kissBuff) {
       if (remainingKissHours() <= 0) {
