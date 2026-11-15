@@ -642,7 +642,7 @@
     return snapshot;
   }
 
-  async function readFolderFarmLayouts(validWorldIds = null) {
+  async function readFolderFarmLayouts(validWorldIds = null, { canonicalOnly = false } = {}) {
     const layouts = {};
     const corruptFiles = [];
     const backupFiles = []; // Noncanonical JSON filenames are recovery copies, never competing live layouts.
@@ -652,8 +652,11 @@
     catch { return { layouts, corruptFiles, backupFiles, missingCanonicalBackups }; }
 
     const backupsByWorld = new Map(); // Used after enumeration to tell harmless backups from missing canonical files.
+    const canonicalNames = canonicalOnly && validWorldIds
+      ? new Set([...validWorldIds].map(farmLayoutFilename)) : null; // On write checks, inspect only authoritative files, not gigabytes of numbered backups.
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue;
+      if (canonicalNames && !canonicalNames.has(name)) continue; // Recovery copies are still fully scanned by folder import and diagnostics.
       try {
         const payload = JSON.parse(await (await entry.getFile()).text());
         if (!payload || typeof payload.worldId !== 'string' || !payload.worldId || !payload.layout || typeof payload.layout !== 'object' || Array.isArray(payload.layout)) {
@@ -886,10 +889,14 @@
           return getStatus();
         }
         if (_lastKnownFarmLayoutFingerprint !== null) {
-          const unchangedOnDisk = automatic && await farmLayoutFilesUnmodified(); // Metadata-only fast path; uncertain cases retain the old full integrity check.
-          const disk = unchangedOnDisk ? null : await readFolderFarmLayouts(new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)));
-          const diskFingerprint = disk ? farmLayoutFingerprint(disk.layouts) : _lastKnownFarmLayoutFingerprint;
-          if (disk && (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint)) {
+          // Only a true no-op may use file timestamps. Any save that writes
+          // bytes must compare the complete canonical farm content, including
+          // same-size edits with preserved timestamps from external restores.
+          const disk = await readFolderFarmLayouts(
+            new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)),
+            { canonicalOnly: true });
+          const diskFingerprint = farmLayoutFingerprint(disk.layouts);
+          if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
             _lastDataLossRisk = disk.corruptFiles.length
               ? 'farm-layout files on disk are unreadable'
               : disk.missingCanonicalBackups.length
