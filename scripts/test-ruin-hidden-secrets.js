@@ -39,27 +39,44 @@ global.DevRandomRuinSimplePuzzles={hasActiveRuinState:()=>true,
  registerExternalProjectileTarget(t){projectiles.add(t);return()=>projectiles.delete(t);}};
 const fire=new Map();
 global.DungeonFire={registerTarget(t){fire.set(t.id,t);return t.id;},unregisterTarget(id){fire.delete(id)}};
-global.PersistentGroundFire={intersects:()=>false};
+let feetY=12,groundOn=false,player={x:43,z:53}; // Scenario controls simulate stacked floor fire and remote instrument input.
+global.PersistentGroundFire={intersects:()=>groundOn};
 global.RuinInteractionAudio={watchPlate(){}};
+let notesReceived=0,melodyListener=null; // Confirms one secret score cannot receive a different plate's notes.
 global.PuzzleCaveMelody={ruinDifficulty:()=>3,generate:()=>({notes:[{index:1}],bpm:90}),
- createSession:(_song,cbs)=>({step(){},note(){},stop(){},solve:()=>cbs.onSolved()})};
+ createSession:(_song,cbs)=>({step(){},note(){notesReceived++;},stop(){},solve:()=>cbs.onSolved()})};
 global.RuinMelodyGlyphDecal={create:()=>({dispose(){}})};
-global.addEventListener=()=>{};global.removeEventListener=()=>{};
+global.addEventListener=(_type,callback)=>{melodyListener=callback;};
+global.removeEventListener=(_type,callback)=>{if(melodyListener===callback)melodyListener=null;};
 const rigUpdates=[]; // Each baby must receive the actual rig's folded-wing hatchling pose, not render as an adult flyer.
 global.DevRandomRuinInteractions={activeCamera:()=>({getWorldPosition(){}})};
 global.SkeeriRuins={paletteFor:theme=>({theme}),createRig:async()=>({root:new Group(),update:(_camera,pose)=>rigUpdates.push(pose),dispose(){this.disposed=true;}})};
 const controls=new Set();
 for(const [key,seed] of Object.entries(found)){
+ feetY=12;groundOn=false;player={x:43,z:53};
  const owner=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
-  getPlayerY:()=>12,getPlayerPosition:()=>({x:43,z:53}),
+  getPlayerY:()=>feetY,getPlayerPosition:()=>player,
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
  assert(owner);
  owner.tick(.05);
  if(key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
    assert.equal(owner.targets.length,1);owner.targets[0].onHit();assert(owner.unlocked);
  }
- if(key==='closet:fire'){owner.fireRecord.onBurn();assert(owner.unlocked);}
- if(key==='closet:melody'){assert(owner.melody);owner.melody.solve();assert(owner.unlocked);}
+ if(key==='closet:fire'){
+   feetY=30;groundOn=true;owner.tick(.05);
+   assert(!owner.unlocked,'ground fire on another floor cannot unlock the secret brazier');
+   feetY=12;owner.tick(.05);assert(owner.unlocked,'ground fire on the correct floor unlocks the brazier');
+   groundOn=false;
+ }
+ if(key==='closet:melody'){
+   assert(owner.melody&&melodyListener,'native timed score and note event listener are present');
+   const noteEvent={detail:{area:'map_i_dev_random_ruin',noteIndex:1,pressedAtMs:100}};
+   melodyListener(noteEvent);assert.equal(notesReceived,0,'distant music cannot feed a hidden score');
+   player={x:owner.platePoint.x,z:owner.platePoint.z};
+   feetY=30;melodyListener(noteEvent);assert.equal(notesReceived,0,'other story cannot feed a hidden score');
+   feetY=12;melodyListener(noteEvent);assert.equal(notesReceived,1,'notes at the correct plate reach the judge');
+   owner.melody.solve();assert(owner.unlocked);
+ }
  if(key==='suspended:net')assert(owner.cover.position.y>room.y+2,'net not at world origin');
  if(key.startsWith('suspended:')){
    for(let i=0;i<30;i++)owner.tick(.05);
