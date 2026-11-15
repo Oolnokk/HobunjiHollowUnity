@@ -5,6 +5,7 @@ const assert = require('node:assert/strict'); // Used for deterministic static r
 const fs = require('node:fs'); // Used to read the shipped runtime/editor/config source files.
 const path = require('node:path'); // Used to resolve repository-relative fixture paths consistently.
 const vm = require('node:vm'); // Executes the pure interior-wall splitter in an isolated browser-like context for geometry regression coverage.
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // Read the effective ordered startup scripts after feature manifests expand.
 
 const root = path.resolve(__dirname, '..'); // Repository root for every source/config assertion below.
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8'); // Small helper keeps each assertion readable.
@@ -574,7 +575,7 @@ assert.match(gameIndex, /interior-scene-builder\.js\?v=[A-Za-z0-9_-]+/, 'game in
 assert.match(gameIndex, /house-window-linkage\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the shared window and brick-cut aperture root');
 assert.match(linkage, /const surface = exteriorSlotSurface\(resolveRun\(binding\), binding\)/, 'exterior window visual must use the same Highland wall surface as placement and cut');
 assert.doesNotMatch(linkage, /makeRotationX\(Math\.PI\)/, 'the discarded Wide Window hinge rotation must not remain');
-assert.match(gameIndex, /farm-editor\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust primary-only linked-window persistence');
+assert.match(expandClassicScriptGroups(gameIndex), /farm-editor\.js\?v=[A-Za-z0-9_-]+/, 'farm manifest must cache-bust primary-only linked-window persistence');
 assert.match(canvasBuilder, /map: texture/, 'merge resolution must preserve main\'s stretched canvas texture while keeping per-panel wall meshes');
 assert.match(canvasBuilder, /canvasSurfaceStretch = 'one-png-per-wall-panel'/, 'canvas wall merge must preserve one texture copy per panel');
 
