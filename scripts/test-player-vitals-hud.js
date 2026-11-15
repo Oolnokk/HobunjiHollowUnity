@@ -78,6 +78,8 @@ context.PlayerVitals.init({ player });
 const refresh = () => context.PlayerVitals.refreshVitalsHud(); // Invokes the game's actual DOM renderer without ticking time.
 const shown = id => elements.get(id).classList.contains('is-active'); // Checks per-resource HUD visibility.
 const bar = id => elements.get('vb' + id + 'Fill'); // Reads displayed width from the actual row fill.
+const capPieces = cap => cap.children.filter(child => child.className === 'vb-cap-piece'); // The lost-capacity cap holds one piece per capacity reducer.
+const pieceLabel = piece => piece.children.find(child => child.className === 'vb-name')?.textContent;
 
 refresh();
 assert.equal(shown('vitalsBar'), false, 'at full and unafflicted the entire HUD is hidden');
@@ -182,20 +184,24 @@ assert.equal(elements.get('vbHealthCap').hidden, false, 'lost effective maximum 
 assert.equal(elements.get('vbHealthCap').style.left, '70.0%');
 const congealedCap = elements.get('vbHealthCap');
 assert.equal(congealedCap.classList.contains('is-withered'), true, 'capacity damage creates a starved outline');
-assert.equal(congealedCap.children[0].id, 'svg', 'cap draws with a real SVG');
-const congealedShape = congealedCap.children[0].children[1].getAttribute('d');
+assert.equal(capPieces(congealedCap).length, 1, 'one capacity reducer, one cap piece');
+const congealedPiece = capPieces(congealedCap)[0];
+assert.equal(congealedPiece.children[0].id, 'svg', 'a cap piece draws with a real SVG');
+const congealedShape = congealedPiece.children[0].children[1].getAttribute('d');
 assert(congealedShape.includes(' C ') && congealedShape.includes(' L '), 'cap is a smooth spline with a flat central section');
-assert.equal(congealedCap.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
+assert.equal(congealedPiece.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
 // The right-anchored lost-capacity cap is labelled too, with the same outline layered over its text.
-const capLabel = congealedCap.children.find(child => child.className === 'vb-name');
+const capLabel = congealedPiece.children.find(child => child.className === 'vb-name');
 assert.ok(capLabel, 'the lost-capacity cap carries a name label');
 assert.equal(capLabel.textContent, 'Congealed', 'the cap prints the reducing affliction without the resource word');
-const capOutline = congealedCap.children.find(child => child.id === 'svg' && child.classList.contains('vb-outline-svg'));
+const capOutline = congealedPiece.children.find(child => child.id === 'svg' && child.classList.contains('vb-outline-svg'));
 assert.ok(capOutline, 'the cap gets an outline overlay');
-assert.ok(congealedCap.children.indexOf(capOutline) > congealedCap.children.indexOf(capLabel), 'the cap outline is after its label so it paints over the text');
+assert.ok(congealedPiece.children.indexOf(capOutline) > congealedPiece.children.indexOf(capLabel), 'the cap outline is after its label so it paints over the text');
 refresh();
-assert.equal(congealedCap.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the cap label');
-assert.equal(congealedCap.children.filter(child => child.classList.contains('vb-outline-svg')).length, 1, 'refresh does not duplicate the cap outline');
+assert.equal(capPieces(congealedCap)[0], congealedPiece, 'refresh keeps the same cap piece');
+assert.equal(congealedPiece.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the piece label');
+assert.equal(congealedPiece.children.filter(child => child.classList.contains('vb-outline-svg')).length, 1, 'refresh does not duplicate the piece outline');
+assert.equal(congealedPiece.style.width, '100.0%', 'a single reducer fills the whole cap');
 player.afflictions.congealedHealth = 0;
 player.health = 100;
 
@@ -248,16 +254,36 @@ refresh();
 assert.equal(elements.get('vbStaminaCap').classList.contains('is-withered'), true, 'winded Stamina shows withered capacity');
 // A capacity reducer is drawn once, as the right-anchored cap: no second, left-anchored band for the same amount.
 assert.equal(elements.get('vbStaminaSegments').children.some(span => span.title === 'Winded Stamina'), false, 'Winded Stamina has no left-anchored band');
-assert.equal(elements.get('vbStaminaCap').children.find(child => child.className === 'vb-name')?.textContent, 'Winded', 'the cap is the one place Winded is drawn and named');
-assert.equal(elements.get('vbStaminaCap').children[0].children[1].getAttribute('d'), congealedShape, 'the Stamina cap uses the same starved spline');
-// Several reducers on one bar: the cap names all of them, strongest first, and takes the strongest one's colour.
+assert.equal(pieceLabel(capPieces(elements.get('vbStaminaCap'))[0]), 'Winded', 'the cap is the one place Winded is drawn and named');
+assert.equal(capPieces(elements.get('vbStaminaCap'))[0].children[0].children[1].getAttribute('d'), congealedShape, 'the Stamina cap piece uses the same starved spline');
+// Several reducers on one bar split the cap: one piece each, in its own colour and width, strongest at the far right.
 player.afflictions.congealedHealth = 20; player.afflictions.rentHealth = 10; player.health = 60;
 refresh();
 const multiCap = elements.get('vbHealthCap');
 assert.equal(elements.get('vbHealthSegments').children.some(span => /Congealed|Rent/.test(span.title)), false, 'no reducer gets a left band on the Health bar either');
-assert.equal(multiCap.children.find(child => child.className === 'vb-name').textContent, 'Rent / Congealed', 'the cap lists every active reducer, strongest first');
-assert.equal(multiCap.children.filter(child => child.className === 'vb-name').length, 1, 'one label for the cap');
-player.afflictions.congealedHealth = 0; player.afflictions.rentHealth = 0; player.health = 100;
+const multiPieces = capPieces(multiCap);
+assert.equal(multiPieces.length, 2, 'two reducers, two cap pieces');
+assert.deepEqual(multiPieces.map(pieceLabel), ['Congealed', 'Rent'], 'weakest (Congealed, priority 50) leftmost, strongest (Rent, 57) at the far right');
+assert.deepEqual(multiPieces.map(piece => piece.style.left), ['0.0%', '66.7%'], 'pieces tile the cap from its left edge');
+assert.deepEqual(multiPieces.map(piece => piece.style.width), ['66.7%', '33.3%'], 'piece widths follow each reducer\'s amount (20 : 10)');
+const pieceFills = multiPieces.map(piece => piece.children[0].children[1].getAttribute('fill'));
+assert.equal(pieceFills[0], context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'each piece keeps its own affliction colour');
+assert.equal(pieceFills[1], context.HOBUNJI_CONFIG.resourceRings.afflictionColors.rentHealth);
+assert.notEqual(pieceFills[0], pieceFills[1], 'the two reducers are told apart by colour');
+for (const piece of multiPieces) {
+  assert.equal(piece.children.filter(child => child.className === 'vb-name').length, 1, 'one label per piece');
+  assert.ok(piece.children.findIndex(child => child.classList.contains('vb-outline-svg')) > piece.children.findIndex(child => child.className === 'vb-name'), 'each piece outlines over its own text');
+}
+player.afflictions.congealedHealth = 10; refresh(); // The same pieces just resize when an amount changes.
+assert.deepEqual(capPieces(multiCap), multiPieces, 'pieces persist across amount changes');
+assert.deepEqual(capPieces(multiCap).map(piece => piece.style.width), ['50.0%', '50.0%'], 'and resize to the new 10 : 10 split');
+player.afflictions.rentHealth = 0; refresh(); // A reducer clearing removes only its piece.
+assert.deepEqual(capPieces(multiCap).map(pieceLabel), ['Congealed'], 'a cleared reducer loses its piece');
+assert.equal(capPieces(multiCap)[0], multiPieces[0], 'the surviving piece is reused');
+player.afflictions.congealedHealth = 0; player.afflictions.rentHealth = 0; player.health = 90; // Still shown (damaged Health), but no reducer left.
+refresh();
+assert.equal(multiCap.children.length, 0, 'with no reducers left the cap holds no pieces');
+player.health = 100;
 player.afflictions.windedStamina = 0;
 player.stamina = 100;
 player.afflictions.poisonedHealth = 20;
@@ -277,7 +303,7 @@ refresh();
 assert.equal(shown('vbFootingRow'), true, 'Footing afflictions also reveal their bar at full displayed points');
 assert.equal(elements.get('vbFootingSegments').children.length, 0, 'Shambling Footing reserves maximum: drawn once, as the end-of-bar cap, not also as a band');
 assert.equal(elements.get('vbFootingCap').hidden, false, 'the reserved Footing shows as the end-of-bar cap');
-assert.equal(elements.get('vbFootingCap').children.find(child => child.className === 'vb-name')?.textContent, 'Shambling', 'the cap names the reserving affliction');
+assert.equal(pieceLabel(capPieces(elements.get('vbFootingCap'))[0]), 'Shambling', 'the cap names the reserving affliction');
 assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 0, 'mobile-readable debug snapshot includes HUD state');
 
 // Enhanced resource visuals are driven by actual transaction metadata, not
@@ -431,7 +457,7 @@ for (const [id, def] of Object.entries(context.ResourceSystem.AFFLICTIONS)) {
   const bands = elements.get(spec[0] + 'Segments').children.filter(span => span.title === def.name);
   const cap = elements.get(spec[0] + 'Cap');
   const short = def.name.replace(new RegExp('\\s+' + def.resource + '$', 'i'), '');
-  const inCap = !cap.hidden && (cap.children.find(child => child.className === 'vb-name')?.textContent || '').split(' / ').includes(short);
+  const inCap = !cap.hidden && capPieces(cap).some(piece => pieceLabel(piece) === short);
   const anchor = context.PlayerVitals.afflictionAnchor(id, def);
   if (!(def.enhanced && fresh.indexOf(id) < 0 && bands.length === 0 && !inCap)) { // Enhanced bands need their own transaction setup to show.
     assert.equal(bands.length + (inCap ? 1 : 0), 1, id + ' (' + anchor + ') is drawn in exactly one place, found ' + bands.length + ' band(s) and ' + (inCap ? 'the cap' : 'no cap'));

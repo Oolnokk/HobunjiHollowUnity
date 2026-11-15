@@ -463,6 +463,7 @@
       pointer-events: none;
     }
     #vitalsBar .vb-cap[hidden] { display: none; }
+    #vitalsBar .vb-cap-piece { position: absolute; top: 0; bottom: 0; pointer-events: none; } /* One lost-capacity piece per capacity reducer, sized in % of the cap. */
     #vitalsBar .vb-cap.is-withered {
       background: transparent;
       border: 0;

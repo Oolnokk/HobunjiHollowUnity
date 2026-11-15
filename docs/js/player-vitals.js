@@ -103,6 +103,7 @@
         cap: document.getElementById('vb' + spec.label + 'Cap'),
         segmentsByKey: new Map(), // Preserve CSS animations between ordinary resource ticks.
         normalByKey: new Map(), // Stable straight-edged ordinary resource bands.
+        capPieces: new Map(), // One lost-capacity piece per active capacity reducer, keyed by affliction id.
         fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
       };
     }
@@ -462,6 +463,50 @@
     if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
   }
 
+  // The end-of-bar anchor: the lost-capacity region is split into one piece per active capacity reducer, each with its own
+  // width (that reducer's share of the lost maximum, by amount), colour, pinched shape, outline-over-text overlay and name.
+  // Strongest reducer at the far right, weaker ones stacking leftwards from it. Pieces persist by affliction id so a
+  // changing amount only resizes them.
+  function drawCapPieces(nodes, reducers, resourceKey, rs, entity) {
+    const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
+    const ordered = reducers.slice().reverse(); // Weakest first = leftmost.
+    const weights = ordered.map(([id]) => Math.max(0, Number(rs.getAffliction(entity, id)) || 0));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const shares = ordered.map((_, index) => (total > 0 ? weights[index] / total : 1 / ordered.length));
+    const next = new Map();
+    const order = [];
+    let used = 0;
+    ordered.forEach(([id, def], index) => {
+      let piece = nodes.capPieces.get(id);
+      if (!piece) {
+        piece = document.createElement('span');
+        piece.className = 'vb-cap-piece';
+        piece.title = def?.name || id;
+        piece.setAttribute('data-anchor', 'end');
+        const color = palette[id] || '#666';
+        ensureStarvedCap(piece, color === '#000000' ? '#555' : color); // Own shape + fill colour.
+        const label = document.createElement('span');
+        label.className = 'vb-name';
+        label.textContent = shortAfflictionName(def?.name || id, resourceKey);
+        piece.appendChild(label);
+        piece._vbName = label;
+        piece._vbOutline = buildOutlineOverlay(piece._vbShape); // After the label, above it.
+        piece.appendChild(piece._vbOutline);
+      }
+      const last = index === ordered.length - 1;
+      const left = (used * 100).toFixed(1) + '%';
+      const width = (last ? 100 - used * 100 : shares[index] * 100).toFixed(1) + '%'; // The last piece closes any rounding gap.
+      used += shares[index];
+      if (piece.style.left !== left) piece.style.left = left;
+      if (piece.style.width !== width) piece.style.width = width;
+      next.set(id, piece);
+      order.push(piece);
+    });
+    const rendered = nodes.cap.children;
+    if (rendered.length !== order.length || order.some((item, index) => rendered[index] !== item)) nodes.cap.replaceChildren(...order);
+    nodes.capPieces = next;
+  }
+
   function drawAfflictionSegments(nodes, pieces, denominator, rs) {
     const previous = nodes.segmentsByKey;
     const next = new Map();
@@ -599,23 +644,11 @@
       const withered = !nodes.cap.hidden && capReducers.length > 0;
       nodes.cap.classList.toggle('is-withered', withered);
       if (withered) {
-        const reducer = capReducers[0];
         if (nodes.cap.getAttribute('data-anchor') !== 'end') nodes.cap.setAttribute('data-anchor', 'end');
-        const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
-        ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
-        // The right-anchored lost-capacity region is the ONLY place these afflictions are drawn, so it names every
-        // active reducer (strongest first), and gets the same outline-over-text layering as the segments.
-        const capName = capReducers.map(([id, def]) => shortAfflictionName(def?.name || id, spec.key)).join(' / ');
-        if (!nodes.cap._vbName) {
-          nodes.cap._vbName = document.createElement('span');
-          nodes.cap._vbName.className = 'vb-name';
-          nodes.cap.appendChild(nodes.cap._vbName);
-        }
-        if (nodes.cap._vbNameText !== capName) { nodes.cap._vbNameText = capName; nodes.cap._vbName.textContent = capName; } // The set of reducers can change while the cap stays on screen.
-        if (nodes.cap._vbShape && !nodes.cap._vbOutline) {
-          nodes.cap._vbOutline = buildOutlineOverlay(nodes.cap._vbShape);
-          nodes.cap.appendChild(nodes.cap._vbOutline);
-        }
+        drawCapPieces(nodes, capReducers, spec.key, rs, player);
+      } else if (nodes.capPieces.size) { // Reducers cleared (or the cap hid): drop their shapes rather than keep them mounted.
+        nodes.capPieces.clear();
+        nodes.cap.replaceChildren();
       }
       if (!nodes.cap.hidden) {
         const capLeft = (effectiveMax / denominator * 100).toFixed(1) + '%';

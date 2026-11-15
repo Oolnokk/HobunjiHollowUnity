@@ -35,10 +35,14 @@ away maximum: Winded Stamina, Congealed/Rent/Wounded Health, Shambling/Drunken F
 was drawn twice, as its `zero` band at the left AND as the lost-capacity cap at the right (visible as "Wounded ...
 Wounded" on one bar); the code comment called that deliberate, the author's call was that it is a bug. End-anchored
 afflictions now live only in the lost-capacity cap (`.vb-cap`, drawn by `refreshVitalsHud`, not by
-`drawAfflictionSegments`), which names every active reducer strongest first ("Wounded / Congealed", colour of the
-strongest) with the same outline-over-text overlay; its text updates when the set of reducers changes. Trade-off: one
-cap is one region and one colour, so several simultaneous reducers are no longer distinguishable by amount, only by the
-names in the label. Checked in the real game with one affliction of each anchor on all three bars, and in
+`drawAfflictionSegments`), which is split into one piece per active reducer (`drawCapPieces`): each piece has its own
+colour, pinched shape, outline-over-text overlay and short name, its width is that reducer's share of the cap by
+amount (`getAffliction`), the strongest by priority sits at the far right and weaker ones stack leftwards from it.
+Pieces persist by affliction id (an amount change only resizes them), a cleared reducer loses only its piece, and all
+pieces are dropped once no reducer is left while the row is still shown. (An earlier version drew one cap in the
+strongest reducer's colour with the names joined by " / "; splitting it fixes simultaneous reducers being
+indistinguishable.) Checked in the real game with one affliction of each anchor on all three bars (Health cap: Congealed | Rent | Wounded
+as three coloured pieces), and in
 `scripts/test-player-vitals-hud.js` by applying each of the 20 base afflictions alone and asserting it is drawn in
 exactly one place (a band for `start`/`current`, the cap only for `end`).
 
