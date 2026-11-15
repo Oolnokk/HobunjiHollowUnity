@@ -29,8 +29,8 @@
         "rx": 0,
         "ry": 0,
         "rz": 0,
-        "sx": 0.65,
-        "sy": 0.65,
+        "sx": 0.325,
+        "sy": 0.325,
         "sz": 0.001
       },
       "color": "#ffffff",
@@ -46,7 +46,7 @@
         0,
         1
       ],
-      "area": 0.4225,
+      "area": 0.105625,
       "localCentroid": [
         0,
         0,
@@ -68,10 +68,10 @@
         0
       ],
       "bounds": {
-        "minU": -0.325,
-        "maxU": 0.325,
-        "minV": -0.325,
-        "maxV": 0.325
+        "minU": -0.1625,
+        "maxU": 0.1625,
+        "minV": -0.1625,
+        "maxV": 0.1625
       },
       "label": "Floating Glyph",
       "role": "none"
@@ -98,15 +98,11 @@
       "normalOffset": 0.002,
       "opacity": 1,
       "visible": true,
-      "glow": {
-        "off": [
-          "#d4f5ff"
-        ],
-        "on": [
-          "#d4f5ff"
-        ],
-        "cycleSeconds": 1.6,
-        "pulse": 0
+      "glyphInk": {
+        "enabled": true,
+        "color": "#d4f5ff",
+        "glowStrength": 0.75,
+        "glowRadius": 0.07
       }
     }
   ],
