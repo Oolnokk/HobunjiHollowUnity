@@ -75,6 +75,17 @@ for (const recipeId of expandedRecipeIds) {
   assert(recipe.slots.length > 0 && recipe.slots.every(slot => slot.accepts.length > 0), `${recipeId} remains category-constrained`);
   assert(cookingData.identityNameRules[recipeId], `${recipeId} has an ingredient-led naming rule`);
 }
+// Every recipe that previously relied on another hearth output must also allow an uncooked ingredient.
+for (const recipeId of ['spicyNoodles', 'cheesyNoodles', 'fishNoodles', 'meatNoodles']) {
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Ensures terminal noodle dishes are still craftable from milled flour.
+  assert(recipe.slots.find(slot => slot.id === 'noodles')?.accepts.includes('flour'), recipeId + ' can be cooked without reusing a cooked noodle dish');
+}
+for (const recipeId of ['eggToast', 'cheeseToast', 'savorySandwich', 'sweetBreadPudding', 'hearthFlatbread']) {
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Keeps toast/bread recipes reachable with uncooked flour.
+  assert(recipe.slots.find(slot => slot.id === 'bread')?.accepts.includes('flour'), recipeId + ' can be cooked without recooking hearth bread');
+}
+assert(cookingData.recipes.find(recipe => recipe.id === 'sweetGoopyMustardSauce')?.slots.find(slot => slot.id === 'mayo')?.accepts.includes('oil'),
+  'mustard sauce can use uncooked cooking oil instead of requiring hearth mayonnaise');
 const expandedCategories = new Set(cookingData.recipes.flatMap(recipe => recipe.slots.flatMap(slot => slot.accepts))); // Used to verify the new meals actually broaden ingredient-family usage.
 for (const category of ['bread', 'sauce', 'herb', 'mollusk']) assert(expandedCategories.has(category), `${category} participates in the expanded meal roster`);
 assert.match(processing.diagnosticsText(), /Expanded meals: 16/, 'food-processing diagnostics report the expanded meal count');

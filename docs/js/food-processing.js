@@ -67,10 +67,10 @@
     {
       id: 'eggToast',
       name: 'Egg Toast',
-      description: 'Bread and egg fried together with cooking fat; somewhere between egg-on-toast and French toast.',
+      description: 'Bread or flour dough cooked with egg and fat into a toast-like breakfast.',
       baseOutputName: 'Egg Toast',
       slots: [
-        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'bread', label: 'Bread / Flour', accepts: ['bread', 'flour'], required: true },
         { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
         { id: 'fat', label: 'Oil / Butter', accepts: ['oil', 'butter'], required: true },
       ],
@@ -79,10 +79,10 @@
     {
       id: 'cheeseToast',
       name: 'Cheese Toast',
-      description: 'Bread, cheese, and butter toasted together into a simple grilled-cheese-style meal.',
+      description: 'Bread or flour dough cooked with cheese and butter into a grilled-cheese-style meal.',
       baseOutputName: 'Cheese Toast',
       slots: [
-        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'bread', label: 'Bread / Flour', accepts: ['bread', 'flour'], required: true },
         { id: 'cheese', label: 'Cheese', accepts: ['cheese'], required: true },
         { id: 'butter', label: 'Butter / Margarine', accepts: ['butter'], required: true },
       ],
@@ -91,10 +91,10 @@
     {
       id: 'savorySandwich',
       name: 'Savory Sandwich',
-      description: 'Bread with a protein, vegetables, and a sauce or pungent spread.',
+      description: 'Bread or flour dough cooked with protein, vegetables, and a sauce or pungent spread.',
       baseOutputName: 'Savory Sandwich',
       slots: [
-        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'bread', label: 'Bread / Flour', accepts: ['bread', 'flour'], required: true },
         { id: 'protein', label: 'Meat / Poultry / Fish', accepts: ['meat', 'poultry', 'fish', 'mollusk'], required: true },
         { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
         { id: 'sauce', label: 'Sauce / Spread', accepts: ['sauce', 'mayonnaise', 'pungentPaste'], required: true },
@@ -179,10 +179,10 @@
     {
       id: 'sweetBreadPudding',
       name: 'Sweet Bread Pudding',
-      description: 'Bread baked with egg, milk or sweet liquid, and a sweet paste.',
+      description: 'Bread or flour baked with egg, milk or sweet liquid, and a sweet paste.',
       baseOutputName: 'Sweet Bread Pudding',
       slots: [
-        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'bread', label: 'Bread / Flour', accepts: ['bread', 'flour'], required: true },
         { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
         { id: 'liquid', label: 'White Milk / Sweet Liquid', accepts: ['whiteMilk', 'sweetLiquid'], required: true },
         { id: 'sweetPaste', label: 'Sweet Paste', accepts: ['sweetPaste'], required: true },
@@ -192,10 +192,10 @@
     {
       id: 'hearthFlatbread',
       name: 'Topped Flatbread',
-      description: 'Bread toasted with cheese, a savory sauce, and a vegetable or spice topping; broadly pizza-like.',
+      description: 'Bread or flour cooked with cheese, a savory sauce, and a vegetable or spice topping; broadly pizza-like.',
       baseOutputName: 'Topped Flatbread',
       slots: [
-        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'bread', label: 'Bread / Flour', accepts: ['bread', 'flour'], required: true },
         { id: 'cheese', label: 'Cheese', accepts: ['cheese'], required: true },
         { id: 'sauce', label: 'Sauce / Pungent Paste', accepts: ['sauce', 'pungentPaste'], required: true },
         { id: 'topping', label: 'Vegetable / Spice', accepts: ['vegetable', 'spice'], required: true },
