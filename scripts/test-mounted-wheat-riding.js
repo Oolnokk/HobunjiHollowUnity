@@ -35,13 +35,13 @@ for (const [species, config] of Object.entries(voices)) {
 }
 
 const T = 64;
-const grid = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => ({ type: 'grass' })));
+const grid = Array.from({ length: 16 }, () => Array.from({ length: 80 }, () => ({ type: 'grass' }))); // Wide enough to observe breathing and wheat recovery during uninterrupted travel.
 grid[6][6] = { type: 'rock', projectileCoverHeightTiles: .45 }; // A pair of low wilderness rocks, both shorter than the mounted hop.
 grid[6][7] = { type: 'rock', projectileCoverHeightTiles: .45 };
 grid[6][8] = { type: 'rock', projectileCoverHeightTiles: .45 }; // Proves a three-tile cluster is crossable in one hop.
 const rockCells = new Set(['6,6', '7,6', '8,6']);
 function canOccupy(x, y) {
-  if (x < T || y < T || x > 15 * T || y > 15 * T) return false;
+  if (x < T || y < T || x > 79 * T || y > 15 * T) return false;
   const radius = 11;
   return [[-radius, -radius], [radius, radius], [-radius, radius], [radius, -radius]]
     .every(([dx, dy]) => !rockCells.has(Math.floor((x + dx) / T) + ',' + Math.floor((y + dy) / T)));
@@ -92,7 +92,7 @@ const deps = {
   updateCreatureMesh() {}, updateCreatureAnimFrame() {},
   tileSurfaceYInArea: () => 0, characterGroundShadowSurfaceOffset: () => 0,
   getActiveScene: () => ({ add() {} }), getActiveGrid: () => grid,
-  getActiveCols: () => 16, getActiveRows: () => 16,
+  getActiveCols: () => 80, getActiveRows: () => 16,
   _isZoneArea: () => true, _isCavernBuildingArea: () => false,
   showToast() {}, getCurrentArea: () => 'wild', getActiveMountId: () => 'one',
   getFacingAngle: () => player.angle, setFacingAngle: angle => { player.angle = angle; },
