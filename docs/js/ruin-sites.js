@@ -825,13 +825,14 @@
     if(!visit||!R?.exitTo)return false;
     const exit=randomExit(visit.zoneId); // A failed exit lookup must not consume a checkpoint or complete a named tomb.
     if(!exit)return false;
-    if(!completeActiveRuinProgress(visit))return false; // Never allow re-entry to mint loot again after a failed save.
-    if(visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
-    else if(visit.kind==='hole'){
+    const unclaimedHeart = visit.specialBoss === true && !!window.LichHeartSystem?.forType?.(visit.theme) && !window.LichHeartSystem.has(visit.theme); // Leaving a named tomb must not forfeit the relic.
+    if(!unclaimedHeart&&!completeActiveRuinProgress(visit))return false; // Only seal a tomb when its character-bound pickup has been claimed.
+    if(!unclaimedHeart&&visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
+    else if(!unclaimedHeart&&visit.kind==='hole'){
       const entry=state();
       if(entry.holes[visit.id]){entry.holes[visit.id].state='cleared';saveState(entry);}
     }
-    if(visit.specialBoss&&visit.kind==='authored'){
+    if(!unclaimedHeart&&visit.specialBoss&&visit.kind==='authored'){
       const record=progressStore().authored?.[visit.theme];
       if(record?.siteId===visit.id&&record.dug){
         const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
@@ -843,14 +844,14 @@
       } // The completed tomb's excavated entrance seals; the unique guardian never respawns.
     }
     syncMapMarkers();
-    debug.lastExit={visit,exit,at:Date.now()};
+    debug.lastExit={visit,exit,unclaimedHeart,at:Date.now()};
     activeVisit=null;
     window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
     R.exitTo(()=>Promise.resolve(deps.enterZone(exit.zoneId,exit.col??undefined,exit.row??undefined)).then(()=>{
       const zi=deps._zoneScenes?.get?.(visit.zoneId);
       if(zi)buildZoneMeshes(zi.scene,zi.grid,visit.zoneId); // Completed hole or cliff doorway disappears.
     }));
-    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.',true);
+    deps?.showToast?.(unclaimedHeart ? 'You left the Lich-heart behind. Its tomb remains accessible until you claim it.' : 'You climb out into daylight somewhere unfamiliar.',true);
     return true;
   }
 
