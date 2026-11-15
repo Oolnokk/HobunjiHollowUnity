@@ -217,7 +217,7 @@
           const data = ctx.getImageData(0, 0, w, h).data;
           const pixels = new Uint8ClampedArray(data);
           resolve({ path, label, role, canvas, ctx, pixels, original: new Uint8ClampedArray(pixels),
-            undo: [], redo: [], dirty: false });
+            undo: [], redo: [], dirty: false, revision: 0 }); // Crop bounds are cached against the pixel revision.
         } catch (error) { reject(error); }
       };
       image.onerror = () => reject(new Error('Could not load hat PNG: ' + path));
@@ -359,6 +359,7 @@
     refreshUndo();
   }
   function writePixels(layer, compareOriginal = false) {
+    layer.revision++; // Invalidates cropped artwork bounds after a committed paint operation.
     layer.ctx.putImageData(new ImageData(layer.pixels, layer.canvas.width, layer.canvas.height), 0, 0);
     if (compareOriginal) layer.dirty = layer.pixels.some((v, i) => v !== layer.original[i]);
     else layer.dirty = true; // Avoid a full-image comparison on every drag frame, especially on mobile.
@@ -385,7 +386,7 @@
     status('Restored the selected PNG layer. Undo returns to the previous version.');
   };
   function brushStroke(from, to) {
-    const layer = selectedLayer();
+    const layer = view.drag?.layer || selectedLayer(); // Keep one entire touch stroke on its original layer.
     if (!layer || !from || !to) return;
     const width = layer.canvas.width, height = layer.canvas.height, power = strength();
     if (view.brush === 'restore') {
@@ -503,11 +504,16 @@
     });
 
   function cropRect(layer) {
+    if (layer.cropRevision === layer.revision ||
+        (view.drag?.layer === layer && layer.cropRevision !== undefined))
+      return layer.cropCache; // Reuse opaque bounds while a long mobile brush drag runs.
     const w = layer.canvas.width, h = layer.canvas.height, p = layer.pixels;
     let x0 = w, y0 = h, x1 = -1, y1 = -1; // Opaque bounds match the runtime's cropped hat placement.
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
       if (p[(y * w + x) * 4 + 3] >= 8) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    return x1 < x0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    layer.cropCache = x1 < x0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    layer.cropRevision = layer.revision;
+    return layer.cropCache;
   }
   function drawAttached(ctx, layer, s, a) {
     if (!layer || !a.enabled) return;
