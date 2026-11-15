@@ -29,9 +29,9 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-15-uploads4-eight-independent-shoulders') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders2', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-15-uploads5-nine-independent-shoulders') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders3', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders3', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
