@@ -167,6 +167,7 @@
   function publishBodyChannel(state) {
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
+      leaseMs: 500, // Unsteady body sway is updated continuously and should not survive a lost animation owner.
       mode: 'additive',
       // Facing/dead-zone code owns Y rotation, so drunk sway contributes only
       // pitch/roll. The compositor no longer freezes a pre-tilt portrait side:
