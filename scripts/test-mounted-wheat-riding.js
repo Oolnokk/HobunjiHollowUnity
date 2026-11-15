@@ -36,10 +36,18 @@ for (const [species, config] of Object.entries(voices)) {
 
 const T = 64;
 const grid = Array.from({ length: 16 }, () => Array.from({ length: 80 }, () => ({ type: 'grass' }))); // Wide enough to observe breathing and wheat recovery during uninterrupted travel.
-grid[6][6] = { type: 'rock', projectileCoverHeightTiles: .45 }; // A pair of low wilderness rocks, both shorter than the mounted hop.
-grid[6][7] = { type: 'rock', projectileCoverHeightTiles: .45 };
-grid[6][8] = { type: 'rock', projectileCoverHeightTiles: .45 }; // Proves a three-tile cluster is crossable in one hop.
+grid[6][6] = { type: 'rock', projectileCoverHeightTiles: .75 }; // A pair of low wilderness rocks, both shorter than the mounted hop.
+grid[6][7] = { type: 'rock', projectileCoverHeightTiles: .75 };
+grid[6][8] = { type: 'rock', projectileCoverHeightTiles: .75 }; // Proves a three-tile cluster is crossable in one hop.
 const rockCells = new Set(['6,6', '7,6', '8,6']);
+const desktopListeners = new Map(); // Captures the actual mounted keyboard capture handler without browser APIs.
+const pointerListeners = new Map(); // Captures mounted touch down/click listeners for press deduplication checks.
+let menuOpen = false; // Simulates the real menu's gameplay-input exclusion gate.
+let controllerCallback = null; // One subscriber to the shared ControllerInput frame, never a new gamepad loop.
+const document = {
+  addEventListener: (type, fn) => { pointerListeners.set(type, fn); },
+  getElementById: id => id === 'menuPanel' ? { classList: { contains: name => name === 'open' && menuOpen } } : null,
+}; // No body intentionally: the HUD view has no effect on the movement/audio test fixture.
 function canOccupy(x, y) {
   if (x < T || y < T || x > 79 * T || y > 15 * T) return false;
   const radius = 11;
@@ -52,6 +60,9 @@ const claims = {}; // The same action ownership API used for remappable Dodge/Ju
 let breaths = 0;
 const win = {
   __farmLog() {},
+  addEventListener: (type, fn) => { desktopListeners.set(type, fn); },
+  InputBindings: { getCurrentBindings: () => ({ desktop: { dodge: 'KeyX' }, controller: { dodge: 'Button1', interact: 'Button0' } }) },
+  ControllerInput: { subscribe: (_id, callback) => { controllerCallback = callback; } },
   AudioSystem: {
     resetCreatureGait() {}, footstepAdvance: () => false,
     playObjectSfx: entry => sfx.push(entry.url),
@@ -68,7 +79,7 @@ const win = {
   ResourceRings: null,
 };
 let now = 1000;
-const ctx = vm.createContext({ window: win, Math, console, performance: { now: () => now } });
+const ctx = vm.createContext({ window: win, Math, console, performance: { now: () => now }, document });
 vm.runInContext(read('docs/js/mount-system.js'), ctx);
 const input = { x: 0, y: 0 };
 const deps = {
@@ -102,6 +113,7 @@ const deps = {
   isShoulderSurfMode: () => false, cameraFacingAngleRad: () => 0,
 };
 win.Mounts.init(deps);
+win.ClimbSystem = { jumpAction: () => win.Mounts.jumpMount() }; // The in-game Jump/Climb owner delegates a normal mounted hop.
 win.Mounts.toggleMount();
 assert(sfx.includes('assets/audio/sfx/sfx_whistle2.m4a'), 'summoning plays the distinct whistle2 cue');
 win.Mounts.updateMountRide(.1);
@@ -145,4 +157,41 @@ assert(breaths > 0, 'partially spent wheat produces periodic species exertion ca
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'manual hop finishes and clears its visual arc');
 assert(win.Mounts.ridingDebug.wheatRemaining > 2, 'wheat charges regenerate after the surge ends');
 
-console.log('mounted wheat, whistles, rock hopping, action routing and animal exertion checks passed');
+// Verify real device-edge adapters, not only the direct action-claim callbacks above.
+assert.equal(typeof desktopListeners.get('keydown'), 'function', 'desktop gameplay listener installed');
+assert.equal(typeof pointerListeners.get('pointerdown'), 'function', 'touch gameplay listener installed');
+assert.equal(typeof controllerCallback, 'function', 'mount subscribes to the existing shared controller frame');
+function keyboard(code) {
+  const event = { code, repeat: false, defaultPrevented: false, target: { closest: () => null },
+    preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() {} };
+  desktopListeners.get('keydown')(event);
+  return event;
+}
+const beforeKeyboard = win.Mounts.ridingDebug.wheatRemaining;
+assert.equal(keyboard('KeyX').defaultPrevented, true, 'mounted keyboard Dodge is claimed instead of rolling the rider');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeKeyboard - 1, 'keyboard Dodge consumes one charge');
+now += 200;
+const beforeModal = win.Mounts.ridingDebug.wheatRemaining;
+menuOpen = true;
+assert.equal(keyboard('KeyX').defaultPrevented, false, 'menu-open Dodge is left to menu ownership');
+controllerCallback({ owner: 'gameplay', focused: true, pressed: new Set(['Button1']) });
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeModal, 'menu-open input does not consume wheat on any device');
+menuOpen = false;
+now += 200;
+const beforeController = win.Mounts.ridingDebug.wheatRemaining;
+controllerCallback({ owner: 'gameplay', focused: true, pressed: new Set(['Button1']) });
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeController - 1, 'remappable controller Dodge accelerates');
+now += 200;
+const beforePointer = win.Mounts.ridingDebug.wheatRemaining;
+function tapEvent(id) {
+  return { target: { closest: () => ({ id }) }, preventDefault() {}, stopImmediatePropagation() {} };
+}
+pointerListeners.get('pointerdown')(tapEvent('dodgeBtn'));
+pointerListeners.get('click')(tapEvent('dodgeBtn'));
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforePointer - 1, 'one touch press + synthetic click consumes only one charge');
+now += 200;
+const beforeJump = win.Mounts.ridingDebug.manualJumps;
+keyboard('Space');
+assert.equal(win.Mounts.ridingDebug.manualJumps, beforeJump + 1, 'Space triggers a mounted jump through the Jump/Climb owner');
+
+console.log('mounted wheat, whistles, rock hopping, device input routing and animal exertion checks passed');
