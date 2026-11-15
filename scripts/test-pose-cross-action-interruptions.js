@@ -6,7 +6,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { execFileSync } = require('node:child_process');
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -151,6 +150,7 @@ root.quaternion.copy(externalBody);
 npcLegs.dispose();
 sameRotation(parts.get('left_foot').quaternion,externalFoot,'new foot pose survives drunken disposal');
 sameRotation(root.quaternion,externalBody,'new body pose survives drunken disposal');
+sameRotation(parts.get('right_foot').quaternion,new Quaternion(),'still-owned other foot restores its original quaternion');
 assert.ok(w.HobunjiDrunkWalk.getDebug().poseHandoffs.foot>0,'offscreen diagnostics count superseded foot poses');
 assert.ok(w.HobunjiDrunkWalk.getDebug().poseHandoffs.body>0,'offscreen diagnostics count superseded body poses');
 assert.equal(layers.getDebug().activeLayers,0,'all procedural thigh and yawn offsets released on disposal');
@@ -228,13 +228,6 @@ for(let i=0;i<60;i++) {
 }
 assert.equal(layers.getDebug().activeLayers,0,'no active named offsets after interrupted lifetime stress');
 
-// These focused production fixtures exercise the full NPC yawn and Tzatzul
-// talon payload rendering/flight, beyond this single-process owner matrix.
-for(const filename of [
-  'scripts/test-npc-yawn-rest.js',
-  'scripts/test-tzatzul-live-visuals-and-eggs.js',
-  'scripts/test-tzatzul-flight-runtime.js',
-]) {
-  execFileSync(process.execPath,[filename],{stdio:'pipe',timeout:30000});
-}
+// The normal scripts/run-tests.js runner independently executes the full
+// NPC-yawn and Tzatzul flight/visual suites; do not nest child processes here.
 console.log('Cross-action pose ownership: walking/sitting/drunk/yawn/dance/crawl/ragdoll/capture/rebuild PASS');
