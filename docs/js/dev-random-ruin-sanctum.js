@@ -1095,6 +1095,11 @@
       decal.geometry?.dispose?.();
       decal.material?.dispose?.(); // Materials are instance-specific; their cached image textures remain shared.
     }
+    for (const part of group.userData?.meshById?.values?.() || []) {
+      if (part.userData?.authoredPart?.kind !== 'transparentBillboardSurface') continue;
+      part.geometry?.dispose?.();
+      part.material?.dispose?.(); // Each heart's invisible authored billboard plane is also an owned GPU allocation.
+    }
     group.parent?.remove?.(group);
     owner.heart = null;
   }
