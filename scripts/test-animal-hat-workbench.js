@@ -72,6 +72,19 @@ vm.createContext(context);
 vm.runInContext(runtime, context, { filename: 'animal-npc-headwear.js' });
 const hats = context.window.AnimalNpcHeadwear;
 assert(hats, 'runtime hat adapter must register');
+const committedRig = { enabled: true, weightMap: { width: 1, height: 1, data: [255] }, pivot: { x: .4, y: .5 } };
+const hatPreview = { enabled: true, width: .49, heightScale: 1.4, skewXDeg: 18, anchor: { x: .35, y: .22 } };
+const storedPreviews = {
+  hobunji_animal_head_rigs_v1: JSON.stringify({ 'test-kind': committedRig }),
+  hobunji_animal_hat_fits_v1: JSON.stringify({ 'test-kind': hatPreview })
+};
+context.localStorage = { getItem: key => storedPreviews[key] || null };
+context.window.HobunjiAnimalHeadRigSpecies = { baseSpeciesFor: id => id === 'test-kind-den-mother' ? 'test-kind' : id };
+assert.equal(hats.previewHatForKind('test-kind').width, .49, 'independent hat preview is readable by runtime');
+assert.equal(hats.previewHatForKind('test-kind-den-mother').heightScale, 1.4,
+  'sprite-equivalent animal variants inherit the authored base hat fit');
+assert.deepEqual(JSON.parse(storedPreviews.hobunji_animal_head_rigs_v1)['test-kind'], committedRig,
+  'reading a hat preview cannot mutate a complete head-rig record');
 
 const original = hats.normalizeAttachment({ width: .4, rotationDeg: 10 });
 assert.equal(original.heightScale, 1, 'older attachments remain vertically unmodified');
@@ -92,6 +105,9 @@ assert.equal(hats.normalizeAttachment({ heightScale: 99, skewXDeg: -90 }).skewXD
 assert.equal(hats.normalizeAttachment({ heightScale: -99 }).heightScale, .2);
 
 (async () => {
+  const previewPlacement = await hats.attachmentForKind('test-kind');
+  assert.equal(previewPlacement.width, .49, 'hat attachment loader must prefer the dedicated preview store');
+  assert.equal(previewPlacement.skewXDeg, 18);
   const composed = await hats.composeWithHat({ width: 100, height: 80 }, 'test-kind', 'test-hat',
     { attachment: { ...authored, enabled: true } });
   assert.equal(composed.width, 100);
