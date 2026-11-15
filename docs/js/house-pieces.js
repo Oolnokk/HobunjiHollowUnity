@@ -59,7 +59,7 @@
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260919combatbgm2'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
-    ['HarlyaoTerror', 'harlyao-terror.js?v=20260909a'],
+    ['HarlyaoTerror', 'harlyao-terror.js?v=20261114activeBuffMenu1'],
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
     ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
     // Appends route/chunk/build/placement/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
