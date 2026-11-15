@@ -169,6 +169,8 @@
   let nonGroundDepthReplayCount = 0;
   let frontPortraitMaskPassCount = 0; // Cumulative once-per-world-frame silhouette stencil draws, exposed to mobile diagnostics.
   let lastFrontPortraitMaskCount = 0; // Eligible portrait meshes in the latest held overlay, exposed to mobile diagnostics.
+  let lastFrontPortraitGearCandidates = 0; // Gear parts requesting front-art masking in the latest held overlay.
+  let lastFrontPortraitMaskedGear = 0; // Gear parts actually assigned a portrait stencil ID in the latest held overlay.
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
   let ordinaryShellMeshesDrawnOnce = 0; // Normal-depth outlines kept in the existing scene pass, shared by all actor types.
@@ -2714,6 +2716,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // same-level floor faces, including slab edges, and retains solid cover.
     if (!held.length && !feet.length && !bodyTint?.portraits.length) {
       lastFrontPortraitMaskCount = 0;
+      lastFrontPortraitGearCandidates = 0;
+      lastFrontPortraitMaskedGear = 0;
       lastBaseElevationGroups = 0;
       lastHeldFullscreenReason = 'no-visible-participants';
       return;
@@ -2815,15 +2819,19 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
       // Stamp front silhouette against base world depth before clearing any
       // same-level ground. Transparent portrait pixels do not protect weapons.
-      const portraitMask = lastBaseStencilBits >= 8 && overlayMeshes.some(isPortraitMaskedGear)
+      lastFrontPortraitGearCandidates = 0;
+      for (const mesh of overlayMeshes) if (isPortraitMaskedGear(mesh)) lastFrontPortraitGearCandidates++;
+      const portraitMask = lastBaseStencilBits >= 8 && lastFrontPortraitGearCandidates
         ? assignPortraitStencilOwners(overlayMeshes, collectVisible(frontPortraitRegistry, scene), scene)
         : null;
       lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
+      lastFrontPortraitMaskedGear = 0;
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
       if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
         portraitGearIds = portraitMask.gearIds;
+        lastFrontPortraitMaskedGear = portraitGearIds.size; // A rank change is effective only if an owner stencil was stamped.
       }
 
       for (const group of groups) {
@@ -3321,6 +3329,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     lastBaseStencilBits = currentFramebufferStencilBits(this);
+    lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
+    lastFrontPortraitGearCandidates = 0;
+    lastFrontPortraitMaskedGear = 0;
     const replayOthers = []; // Non-participant hands/feet/held items: drawn in the base pass, hidden from the replays.
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const ground = collectVisible(groundRegistry, scene);
@@ -3447,6 +3458,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       frontPortraitMasks: lastFrontPortraitMaskCount,
+      frontPortraitGearCandidates: lastFrontPortraitGearCandidates,
+      frontPortraitMaskedGear: lastFrontPortraitMaskedGear,
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
