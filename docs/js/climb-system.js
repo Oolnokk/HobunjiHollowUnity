@@ -1107,11 +1107,14 @@
       if (next) beginRouteHop(player, session, next);
       return true;
     }
-    if (player._freeJump) return window.PlayerJump?.start?.() || false; // No double-jump in air; a new press hops off raised furniture.
+    const mounted = window.Mounts?.rideState === 'mounted'; // The ride controller owns the physical jump, but this action still owns cliff-target priority.
+    if (mounted && window.Mounts?.rideEntity?._mountHop) return true; // Don't interrupt an already-airborne mount with a second jump or climb.
+    if (!mounted && player._freeJump) return window.PlayerJump?.start?.() || false; // No double-jump in air; a new press hops off raised furniture.
     if (player.climbing) return false;
-    if (player.onCliffBalcony) return jumpFromBalcony();
+    if (player.onCliffBalcony && !mounted) return jumpFromBalcony();
     const climb = getClimbTarget();
-    if (climb) return startClimb(climb);
+    if (climb && (!mounted || climb.type === 'wall')) return startClimb(climb);
+    if (mounted) return window.Mounts?.jumpMount?.() || false; // Mounted on open ground: no dismounted PlayerJump state or branch-climb toast.
     const world = getWorldClimbTarget();
     if (world) { world.start(); return true; }
     return window.PlayerJump?.start?.() || false; // Empty ground still has a valid Jump action.

@@ -115,6 +115,9 @@ const deps = {
   getActiveGrid: () => grid,
   getActiveCols: () => COLS,
   getActiveRows: () => ROWS,
+  isSolid: type => type === 'rock', // ClimbSystem's own target resolver distinguishes rock blockers from incline wall tiles.
+  facingCardinal: () => ({ x: 0, y: -1, name: 'north' }), // The fixture faces the ascending cliff while the carrier follows its own heading.
+  getMountRideState: () => context.window.Mounts.rideState,
   _isZoneArea: () => true,
   _isCavernBuildingArea: () => false,
   showToast: () => {},
@@ -145,7 +148,9 @@ context.window.__farmLog = () => {};
 context.window.ResourceRings = null;
 vm.createContext(context);
 vm.runInContext(read('docs/js/mount-system.js'), context, { filename: 'mount-system.js' });
+vm.runInContext(read('docs/js/climb-system.js'), context, { filename: 'climb-system.js' });
 context.window.Mounts.init(deps);
+context.window.ClimbSystem.init(deps);
 
 // ── Drive the mount all the way to 'mounted' ──────────────────────────
 player.x = 5 * TILE; player.y = 15 * TILE; // solid ground, well below the incline row
@@ -159,15 +164,16 @@ const m = context.window.Mounts.rideEntity;
 assert(m, 'a rideEntity exists once mounted');
 
 // ── Face the incline wall and trigger the leap ────────────────────────
-m.x = 5 * TILE; m.y = (10.9) * TILE; // one tile of solid ground short of the incline row (row 10), matching getWallClimbTarget's own "start off the incline" requirement
+m.x = 5 * TILE; m.y = 11.5 * TILE; // Start on ground row 11; row 10 is incline and row 9 is the first upper landing.
+player.x = m.x; player.y = m.y;
 const climb = {
   type: 'wall', dir: { x: 0, y: -1 }, landCol: 5, landRow: 9,
   startElevTier: 0, landElevTier: 1, wallTiles: 1,
 };
 
 assert.equal(context.window.CharacterActionLocks.isLocked('player', 'movement'), false, 'player movement is unlocked before the leap');
-const started = context.window.Mounts.startClimbLeap(climb);
-assert.equal(started, true, 'startClimbLeap accepts a wall climb target while steadily mounted');
+const started = context.window.ClimbSystem.jumpAction();
+assert.equal(started, true, 'mounted Jump routes through ClimbSystem and starts the original wall leap');
 assert.equal(context.window.Mounts.rideState, 'climbLeap', 'ride state switches to the scripted leap');
 assert.equal(context.window.CharacterActionLocks.isLocked('player', 'movement'), true, 'player movement locks for the duration of the leap, same as any other scripted crossing');
 assert.equal(context.window.CharacterActionLocks.isLocked('player', 'actions'), true, 'actions lock too, so climb/dodge cannot be re-triggered mid-leap');

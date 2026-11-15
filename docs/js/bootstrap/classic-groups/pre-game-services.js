@@ -2,12 +2,12 @@
   'use strict';
   // Mounts, companion movement, sound effects and music (AudioSystem before its consumers).
   const scriptUrls = [
-    "js/mount-system.js?v=20261115mountAvoidAudit2",
+    "js/mount-system.js?v=20261115wheatautorideReview3",
     "js/companion-movement-speed.js?v=20261114ownerpaceReview5",
-    "js/audio-system.js?v=20261114posobj1754",
+    "js/audio-system.js?v=20261115exertionVoiceGateReview3",
     "js/honeyfuzzle-audio.js?v=20261114queenPerf1",
     "js/scratchbones-emoji-reactions.js?v=20261109scaleglow1",
-    "js/animal-vocalizations.js?v=20261115breath03502",
+    "js/animal-vocalizations.js?v=20261115mountexert01",
     "js/music-system.js?v=20261108shaftfade1",
     "js/audio-track-gain-settings.js?v=20260920trackgain2"
   ]; // Cache versions are owned by this feature area, rather than the shared index page.

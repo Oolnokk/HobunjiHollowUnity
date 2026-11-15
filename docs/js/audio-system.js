@@ -1564,7 +1564,8 @@
     if (ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]?.length) return true;
     const profile = window.AnimalVocalizations?.profileForDebug?.(c); // The cached authored profile owns voices for species added after the legacy pools.
     return !!(profile?.chatter?.allowedClips?.length
-      || profile?.warning?.allowedClips?.length || profile?.growl?.allowedClips?.length);
+      || profile?.warning?.allowedClips?.length || profile?.growl?.allowedClips?.length
+      || profile?.exertion?.allowedClips?.length); // A future mount-only species still qualifies for its independently authored exertion voice.
   }
 
   function animalVoicePool(c, opts) {

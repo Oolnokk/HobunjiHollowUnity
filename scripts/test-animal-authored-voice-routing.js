@@ -43,10 +43,20 @@ assert.equal(window.AudioSystem.hasAnimalVoice({ animalKey: 'uumkaoii' }), true,
 assert.equal(window.AudioSystem.hasAnimalVoice({ animalKey: 'drenkirra' }), true, 'farm Drenkirra resolves its authored voice profile through animalKey');
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('puktuk-wild-den-mother')), true, 'den mothers resolve their canonical authored profile');
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('unsupported')), false, 'unknown animals stay silent');
+window.AnimalVocalizations.setAuthoredProfiles({
+  'mount-only-species': { exertion: { allowedClips: ['sfx_rattling_growl_1.ogg'], utterances: [{ tempo: 1, pitchSemitones: 0 }] } },
+});
+assert.equal(window.AudioSystem.hasAnimalVoice(creature('mount-only-species')), true, 'exertion-only species are eligible for the real animal audio pipeline');
+window.AnimalVocalizations.setAuthoredProfiles(config.animalVocalizations);
 
 // Start the ordinary grace period, then use both gameplay scheduling paths.
 window.AudioSystem.playAnimalVoiceUtterance(creature('puktuk'), { allowedClips: ['sfx_bark-yap.ogg'] });
 now = 5000;
+const exertionStart = played.length;
+assert.equal(window.AnimalVocalizations.mountExertion(creature('puktuk')), true, 'mount exertion goes through the real shared voice coordinator');
+assert.equal(played.length, exertionStart + 1, 'mount exertion produces one actual sound through the existing playback adapter');
+assert.ok(played[played.length - 1].includes('sfx_rattling_growl_1.ogg'), 'exertion resolves its own aggression-derived recording pool');
+window.AnimalVoiceIndependentPlayback.stopAll(); // FakeAudio never emits natural ended; release the one-shot before the pre-existing capped-voice livestock tests.
 for (const stableRole of [undefined, 'companion']) {
   const c = { ...creature('puktuk'), stableRole }; // Wild and whistled companion cases share the same authored scheduler.
   const start = played.length; // Counts each authored passive utterance after native preparation.

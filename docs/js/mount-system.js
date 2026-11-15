@@ -15,6 +15,8 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     installSharedCreatureGait();
+    ensureMountWheatHud();
+    installMountedActionInput();
   }
 
   // 'none': no mount out. 'rushingIn': a just-summoned mount is dashing in
@@ -44,6 +46,26 @@
   // game.js's updateCreatureMesh can read `_climbLeap.surfaceY` directly,
   // the same way it already reads `onBranch`'s branchSurfaceY — see its
   // `surfY` ternary.
+  const WHEAT_MAX = 6; // Six OoT-style boost charges displayed by the riding HUD.
+  const WHEAT_RECOVER_S = 3.3; // Seconds without an active surge before one spent charge regrows.
+  const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
+  const CRUISE_SPEED_RATIO = 0.66; // Hands-free forward riding speed, below the maximum gallop.
+  const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
+  const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
+  let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
+  let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
+  let mountBoostS = 0; // Remaining surge time; read by movement and the exertion scheduler.
+  let mountBreathClockS = 0; // Cadence timer for one animal exertion clip at a time.
+  let mountRockScanS = 0; // Throttles short-rock lookahead to avoid repeated tile and collision probes every frame.
+  const MOUNT_ROCK_SCAN_INTERVAL_S = 0.07; // Fast enough to catch rocks at boosted speed without a per-frame radius scan.
+  let mountWheatHud = null; // Retained DOM view; only updated when charge/state changes.
+  let lastHudSignature = ''; // Avoids per-frame DOM mutation and MutationObserver loops.
+  let mountActionsClaimed = false; // Mirrors the action router's mounted dodge/jump overrides.
+  let mountInputInstalled = false; // Prevents duplicate key/pointer/controller listeners across repeated game initialization.
+  const lastMountedActionMs = { dodge: -10000, jump: -10000 }; // Deduplicates a physical press dispatched by both the shared action router and device adapters.
+  let lastPointerAction = null; // Suppresses the synthetic click following a handled mobile pointerdown.
+  const ridingDebug = { boosts: 0, autoRockJumps: 0, manualJumps: 0, lastWhistle: null, lastBreath: null }; // Mobile-readable mount behavior diagnostics.
+
   const mountRenderSync = { active: false, beforeXzDriftTiles: 0, afterXzDriftTiles: 0, verticalCorrectionTiles: 0 }; // Used by Pixel Probe to expose rider/carrier render drift on mobile.
   const mountFootstepDebug = { emitted: 0, surfaceKey: null, lastDistancePx: 0, lastVolumeScale: 0, lastAtMs: 0, lastTransition: null, nativeLayers: 0, gaitHz: DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND }; // Exposed through window.Mounts.footstepDebug for console-free gait/audio checks.
 
@@ -84,6 +106,172 @@
   // for the speed a mount gives you (see updateMountedMovement).
   const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
   const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
+
+  // This is the existing Farm tab's actual PNG (and mask technique), not a new carrot asset.
+  function ensureMountWheatHud() {
+    if (mountWheatHud || typeof document === 'undefined' || !document.body?.appendChild) return;
+    if (!document.getElementById('mountWheatHudStyle')) {
+      const style = document.createElement('style');
+      style.id = 'mountWheatHudStyle';
+      style.textContent = '#mountWheatHud{position:fixed;right:16px;bottom:152px;display:none;gap:5px;align-items:center;z-index:110;pointer-events:none;padding:8px 10px;border-radius:12px;background:rgba(12,17,12,.62)}#mountWheatHud .wheat-charge{display:block;width:23px;height:23px;background:#6bc36f;-webkit-mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;transition:background .14s,opacity .14s}#mountWheatHud .wheat-charge.empty{background:#737675;opacity:.6}#mountWheatHud .wheat-charge.boosting:not(.empty){background:#f1cc63}@media(max-width:640px){#mountWheatHud{right:8px;bottom:205px;gap:3px}#mountWheatHud .wheat-charge{width:20px;height:20px}}';
+      document.head?.appendChild(style);
+    }
+    mountWheatHud = document.createElement('div');
+    mountWheatHud.id = 'mountWheatHud';
+    mountWheatHud.setAttribute('role', 'status');
+    mountWheatHud.setAttribute('aria-label', 'Mount acceleration: six wheat charges');
+    for (let i = 0; i < WHEAT_MAX; i++) {
+      const charge = document.createElement('span');
+      charge.className = 'wheat-charge';
+      mountWheatHud.appendChild(charge);
+    }
+    document.body.appendChild(mountWheatHud);
+    lastHudSignature = '';
+    refreshMountWheatHud();
+  }
+
+  function refreshMountWheatHud() {
+    if (!mountWheatHud) return;
+    const visible = mountRideState === 'mounted' || mountRideState === 'climbLeap';
+    const signature = [visible, wheatRemaining, mountBoostS > 0].join(':');
+    if (lastHudSignature === signature) return;
+    lastHudSignature = signature;
+    mountWheatHud.style.display = visible ? 'flex' : 'none';
+    mountWheatHud.setAttribute('aria-label', 'Mount acceleration: ' + wheatRemaining + ' of ' + WHEAT_MAX + ' wheat charges');
+    for (let i = 0; i < mountWheatHud.children.length; i++) {
+      const child = mountWheatHud.children[i];
+      child.classList.toggle('empty', i >= wheatRemaining);
+      child.classList.toggle('boosting', mountBoostS > 0);
+    }
+  }
+
+  function pressMountedAction(actionId) {
+    if (mountRideState !== 'mounted' || gameInputBlocked()) return false;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - (lastMountedActionMs[actionId] ?? -10000) < 140) return true;
+    lastMountedActionMs[actionId] = now;
+    return actionId === 'dodge' ? accelerateMount() : actionId === 'jump' ? (window.ClimbSystem?.jumpAction?.() ?? jumpMount()) : false; // Preserve existing mounted cliff crossings; jumpMount handles open ground.
+  }
+
+  function gameInputBlocked(event = null) {
+    if (typeof document === 'undefined') return false;
+    if (event?.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return true;
+    if (document.getElementById('menuPanel')?.classList?.contains?.('open')) return true;
+    if (window.ControllerUI?.isActive?.() || window.FarmworkUI?.isPlanning?.()) return true; // Existing menu and farm-planning owners outrank riding buttons.
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly || window.__mapEditorGizmoActive) return true;
+    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return true; // Fishing and music own their own primary inputs.
+    return false;
+  }
+
+  // The action router owns gameplay claims; these device-edge listeners cover
+  // legacy Dodge/Jump input paths that execute before generic world claims.
+  // Controller support reads ControllerInput's existing shared frame, never
+  // polls a gamepad or starts another frame loop.
+  function installMountedActionInput() {
+    if (mountInputInstalled || typeof window?.addEventListener !== 'function') return;
+    mountInputInstalled = true;
+    window.addEventListener('keydown', event => {
+      if (mountRideState !== 'mounted' || event.repeat || event.defaultPrevented || gameInputBlocked(event)) return;
+      const bindings = window.InputBindings?.getCurrentBindings?.()?.desktop || {};
+      const action = event.code === (bindings.dodge || 'KeyX') ? 'dodge' : event.code === (bindings.jump || 'Space') ? 'jump' : null; // Match game's legacy X/Space controls when Jump is absent from user-remappable bindings.
+      if (!action) return;
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+      pressMountedAction(action);
+    }, true);
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('pointerdown', event => {
+        if (mountRideState !== 'mounted' || gameInputBlocked(event)) return;
+        const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
+        if (!target) return;
+        const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
+        lastPointerAction = { action, at: typeof performance !== 'undefined' ? performance.now() : Date.now() };
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        pressMountedAction(action);
+      }, true);
+      document.addEventListener('click', event => {
+        if (mountRideState !== 'mounted' || gameInputBlocked(event)) return;
+        const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
+        if (!target) return;
+        const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        if (lastPointerAction?.action === action && now - lastPointerAction.at < 800) return;
+        pressMountedAction(action);
+      }, true);
+    }
+    window.ControllerInput?.subscribe?.('mount-riding-actions', frame => {
+      if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false || gameInputBlocked()) return;
+      const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
+      if (bindings.dodge && frame.pressed?.has?.(bindings.dodge)) pressMountedAction('dodge');
+      // The game's existing A/Interact handler prioritizes nearby interactions and invokes ClimbSystem.jumpAction when the world has nothing to interact with. A second controller Jump press here would trigger BOTH actions.
+    }, 5);
+  }
+
+  // Claims use the same device-neutral gameplay action router as nearby interactions.
+  function syncMountedActionClaims() {
+    const active = mountRideState === 'mounted';
+    if (active === mountActionsClaimed) return;
+    const claims = window.WorldActionInputClaims;
+    if (!claims?.setClaims || !claims?.clearClaims) return;
+    mountActionsClaimed = active;
+    if (active) claims.setClaims('mount-riding', [
+      { actionId: 'dodge', label: 'Accelerate mount', priority: 990, onPress: () => pressMountedAction('dodge') },
+      { actionId: 'jump', label: 'Jump mount', priority: 990, onPress: () => pressMountedAction('jump') },
+    ]);
+    else claims.clearClaims('mount-riding');
+  }
+
+  function whistleMount(filename) {
+    const url = 'assets/audio/sfx/' + filename; // Exact authored files already in the game's SFX directory.
+    window.AudioSystem?.playObjectSfx?.({ url, volume: 0.85, preload: true });
+    ridingDebug.lastWhistle = filename;
+  }
+
+  function resetMountRidingResource() {
+    wheatRemaining = WHEAT_MAX;
+    wheatRecoveryS = 0;
+    mountBoostS = 0;
+    mountBreathClockS = 0;
+    mountRockScanS = 0;
+    refreshMountWheatHud();
+  }
+
+  function accelerateMount() {
+    if (mountRideState !== 'mounted' || !mountRideEntity || wheatRemaining <= 0) return false;
+    wheatRemaining--;
+    wheatRecoveryS = 0;
+    mountBoostS = Math.max(mountBoostS, BOOST_DURATION_S);
+    ridingDebug.boosts++;
+    whistleMount('sfx_whistle1.mp3');
+    refreshMountWheatHud();
+    return true;
+  }
+
+  function updateWheatAndBreathing(m, dt, traveledPx) {
+    mountBoostS = Math.max(0, mountBoostS - dt);
+    if (mountBoostS <= 0 && wheatRemaining < WHEAT_MAX) {
+      wheatRecoveryS += dt;
+      if (wheatRecoveryS >= WHEAT_RECOVER_S) {
+        wheatRecoveryS -= WHEAT_RECOVER_S;
+        wheatRemaining++;
+      }
+    }
+    const spent = WHEAT_MAX - wheatRemaining;
+    if (spent > 0 && traveledPx > 0.2) {
+      mountBreathClockS += dt;
+      const interval = Math.max(1.4, 5.2 - spent * 0.9); // More spent wheats = more frequent single exertion utterances.
+      if (mountBreathClockS >= interval) {
+        mountBreathClockS = 0;
+        if (window.AnimalVocalizations?.mountExertion?.(m)) {
+          ridingDebug.lastBreath = spent;
+        }
+      }
+    } else mountBreathClockS = 0;
+    refreshMountWheatHud();
+  }
 
   function mountAllowedInArea(area) {
     // Used by summon and both update paths: every authored/farmhouse/cavern
@@ -361,6 +549,8 @@
     if (!mount) return;
     deps.companionObjects.add(mount);
     mountRideEntity = mount;
+    resetMountRidingResource();
+    whistleMount('sfx_whistle2.m4a');
     window.GroundObstacleAvoidance?.reset('mounted'); // A summoned animal starts with no steering history from a prior ride.
     mountRideState = 'rushingIn';
     mountAngle = deps.player.angle;
@@ -378,8 +568,15 @@
   }
 
   function beginDismissMount() {
-    window.GroundObstacleAvoidance?.reset('mounted'); // Dismount immediately discards stored obstacle waypoints.
+    window.GroundObstacleAvoidance?.reset('mounted');
+    window.WorldActionInputClaims?.clearClaims?.('mount-riding');
+    mountActionsClaimed = false;
+    refreshMountWheatHud(); // Dismount immediately discards stored obstacle waypoints.
     if (!mountRideEntity) { mountRideState = 'none'; return; }
+    // Dismounting while a low-rock jump is still active must not leave the mount
+    // permanently in an airborne hop or carry its visual lift into rush-out.
+    mountRideEntity._mountHop = null;
+    mountRideEntity._banditLungeHopCurrent = 0;
     mountRideState = 'dismountingDown';
     mountTransitionT = 0;
     mountTransitionFromX = deps.player.x; mountTransitionFromY = deps.player.y;
@@ -396,7 +593,7 @@
   // the mount lands exactly where the player's own feet would have.
   function startClimbLeap(climb) {
     const m = mountRideEntity;
-    if (mountRideState !== 'mounted' || !m || climb?.type !== 'wall') return false;
+    if (mountRideState !== 'mounted' || !m || m._mountHop || climb?.type !== 'wall') return false; // Never overlap a normal rock hop with a scripted cliff crossing.
     const currentArea = deps.getCurrentArea();
     const grid = deps.getActiveGrid();
     const startCol = deps.clamp(Math.floor(m.x / deps.TILE), 0, deps.getActiveCols() - 1);
@@ -472,6 +669,9 @@
   }
 
   function updateMountRide(dt) {
+    ensureMountWheatHud();
+    syncMountedActionClaims();
+    refreshMountWheatHud();
     const mountActive = mountRideState !== 'none';
     if (mountActive !== _lastMountActiveClass) {
       _lastMountActiveClass = mountActive;
@@ -634,6 +834,8 @@
     m.areaRows = deps.getActiveRows();
     m.areaId = deps.getCurrentArea();
     m.x = deps.player.x; m.y = deps.player.y;
+    m._mountHop = null; m._banditLungeHopCurrent = 0; // Area transitions cancel any in-flight wilderness hop before reseating the rider.
+    mountRockScanS = 0;
     m.vx = 0; m.vy = 0;
     window.AudioSystem?.resetCreatureGait?.(m);
     mountFootstepDebug.surfaceKey = null;
@@ -647,6 +849,88 @@
       newScene.add(m.groundShadow);
     }
     window.ResourceRings?.disposeRingHud(m);
+  }
+
+  // The jump path is permitted through only finite, genuinely low wilderness rock
+  // cover. Other blocked cells (trees, fences, tall boulders, cliffs) are never
+  // exempt from occupancy and continue through the existing tile detour planner.
+  function smallRockAt(grid, col, row, startY) {
+    const tile = grid[row]?.[col];
+    if (!tile || String(tile.type || '').toLowerCase() !== 'rock' || tile.rockKind === 'undiggableBoulder' || tile.boulderId || tile.mapBoundary || tile.incline) return false;
+    const top = window.ProjectileTileCover?.coverTop?.(tile, col, row);
+    return Number.isFinite(top) && top > startY && top - startY <= MOUNT_HOP_MAX_ROCK_RISE;
+  }
+
+  function planMountHop(m, area, allowOpenGround = false) {
+    if (!deps._isZoneArea?.(area)) return null; // Auto-rock hopping is wilderness only, never through indoor rock walls.
+    const grid = deps.getActiveGrid();
+    if (!Array.isArray(grid) || !grid.length) return null;
+    const T = deps.TILE, dx = Math.cos(mountAngle), dy = Math.sin(mountAngle);
+    const baseTile = grid[Math.floor(m.y / T)]?.[Math.floor(m.x / T)];
+    const startY = deps.tileSurfaceYInArea?.(baseTile, area);
+    if (!Number.isFinite(startY) || !grid) return null;
+    let firstRock = -1, lastRock = -1;
+    let lastCell = ''; // Skip redundant same-tile probes along a diagonal and avoid additional pathfinding.
+    for (let d = 0.45; d <= 4.65; d += 0.24) {
+      const x = m.x + dx * d * T, y = m.y + dy * d * T;
+      const col = Math.floor(x / T), row = Math.floor(y / T);
+      const cell = col + ',' + row;
+      if (cell === lastCell) continue;
+      lastCell = cell;
+      const rock = smallRockAt(grid, col, row, startY);
+      if (rock) {
+        if (firstRock < 0) firstRock = d;
+        lastRock = d;
+        if (lastRock - firstRock > 3.15) return null; // Patch-sized, but not unbounded, rock fields can be hopped.
+      } else {
+        if (!deps.canPlayerOccupy(x, y)) return null; // Non-rock blockers are never jump-through surfaces.
+        if (lastRock > 0 && d >= lastRock + 0.48) {
+          if (firstRock > 1.05) return null; // Begin only as the small rocks approach the mount's feet.
+          const destinationDistance = d + 0.18;
+          const endX = m.x + dx * destinationDistance * T;
+          const endY = m.y + dy * destinationDistance * T;
+          if (!deps.canPlayerOccupy(endX, endY)) return null;
+          return { endX, endY, distanceTiles: destinationDistance, overRock: true };
+        }
+      }
+    }
+    if (!allowOpenGround || firstRock >= 0) return null;
+    const endX = m.x + dx * T * 0.8, endY = m.y + dy * T * 0.8;
+    return deps.canPlayerOccupy(endX, endY) ? { endX, endY, distanceTiles: 0.8, overRock: false } : null;
+  }
+
+  function beginMountHop(m, plan, automatic) {
+    if (m._mountHop) return false;
+    m._mountHop = {
+      x: m.x, y: m.y, endX: plan.endX, endY: plan.endY,
+      elapsed: 0, duration: Math.max(0.47, Math.min(1.05, plan.distanceTiles / 4.4)),
+      height: plan.overRock ? Math.max(0.86, Math.min(1.07, plan.distanceTiles * 0.27)) : 0.61,
+    }; // One flight record owns the entire horizontal crossing and visual hop arc.
+    mountBreathClockS = 0;
+    if (automatic) ridingDebug.autoRockJumps++; else ridingDebug.manualJumps++;
+    window.GroundObstacleAvoidance?.reset('mounted');
+    return true;
+  }
+
+  function jumpMount() {
+    if (mountRideState !== 'mounted' || !mountRideEntity || mountRideEntity._mountHop) return false;
+    const plan = planMountHop(mountRideEntity, deps.getCurrentArea(), true);
+    return beginMountHop(mountRideEntity, plan || {
+      endX: mountRideEntity.x, endY: mountRideEntity.y, distanceTiles: 0.8, overRock: false,
+    }, false); // On blocked ground a deliberate jump is vertical; it never phases through trees.
+  }
+
+  function updateMountHop(m, dt) {
+    const hop = m._mountHop;
+    if (!hop) return false;
+    hop.elapsed = Math.min(hop.duration, hop.elapsed + dt);
+    const t = hop.elapsed / hop.duration;
+    const eased = t * t * (3 - 2 * t);
+    m.x = hop.x + (hop.endX - hop.x) * eased;
+    m.y = hop.y + (hop.endY - hop.y) * eased;
+    m._banditLungeHopCurrent = hop.height * Math.sin(Math.PI * t); // Shared creature-renderer elevation used by Pounce and cliff leaps.
+    if (t >= 1) { m._banditLungeHopCurrent = 0; m._mountHop = null; }
+    return true;
   }
 
   // Replaces game.js's normal on-foot updateMovement while mounted.
@@ -682,32 +966,49 @@
     }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
-    const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Perception Mode halves mounted speed too.
-    if (inputStrength > 0.001) {
-      mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      const assisted = window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, ix, iy, deps.TILE, deps.canPlayerOccupy, dt); // Nearby tiles route the carrier; raw input still owns the rider's intended direction.
-      const desiredAngle = Math.atan2(assisted?.y ?? iy, assisted?.x ?? ix);
-      const speedRatio = topSpeed > 0 ? deps.clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
-      const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
-      const diff = deps.angleDiff(desiredAngle, mountAngle);
-      mountAngle += deps.clamp(diff, -turnRate * dt, turnRate * dt);
+    const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Training perks still wrap the authored mount speed and acceleration.
+    const stepStartX = m.x, stepStartY = m.y;
+    const boosting = mountBoostS > 0;
+    const desiredSpeed = boosting ? topSpeed * BOOST_SPEED_RATIO : topSpeed * CRUISE_SPEED_RATIO;
+    // Backward reins brake only when substantially opposed to the current heading.
+    // Releasing controls does not stop the mount: it continues along its heading.
+    const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
+    if (braking && !m._mountHop) {
+      mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
+      window.GroundObstacleAvoidance?.reset('mounted');
+      if (mountCurrentSpeedPxS < 1) {
+        // Once fully stopped, allow an explicit opposite stick/key direction to turn around.
+        const desiredAngle = Math.atan2(iy, ix);
+        const diff = deps.angleDiff(desiredAngle, mountAngle);
+        mountAngle += deps.clamp(diff, -MOUNT_TURN_RATE_MAX * dt, MOUNT_TURN_RATE_MAX * dt);
+      }
     } else {
-      mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt);
-      window.GroundObstacleAvoidance?.reset('mounted'); // Releasing the reins discards any cached detour; inertia still decelerates normally.
+      if (mountCurrentSpeedPxS < desiredSpeed) mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
+      else mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
+      mountRockScanS -= dt;
+      const scanRocks = !m._mountHop && mountRockScanS <= 0;
+      if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
+      const rockPlan = scanRocks ? planMountHop(m, currentArea) : null;
+      const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
+      const steerX = inputStrength > 0.01 ? ix : Math.cos(mountAngle);
+      const steerY = inputStrength > 0.01 ? iy : Math.sin(mountAngle);
+      if (!m._mountHop) {
+        const assisted = autoHopped ? null : window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, steerX, steerY, deps.TILE, deps.canPlayerOccupy, dt);
+        const desiredAngle = Math.atan2(assisted?.y ?? steerY, assisted?.x ?? steerX);
+        const speedRatio = topSpeed > 0 ? deps.clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
+        const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
+        const diff = deps.angleDiff(desiredAngle, mountAngle);
+        mountAngle += deps.clamp(diff, -turnRate * dt, turnRate * dt);
+      }
     }
 
-    const stepStartX = m.x, stepStartY = m.y;
-    if (mountCurrentSpeedPxS > 0.01) {
+    if (!updateMountHop(m, dt) && mountCurrentSpeedPxS > 0.01) {
       const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
       const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
       const minX = deps.PLAYER_RADIUS, maxX = deps.getActiveCols() * deps.TILE - deps.PLAYER_RADIUS;
       const minY = deps.PLAYER_RADIUS, maxY = deps.getActiveRows() * deps.TILE - deps.PLAYER_RADIUS;
       const nextX = deps.clamp(desiredX, minX, maxX), nextY = deps.clamp(desiredY, minY, maxY);
-      // Framerate-independent collision bleed-off: while blocked, speed decays
-      // toward 0 at the same real-time rate regardless of how many frames the
-      // block spans (a plain per-call `*= 0.4` would bleed off far faster at
-      // high framerate than low, since it fires once per frame).
-      const collisionBleedRate = Math.exp(-55 * dt);
+      const collisionBleedRate = Math.exp(-55 * dt); // Fixed per-second collision drag instead of framerate-sensitive *=0.4.
       if (deps.canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= collisionBleedRate;
       if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= collisionBleedRate;
     }
@@ -724,7 +1025,9 @@
     m.facing = mountAngle;
     deps.player.x = m.x; deps.player.y = m.y;
     deps.player.vx = 0; deps.player.vy = 0;
-    updateMountLocomotion(m, dt, mountCurrentSpeedPxS > 5 && movedPx > 0, movedPx);
+    const airborne = !!m._mountHop || (m._banditLungeHopCurrent || 0) > 0; // Ground gait/footstep contacts must pause while the mount is visibly airborne.
+    updateMountLocomotion(m, dt, !airborne && mountCurrentSpeedPxS > 5 && movedPx > 0, airborne ? 0 : movedPx);
+    updateWheatAndBreathing(m, dt, movedPx);
 
     // Rider facing remains independent of mount heading while look input is active.
     let facingAngle = deps.getFacingAngle();
@@ -758,5 +1061,7 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, claimed: mountActionsClaimed }; },
+    accelerateMount, jumpMount,
   };
 })();
