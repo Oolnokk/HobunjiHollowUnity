@@ -115,10 +115,23 @@ Crucially, the pet's no-depth-write mode must not disable the **player
 front-art owner stencil**. The player front mesh is registered for the stencil
 even when its ordinary color material does not write depth, and the selective
 held overlay runs the stencil even when the current map has no classified
-ground, floors or water. The mask still matches only the weapon's actual owner
-and does not hide it behind unrelated animals. A failing/missing stencil
+ground, floors or water. When the pet itself is visually *in front* of its
+carrier, its front, rear and split-overlay silhouette parts receive that
+same carrier's stencil ID. When the authored pose or diagnostic preset puts
+the pet behind the carrier, those parts do **not** mask the carrier's tools.
+This follows the composed draw order rather than imposing a physical-depth
+test between two overlapping portrait cards. A failing/missing stencil
 requires a targeted compositor fix, never simply elevating the weapon's
 draw order.
+
+The private camera layer is shared by **all** automatically registered front
+portraits, including unrelated or unarmed NPCs. A stencil submission must
+temporarily disable that private layer on unselected portraits and restore
+it afterward, including on render failure; otherwise those unrelated
+portraits draw normal **color** again in the owner-mask pass. Shoulder split
+overlays never inherit private-stencil camera membership from their source
+unless the foreground pet policy explicitly enrolls them. All eligible
+portraits' stencil material state is restored after the private pass.
 
 The mobile X-ray panel and Pixel Probe report the active pet mode,
 `frontPortraitGearCandidates`, `frontPortraitMaskedGear` and
