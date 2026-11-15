@@ -162,11 +162,11 @@
   }
 
   // Stands the player a couple of tiles south of the pond, facing it.
-  function standAtPond() {
+  function standAtPond(bankGapTiles = 1.5) {
     if (deps.getCurrentArea() !== ARENA_ID) { toast('Go to the Testing Arena first.', false); return false; }
     ensurePond();
     deps.player.x = (POND.col + Math.floor(POND.cols / 2) + 0.5) * deps.TILE; // Tile centre, so a dummy spawned dead ahead is exactly in line with the camera.
-    deps.player.y = (POND.row + POND.rows + 1.5) * deps.TILE;
+    deps.player.y = (POND.row + POND.rows + bankGapTiles) * deps.TILE; // 1.5 = a short way back; ~0.3 = on the bank with the water directly behind.
     deps.player.vx = 0; deps.player.vy = 0;
     deps._snapCameraTarget?.();
     setStatus('Standing in front of the pond.');
@@ -204,6 +204,7 @@
       <div class="fed-label">Pond &amp; dummy NPC — stand by the water and drop a stationary NPC next to you to check draw order / x-ray</div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" id="devPondStandBtn">🏞️ Stand in front of pond</button>
+        <button type="button" class="fed-action-btn" id="devPondBankBtn">🪵 Stand on the bank</button>
         <button type="button" class="fed-action-btn" id="devTestLookBtn">🧝 Female Kenkari + centred, tilted camera</button>
         <button type="button" class="fed-action-btn" id="devTestLookRestoreBtn">↩️ Restore look</button>
       </div>
@@ -220,6 +221,7 @@
       const spawnBtn = event.target.closest('[data-dummy]');
       if (spawnBtn) { spawnDummy(spawnBtn.dataset.dummy); return; }
       if (event.target.closest('#devPondStandBtn')) standAtPond();
+      else if (event.target.closest('#devPondBankBtn')) standAtPond(0.3);
       else if (event.target.closest('#devTestLookBtn')) applyTestLook();
       else if (event.target.closest('#devTestLookRestoreBtn')) restoreLook();
       else if (event.target.closest('#devDummyClearBtn')) clearDummies();
