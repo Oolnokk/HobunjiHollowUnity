@@ -683,6 +683,7 @@
       combatHoldFrac: visual?.hf ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
       flailLengthScale: getRuntimeState().flailLengthScale, // Existing debugSnapshot stays in parity with the allocation-free runtime view.
+      idlePose: getRuntimeState().idlePose, // Keep diagnostics in exact parity with the borrowed runtime view, including no-torch null.
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
       combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
