@@ -6,6 +6,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Loads the real runtime modules from repository root.
+const committedTorch = JSON.parse(read('docs/config/combat/weapon-idle-stances.json')).stances.torchHold; // Shared runtime/editor idle Y.
+assert.equal(committedTorch.y, 0, 'torch idle defaults to height zero');
+assert.match(read('docs/js/attack-idle-stance-editor.js'), /id="torchIdleYDirect"/, 'attack editor exposes direct torch height slider');
+assert.match(read('docs/js/attack-idle-stance-editor.js'), /workingConfig.stances.torchHold.y = value/, 'slider writes the existing exported stance');
+assert.match(read('docs/js/weapon-tool-stances.js'), /PREVIOUS_TORCH_HOLD_STANCE/, 'untouched legacy browser overrides migrate to Y=0');
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
