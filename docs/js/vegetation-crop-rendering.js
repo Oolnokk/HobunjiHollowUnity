@@ -677,7 +677,12 @@
     group.userData.hobunjiBerryFruitCount = bunchCount * 3; // The batch contains three berries per branch-tip cluster.
     if (!bunchCount) return group;
 
-    if (!berryFruitGeometry) berryFruitGeometry = new THREE.SphereGeometry(0.07, 6, 5); // Rounded fruit with inexpensive geometry and natural lighting.
+    if (!berryFruitGeometry) {
+      berryFruitGeometry = new THREE.SphereGeometry(0.07, 6, 5); // Rounded fruit with inexpensive geometry and natural lighting.
+      berryFruitGeometry.computeBoundingSphere();
+      berryFruitGeometry.boundingSphere.center.set(0, 0.4, 0); // Includes all branch-tip instance offsets, not only a lone berry at the origin.
+      berryFruitGeometry.boundingSphere.radius = 0.92; // Prevents edge-of-camera fruit from being culled before the actual bush canopy.
+    }
     let material = berryFruitMaterials.get(fruitColor);
     if (!material) {
       material = new THREE.MeshLambertMaterial({ color: fruitColor }); // Exact fruit pigment; surrounding foliage stays green.
@@ -688,6 +693,7 @@
     berries.userData.noOutline = true; // Small spheres do not need heavy black shell outlines over their highlights.
     berries.castShadow = false;
     berries.receiveShadow = false;
+    berries.frustumCulled = true; // The expanded shared bounds permit ordinary conservative view-frustum culling.
 
     const random = _mbRng(Math.imul(col + 1, 92837111) ^ Math.imul(row + 1, 689287499) ^ 0xb3771e5); // Stable canopy clusters across saves and growth-stage rebuilds.
     const transform = new THREE.Object3D(); // Reused to assemble each instance matrix without one mesh per fruit.
