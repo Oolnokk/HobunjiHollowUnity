@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 5; // Player yawns now own a final-render two-arm stretch and held-equipment presentation.
+  const VERSION = 6; // Fallback yawns now use a single intensity-5 breath at 0.350x utterance tempo.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -19,7 +19,8 @@
   const PLAYER_KOMA_ID = '__player_daily_koma__'; // Separate per-character cooldown key for the player's own daily Koma dose.
   const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v2:'; // New per-character namespace avoids importing old, non-monotonic midnight timestamps.
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
-  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Intensity-5 combat breath supplies the full yawn when no recording exists.
+  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Missing yawn recordings use the existing intensity-5 breath asset.
+  const BREATH_FALLBACK_TEMPO = 0.35; // The ordinary utterance renderer plays this breath at a fixed, pitch-preserving 0.350x tempo.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
   const activeById = new Map(); // O(1) lookups from each NPC's movement-speed chokepoint, even during crowd-wide yawns.
   const fileProbes = new Map(); // One HEAD lookup per future yawn-asset filename, reused for every NPC.
@@ -208,10 +209,9 @@
       return {
         url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
         pitch: Number(mod.pitchSemitones) || 0,
-        tempo: 1, // The source breath's natural pitch/time contours stay intact; the composer owns its five-second duration.
-        cadence: Number(mod.tempo) || 1, // Reuses each species/gender's combat voice tempo as the grain pacing.
+        tempo: BREATH_FALLBACK_TEMPO, // Exact utterance tempo, independent of species' ordinary speaking cadence.
         gain: Number(mod.gain) || 1,
-        source: 'reconstructed breathing',
+        source: 'breath 5 (0.350x utterance tempo)',
       };
     })());
     return voicePlans.get(key);
@@ -257,8 +257,7 @@
     if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     const voiceDebug = {
       npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
-      source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
-      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume,
+      source: plan.source, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
       positional: !entry.isPlayer, status: 'queued',
     }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
     entry.voiceDebug = voiceDebug;
@@ -272,9 +271,7 @@
         lastError = 'audio: ' + String(error?.message || error);
       },
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
-      breathYawnDurationS: plan.cadence ? YAWN_DURATION_S : undefined, // Only breathing fallbacks are composed; authentic yawns never enter this path.
-      breathYawnCadence: plan.cadence || undefined, // Keeps species-relative speaking/breathing cadence without stretching a transient 4x.
-      preservePitchOnFallback: true, // A locked/unsupported Web Audio device must not turn a fourfold breath stretch into a low-pitched recording.
+      preservePitchOnFallback: true, // Native playback should preserve source pitch when Web Audio is unavailable.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
@@ -571,7 +568,7 @@
 
   window.RuntimeFrameScheduler?.register?.('npc-yawn-rest', frame, {
     phase: 'pre-render', owner: 'NpcYawnRest',
-    description: 'NPC rested timers, five-second yawns, natural reconstructed breathing fallback and daily Koma drink',
+    description: 'NPC rested timers, five-second yawns, intensity-5 breath at 0.350x tempo and daily Koma drink',
   });
   window.addEventListener?.('hobunji-time-passage', event => {
     if (event?.detail?.kind === 'sleep' && Number(event.detail.hours) > 0) playerWakePending = true; // Only actual completed player Sleep, never Wait or dev time skips.
