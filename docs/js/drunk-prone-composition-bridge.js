@@ -335,7 +335,7 @@
       return;
     }
 
-    const sample = window.HobunjiDrunkWalk?.getDebug?.();
+    const sample = window.HobunjiDrunkWalk?.currentPlayerPoseSample?.(); // Direct live solver state; a full mobile diagnostics snapshot is too expensive to build per draw.
     const stamp = sample?.lastUpdatedAtMs;
     const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
       ? performance.now() : Date.now(); // Must use the same time origin as the gait writer and composer.
@@ -347,8 +347,8 @@
       return;
     }
 
-    const pitch = Number(sample.pitchDeg) * DEG;
-    const roll = Number(sample.rollDeg) * DEG;
+    const pitch = Number(sample.pitch); // Sampled gait pitch is already in radians, unlike the debug-only pitchDeg value.
+    const roll = Number(sample.roll); // Sampled gait roll shares the composer's local rotation convention.
     if (!Number.isFinite(pitch) || !Number.isFinite(roll)) {
       composer.clearChannel(DRUNK_CHANNEL);
       lastDrunkPoseSyncReason = 'invalid-gait-sample';
