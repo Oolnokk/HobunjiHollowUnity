@@ -257,8 +257,15 @@
       rec.melody?.stop?.();
       for(const a of art)a.dispose?.();
       for(const id of colliders)DS?.remove?.(id);
-      for(const m of materials)m.dispose?.();
-      group.parent?.remove?.(group); // Native V50 composer also releases this scene-owned root on clear.
+      const geometries=new Set(); // Destroy detached secret meshes in both layer and V50 sessions; neither owner traverses them after removal.
+      const ownMaterials=new Set(materials);
+      group.traverse?.(node=>{
+        if(node.geometry&&!node.geometry.userData?.devRuinSharedPrimitive)geometries.add(node.geometry);
+        for(const material of Array.isArray(node.material)?node.material:[node.material])if(material)ownMaterials.add(material);
+      });
+      group.parent?.remove?.(group);
+      for(const geometry of geometries)geometry.dispose?.();
+      for(const material of ownMaterials)material.dispose?.(); // Cached source textures are owned by their original author, never disposed here.
       // The owner disposes all scene geometry after its puzzles; do not release
       // a shared authored chest texture or remove the group before that sweep.
     };
