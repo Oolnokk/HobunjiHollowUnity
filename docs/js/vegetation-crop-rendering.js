@@ -611,6 +611,7 @@
       batch.castShadow = false;
       batch.receiveShadow = false;
       batch.frustumCulled = true; // Expanded shared geometry bounds safely cull entire offscreen plants.
+      batch.userData.noOutline = true; // Alpha-cutout leaf cards cannot use the inverted-hull shell: it paints their transparent area solid black.
       batch.userData.hobunjiMustardLeaf = true; // The dev companion can identify the source shape and leaf instance IDs.
       batch.userData.hobunjiMustardShape = shape;
       batches[shape] = batch;
@@ -641,6 +642,11 @@
   }
 
   const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']);
+
+  function _cropFamily(cropKey, data, variety = null) {
+    // Restored/older cultivar definitions can exist without baseCrop; their encoded ID still identifies the species.
+    return data?.baseCrop || variety?.family || window.CropVarieties?.produceFamily?.(cropKey) || cropKey;
+  }
 
   function _growthBucket(growth) {
     // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
@@ -708,8 +714,19 @@
         const growth = Math.min(tile.cropAge / data.growDays, 1.0);
         const surfY  = deps.tileSurfaceY(tile.type) + tile.water * deps.WATER_UNIT;
 
-        const family = data.baseCrop || tile.crop; // Varied needlegrain/heftroot keep their species' detailed procedural foliage.
-        if (FOLIAGE_CROPS.has(family)) {
+        const family = _cropFamily(tile.crop, data); // Resolve saved/imported mushtard cultivars even when older cropData entries lack baseCrop.
+        const wantsFoliage = FOLIAGE_CROPS.has(family); // Determines which existing visual type is valid before reusing the tile mesh.
+        const previousMesh = cropMeshes[i]; // The previous crop can have been a different species or a legacy placeholder.
+        if (previousMesh && (
+          (previousMesh.userData?.hobunjiCropRootKey && previousMesh.userData.hobunjiCropRootKey !== family)
+          || (wantsFoliage && previousMesh.userData?.hobunjiFoliageMesh !== true)
+          || (!wantsFoliage && !previousMesh.isMesh)
+        )) {
+          deps.scene.remove(previousMesh);
+          cropMeshes[i] = null;
+          cropGrowthBucket[i] = -1;
+        }
+        if (wantsFoliage) {
           // ── Procedural foliage mesh ──────────────────────────────
           const bucket = _growthBucket(growth);
           if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
@@ -720,6 +737,8 @@
           if (!cropMeshes[i]) {
             const group = _buildFoliageMesh(family, growth, col, row);
             if (group) {
+              group.userData.hobunjiCropRootKey = family; // Prevent a tile switched to another crop from reusing the wrong foliage.
+              group.userData.hobunjiFoliageMesh = true; // Distinguishes foliage from legacy colored cube placeholders on restored fields.
               _tintVarietyFoliage(group, data.varietyColor); // Only cultivar clones receive the inherited tint.
               deps.scene.add(group);
               deps.markOutline(group);
@@ -999,10 +1018,12 @@
     const g = Math.max(0, Math.min(1, growth));
     const size = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * g;
     const variety = window.CropVarieties?.ensure?.(crop); // Saved NPC crops use the same genotype/color as the farm.
-    const family = variety?.family || crop;
+    const family = _cropFamily(crop, null, variety); // NPC plots must also preserve native leaf art for imported mushtard keys.
     if (FOLIAGE_CROPS.has(family)) {
       const group = _buildFoliageMesh(family, g, col, row);
       if (!group) return null;
+      group.userData.hobunjiCropRootKey = family; // Identifies the actual crop family in town and wilderness farm plots.
+      group.userData.hobunjiFoliageMesh = true; // Keeps the same foliage identity contract as player farm crops.
       _tintVarietyFoliage(group, variety?.color);
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
