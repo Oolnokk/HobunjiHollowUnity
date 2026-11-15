@@ -278,6 +278,43 @@
     return null;
   }
 
+  // Arm reach is solved in the portrait rig's Y/Z plane. When the character
+  // has a non-uniform final X/Y scale, depth (Z) follows X while arm height
+  // follows Y. Reproject the cached final rig reach by its actual components,
+  // instead of multiplying the entire diagonal arm by rigScaleY.
+  function renderedArmReach(reach, options, profile, rigX, rigY) {
+    const modelHeight = validScale(options.modelHeight);
+    const floorY = Number(options.floorY) || 0;
+    const rawHandY = Number(options.baseY) - floorY;
+    const posteriorY = modelHeight != null
+      ? window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(profile?.posteriorRule, modelHeight, rawHandY)
+      : null;
+    if (!Number.isFinite(posteriorY)) return reach * rigY;
+    const armOffset = Number(profile?.anatomy?.armLengthHeightPercentOffset);
+    const wristY = posteriorY - modelHeight * (Number.isFinite(armOffset) ? armOffset : 0) / 100;
+    const sourcePortraitScale = validScale(profile?.anatomy?.portraitScale);
+    const activePortraitScale = validScale(options.portraitScaleMultiplier);
+    const factor = sourcePortraitScale != null && activePortraitScale != null
+      ? activePortraitScale / sourcePortraitScale : 1;
+    const sourcePlacement = Number(profile?.anatomy?.portraitVerticalPlacementRatio);
+    const activePlacement = Number(options.portraitVerticalPlacementRatio);
+    const placementShift = Number.isFinite(sourcePlacement) && Number.isFinite(activePlacement)
+      ? modelHeight * (activePlacement - sourcePlacement) : 0;
+    let original = 0, rendered = 0, count = 0;
+    for (const side of ['left', 'right']) {
+      const shoulder = profile?.anchors?.[`${side}HandShoulder`]?.position;
+      if (!shoulder) continue;
+      const dy = wristY - (shoulder.y * factor + placementShift);
+      const dz = -shoulder.z * factor;
+      const length = Math.hypot(dy, dz);
+      if (!(length > 1e-6)) continue;
+      original += length;
+      rendered += Math.hypot(dy * rigY, dz * rigX);
+      count++;
+    }
+    return count && original > 0 ? reach * rendered / original : reach * rigY;
+  }
+
   // Return the *rendered* sphere, not the old authored species scale. All
   // positions use the same floor-relative, pose-facing frame as the shoulder
   // targets; the optional spine shift is applied once, after this mapping.
@@ -298,7 +335,7 @@
     const { left, right } = shoulders;
     const midX = (left.x + right.x) / 2, midY = (left.y + right.y) / 2, midZ = (left.z + right.z) / 2;
     const shoulderGap = Math.hypot((left.x - right.x) * rigX, (left.y - right.y) * rigY, (left.z - right.z) * rigX);
-    const finalArmLength = reach * rigY; // The completed vertical shoulder-to-wrist reach in displayed units.
+    const finalArmLength = renderedArmReach(reach, options, shoulders.profile, rigX, rigY); // Complete 3D arm reach after X/Y rig scaling.
     const diameter = 2 * finalArmLength + shoulderGap;
     const reference = shoulderTargetsFor('mao-ao', 'male');
     const referenceHeight = portraitModelHeightFor('mao-ao', 'male');
@@ -314,7 +351,13 @@
       (reference.left.y - reference.right.y) * refRigY,
       (reference.left.z - reference.right.z) * refRigX
     );
-    const referenceRadius = referenceReach * refRigY + refGap / 2;
+    const referenceArmLength = renderedArmReach(referenceReach, {
+      speciesId: 'mao-ao', gender: 'male', modelHeight: referenceHeight,
+      floorY: 0, baseY: referenceHeight / 2,
+      portraitScaleMultiplier: reference?.profile?.anatomy?.portraitScale,
+      portraitVerticalPlacementRatio: reference?.profile?.anatomy?.portraitVerticalPlacementRatio,
+    }, reference.profile, refRigX, refRigY); // Reference must undergo the exact same 3D arm projection.
+    const referenceRadius = referenceArmLength + refGap / 2;
     if (!(referenceRadius > 0) || !(diameter > 0)) return null;
     const yaw = Number(options.yawRad) || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
     const cx = Number(options.cx) || 0, cz = Number(options.cz) || 0, floorY = Number(options.floorY) || 0;
