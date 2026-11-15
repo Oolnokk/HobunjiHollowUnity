@@ -512,24 +512,9 @@
     ];
   }
 
-  // A shoulder pet visibly clipping through the player has exactly two
-  // possible mechanisms: a depthWrite/renderOrder mismatch (see
-  // updatePetLayering — its overrides only get (re)applied when the
-  // (active,pet) pair actually changes, so anything that left it out of
-  // sync would keep drawing with the wrong depthWrite/renderOrder every
-  // frame after) or a positional mismatch (the shoulderPerch/
-  // shoulderGrip anchor math in updateCompanions landing the pet mesh
-  // somewhere other than where the rig actually intends, e.g. a stale
-  // cached anchor — see playerAttachmentAnchor/creatureAttachmentAnchor).
-  // This recomputes both live and diffs them against actual live state,
-  // so a probe click can confirm or rule out each directly instead of a
-  // human cross-referencing several unrelated numbers by hand. Only
-  // meaningful when the probe actually landed on the player's own
-  // avatar or a creature currently (or, per _petLayeringPet, previously)
-  // in the shoulder-pet role — gated the same way
-  // _pixelProbeSeatedLegReadoutLines gates on sitInteraction, so an
-  // unrelated click doesn't pad the report with a "no shoulder pet"
-  // section nobody asked about.
+  // The same compositor now owns shoulder-pet pose ordering, temporary portrait
+  // depth writes and owner front-art weapon stencil. The probe checks its
+  // selected preset and actual material state alongside the physical attachment.
   function _pixelProbeShoulderPetLines(hits) {
     const isDescendant = (obj, ancestor) => {
       if (!ancestor) return false;
@@ -552,25 +537,31 @@
     if (!hitPlayer && !hitTrackedPet && !hitLivePet) return null;
 
     const lines = ['', '=== Shoulder-pet diagnostics ==='];
+    const compositor = window.HeldObjectRenderOrder?.snapshot?.() || {};
+    const petPolicy = compositor.shoulderPetCompositor || {};
+    const legacyDepth = petPolicy.active && petPolicy.mode === 'world-depth';
+    const expectedDepth = !liveActivePet || legacyDepth;
     lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
-    lines.push(`updatePetLayering's last-applied state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
-    if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet) {
-      lines.push(`>>> MISMATCH — updatePetLayering hasn't caught up to this frame's live shoulder-pet state. Its depthWrite/renderOrder overrides only get (re)applied when (active,pet) actually changes (see its own early-return), so the checks below may be comparing against a stale layering pass.`);
+    lines.push(`Gameplay attachment state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
+    lines.push(`Compositor: mode=${petPolicy.mode || '(not available)'} active=${!!petPolicy.active} playerInFront=${petPolicy.playerDrawsOnTop ?? '-'} frontMask=${compositor.frontPortraitMaskedGear ?? '-'}/${compositor.frontPortraitGearCandidates ?? '-'} reason=${compositor.frontPortraitMaskReason || '-'} stencilBits=${compositor.stencilBits ?? '-'}`);
+    if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet || !!liveActivePet !== !!petPolicy.active) {
+      lines.push('>>> MISMATCH — gameplay and shared compositor have different active shoulder pets; inspect the game render/attachment frame.');
     }
 
     const checks = [];
-    const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
-    if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+    const frontMaterial = deps.getPlayerAvatarFrontMaterial();
+    if (frontMaterial) checks.push(['player front plane', 'depthWrite', expectedDepth, frontMaterial.depthWrite]);
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
-        checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
-        checks.push([label, 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+        checks.push([label, 'depthWrite', legacyDepth, mesh.material.depthWrite]);
+        checks.push([label, 'renderOrder', window.HeldObjectRenderOrder?.SHOULDER_PET_RENDER_ORDERS?.pet
+          || deps.SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
       }
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
-    if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
-    else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
+    if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} under the shared compositor preset.`));
+    else if (checks.length) lines.push('Player and pet materials match the selected compositor policy.');
 
     if (liveActivePet) {
       const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.
