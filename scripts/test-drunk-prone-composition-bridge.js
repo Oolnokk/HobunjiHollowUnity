@@ -207,6 +207,7 @@ vm.runInContext(source, context, { filename: modulePath });
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
 
+  player.vx = 0; player.vy = 4.3; // Initial velocity-only fixture has no committed positions yet.
   mockedRunLean = 0.15;
   playerLegs.update(0.016, 3, false, undefined, { combat: true });
   assert.strictEqual(composerSet.name, 'run-lean');
