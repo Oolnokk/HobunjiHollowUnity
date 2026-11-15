@@ -718,6 +718,20 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
   assert.equal(timedReleaseB.cancelled, true, 'despawn must clean up the middle release');
   assert.equal(timedReleaseC.cancelled, true, 'despawn must clean up the newest release');
   assert.equal(claims().length, 0, 'despawn must clear all release claims');
+  const coffinSkeleton = { id:'coffin-emergence-alert-probe', health:80,
+    rosterRecord:{appearance:{speciesId:'harlyao-skeleton',gender:'male'}} }; // Distinct actor verifies the coffin's preplayed scream survives an idle transition.
+  assert.equal(W.CombatVocalizations.suppressSkeletonCoffinSpawnAlert(coffinSkeleton),true);
+  W.CombatVocalizations.onHostileAlertState(coffinSkeleton,false); // Spawn AI may report idle before noticing the player.
+  const beforeCoffinAlert=played.length; // Neither opening nor the first active detection may replay the shriek through combat voices.
+  assert.equal(W.CombatVocalizations.onHostileAlertState(coffinSkeleton,true),null);
+  assert.equal(played.length,beforeCoffinAlert,'the already-heard coffin shriek is not doubled by AI detection');
+  assert.equal(W.CombatVocalizations.onHostileAlertState(coffinSkeleton,true),null,'repeated active ticks remain silent');
+  W.CombatVocalizations.onHostileAlertState(coffinSkeleton,false);
+  W.CombatVocalizations.onHostileAlertState(coffinSkeleton,true);
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastAlert.entity,'coffin-emergence-alert-probe',
+    'a later genuine combat re-entry can still use the normal skeleton alarm');
+  W.CombatVocalizations.forgetEntity(coffinSkeleton);
+
   console.log('time-stretched release grunts overlap through followup attacks and clean up independently: ok');
   console.log('all species/gender profiles reach timed charge/combo/quick/held renderers: ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
