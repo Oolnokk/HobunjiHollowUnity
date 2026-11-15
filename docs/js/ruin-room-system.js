@@ -173,15 +173,33 @@
   }
 
   function roomLightFootprint(room,project){
-    if(!room?.wingId||typeof project!=='function')return null; // Native V50 rooms have authored irregular plateaus; only the rectangular generated wings use this shortcut.
-    const inset=.1,y=room.y+1.4; // Interior wall-facing plane at ordinary lantern height; room roofs/floors are never projected into the light mask.
+    if(!room?.wingId||typeof project!=='function')return null; // Only rectangular generated-wing rooms use this geometry; irregular native V50 floors do not.
+    const inset=.1,levels=[room.y+.05,room.y+WALL_HEIGHT-.05]; // Bound the lit room from floor to wall top, not just a slice through a player's torso.
     const corners=[[room.x+inset,room.z+inset],[room.x+room.w-inset,room.z+inset],
       [room.x+room.w-inset,room.z+room.d-inset],[room.x+inset,room.z+room.d-inset]];
-    const points=corners.map(([x,z])=>project(x,y,z));
-    if(points.some(p=>!Number.isFinite(p?.x)||!Number.isFinite(p?.y)))return null;
-    let area=0; // Reject collapsed edge-on camera projections rather than inserting an invalid Canvas clip.
-    for(let i=0;i<4;i++)area+=points[i].x*points[(i+1)%4].y-points[(i+1)%4].x*points[i].y;
-    return Math.abs(area)>.1?points:null;
+    const projected=[]; // Eight actual wall-volume corners bound local light only; the 7% full-screen tradition tint never uses this path.
+    for(const y of levels)for(const [x,z] of corners){
+      const p=project(x,y,z);
+      if(!Number.isFinite(p?.x)||!Number.isFinite(p?.y))return null;
+      projected.push({x:p.x,y:p.y});
+    }
+    projected.sort((a,b)=>a.x-b.x||a.y-b.y);
+    const turn=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    const lower=[],upper=[]; // Convex hull covers both wall heights under the angled camera without per-light clipping.
+    for(const p of projected){
+      while(lower.length>1&&turn(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();
+      lower.push(p);
+    }
+    for(let i=projected.length-1;i>=0;i--){
+      const p=projected[i];
+      while(upper.length>1&&turn(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();
+      upper.push(p);
+    }
+    const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+    if(hull.length<3)return null;
+    let area=0; // Degenerate camera projections should not extinguish every lamp.
+    for(let i=0;i<hull.length;i++)area+=hull[i].x*hull[(i+1)%hull.length].y-hull[(i+1)%hull.length].x*hull[i].y;
+    return Math.abs(area)>.1?hull:null;
   }
 
   function visual(record,show){
@@ -293,7 +311,7 @@
       withLightRegion(ctx,project,draw){
         if(typeof draw!=='function')return false;
         if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
-        const footprint=roomLightFootprint(active,project); // Only four corners on one world-height plane, computed once per lighting redraw.
+        const footprint=roomLightFootprint(active,project); // One eight-corner wall-volume projection per lighting redraw, not one mask per light.
         if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
         ctx.save();
         try{
@@ -348,7 +366,7 @@
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
         lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
-        localLightBoundary:{mode:'room-floor-footprint',active:!!active?.wingId,canvasPasses:localLightClipPasses}};},
+        localLightBoundary:{mode:'room-volume-light-clip',active:!!active?.wingId,canvasPasses:localLightClipPasses}};},
     };
     live=session;
     return session;
