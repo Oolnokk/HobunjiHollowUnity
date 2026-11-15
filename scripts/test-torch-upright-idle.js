@@ -7,14 +7,34 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Loads the real runtime modules from repository root.
 const committedTorch = JSON.parse(read('docs/config/combat/weapon-idle-stances.json')).stances.torchHold; // Shared runtime/editor idle Y.
-assert.equal(committedTorch.y, 0, 'torch idle defaults to height zero');
+assert.equal(committedTorch.y, 0.08, 'torch idle uses the newly authored neutral height');
+assert.equal(committedTorch.x, -0.03);
+assert.equal(committedTorch.z, 0.17);
+assert.equal(committedTorch.pitch, 10);
+assert.equal(committedTorch.scale, 0.64);
+assert.equal(committedTorch.elbows.right.y, -0.19);
+const sharedSource = read('docs/js/held-action-animations.js'); // Exported still-action lives in the shared held-action registry.
+const start = sharedSource.indexOf('const torchIdle = ');
+const end = sharedSource.indexOf(';\n\n  const drink', start);
+assert(start >= 0 && end > start, 'shared authored torch action is present');
+const sharedTorch = vm.runInNewContext('(' + sharedSource.slice(start + 'const torchIdle = '.length, end) + ')');
+assert.equal(sharedTorch.actionId, 'torch_idle');
+assert.equal(sharedTorch.poses.neutral.y, 0.08);
+assert.equal(sharedTorch.poses.neutral.scale, 0.64);
+assert.equal(sharedTorch.poses.neutral.elbows.right.x, -0.04);
+assert.equal(sharedTorch.poses.windup.x, 0.13);
+assert.equal(sharedTorch.poses.windup.y, 0);
+assert.equal(sharedTorch.poses.strike.pitch, 10.31);
+assert.equal(sharedTorch.gripMode, 'palm-parallel');
+assert.equal(sharedTorch.worldUpright, true);
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /id="torchIdleYDirect"/, 'attack editor exposes direct torch height slider');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /workingConfig.stances.torchHold.y = value/, 'slider writes the existing exported stance');
-assert.match(read('docs/js/weapon-tool-stances.js'), /PREVIOUS_TORCH_HOLD_STANCE/, 'untouched legacy browser overrides migrate to Y=0');
+assert.match(read('docs/js/weapon-tool-stances.js'), /PREVIOUS_TORCH_HOLD_STANCES/, 'untouched legacy browser overrides migrate to the authored neutral');
 const torchEditor = read('docs/tools/attack-animation-editor/index.html'); // Authoring action list must expose the torch itself, not just preview its PNG.
-assert.match(torchEditor, /id: 'torch_idle', group: 'Non-attack held actions'[^\n]*templateId: 'torch_idle'/, 'torch idle is a selectable action');
+assert.match(torchEditor, /id: 'torch_idle', group: 'Non-attack held actions'[^\n]*heldAnimationKey: 'torchIdle'/, 'torch idle is a selectable shared held action');
 assert.match(torchEditor, /id: 'torch_swing', group: 'Melee attacks'[^\n]*templateId: 'torch_swing'/, 'torch swing is a selectable action');
-assert.match(torchEditor, /\['torch_idle', 'torchHold'\]/, 'torch idle editor loads its stance from committed JSON');
+assert.doesNotMatch(torchEditor, /\['torch_idle', 'torchHold'\]/, 'loading flat still stances cannot overwrite authored torch windup/strike');
+assert.match(torchEditor, /anim\.poses\.neutral = \{ \.\.\.anim\.poses\.neutral, \.\.\.pose \}/, 'quick height updates only torch neutral');
 assert.match(torchEditor, /previewTorchIdlePose\(pose\)/, 'editor provides one dedicated still-pose preview bridge');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /actionSelect\.value = 'torch_idle'/, 'direct idle editor shortcut selects the actual Torch Idle action');
 
@@ -26,6 +46,8 @@ class Vector3 {
   copy(v) { return this.set(v.x, v.y, v.z); }
   add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
   multiply(v) { this.x *= v.x; this.y *= v.y; this.z *= v.z; return this; }
+  multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; }
+  sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
   lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
   normalize() { const n = Math.sqrt(this.lengthSq()); return this.set(this.x / n, this.y / n, this.z / n); }
   applyQuaternion(q) {
@@ -103,6 +125,7 @@ plane.rotation = {
 const window = {
   __farmLog() {}, Combat: { deps: {} },
   PlayerBodyTransformComposer: { getPlayerMesh: () => body },
+  HobunjiHandToolGrips: { primaryGripHolderPointForTool: () => ({ x: 0.025, y: 0, z: 0.03 }) }, // Tests the real scale-around-grip path.
 };
 const context = vm.createContext({
   window, THREE, localStorage: { getItem: () => null },
@@ -136,12 +159,16 @@ const deps = {
   getActiveTool: () => active.slot, getHeldMode: () => 'tool',
 };
 let renderedUp = null; // Captures the pose *inside* the temporary matrix hook, before it restores idle-basis transforms.
-holder.updateMatrixWorld = function () { renderedUp = upDirection(plane); };
+let renderedScale = null; // The committed torch rest-size should be temporary and must not accumulate.
+holder.updateMatrixWorld = function () { renderedUp = upDirection(plane); renderedScale = holder.scale.x; };
 window.WeaponToolStances.init(deps);
 holder.updateMatrixWorld();
 let snapshot = window.WeaponToolStances.debugSnapshot();
 assert.equal(snapshot.stanceApplied, true, 'torch starts in its dedicated idle stance');
 assert.equal(snapshot.worldUprightApplied, true, 'torched PNG receives the world-up correction');
+assert.equal(renderedScale, 0.64, 'torch renders at the exported neutral size');
+assert.equal(holder.scale.x, 1, 'holder scale is restored after the pose bake');
+assert.equal(snapshot.poses.torchHold.y, 0.08, 'diagnostics expose authored neutral height');
 assert(renderedUp.y < -.99999, 'rendered torch flame points up, even through mirrored scales');
 for (let i = 0; i < 4; i++) {
   time += 16;
@@ -157,6 +184,13 @@ assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, false, 'rea
 holder.userData.authoredToolActionActive = false;
 holder.updateMatrixWorld();
 assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'torch returns to upright idle after its action');
+load('docs/js/hand-shoulder-pose-runtime.js');
+const avatarRoot = { parent: body }; // Live player rig; NPC rigs must not inherit this elbow.
+const hands = window.HobunjiHandShoulderPoseRuntime;
+assert.equal(hands.currentWeights('right', avatarRoot).grip, 1);
+assert.equal(hands.currentWeights('right', avatarRoot).palmNormal, 1);
+assert.equal(hands.currentElbow('right', avatarRoot).y, -0.19, 'idle carries the exported right-elbow position');
+assert.equal(hands.currentElbow('right', { parent: root }), null, 'unrelated NPC rigs do not inherit player torch elbows');
 
 active.slot = 'axe';
 holder.updateMatrixWorld(); // First tool-frame records a new relative quaternion.
