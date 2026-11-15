@@ -52,11 +52,11 @@ trusted.material.isShaderMaterial=true;
 assert(!canBound(trusted),'GPU shader deformation still keeps independent conservative occlusion');
 assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treated as rigid');
 
-// Confirm the shipping tile-batching algorithm actually consolidates screen-
+// Confirm circle-centered batching still consolidates screen-
 // separated trusted rigs, rather than merely accepting a marker in isolation.
 const groupingCode=section('  function rectsOverlap(', '  const gearWaterBounds = ');
 const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCullable','objectProto',[
-  'const XRAY_TILE_RADIUS=1,XRAY_TILE_EDGE_EPSILON=.0001,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
+  'const XRAY_TILE_RADIUS=1,XRAY_CIRCLE_RADIUS=XRAY_TILE_RADIUS+.5,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
   'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0;',
   'const xrayGearRect={},xrayGroundRect={};',
   'const pt=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;}});',
@@ -80,7 +80,7 @@ const isolated=Array.from({length:24},(_,i)=>{
 }); // Synthetic safe-to-bound hand-like meshes at separated tiles; not a measurement of actual NPC draw calls.
 const batch=groupActors({},null,{},isolated);
 assert.equal(batch.groups.length,3,'24 spaced trusted rigs share three eight-tile depth builds instead of 24');
-assert(batch.groups.every(x=>x.regions.length===8),'shader tile uniform budget remains capped at eight');
+assert(batch.groups.every(x=>x.regions.length===8),'shader circle-center uniform budget remains capped at eight');
 const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
 assert.match(leg,/mesh\.onBeforeRender = function footDepthPushBefore\(/,
@@ -111,7 +111,9 @@ const untrustedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null})
 assert.equal(groupActors({},null,{},untrustedFeet).groups.length,24,
   'unproven custom foot hooks still receive separate conservative depth replays');
 const overlapping=isolated.slice(0,2).map((mesh,i)=>({...mesh,x:i+.5,z:.5,scope:{col:i,row:0,elevation:0}}));
-assert.equal(groupActors({},null,{},overlapping).groups.length,2,'neighboring projected floor exemptions never share a potentially leaking depth buffer');
+assert.equal(groupActors({},null,{},overlapping).groups.length,2,'overlapping circular ground exceptions never share a potentially leaking depth buffer');
+const sharedTileDifferentPosition=isolated.slice(0,2).map((mesh,i)=>({...mesh,x:.15+i*.5,z:.25,scope:{col:0,row:0,x:.15+i*.5,z:.25,elevation:0}})); // Actors standing within one tile have separate centers.
+assert.equal(groupActors({},null,{},sharedTileDifferentPosition).groups.length,2,'two characters in one tile do not share a snapped circular X-ray zone');
 
 for (const [label,source] of [['hand',hand],['foot',foot]]) {
   assert.match(source,/Object\.defineProperty\(mesh, '__hobunjiXrayBoundParity'/,
