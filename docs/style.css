@@ -3160,6 +3160,7 @@
       display: flex; flex-wrap: wrap; gap: var(--inv-gap); align-content: flex-start;
     }
     .inv-key-empty { font-size: var(--inv-font-xs); color: var(--muted); opacity: 0.45; padding: var(--inv-pad) 0; }
+    .inv-key-scope-heading { flex: 0 0 100%; font-size: var(--inv-font-xs); font-weight: 750; letter-spacing: .03em; color: var(--muted); padding: 2px 0 0; }
     .inv-key-chip {
       display: inline-flex; align-items: center; justify-content: flex-start; flex-wrap: wrap;
       gap: calc(0.5 * var(--inv-gap)); max-width: 100%; height: fit-content;

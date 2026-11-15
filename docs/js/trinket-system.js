@@ -287,7 +287,7 @@
   }
 
   function capacity() {
-    return ATTUNEMENT_CAPACITY;
+    return ATTUNEMENT_CAPACITY + Math.max(0, Number(window.LichHeartSystem?.count?.()) || 0); // Each distinct character-owned Lich-heart permanently extends the shared trinket budget by one.
   }
 
   function ownedEntries() {
@@ -443,7 +443,8 @@
 
     const hdr = document.createElement('div');
     hdr.className = 'inv-equip-label trinket-attunement-label';
-    hdr.innerHTML = `Trinkets — <strong style="color:${over ? '#ff8080' : 'var(--accent, #f9e28a)'}">Attunement: ${used} / ${cap}</strong>`;
+    const heartBonus = window.LichHeartSystem?.count?.() || 0; // Shows where the permanently gained capacity comes from.
+    hdr.innerHTML = `Trinkets — <strong style="color:${over ? '#ff8080' : 'var(--accent, #f9e28a)'}">Attunement: ${used} / ${cap}</strong>${heartBonus ? ` <small>(+${heartBonus} Lich-heart${heartBonus === 1 ? '' : 's'})</small>` : ''}`;
     group.appendChild(hdr);
     if (over) {
       const warn = document.createElement('div');
@@ -535,6 +536,7 @@
   function debugSnapshot() {
     return {
       capacity: capacity(),
+      lichHeartBonus: window.LichHeartSystem?.count?.() || 0,
       used: usedAttunement(),
       equipped: equippedEntries().map(entry => ({ uid: entry.uid, id: entry.id, cost: costOf(entry.id) })),
       owned: ownedEntries().map(entry => ({ uid: entry.uid, id: entry.id, cost: costOf(entry.id) })),

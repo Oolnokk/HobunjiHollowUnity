@@ -89,6 +89,7 @@
       const worldKeys = ownedWorldKeys(liveProfile); // World grants are shared by characters in this world, without repeated JSON.parse.
       const characterKeysOwned = new Set(Array.isArray(liveProfile?.gearInventory?.keyItems) ? liveProfile.gearInventory.keyItems : []); // Personal keys travel with this character.
       const owned = [...definitions.values()].filter(definition => (definition.scope === 'world' ? worldKeys : characterKeysOwned).has(definition.id));
+      const ordered = [...owned.filter(definition => definition.scope === 'character'), ...owned.filter(definition => definition.scope === 'world')]; // Character heirlooms have their own section ahead of world unlocks.
       const expandedKey = list.querySelector?.('.inv-key-chip[aria-expanded="true"]')?.dataset?.keyItemId || ''; // Preserve a tapped key's description across refreshes.
       const fragment = document.createDocumentFragment();
       if (!owned.length) {
@@ -97,7 +98,15 @@
         empty.textContent = 'No key items yet.';
         fragment.appendChild(empty);
       }
-      for (const definition of owned) {
+      let lastScope = null; // Inserts one visible save-scope heading per nonempty collection.
+      for (const definition of ordered) {
+        if (definition.scope !== lastScope) {
+          lastScope = definition.scope;
+          const heading = document.createElement('div'); // Headings remain siblings of chips so existing tap/keyboard selection still works.
+          heading.className = 'inv-key-scope-heading';
+          heading.textContent = lastScope === 'character' ? 'Character — follows this player between worlds' : 'World — belongs to this world';
+          fragment.appendChild(heading);
+        }
         const button = document.createElement('button'); // Buttons support keyboard/controller selection and mobile tapping.
         button.type = 'button';
         button.className = 'inv-key-chip';
@@ -122,6 +131,8 @@
         fragment.appendChild(button);
       }
       list.replaceChildren(fragment);
+      const badge = list.parentElement?.querySelector?.('.inv-key-badge'); // The original world-only badge must describe the player-save section too.
+      if (badge) badge.textContent = 'Character + world';
       return true;
     } catch (error) {
       global.__farmLog?.('[key-items] Could not refresh Pack key list: ' + String(error?.message || error), 'warn'); // Mobile-visible log rather than a silent UI exception.
