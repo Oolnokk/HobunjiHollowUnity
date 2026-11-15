@@ -24,10 +24,12 @@ function harness({ oldSite, oldProgress } = {}) {
     setItem:(key,value)=>storage.set(key,String(value)),
   };
   const savedWorlds = new Map([[world,oldProgress || null]]);
+  let writable=true; // Toggle to prove completion never clears a checkpoint when world persistence is unavailable.
+  let exitsAvailable=true; // Toggle to prove missing return destinations cannot complete a ruin.
   const meta = {
     loadRuinProgress:key=>JSON.parse(JSON.stringify(savedWorlds.get(key)||null)),
     saveRuinProgress:(key,value)=>{
-      if(!savedWorlds.has(key))return false;
+      if(!savedWorlds.has(key)||!writable)return false;
       savedWorlds.set(key,JSON.parse(JSON.stringify(value)));
       return true;
     },
@@ -69,7 +71,7 @@ function harness({ oldSite, oldProgress } = {}) {
     tothalWorldId:()=>currentWorld,currentTothalYear:()=>currentCycle,
     TileType:{TRENCH:'trench',GRASS:'grass',PATH:'path',RIVER:'river',STREAM:'stream',WATERFALL:'waterfall',RAMP:'ramp',ROCK:'rock'},
     TRENCH_TOP:1,TILE:32,calendar:{day:12},getCurrentArea:()=>zone,
-    findZoneFlatEmptyTiles:()=>[{col:25,row:26}],
+    findZoneFlatEmptyTiles:()=>exitsAvailable ? [{col:currentCycle>=3?32:25,row:currentCycle>=3?35:26}] : [],
     buildZoneScene:()=>zi,enterZone:()=>Promise.resolve(true),
     showToast(){},refreshActionBar(){},recordWildernessChunkTileDelta(){},
   };
@@ -78,6 +80,8 @@ function harness({ oldSite, oldProgress } = {}) {
     zone,world,window,meta,generated,layouts,
     saved:()=>savedWorlds.get(world),
     shift:()=>{currentCycle++;zi=makeZone();zones.set(zone,zi);return zi;},
+    setWritable:value=>{writable=value;},
+    setExitsAvailable:value=>{exitsAvailable=value;},
     newWorld:()=>{currentWorld='another-world';savedWorlds.set(currentWorld,null);},
     grid:()=>zi.grid,
   };
@@ -126,12 +130,32 @@ async function main() {
   assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
   assert.equal(ruins.isActiveRuinChestOpened('chest-1',seed),true);
   assert.equal(ruins.isActiveRuinBossDefeated(seed),true);
+  // Shift again while still inside: leaving by the ordinary entrance should surface at the NEW ladder.
+  h.shift();
+  const shiftedExit=ruins.relocatedReturnAnchor();
+  assert.equal(shiftedExit.area,h.zone);
+  assert.equal(shiftedExit.x,(32+.5)*32);
+  assert.equal(shiftedExit.y,(35+1.5)*32);
+  assert.equal(h.saved().authored.tothal.dug,true,'leaving from below exposes the new burrow');
+  assert.equal(h.grid()[35][32].type,'trench');
+  assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east','second shift retains progress');
+
+  h.setExitsAvailable(false);
+  assert.equal(ruins.completeActiveRuin(),false,'missing random exit does not delete checkpoints');
+  assert.equal(h.saved().authored.tothal.completed,false);
+  assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
+  h.setExitsAvailable(true);
+  h.setWritable(false);
+  assert.equal(ruins.completeActiveRuin(),false,'failed world save does not complete the tomb');
+  assert.equal(h.saved().authored.tothal.completed,false);
+  assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
+  h.setWritable(true);
   assert.equal(ruins.completeActiveRuin(),true);
   assert.equal(h.saved().authored.tothal.completed,true,'completion retires the unique tomb');
   assert.equal(h.saved().authored.tothal.progress,undefined);
   assert.equal(h.layouts.get(h.zone).localeInstances.some(marker=>marker.localeId==='authored_tomb_tothal'),false);
   const third=Array.from({length:20},(_,i)=>'post-completion-'+i)
-    .find(id=>hashString(`${h.world}|2|${id}`)%3===0);
+    .find(id=>hashString(`${h.world}|3|${id}`)%3===0);
   assert.equal(ruins.debugEnterVisit({kind:'entrance',id:third,zoneId:h.zone,returnAt:{x:12,z:12}}),true);
   await Promise.resolve();
   assert.equal(h.generated.at(-1).opts.specialBoss,false,'completed named tombs do not respawn on new sites');
@@ -148,6 +172,8 @@ async function main() {
   assert.equal(migrated.length,1,'pre-update assigned guardians migrate on world load');
   assert.equal(migrated[0].seed,1234,'migration preserves the existing layout seed');
   assert.equal(older.saved().authored.tothal.progress.travel.activeCheckpoint,'shaft');
+  assert(fs.readFileSync(path.join(__dirname,'../docs/js/dev-random-ruin-interior-map.js'),'utf8').includes('window.RuinSites?.relocatedReturnAnchor?.()'),
+    'ordinary exit must consult the shifted named tomb, not only the story vault');
   console.log('Persistent authored Lich ruins: PASS');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
