@@ -15,6 +15,7 @@ class Quaternion {
   }
   identity() { this.x = this.y = this.z = 0; this.w = 1; return this; }
   clone() { const q = new Quaternion(); q.x = this.x; q.y = this.y; q.z = this.z; q.w = this.w; return q; }
+  copy(q) { this.x = q.x; this.y = q.y; this.z = q.z; this.w = q.w; return this; } // The production drunk owner snapshots the exact applied quaternion for safe handoff.
   invert() { return this; }
   multiply() { return this; }
   setFromEuler() { return this; }

@@ -89,6 +89,48 @@ These two handoffs are specifically addressed, **not proof that all animation
 paths use the ledger**. The player render composer, quaternion-based impact
 animation, and authored IK retain their existing independent owners.
 
+## Cross-action interruption suite and quaternion ownership
+
+`scripts/test-pose-cross-action-interruptions.js` executes the production
+`RigTransformLayers`, drunken-gait wrapper, `PlayerCrawl`,
+`ImpactRagdollPlayback`, NPC dance presentation and Tzatzul visual
+release in the same controlled VM. It transitions through walking, seated
+movement, drunken thigh/foot/body offsets, named yawn head/chest offsets,
+dance hand cancellation without a render, crawl and a held knockdown, visual
+capture release, and repeated rig reconstruction. The existing full yawn,
+Tzatzul flight and visual-release regression suites remain separate tests
+run by `scripts/run-tests.js`; the cross-action suite does not duplicate
+their deep browser/AI setup.
+
+**Additional confirmed handoff:** drunken foot cleanup previously
+multiplied inverse quaternions even after combat, sitting or IK assigned
+a new absolute orientation. Each drunken handle now remembers its exact
+last-applied foot quaternion and undoes it only while that orientation
+is still owned. `HobunjiDrunkWalk.getDebug().poseHandoffs.foot`
+counts displaced foot rotations; the fallback body-quaternion owner uses
+the same guarded release.
+
+The main NPC drunken *torso* shares a Three.js Euler with the NPC yawn.
+Writing a quaternion directly to that Euler's backing orientation bypasses
+the yawn ledger and can cause invalidated baselines. The real gameplay
+path now composes named `npc-drunk-body` pitch/roll offsets through
+`RigTransformLayers`, alongside `npc-yawn-body` on the same pitch
+axis; it releases only its own offsets, preserving simultaneous yawn
+or new action ownership. In standalone contexts lacking the shared
+ledger, the guarded quaternion fallback remains available. The ledger's
+existing `externalTakeovers` counter reports absolute torso rewrites.
+
+`scripts/test-pose-shared-torso-three.js` runs 700 consecutive frames
+using the **real Three.js r128** Euler/quaternion synchronization, and
+checks concurrent yawn/drunken offsets, independent disposal, and a
+new absolute combat torso/foot takeover. It skips the dependency-free
+fast run and is explicitly rerun once CI installs `three@0.128.0`.
+
+This is a reproducible *unit integration* harness with targeted Three.js
+doubles, not proof that every scene-render/reparenting interaction works
+in a browser. A separate live browser cross-action smoke remains desirable
+for ragdoll pivot parentage and attachment draw passes.
+
 ## Recommended next migration/testing pass
 
 Continue auditing remaining overlap beyond the corrected dance-hand and
