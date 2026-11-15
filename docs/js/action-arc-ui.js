@@ -432,7 +432,8 @@
       if(slot.data==='adventuringGateway'){_openAdventuringArc();return;}
       if(slot.data==='backBurden')window.Shattercasks?.takeFromBack?.();
       else {
-        deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
+        deps.setHeldMode('tool');
+        if (deps.WHEEL_SLOTS.includes(slot.data)) deps.setLastHeldFarmTool(slot.data); // Selecting a weapon is temporary: keep the last farm/adventuring tool in memory.
         deps.setActiveTool(slot.data); // calls refreshActionBar internally
       }
     } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
@@ -491,7 +492,7 @@
         if(chosen==='adventuringGateway'){_openAdventuringArc();return;}
         if(chosen!=='backBurden'){
           deps.setHeldMode('tool');
-          deps.setLastHeldFarmTool(chosen);
+          if (deps.WHEEL_SLOTS.includes(chosen)) deps.setLastHeldFarmTool(chosen); // Scroll-selected weapons must not erase the selected torch.
           deps.setActiveTool(chosen);
         }
         _setActive(next); // Back-carried Burdens are taken into the hands only when the selector commits.
