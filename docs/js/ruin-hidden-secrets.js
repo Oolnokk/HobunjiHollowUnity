@@ -125,8 +125,10 @@
         sampleSupport:()=>({y:floor}),seed:hash(rec.id+':melody-art')
       });
       if(glyphs)art.push(glyphs);
+      rec.glyphs=glyphs;rec.scoreComposer=composer; // Scratchbone notes are hidden until the almost invisible floor stone is stepped on.
       rec.melody=composer.createSession(song,{
         lookaheadMs:root.AudioSystem?.metronomeLookaheadMs||0,
+        clockMs:root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():undefined,
         onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();},
         onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);},
         onNote:note=>root.RuinInteractionAudio?.melodyPercussionTick?.(note),
@@ -243,6 +245,13 @@
         const p=getPlayerPosition?.(),standing=p&&nearFloor(getPlayerY,floor)
           &&Math.hypot(p.x-rec.platePoint.x,p.z-rec.platePoint.z)<.48;
         rec.melody.step(t,!!standing);
+        rec.glyphs?.setVisible?.(!!standing); // The clue is disclosed by the hidden plate, never a conspicuous room-wide marker.
+        const glow=rec.melody.snapshot?.();
+        if(glow&&rec.scoreComposer?.advanceGlyphGlow){
+          const notes=rec.glyphs?.group?.children?.filter?.(node=>node.userData?.melodyNoteIndex!==undefined)||[];
+          for(let i=0;i<notes.length;i++)rec.scoreComposer.advanceGlyphGlow(notes[i],{
+            current:i===glow.activeIndex,accepted:i<glow.progress,dt:t});
+        }
         root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!standing);
       }
       if(rec.targets.length&&!rec.linked&&bus?.hasActiveRuinState?.()===true){
