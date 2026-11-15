@@ -95,8 +95,8 @@ assert.strictEqual(Object.keys(fallback).length, X.keys().length, 'fallback list
 for (const key of X.keys()) assert.ok(render.includes(`'${key}'`), `renderer reads rule ${key}`);
 assert.ok(/updateFrontPlaneHands\(held, scene, camera\)/.test(render), 'hand rule runs each base world frame');
 assert.ok(/handsBehindFrontPlane: lastHandsBehindFrontPlane/.test(render), 'snapshot exposes the hand counter');
-assert.ok(/withPortraitDrawOrder\(renderer, null, \(\) => rawRender\.call\(renderer, scene, camera\)\)/.test(render),
-  'actual gear/hand/foot overlay color draws use the manual hierarchy');
+assert.ok(/withPortraitDrawOrder\(renderer, overlayDrawOrder, \(\) => rawRender\.call\(renderer, scene, camera\)\)/.test(render),
+  'actual gear/hand/foot overlay color draws inherit actor depth and manual layer sorting');
 assert.ok(/const supplementDepth = !group\.regions\.length && canLockColorMask && !rebuildAirborne/.test(render),
   'airborne ordinary gear cannot reuse a sky-masked base depth buffer');
 assert.ok(/backgroundHidden = backgroundMeshes\.length && !supplementDepth \? hideObjects\(backgroundMeshes\)/.test(render),
@@ -152,6 +152,25 @@ visualSort.withVisualSort(rendererMock, actorOrder, () => {
     'near NPC portrait still covers far NPC weapon despite the weapon manual priority');
 });
 assert.strictEqual(rendererMock.transparent, null, 'actor-aware visual sort transaction restores renderer state');
+const overlayRankStart = render.indexOf('  function rankedHeldOverlayOrder(');
+const overlayRankEnd = render.indexOf('\n  function assignPortraitStencilOwners(', overlayRankStart);
+assert.ok(overlayRankStart >= 0 && overlayRankEnd > overlayRankStart, 'held overlay owner-rank adapter is present');
+const rankedHeld = new Function('xrayRule', 'portraitStencilOwner',
+  render.slice(overlayRankStart, overlayRankEnd) + '; return rankedHeldOverlayOrder;')(
+  key => X.get(key), mesh => mesh.owner);
+const farEquipment = { owner: farOwner }, nearEquipment = { owner: nearOwner };
+const baseActorSort = { ranks: actorOrder.ranks, extras: new Map() };
+const heldSort = rankedHeld(baseActorSort, [farEquipment, nearEquipment], {});
+assert.strictEqual(heldSort.extras.get(farEquipment).owner, farOwner,
+  'the far actor weapon inherits its own portrait depth rank');
+assert.strictEqual(heldSort.extras.get(nearEquipment).owner, nearOwner,
+  'the near actor hands inherit the near portrait depth rank');
+assert.strictEqual(rankedHeld(null, [farEquipment], {}), null, 'single actor worlds keep the original simple sort');
+visualSort.withVisualSort(rendererMock, heldSort, () => {
+  const farDraw = { ...weaponItem, object: farEquipment }, nearDraw = { ...handItem, object: nearEquipment };
+  assert.ok(rendererMock.transparent(farDraw, nearDraw) < 0,
+    'in the isolated held overlay the nearer actor still covers the farther actor');
+});
 X.reset();
 
 // The stencil owner rule must use manually chosen front-plane priorities, not
