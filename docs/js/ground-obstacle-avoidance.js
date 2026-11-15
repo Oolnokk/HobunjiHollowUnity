@@ -18,7 +18,7 @@
 
   function makeState() {
     return {
-      area: null, lastX: NaN, lastY: NaN, dirX: 0, dirY: 0,
+      area: null, lastX: NaN, lastY: NaN, dirX: 0, dirY: 0, planDirX: 0, planDirY: 0,
       scanAge: Infinity, routeAge: Infinity, blocked: false, clearScans: 0,
       path: null, index: 0, probes: 0, plans: 0, status: 'idle',
       output: { x: 0, y: 0, engaged: true, turnRad: 0 },
@@ -31,6 +31,7 @@
     st.path = null;
     st.index = 0;
     st.blocked = false;
+    st.planDirX = st.planDirY = 0; // Tracks the intentional direction at the last route plan.
     st.clearScans = 0;
     st.scanAge = Infinity;
     st.routeAge = Infinity;
@@ -93,7 +94,8 @@
     }
     const dx = inputX / strength, dy = inputY / strength;
     if (st.area !== area || Math.hypot(x - st.lastX, y - st.lastY) > tile * 1.8 ||
-        dx * st.dirX + dy * st.dirY < 0.82) {
+        dx * st.dirX + dy * st.dirY < 0.82 ||
+        ((st.path || st.status === 'no-route') && dx * st.planDirX + dy * st.planDirY < 0.82)) {
       reset(mode); // New area, teleport, or deliberate turn cancels the previous detour.
     }
     st.area = area;
@@ -120,6 +122,7 @@
     // 21 bounded A* searches on every frame while the stick is held.
     // A new blockage (previously 'clear') still plans immediately.
     if (st.routeAge >= REPLAN_INTERVAL_S || (!st.path && st.status !== 'no-route')) {
+      st.planDirX = dx; st.planDirY = dy; // Slow stick turns must not follow a stale route from an old bearing.
       st.path = findRoute(st, profile, x, y, dx, dy, tile, canOccupy);
       st.index = 0;
       st.routeAge = 0;
