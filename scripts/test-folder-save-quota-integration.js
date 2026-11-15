@@ -346,7 +346,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal((JSON.parse(await (await layoutFile.getFile()).text())).layout.furniture.length, 2,
     'external farm restore survives the attempted autosync unchanged');
   const explicitLoad = await first.window.LocalSaveFolder.loadFromFolder();
-  assert.equal(explicitLoad.ok, true, 'Load from Folder imports the external farm restoration');
+  assert.equal(explicitLoad.ok, true, 'Load from Folder imports the external farm restoration: ' + JSON.stringify(explicitLoad));
   assert.equal(first.window.HobunjiSaveSnapshot.capture().farmLayouts.hollow.furniture.length, 2,
     'the restored processor positions reach browser storage after explicit load');
 
