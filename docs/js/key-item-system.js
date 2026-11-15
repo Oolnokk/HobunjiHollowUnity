@@ -132,7 +132,7 @@
       }
       list.replaceChildren(fragment);
       const badge = list.parentElement?.querySelector?.('.inv-key-badge'); // The original world-only badge must describe the player-save section too.
-      if (badge) badge.textContent = 'Character + world';
+      if (badge && badge.textContent !== 'Character + world') badge.textContent = 'Character + world'; // Avoid unnecessary MutationObserver churn on repeated menu renders.
       return true;
     } catch (error) {
       global.__farmLog?.('[key-items] Could not refresh Pack key list: ' + String(error?.message || error), 'warn'); // Mobile-visible log rather than a silent UI exception.
