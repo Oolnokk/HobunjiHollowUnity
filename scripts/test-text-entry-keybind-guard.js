@@ -12,7 +12,7 @@ function source(relativePath) {
 
 const guardSource = source('docs/js/text-entry-keybind-guard.js'); // Used to execute the shared text-entry/global-keybind barrier in a tiny DOM mock.
 const loaderSource = source('docs/js/combat/combat-config-loader.js'); // Used to pin the guard before gameplay keyboard modules.
-const indexSource = source('docs/index.html'); // Used to prove the bootstrap itself executes before game.js registers its global shortcuts.
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Actual parser load order includes the feature-owned combat-config manifest.
 const listeners = new Map(); // Used to capture the guard's document listeners without requiring a browser or jsdom.
 const documentMock = {
   activeElement: null,

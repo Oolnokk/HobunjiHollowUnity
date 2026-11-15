@@ -42,7 +42,7 @@ assert.ok(game.includes('SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _
 // Both entry points must import the updated mouth-attachment scripts rather than old cached revisions.
 // Token equality is checked only for the SAME script referenced by game/editor; unrelated scripts may update independently.
 {
-  const indexHtml = fs.readFileSync('docs/index.html', 'utf8');
+  const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // The combat config loader now lives in a versioned parser-time manifest.
   const editorHtml = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
   const loaderJs = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
   const tokenFor = (source, fileName) => {

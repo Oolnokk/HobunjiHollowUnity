@@ -100,6 +100,10 @@
     return top;
   }
 
+  function stateIsSupported() {
+    return deps?.player?._freeJump?.phase === 'supported'; // Only grounded elevated movement needs full-body railing contact.
+  }
+
   function blockingReason(x, z, feetY) {
     const grid = deps.getActiveGrid?.();
     if (!grid?.length) return 'no terrain';
@@ -124,6 +128,8 @@
     }
     const area = deps.getCurrentArea();
     const access = window.GridTileAccessors; // Game's existing house, farm-building, and town-building tile collision authority.
+    if (stateIsSupported() && window.HobunjiWalkableElevation?.railBlocksBox?.(x, z, CONFIG.radius, feetY, 1.25))
+      return 'railing'; // Raised-support walking checks the whole body against railings; airborne feet can clear their tops.
     if (window.InteriorDoorTiles?.blocksBox?.(area, x, z, CONFIG.radius)) return 'closed interior door';
     for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
       if (area === 'farm' && (access?.isHouseFootprint?.(col, row) || access?.isFarmBuildingCollisionTile?.(col, row))) return 'farm building';

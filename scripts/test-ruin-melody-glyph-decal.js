@@ -121,6 +121,14 @@ assert(columnGlyphs.every(glyph=>Math.abs(glyph.position.x)<.001&&glyph.rotation
 assert(columnGlyphs.every((glyph,index)=>index===0||glyph.position.y<columnGlyphs[index-1].position.y),
   'top-to-bottom Scratchbone notes retain their chronological order');
 column.dispose();
+const carvedFace=api.create({root:new Group(),plate,notes:[0,1,2],sampleSupport,
+  surfaces:[{x:2,y:1.8,z:3,yaw:Math.PI}],backingMode:'carved'});
+assert.equal(carvedFace.group.children.length,3,'carved ruin glyphs appear directly on stone without pale plaques');
+assert.equal(carvedFace.diagnostics().vertical,true);
+const carvedFloor=api.create({root:new Group(),plate,notes:[0,1,2],bounds,sampleSupport,backingMode:'carved'});
+assert.equal(carvedFloor.group.children.length,4,'a supported floor fallback keeps one physical stone backing');
+assert.equal(carvedFloor.group.children[0].material.color,0x514b43,'the fallback stone is dark for white and yellow glyph contrast');
+carvedFace.dispose();carvedFloor.dispose();
 console.log('Procedural ruin Scratchbone glyph decals and single-column cave pillars passed.');
 
 // Explicit vertical stone faces keep notes upright and appear only on their own trigger.

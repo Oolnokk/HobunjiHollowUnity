@@ -17,7 +17,7 @@
       return {
         id: String(entry?.id || 'balcony_' + index), cells, height, tile,
         deckThickness: Math.max(.08, Math.min(.6, number(entry?.deckThickness, Math.max(.08, tile * .12)))), // Optional deck depth fits rounded log courses.
-        railHeight: Math.max(.25, Math.min(2, number(entry?.railHeight, .72))),
+        railHeight: Math.max(.25, Math.min(2, number(entry?.railHeight, .46))),
         railings: entry?.railings !== false,
         access: entry?.access || null, // A furniture/interior interaction handles the climb; the deck does not create a ground stair.
       };

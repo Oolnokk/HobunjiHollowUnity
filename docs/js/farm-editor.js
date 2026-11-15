@@ -445,6 +445,59 @@
         }
       }
       window.FarmhouseRoomPlanner?.restore?.(layout.farmhousePartitions); // Older saves default to no manual subdivisions.
+      // Restore saved house footprint BEFORE processing stations: the temporary starter
+      // house at (26,2) can occupy saved processor tiles even when the actual saved
+      // house was moved. Placement validation must see final, not bootstrap, footprints.
+      // House pieces — initWorldObjects() already seeded the starter piece at
+      // its hard default position before this runs. A modern save's own
+      // housePieces array may have moved the starter (a legacy "Move
+      // Building" save carried forward) and/or built additional deed
+      // pieces; an old pre-modular-house save only ever has the legacy
+      // houseCol/houseRow fields, which just repositions the starter with
+      // nothing else to restore.
+      let housePieces = deps.getHousePieces(); // Registry is replaced by clearAll; refresh this reference before populating or reconciling pieces.
+      let starterEntry = housePieces.find(p => p.id === 'house_starter');
+      if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
+        const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
+        const housePieceCatalog = deps.getHousePieceCatalog();
+        if (savedStarter) {
+          // Restore the saved records themselves instead of reseeding a
+          // default starter pair and skipping pieceKey:'starter'. The old
+          // path restored the main room but silently reset a rearranged
+          // starter annex to its default position on every reload.
+          window.HousePieces.clearAll();
+          housePieces = deps.getHousePieces(); // clearAll replaces the registry array; never append saved pieces to the discarded one.
+          layout.housePieces.forEach(saved => {
+            const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
+            if (!def || !saved.id) return;
+            const entry = {
+              id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null,
+              features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
+            };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+          starterEntry = housePieces.find(p => p.id === 'house_starter');
+        } else {
+          // Transitional saves with deeds but no explicit main-room record.
+          layout.housePieces.forEach(saved => {
+            if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
+            const def = housePieceCatalog[saved.pieceKey];
+            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null, features: saved.features || [] };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+        }
+      } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
+                 && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
+        window.HousePieces.clearAll();
+        window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
+        housePieces = deps.getHousePieces(); // Legacy relocation also replaces the whole registry.
+      }
       (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
         // Guarded per-entry: one malformed saved processing station must not
         // throw and abort the rest of this restore (decor, house pieces,
@@ -503,54 +556,6 @@
           console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
         }
       });
-      // House pieces — initWorldObjects() already seeded the starter piece at
-      // its hard default position before this runs. A modern save's own
-      // housePieces array may have moved the starter (a legacy "Move
-      // Building" save carried forward) and/or built additional deed
-      // pieces; an old pre-modular-house save only ever has the legacy
-      // houseCol/houseRow fields, which just repositions the starter with
-      // nothing else to restore.
-      const housePieces = deps.getHousePieces();
-      let starterEntry = housePieces.find(p => p.id === 'house_starter');
-      if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-        const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
-        const housePieceCatalog = deps.getHousePieceCatalog();
-        if (savedStarter) {
-          // Restore the saved records themselves instead of reseeding a
-          // default starter pair and skipping pieceKey:'starter'. The old
-          // path restored the main room but silently reset a rearranged
-          // starter annex to its default position on every reload.
-          window.HousePieces.clearAll();
-          layout.housePieces.forEach(saved => {
-            const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
-            if (!def || !saved.id) return;
-            const entry = {
-              id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-              roofAxis: saved.roofAxis || null,
-              features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
-            };
-            housePieces.push(entry);
-            window.HousePieces.spawnEntry(entry);
-          });
-          starterEntry = housePieces.find(p => p.id === 'house_starter');
-        } else {
-          // Transitional saves with deeds but no explicit main-room record.
-          layout.housePieces.forEach(saved => {
-            if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
-            const def = housePieceCatalog[saved.pieceKey];
-            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-              roofAxis: saved.roofAxis || null, features: saved.features || [] };
-            housePieces.push(entry);
-            window.HousePieces.spawnEntry(entry);
-          });
-        }
-      } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
-                 && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
-        window.HousePieces.clearAll();
-        window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
-      }
       // Manual entrances/chimneys recovered by removal or a wall junction —
       // independent of any one piece's position, so restored unconditionally
       // here rather than inside either branch above.

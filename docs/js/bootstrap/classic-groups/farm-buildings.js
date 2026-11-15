@@ -5,7 +5,7 @@
   const scriptUrls = [
     "js/farm-buildings.js?v=20261031furniturecontrols1",
     "js/farm-troughs.js?v=20261111h572c727",
-    "js/house-pieces.js?v=20261115h085cada&surfaceUv=20261113terrainpass2"
+    "js/house-pieces.js?v=20261115activeBuffCombined1&surfaceUv=20261113terrainpass2"
   ]; // Farm building scripts and their independent cache versions.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   document.write(scriptUrls.map(src => '<script src="' + src.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"><\/script>').join('\n'));
