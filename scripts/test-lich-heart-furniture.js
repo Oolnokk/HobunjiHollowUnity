@@ -40,9 +40,14 @@ for (const fixture of fixtures) {
   const part = record.parts[0]; // Transparent, camera-facing piece supports an existing recognized decal surface.
   assert.equal(part.kind, 'transparentBillboardSurface');
   assert.equal(part.surfaceOpacity, 0);
+  assert.equal(part.transform.sx, .325, 'half-sized billboard width');
+  assert.equal(part.transform.sy, .325, 'half-sized billboard height');
   assert.equal(record.recognizedSurfaces.length, 1);
   const surface = record.recognizedSurfaces[0]; // Surface ID must agree with the saved decal attachment.
   assert.equal(surface.partId, part.id);
+  assert.equal(surface.area, .325 * .325, 'recognized billboard area reflects the smaller geometry');
+  assert.equal(surface.bounds.minU, -.1625);
+  assert.equal(surface.bounds.maxV, .1625);
   assert.equal(record.decals.length, 1);
   const decal = record.decals[0]; // The glyph's alpha PNG and emissive inverse color.
   assert.equal(decal.surfacePartId, part.id);
@@ -50,8 +55,10 @@ for (const fixture of fixtures) {
   assert.equal(decal.imageName, motif);
   assert.equal(decal.imageSource, '../../../docs/assets/patterns/' + motif);
   assert.ok(fs.existsSync(path.join(repoRoot, 'docs/assets/patterns', motif)), 'motif PNG actually exists: ' + motif);
-  assert.equal(decal.glow.off[0].toLowerCase(), inverseInk.toLowerCase(), fixture.key + ' decal matches Body C');
-  assert.equal(decal.glow.on[0].toLowerCase(), inverseInk.toLowerCase(), fixture.key + ' active decal stays the same ink');
+  assert.equal(decal.glow, undefined, 'static glyph does not depend on puzzle glow state');
+  assert.equal(decal.glyphInk?.enabled, true, 'standalone recolor is enabled');
+  assert.equal(decal.glyphInk.color.toLowerCase(), inverseInk.toLowerCase(), fixture.key + ' standalone glyph ink matches Body C');
+  assert.ok(decal.glyphInk.glowStrength > 0 && decal.glyphInk.glowRadius > 0, 'visible spread and glow');
   assert.equal(record.particleEmitters.length, 1);
   const glow = record.particleEmitters[0]; // One stationary, part-attached radial emitter; no particle motion or physical light.
   assert.equal(glow.type, 'glowingSphere');
