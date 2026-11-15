@@ -30,7 +30,7 @@ class Mesh { constructor(geometry, material) { this.geometry = geometry; this.ma
 class Material { constructor({ color }) { this.color = color; } }
 class TextureLoader { load(path) { return { path }; } }
 
-function harness(roll, legacyPlacement = null) {
+function harness(roll, legacyPlacement = null, disableMetals = false) {
   const mapId = 'buried_tier_test'; // Shared active zone ID used by scatter, lock targeting, and chest removal.
   const TILE = { GRASS: 'grass', TRENCH: 'trench' }; // Distinguishes a buried chest from one ready to open.
   const tile = { type: TILE.GRASS, elevTier: 0 }; // Single legal diggable tile.
@@ -77,7 +77,7 @@ function harness(roll, legacyPlacement = null) {
   const api = context.window.WildTreasure; // The actual browser-facing API under test.
   const deps = {
     calendar: { day: 1 }, rnd: () => 0.01, getLootPools: () => ({
-      treasureChest: { entries: [{ id: 'potion', chance: 0 }, { id: 'clothing', chance: 0 }, { id: 'combatManual', chance: 0 }] },
+      treasureChest: { entries: [{ id: 'metalBars', chance: disableMetals ? 0 : 1 }, { id: 'potion', chance: 0 }, { id: 'clothing', chance: 0 }, { id: 'combatManual', chance: 0 }] },
     }), lootShopWorldState: () => ({}),
     VERDIGRIS_METAL_KEYS: ['tin'], MYSTERY_DYE_ITEM_KEY_BY_POOL: { test: 'dyeTest' },
     metalBarItemKey: metal => metal + 'Bar', METAL_DEFS: { tin: { label: 'Tin' } },
@@ -132,6 +132,13 @@ for (const [roll, tier] of [[0, 1], [0.619, 1], [0.62, 2], [0.869, 2], [0.87, 3]
   assert.deepEqual(JSON.parse(JSON.stringify(loot)), JSON.parse(JSON.stringify(loot)), 'captured bundle stays JSON-compatible');
   assert.equal(chest.onAction('obj_open_treasure_chest').ok, false, 'stale action cannot duplicate the relic or other rewards');
 }
+
+const disabledMetals = harness(0.999, null, true); // Simulates an editor-authored metalBars entry explicitly disabled while rolling a rare Ancient chest.
+assert.equal(disabledMetals.placement.tier, 4);
+assert.equal(disabledMetals.placement.loot.metalKeys.length, 0, 'higher-tier extra bars respect a disabled base metal loot roll');
+disabledMetals.dig().onAction('obj_open_treasure_chest');
+disabledMetals.started[0].onSuccess({ bonusDrops: 0 });
+assert.equal(disabledMetals.inventory.tinBar, undefined, 'opening an Ancient chest does not bypass disabled metal drop settings');
 
 const legacy = harness(0.99, { col: 0, row: 0, found: false, loot: { metalKeys: ['tin'], gold: 4 } }); // Pre-tier chest save must keep its original reward.
 const legacyChest = legacy.dig();
