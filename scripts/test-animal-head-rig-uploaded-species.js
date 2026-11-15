@@ -17,6 +17,7 @@ const baseMap = {
   puktuk: { legacy: true },
   'gar-wolf': { legacy: true },
   'dabinggi-hound': dabinggiBase,
+  nazgraku: { enabled:true,pivot:{x:.421875,y:.42592592592592593},weightMap:{marker:'nazgraku-head'} }, // Original head data must be retained.
 };
 const renderer = {
   ANIMAL_HEAD_RIGS: baseMap,
@@ -47,7 +48,7 @@ const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
 assert.match(String(api.version), /uploads/, 'uploaded rig layer reports its data version');
 
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra']; // Every intended species gets an independent shoulder rig.
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'uumkaoii', 'nazgraku']; // Every intended species gets an independent shoulder rig.
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
 assert.equal(puktuk.pivot.x, .484375, 'Puktuk retains its original head pivot');
 assert.equal(puktuk.pivot.y, .5);
@@ -70,10 +71,12 @@ const gar = renderer.ANIMAL_HEAD_RIGS['gar-wolf'];
 assert.equal(gar.pivot.x, .328125, 'Gar-wolf keeps its original head pivot');
 const dabinggi = renderer.ANIMAL_HEAD_RIGS['dabinggi-hound'];
 assert.equal(dabinggi.ownHeadMarker, 'dabinggi-head-stays-dabinggi', 'Dabinggi keeps its own head rig');
+assert.equal(renderer.ANIMAL_HEAD_RIGS.nazgraku.weightMap.marker, 'nazgraku-head', 'Nazgraku keeps its own painted neck');
+assert.equal(renderer.ANIMAL_HEAD_RIGS.uumkaoii.weightMap.width, 128, 'Uumkao\'ii retains its own original detailed head paint');
 const grehlr = renderer.ANIMAL_HEAD_RIGS.grehlr;
 assert.equal(grehlr.pivot.x, .3615050095996143);
 assert.equal(grehlr.shoulderRest.frameShiftX, .54, 'Grehlr remains unchanged');
 const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
 assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
-console.log('uploaded animal head rigs: six independent Puktuk shoulder copies passed');
+console.log('uploaded animal head rigs: eight independent Puktuk shoulder copies passed');
