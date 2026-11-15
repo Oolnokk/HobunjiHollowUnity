@@ -1943,13 +1943,19 @@
       // actor's elevation band. Mixed terrain keeps cliff/wall faces solid.
       shader.fragmentShader = fragment
         .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayTileCount;\nuniform vec2 uHobunjiXrayTiles[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
-        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE} && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) {
+        // enabled 0 = off, 1 = discard the holder's nearby floor (depth
+        // rebuild), 2 = keep ONLY that floor (stencil punch of the floor
+        // that is frontmost in the existing depth; see punchHeldGroupFloor).
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nfloat hobunjiXrayNearFloor = 0.0;
+if (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE} && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) {
   vec2 groundTile = floor(vHobunjiXrayWorldXZ - vHobunjiXrayWorldNormal.xz * (uHobunjiXrayAnyFacing * ${XRAY_TILE_EDGE_EPSILON}));
   for (int i = 0; i < ${XRAY_MAX_BATCH_TILES}; ++i) {
     if (i >= uHobunjiXrayTileCount) break;
-    if (all(lessThanEqual(abs(groundTile - uHobunjiXrayTiles[i]), vec2(${XRAY_TILE_RADIUS}.0)))) discard;
+    if (all(lessThanEqual(abs(groundTile - uHobunjiXrayTiles[i]), vec2(${XRAY_TILE_RADIUS}.0)))) { hobunjiXrayNearFloor = 1.0; break; }
   }
-}`);
+}
+if (uHobunjiXrayElevationEnabled > 1.5) { if (hobunjiXrayNearFloor < 0.5) discard; }
+else if (hobunjiXrayNearFloor > 0.5) discard;`);
       shader.uniforms.uHobunjiXrayActorElevation = state.uniforms.elevation;
       shader.uniforms.uHobunjiXrayElevationEnabled = state.uniforms.enabled;
       shader.uniforms.uHobunjiXrayAnyFacing = state.uniforms.anyFacing;
@@ -1961,7 +1967,7 @@
     material.onBeforeCompile.__hobunjiXrayMaterialOwner = material; // The function belongs to this material even if another clone shares its metadata reference.
     material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
-      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v4';
+      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v5';
     };
     material.customProgramCacheKey.__hobunjiXrayBaseCacheKey = previousCacheKey; // Keeps prior renderer/Jigsaw program features on clones.
     material.needsUpdate = true;
@@ -2010,15 +2016,154 @@
     return seen;
   }
 
-  function setGroundElevationFilter(materials, group) {
+  function setGroundElevationFilter(materials, group, mode = 1) {
     for (const material of materials) {
       const { uniforms } = material.userData.hobunjiXrayElevationShader;
-      uniforms.enabled.value = group ? 1 : 0;
+      uniforms.enabled.value = group ? mode : 0;
       if (!group) continue;
       uniforms.elevation.value = group.elevation;
       uniforms.tileCount.value = group.regions.length;
       uniforms.tiles.value = group.tiles;
     }
+  }
+
+  // ── Floor punch: rebuild only the holder's 3x3-tile patch ────────────────
+  // An x-ray group used to clear depth inside its scissor and redraw every
+  // occluder there with the holder's nearby floor filtered out. Only that floor
+  // (XRAY_TILE_RADIUS around the holder, at its standing elevation) is ever
+  // exempt, so when the original depth can be copied back afterwards
+  // (ScissorDepthSnapshot) the group now keeps the existing depth and:
+  //   1. stencil-marks pixels where that nearby floor is the frontmost surface
+  //      (ground layer only, each ground material's own program with its
+  //      filter inverted, depth-test LEQUAL, no depth/colour writes),
+  //   2. resets depth to far on the marked pixels with one quad (clearing the
+  //      mark as it goes),
+  //   3. redraws, filtered as before, only the objects that touch the patch
+  //      column, for whatever sits behind that floor.
+  // Everything outside the patch keeps the depth it already had. Without a
+  // depth snapshot (WebGL1, outlines off) the original clear-and-redraw runs.
+  // HeldObjectRenderOrder.setFloorPunchEnabled(false) is the A/B switch.
+  const FLOOR_PUNCH_STENCIL_BIT = 0x80; // Unused by the held/foot/tint stencil masks (bits 0-1 and small refs).
+  const FLOOR_PUNCH_PATCH_MARGIN = 1.5; // World units past the 3x3 patch: oblique rays and parts poking past it.
+  let floorPunchEnabled = true;
+  let floorPunchResources = null;
+  let floorPunches = 0, floorPunchFallbacks = 0, floorPunchRefillHidden = 0, floorPunchRefillKept = 0, floorPunchDepthResets = 0;
+  let floorPunchBox = null;
+
+  function ensureFloorPunchResources() {
+    if (floorPunchResources) return floorPunchResources;
+    if (!THREE?.ShaderMaterial || !THREE.PlaneGeometry || !THREE.Scene || !THREE.OrthographicCamera) return null;
+    const material = new THREE.ShaderMaterial({
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 1.0, 1.0); }', // Exactly the far plane.
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+      colorWrite: false, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
+      stencilWrite: true, stencilFunc: THREE.EqualStencilFunc, stencilRef: FLOOR_PUNCH_STENCIL_BIT,
+      stencilFuncMask: FLOOR_PUNCH_STENCIL_BIT, stencilWriteMask: FLOOR_PUNCH_STENCIL_BIT,
+      stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.ZeroStencilOp,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    quad.frustumCulled = false;
+    const quadScene = new THREE.Scene();
+    quadScene.add(quad);
+    floorPunchResources = { quadScene, quadCamera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    return floorPunchResources;
+  }
+
+  // Stencil punch + far-depth reset for one group. Returns false (and touches
+  // nothing) when it cannot run, so the caller falls back to clear-and-redraw.
+  function punchHeldGroupFloor(renderer, scene, camera, group, groundMeshes, groundMaterials, colorBuffer) {
+    if (!floorPunchEnabled || !group?.regions?.length || !groundMaterials?.size) return false;
+    const resources = ensureFloorPunchResources();
+    if (!resources || !colorBuffer?.setMask || !colorBuffer?.setLocked) return false;
+    // A ground mesh whose material has no compiled filter would mark ALL of its
+    // frontmost pixels; leave it out of the punch (its floor keeps occluding).
+    // Ground that does not touch the patch cannot contain the nearby floor.
+    const hidden = new Map();
+    for (const mesh of groundMeshes) {
+      if (!mesh?.visible) continue;
+      let filtered = true;
+      forEachMaterial(mesh.material, material => { if (!material?.userData?.hobunjiXrayElevationShader?.supported) filtered = false; });
+      if (!filtered || touchesFloorPatch(mesh, group, 0.05) === 0) { hidden.set(mesh, true); mesh.visible = false; }
+    }
+    const saved = [];
+    for (const material of groundMaterials) {
+      if (!material?.userData?.hobunjiXrayElevationShader?.supported) continue;
+      saved.push([material, material.colorWrite, material.depthWrite, material.depthTest, material.depthFunc, material.stencilWrite,
+        material.stencilFunc, material.stencilRef, material.stencilFuncMask, material.stencilWriteMask, material.stencilFail, material.stencilZFail, material.stencilZPass]);
+      material.colorWrite = false; material.depthWrite = false; material.depthTest = true; material.depthFunc = THREE.LessEqualDepth;
+      material.stencilWrite = true; material.stencilFunc = THREE.AlwaysStencilFunc; material.stencilRef = FLOOR_PUNCH_STENCIL_BIT;
+      material.stencilFuncMask = 0xff; material.stencilWriteMask = FLOOR_PUNCH_STENCIL_BIT;
+      material.stencilFail = THREE.KeepStencilOp; material.stencilZFail = THREE.KeepStencilOp; material.stencilZPass = THREE.ReplaceStencilOp;
+    }
+    const oldMask = camera.layers.mask;
+    setGroundElevationFilter(groundMaterials, group, 2);
+    colorBuffer.setMask(false);
+    colorBuffer.setLocked(true);
+    try {
+      camera.layers.mask = GROUND_REPLAY_MASK;
+      rawRender.call(renderer, scene, camera);
+      rawRender.call(renderer, resources.quadScene, resources.quadCamera);
+      floorPunches++;
+    } finally {
+      colorBuffer.setLocked(false);
+      colorBuffer.setMask(true);
+      camera.layers.mask = oldMask;
+      setGroundElevationFilter(groundMaterials, group, 1); // The local refill draws with the ordinary filter.
+      for (const [material, colorWrite, depthWrite, depthTest, depthFunc, stencilWrite, stencilFunc, stencilRef, stencilFuncMask, stencilWriteMask, stencilFail, stencilZFail, stencilZPass] of saved) {
+        Object.assign(material, { colorWrite, depthWrite, depthTest, depthFunc, stencilWrite, stencilFunc, stencilRef, stencilFuncMask, stencilWriteMask, stencilFail, stencilZFail, stencilZPass });
+      }
+      restoreVisibility(hidden);
+    }
+    return true;
+  }
+
+  // 1 = the object's world box touches a region's patch column (3x3 tiles +
+  // margin, any height), 0 = it does not, -1 = unknown bounds.
+  // With belowFloor set, an object must also reach below the group's floor
+  // height: a punched pixel is one where that floor was the frontmost
+  // surface, and with the camera above it anything farther along the same
+  // ray lies under the floor plane.
+  function touchesFloorPatch(object, group, margin, belowFloor = false) {
+    if (!floorPunchBox) floorPunchBox = new THREE.Box3();
+    let minX, maxX, minZ, maxZ, minY;
+    const sphere = instancedReplaySphere(object);
+    if (sphere) { minX = sphere.center.x - sphere.radius; maxX = sphere.center.x + sphere.radius; minZ = sphere.center.z - sphere.radius; maxZ = sphere.center.z + sphere.radius; minY = sphere.center.y - sphere.radius; }
+    else {
+      const geometry = object.geometry;
+      if (geometry && !geometry.boundingBox && geometry.computeBoundingBox) geometry.computeBoundingBox();
+      const box = geometry?.boundingBox;
+      if (!box || !(box.min.x <= box.max.x)) return -1;
+      floorPunchBox.copy(box).applyMatrix4(object.matrixWorld);
+      minX = floorPunchBox.min.x; maxX = floorPunchBox.max.x; minZ = floorPunchBox.min.z; maxZ = floorPunchBox.max.z; minY = floorPunchBox.min.y;
+    }
+    if (!(minX <= maxX && minZ <= maxZ)) return -1; // NaN bounds.
+    if (belowFloor && Number.isFinite(group.elevation) && minY > group.elevation + XRAY_ELEVATION_TOLERANCE) return 0; // Wholly above the floor.
+    const R = XRAY_TILE_RADIUS;
+    for (const region of group.regions) {
+      if (maxX >= region.col - R - margin && minX <= region.col + R + 1 + margin && maxZ >= region.row - R - margin && minZ <= region.row + R + 1 + margin) return 1;
+    }
+    return 0;
+  }
+
+  // The local refill after a punch: only non-ground objects that touch the
+  // patch column and reach below the floor (sunken parts, anything that can
+  // sit between the punched floor and a held part). Ground is left out: what lies behind the holder's
+  // own floor is underground and already farther than its parts. Unbounded
+  // objects stay: drawing a real occluder again only restores depth it had.
+  function hideOutsideFloorPatch(candidates, group) {
+    if (!candidates?.length || !group?.regions?.length) return null;
+    let hidden = null;
+    for (const object of candidates) {
+      if (!object.visible) continue;
+      const ground = hasLayer(object, GROUND_REPLAY_LAYER);
+      const touches = ground ? 0 : touchesFloorPatch(object, group, FLOOR_PUNCH_PATCH_MARGIN, true);
+      if (touches !== 0) { floorPunchRefillKept++; continue; }
+      if (!hidden) hidden = new Map();
+      hidden.set(object, true);
+      object.visible = false;
+    }
+    if (hidden) floorPunchRefillHidden += hidden.size;
+    return hidden;
   }
 
   // Ordinary parts need repaired cutout/cover depth, but opaque world depth is
@@ -2214,6 +2359,7 @@
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
     let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
     let nearSnapshotFailed = false;
+    let baseDepthTouched = false; // A depth-modifying group already ran since the snapshot.
     let portraitGearIds = null; // Null without 8-bit stencil; otherwise maps held weapon art to its exact character owner.
     try {
       distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
@@ -2266,6 +2412,7 @@
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
         if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
         const supplementDepth = !group.regions.length && canLockColorMask; // The ordinary group runs first, while complete base depth is intact.
+        let punched = false; // Floor punch kept the existing depth (see punchHeldGroupFloor).
         if (supplementDepth) ordinaryDepthClearsAvoided++;
         else {
           // Taken after any ordinary supplement, so its repaired cutout/cover depth is part of what comes back.
@@ -2273,7 +2420,14 @@
             nearToken = nearReplay.save(renderer, scissored ? scissorRect : null);
             if (nearToken) nearReplaySnapshots++; else nearSnapshotFailed = true;
           }
-          renderer.clearDepth();
+          if (nearToken && group.regions.length && canLockColorMask && floorPunchEnabled) {
+            // A previous group left its own punch/refill/held depth behind: start again from the original.
+            const pristine = !baseDepthTouched || (nearReplay.restore(renderer, nearToken, scissored ? scissorRect : null) && ++floorPunchDepthResets);
+            punched = !!pristine && punchHeldGroupFloor(renderer, scene, camera, group, groundMeshes, groundMaterials, colorBuffer);
+            if (!punched) floorPunchFallbacks++;
+          }
+          if (!punched) renderer.clearDepth();
+          baseDepthTouched = true;
         }
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
         const depthMaterialStates = canLockColorMask
@@ -2286,11 +2440,13 @@
         window.PerfProfiler?.end(prepPerf);
         let groupCulled = null; // Only depth needs the bounded world occluder list.
         let farCulled = null; // Objects wholly behind this group's held parts; the saved depth brings them back.
+        let patchCulled = null; // After a floor punch, only objects touching the holder's patch are redrawn.
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
+          if (punched) patchCulled = hideOutsideFloorPatch(nearCandidates, group);
           if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           camera.layers.mask = originalCameraMask;
@@ -2300,6 +2456,7 @@
           nonGroundDepthReplayCount++;
         } finally {
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
+          if (patchCulled) restoreVisibility(patchCulled);
           if (redundantDepth) restoreVisibility(redundantDepth);
           if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
@@ -2552,6 +2709,9 @@
       for (const group of groups) {
         const groupScissored = scissorActive && applyElevationScissor(renderer, camera, group.meshes, glState, shellPadding);
         if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
+        // No floor punch here: by the shell pass the saved depth also holds the
+        // PNG-silhouette occluder pass, which the clear-and-redraw below removes
+        // around the holder. Keeping it hid hand/foot outlines (seen in testing).
         renderer.clearDepth();
         depthWasCleared = true;
         scene.overrideMaterial = null;
@@ -2788,7 +2948,7 @@
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -2868,6 +3028,7 @@
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
+    setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
     setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },

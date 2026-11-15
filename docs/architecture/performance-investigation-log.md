@@ -73,10 +73,25 @@ screenshots showed no visible difference. `HeldObjectRenderOrder.setReplayPartic
 ground the way the rest of the body already is. `scripts/test-held-replay-participants.js` runs the real ownership
 code on a fake rig hierarchy.
 
-**Next lever (not done):** because only that 3x3-tile patch is ever x-rayed, the depth rebuild does not need to
-redraw every occluder in the holder's screen rectangle. With the existing `ScissorDepthSnapshot` copy, a replay could
-keep the saved depth, punch out only the holder's nearby floor (depth-equal draw writing far depth), and redraw just
-the objects inside that patch. That would remove most remaining replay draws, but it rewrites the core of the module.
+**Floor punch (15 Nov 2026, base replay only).** Because only that 3x3-tile patch is ever x-rayed, an x-ray group in
+the base held replay no longer clears depth and redraws every occluder in its scissor when `ScissorDepthSnapshot` can
+copy the original back. It keeps the existing depth, stencil-marks (bit 0x80) pixels where the holder's nearby floor
+is frontmost by drawing only ground that touches the patch through each ground material's own program with the x-ray
+filter inverted (`enabled = 2`, depth LEQUAL, no depth/colour writes), resets those pixels to far depth with one quad
+(clearing the mark), then redraws only non-ground objects in the patch column that reach below the floor (with the
+camera above it, anything behind a frontmost floor pixel lies under the floor plane). Later groups restore the saved
+depth first. Synchronous frames rendered into a depth-stencil target like the game's: **0 pixels differ** in town and
+the western slope, the farm within its own frame-to-frame noise. Real frames: base-replay draws town 227 -> 204,
+western slope 66 -> 58, i.e. about 2% of the whole frame. The gain is small because the near-only cull and the
+participant rule had already made the rebuild local; much of what remains is the holders' own skinned rig parts,
+whose bounds are unknown and are kept conservatively.
+
+**Not applied to the shell outline replay:** by then the saved depth also contains the PNG-silhouette occluder pass,
+which the old clear-and-redraw removed around the holder. Keeping it hid hand/foot outlines (caught by comparing
+paused real frames; a foot lost its black shell). The shell replay keeps the clear-and-redraw.
+`HeldObjectRenderOrder.setFloorPunchEnabled(false)` is the A/B switch; `snapshot().floorPunch` has counts.
+`scripts/test-held-floor-punch.js` runs the real helpers; `test-held-near-replay-depth-snapshot.js` covers the
+compositor integration (no clear, patch cull per group, depth reset before a second group, fallbacks).
 
 Also: replay-inert detection now covers sprites with alpha cutoffs (sun/moon; only meshes get depth forced for
 cutouts) and Points (campfire/bonfire particles), and, only when the replay restores depth by copy, objects whose

@@ -124,7 +124,7 @@ const begin = heldSource.indexOf('  let ordinaryDepthLeavesSkipped =');
 const end = heldSource.indexOf('  function isShellOutlinePass(', begin);
 assert(begin > 0 && end > begin);
 
-function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}) {
+function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch = false, twoGroups = false } = {}) {
   const nearRock = mesh(3), farMesa = mesh(60, 5), straddling = mesh(11, 2), unbounded = { isMesh: true, visible: true, children: [], userData: {}, matrixWorld: at(90) };
   const cover = mesh(4), hand = mesh(10, 0.5, handExtra);
   const boxed = (depth, zMin, zMax) => mesh(depth, 100, { geometry: { boundingSphere: new Sphere(0, 100), boundingBox: { min: { x: -90, y: 0, z: zMin }, max: { x: 90, y: 0, z: zMax } } } });
@@ -146,7 +146,11 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
     window: { ScissorDepthSnapshot: fake }, THREE: { Sphere, Vector3: Vec3, Matrix4 }, objectProto: { onBeforeRender: undefined }, internalReplay: false, Map, Set, Infinity, Number, Math,
     lastBaseStencilBits: 0, replayScissorEnabled: scissored, replayCullEnabled: false, scissorRect: { x: 1, y: 2, z: 3, w: 4 },
     replayScissorRect: () => scissored, setReplayCullFrustum: () => false, scissoredReplayCount: 0, applyElevationScissor: () => false, restoreRendererScissor() {},
-    buildXrayGroups: () => ({ groups: [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
+    buildXrayGroups: () => ({ groups: twoGroups ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }, { meshes: [hand], regions: [{ col: 9, row: 9 }] }] : [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
+    // Floor punch (helpers live outside this slice): stubbed so the compositor's integration is what is tested.
+    floorPunchEnabled: punch, floorPunchFallbacks: 0, floorPunchDepthResets: 0,
+    punchHeldGroupFloor: (_r, _s, _c, group) => { log.push('punch:' + group.regions[0].col); return true; },
+    hideOutsideFloorPatch: (candidates, group) => { log.push('patch:' + group.regions[0].col + ':' + (candidates?.length ?? 'none')); return null; },
     collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => false,
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Snapshot tests stub the unrelated owner shader clipping transaction.
@@ -169,6 +173,20 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false } = {}
   assert.equal(camera.layers.mask, 1); assert.equal(scope.internalReplay, false);
   const counters = vm.runInContext('({ nearReplayFarCulled, nearReplaySnapshots, nearReplayFallbacks })', scope); // Module-level lets are not context properties.
   return { draws, log, nearRock, farMesa, straddling, unbounded, cover, hand, wideFarFloor, wideNearFloor, counters };
+}
+
+// ── Floor punch: keep the saved depth, punch the holder's floor, redraw only its patch ─
+{
+  const { log } = baseFixture({ punch: true, twoGroups: true });
+  assert(!log.includes('clear'), 'a punched group never clears depth: ' + log.join(' '));
+  assert.deepEqual(log.filter(e => typeof e === 'string' && /^(punch|patch)/.test(e)).map(e => e.startsWith('patch') ? e.replace(/:\d+$/, ':n') : e), ['punch:0', 'patch:0:n', 'punch:9', 'patch:9:n'], 'each group punches its own floor, then culls the redraw to its patch (near candidates)');
+  const restores = log.filter(e => Array.isArray(e) && e[0] === 'restore');
+  assert.equal(restores.length, 2, 'the second group starts again from the saved depth, and the final copy still runs');
+  assert(log.indexOf('punch:9') > log.findIndex(e => Array.isArray(e) && e[0] === 'restore'), 'the reset happens before the second punch');
+  const fallback = baseFixture({ punch: true, snapshot: 'unsupported' }).log;
+  assert(fallback.includes('clear') && !fallback.some(e => /^punch/.test(e)), 'without a depth snapshot the original clear-and-redraw runs');
+  const off = baseFixture({ punch: false }).log;
+  assert(off.includes('clear') && !off.some(e => /^punch/.test(e)), 'setFloorPunchEnabled(false) restores the old path');
 }
 
 // Verify the production affine depth bound against the former eight-corner calculation.
