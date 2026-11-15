@@ -83,6 +83,11 @@ steering.reset('foot');
 assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
   'facing a nearby interactable does not steer the player away from its action');
 assert.equal(steering.debugSnapshot().foot.status, 'yielding');
+player.angle = Math.PI / 2;
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'a nearby interaction still suppresses foot avoidance while strafing across its facing');
+player.angle = 0;
 context.window.WorldPopupText = { debugSnapshot: () => ({ interactionRows: [] }) };
 context.window.ClimbSystem = { getClimbTarget: () => ({ type: 'wall' }), getWorldClimbTarget: () => null };
 steering.reset('foot');
@@ -97,7 +102,16 @@ context.window.PlayerJump = { hasJumpableSupportAhead: () => false };
 steering.reset('foot');
 player.angle = Math.PI / 2;
 assert(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60),
-  'an object outside player facing does not claim a deliberate stop');
+  'without an actual faced jump or action target, walking can still slide');
+let jumpFacingY = 0; // Captures what direction the native jump support checker receives.
+context.window.PlayerJump = { hasJumpableSupportAhead: (_x, _y, _dx, dy) => {
+  jumpFacingY = dy;
+  return dy > 0.95;
+} };
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'jumpable object directly in view takes priority over sideways held movement');
+assert(jumpFacingY > 0.95, 'jump support checks the look direction rather than the strafe direction');
 player.angle = 0;
 context.window.InteriorDoorTiles = { blocksBox: () => true };
 steering.reset('foot');
