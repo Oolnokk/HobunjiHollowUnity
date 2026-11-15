@@ -857,7 +857,17 @@
         _lastSaveWork = { written: 0, unchanged: delta.digests.size };
         _unchangedAutosavesSkipped++;
         _lastAction = 'autosync-skipped-unchanged';
+        // Browser edits can arrive while the disk metadata checks await I/O.
+        // Don't hide them by replacing the change poll baseline silently.
+        const browserChangedWhileChecking = Array.isArray(saveSnapshot.browserBaselineParts)
+          ? !browserFingerprintMatches(window.HobunjiSaveSnapshot?.browserCacheParts?.(), saveSnapshot.browserBaselineParts)
+          : saveSnapshot.browserBaselineFingerprint !== undefined
+            && window.HobunjiSaveSnapshot?.fingerprint?.() !== saveSnapshot.browserBaselineFingerprint;
         _lastObservedFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
+        if (browserChangedWhileChecking && _autoSyncArmed) {
+          _lastBrowserMirrorWarning = 'Primary folder unchanged; newer browser changes made during the disk check were queued for saving.';
+          scheduleChangeSync(); // Save the new data instead of treating the stale snapshot as the last version.
+        }
         notify();
         return getStatus(); // Do not churn manifest, canonical files, browser mirrors or recovery checkpoints.
       }
