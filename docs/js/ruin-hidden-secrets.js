@@ -117,12 +117,13 @@
       if(!composer?.generate||!composer?.createSession)return false;
       const plate=box('unmarked-music-pressure-stone-'+rec.id,.9,.075,.9,x,floor+.042,z,mat);
       rec.plate=plate;rec.platePoint={x,z}; // Nearly flush, no glowing glyph on the trigger itself.
-      const song=composer.generate(rec.id+':melody',{difficulty:composer.ruinDifficulty?.(options.ruinTier)||3});
+      const song=composer.generate(rec.id+':melody',{difficulty:composer.ruinDifficulty?.(options.ruinTier)??3});
       rec.notes=song.notes.map(note=>note.index);
       const glyphs=root.RuinMelodyGlyphDecal?.create?.({
         root:group,plate:{x,y:floor,z},notes:rec.notes,backingMode:'carved',
         bounds:{minX:room.x,maxX:room.x+room.w,minZ:room.z,maxZ:room.z+room.d},
-        sampleSupport:()=>({y:floor}),seed:hash(rec.id+':melody-art')
+        sampleSupport:(px,pz)=>{const sample=DS?.sampleSupport?.(px,pz,{minY:floor-.5,maxY:floor+.5,pad:.02});
+          return typeof DS?.sampleSupport==='function'?sample||null:{y:floor};},seed:hash(rec.id+':melody-art') // Only actual supported room floor may hold a clue.
       });
       if(glyphs)art.push(glyphs);
       rec.glyphs=glyphs;rec.scoreComposer=composer; // Scratchbone notes are hidden until the almost invisible floor stone is stepped on.
@@ -186,7 +187,7 @@
             strand.userData.devRuinFootprintIgnore=true;rec.cover.add(strand);
           }
         }
-        targetAt(center.x+.48,height+.37,center.z+.15,unlock); // Exposed edge of the hanging cover: visible and shootable from floor.
+        targetAt(center.x+sx*.83,height+.16,center.z+sz*.20,unlock); // A visible clasp outside the ice block and net strands, so ranged hits actually reach it.
       }
     }
     if(spec.babies){
