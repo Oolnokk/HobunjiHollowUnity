@@ -136,4 +136,27 @@ assert.equal(api.shoulderOrbitGeometry({ ...shoulderOpts, speciesId: 'no-such-sp
 const oldFallback = api.transformPosePoint({ x: 1, y: 0.4, z: 0 }, { ...shoulderOpts, speciesId: 'no-such-species', cx: 0, cz: 0, poseOrbitScale: 0.5 });
 near(oldFallback.x, 0.5, 'a missing shoulder pair still respects the old config multiplier');
 
+// Depth-offset shoulder anchors are a diagonal arm: nonuniform X/Y rig
+// scaling must project Y and Z separately before sizing the final sphere.
+const depthRig = anchors({ x: -0.2, y: 0.7, z: 0.3 }, { x: 0.3, y: 0.7, z: -0.3 });
+depthRig.anatomy.armLengthHeightPercentOffset = 0;
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['depth-wing::male'] = depthRig;
+const previousScaleFor = sandbox.window.HobunjiCharacterRigScale.scaleFor;
+sandbox.window.HobunjiCharacterRigScale.scaleFor = species =>
+  species === 'depth-wing' ? { x: 2, y: 1 } : previousScaleFor(species);
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY = () => 0.25;
+const diagonalReach = Math.hypot(0.45, 0.3);
+const depthOptions = {
+  ...shoulderOpts, speciesId: 'depth-wing', modelHeight: 1, armLength: diagonalReach,
+  rigScaleY: 1, baseY: 0.4,
+};
+const depthSphere = api.shoulderOrbitGeometry(depthOptions);
+near(depthSphere.finalArmLength, Math.hypot(0.45, 0.6), 'rendered arm reach must use Y for height and X for depth');
+near(depthSphere.shoulderGap, Math.hypot(0.5 * 2, 0.6 * 2), '3D shoulder gap follows nonuniform rig scale');
+near(depthSphere.diameter, 2 * Math.hypot(0.45, 0.6) + Math.hypot(1, 1.2),
+  'sphere diameter uses final rendered 3D arm length, not raw arm length times Y');
+const depthTestPoint = { x: depthSphere.rawCenter.x + 0.13, y: depthSphere.rawCenter.y + 0.26, z: depthSphere.rawCenter.z - 0.41 };
+const depthInverse = api.untransformPosePoint(api.transformPosePoint({ ...depthTestPoint }, depthOptions), depthOptions);
+for (const axis of ['x', 'y', 'z']) near(depthInverse[axis], depthTestPoint[axis], `nonuniform arm rig inverse on ${axis}`);
+
 console.log('species pose orbit axes ok');
