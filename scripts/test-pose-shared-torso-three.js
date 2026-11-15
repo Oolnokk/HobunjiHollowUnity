@@ -11,7 +11,7 @@ const vm = require('node:vm');
 let THREE;
 try { THREE = require('three'); }
 catch (error) {
-  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  if (error.code !== 'MODULE_NOT_FOUND' || process.env.REQUIRE_REAL_THREE === '1') throw error;
   console.log('SKIP: real Three.js r128 is installed in the browser phase of CI');
   process.exit(0);
 }
