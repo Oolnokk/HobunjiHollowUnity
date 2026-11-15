@@ -45,6 +45,10 @@
     if(elapsed!==TICKS_PER_MEASURE/2)throw new Error('A rhythm motif must divide cleanly at beat three.');
     return opening.concat(TICKS_PER_MEASURE/2); // Cadence always ends on beat three and lasts two beats.
   }
+  const RUIN_TIER_DIFFICULTY=Object.freeze({cave:3,hole:4,lich:5}); // All ruin composition paths use the same cave/hole/lich difficulty scale.
+  function ruinDifficulty(tier){
+    return RUIN_TIER_DIFFICULTY[String(tier||'').toLowerCase()]??3; // Untiered dev trials default to medium, never a random difficulty.
+  }
   function generate(id,options={}){
     const rng=seeded(String(id)+':puzzle-cave-song-rhythm-v2');
     const difficulty=clamp(Math.floor(Number(options.difficulty)||1),1,5);
@@ -247,5 +251,5 @@
     }
     return Object.freeze({step,note,snapshot,activeIndex,setClockSource,get solved(){return solved;}});
   }
-  return Object.freeze({TICKS_PER_MEASURE,NOTE_COUNT,MIN_BPM,MAX_BPM,DURATIONS,generate,createSession,advanceGlyphGlow,GLYPH_COLORS});
+  return Object.freeze({TICKS_PER_MEASURE,NOTE_COUNT,MIN_BPM,MAX_BPM,DURATIONS,generate,ruinDifficulty,createSession,advanceGlyphGlow,GLYPH_COLORS});
 });

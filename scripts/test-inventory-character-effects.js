@@ -18,7 +18,7 @@ vm.runInContext(source, context, { filename: 'inventory-character-effects.js' })
 
 const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
-assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
+assert.equal(api.version, 2, 'character effects module includes the active HUD buff list');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads the character-effects module');
 assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=[A-Za-z0-9_-]+/, 'combat bootstrap loads the three-panel Gear layout module revision');
 assert.match(loaderSource, /hud-x-control-polish\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
@@ -159,7 +159,47 @@ assert.match(dodgeSource, /BASE_DODGE_SOMERSAULT_DUR_S = 0\.22/, 'UI dodge-durat
 assert.deepEqual({ ...api.__test.BASE_DODGE_PROFILE }, { durationS: 0.22, iframeMs: 380 }, 'module exposes its dodge timing baseline for regression tests');
 
 
-assert.match(source, /panel\.replaceChildren\(trinketCard, outfitCard, finalCard\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
+assert.ok(source.includes('panel.replaceChildren(buffsCard, trinketCard, outfitCard, finalCard)'), 'active buffs lead the Character Effects stack');
+assert.ok(source.includes('gear-active-buff-icon'), 'active effects show the original icon beside the explanation');
+assert.ok(source.includes('entry.description || entry.desc'), 'active effects show descriptions in the menu, not just hover titles');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'temple-prayer-rest', remainingS: 86400 }), '1d game');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'alchemy', remainingS: 90 }), '1m 30s real');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'rangedImpact', timeBasis: 'real', remainingS: 2.2 }), '3s real', 'ranged impacts use real milliseconds and cannot be labeled as game time');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', timeBasis: 'day', remainingS: 336 }), '336d game', 'ancestor offerings carry days, not seconds');
+assert.equal(api.__test.formatBuffDuration({ timeBasis: 'conditional', remainingLabel: 'While nearby', remainingS: 1 }), 'While nearby');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'harlyao-terror', remainingS: 1 }), 'While nearby');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', key: 'ancestor-blessing', remainingS: 7 }), '7d game');
+
+const makeBuffElement = tagName => ({
+  tagName, children: [], className: '', textContent: '', parent: null,
+  append(...items) { items.forEach(item => this.appendChild(item)); },
+  appendChild(item) { this.children.push(item); item.parent = this; },
+  remove() { const siblings = this.parent?.children; if (siblings) siblings.splice(siblings.indexOf(this), 1); },
+  get lastElementChild() { return this.children.at(-1) || null; },
+}); // Minimal DOM harness exercises the actual menu renderer without a browser or console.
+context.document = { createElement: makeBuffElement };
+const buffList = makeBuffElement('div');
+const buffEntries = [
+  { sourceId: 'temple-prayer-rest', domId: 'temple:rested', label: 'Rested', icon: '💤', kind: 'boon',
+    sourceLabel: 'Sleep or seated Wait', remainingS: 10800, description: 'Prevents fatigue yawns.' },
+  { sourceId: 'temple-prayer-rest', domId: 'temple:well-rested', label: 'Well Rested', icon: '🛏️', kind: 'boon',
+    sourceLabel: 'Sleep', remainingS: 86400, description: '+8% movement speed and +30% Stamina recovery.' },
+]; // Two distinct rest tiers must be identifiable without a hover or HUD lookup.
+api.__test.renderActiveBuffs(buffList, buffEntries);
+assert.equal(buffList.children.length, 2);
+assert.equal(buffList.children[0].children[0].textContent, '💤');
+assert.equal(buffList.children[0].children[1].children[0].children[0].textContent, 'Rested');
+assert.equal(buffList.children[1].children[0].textContent, '🛏️');
+assert.equal(buffList.children[1].children[1].children[1].textContent, '+8% movement speed and +30% Stamina recovery.');
+assert.equal(buffList.children[1].children[1].children[0].children[1].textContent, '1d game');
+const firstBuffNode = buffList.children[0]; // Verifies the one-second countdown refresh reuses visible rows without rebuilding the Gear layout.
+api.__test.renderActiveBuffs(buffList, [{ ...buffEntries[0], remainingS: 3600 }]);
+assert.equal(buffList.children.length, 1, 'expired/removed effects disappear from the menu');
+assert.strictEqual(buffList.children[0], firstBuffNode, 'unchanged buff rows reuse the same DOM');
+assert.equal(buffList.children[0].children[1].children[0].children[1].textContent, '1h game');
+api.__test.renderActiveBuffs(buffList, []);
+assert.equal(buffList.children[0].children[1].children[0].children[0].textContent, 'No active buffs or debuffs');
+
 assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
 assert.match(source, /trinketHeading\.textContent !== headingText/, 'stable Attunement heading must not trigger redundant mutation/layout work');
 assert.match(source, /row\.classList\.contains\(tone\) !== active/, 'the 1 Hz effect refresh must not rewrite unchanged bonus/drawback classes');

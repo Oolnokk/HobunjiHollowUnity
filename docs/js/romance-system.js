@@ -715,7 +715,7 @@
         const effect = currentKissEffect(); // Live perfume changes update HUD without changing the original expiry.
         return remaining > 0 ? [{
           id: 'beloved', icon: effect.icon, label: `Beloved (${effect.effectLabel})`,
-          sourceLabel: effect.recipeId ? `Spouse kiss · ${effect.label}` : 'Spouse kiss', durationS: KISS_BUFF_HOURS * 3600,
+          sourceLabel: effect.recipeId ? `Spouse kiss · ${effect.label}` : 'Spouse kiss', description: `Your spouse's kiss grants ${effect.effectLabel} for 24 in-game hours.`, durationS: KISS_BUFF_HOURS * 3600,
           remainingS: remaining * 3600,
         }] : [];
       });

@@ -84,11 +84,27 @@ assert.equal(queued.length, 1, 'multiple relevant mutations coalesce into one fr
 flushFrames();
 assert.equal(layoutReads, 2, 'coalesced mutations cause a single additional layout pass');
 
+const liveBuffNode = {
+  nodeType: 1,
+  closest(selector) { return selector.includes('.gear-active-buff-list') || selector.includes('#invEquipSection') ? this : null; },
+}; // Models a mutable text node inside the left Gear buff card rather than the right-hand item-detail.
+observer.notify([mutation(liveBuffNode, 'characterData'), mutation(liveBuffNode, 'childList'), mutation(liveBuffNode, 'attributes')]);
+assert.equal(queued.length, 0, 'one-second buff icon/countdown updates never schedule item-detail refits');
+const effectCard = {
+  nodeType: 1,
+  closest(selector) { return selector.includes('#invEquipSection') ? this : null; },
+}; // A whole effects-card replacement must still trigger normal Gear layout measurements.
+observer.notify([mutation(effectCard, 'childList')]);
+assert.equal(queued.length, 1, 'real effect-section rebuilds still schedule a layout pass');
+flushFrames();
+assert.equal(layoutReads, 3, 'effects-card replacement triggers exactly one real layout pass');
+
+
 // The menu panel remains mounted and measurable while it is opacity-hidden.
 menu.open = false;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 2, 'closing the main menu never measures still-selected Gear');
+assert.equal(layoutReads, 3, 'closing the main menu never measures still-selected Gear');
 const closedMenuWrites = styleWrites; // Tracks CSS work while Gear is selected but no longer visible.
 observer.notify([mutation(info, 'characterData')]);
 flushFrames();
@@ -96,12 +112,12 @@ assert.equal(styleWrites, closedMenuWrites, 'Gear remains idle while its parent 
 menu.open = true;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 3, 'reopening the menu refits the still-selected Gear tab');
+assert.equal(layoutReads, 4, 'reopening the menu refits the still-selected Gear tab');
 
 pane.gear = false;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 3, 'leaving Gear does not read the hidden detail panel');
+assert.equal(layoutReads, 4, 'leaving Gear does not read the hidden detail panel');
 assert(disconnects >= 1, 'leaving Gear disconnects layout resize targets');
 const hiddenWrites = styleWrites; // Compares real mutation bursts with hidden Gear to the no-work baseline.
 observer.notify([mutation(info, 'characterData'), mutation(irrelevant)]);
@@ -111,10 +127,10 @@ assert.equal(styleWrites, hiddenWrites, 'hidden Gear changes never run CSS font 
 pane.gear = true;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 4, 'reopening Gear refits, including changes made while hidden');
+assert.equal(layoutReads, 5, 'reopening Gear refits, including changes made while hidden');
 const debug = window.InventoryGearCompactEffects.debugSnapshot();
 assert.equal(debug.gearActive, true);
-assert.equal(debug.fitStats.passes, 4);
+assert.equal(debug.fitStats.passes, 5);
 assert(debug.fitStats.ignoredMutations >= 2);
 assert(debug.fitStats.inactiveSkips >= 3);
 console.log('Gear layout idle-cadence tests passed');
