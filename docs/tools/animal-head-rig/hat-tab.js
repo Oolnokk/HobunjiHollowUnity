@@ -71,7 +71,7 @@
     '<div class="canvas-wrap"><canvas id="hatPlacementCanvas"></canvas></div>',
     '<div class="row"><strong>Hat raster · drag to deform</strong><span id="hatArtBadge" class="badge">No hat</span></div>',
     '<div class="canvas-wrap"><canvas id="hatArtCanvas"></canvas></div>',
-    '<div id="hatStatus" class="hat-status" role="status">Load a species and hat to begin.</div>',
+    '<div><div id="hatStatus" class="hat-status" role="status">Load a species and hat to begin.</div><details><summary class="hint">Hat editor diagnostics</summary><pre id="hatDiagnostics" class="hint" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details></div>',
     '</section>'
   ].join('');
   rigWorkspace.after(workspace);
@@ -351,7 +351,8 @@
   }
   function snapshot(layer) {
     layer.undo.push(new Uint8ClampedArray(layer.pixels));
-    if (layer.undo.length > 16) layer.undo.shift(); // Keep browser memory bounded on mobile.
+    const maxHistory = Math.min(8, Math.max(1, Math.floor((24 * 1024 * 1024) / layer.pixels.byteLength))); // Per-layer mobile history budget.
+    while (layer.undo.length > maxHistory) layer.undo.shift();
     layer.redo.length = 0;
     refreshUndo();
   }
@@ -423,7 +424,7 @@
     snapshot(layer);
     view.drag = { id: event.pointerId, last: p };
     artCanvas.setPointerCapture(event.pointerId);
-    if (view.brush === 'restore') brushStroke(p, p); // Taps erase locally even with zero movement.
+    if (view.brush === 'restore') brushStroke(p, p); // Taps restore locally even with zero movement.
   });
   artCanvas.addEventListener('pointermove', event => {
     const layer = selectedLayer();
@@ -437,16 +438,32 @@
     }
     drawSoon();
   });
-  function finishArt(event) {
+  function finishArt(event, cancelled = false) {
     if (!view.drag || view.drag.id !== event.pointerId) return;
+    const layer = selectedLayer(); // Active layer whose one-stroke snapshot must commit or roll back.
+    if (layer && !cancelled) {
+      const fit = fitted(artCanvas, layer.canvas.width, layer.canvas.height);
+      const last = pointOnCanvas(event, artCanvas, fit, layer.canvas.width, layer.canvas.height);
+      if (last.x !== view.drag.last.x || last.y !== view.drag.last.y) brushStroke(view.drag.last, last); // Capture final touch segment.
+    }
     view.drag = null;
     if (artCanvas.hasPointerCapture?.(event.pointerId)) artCanvas.releasePointerCapture(event.pointerId);
+    if (layer) {
+      const before = layer.undo[layer.undo.length - 1]; // Snapshot pushed on pointerdown for this gesture.
+      if (cancelled && before) {
+        layer.pixels = layer.undo.pop();
+        writePixels(layer, true);
+      } else if (before && layer.pixels.every((v, i) => v === before[i])) {
+        layer.undo.pop(); // No-op taps do not consume Undo history.
+      }
+    }
     refreshUndo();
-    status('Hat pixels updated. Export the edited PNG to make the change permanent in game assets.');
+    status(cancelled ? 'Cancelled the hat brush stroke; previous pixels restored.' :
+      'Hat pixels updated. Export the edited PNG to make the change permanent in game assets.');
     drawSoon();
   }
-  artCanvas.addEventListener('pointerup', finishArt);
-  artCanvas.addEventListener('pointercancel', finishArt);
+  artCanvas.addEventListener('pointerup', e => finishArt(e));
+  artCanvas.addEventListener('pointercancel', e => finishArt(e, true));
   artCanvas.addEventListener('pointerleave', () => { if (!view.drag) { view.cursor = null; drawSoon(); } });
 
   function animalSize() {
@@ -503,6 +520,15 @@
   }
   function drawNow() {
     view.redraw = false;
+    const diagnostics = el('hatDiagnostics'); // Expandable in-page support information for mobile authoring.
+    if (diagnostics) diagnostics.textContent = JSON.stringify({
+      animal: el('animalId').value || null,
+      hat: view.selectedCosmetic || 'custom',
+      attachment: attachmentFromControls(),
+      activeLayer: view.layerIndex,
+      layers: view.layers.map(item => ({ role: item.role, path: item.path, width: item.canvas.width,
+        height: item.canvas.height, changed: item.dirty, undo: item.undo.length, redo: item.redo.length }))
+    }, null, 2);
     artCtx.clearRect(0, 0, artCanvas.width, artCanvas.height);
     placementCtx.clearRect(0, 0, placementCanvas.width, placementCanvas.height);
     const layer = selectedLayer();
@@ -571,11 +597,25 @@
     catch (error) { status(error.message, false); }
   };
   el('hatPreviewSave').onclick = () => {
-    // The established preview save validates the full neck rig and round-trips storage;
-    // a hat-only object must never replace a valid head rig in game.
-    if (!normalizedRig()) return status('Author or load a valid head rig first, then save its hat placement preview.', false);
-    el('savePreviewRig').click();
-    status(el('status').textContent + ' Pixel changes still require exported PNG assets.', !el('status').classList.contains('error'));
+    try {
+      const id = el('animalId').value.trim(); // Browser preview is keyed by the animal's stable species ID.
+      if (!id) throw new Error('Animal ID is required to save the in-game hat preview.');
+      const rigs = readPreviewRigs(); // Existing shared runtime storage; never wipe the current head rig for a hat-only edit.
+      const previous = rigs[id] && typeof rigs[id] === 'object' && !Array.isArray(rigs[id]) ? rigs[id] : {};
+      const neckRig = normalizedRig(); // Optional: hat-only authoring does not require neck influence.
+      const next = { ...previous, ...(neckRig || {}) };
+      if (view.authored) next.hatAttachment = attachmentFromControls();
+      else delete next.hatAttachment; // Resetting fit also clears any previously saved hat-only override.
+      if (Object.keys(next).length) rigs[id] = next;
+      else delete rigs[id];
+      writePreviewRigs(rigs);
+      const verified = readPreviewRigs(); // No success message until browser storage survives a round trip.
+      if (JSON.stringify(verified[id] || null) !== JSON.stringify(rigs[id] || null))
+        throw new Error('Hat preview did not round-trip through browser storage.');
+      status('Saved ' + (view.authored ? 'authored' : 'head-derived') + ' hat fit preview for ' + id +
+        (neckRig ? ' with current neck rig.' : ' (hat-only, existing neck rig preserved).') +
+        ' Reload/respawn the animal. Edited PNG pixels still require exported asset files.');
+    } catch (error) { status(error.message || String(error), false); }
   };
   el('animalId').addEventListener('input', syncSpecies);
   el('animalLabel').addEventListener('input', syncSpecies);
