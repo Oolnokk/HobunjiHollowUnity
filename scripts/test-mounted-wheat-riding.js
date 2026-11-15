@@ -195,6 +195,10 @@ now += 200;
 const beforeController = win.Mounts.ridingDebug.wheatRemaining;
 controllerCallback({ owner: 'gameplay', focused: true, pressed: new Set(['Button1']) });
 assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeController - 1, 'remappable controller Dodge accelerates');
+const beforeControllerInteract = win.Mounts.ridingDebug.manualJumps;
+controllerCallback({ owner: 'gameplay', focused: true, pressed: new Set(['Button0']) });
+assert.equal(win.Mounts.ridingDebug.manualJumps, beforeControllerInteract,
+  'the extra mount listener leaves A/Interact to the game-owned interaction-or-jump fallback; it must not double-dispatch');
 now += 200;
 const beforePointer = win.Mounts.ridingDebug.wheatRemaining;
 function tapEvent(id) {
