@@ -22,9 +22,12 @@
     const result = window.KeyItemSystem?.grant?.(heart.itemId);
     if (!result?.ok) return result || { ok:false, granted:false, message:'Key Items are unavailable.' };
     if (result.granted) {
-      window.EquipmentPanel?.buildEquipmentSlots?.(); // Refresh an already-open Gear menu without changing the equipped trinket selection.
-      const cap = window.TrinketSystem?.capacity?.() ?? 8 + count(); // Used in immediate mobile-visible acquisition feedback.
-      (window.Combat?.deps?.showToast || window.showToast)?.(`${heart.label} acquired. Attunement capacity +1 (${cap}).`, true);
+      // Ownership is already durable. A broken HUD/menu must not interrupt removal of the claimed world prop.
+      try { window.EquipmentPanel?.buildEquipmentSlots?.(); } catch (error) {
+        window.__farmLog?.('[lich-heart] Gear refresh failed: ' + String(error?.message || error), 'warn');
+      }
+      const cap = window.TrinketSystem?.capacity?.() ?? 8 + count(); // Immediate mobile-visible acquisition feedback.
+      try { (window.Combat?.deps?.showToast || window.showToast)?.(`${heart.label} acquired. Attunement capacity +1 (${cap}).`, true); } catch (_) {}
       window.__farmLog?.(`[lich-heart] ${heart.bossId} claimed; permanent character attunement ${count()}/3`, 'world');
     }
     return result;
