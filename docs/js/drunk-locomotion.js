@@ -230,6 +230,12 @@
 
     function clearPreviousBodyTilt() {
       const bodyRoot = options.drunkBodyRoot;
+      if (!isPlayer && bodyRoot?.rotation && window.RigTransformLayers?.clear) {
+        // The NPC yawn owns this SAME Euler torso. Use named layers for both
+        // gestures; a separate quaternion inverse would invalidate yawn's base.
+        window.RigTransformLayers.clear(bodyRoot, 'npc-drunk-body');
+        return;
+      }
       if (!bodyRoot?.quaternion || !state.bodyTilt?.isQuaternion) return;
       const hasDelta = Math.abs(state.bodyTilt.x) + Math.abs(state.bodyTilt.y) + Math.abs(state.bodyTilt.z) > 1e-10
         || Math.abs(state.bodyTilt.w - 1) > 1e-10;
@@ -247,10 +253,21 @@
         return;
       }
       const bodyRoot = options.drunkBodyRoot;
-      if (!bodyRoot?.quaternion) return;
+      if (!bodyRoot) return;
+      const layers = window.RigTransformLayers;
+      if (bodyRoot.rotation && layers?.setAxis) {
+        // Composes with npc-yawn-body on the SAME Euler X axis. Own a single
+        // pair of named offsets instead of post-multiplying a competing quaternion.
+        layers.setAxis(bodyRoot, 'npc-drunk-body', 'rotation', 'x', state.pitch);
+        layers.setAxis(bodyRoot, 'npc-drunk-body', 'rotation', 'z', state.roll);
+        return;
+      }
+      if (!bodyRoot.quaternion) return;
+      // Isolated tool previews without the shared ledger retain the original
+      // quaternion path, guarded against newer absolute transform writers.
       state.bodyTilt.setFromEuler(reuseEuler(THREE, state.pitch, 0, state.roll));
       bodyRoot.quaternion.multiply(state.bodyTilt);
-      state.bodyTiltApplied.copy(bodyRoot.quaternion); // Only this exact rotation may have drunken tilt undone.
+      state.bodyTiltApplied.copy(bodyRoot.quaternion);
     }
 
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
