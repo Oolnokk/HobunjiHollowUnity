@@ -52,7 +52,7 @@ const twoPointAuthor = fs.readFileSync(path.join(riggerDir, 'author-part9.js'), 
 assert(shell.includes('id="paintCanvas"') && shell.includes('id="previewCanvas"'), 'persistent paint + preview canvases should exist');
 assert(!shell.includes('previewDeform'), 'preview checkbox remains removed');
 assert(shell.includes('id="brushStrength"'), 'brush strength remains visible');
-for (let n = 1; n <= 9; n++) assert(shell.includes(`src="./author-part${n}.js"`), `shell loads author-part${n}.js`);
+for (let n = 1; n <= 9; n++) assert(shell.includes(`src="./author-part${n}.js"`) || shell.includes(`src="./author-part${n}.js?v=`), `shell loads author-part${n}.js`); // Cache-busted author scripts still count as loaded.
 assert(shell.includes('position:sticky') && shell.includes('.preview-settings{min-height:0;overflow:auto'), 'right workbench remains sticky and settings scroll internally');
 assert(shell.includes('Enable body spline') && shell.includes('BEFORE / Bind') && shell.includes('AFTER / Pose'),
   'current explicit BEFORE/AFTER shoulder workflow is visible');
