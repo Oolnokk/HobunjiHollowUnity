@@ -380,8 +380,12 @@
 
   function setChannel(name, contribution = {}) {
     if (!name) return false;
+    const leaseMs = Number.isFinite(contribution.leaseMs) && contribution.leaseMs > 0
+      ? Math.min(contribution.leaseMs, 5000) : 0; // Continuously refreshed animation channels expire if their owner disappears.
     const stored = {
       priority: finite(contribution.priority),
+      leaseMs, // A missing animation tick cannot leave a temporary tilt permanently active.
+      expiresAtMs: leaseMs ? performance.now() + leaseMs : null, // The render compositor discards expired leases before solving the frame.
       space: contribution.space === 'world' ? 'world' : 'local', // Movement lean is applied after portrait yaw and its camera clamp.
       mode: contribution.mode === 'override' ? 'override' : 'additive',
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
@@ -407,6 +411,26 @@
 
   function clearAllChannels() {
     channels.clear();
+  }
+
+  const leaseRecovery = { expired: 0, lastExpired: null }; // Visible in the existing mobile composer debug snapshot.
+  function touchChannel(name) {
+    const channel = channels.get(String(name));
+    if (!channel) return false;
+    if (channel.leaseMs) channel.expiresAtMs = performance.now() + channel.leaseMs;
+    return true; // Unchanged idle stances renew ownership without rebuilding their stored pose.
+  }
+
+  function expireStaleChannels(nowMs = performance.now()) {
+    let expired = 0; // Count recovered animation channels on this render; persistent channels are deliberately exempt.
+    for (const [name, channel] of channels) {
+      if (channel.expiresAtMs == null || nowMs < channel.expiresAtMs) continue;
+      channels.delete(name);
+      leaseRecovery.expired++;
+      leaseRecovery.lastExpired = name;
+      expired++;
+    }
+    return expired;
   }
 
   function registerExternalRootProvider(name, provider) {
@@ -555,6 +579,7 @@
         composedWorldEulerDeg: null,
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
+      renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       try {
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
@@ -664,6 +689,7 @@
   // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
   // and the head renders off-target by whatever yaw a channel contributes.
   function resolvedYawDeltaRad() {
+    expireStaleChannels(); // Head aim must not incorporate an expired body-yaw contribution before rendering.
     const delta = resolveDelta('player');
     if (playerMesh && Number.isFinite(delta.absoluteYaw)) applyAbsoluteYaw(delta, hierarchyWorldQuaternion(playerMesh)); // Same base-yaw comparison the render hook makes.
     return new THREE.Euler().setFromQuaternion(delta.rotation, 'YXZ').y;
@@ -671,6 +697,7 @@
 
   window.PlayerBodyTransformComposer = {
     setChannel,
+    touchChannel,
     setHeadAimTarget,
     addPostHeadAimHook,
     clearChannel,
@@ -698,9 +725,12 @@
         externalProviders: Array.from(externalRootProviders.keys()),
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
+        leaseRecovery: { ...leaseRecovery }, // Helps mobile debugging distinguish an expired stale pose from a missing animation writer.
         channels: Array.from(channels.entries()).map(([name, channel]) => ({
           name,
           priority: channel.priority,
+          leaseMs: channel.leaseMs,
+          expiresInMs: channel.expiresAtMs == null ? null : Math.max(0, Math.round(channel.expiresAtMs - performance.now())),
           space: channel.space,
           mode: channel.mode,
           enabled: channel.enabled !== false,
