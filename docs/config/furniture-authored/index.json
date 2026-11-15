@@ -178,6 +178,10 @@
       "file": "config/furniture-authored/generalStoreSign.json"
     },
     {
+      "key": "glowGlyphOrb",
+      "file": "config/furniture-authored/glowGlyphOrb.json"
+    },
+    {
       "key": "handMill",
       "file": "config/furniture-authored/handMill.json"
     },
