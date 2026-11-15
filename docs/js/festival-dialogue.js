@@ -89,7 +89,7 @@
     ][greetingVariant(rec, day)];
   }
   function treeFor(rec, { world, defaultTree } = {}) {
-    if (!active() || !rec?.id || rec.dead || rec.deceased) return null;
+    if (!active() || !rec?.id || rec.dead || rec.deceased || window.RomanceSystem?.getSpouse?.()?.npcId === rec.id) return null; // Married partners use their own purposeful festival lines; other residents retain authored lore.
     // Authored quest/story trees retain their normal selection. Existing General Chat trees use this suffix.
     if (defaultTree && !String(defaultTree.id || '').endsWith('_fallback')) return null;
     if (rec.id === 'father_hunundi_hodu') return null;
@@ -104,7 +104,7 @@
     return trees.get(key);
   }
   function greetingFor(rec, context) {
-    if (!active() || EXCLUDED.has(rec?.id) || rec?.dead || rec?.deceased) return null;
+    if (!active() || EXCLUDED.has(rec?.id) || rec?.dead || rec?.deceased || window.RomanceSystem?.getSpouse?.()?.npcId === rec?.id) return null; // Keep the chosen spouse's individual festival voice in ambient speech.
     return festivalGreeting(rec, context);
   }
   function homeTarget(rec) {
