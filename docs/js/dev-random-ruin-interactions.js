@@ -631,7 +631,11 @@
   function syncWorldPopup(rows) {
     const popup=window.WorldPopupText;
     if(!popup?.syncInteractionPrompts)return;
-    const buttons=actionButtonsFromRows(rows);
+    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Match prompt glyphs to the separate Interact binding while torch swings keep Action 1.
+    const buttons=actionButtonsFromRows(rows).map((button, index) => (
+      torchHeld && PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)
+        ? { ...button, inputAction: 'interact' } : button
+    ));
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
     const device=currentDevice();
     const promptInputs=buttons.map(button=>({
