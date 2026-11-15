@@ -1,12 +1,12 @@
 // Shoulder-spline species registration and fallbacks.
 //
-// The six new ground-creature shoulder rigs are each independently authored in
-// animal-head-rig-authored.js. Existing head paint and Uumkao'ii remain intact.
+// Eight ground-creature shoulder rigs are independently authored in
+// animal-head-rig-authored.js. Their preexisting head paint is retained.
 (() => {
   'use strict';
 
   const STORAGE_KEY = window.AnimalHeadRigRuntime?.STORAGE_KEY || 'hobunji_animal_head_rigs_v1';
-  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk', 'moot', 'nelk', 'drenkirra']);
+  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk', 'moot', 'nelk', 'drenkirra', 'nazgraku']);
   const SPECIES_SET = new Set(SPECIES);
   const GREHLR_BEFORE = Object.freeze([
     Object.freeze({ x: 0.5423902927484727, y: 0.5694472546137244 }),
@@ -126,7 +126,7 @@
   }
 
   window.HobunjiShoulderSplineProfiles = {
-    version: 4, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
+    version: 5, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
     defaultShoulderRest, bodyOnlyRig, supportRigFor: resolveForKind, resolveForOptions, install,
   };
   install();
