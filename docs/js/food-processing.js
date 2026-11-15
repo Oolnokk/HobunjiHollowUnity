@@ -440,7 +440,10 @@
   }
 
   function getProcessingOutputs(methodId, inputKey, input) {
-    if (!inputKey || !input) return null;
+    if (!inputKey || !input || input.isCookedFood || hasTag(input, 'cooked food')) return null;
+    const steps = Array.isArray(input.cookingProcessSteps) ? input.cookingProcessSteps : []; // Guards direct callers even when ItemProcessing's host adapter is absent.
+    if (steps.some(step => step?.method === methodId) || input.cookingProcessLastMethod === methodId) return null;
+    if (methodId === 'squeezing' && isCookingOil(inputKey, input)) return null; // Legacy Fish-tagged oils must not be rendered again.
     if (methodId === 'churning') {
       const output = churnOutput(inputKey, input); // Used as the single churn result while retaining the plural processor API.
       return output ? [output] : null;
@@ -579,7 +582,7 @@
     };
     itemProcessing.isWheelEligible = function butterChurnWheelEligible(inputKey, ...rest) {
       if (originalWheelEligible.call(this, inputKey, ...rest)) return true;
-      return !!churnOutput(inputKey, processingDeps?.ITEM_DEFS?.[inputKey]);
+      return !!getProcessingOutputs('churning', inputKey, processingDeps?.ITEM_DEFS?.[inputKey])?.length;
     };
     itemProcessing.__butterChurnInstalled = true;
   }

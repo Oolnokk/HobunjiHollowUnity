@@ -285,9 +285,15 @@
     return true;
   }
 
+  function isUncookedIngredient(definition) {
+    return !!definition && !definition.isCookedFood &&
+      !definition.tags?.some(tag => String(tag).toLowerCase() === 'cooked food'); // Meals are always final, even when older saves still list recipe ingredient categories.
+  }
+
   function ingredientCandidates(slot) {
     return Object.entries(deps.ITEM_DEFS).filter(([key, definition]) =>
-      (deps.inventory[key] || 0) > 0 && definition.cookingCategories?.some(category => slot.accepts.includes(category))
+      (deps.inventory[key] || 0) > 0 && isUncookedIngredient(definition) &&
+      definition.cookingCategories?.some(category => slot.accepts.includes(category))
     ).sort(([, a], [, b]) => String(a.label).localeCompare(String(b.label))); // Used to populate each category-constrained slot picker.
   }
 
@@ -315,7 +321,7 @@
   function listIngredientDefinitions(category = null) {
     return Object.entries(deps?.ITEM_DEFS || {}).filter(([, definition]) => {
       const categories = definition?.cookingCategories || []; // Used to filter the full registered ingredient catalog by an optional cooking category.
-      return categories.length && (!category || categories.includes(category));
+      return isUncookedIngredient(definition) && categories.length && (!category || categories.includes(category));
     }).map(([key, definition]) => ({ key, definition }));
   }
 
@@ -405,7 +411,12 @@
   }
 
   function selectionIsValid(recipe = selectedRecipe(), slots = selectedSlots) {
-    if (!recipe || !recipe.slots.every(slot => !slot.required || slots[slot.id])) return false;
+    if (!recipe || !recipe.slots.every(slot => {
+      const selected = slots[slot.id]; // Validate saved/favorited slot choices at the actual cook boundary, not only in the picker.
+      const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
+      return (!slot.required || !!selected) && (!selected || (isUncookedIngredient(definition) &&
+        definition.cookingCategories?.some(category => slot.accepts.includes(category))));
+    })) return false;
     const required = {}; // Used to prevent one inventory unit from filling multiple recipe slots.
     recipe.slots.forEach(slot => {
       const selected = slots[slot.id];
@@ -427,6 +438,7 @@
       if (slot.contributesEffects === false) return; // Structural ingredients such as Nine Leaf Tea's milk can be required without adding an unrelated food buff.
       const selected = slots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
+      if (!isUncookedIngredient(definition)) return; // Stale UI selections must never preview inherited cooked-meal bonuses.
       const ingredientEffects = ingredientEffectTotals(definition, selected?.stars); // Used to ensure the meal preview consumes the exact same per-ingredient buff math shown beside the ingredient.
       Object.entries(ingredientEffects).forEach(([effect, amount]) => {
         totals[effect] = (totals[effect] || 0) + amount;
