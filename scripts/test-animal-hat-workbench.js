@@ -79,6 +79,10 @@ const authored = hats.normalizeAttachment({ width: .4, heightScale: 1.5, skewXDe
 assert.equal(authored.heightScale, 1.5);
 assert.equal(authored.skewXDeg, 25);
 assert.equal(authored.flipX, true);
+const disabled = hats.normalizeAttachment({ enabled: false, width: .7, heightScale: 1.8 });
+assert.equal(disabled.enabled, false, 'disabled hats must remain disabled');
+assert.equal(disabled.width, .7, 'disabled hat placement retains editable geometry');
+assert.equal(disabled.heightScale, 1.8, 'disabled hat deformation survives serialization');
 assert.equal(hats.normalizeAttachment({ heightScale: 99, skewXDeg: -90 }).heightScale, 3,
   'untrusted vertical scale must clamp to the editor range');
 assert.equal(hats.normalizeAttachment({ heightScale: 99, skewXDeg: -90 }).skewXDeg, -45,
@@ -94,7 +98,7 @@ assert.equal(hats.normalizeAttachment({ heightScale: -99 }).heightScale, .2);
   assert.equal(skew.length, 2, 'back/front hat art must each receive the attachment deformation');
   for (const op of skew) assert(Math.abs(op[3] - Math.tan(25 * Math.PI / 180)) < 1e-9);
   assert.equal(operations.filter(o => o[0] === 'scale' && o[1] === -1).length, 2);
-  const drawnHat = operations.filter(o => o[0] === 'drawImage' && o.length === 6);
+  const drawnHat = operations.filter(o => o[0] === 'drawImage' && o.length === 6 && o[1]?.width === 4 && o[1]?.height === 2);
   assert.equal(drawnHat.length, 2, 'both hat layers render, in addition to the creature base');
   assert.equal(drawnHat[0][5], 100 * .4 * (2 / 4) * 1.5,
     'vertical scale must adjust hat drawing geometry without modifying the source PNG');
