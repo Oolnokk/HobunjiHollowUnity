@@ -248,6 +248,12 @@ for that frame (`updateFrontPlaneHands`); a parrot hand's separate wing-continua
 like a weapon; `off` restores the old behaviour. `HeldObjectRenderOrder.snapshot().handsBehindFrontPlane` reports
 the live count.
 
+### Manual layer ranks are not physical renderer stages
+
+The Dev Companion's editable draw-order ranks affect color sorts only within a compatible renderer pass. In `held-object-render-order.js`, render-time pose sentinels (`renderOrder <= -10000`) remain before ordinary color geometry, while high-priority late art and depth masks (`renderOrder >= 900`) remain after it. Within either protected phase, Three.js's legacy group/render-order sort wins; manual ranks cannot move an animation sentinel behind its hand or move a late cloud depth mask ahead of foreground geometry. Group order is protected in all phases.
+
+`enforceHeldMesh()` intentionally normalizes ordinary held sprites' authored `renderOrder` to zero (multi-sprite assembly parts retain their authored local ordering) and ensures they participate in the dedicated held-overlay camera layer. That normalization is not a persistent user-editable global layer: the Dev Companion now reports the count of normalizations and the most recent affected mesh under **Held renderOrder overrides**, also included in the copyable diagnostic report. A nonzero count alone is not a bug; it identifies why editing a raw mesh's order is ineffective. The actual front-art occlusion remains a separate per-owner stencil rule requiring an 8-bit stencil target and a resolved portrait owner. See `scripts/test-xray-hierarchy.js` for guarded comparator ordering; real GPU pixels still need scene-specific verification.
+
 ## Actor draw order: portraits and worn pants sort together
 
 `nearbyPortraitOrder()` orders every visible player/NPC portrait by its actor's camera depth (far to near) and
