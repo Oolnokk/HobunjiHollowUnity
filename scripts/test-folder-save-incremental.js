@@ -253,7 +253,32 @@ async function main() {
   assert.equal(layoutsDir.files.has('world.json'), false, 'deleted world canonical farm layout is removed');
   assert.equal(layoutsDir.files.has('world(1).json'), true, 'numbered backup copies survive world deletion');
 
-  console.log('OK  incremental saves, no-op autosaves, protected farm layouts, external edits, folder switching, write retries and world deletion');
+  // A large farm must not cause an unchanged autosave to rewrite its payload.
+  const largeFolder = directory('large-farm', counters); // Separate destination keeps the stress test from disturbing recovery history.
+  window.showDirectoryPicker = async () => largeFolder;
+  meta.worlds = [{ id: 'world', label: 'Farm', day: 30 }];
+  saveMeta();
+  const largeLayout = {
+    version: 3,
+    tiles: Array.from({ length: 20000 }, (_, i) => ({ c: i % 128, r: Math.floor(i / 128), crop: 'crop' + (i % 5), age: i })),
+  }; // Deliberately multi-megabyte farm payload; all 20,000 distinct tile records must survive world-only writes.
+  localStorage.setItem('hobunji_farm_layout_v3:world', JSON.stringify(largeLayout));
+  await window.LocalSaveFolder.chooseFolder();
+  const initialLarge = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(initialLarge.lastError, null);
+  const baselineDiskWrites = counters.writes.length;
+  const skippedLarge = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(skippedLarge.lastAction, 'autosync-skipped-unchanged', 'large unchanged farm has a complete no-op save');
+  assert.equal(counters.writes.length, baselineDiskWrites, 'large unchanged farm produces zero disk writes');
+  meta.worlds[0].day = 31;
+  saveMeta();
+  const changedLarge = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(changedLarge.lastError, null);
+  assert.equal(changedLarge.saveFileWork.written, 1, 'world-only edit does not rewrite the 20,000-tile farm');
+  const persistedLarge = JSON.parse(await (await largeFolder.folders.get('farm-layouts').files.get('world.json').getFile()).text());
+  assert.equal(persistedLarge.layout.tiles.length, 20000, 'all large farm tiles remain intact after the world-only save');
+
+  console.log('OK  incremental saves, no-op autosaves, protected farm layouts, external edits, recovery transitions, write retries, world deletion and large-farm stress');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
