@@ -26,9 +26,21 @@ between its two outline strokes, so its name was mostly hidden; the pinch is now
 viewBox units per side (a throat of ~5/6, still visibly concave, label fully readable; 13.33 restores the old shape). Plain bordered segments needed nothing: their
 label already sits inside the border's padding box.
 
-The right-anchored lost-capacity region (`.vb-cap`, drawn by `refreshVitalsHud`, not by `drawAfflictionSegments`) is
-labelled too, with the highest-priority capacity-reducing affliction's short name ("Wounded" on Health, "Winded" on
-Stamina) and the same outline-over-text overlay; its text updates if the dominant reducer changes while it is shown.
+**Three anchors, one per affliction (player vitals bar).** Each affliction hangs off exactly one anchor and is drawn only
+there (`PlayerVitals.afflictionAnchor(id, def)`; bands carry `data-anchor`): `start` = the bar's zero (`extend: 'zero'`
+non-reducers: Wounded/Infected/Frostbitten/Shattered Stamina), `current` = the end of the current resource
+(`currentBack` and the Drunken Health buffer: Bleeding, Bruised, Poisoned, Burning, Kindling, Entranced, Scent-marked,
+Corroded, and the enhanced Resolute/Mirrored/Furious/Moralized bands), `end` = the end of the bar (anything that locks
+away maximum: Winded Stamina, Congealed/Rent/Wounded Health, Shambling/Drunken Footing). Before this, a capacity reducer
+was drawn twice, as its `zero` band at the left AND as the lost-capacity cap at the right (visible as "Wounded ...
+Wounded" on one bar); the code comment called that deliberate, the author's call was that it is a bug. End-anchored
+afflictions now live only in the lost-capacity cap (`.vb-cap`, drawn by `refreshVitalsHud`, not by
+`drawAfflictionSegments`), which names every active reducer strongest first ("Wounded / Congealed", colour of the
+strongest) with the same outline-over-text overlay; its text updates when the set of reducers changes. Trade-off: one
+cap is one region and one colour, so several simultaneous reducers are no longer distinguishable by amount, only by the
+names in the label. Checked in the real game with one affliction of each anchor on all three bars, and in
+`scripts/test-player-vitals-hud.js` by applying each of the 20 base afflictions alone and asserting it is drawn in
+exactly one place (a band for `start`/`current`, the cap only for `end`).
 
 Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,
 toggles flip the classes and persist; burning with the defaults **190-191 ms vs 284-298 ms with animations on** (control

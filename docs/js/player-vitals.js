@@ -135,12 +135,21 @@
 
   // Clip lower-priority afflictions against higher-priority occupied portions,
   // as ResourceRings does. Normal-colored fill is drawn beneath the segments.
-  // Afflictions that lock away part of a resource's MAXIMUM (Winded Stamina, Congealed/Rent/Wounded Health, Shambling
-  // and Drunken Footing, ...). The lost-capacity cap at the far right of the bar is their one representation: drawing a
-  // second, left-anchored band for the same amount showed the same affliction at both ends of the bar. Late-registered
-  // reducers sometimes lack the canonical reducesEffectiveMax metadata, hence the two explicit ids.
+  // Every affliction hangs off exactly ONE of three anchors on its bar, and is drawn only there:
+  //   'start'   - the bar's zero (extend 'zero': stamina debts such as Wounded/Infected/Frostbitten/Shattered Stamina)
+  //   'current' - the end of the current resource (extend 'currentBack' and the Drunken Health buffer, which sits at the
+  //               end of current: Bleeding, Bruised, Poisoned, Burning, ... and the enhanced Resolute/Mirrored bands)
+  //   'end'     - the end of the bar: afflictions that lock away part of the MAXIMUM (Winded Stamina, Congealed/Rent/
+  //               Wounded Health, Shambling/Drunken Footing). They are drawn as the lost-capacity cap and nowhere else,
+  //               not also as a band at their authored anchor (the same affliction at both ends of the bar).
+  // Late-registered reducers sometimes lack the canonical reducesEffectiveMax metadata, hence the two explicit ids.
   function isCapacityReducer(id, def) {
     return def?.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth';
+  }
+  function afflictionAnchor(id, def) {
+    if (isCapacityReducer(id, def) || def?.extend === 'maxBack') return 'end';
+    if (def?.extend === 'currentBack' || def?.extend === 'drunkBand') return 'current';
+    return 'start';
   }
 
   function visibleAfflictionSegments(entity, resourceKey, entries, denominator, rs) {
@@ -468,6 +477,7 @@
         segment._vbTreatment = visualTreatment(piece.id, rs.AFFLICTIONS[piece.id], rs);
         segment.className = 'vb-affliction-segment' + effectClasses(segment._vbTreatment);
         segment.title = piece.name;
+        segment.setAttribute('data-anchor', afflictionAnchor(piece.id, rs.AFFLICTIONS[piece.id]));
       }
       const left = (piece.start / denominator * 100).toFixed(1) + '%';
       const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
@@ -590,6 +600,7 @@
       nodes.cap.classList.toggle('is-withered', withered);
       if (withered) {
         const reducer = capReducers[0];
+        if (nodes.cap.getAttribute('data-anchor') !== 'end') nodes.cap.setAttribute('data-anchor', 'end');
         const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
         ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
         // The right-anchored lost-capacity region is the ONLY place these afflictions are drawn, so it names every
@@ -662,7 +673,7 @@
     init,
     updatePlayerVitals,
     refreshVitalsHud,
-    animationsEnabled, setAnimationsEnabled, namesEnabled, setNamesEnabled, bindSettingsToggles,
+    animationsEnabled, setAnimationsEnabled, namesEnabled, setNamesEnabled, bindSettingsToggles, afflictionAnchor,
     getDebug: () => ({
       health: Number(deps?.player?.health) || 0,
       maxHealth: Number(deps?.player?.maxHealth) || 0,

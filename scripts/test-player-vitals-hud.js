@@ -275,8 +275,10 @@ player.stamina = 100;
 player.afflictions.shamblingFooting = 30;
 refresh();
 assert.equal(shown('vbFootingRow'), true, 'Footing afflictions also reveal their bar at full displayed points');
-assert.equal(elements.get('vbFootingSegments').children.length, 1);
-assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 1, 'mobile-readable debug snapshot includes HUD state');
+assert.equal(elements.get('vbFootingSegments').children.length, 0, 'Shambling Footing reserves maximum: drawn once, as the end-of-bar cap, not also as a band');
+assert.equal(elements.get('vbFootingCap').hidden, false, 'the reserved Footing shows as the end-of-bar cap');
+assert.equal(elements.get('vbFootingCap').children.find(child => child.className === 'vb-name')?.textContent, 'Shambling', 'the cap names the reserving affliction');
+assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 0, 'mobile-readable debug snapshot includes HUD state');
 
 // Enhanced resource visuals are driven by actual transaction metadata, not
 // one-off names: rapid attacks swell, efficient resources have crenellations.
@@ -396,4 +398,48 @@ assert(css.includes('.vb-effect-fire::after') && css.includes('.vb-effect-ember:
 assert(!css.includes('.vb-effect-brittle::before'), 'old fake chip slashes are gone');
 assert(!css.includes('clip-path: polygon('), 'starved cap no longer clips a rectangular border');
 assert(css.slice(css.indexOf('/* ── Player-only resource bars'), css.indexOf('/* ── Buff bar: active timed effects')).includes('background: transparent'), 'HUD root has no visible panel');
+
+// Three anchors, one per affliction: 'start' (0), 'current' (end of the current resource), 'end' (end of the bar).
+const expectedAnchors = {
+  woundedStamina: 'start', infectedStamina: 'start', frostbittenStamina: 'start', shatteredStamina: 'start',
+  bleedingHealth: 'current', entrancedHealth: 'current', bruisedHealth: 'current', poisonedHealth: 'current', burningHealth: 'current',
+  kindlingHealth: 'current', furiousStamina: 'current', moralizedStamina: 'current', resoluteFooting: 'current', resoluteHealth: 'current', mirroredHealth: 'current',
+  congealedHealth: 'end', rentHealth: 'end', windedStamina: 'end', shamblingFooting: 'end',
+};
+for (const [id, anchor] of Object.entries(expectedAnchors)) {
+  assert.equal(context.ResourceSystem.AFFLICTIONS[id] !== undefined, true, id + ' exists in the fixture');
+  assert.equal(context.PlayerVitals.afflictionAnchor(id, context.ResourceSystem.AFFLICTIONS[id]), anchor, id + ' hangs off the ' + anchor + ' anchor');
+}
+// Afflictions other modules register at runtime (combat-core.js drunk bands, amphibious-fishing.js Wounded Health, corroded health).
+assert.equal(context.PlayerVitals.afflictionAnchor('drunkenHealth', { extend: 'drunkBand' }), 'current', 'the Drunken Health buffer sits at the end of the current resource');
+assert.equal(context.PlayerVitals.afflictionAnchor('drunkenFooting', { extend: 'maxBack' }), 'end', 'Drunken Footing reserves the end of the bar');
+assert.equal(context.PlayerVitals.afflictionAnchor('woundedHealth', { extend: 'zero', reducesEffectiveMax: true }), 'end', 'Wounded Health locks maximum Health, so it is an end-of-bar affliction despite extend zero');
+assert.equal(context.PlayerVitals.afflictionAnchor('corrodedHealth', { extend: 'currentBack' }), 'current');
+assert.equal(context.PlayerVitals.afflictionAnchor('scentMarkedHealth', { extend: 'currentBack' }), 'current');
+const knownIds = new Set(Object.keys(context.ResourceSystem.AFFLICTIONS));
+for (const id of knownIds) assert.ok(['start', 'current', 'end'].includes(context.PlayerVitals.afflictionAnchor(id, context.ResourceSystem.AFFLICTIONS[id])), id + ' has exactly one of the three anchors');
+// Each affliction, applied alone, is drawn in exactly one place: a band (start/current) or the end-of-bar cap, never both.
+for (const [id, def] of Object.entries(context.ResourceSystem.AFFLICTIONS)) {
+  if (def.immutable && id !== 'shamblingFooting') continue;
+  const spec = { health: ['vbHealth', 'health', 'maxHealth'], stamina: ['vbStamina', 'stamina', 'maxStamina'], footing: ['vbFooting', 'footing', 'maxFooting'] }[def.resource];
+  if (!spec) continue;
+  const fresh = ['bleedingHealth', 'bruisedHealth', 'congealedHealth', 'rentHealth', 'windedStamina', 'shamblingFooting'];
+  for (const key of Object.keys(player.afflictions)) player.afflictions[key] = 0;
+  player.health = 100; player.stamina = 100; player.footing = 100; player.exhaustion.active = false;
+  player.afflictions[id] = 12; player[spec[1]] = 80;
+  refresh();
+  const bands = elements.get(spec[0] + 'Segments').children.filter(span => span.title === def.name);
+  const cap = elements.get(spec[0] + 'Cap');
+  const short = def.name.replace(new RegExp('\\s+' + def.resource + '$', 'i'), '');
+  const inCap = !cap.hidden && (cap.children.find(child => child.className === 'vb-name')?.textContent || '').split(' / ').includes(short);
+  const anchor = context.PlayerVitals.afflictionAnchor(id, def);
+  if (!(def.enhanced && fresh.indexOf(id) < 0 && bands.length === 0 && !inCap)) { // Enhanced bands need their own transaction setup to show.
+    assert.equal(bands.length + (inCap ? 1 : 0), 1, id + ' (' + anchor + ') is drawn in exactly one place, found ' + bands.length + ' band(s) and ' + (inCap ? 'the cap' : 'no cap'));
+    assert.equal(inCap, anchor === 'end', id + ' is in the cap only when it hangs off the end-of-bar anchor');
+    if (bands.length) assert.equal(bands[0].getAttribute('data-anchor'), anchor, id + ' band is tagged with its anchor');
+  }
+}
+for (const key of Object.keys(player.afflictions)) player.afflictions[key] = 0;
+player.health = 100; player.stamina = 100; player.footing = 100;
+refresh();
 console.log('player vitals HUD tests passed');
