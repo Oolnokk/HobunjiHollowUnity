@@ -100,6 +100,7 @@
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
+    const secrets=[]; // Optional per-room caches and Skeeri shelves; never count toward mandatory wing progression.
     function addControl(control){ruin.controls.push(control);ownedControls.add(control);}
     function removeControl(control){
       const i=ruin.controls.indexOf(control);if(i>=0)ruin.controls.splice(i,1);
@@ -127,6 +128,7 @@
       roomSession?.dispose?.(); // Wake sleepers before an exit/reroll tears down the shared scene.
       if(owner.disposed)return;owner.disposed=true;
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
+      for(const secret of secrets)secret.dispose?.(); // Unregister floor-gated fire, music and ranged contacts before removing stone.
       for(const flame of wingFlameVisuals)flame.dispose?.(); // No stale authored GPU particles after a dungeon reroll.
       for(const control of [...ownedControls])removeControl(control);
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
@@ -428,6 +430,11 @@
             setGate(challenge,true,true); // Locked until this stage solves; afterward proximity controls it.
           }
           record.challenges.push(challenge);
+          const secret=root.RuinHiddenSecrets?.create?.({room,seed:ruin.seed??plan.options?.seed??0,
+            theme:ruin.theme,ruinTier:ruin.tier??plan.options?.tier,THREE,parent:activeRoot,DynamicSurfaces:DS,
+            mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),getPlayerPosition,getPlayerY,
+            addControl,removeControl,showToast:options.showToast,onStateChange:options.onStateChange});
+          if(secret)secrets.push(secret); // No existing challenge or objective ownership is changed.
         }
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
         // The sanctum's stone-bowl brazier, bigger, burning in the lich's colour (the same
@@ -521,6 +528,7 @@
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
       for(const flame of wingFlameVisuals)
         if(roomSession.isRoomActive(flame.roomId))flame.update?.(Math.max(0,Math.min(.05,dt))); // Particle work sleeps in every closed room.
+      for(const secret of secrets)if(roomSession.isRoomActive(secret.roomId))secret.tick?.(dt);
       for(const record of states){
         const current=record.challenges[record.solved];
         if(current&&roomSession.isRoomActive(current.id))current.tick?.(dt); // Inactive rooms do not advance puzzles or their input clocks.
@@ -554,6 +562,7 @@
       challengesSolved:states.reduce((n,r)=>n+r.solved,0),
       challengesTotal:states.reduce((n,r)=>n+r.challenges.length,0),
       challengeKinds:states.flatMap(r=>r.challenges.map(c=>c.kind)),
+      hiddenDiscoveries:secrets.map(secret=>secret.snapshot()), // Mobile debug includes each secret's activation and chest state.
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
       floorlessCells:states.reduce((n,r)=>n+r.voidCells,0),
       ropeChainsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.ropeLinked).length,0),
