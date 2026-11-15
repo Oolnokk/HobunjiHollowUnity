@@ -166,6 +166,37 @@ assert.equal(api.__test.formatBuffDuration({ sourceId: 'temple-prayer-rest', rem
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'alchemy', remainingS: 90 }), '1m 30s real');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'harlyao-terror', remainingS: 1 }), 'While nearby');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', key: 'ancestor-blessing', remainingS: 7 }), '7d game');
+
+const makeBuffElement = tagName => ({
+  tagName, children: [], className: '', textContent: '', parent: null,
+  append(...items) { items.forEach(item => this.appendChild(item)); },
+  appendChild(item) { this.children.push(item); item.parent = this; },
+  remove() { const siblings = this.parent?.children; if (siblings) siblings.splice(siblings.indexOf(this), 1); },
+  get lastElementChild() { return this.children.at(-1) || null; },
+}); // Minimal DOM harness exercises the actual menu renderer without a browser or console.
+context.document = { createElement: makeBuffElement };
+const buffList = makeBuffElement('div');
+const buffEntries = [
+  { sourceId: 'temple-prayer-rest', domId: 'temple:rested', label: 'Rested', icon: '💤', kind: 'boon',
+    sourceLabel: 'Sleep or seated Wait', remainingS: 10800, description: 'Prevents fatigue yawns.' },
+  { sourceId: 'temple-prayer-rest', domId: 'temple:well-rested', label: 'Well Rested', icon: '🛏️', kind: 'boon',
+    sourceLabel: 'Sleep', remainingS: 86400, description: '+8% movement speed and +30% Stamina recovery.' },
+]; // Two distinct rest tiers must be identifiable without a hover or HUD lookup.
+api.__test.renderActiveBuffs(buffList, buffEntries);
+assert.equal(buffList.children.length, 2);
+assert.equal(buffList.children[0].children[0].textContent, '💤');
+assert.equal(buffList.children[0].children[1].children[0].children[0].textContent, 'Rested');
+assert.equal(buffList.children[1].children[0].textContent, '🛏️');
+assert.equal(buffList.children[1].children[1].children[1].textContent, '+8% movement speed and +30% Stamina recovery.');
+assert.equal(buffList.children[1].children[1].children[0].children[1].textContent, '1d game');
+const firstBuffNode = buffList.children[0]; // Verifies the one-second countdown refresh reuses visible rows without rebuilding the Gear layout.
+api.__test.renderActiveBuffs(buffList, [{ ...buffEntries[0], remainingS: 3600 }]);
+assert.equal(buffList.children.length, 1, 'expired/removed effects disappear from the menu');
+assert.strictEqual(buffList.children[0], firstBuffNode, 'unchanged buff rows reuse the same DOM');
+assert.equal(buffList.children[0].children[1].children[0].children[1].textContent, '1h game');
+api.__test.renderActiveBuffs(buffList, []);
+assert.equal(buffList.children[0].children[1].children[0].children[0].textContent, 'No active buffs or debuffs');
+
 assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
 assert.match(source, /trinketHeading\.textContent !== headingText/, 'stable Attunement heading must not trigger redundant mutation/layout work');
 assert.match(source, /row\.classList\.contains\(tone\) !== active/, 'the 1 Hz effect refresh must not rewrite unchanged bonus/drawback classes');
