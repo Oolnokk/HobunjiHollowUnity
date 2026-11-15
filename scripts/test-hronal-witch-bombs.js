@@ -9,6 +9,8 @@ const tube=json('docs/config/furniture-authored/witchBombCeilingTube.json');
 const audioConfig=read('docs/config/scratchbones-config.js'); // Verifies the production cue mapping and shipped recording.
 assert(fs.existsSync('docs/assets/audio/sfx/sfx_lowblast.mp3'),'Witch-bomb lowblast recording must ship with the game');
 assert(/"witchBombBlast":\s*\{[^}]*"url":\s*"assets\/audio\/sfx\/sfx_lowblast\.mp3"[^}]*"preload":\s*true/s.test(audioConfig),'dedicated Witch-bomb cue must map to the preloaded lowblast recording');
+assert(/"witchBombGroundHit":\s*\{[^}]*"url":\s*"assets\/audio\/sfx\/combat\/sfx_blunt_hit_large\.mp3"[^}]*"preload":\s*true/s.test(audioConfig),
+ 'the landing cue reuses the existing large blunt impact recording in the positional object mixer');
 const index=json('docs/config/furniture-authored/index.json');
 
 assert.equal(bomb.key,'hronalWitchBomb');
@@ -306,6 +308,9 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  const beforeWater=playedSfx.length;
  assert.equal(water.onImpact(water,'released-ground-impact'),true,'water contact discards the bomb');
  assert.equal(playedSfx.length,beforeWater,'water does not sound like a stone floor');
+ const directWater=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:0,z:6,fuseSeconds:120});
+ directWater.onDrop(directWater); // The player's direct floor placement must obey the same hazard guard as a falling Burden.
+ assert.equal(playedSfx.length,beforeWater,'Action 2 in water cannot manufacture a stone-impact sound');
  hazardousGrid[6][5]={type:'void'};
  testArea='map_i_dev_random_ruin';supportAt=()=>({y:4});
  const elevated=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:4.45,z:6,fuseSeconds:120});
