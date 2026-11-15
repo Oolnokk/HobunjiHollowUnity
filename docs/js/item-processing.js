@@ -399,7 +399,7 @@
     for (const key of Object.keys(stock || {})) {
       if (!(Number(stock[key]) > 0)) continue;
       const match = PRESERVED_SUFFIX.exec(key);
-      if (!match || deps.ITEM_DEFS[key]?.cookingCategories?.length) continue;
+      if (!match || (deps.ITEM_DEFS[key]?.cookingCategories?.length && processedDefinitions.has(key))) continue; // A previous world may leave its definitions in ITEM_DEFS even after this world's provenance map was cleared.
       const current = currentPreservedOutput(key, match[1]);
       if (!current?.cookingCategories?.length) continue;
       ensureProcessedItemDef(current);
