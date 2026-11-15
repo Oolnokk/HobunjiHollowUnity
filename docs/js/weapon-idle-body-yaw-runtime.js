@@ -42,8 +42,9 @@
     const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;
     const resolvedYawDeg = finite(resolved.yawDeg);
     if (resolved.active && Math.abs(resolvedYawDeg) > 1e-6) {
-      if (composerChanged || lastYawDeg !== resolvedYawDeg) composer.setChannel(CHANNEL, {
+      if (composerChanged || lastYawDeg !== resolvedYawDeg || !(composer.touchChannel?.(CHANNEL) ?? true)) composer.setChannel(CHANNEL, {
         priority: 5,
+        leaseMs: 500, // Renewed by touchChannel on unchanged idle frames; recovers from missed cleanup.
         mode: 'additive',
         rotation: { pitch: 0, yaw: resolvedYawDeg * DEG_TO_RAD, roll: 0 },
       });
