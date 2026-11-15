@@ -38,7 +38,13 @@ const effects = [
   ['guardiansBrooch', 'maxHealth', 1.20, 2],
   ['duelistsSignet', 'outgoingHealthDamage', 1.30, 3],
   ['wardensAmulet', 'maxFooting', 1.60, 3],
-]; // Exact expected benefits/prices from the seven new ordinary buried-treasure curios.
+  ['fightersBelt', 'attackStaminaCost', 0.85, 2],
+  ['swiftbladeRing', 'attackSpeed', 1.12, 2],
+  ['defendersBrooch', 'incomingHealthDamage', 0.88, 2],
+  ['steadfastBeads', 'incomingAffliction', 0.80, 2],
+  ['runnersCord', 'maxStamina', 1.20, 2],
+  ['masonsRing', 'footingRegen', 1.35, 2],
+]; // Exact expected benefits/prices from the thirteen ordinary buried-treasure curios.
 for (const [id, stat, expected, cost] of effects) {
   const before = saved.length; // Confirms character gear is saved on acquisition/equip/unequip.
   const claim = { ['trinket_' + id]: 1 }; // Uses the same key format and claim path as an opened chest.
@@ -92,4 +98,4 @@ assert.equal(hit.amount, 10, 'Ranger Beads does not buff melee');
 trinkets.unequip(uid);
 assert(hits.length >= 4, 'all pathways reached the live damage wrapper');
 
-console.log('PASS buried trinkets: seven real stat effects, Attunement, gear saves, wearer-only scope, ranged/Health/Footing combat hooks.');
+console.log('PASS buried trinkets: thirteen real stat effects, Attunement, gear saves, wearer-only scope, ranged/Health/Footing combat hooks.');
