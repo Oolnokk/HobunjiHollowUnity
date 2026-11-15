@@ -136,9 +136,14 @@ assert.equal(mesh.material[0].userData.naturalSurface,'rocks');
 assert.equal(mesh.material[0].fog,true,'both top and cliff slot must use the zone fog, not bypass it');
 const fogShader = { uniforms:{}, vertexShader:'void main() {\n#include <fog_vertex>\n}', fragmentShader:'' }; // Compiles the real plateau fog adapter against a minimal fog-enabled Three shader.
 mesh.material[0].onBeforeCompile(fogShader);
-assert.match(fogShader.vertexShader,/vFogDepth = 24\.0 \+ max\(0\.0, vFogDepth - 24\.0\) \* 0\.22;/,'far plateau must fade in the same scene fog without disappearing behind the camera limit');
+assert.match(fogShader.vertexShader,/vFogDepth = min\(vFogDepth, 24\.0\) \+ max\(0\.0, vFogDepth - 24\.0\) \* 0\.22;/,'normal nearby fog must remain unchanged before far-plateau distance compression begins');
 assert.match(fogShader.vertexShader,/#ifdef USE_FOG/,'fog distance compression applies only to fog-enabled scenes');
-assert.match(mesh.material[0].customProgramCacheKey(),/northern-plateau-scene-fog-v1/,'fog shader program must not reuse the old unfogged skyline variant');
+const fogDepth = depth => Math.min(depth, layout.fogNearDistance) + Math.max(0, depth - layout.fogNearDistance) * layout.fogDistanceScale; // Mirrors the shader's near/far piecewise fog distance at the transition.
+assert.equal(fogDepth(0),0,'camera-adjacent points must not receive artificial minimum fog');
+assert.equal(fogDepth(12),12,'ordinary scene fog must be preserved inside the near 24-unit range');
+assert.equal(fogDepth(24),24,'the near/far distance transition must be continuous');
+assert(Math.abs(fogDepth(100)-40.72)<1e-9,'past the transition, distant fog keeps growing at the backdrop scale');
+assert.match(mesh.material[0].customProgramCacheKey(),/northern-plateau-scene-fog-v2/,'fog shader program must not reuse the old unfogged skyline variant');
 assert.equal(layout.materialSlotCount,2);
 assert.equal(layout.cliffMaterialSlot,1);
 assert.equal(mesh.geometry.groups.length,2,'keep the top and side material groups');
