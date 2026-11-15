@@ -629,6 +629,25 @@
     };
   }
 
+  function unassignedReadyHarvestCount() {
+    if (!deps?.getGrid || !Number.isInteger(deps.COLS) || !Number.isInteger(deps.ROWS)) return null;
+    const assigned = new Set(); // Excludes any field tile with an active family harvesting lineup from the spouse's reminder.
+    for (const plot of window.FarmPlotEditor?.plots?.() || []) {
+      if (plot.kind !== 'till' || !(plot.workers || []).length) continue;
+      for (const tile of plot.tiles || []) assigned.add(String(tile[0]) + ',' + String(tile[1]));
+    }
+    const grid = deps.getGrid(); // The owned farm's persistent grid remains authoritative even when the player is in town.
+    if (!Array.isArray(grid)) return null;
+    let count = 0; // Used only when spouse advice is selected, not every frame.
+    for (let row = 0; row < deps.ROWS; row++) {
+      for (let col = 0; col < deps.COLS; col++) {
+        const tile = grid[row]?.[col];
+        if (tile?.crop && tile.cropReady && !assigned.has(col + ',' + row)) count++;
+      }
+    }
+    return count;
+  }
+
   // ── Farm editor pointer handlers ──────────────────────────────
   let _editorPainting = false;
   function _bindListeners() {
@@ -770,7 +789,7 @@
 
   window.FarmEditor = {
     init,
-    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
+    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess, unassignedReadyHarvestCount,
     farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     inspectFarmRestore, // Read-only selected-world layout versus live farm comparison for mobile Save Diagnostics.
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
