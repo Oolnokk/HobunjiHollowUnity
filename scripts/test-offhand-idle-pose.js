@@ -74,6 +74,35 @@ for (const t of [0, .08, .16, .22, .28, .4, .496, .65, .9, 1]) {
   assert.equal(grips.offhandIdleStateForTool('torch', 'melee', { animationGripState: grip }), null, 'torch t=' + t + ' returns free hand to locomotion idle');
 }
 
+// The actual Attack Animation Editor adapter must import the three unchecked boxes and export them unchanged.
+const editorJsonView = { value: JSON.stringify(torchIdle) }; // Lets the genuine editor grip adapter decorate JSON without a browser canvas.
+const editorContext = { // Models the editor Action, sprite selector and hand-group controls without mounting the whole 3D scene.
+  window: {
+    location: { pathname: '/tools/attack-animation-editor/index.html' },
+    HobunjiAttackEditorToolContext: { toolKey: 'torch' },
+    RuntimeFrameScheduler: { register() {} },
+  },
+  location: { pathname: '/tools/attack-animation-editor/index.html' },
+  document: {
+    getElementById(id) {
+      if (id === 'jsonView') return editorJsonView;
+      if (id === 'playbackSequence') return { value: 'attack' };
+      if (id === 'handGripContextSelect') return { value: 'melee' };
+      if (id === 'toolSpriteSelect') return { value: 'torch' };
+      return null;
+    },
+  },
+};
+vm.runInNewContext(gripSource, editorContext);
+const editorGrips = editorContext.window.HobunjiHandToolGrips; // Real import/export bridge driving the authored checkbox state.
+editorGrips.loadEditorAnimationGrip(torchIdle);
+const editorPoseFlags = editorGrips.editorSecondaryGripStateSnapshot(); // Snapshots the actual in-editor hand toggles.
+const editorExport = editorGrips.decorateEditorAnimationGrip(JSON.parse(editorJsonView.value)); // Uses the same JSON serializer as the download and copy buttons.
+for (const phase of ['neutral', 'windup', 'strike']) {
+  assert.equal(editorPoseFlags[phase].offhandIdle.enabled, false, 'editor ' + phase + ': checkbox is unchecked on load');
+  assert.equal(editorExport.poses[phase].offhandIdle.enabled, false, 'editor ' + phase + ': exported JSON retains the unchecked state');
+}
+
 // Ranged / load-fire sequences never use it.
 near(grips.animationGripAt(0.3, timing, oneHand, 'fire', 'hatchet').offhandIdleBlend, 0, 'ranged');
 
