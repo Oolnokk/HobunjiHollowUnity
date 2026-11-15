@@ -14,6 +14,14 @@
     garlink: Object.freeze({ spriteIcon: 'garlink_bunch.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB }),
     ongyums: Object.freeze({ spriteIcon: 'ongyum.png', worldMode: 'billboard', ingredientColor: 0x627F20 }),
   });
+  const CROP_WORLD_ART = Object.freeze({ // Garlink/ongyums keep PNG clusters; berry crop world art is now owned by VegetationCropRendering's real shrub meshes.
+    ...CROP_ART,
+    redberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xff4f62 }),
+    blueberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0x5f80ff }),
+    yellowberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xffe86a }),
+    whiteberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xffffff }),
+    blackberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0x17121f }),
+  });
   const WORLD_COLOR_TO_CROP = new Map([ // Used to identify generic crop cubes and tag every crop root for soil anchoring; only garlink/ongyums are converted to PNGs.
     [0xd8d0b0, 'garlink'], [0xf2ead0, 'garlink'], [0x8bbf6a, 'garlink'],
     [0xc07a3d, 'ongyums'], [0xe09a4b, 'ongyums'], [0x86b95a, 'ongyums'],
@@ -130,8 +138,10 @@
     if (!mesh?.isMesh || mesh.userData?.hobunjiCropSpriteKey || !mesh.material?.isMeshLambertMaterial || !params) return false;
     if (geometry.type !== 'BoxGeometry') return false;
     if (Math.abs(Number(params.width) - 1) > 0.0001 || Math.abs(Number(params.height) - 1) > 0.0001 || Math.abs(Number(params.depth) - 1) > 0.0001) return false;
-    const color = mesh.material.color?.getHex?.(); // Used to distinguish crop placeholders from unrelated unit cubes by the authored crop palette.
-    if (!WORLD_COLOR_TO_CROP.has(color) && !CROP_ART[mesh.userData?.hobunjiCropBaseKey]) return false; // A cultivar's blended tint is not in the legacy fixed-color lookup.
+    const color = mesh.material.color?.getHex?.(); // Used only as a legacy fallback for the two formerly supported untagged PNG crops.
+    const baseKey = mesh.userData?.hobunjiCropBaseKey; // Modern farm and NPC crop builders tag their genuine species, including every regional genotype.
+    const legacyKey = WORLD_COLOR_TO_CROP.get(color); // Old garlink/ongyums cube meshes may predate the species tag.
+    if (baseKey ? !CROP_WORLD_ART[baseKey] : legacyKey !== 'garlink' && legacyKey !== 'ongyums') return false; // Never turn unrelated white/berry-colored scenery into crops.
     const sx = Number(mesh.scale?.x); // Used with sy/sz to reject ordinary world cubes that happen to share a crop color.
     const sy = Number(mesh.scale?.y); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
     const sz = Number(mesh.scale?.z); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
@@ -141,13 +151,13 @@
     return xFrac < 0.01 && zFrac < 0.01;
   }
 
-  function makeClusterPlant(cropKey, aspect, texture, index, pigment = null) {
+  function makeClusterPlant(cropKey, aspect, texture, index, pigment = null, painted = false) {
     const geometry = new window.THREE.PlaneGeometry(aspect, 1); // Used to preserve the authored PNG aspect for this cluster member.
     const material = new window.THREE.MeshBasicMaterial({
       map: texture,
-      color: pigment ?? 0xffffff, // Only imported/crossbred cultivars tint the authored crop PNG; natives remain unchanged.
-      transparent: true,
-      alphaTest: 0.04,
+      color: painted ? 0xffffff : (pigment ?? 0xffffff), // A shade-filled texture already carries the entire inherited color; never tint it twice.
+      transparent: false,
+      alphaTest: window.HobunjiSpritePngSurface?.alphaTest?.() ?? 0.04,
       side: window.THREE.DoubleSide,
       depthWrite: true,
     });
@@ -157,13 +167,14 @@
     plant.scale.setScalar(CLUSTER_PLANT_SCALE);
     plant.castShadow = false;
     plant.receiveShadow = false;
+    plant.userData.noOutline = true; // Inverted hull outlines would fill the transparent area of the authored berry/vegetable sprite.
     plant.userData.hobunjiCropSpriteKey = cropKey;
     plant.userData.hobunjiCropClusterMember = true;
     plant.userData.hobunjiCropClusterIndex = index;
     return plant;
   }
 
-  function convertMeshToBillboard(mesh, cropKey, texture) {
+  function convertMeshToBillboard(mesh, cropKey, texture, pigment = null, painted = false) {
     if (!mesh?.parent || mesh.userData?.hobunjiCropSpriteKey || !texture?.image) return;
     const imageWidth = Math.max(1, Number(texture.image.naturalWidth || texture.image.width) || 1); // Used to preserve the authored PNG's horizontal aspect ratio in world space.
     const imageHeight = Math.max(1, Number(texture.image.naturalHeight || texture.image.height) || 1); // Used with imageWidth to keep the billboard from stretching square.
@@ -178,41 +189,69 @@
     mesh.userData.hobunjiCropSpriteKey = cropKey;
     mesh.userData.hobunjiCropRootKey = cropKey;
     mesh.userData.hobunjiCropSpriteAspect = aspect;
+    mesh.userData.hobunjiCropSpritePigment = pigment;
+    mesh.userData.hobunjiCropSpritePainted = painted;
     mesh.userData.hobunjiCropClusterCount = CLUSTER_OFFSETS.length;
 
     for (let index = 0; index < CLUSTER_OFFSETS.length; index++) {
-      mesh.add(makeClusterPlant(cropKey, aspect, texture, index, mesh.userData.hobunjiCropVarietyColor));
+      mesh.add(makeClusterPlant(cropKey, aspect, texture, index, pigment, painted));
     }
     activeBillboards.add(mesh);
   }
 
-  function flushPending(cropKey, texture) {
-    const meshes = pendingMeshes.get(cropKey); // Used to upgrade every crop tile that waited on this one shared PNG load.
-    if (!meshes) return;
-    for (const mesh of meshes) convertMeshToBillboard(mesh, cropKey, texture);
-    pendingMeshes.delete(cropKey);
+  function textureKeyFor(cropKey, pigment) {
+    return cropKey + ':' + (pigment == null ? 'native' : pigment.toString(16).padStart(6, '0'));
   }
 
-  function ensureTexture(cropKey) {
-    const art = CROP_ART[cropKey]; // Used to resolve the authored filename for a billboard-eligible crop.
+  function flushPending(textureKey, cropKey, pigment, texture, painted) {
+    const meshes = pendingMeshes.get(textureKey); // Used to upgrade all crops sharing exactly this source image and inherited color.
+    if (!meshes) return;
+    for (const mesh of meshes) convertMeshToBillboard(mesh, cropKey, texture, pigment, painted);
+    pendingMeshes.delete(textureKey);
+  }
+
+  function ensureTexture(cropKey, pigment) {
+    const art = CROP_WORLD_ART[cropKey]; // All berry species share authored berries.png while each inherited color has its own cached fill.
     if (!art || art.worldMode !== 'billboard' || !window.THREE?.TextureLoader) return null;
-    const existing = textureRecords.get(cropKey); // Used to reuse a loaded or in-flight texture request for all matching crop meshes.
+    const textureKey = textureKeyFor(cropKey, pigment); // Keeps existing native art separate from every hue-coded cultivar.
+    const existing = textureRecords.get(textureKey);
     if (existing) return existing;
-    const record = { texture: null, loaded: false, failed: false }; // Used to track this crop texture's async state without issuing duplicate requests.
-    textureRecords.set(cropKey, record);
-    const loader = new window.THREE.TextureLoader(); // Used for the same browser/Three.js asset path semantics as other game object sprites.
+    const record = { textureKey, texture: null, loaded: false, failed: false, painted: false, pigment }; // Shared loading state for one crop/source/color combination.
+    textureRecords.set(textureKey, record);
+    const sourcePath = `assets/objectsprites/${art.spriteIcon}`; // Reuses the same authored PNG as pack art, with no duplicate species asset.
+
+    if (pigment != null && window.SpriteRecolor?.getRecoloredCanvas && window.HobunjiSpritePngSurface?.makeCanvasTexture) {
+      // The inventory's existing shade-fill routine retains painted highlights and silhouette alpha.
+      // A Three.js material multiplier would turn red or white berries nearly black on the green source sprite.
+      window.SpriteRecolor.getRecoloredCanvas(sourcePath, pigment, 'direct')
+        .then(canvas => {
+          const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(window.THREE, canvas, 'crop-' + textureKey);
+          record.texture = texture;
+          record.loaded = true;
+          record.painted = true;
+          flushPending(textureKey, cropKey, pigment, texture, true);
+        })
+        .catch(error => {
+          record.failed = true; // No silent green base art that misrepresents a cultivar's inherited pigment.
+          pendingMeshes.delete(textureKey);
+          window.__farmLog?.(`[crop-art] recolor failed ${textureKey}: ${error?.message || error}`, 'warn');
+        });
+      return record;
+    }
+
+    const loader = new window.THREE.TextureLoader(); // Native garlink/ongyums use original PNGs; test harnesses without a recolorer preserve the legacy tint fallback.
     record.texture = loader.load(
-      `assets/objectsprites/${art.spriteIcon}`,
+      sourcePath,
       texture => {
         if (window.THREE.sRGBEncoding !== undefined) texture.encoding = window.THREE.sRGBEncoding;
         texture.needsUpdate = true;
         record.loaded = true;
-        flushPending(cropKey, texture);
+        flushPending(textureKey, cropKey, pigment, texture, false);
       },
       undefined,
       error => {
         record.failed = true;
-        pendingMeshes.delete(cropKey);
+        pendingMeshes.delete(textureKey);
         window.__farmLog?.(`[crop-art] failed to load ${art.spriteIcon}: ${error?.message || error || 'unknown error'}`, 'warn');
       },
     );
@@ -220,16 +259,19 @@
   }
 
   function queueBillboard(mesh, cropKey) {
-    const record = ensureTexture(cropKey); // Used to either convert immediately or park this mesh until its shared texture finishes loading.
+    const art = CROP_WORLD_ART[cropKey]; // Base species selects the actual PNG; genotype only changes its color.
+    const rawColor = mesh.userData?.hobunjiCropVarietyColor ?? art?.worldTint ?? null; // Native berries need their own fruit color too.
+    const pigment = rawColor != null && Number.isFinite(Number(rawColor)) ? (Number(rawColor) & 0xffffff) : null;
+    const record = ensureTexture(cropKey, pigment);
     if (!record || record.failed) return;
     if (record.loaded && record.texture?.image) {
-      convertMeshToBillboard(mesh, cropKey, record.texture);
+      convertMeshToBillboard(mesh, cropKey, record.texture, pigment, record.painted);
       return;
     }
-    let meshes = pendingMeshes.get(cropKey); // Used to collect all currently visible placeholder tiles for the same pending crop PNG.
+    let meshes = pendingMeshes.get(record.textureKey); // One async shade-fill result services every plant with the same genotype pigment.
     if (!meshes) {
       meshes = new Set();
-      pendingMeshes.set(cropKey, meshes);
+      pendingMeshes.set(record.textureKey, meshes);
     }
     meshes.add(mesh);
   }
@@ -243,7 +285,7 @@
       const cropKey = object.userData?.hobunjiCropBaseKey || WORLD_COLOR_TO_CROP.get(color); // Regional garlink/ongyums keep their three-plant PNGs.
       if (!cropKey) return;
       object.userData.hobunjiCropRootKey = cropKey; // Used by crop-billboard-presentation to remove water-surface lift from every generic farm crop, even ones that stay cubes.
-      if (CROP_ART[cropKey]?.worldMode === 'billboard') queueBillboard(object, cropKey);
+      if (CROP_WORLD_ART[cropKey]?.worldMode === 'billboard') queueBillboard(object, cropKey);
     });
     discoveryScanCount++;
     lastDiscoveryObjectCount = inspected;
@@ -268,7 +310,7 @@
       anchor.material?.color?.setHex?.(0xffffff);
       anchor.quaternion?.identity?.();
       for (const plant of anchor.children || []) {
-        plant.material?.color?.setHex?.(anchor.userData.hobunjiCropVarietyColor ?? 0xffffff); // Never erase a cultivar's inherited tint during render.
+        plant.material?.color?.setHex?.(anchor.userData.hobunjiCropSpritePainted ? 0xffffff : (anchor.userData.hobunjiCropSpritePigment ?? 0xffffff)); // Keep shade-filled textures untinted on every render pass.
         if (camera?.quaternion && plant.userData?.hobunjiCropClusterMember) plant.quaternion.copy(camera.quaternion);
       }
     }
@@ -301,6 +343,9 @@
       ...lastItemSync,
       activeBillboards: activeBillboards.size,
       loadedTextures: [...textureRecords.values()].filter(record => record.loaded).length,
+      paintedTextures: [...textureRecords.values()].filter(record => record.painted).length, // Mobile diagnostics distinguish real shade-fill from the legacy multiplier fallback.
+      pendingTextures: [...textureRecords.values()].filter(record => !record.loaded && !record.failed).length,
+      failedTextures: [...textureRecords.values()].filter(record => record.failed).length,
       clusterCount: CLUSTER_OFFSETS.length,
       clusterPlantScale: CLUSTER_PLANT_SCALE,
       discoveryScanIntervalMs: CROP_DISCOVERY_SCAN_INTERVAL_MS,
