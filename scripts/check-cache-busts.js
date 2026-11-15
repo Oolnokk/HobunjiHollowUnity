@@ -24,6 +24,7 @@ const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { isNavigationFreshClassicManifest } = require('./cache-bust-ownership-policy.js'); // Avoid treating parser-fresh manifests as same-named gameplay modules.
 
 const args = process.argv.slice(2);
 const fix = args.includes('--fix');
@@ -83,7 +84,9 @@ function findStale() {
 
   const stale = [];
   const unversioned = [];
+  const freshManifests = []; // Report manifests whose per-navigation loader query already guarantees fresh script contents.
   for (const changedFile of changed) {
+    if (isNavigationFreshClassicManifest(changedFile)) { freshManifests.push(changedFile); continue; } // Main-branch farm-buildings.js is a runtime child, not the freshly fetched manifest with the same basename.
     const base = path.basename(changedFile);
     if (EDITOR_ONLY.has(base)) continue;
     const patterns = refPatterns(base);
@@ -99,7 +102,7 @@ function findStale() {
     // The reference is fresh if any of its versioned URLs appears on an added line.
     if (!refs.some(ref => addedBlob.includes(ref.url))) stale.push({ changedFile, refs });
   }
-  return { changed, stale, unversioned };
+  return { changed, stale, unversioned, freshManifests };
 }
 
 function freshToken(file) {
@@ -142,12 +145,14 @@ if (fix) {
   }
 }
 
-const { changed, stale, unversioned } = result;
+const { changed, stale, unversioned, freshManifests } = result;
 
 if (!changed.length) {
   console.log('No changed docs/ scripts to check.');
   process.exit(0);
 }
+
+if (freshManifests.length) console.log(`\nFresh parser-time manifests: ${freshManifests.length} (loaded with ?load=<navigation time>; no module ?v= bump needed).`);
 
 if (unversioned.length) {
   console.log(`\nNote: ${unversioned.length} changed file(s) have no versioned reference (loaded another way):`);
@@ -166,4 +171,4 @@ if (stale.length) {
   process.exit(1);
 }
 
-console.log(`\nOK: all ${changed.length - unversioned.length} changed docs/ module(s) carry a bumped cache-bust token.`);
+console.log(`\nOK: all ${changed.length - unversioned.length - freshManifests.length} cache-versioned changed docs/ module(s) carry a bumped token.`);

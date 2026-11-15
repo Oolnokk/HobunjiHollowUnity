@@ -490,13 +490,13 @@
       })||null;
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // Legacy echo placements now use the timed-score generator and judge.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
-      const song=composer.generate(id,options.songOptions||{});
+      const song=composer.generate(id,{difficulty:composer.ruinDifficulty?.(options.ruinTier)??3,...options.songOptions}); // Use the owning ruin's rarity tier; explicit authored scores retain their override.
       rec.notes=song.notes.map(note=>note.index);
       rec.melodyPlate={x:cx,z:cz,radius:MELODY_PLATE_RADIUS}; // The rhythm is gated only inside the one-tile footprint.
       rec.lastDown=false;rec.attempts=0;
       rec.heardNotes=[];rec.glyphs=[]; // Accepted notes and owned glyphs remain available in the mobile ruin diagnostics.
       rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
-        root:group,plate:{x:cx,y,z:cz},notes:rec.notes,
+        root:group,plate:{x:cx,y,z:cz},notes:rec.notes,backingMode:'carved',
         bounds:{minX:room.x,maxX:room.x+room.w,minZ:room.z,maxZ:room.z+room.d},
         sampleSupport:()=>({y}),surfaces:options.melodySurfaces||[],surfaceRoot:options.surfaceRoot,
         seed:rec.notes.reduce((sum,n)=>sum*8+n,0),

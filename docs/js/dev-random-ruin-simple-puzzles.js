@@ -1242,18 +1242,19 @@
       }); // Glowing glyph replaces all per-interaction stone recoloring.
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,signal,down:false,played:false,pressCount:0});
     }
-    const song=composer.generate('ruin:'+String(state.buildSeed)+':'+id,{difficulty:2}); // Stable per-seed rhythm, rather than a random untimed 4-note suffix.
+    const scoreId='ruin:'+String(state.buildSeed)+':'+id; // The world seed and module ID fix both difficulty and tune across reloads.
+    const song=composer.generate(scoreId,{difficulty:composer.ruinDifficulty?.(state.context?.tier)??3}); // Stable cave-style score with difficulty determined by this ruin's rarity tier.
     const melody=song.notes.map(note=>note.index); // The existing Scratchbone decal displays the actual beat-ordered score.
     const inscription=window.RuinMelodyGlyphDecal?.create?.({
-      root,plate:plates[0],notes:melody,surfaceRoot:context.scene,seed:melody.reduce((sum,n)=>sum*8+n,0),
+      root,plate:plates[0],notes:melody,backingMode:'carved',surfaceRoot:context.scene,seed:melody.reduce((sum,n)=>sum*8+n,0),
       bounds:slot.bounds||roomBounds(context.meta,owner),
       hallway:isHallway,hallAxis:owner?.axis,
       sampleSupport,
       blockedAt:(x,z,radius)=>Boolean(window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,radius) ||
         window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,radius)),
       makeStoneMaterial:()=>window.ProceduralFurniture.makePartMaterial({
-        materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#c2b39b',
-        materialFillEnabled:true,materialFillColor:'#c2b39b',materialFillMode:'always',
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#514b43',
+        materialFillEnabled:true,materialFillColor:'#514b43',materialFillMode:'always',
       }),
     }); // Visible stone faces reveal the generated phrase only while its trigger is occupied.
     const glyphs=inscription?.group?.children?.filter(node=>node.userData?.melodyNoteIndex!==undefined)||[]; // Ordered ink planes drive the same white/yellow/green/red glows as cave scores.
@@ -2137,7 +2138,7 @@
     const removeControl=control=>{const i=owner.controls.indexOf(control);if(i>=0)owner.controls.splice(i,1);};
     state.singleRoomChallenge=Challenge.compose({
       THREE,parent:state.group,room,y:floorY,id:'single-room-'+context.seed,kind:selection.kind,side,
-      mapId:MAP_ID,standaloneRoom:true,noLoot:context.noLoot===true,
+      mapId:MAP_ID,standaloneRoom:true,noLoot:context.noLoot===true,ruinTier:context.tier??null, // Puzzle Lab uses its explicitly selected ruin tier when present.
       isActive:()=>state===owner&&inRuin(),
       onSolved:()=>{owner.singleRoomSolved=true;deps?.showToast?.('Puzzle complete! The test room awards no loot.',true);},
       getPlayerPosition:playerWorld,

@@ -61,7 +61,7 @@
     return {rooms,doors,errors,ok:errors.length===0};
   }
 
-  function v50Rooms(meta,{originX=0,originZ=0,tileScale=2,y=0,prefix='v50',theme='hronal'}={}){
+  function v50Rooms(meta,{originX=0,originZ=0,tileScale=2,y=0,prefix='v50',theme='hronal',supportYAt=null}={}){
     const cs=(Number(meta?.cellSize)||.5)*tileScale; // Matches nativeRoom and the original V50 2x horizontal projection, not a second tile grid.
     const color=theme==='tothal'?[6,18,44]:theme==='hronal'?[20,7,2]:[0,0,0];
     if(!(cs>0)||!Number.isFinite(cs))return [];
@@ -70,7 +70,9 @@
       const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
       if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
       return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),
-        y,wingId:null,challenge:null,x,z,w,d,ambient:{darknessOffset:0,color}}];
+        y,wingId:null,challenge:null,x,z,w,d,
+        supportYAt:typeof supportYAt==='function'?supportYAt:null, // V50 uses the floor's exact plateau height when deciding which room is awake.
+        ambient:{darknessOffset:0,color}}];
     });
   }
   function projectedFloorArea(data){
@@ -159,8 +161,10 @@
     let best=null,distance=Infinity;
     for(const room of rooms){
       if(!inside(room,x,z))continue;
-      const delta=Number.isFinite(y)?Math.abs(y-room.y):0;
-      if(Number.isFinite(y)&&(y<room.y-.65||y>room.y+WALL_HEIGHT+1))continue; // Never treat an actor jumping below an upper deck as already inside its room.
+      const localSupport=room.supportYAt?.(x,z); // V50 uses real per-cell plateau elevation rather than the nominal room origin.
+      const baseY=Number.isFinite(localSupport)?localSupport:room.y; // Flat authored rooms keep their existing floor-height ownership.
+      const delta=Number.isFinite(y)?Math.abs(y-baseY):0;
+      if(Number.isFinite(y)&&(y<baseY-.65||y>baseY+WALL_HEIGHT+1))continue; // Never treat an actor below the local deck as being inside the chamber.
       if(delta<distance-1e-6||(Math.abs(delta-distance)<=1e-6&&(!best||room.w*room.d<best.w*best.d))){
         best=room;distance=delta; // A nested V50 puzzle chamber wins over its containing hall at the same elevation.
       }

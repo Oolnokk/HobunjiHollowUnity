@@ -31,7 +31,7 @@ const twoPointAuthorSource = fs.readFileSync(twoPointAuthorPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
 const combatLoaderSource = fs.readFileSync(combatLoaderPath, 'utf8');
-const indexSource = fs.readFileSync(indexPath, 'utf8');
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Assert against the real parser-expanded startup list, including feature-owned manifests.
 
 global.window = global;
 delete global.AnimalShoulderSpline;

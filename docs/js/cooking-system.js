@@ -9,6 +9,15 @@
   }; // Used to give every prototype ingredient an inventory and picker icon.
   const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
 
+  const FOOD_EFFECT_BENEFITS = Object.freeze({
+    strength: 'Increases outgoing damage.', fortitude: 'Reduces incoming Health damage.',
+    vigor: 'Improves Stamina recovery.', speed: 'Increases movement speed.',
+    perception: 'Improves Perception checks and rare-fish encounters.',
+    clarity: 'Improves the chance to save ingredients while cooking.',
+    combat: 'Improves Combat skill bonuses.', farming: 'Improves Farming skill bonuses.',
+    fishing: 'Improves Fishing skill bonuses.', foraging: 'Improves Foraging skill bonuses.',
+    cooking: 'Improves Cooking skill bonuses.', mining: 'Improves Mining skill bonuses.',
+  }); // Food effect keys translated into explanations for the active buff menu.
   let deps = null; // Used as the only bridge to inventory, saving, and the host game's UI refreshes.
   let selectedRecipeId = null; // Used to preserve the selected recipe while rerendering.
   let selectedSlots = {}; // Used to hold one item-quality choice per recipe slot.
@@ -585,7 +594,7 @@
     hydratePendingFoodTimers(now);
     return activeFoodEffects.filter(effect => effect.expiresAtGameHour > now).map(effect => ({
       key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
-      sourceLabel: 'Food', stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.expiresAtGameHour - now) * 3600,
+      sourceLabel: 'Food', description: (FOOD_EFFECT_BENEFITS[effect.key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`, stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.expiresAtGameHour - now) * 3600,
     }));
   }
 

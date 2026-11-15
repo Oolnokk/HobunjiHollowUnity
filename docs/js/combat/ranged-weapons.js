@@ -176,11 +176,11 @@
       const entries = []; // Player-only HUD entries; hostile debuffs stay on the actor.
       if (state.stickyUntil > now) entries.push({
         key:'sticky',label:'Sticky · 20% movement speed',icon:'🍈',kind:'bane',
-        sourceLabel:'Soursap Fruit',durationS:2.2,remainingS:(state.stickyUntil-now)/1000,
+        sourceLabel:'Soursap Fruit',description:'Movement speed is reduced to 20% while sticky.',timeBasis:'real',durationS:2.2,remainingS:(state.stickyUntil-now)/1000,
       });
       if (state.disorientUntil > now) entries.push({
         key:'disorient',label:'Disoriented · reversed movement',icon:'💫',kind:'bane',
-        sourceLabel:'Concussive impact',durationS:DISORIENT_DURATION_MS/1000,
+        sourceLabel:'Concussive impact',description:'Movement controls are reversed while disoriented.',timeBasis:'real',durationS:DISORIENT_DURATION_MS/1000,
         remainingS:(state.disorientUntil-now)/1000,
       });
       return entries;

@@ -55,6 +55,7 @@ class MockGroup {
   updateWorldMatrix() {}
 }
 
+let runLeanProvider = null; // Captured existing Dev Companion state provider for mobile-diagnostics regression.
 const player = {
   prone: false,
   footing: 70,
@@ -143,6 +144,7 @@ const context = {
     ProceduralLegAnimation,
     PlayerBodyTransformComposer,
     BanditCombat,
+    DevCompanion: { registerStateProvider: (name, provider) => { if (name === 'playerRunLean') runLeanProvider = provider; } }, // Existing mobile bridge, no new UI.
     THREE,
     Combat: { deps: { player } },
     HobunjiDrunkWalk: {
@@ -207,6 +209,7 @@ vm.runInContext(source, context, { filename: modulePath });
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
 
+  player.vx = 0; player.vy = 4.3; // Initial velocity-only fixture has no committed positions yet.
   mockedRunLean = 0.15;
   playerLegs.update(0.016, 3, false, undefined, { combat: true });
   assert.strictEqual(composerSet.name, 'run-lean');
@@ -226,6 +229,41 @@ vm.runInContext(source, context, { filename: modulePath });
     assert(Math.abs(upZ - Math.cos(yaw) * 0.5) < 1e-12);
     assert(Math.abs(upY - Math.cos(Math.PI / 6)) < 1e-12);
   }
+  // Raised ruin supports can update committed position but leave native vx/vy at zero.
+  // The torso must follow that physical travel, not remain pitched toward world +Z.
+  player.vx = 0; player.vy = 0;
+  player.x = 5000; player.y = 4000; // Starts a new traversal sample after the original velocity-only fixture.
+  playerLegs.update(0.016, 0, false, undefined, { combat: true }); // A checkpoint warp is never gait motion.
+  assert.strictEqual(composerCleared, 'run-lean');
+  mockedRunLean = Math.PI / 6;
+  for (const [dx, dy] of [[8, 0], [0, -8], [-8, 0], [0, 8], [4, 4]]) {
+    player.x += dx; player.y += dy;
+    playerLegs.update(0.016, 3.2, false, undefined, { combat: true });
+    const yaw = Math.atan2(dx, dy); // Ground-travel heading uses game X/Z pixel-space axes.
+    const q = composerSet.contribution.quaternion;
+    const upX = -2 * q.w * q.z, upZ = 2 * q.w * q.x;
+    assert(Math.abs(upX - Math.sin(yaw) * 0.5) < 1e-12, 'lean follows committed ruin travel X');
+    assert(Math.abs(upZ - Math.cos(yaw) * 0.5) < 1e-12, 'lean follows committed ruin travel Z');
+    assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'committed-travel');
+  }
+  player.vx = 10; player.vy = 0; player.y += 7; // Even stale physics velocity must not override real raised-surface travel.
+  playerLegs.update(0.016, 3.2, false, undefined, { combat: true });
+  assert(Math.abs(composerSet.contribution.quaternion.x - Math.sin(Math.PI / 12)) < 1e-12);
+  player.x += 12000; player.y -= 16000; // Teleport is filtered by the canonical gait-speed input.
+  playerLegs.update(0.016, 0, false, undefined, { combat: true });
+  assert.strictEqual(composerCleared, 'run-lean', 'teleport does not preserve a leaning body');
+  player.x += 5; player.vx = 0; player.vy = 0;
+  playerLegs.update(0.016, 3.2, false, undefined, { combat: true });
+  assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'committed-travel', 'gait recovers after a warp');
+  playerLegs.update(0.016, 3.2, false, undefined, { combat: true }); // No displacement and no physics velocity.
+  assert.strictEqual(composerCleared, 'run-lean', 'unknown heading does not lean toward arbitrary world +Z');
+  assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'heading-unavailable');
+  assert.strictEqual(typeof runLeanProvider, 'function', 'run-lean debug integrates with the existing mobile Dev Companion');
+  assert.strictEqual(runLeanProvider().headingSource, 'heading-unavailable');
+  player.x = undefined; player.y = undefined; player.vx = 4; player.vy = 0;
+  playerLegs.update(0.016, 3.2, false, undefined, { combat: true });
+  assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'velocity-fallback', 'non-positional callers keep original velocity support');
+
   playerLegs.update(0.016, 3, true, undefined, { combat: true });
   assert.strictEqual(composerCleared, 'run-lean', 'mount/prone suppression removes running lean');
   playerLegs.dispose();

@@ -17,6 +17,13 @@ const v50=Rooms.v50Rooms({cellSize:.5,rooms:[{id:'vestibule',col:2,row:3,w:6,h:8
 });
 assert.deepEqual(v50.map(r=>[r.id,r.x,r.z,r.w,r.d,r.y]),[['v50-f1:vestibule',42,73,6,8,12]]);
 assert.deepEqual(v50[0].ambient.color,[0,0,0]);
+const sunkenRoom={...v50[0],supportYAt:(x,z)=>x<45?11.16:13.26}; // One native chamber can include lower and upper plateau cells around its nominal Y=12.
+assert.equal(Rooms.roomAt([sunkenRoom],42.5,74,11.16)?.id,'v50-f1:vestibule',
+  'a sunken native plateau remains active instead of suspending its puzzle');
+assert.equal(Rooms.roomAt([sunkenRoom],47,74,13.26)?.id,'v50-f1:vestibule',
+  'room ownership follows actual raised native floor support');
+assert.equal(Rooms.roomAt([sunkenRoom],42.5,74,10.3),null,
+  'players below the local plateau may not wake that V50 chamber');
 assert.equal(layout.doors.length,2);
 assert.equal(layout.rooms[1].blocked.length,8,'eleven-cell wall has eight solid cells and one three-cell aperture');
 assert.deepEqual(layout.rooms[1].ambient.color,[6,18,44]);
