@@ -45,7 +45,7 @@ for (const fixture of fixtures) {
   assert.equal(record.recognizedSurfaces.length, 1);
   const surface = record.recognizedSurfaces[0]; // Surface ID must agree with the saved decal attachment.
   assert.equal(surface.partId, part.id);
-  assert.equal(surface.area, .325 * .325, 'recognized billboard area reflects the smaller geometry');
+  assert.ok(Math.abs(surface.area - .325 * .325) < 1e-10, 'recognized billboard area reflects the smaller geometry');
   assert.equal(surface.bounds.minU, -.1625);
   assert.equal(surface.bounds.maxV, .1625);
   assert.equal(record.decals.length, 1);
