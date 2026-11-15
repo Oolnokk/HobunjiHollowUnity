@@ -89,12 +89,13 @@
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
       materialFillEnabled:true,materialFillColor:hex,materialFillMode:'always',color:hex,
     })||new THREE.MeshBasicMaterial({color:fallback}); // Recolor the author's stone PNG rather than substituting flat-colored dungeon furniture.
+    const wallMaterial=root.RuinWallFaces?.visibleWallMaterial?.(THREE,material)||material; // Wall backfaces remain visible without changing downward-only ceilings or solid floor depth.
     const plateMat=tintedStone('#8c735b',0x8c735b);
     const gateMat=tintedStone('#4f3b32',0x4f3b32);
     const brazierMat=tintedStone('#665346',0x665346);
     const cameraWalls=[]; // Detached geometry is only visible to the camera boom's raycasts.
     const cameraWallMaterial=new THREE.MeshBasicMaterial();
-    const materials=[material,plateMat,gateMat,brazierMat,cameraWallMaterial]; // Disposed together with the geometry and owned interactive controls.
+    const materials=[material,wallMaterial,plateMat,gateMat,brazierMat,cameraWallMaterial]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const roomLights=[]; // One light per puzzle room (and, outside Kanthic, each goal room): a room fills with light when its puzzle is solved.
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
@@ -164,9 +165,9 @@
     const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=RoomSystem.WALL_HEIGHT,WALL_THICKNESS=.14,PATCH={h:6,v:6};
     function masonry(wingName,y,floorCells,wallsX,wallsZ){
       const Faces=root.RuinWallFaces;
-      const add=(name,data,parent=activeRoot)=>{
+      const add=(name,data,parent=activeRoot,surfaceMaterial=material)=>{
         if(!data.positions.length)return null;
-        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),material);node.name=name;parent.add(node);owner.geometryCount++;return node;
+        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),surfaceMaterial);node.name=name;parent.add(node);owner.geometryCount++;return node;
       };
       if(floorCells.length){
         let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
@@ -198,9 +199,9 @@
       const wallOptions={y0:y,y1:y+WALL_HEIGHT,thickness:WALL_THICKNESS,patch:PATCH};
       if(features.length){
         const group=new THREE.Group();group.name='ruin-wing-feature-walls';group.userData.ruinFeatureWalls=true;activeRoot.add(group);
-        for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group);
+        for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group,wallMaterial);
       }
-      add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
+      add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions),activeRoot,wallMaterial);
       if(rec.occlusionMeshes&&runs.length){
         const boundary=Faces.buildEdgeWallQuads(runs,{...wallOptions,y0:y+WALL_HEIGHT,y1:y+plan.options.floorHeight});
         const wall=new THREE.Mesh(Faces.toGeometry(THREE,boundary),cameraWallMaterial);
@@ -294,6 +295,7 @@
           const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
             material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
+          if(shell.meshes[1])shell.meshes[1].material=wallMaterial; // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
           owner.geometryCount+=shell.meshes.length;
           const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ); // Verify actual exposed wall faces before accepting the generated room.
           if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');
