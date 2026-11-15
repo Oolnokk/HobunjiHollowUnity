@@ -122,6 +122,76 @@ panel.onAction('reset', {});
 assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-stage').value, 'held',
   'full reset restores stage selection');
 
+// Diagnostic hypothesis presets: each experiment is a fresh, reversible config, not a stack of overrides.
+assert.equal(X.DIAGNOSTIC_PRESETS.length, 10, 'ten grounded A/B diagnostic setups are available');
+const presetPicker = panel.render().actions.find(action => action.id === 'focus-preset');
+assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all experiments appear in one mobile dropdown');
+assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
+X.set('hand.frontPlaneMask', 'off');
+X.set('actors.order', 'near');
+X.moveLayer('actor.hands', '__end');
+const pretestRules = Object.fromEntries(X.keys().map(key => [key, X.get(key)])); // Simulates the user's custom pre-diagnosis configuration.
+const pretestOrder = X.describeLayers().map(layer => layer.id); // Capture the exact non-default custom rank arrangement.
+for (const experiment of X.DIAGNOSTIC_PRESETS) {
+  assert.deepStrictEqual(panel.onAction('focus-preset', { value: experiment.id }), { ok: true });
+  assert.deepStrictEqual(panel.onAction('apply-preset', {}), { ok: true }, 'diagnostic preset applies from shipped defaults');
+  for (const key of X.keys()) assert.equal(X.get(key), experiment.rules[key] ?? X.RULES[key].default,
+    experiment.id + ' sets a reproducible ' + key + ' rather than preserving a previous experiment');
+  assert.equal(X.get('layers.manualOrder'), experiment.rules['layers.manualOrder'] ?? 'off',
+    'the experiment does not inherit another color sort switch');
+  if (experiment.id === 'tool-before-hand') {
+    assert.ok(X.layerRank('item.weapons') < X.layerRank('actor.hands'), 'tool-under-hand preset changes the actual rank');
+    assert.equal(X.get('weapon.followHandLayer'), 'off', 'independent priority is enabled before moving tools');
+  }
+  if (experiment.id === 'tool-after-hand') {
+    assert.ok(X.layerRank('item.weapons') > X.layerRank('actor.hands'), 'tool-over-hand preset reverses that rank');
+  }
+  assert.ok(panel.render().rows.some(row => row[0] === 'Experiment' && row[1].includes('(applied)')),
+    'preset status distinguishes applied from manually edited');
+  const report = JSON.parse(panel.onAction('report', {}).text);
+  assert.equal(report.xrayDiagnosis.activePreset, experiment.id, 'report carries the actual active preset');
+  assert.equal(report.xrayDiagnosis.status, 'applied', 'report shows an unchanged experiment');
+  assert.equal(report.xrayDiagnosis.stencilAndReplay.frontPortraitMaskedGear, undefined,
+    'missing diagnostic counters do not create fake counts');
+}
+assert.ok(panel.render().actions.some(action => action.id === 'restore-original'),
+  'the first configuration can be restored at any point in the experiment');
+const savedOriginal = JSON.parse(store['hobunji.xrayHierarchy.diagnostics.v1']);
+assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets retain the original rules, not the previous preset');
+assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
+assert.equal(savedOriginal.active, 'portrait-water-off', 'last applied experiment survives browser reload');
+X.set('hand.frontPlaneMask', 'off');
+assert.ok(panel.render().rows.some(row => row[0] === 'Experiment' && row[1].includes('(modified manually)')),
+  'editing one rule after applying a preset is reported, not silently treated as the preset');
+const modifiedReport = JSON.parse(panel.onAction('report', {}).text);
+assert.equal(modifiedReport.xrayDiagnosis.status, 'modified after apply');
+
+const reloadedPanels = []; // Simulates loading the same game configuration into a new mobile tab.
+const reloadedWin = {
+  DevCompanion: { registerPanel: panel => reloadedPanels.push(panel) },
+  HeldObjectRenderOrder: win.HeldObjectRenderOrder,
+  __hobunjiGameStarted: true,
+};
+global.window = reloadedWin;
+new Function(cfgSource)();
+const Y = reloadedWin.XrayHierarchy;
+assert.equal(reloadedPanels.length, 1, 'reloaded X-ray panel is registered');
+assert.equal(Y.get('hand.frontPlaneMask'), 'off', 'user edits during the experiment still persist');
+assert.ok(reloadedPanels[0].render().actions.some(action => action.id === 'restore-original'),
+  'the original configuration is available after a page reload');
+assert.equal(Y.restoreBeforePresets(), true, 'restoring after reload succeeds');
+for (const key of X.keys()) assert.equal(Y.get(key), pretestRules[key],
+  'restore brings back the rule values from before the first experiment');
+assert.deepStrictEqual(Y.describeLayers().map(layer => layer.id), pretestOrder,
+  'restore brings back the exact pre-experiment draw order');
+assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'restoring clears the backup record');
+assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup twice');
+global.window = win;
+panel.onAction('reset', {});
+assert.equal(store['hobunji.xrayHierarchy.v1'], undefined, 'reset to repo clears experiment values');
+assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'reset to repo clears the diagnostic session too');
+assert.deepStrictEqual(X.diff(), {}, 'regression's remaining renderer checks start at shipped defaults');
+
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
 const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
 assert.ok(fallbackSource, 'renderer declares XRAY_RULE_FALLBACK');
