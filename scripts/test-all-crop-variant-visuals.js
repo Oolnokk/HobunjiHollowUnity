@@ -115,7 +115,7 @@ const grid = [families.flatMap(family => {
   const native = { crop: family, type: 'tilled', water: 0, cropAge: 5, cropReady: false };
   const key = cultivarFor(family);
   cropDefs[family] = { growDays: 5 };
-  cropDefs[key] = { growDays: 5, varietyColor: pigmentFor(family), ...(family === 'greenMustard' ? {} : { baseCrop: family }) };
+  cropDefs[key] = { growDays: 5, ...(family === 'greenMustard' ? {} : { baseCrop: family, varietyColor: pigmentFor(family) }) }; // Green mushtard intentionally exercises missing legacy family AND pigment fields.
   const variant = { crop: key, type: 'tilled', water: 0, cropAge: 5, cropReady: false };
   return [native, variant];
 })];
