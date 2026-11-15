@@ -460,6 +460,7 @@
       } else if (before && layer.pixels.every((v, i) => v === before[i])) {
         layer.undo.pop(); // No-op taps do not consume Undo history.
         layer.redo = layer.pendingRedo || [];
+        writePixels(layer, true); // A tap with zero pixel difference must not leave a false dirty marker.
       }
       layer.pendingRedo = null;
     }
@@ -653,6 +654,8 @@
     getAttachment: () => attachmentFromControls(),
     getDebug: () => ({ active: !workspace.hidden, animal: el('animalId').value,
       cosmetic: view.selectedCosmetic, layers: view.layers.map(layer => ({ path: layer.path, role: layer.role, dirty: layer.dirty,
-        undo: layer.undo.length, redo: layer.redo.length })), brush: view.brush, authored: view.authored })
+        undo: layer.undo.length, redo: layer.redo.length,
+        changedPixels: layer.pixels.reduce((total, value, index) => total + (value !== layer.original[index]), 0) })),
+      brush: view.brush, authored: view.authored })
   }); // On-page diagnostic hook without requiring a console.
 })();
