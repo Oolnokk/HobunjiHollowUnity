@@ -164,7 +164,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
   },
   FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
   AudioSystem:{playObjectSfxKey(key){playedSfx.push(key);},playObjectSfxKeyAt(key,x,z,mapId,y,opts){
-    playedSfx.push(key);positionedSfx.push({x,z,mapId,y,reverse:!!opts?.reverse});
+    playedSfx.push(key);positionedSfx.push({x,z,mapId,y,reverse:!!opts?.reverse,pitch:opts?.pitch??1});
    }},
  };
  runtimeWindow.window=runtimeWindow;
@@ -201,7 +201,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
  assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
  assert.deepEqual(playedSfx,['witchBombBlast'],'each Witch-bomb explosion plays lowblast exactly once, never the Shattercask cue');
- assert.deepEqual(positionedSfx[0],{x:2,z:4,mapId:'map_witch_bomb_runtime',y:2.12,reverse:false},
+ assert.deepEqual(positionedSfx[0],{x:2,z:4,mapId:'map_witch_bomb_runtime',y:2.12,reverse:false,pitch:1},
    "a ceiling bomb's real height and impact position reach the shared spatial renderer");
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().blastSfxKey,'witchBombBlast','mobile debugging reports the explosion cue');
  assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
@@ -278,6 +278,18 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    'the outer explosion discovers a prop created by the inner explosion callback');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeMutation,2,
    'a scene-mutating callback invalidates the nested-chain cache and triggers a fresh scan');
+ const landed=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:5,y:.45,z:6,fuseSeconds:120});
+ assert.equal(landed.onImpact(landed,'ceiling-witch-bomb-ground-impact'),false,'an intact landing does not detonate the bomb');
+ assert.equal(playedSfx.at(-1),'witchBombGroundHit','ground contact uses the named large blunt-impact cue');
+ const groundEvent=positionedSfx.at(-1);
+ assert.equal(groundEvent.x,5);assert.equal(groundEvent.z,6);
+ assert.equal(groundEvent.y,0,'the origin is the floor beneath the bomb sphere');
+ assert.equal(groundEvent.mapId,'map_witch_bomb_runtime');
+ assert.ok(Math.abs(groundEvent.pitch-Math.pow(2,-9/12))<1e-12,'the landing sample is pitched down exactly nine semitones');
+ const groundSounds=playedSfx.length;
+ assert.equal(landed.onImpact(landed,'ceiling-witch-bomb-collision'),false,'non-ground collision does not detonate');
+ assert.equal(playedSfx.length,groundSounds,'a bomb colliding with another object does not play a false ground hit');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().groundHitPitchSemitones,-9,'mobile diagnostics identify the intended landing pitch');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
