@@ -1220,6 +1220,10 @@
       const footSide = footRoute.side > 0 ? 'right' : footRoute.side < 0 ? 'left' : 'none'; // Exposes the contact slide direction on phones.
       lines.push(`Ground steering: foot=${footRoute.status || '-'} blocked=${!!footRoute.blocked} side=${footSide} contact=${Number(footRoute.contactTiles || 0).toFixed(3)}t plans=${footRoute.plans ?? 0} mount=${mountRoute.status || '-'} blocked=${!!mountRoute.blocked} waypoint=${mountRoute.waypoint ? mountRoute.waypoint.col + ',' + mountRoute.waypoint.row : '-'} plans=${mountRoute.plans ?? 0}`);
     }
+    const mountedRide = window.Mounts?.ridingDebug; // Mount speed, wheat, jump state and voice cadence are copyable on phones.
+    if (mountedRide && window.Mounts?.rideState !== 'none') {
+      lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
+    }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
       lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
