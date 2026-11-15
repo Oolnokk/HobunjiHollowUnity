@@ -667,7 +667,7 @@ assert.equal(farm.offspringProvenanceFor('mother'),null,
 
 const farmPanelText=fs.readFileSync('docs/js/farm-panel-core.js','utf8');
 const farmPanelLoaderText=fs.readFileSync('docs/js/farm-panel.js','utf8');
-const browserIndex=fs.readFileSync('docs/index.html','utf8');
+const browserIndex=indexSource; // Verify the effective parser-ordered script registrations, including feature manifests.
 assert(farmPanelText.includes('cropGenealogy:') && farmPanelText.includes('lastChildRoutes:'),
   'existing mobile Farm layout Debug report includes canonical saved cultivar ancestry');
 assert(farmPanelText.includes('livestockBirths:') && farmPanelText.includes('offspringProvenance'),

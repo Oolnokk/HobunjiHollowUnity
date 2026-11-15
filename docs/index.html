@@ -138,7 +138,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261114perfumesAudit3"></script>
+  <script src="js/item-processing.js?v=20261115smokedFishAudit2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261112corpseAndSharedTint1"></script>
@@ -185,7 +185,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261114hRigDance1"></script>
+  <script src="js/character-action-locks.js?v=20261115hPoseLocks2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/rig-transform-layers.js?v=20261114hRigBaseline1"></script> <!-- Named removable offsets for procedural NPC/head/leg poses. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
@@ -300,7 +300,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261113idle1"></script>
+  <script src="js/local-save-folder.js?v=20261115externalLayoutCopies3"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
@@ -364,7 +364,7 @@
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
   <script src="js/cooking-data.js?v=20261114skeeri1"></script>
   <script src="js/food-processing.js?v=20261109craftHours1"></script>
-  <script src="js/cooking-system.js?v=20261110h1f7ed44"></script>
+  <script src="js/cooking-system.js?v=20261115smokedFishAudit2"></script>
   <script src="js/key-item-system.js?v=20261112keyPack2"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -404,7 +404,7 @@
        during its own setup. -->
   <!-- The same controller/touch ring lock guards wilderness, cave-cache and ruin rewards. -->
   <script src="js/chest-lockpicking.js?v=20261104lockaudit2"></script>
-  <script src="js/wild-treasure.js?v=20261114potionStacks2"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-treasure"></script> <!-- Buried treasure code and cache versions live in its own manifest. -->
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -582,7 +582,7 @@
   <script src="js/flying-animal-rig.js?v=20261114skeeri1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261108tzflightnest2"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261114skeeri1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261114skeeriCorpse1"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261115hTalonHandoff2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261108tzflightnest2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -870,10 +870,7 @@
   <script src="js/ruin-composer-playable.js?v=20261108witchBombExtern1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261107combined1520_1524_1"></script>
-  <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
-  <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
-  <script src="js/tothal-zone-cache.js?v=20261110banubuNightAudit2"></script>
-  <script src="js/ruin-sites.js?v=20261110hb96c703"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
   <script src="js/zone-den-totem-features.js?v=20261114glowsphere1"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2872,7 +2869,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261114shaftTravel1"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="ruin-runtime"></script> <!-- Full ruin runtime bootstrap owned by a feature manifest. -->
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

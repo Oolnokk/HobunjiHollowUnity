@@ -227,6 +227,7 @@
     if (itemsRegistered) return true;
     if (window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(), buildBasePrices()) !== true) return false;
     itemsRegistered = true;
+    window.CookingSystem?.repairPreservedInventory?.(); // Rehydrate late-loaded fish definitions when the item catalog arrives.
     window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish (${FISH.filter(f=>f.amphibious).length} amphibious at ${AMPHIBIOUS_SELL_MULTIPLIER}x value)`,'items');
     return true;
   }

@@ -202,7 +202,7 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20261018h1c2396a',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20261114smokedFishFix1',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

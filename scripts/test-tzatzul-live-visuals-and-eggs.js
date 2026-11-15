@@ -126,22 +126,19 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(tintChecks.length, beforeTint + 1, 'individual color is restored once the damage flash ends');
   assert.equal(visuals.snapshot().refreshedPlanes, 1, 'mobile diagnostics count the native replacement');
   const captive = { health:20, avatarRef: { group: { quaternion: {
-    angle: .37, clone() { return { angle: this.angle }; }, copy(pose) { this.angle = pose.angle; }
+    angle: .37, clone() { return { angle: this.angle }; }, copy(pose) { this.angle = pose.angle; },
+    equals(pose) { return this.angle === pose.angle; }
   }, scale:{ x:1, clone(){ return {x:this.x}; }, copy(value){this.x=value.x;} } } } }; // A real surviving actor must regain rotation and size after the drop.
   assert(visuals.rememberCaptive(captive));
-  captive.avatarRef.group.quaternion.angle = -1.23;
-  assert(visuals.restoreCaptive(captive), 'a released prey is returned to its own native orientation');
-  assert.equal(captive.avatarRef.group.quaternion.angle, .37);
+  captive.avatarRef.group.quaternion.angle = -1.23; // An unrelated native pose writer, not a verified talon alignment.
+  assert(visuals.restoreCaptive(captive), 'a captured actor can release even if the flying rig did not align');
+  assert.equal(captive.avatarRef.group.quaternion.angle, -1.23, 'unowned native orientation must not be rolled back');
   assert.equal(visuals.restoreCaptive(captive), false, 'repeat releases must never replay stale rotations');
   assert.equal(visuals.snapshot().captiveRestores, 1);
-  captive.avatarRef.group.quaternion.angle = -1.23; captive.avatarRef.group.scale.x = 3; // A late renderer reapplies the talon matrix after release.
+  captive.avatarRef.group.scale.x = 3; // Unrelated native growth/impact scale is not owned by the talons.
   visuals.tick(.016, 'map_northern_cliffs');
-  assert.equal(captive.avatarRef.group.quaternion.angle,.37,'next-frame cleanup prevents a lingering sideways captive');
-  assert.equal(captive.avatarRef.group.scale.x,1,'capture scale is restored too');
-  visuals.tick(.016, 'map_northern_cliffs'); // The restoration fence expires after two ticks.
-  captive.avatarRef.group.quaternion.angle = .8;
-  visuals.tick(.016, 'map_northern_cliffs');
-  assert.equal(captive.avatarRef.group.quaternion.angle,.8,'normal character animation takes over after the drop');
+  assert.equal(captive.avatarRef.group.quaternion.angle, -1.23, 'no blind post-release angle reset');
+  assert.equal(captive.avatarRef.group.scale.x, 3, 'no blind post-release scale reset');
 
   const hatchling = { id:'test-hatchling', creatureKey:'tzatzul-hatchling', health:30,
     x:180, y:220, state:'idle', areaId:'map_northern_cliffs',
@@ -184,7 +181,7 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   // Player rendering uses game.js's playerMesh, whereas avatarRef.group may be an absent or different portrait child.
   function poseRoot(angle) {
     return { parent: {}, quaternion: { angle, clone() { return { angle: this.angle }; },
-      copy(value) { this.angle = value.angle; } },
+      copy(value) { this.angle = value.angle; }, equals(value) { return this.angle === value.angle; } },
       scale: { x: 1, clone() { return { x: this.x }; }, copy(value) { this.x = value.x; } } };
   }
   let playerRig = poseRoot(.42); // The actual PlayerBodyTransformComposer/game.js root changed by talon alignment.
@@ -244,19 +241,38 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(playerRig.quaternion.angle, .42, 'the carried rotation is removed from normal player animation');
   assert.equal(playerRig.scale.x, 1, 'talon-carry size cannot persist into walking and attacks');
   assert.equal(portraitChild.quaternion.angle, .91, 'the unrelated portrait child is not touched');
-  playerRig.quaternion.angle = -1.55; // A final in-flight draw attempts to reapply the tilt after release.
+  playerRig.quaternion.angle = .64; // Combat takes over immediately in the very first post-release tick.
   visuals.tick(.016, 'map_northern_cliffs');
-  assert.equal(playerRig.quaternion.angle, .42, 'the release correction targets the actual player root on the next native tick');
+  assert.equal(playerRig.quaternion.angle, .64, 'the first resumed combat frame must not be replaced by a saved idle pose');
+  playerRig.quaternion.angle = .91;
   visuals.tick(.016, 'map_northern_cliffs');
-  playerRig.quaternion.angle = .64; // Normal combat/locomotion writes must work after the two-frame fence.
-  visuals.tick(.016, 'map_northern_cliffs');
-  assert.equal(playerRig.quaternion.angle, .64, 'post-release attack and walking pose owns the baseline again');
+  assert.equal(playerRig.quaternion.angle, .91, 'a completed handoff remains free of delayed pose corrections');
   assert.match(visuals.snapshot().lastCaptiveRestore, /player: restored root baseline/);
 
   assert(visuals.rememberCaptive(capturedPlayer), 'a second abduction samples the new native orientation');
-  playerRig.quaternion.angle = -2.1;
-  assert(visuals.restoreCaptive(capturedPlayer), 'repeated captures restore the newest baseline instead of the first one');
-  assert.equal(playerRig.quaternion.angle, .64);
+  capturedPlayer.tzatzulCapturedBy = carrier.id;
+  assert(visuals.alignCaptive(capturedPlayer, playerRig), 'repeated capture actually records the latest talon orientation');
+  capturedPlayer.tzatzulCapturedBy = null;
+  assert(visuals.restoreCaptive(capturedPlayer), 'repeated capture restores the new pre-capture rotation');
+  assert.equal(playerRig.quaternion.angle, .91);
+  playerRig.quaternion.angle = -1.55; // A delayed talon write reproduces the precise aligned orientation.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.quaternion.angle, .91, 'a verified stale talon write is corrected exactly once');
+  assert.equal(visuals.snapshot().staleCarryCorrections, 1, 'mobile diagnostics expose a late talon reapplication');
+  playerRig.quaternion.angle = .65; // Another legitimate writer owns the next native tick.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.quaternion.angle, .65, 'the bounded release guard never cancels a new animation');
+
+  assert(visuals.rememberCaptive(capturedPlayer));
+  capturedPlayer.tzatzulCapturedBy = carrier.id;
+  assert(visuals.alignCaptive(capturedPlayer, playerRig));
+  playerRig.quaternion.angle = .2; // A fall/ragdoll overwrote the talon pose before the release callback.
+  capturedPlayer.tzatzulCapturedBy = null;
+  assert(visuals.restoreCaptive(capturedPlayer));
+  assert.equal(playerRig.quaternion.angle, .2, 'fall pose already holding the rig survives the release');
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.quaternion.angle, .2, 'no correction persists after a prior animation takeover');
+  assert(visuals.snapshot().captiveHandoffs >= 2, 'mobile diagnostics report ownership handoffs');
 
   assert(visuals.rememberCaptive(capturedPlayer));
   const oldPlayerRig = playerRig; // Retained only to ensure a rebuilt rig is never modified by an obsolete capture.

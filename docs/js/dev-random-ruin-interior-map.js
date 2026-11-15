@@ -1605,10 +1605,11 @@
   function leaveRuin() {
     if (deps?.getCurrentArea?.()!==MAP_ID) return;
     const leaving=ruin;
-    const relocated=leaving?.storyVault ? window.RuinSites?.storyVaultSite?.('map_western_slope') : null; // A Tothal Shift may move the unique quest burrow while the player is underground.
+    const relocated=leaving?.storyVault ? window.RuinSites?.storyVaultSite?.('map_western_slope') : null; // The unique quest vault moves with Tothal.
+    const shiftedTomb=leaving?.storyVault ? null : window.RuinSites?.relocatedReturnAnchor?.(); // Named Lich ruins also move, but keep their original interior.
     const back=relocated
       ? {area:relocated.zoneId,x:(relocated.col+.5)*deps.TILE,y:(relocated.row+1.5)*deps.TILE}
-      : returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
+      : shiftedTomb||returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
     return runSceneTransition(()=>{
       if(!leaving||ruin!==leaving)return;
       for(const o of playerSceneObjects()) detach(o);

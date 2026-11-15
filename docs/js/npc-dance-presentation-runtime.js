@@ -165,8 +165,12 @@
     }
   }
 
+  function cancelHandPose(entry) {
+    releaseHandPose(entry); // Cancel even when the sentinel was not drawn this frame (culled/hidden NPC).
+    entry.session = null;
+  }
   function lateHandPose(entry, target) {
-    if (!arrivedForSocialPose(entry.walker, target)) return;
+    if (!arrivedForSocialPose(entry.walker, target)) { cancelHandPose(entry); return; }
 
     const presentation = target.socialDance || target.socialAncestorCeremony;
     const ceremony = !!target.socialAncestorCeremony; // Mourners do not dance or smile.
@@ -237,7 +241,7 @@
   function disposeSentinel(entry) {
     const sentinel = entry?.sentinel;
     if (!sentinel) return;
-    releaseHandPose(entry); // Despawn/avatar replacement releases any pose still owned by dance.
+    cancelHandPose(entry); // Despawn/avatar replacement releases any pose still owned by dance.
     sentinel.parent?.remove?.(sentinel);
     sentinel.geometry?.dispose?.();
     sentinel.material?.dispose?.();
@@ -270,11 +274,8 @@
     };
     sentinel.onBeforeRender = () => {
       const target = walker.currentScheduleTarget;
-      if (!target?.socialDance && !target?.socialAncestorCeremony) {
-        releaseHandPose(entry); // Cancelled dances cannot leave an overhead punch stuck.
-        entry.session = null;
-        entry.handPoseState.left = null;
-        entry.handPoseState.right = null;
+      if (!arrivedForSocialPose(walker, target)) {
+        cancelHandPose(entry); // Leaving the dance location also releases the hands, not only ending the schedule.
         return;
       }
       lateHandPose(entry, target);
@@ -301,6 +302,8 @@
       if (!existing || existing.walker !== walker || existing.sentinel?.parent !== walker.root) {
         if (existing) disposeSentinel(existing);
         makeSentinel(walker);
+      } else if (!arrivedForSocialPose(walker, walker.currentScheduleTarget)) {
+        cancelHandPose(existing); // Periodic game tick releases offscreen dance poses without requiring render().
       }
     }
     for (const [id, entry] of state.sentinels) {
