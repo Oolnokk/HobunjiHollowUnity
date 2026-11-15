@@ -25,7 +25,9 @@ assert.match(workbench, /brushApi\.smudgeStep/, 'smudge uses shared modular weap
 assert.match(workbench, /brushApi\.plowStep/, 'plow uses shared modular weapon displacement');
 assert.match(workbench, /brushApi\.revertStep/, 'restore uses shared modular weapon undo/revert brush');
 assert.match(workbench, /rgba|pixels|pixel/i, 'hat tab includes raster authoring');
-assert.match(workbench, /pixel changes still require exported PNG assets/i, 'UI does not misrepresent browser fit preview as a committed sprite edit');
+assert.match(workbench, /Edited PNG pixels still require exported assets/i, 'UI distinguishes hat fit previews from exported sprite art');
+assert.match(workbench, /HAT_PREVIEW_STORAGE_KEY = 'hobunji_animal_hat_fits_v1'/, 'hat-only preview uses a key distinct from complete neck rigs');
+assert.doesNotMatch(workbench, /writePreviewRigs\(rigs\)/, 'hat-only save must not overwrite runtime head-rig records');
 assert.match(workbench, /view\.layers\.filter\(layer => layer\.dirty\)/, 'multi-layer export only selects edited layers');
 
 const context = {
@@ -126,3 +128,61 @@ assert.equal(hats.normalizeAttachment({ heightScale: -99 }).heightScale, .2);
   assert.deepEqual(pixels, before, 'restore can recover dark outlines and colored hat art together');
   console.log('Animal hat workspace and runtime attachment deformation: PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Real hats-tab module bootstrap in a fake DOM: regression for hat-only storage
+// never shadowing a valid head-rig preview record.
+{
+  const elements = new Map(); // Fake elements keep callbacks installed by the unmodified editor script.
+  function createNode() {
+    return { events: {}, addEventListener(type, callback) { this.events[type] = callback; },
+      appendChild() {}, before() {}, after() {}, setAttribute() {}, classList: { toggle() {} },
+      getContext: () => ({ clearRect() {}, drawImage() {} }),
+      getBoundingClientRect: () => ({ width: 300, height: 200 }),
+      options: [], selectedIndex: 0, innerHTML: '', textContent: '', value: '', style: {}, hidden: false };
+  }
+  const node = id => {
+    if (!elements.has(id)) elements.set(id, createNode());
+    return elements.get(id);
+  };
+  node('animalId').value = 'hat_only_test';
+  node('hatEnabled').checked = true;
+  for (const [id, value] of Object.entries({ hatAnchorX: '.5', hatAnchorY: '.2', hatWidth: '.34',
+    hatHeightScale: '1', hatSkew: '0', hatRotation: '0', hatArtX: '.5', hatArtY: '.86' }))
+    node(id).value = value;
+  const originalNeck = { enabled: true, weightMap: { width: 1, height: 1, data: [255] }, pivot: { x: .2, y: .5 } };
+  const saved = { hobunji_animal_head_rigs_v1: JSON.stringify({ 'hat-only-test': originalNeck }) };
+  const localStorage = { getItem: key => saved[key] || null, setItem: (key, value) => { saved[key] = value; } };
+  const testWindow = { ModularWeaponBridgeFill: { smudgeStep() {}, plowStep() {}, revertStep() {} },
+    AnimalNpcHeadwear: hats, addEventListener() {}, devicePixelRatio: 1 };
+  const testContext = {
+    window: testWindow, document: { head: createNode(), querySelector: createNode,
+      getElementById: node, createElement: createNode }, localStorage,
+    state: { baseRecord: {}, pendingRig: null, image: null },
+    normalizedRig: () => null, applyRecord: () => {}, buildRecord: () => ({ id: 'hat_only_test' }),
+    populateAnimalSelect: () => {}, updateOutput: () => {}, resizeCanvases: () => {},
+    requestAnimationFrame: callback => callback(), ResizeObserver: class { observe() {} },
+    pretty: JSON.stringify, copyText() {}, downloadJson() {}, console
+  };
+  vm.createContext(testContext);
+  vm.runInContext(workbench, testContext, { filename: 'hat-tab.js' });
+  assert(testWindow.HobunjiAnimalHatWorkbench, 'actual Hats-tab script must boot with legacy neck bindings');
+  node('hatHeightScale').value = '1.7';
+  node('hatHeightScale').events.input();
+  node('hatPreviewSave').onclick();
+  const hatFits = JSON.parse(saved.hobunji_animal_hat_fits_v1);
+  assert.equal(hatFits['hat-only-test'].heightScale, 1.7,
+    'hat-only Save must persist authored deformation without head paint');
+  assert.deepEqual(JSON.parse(saved.hobunji_animal_head_rigs_v1)['hat-only-test'], originalNeck,
+    'hat-only Save must preserve a previously valid complete neck preview, byte-for-byte');
+  node('hatPreviewClear').onclick();
+  assert.equal(Object.hasOwn(JSON.parse(saved.hobunji_animal_hat_fits_v1), 'hat-only-test'), false,
+    'Clear hat preview only deletes the separate hat override');
+  assert.deepEqual(JSON.parse(saved.hobunji_animal_head_rigs_v1)['hat-only-test'], originalNeck,
+    'clearing a hat preview must not clear neck pose/weights');
+  node('hatHeightScale').value = '1.2';
+  node('hatHeightScale').events.input();
+  node('hatPreviewSave').onclick();
+  node('clearAllPreviewRigs').onclick();
+  assert.deepEqual(JSON.parse(saved.hobunji_animal_hat_fits_v1), {},
+    'Clear all in-game previews must include independent hat previews');
+}
