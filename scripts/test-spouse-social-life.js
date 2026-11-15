@@ -5,6 +5,18 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const sourceFile = path => fs.readFileSync(path, 'utf8');
+
+const index = sourceFile('docs/index.html'); // Verifies real parser order instead of assuming this new content module is loaded.
+const socialTag = 'data-classic-group="spouse-social"'; // The stable manifest owns social dialogue's versioned child URL.
+assert.equal(index.split(socialTag).length - 1, 1, 'spouse-social manifest appears exactly once');
+assert(index.indexOf(socialTag) < index.indexOf('data-classic-group="romance-runtime"'),
+  'spouse dialogue context must load before the RomanceSystem module');
+const writes = []; // Captures actual parser-time expansion without a browser.
+vm.runInNewContext(sourceFile('docs/js/bootstrap/classic-groups/spouse-social.js'),
+  { document: { readyState: 'loading', write: html => writes.push(html) } });
+assert.equal(writes.length, 1, 'spouse-social manifest emits its child script once');
+assert.match(writes[0], /js\/spouse-social-life\.js\?v=[A-Za-z0-9_-]+/, 'shipped advice module has a versioned URL');
+
 const clock = { hour: 10, day: 8, weekday: 'Hronu' }; // Drives prayer/festival/hour-window cases deterministically.
 const active = { kissHours: 0, food: true, rested: true, prayer: false, festival: null, harvest: 0, job: null }; // Drives live signal and farmwork stubs.
 const graph = [ // Real social-relationship edges, including a partner of a direct family member.
