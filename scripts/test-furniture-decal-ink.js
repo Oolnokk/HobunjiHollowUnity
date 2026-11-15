@@ -38,10 +38,10 @@ const settings = { enabled:true, color:'#aabbcc', glowStrength:.75, glowRadius:.
 const ink = inkApi.decorate(mesh, settings);
 assert.equal(ink.color, '#aabbcc');
 assert.equal(mesh.material.color.value, '#aabbcc', 'the motif uses selected ink rather than source PNG RGB');
-assert.equal(mesh.material.blending, THREE.AdditiveBlending, 'ink core is emissive');
+assert.equal(mesh.material.blending, THREE.NormalBlending, 'glyph core uses normal blending to preserve hue');
 assert.equal(mesh.children.length, 1, 'soft halo is a child of the glyph, not a separate world effect');
 const halo = mesh.userData.glyphInkHalo; // Independently visible background falloff.
-assert.equal(halo.material.opacity, .75);
+assert.ok(Math.abs(halo.material.opacity - .75 * .35) < 1e-9, 'halo intensity is restrained to avoid white clipping');
 assert.equal(halo.visible, false, 'halo is hidden while the asynchronous image has not loaded');
 assert.ok(halo.geometry.parameters.width > mesh.geometry.parameters.width, 'halo footprint extends beyond motif');
 const coreShader = { fragmentShader:'void main(){ #include <map_fragment> }' }; // Shader fragment replacement is the production behavior.
@@ -88,6 +88,8 @@ for (const key of ['glowGlyphOrb','flamingLichHeart','unsleepingLichHeart','sigh
   assert.ok(Math.abs(surface.area-.325*.325)<1e-10);
   assert.equal(surface.bounds.minU,-.1625);
   assert.equal(surface.bounds.maxV,.1625);
+  assert.equal(decal.width, .3, 'decal width is reduced independently of billboard');
+  assert.equal(decal.height, .3, 'decal height is reduced independently of billboard');
   assert.equal(decal.glyphInk?.enabled,true);
   assert.ok(decal.glyphInk.glowStrength>0);
   assert.ok(decal.glyphInk.glowRadius>0);
