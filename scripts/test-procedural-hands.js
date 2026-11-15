@@ -441,6 +441,20 @@ assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibr
 assert.match(handSource, /rec\.calibration\.add\(visual\)/, 'rendered hand visuals must live below the calibration child, not directly on the shoulder-owned socket');
 assert.match(handSource, /applyToolCalibration\(side, null\)/, 'free-hand fallback must disable held-item calibration without rebuilding the GLB');
 assert.match(handSource, /function placeHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\(side, modelCalibration\)/, 'held-item placement must apply the exact calibration supplied by the frame driver');
+// Character View can reveal a reflected player plane from behind; both the visible
+// hand and its editor reference must convert the weapon's scale-free world grip
+// rotation without decomposing a mirrored parent matrix.
+for (const [label, startMarker, endMarker] of [
+  ['hand', 'function placeHandWorld(', 'const calibrationParentWorldQuaternion'],
+  ['paper reference', 'function placePaperHandGuideWorld(', 'function placeHandWorld('],
+]) {
+  const start = handSource.indexOf(startMarker);
+  const end = handSource.indexOf(endMarker, start);
+  assert(start >= 0 && end > start, `${label} placement method must be present`);
+  const placement = handSource.slice(start, end);
+  assert.match(placement, /hierarchyWorldQuaternionScaleFree\(parent, tempParentQuaternion\)/, `${label} orientation must follow the grip's scale-free parent hierarchy`);
+  assert.doesNotMatch(placement, /parent\.getWorldQuaternion\(/, `${label} must not use reflected-matrix decomposition`);
+}
 assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*const modelKey = modelKeyForRecord\(record\)/, 'frame driver must use one authoritative selected model identity for calibration');
 assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
