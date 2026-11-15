@@ -268,4 +268,31 @@ assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or b
     'the lower pressure plate, rather than the bridge glyph, unlocks the final V50 door');
   dropRuntime.dispose();assert.equal(controls.length,0);
 }
+// Reproduction of full-construction CI failure: the V50 cubes are aligned
+// while the player is outside the active-room bounds on the final animation frame.
+{
+  const dormantRoot=new Node(0,4,0),dormantDoor=new Node(5,0,3),dormantCube=new Node(4,0,3);
+  dormantDoor.userData={mechanismId:'last-cube-door',previewMotion:{type:'stoneDoor'}};
+  dormantCube.userData={activatorType:'linkedCubePillars',linkedMechanismId:'last-cube-door',
+    solved:false,solveTarget:0,solveProgress:0,rotatingSegments:[]};
+  dormantDoor.userData.linkedCubePuzzleRoot=dormantCube;
+  dormantRoot.add(dormantDoor);dormantRoot.add(dormantCube);
+  const mounted=Native.mount({nativeRoot:dormantRoot,floor:2,scope:'dormant-completion',
+    api:generator,THREE,DynamicSurfaces:DS,getPlayerPosition:()=>player,getPlayerY,
+    addControl,removeControl,hitPuzzles:{registerExternalRoot:()=>()=>{}},heightAt:()=>4,showToast(){}});
+  const doorState=mounted.states.get('last-cube-door');
+  dormantCube.userData.solveProgress=1-Number.EPSILON;
+  mounted.tickDormant(.05);
+  assert.equal(doorState.solved,false,'an almost complete animation is not proof of a solved cube');
+  assert.equal(doorState.progress,0,'dormant unsolved puzzles remain frozen');
+  dormantCube.userData.solveTarget=1;dormantCube.userData.solved=true;
+  mounted.tickDormant(.05);
+  assert.equal(doorState.accepted,true,'an actually solved cube latches its exit despite the inactive room');
+  assert(doorState.progress>0,'the accepted exit begins opening without replaying off-room puzzle inputs');
+  for(let i=0;i<20;i++)mounted.tickDormant(.05);
+  assert.equal(doorState.progress,1,'the real V50 door reaches the fully opened pose');
+  assert.equal(mounted.isSolved(doorState.id),true);
+  mounted.dispose();
+  assert.equal(controls.length,0,'completed off-room cube controls clean up on map teardown');
+}
 console.log('ok V50 native authored puzzles: plates, blocks, glyphs, torches, ring obelisks, linked cubes, moving stone, transit controls, cleanup');
