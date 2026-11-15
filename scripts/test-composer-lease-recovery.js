@@ -29,7 +29,12 @@ assert.equal(api.expireStaleChannels(1500), 1, 'abandoned run lean expires');
 assert.equal(context.channels.has('run-lean'), false);
 assert.equal(context.channels.has('weapon-idle'), true);
 assert.equal(context.channels.has('ragdoll-hold'), true);
-assert.equal(api.expireStaleChannels(1990), 1, 'unrenewed weapon pose eventually expires');
+clock = 1900;
+assert.equal(api.touchChannel('weapon-idle'), true, 'live idle pose is still renewable before its deadline');
+clock = 2490;
+assert.equal(api.touchChannel('weapon-idle'), false, 'an expired idle pose cannot be revived by touch');
+assert.equal(context.channels.has('weapon-idle'), false, 'expired idle pose is removed before a new writer publishes it');
+assert.equal(api.expireStaleChannels(2490), 0, 'expired channel is counted only once');
 assert.equal(context.channels.has('ragdoll-hold'), true, 'held ragdoll pose must survive cleanup');
 
 clock = 2200;
