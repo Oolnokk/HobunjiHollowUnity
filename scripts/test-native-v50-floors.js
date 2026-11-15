@@ -7,6 +7,7 @@ const assert=require('assert');
 const fs=require('fs'); // Read the real V50 bridge source to prove scene snapshots preserve native meshes across generations.
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const Native=require('../docs/js/ruin-v50-native-floors.js');
+const Rooms=require('../docs/js/ruin-room-system.js'); // Verify native room ownership at the real lower/raised plateau elevations.
 const NativeMechanisms=require('../docs/js/ruin-v50-native-mechanisms.js'); // Real V50 authored activators must remain attached to each generated story.
 const CG=require('../docs/js/cell-grid-3d.js');
 const Corridors=require('../docs/js/ruin-shaft-corridor.js');
@@ -158,9 +159,11 @@ for(let floor=1;floor<3;floor++){
 const rec={scene,cols:100,rows:100,grid:[],
   floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]}};
 let cubeRegistrations=0,cubeReleases=0; // Verifies native floors restore their genuine V50 solver registry entries and release them on teardown.
+const registeredRooms=[]; // Captures the real native rooms registered into the common room simulation, including their plateau-support queries.
 const ruin={controls:[],api:{applyProgress(){},syncPressurePlates(){},
   registerDetachedCubeRoots(){cubeRegistrations++;return ()=>cubeReleases++;}},
-  shaftLayerRuntime:{calls:[],setNativeGoalState(total,lit){this.calls.push({total,lit})}}}; // V50's original pose bridge is required even when this fixture has no authored activators.
+  shaftLayerRuntime:{calls:[],setNativeGoalState(total,lit){this.calls.push({total,lit})},
+    registerRooms(rooms){registeredRooms.push(...rooms)}}}; // V50's original pose bridge is required even when this fixture has no authored activators.
 const registered=[],surfaces=[],cleared=[],toasts=[],player={x:0,z:0,y:0};
 const DS={registerSurface:r=>surfaces.push(r),registerBlocker:r=>surfaces.push(r),
   remove(){},clearScope:id=>cleared.push(id)};
@@ -203,6 +206,13 @@ try{
   assert(native.getState().perFloor.every(f=>f.reservationVerified));
   assert.equal(native.records[0].challenges[0].floorY,plan.floors[1].y+.42,'native puzzle height comes from V50 surface metadata');
   assert.equal(native.getState().rooms,8);
+  const loweredRoom=registeredRooms.find(room=>room.id==='v50-f2:room_3'); // Floor-2 room_3 contains the fixture's -0.84 sunken tile.
+  const loweredPoint={x:native.records[1].place.originX+38.5,z:native.records[1].place.originZ+18.5}; // Center of exact original V50 plateau cell '38,18'.
+  assert.equal(typeof loweredRoom?.supportYAt,'function','native rooms must have a real per-tile support callback');
+  assert.equal(Rooms.roomAt(registeredRooms,loweredPoint.x,loweredPoint.z,plan.floors[2].y-.84)?.id,loweredRoom.id,
+    'a sunken V50 room must still own its active puzzle and continue simulating it');
+  assert.equal(Rooms.roomAt([loweredRoom],loweredPoint.x,loweredPoint.z,plan.floors[2].y-2),null,
+    'native room activity must not leak below the local plateau');
   assert.equal(native.records[0].challenges[0].kind,'v50Authored','a V50-authored signal is the chamber gate authority when one exists');
   assert.equal(native.getState().perFloor[0].nativeAuthoredStages,1);
   assert.equal(nativeScanRoots.size,2,'both upper-floor V50 roots join the real glyph/torch runtime');

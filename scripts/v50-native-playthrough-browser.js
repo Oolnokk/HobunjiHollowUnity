@@ -261,7 +261,15 @@ module.exports=async function runNativeV50Playthrough(page){
         steps.push({floor:record.floor,stage:stage.id,event:'native-pressure-plate-pushes',count:path.length-1});
       }else fail('unsupported authored V50 activator family',record,stage,{state:state.id,type:actor.userData.activatorType});
       await advance(42);
-      if(!state.solved)fail('authored V50 mechanism did not signal completion',record,stage,{mechanismId:state.id,progress:state.progress,target:state.target});
+      if(!state.solved){
+        const cube=state.object.userData?.linkedCubePuzzleRoot?.userData; // CI distinguishes successful cube input from a sleeping room's mechanism tick.
+        fail('authored V50 mechanism did not signal completion',record,stage,{
+          mechanismId:state.id,progress:state.progress,target:state.target,
+          activeRoom:window.RuinRoomSystem?.debugSnapshot?.().activeRoomId??null,
+          expectedRoom:'v50-f'+record.floor+':'+record.analysis.stages?.[record.solved]?.id,
+          cube:cube?{states:cube.states?.slice(),solved:cube.solved,solveTarget:cube.solveTarget,solveProgress:cube.solveProgress}:null,
+        });
+      }
     };
     const solveFallback=async(stage,record)=>{
       await put({x:stage.x,z:stage.z,y:stage.floorY},record,stage);

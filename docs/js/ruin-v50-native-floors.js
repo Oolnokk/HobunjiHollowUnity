@@ -322,6 +322,7 @@
         const nativeRooms=RoomSystem?.v50Rooms?.(meta,{
           originX:place.originX,originZ:place.originZ,tileScale:options.tileScale||2,
           y:floor.y+(Number(meta.floorSurfaceY)||0),prefix:'v50-f'+item.floor,theme:ruin.theme,
+          supportYAt:(x,z)=>floor.y+(heights.get(key(Math.floor(x),Math.floor(z)))??(Number(meta.floorSurfaceY)||0)), // Room ownership samples the same authored support tiles as physics and native gate collision.
         })||[];
         ruin.shaftLayerRuntime?.registerRooms?.(nativeRooms); // Room IDs apply to AI/light isolation even on V50's original physical layout.
         if(faces?.buildQuads&&faces?.toGeometry){
