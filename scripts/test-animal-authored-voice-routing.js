@@ -56,6 +56,7 @@ const exertionStart = played.length;
 assert.equal(window.AnimalVocalizations.mountExertion(creature('puktuk')), true, 'mount exertion goes through the real shared voice coordinator');
 assert.equal(played.length, exertionStart + 1, 'mount exertion produces one actual sound through the existing playback adapter');
 assert.ok(played[played.length - 1].includes('sfx_rattling_growl_1.ogg'), 'exertion resolves its own aggression-derived recording pool');
+window.AnimalVoiceIndependentPlayback.stopAll(); // FakeAudio never emits natural ended; release the one-shot before the pre-existing capped-voice livestock tests.
 for (const stableRole of [undefined, 'companion']) {
   const c = { ...creature('puktuk'), stableRole }; // Wild and whistled companion cases share the same authored scheduler.
   const start = played.length; // Counts each authored passive utterance after native preparation.
