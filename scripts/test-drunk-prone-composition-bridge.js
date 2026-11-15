@@ -55,6 +55,7 @@ class MockGroup {
   updateWorldMatrix() {}
 }
 
+let runLeanProvider = null; // Captured existing Dev Companion state provider for mobile-diagnostics regression.
 const player = {
   prone: false,
   footing: 70,
@@ -143,6 +144,7 @@ const context = {
     ProceduralLegAnimation,
     PlayerBodyTransformComposer,
     BanditCombat,
+    DevCompanion: { registerStateProvider: (name, provider) => { if (name === 'playerRunLean') runLeanProvider = provider; } }, // Existing mobile bridge, no new UI.
     THREE,
     Combat: { deps: { player } },
     HobunjiDrunkWalk: {
@@ -256,6 +258,8 @@ vm.runInContext(source, context, { filename: modulePath });
   playerLegs.update(0.016, 3.2, false, undefined, { combat: true }); // No displacement and no physics velocity.
   assert.strictEqual(composerCleared, 'run-lean', 'unknown heading does not lean toward arbitrary world +Z');
   assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'heading-unavailable');
+  assert.strictEqual(typeof runLeanProvider, 'function', 'run-lean debug integrates with the existing mobile Dev Companion');
+  assert.strictEqual(runLeanProvider().headingSource, 'heading-unavailable');
   player.x = undefined; player.y = undefined; player.vx = 4; player.vy = 0;
   playerLegs.update(0.016, 3.2, false, undefined, { combat: true });
   assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().playerRunHeadingSource, 'velocity-fallback', 'non-positional callers keep original velocity support');
