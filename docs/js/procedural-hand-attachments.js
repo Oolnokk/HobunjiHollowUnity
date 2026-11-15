@@ -818,7 +818,7 @@
       parent.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
       parent.worldToLocal(localPosition);
-      parent.getWorldQuaternion(tempParentQuaternion);
+      hierarchyWorldQuaternionScaleFree(parent, tempParentQuaternion); // Mirror-safe: use the same scale-free world rotation as the weapon's grip socket.
       const localQuaternion = tempParentQuaternion.clone().invert().multiply(worldQuaternion);
       paperReferenceSocket.position.copy(localPosition);
       paperReferenceSocket.quaternion.copy(localQuaternion);
@@ -837,7 +837,7 @@
       parent.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
       parent.worldToLocal(localPosition);
-      parent.getWorldQuaternion(tempParentQuaternion);
+      hierarchyWorldQuaternionScaleFree(parent, tempParentQuaternion); // Mirror-safe: use the same scale-free world rotation as the weapon's grip socket.
       const localQuaternion = tempParentQuaternion.clone().invert().multiply(worldQuaternion);
       rec.socket.position.copy(localPosition);
       rec.socket.quaternion.copy(localQuaternion);
