@@ -121,7 +121,7 @@ assert.equal(session.roomGlowRadius({x:31,y:1,z:15},4),.9,
 assert.equal(session.roomGlowRadius({x:14,y:1,z:14},4),4,
   'light sources outside the active chamber keep their authored radius');
 assert.equal(session.roomGlowRadius({x:35,y:10,z:15},6),6,
-  'another story at the same tile does not inherit the active room's light radius');
+  'another story at the same tile does not inherit the active room light radius');
 assert.equal(session.roomGlowRadius({x:NaN,y:1,z:15},6),6,
   'malformed source positions cannot create a clipped light or extra room searches');
 let regionClips=0,saves=0,restores=0,regionPaints=0;
