@@ -132,6 +132,7 @@
     el('hatSpeciesLabel').textContent = (record?.label || record?.id || 'New animal') +
       (view.authored ? ' · authored hat fit' : ' · derived from head rig until edited');
     syncSpecies();
+    updateOutput(); // Original applyRecord serialized before this tab restored the selected animal's fit.
   }
   function changedFit() {
     view.authored = true;
@@ -198,7 +199,7 @@
 
   async function loadHatImage(path, role = 'front', label = path) {
     const token = view.token; // An older selection cannot replace a newer request.
-    const url = repoSpriteUrl(path);
+    const url = /^(?:blob:|data:|https?:)/i.test(path) ? path : repoSpriteUrl(path); // Local uploads must not be prefixed with the docs directory.
     return new Promise((resolve, reject) => {
       const image = new Image(); // Original source may be any PNG accessible under docs/assets.
       image.crossOrigin = 'anonymous';
@@ -353,9 +354,10 @@
     layer.redo.length = 0;
     refreshUndo();
   }
-  function writePixels(layer) {
-    layer.ctx.putImageData(new ImageData(new Uint8ClampedArray(layer.pixels), layer.canvas.width, layer.canvas.height), 0, 0);
-    layer.dirty = layer.pixels.some((v, i) => v !== layer.original[i]);
+  function writePixels(layer, compareOriginal = false) {
+    layer.ctx.putImageData(new ImageData(layer.pixels, layer.canvas.width, layer.canvas.height), 0, 0);
+    if (compareOriginal) layer.dirty = layer.pixels.some((v, i) => v !== layer.original[i]);
+    else layer.dirty = true; // Avoid a full-image comparison on every drag frame, especially on mobile.
     drawSoon();
   }
   function undoRedo(direction) {
@@ -366,7 +368,7 @@
     if (!from.length) return;
     to.push(new Uint8ClampedArray(layer.pixels));
     layer.pixels = from.pop();
-    writePixels(layer); refreshUndo();
+    writePixels(layer, true); refreshUndo();
   }
   el('hatUndo').onclick = () => undoRedo('undo');
   el('hatRedo').onclick = () => undoRedo('redo');
@@ -375,7 +377,7 @@
     if (!layer) return;
     snapshot(layer);
     layer.pixels = new Uint8ClampedArray(layer.original);
-    writePixels(layer); refreshUndo();
+    writePixels(layer, true); refreshUndo();
     status('Restored the selected PNG layer. Undo returns to the previous version.');
   };
   function brushStroke(from, to) {
