@@ -505,6 +505,23 @@
     return ensureUvs(geometry);
   }
 
+  const billboardCameraQuaternion = new THREE.Quaternion(); // Camera attitude scratch shared across all rendered billboard surfaces.
+  const billboardParentQuaternion = new THREE.Quaternion(); // World-to-parent rotation scratch reused without allocating per frame.
+  function configureBillboardSurface(mesh, part) {
+    mesh.userData.billboardSurface = true; // Decal renderer identifies a camera-facing transparent parent.
+    mesh.castShadow = false; mesh.receiveShadow = false;
+    mesh.frustumCulled = false; // A transparent surface can carry a visible child even while edge-on.
+    mesh.onBeforeRender = (_renderer, _scene, camera) => {
+      camera.getWorldQuaternion(billboardCameraQuaternion);
+      if (mesh.parent) mesh.parent.getWorldQuaternion(billboardParentQuaternion);
+      else billboardParentQuaternion.identity();
+      mesh.quaternion.copy(billboardParentQuaternion.invert().multiply(billboardCameraQuaternion));
+      mesh.rotateZ((Number(part.transform?.rz) || 0) * DEG); // Preserve authorable screen-space decal roll.
+      mesh.updateMatrixWorld(true); // Child decal meshes inherit the new camera-facing frame immediately.
+    };
+    return mesh;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -512,6 +529,17 @@
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
       mesh.position.set(t.x || 0, t.y || 0, t.z || 0); mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
       mesh.userData.furnitureGlbPart = true; attachGlb(mesh, part, baseColor); return mesh;
+    }
+    if (part.kind === 'transparentBillboardSurface' && !part.rockShape?.enabled) {
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(Math.max(.001, Number(t.sx) || .6), Math.max(.001, Number(t.sy) || .6)).toNonIndexed(),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+      ); // Invisible selectable geometry supplies the recognized surface and decal attachment.
+      plane.position.set(Number(t.x) || 0, Number(t.y) || 0, Number(t.z) || 0);
+      plane.rotation.set((Number(t.rx) || 0) * DEG, (Number(t.ry) || 0) * DEG, (Number(t.rz) || 0) * DEG);
+      plane.name = part.name || part.kind;
+      plane.userData.authoredPart = part;
+      return configureBillboardSurface(plane, part);
     }
     if (part.kind === 'banner') {
       geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
@@ -1060,6 +1088,7 @@ function campfireRecipe() {
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
+    configureBillboardSurface,
     createRockGeometry,
     applyRockContacts,
     getRockContactArea,
