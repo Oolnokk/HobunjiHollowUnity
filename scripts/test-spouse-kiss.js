@@ -9,7 +9,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const motionSrc = read('docs/js/spouse-kiss-motion.js');
 const romanceSrc = read('docs/js/romance-system.js');
 const editorSrc = read('docs/tools/animation-author/index.html');
-const gamePage = read('docs/index.html');
+const gamePage = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Checks actual parser-evaluated romance and motion order after manifest expansion.
 
 // Shared height solver: unequal, reversed and truly extreme size pairs are
 // all solved in percent-of-rendered-height units, never by scaling either body.
