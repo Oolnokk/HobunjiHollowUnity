@@ -18,7 +18,7 @@ const context = {
   RUNTIME_RIGGER_SPECIES: speciesMetadata,
   window: {
     CreatureGeneticsRender: { SPECIES: {} }, // Reproduces a painter opened before wildlife registration.
-    HobunjiAuthoredAnimalHeadRigs: { get: kind => ({ origin: kind, shoulderRest: { frameShiftX: .48 } }) },
+    HobunjiAuthoredAnimalHeadRigs: { get: kind => ({ origin: kind, shoulderRest: { frameShiftX: .46 } }) },
   },
   numberOr: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
   deepClone: value => JSON.parse(JSON.stringify(value)),
@@ -40,7 +40,7 @@ assert.deepEqual(Array.from(vorg.sprites.run), [
   'assets/creaturesprites/voorg-ass_run2.png',
 ]);
 assert.equal(vorg.headRig.origin, 'voorg-ass', 'painter reads its own previously authored rig');
-assert.equal(vorg.headRig.shoulderRest.frameShiftX, .48, 'Voorg-Ass shoulder pose is not overwritten by Puktuk');
+assert.equal(vorg.headRig.shoulderRest.frameShiftX, .46, 'Voorg-Ass uses its newly uploaded independent shoulder pose');
 assert(supplements.some(item => item.id === 'moot'), 'Moot retains its standalone picker entry');
 
 context.window.CreatureGeneticsRender.SPECIES['voorg-ass'] = {
@@ -50,4 +50,4 @@ assert.equal(supplementsFor(baseBestiary).filter(item => item.id === 'voorg-ass'
   'registered and fallback pathways never duplicate Voorg-Ass');
 assert.equal(supplementsFor([...baseBestiary, { id: 'voorg-ass' }]).filter(item => item.id === 'voorg-ass').length, 0,
   'a real bestiary record suppresses the supplemental duplicate');
-console.log('animal head rigger species picker: Voorg-Ass is selectable before registration and retains its authored rig');
+console.log('animal head rigger species picker: Voorg-Ass is selectable before registration and picks up its latest authored rig');
