@@ -111,6 +111,12 @@ clock.hour = 2.99;
 assert.equal(social.outingAvailable('communion'), true, 'communion remains available before its authored 03:00 close');
 clock.hour = 3;
 assert.equal(social.outingAvailable('communion'), false, 'communion closes when the temple switches away from the night layout');
+clock.hour = 2.5;
+assert.equal(romance.startSpouseOuting('communion', social.destinationFor('communion')), true);
+clock.hour = 3;
+assert.equal(romance.activeSpouseOuting(), null, 'a Communion outing ends when the event closes, without waiting four hours');
+assert.equal(romance._test.scheduleOverride({ id: 'aliri_ginju' })?.activity, 'sleeping', 'spouse leaves the closed temple for bed');
+romance.endSpouseOuting();
 clock.hour = 9; clock.weekday = 'Hronu';
 assert.equal(social.outingAvailable('communion'), false, 'ordinary days do not offer communion');
 
@@ -137,6 +143,9 @@ const accepted = actions.get('spouse-social-life')({ op: 'outing', kind: 'festiv
 assert.equal(accepted.ok, true, 'accepting starts an actual persisted spouse outing');
 assert.equal(romance.activeSpouseOuting().kind, 'festival');
 assert.equal(romance._test.scheduleOverride({ id: 'nashka_khibu' }).area, 'town', 'the spouse heads to the event');
+active.festivalHours = false;
+assert.equal(romance.activeSpouseOuting(), null, 'the festival outing ends as soon as the gathering closes');
+active.festivalHours = true;
 assert.equal(romance.endSpouseOuting(), true, 'the command-wheel return-home path can stop the outing');
 assert.equal(romance.activeSpouseOuting(), null);
 assert.equal(contexts.get('spouse-social-life').treeFor({ id: 'nashka_khibu' },
