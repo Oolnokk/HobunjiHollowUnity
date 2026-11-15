@@ -33,11 +33,15 @@ const otherNpc = root('npc_walker_unarmed');
 const windowObject = { HobunjiSpritePngSurface: { maskAlphaTest:()=>0.35 },
   PlayerBodyTransformComposer: {getPlayerMesh:()=>player,getVisualRoots:()=>[playerHands]} };
 const observations = []; // Snapshots only during actual mask draw.
+const registeredFronts = []; // The shared private layer includes unarmed fronts, which must NEVER draw color into an owner's mask.
 let failRender = false; // Simulates WebGL exceptions to verify state restoration.
-const runtime = new Function('THREE','window','rawRender',[
+const runtime = new Function('THREE','window','rawRender','registeredFronts',[
   'const PNG_OCCLUDER_LAYER=4, FRONT_PORTRAIT_STENCIL_MASK=0xFC, FRONT_PORTRAIT_MAX_OWNERS=63, FRONT_PORTRAIT_MASK=1<<24;',
   'const surfaceComposer=null;',
   'const withPortraitDrawOrder=(_r,_order,draw)=>draw();',
+  'const frontPortraitRegistry={}; const collectVisible=()=>registeredFronts;',
+  'const suppressDraws=(objects,mask)=>{const prior=new Map(); for(const mesh of objects){prior.set(mesh,mesh.layers.mask);mesh.layers.mask &= ~mask;} return prior;};',
+  'const restoreDraws=(prior)=>{for(const [mesh,mask] of prior)mesh.layers.mask=mask;};',
   'const hasLayer=(o,layer)=>!!(o.layers.mask & (1<<layer));',
   'const forEachMaterial=(materials,fn)=>{for(const m of Array.isArray(materials)?materials:[materials])if(m)fn(m);};',
   'let frontPortraitMaskPassCount=0;',production,
@@ -47,9 +51,11 @@ const runtime = new Function('THREE','window','rawRender',[
 ].join('\n'))(THREE,windowObject,function(_scene,camera){
   observations.push({mask:camera.layers.mask,playerRef:playerFront.stencilRef,npcRef:npcFront.stencilRef,
     playerDraw:playerFront.stencilWrite,playerAlpha:playerFront.alphaTest,npcDraw:npcFront.stencilWrite,
-    playerDepth:playerFront.depthWrite,rearDraw:playerRear.stencilWrite});
+    playerDepth:playerFront.depthWrite,rearDraw:playerRear.stencilWrite,
+    unarmedPrivateVisible:!!(unarmedPortrait.layers.mask & camera.layers.mask),
+    unarmedColorWrite:unarmedPortrait.material.colorWrite});
   if(failRender)throw new Error('simulated draw failure');
-});
+},registeredFronts);
 function mat(name) {
   return {name, map:{}, colorWrite:true, depthWrite:false, depthTest:false, depthFunc:77,
     alphaTest:0.04, stencilWrite:false, stencilWriteMask:0xff, stencilFunc:99, stencilRef:6,
@@ -72,6 +78,7 @@ const stationWeapon=mesh('npc_station_tool',mat('hoe'),stationWorldHolder,{tags:
 const unarmedPortrait=mesh('npc_avatar_front_plane',mat('npc_unarmed'),otherNpc);
 const banditPortrait=mesh('npc_avatar_front_plane',mat('bandit_front'),bandit);
 const banditWeapon=mesh('bandit_tool',mat('bandit_weapon'),banditWorldHolder,{tags:{hobunjiHeldObjectPlane:true}});
+registeredFronts.push(playerPortrait,npcPortrait,unarmedPortrait,banditPortrait);
 assert.equal(runtime.isFrontPortraitMesh(playerPortrait),true,'skinned player front recognized');
 assert.equal(runtime.isFrontPortraitMesh(npcPortrait),true,'rigid NPC front recognized');
 assert.equal(runtime.isFrontPortraitMesh(banditPortrait),true,'enemy front recognized');
@@ -113,6 +120,10 @@ for(const [material, original] of [[playerFront,playerOrig],[playerRear,rearOrig
 const camera={layers:{mask:1}};
 runtime.stampFrontPortraitStencil({},scene,camera,assigned.portraits,assigned.ownerIds);
 assert.equal(observations[0].mask,1<<24,'only private portrait layer is drawn');
+assert.equal(observations[0].unarmedPrivateVisible,false,
+  'unselected, unarmed NPC front art is excluded from the stencil render instead of being drawn again in COLOR');
+assert.equal(observations[0].unarmedColorWrite,true,'the normal unarmed portrait material is never modified by another owner stencil');
+assert.equal(unarmedPortrait.layers.mask & (1<<24),1<<24,'unselected actor private layer restored after stamp');
 assert.equal(observations[0].playerRef,assigned.ownerIds.get(player)<<2,'player ID is live during draw');
 assert.equal(observations[0].npcRef,assigned.ownerIds.get(npc)<<2,'NPC ID is live during draw');
 assert.equal(observations[0].rearDraw,false,'back material is excluded during mask');
@@ -123,7 +134,48 @@ failRender=true;
 assert.throws(()=>runtime.stampFrontPortraitStencil({},scene,camera,assigned.portraits,assigned.ownerIds),/simulated draw failure/);
 assert.equal(camera.layers.mask,1,'camera restored on exception');
 assert.equal(playerFront.stencilWrite,false,'material restored on exception');
+assert.ok(unarmedPortrait.layers.mask & (1<<24),'unselected actor private layer restored even after a stencil render exception');
 failRender=false;
+
+// Foreground shoulder pets share the player's stencil ID, including their back/split artwork.
+// The same pet behind the player must not hide a tool in front of it.
+const petRoot=root('shoulder_pet',scene,{
+  hobunjiShoulderPetLayering:{active:true,playerDrawsOnTop:false},
+});
+const petFront=mesh('npc_avatar_front_plane',mat('pet_front'),petRoot,{
+  tags:{hobunjiShoulderPetStencilForeground:true},
+});
+const petBack=mesh('npc_avatar_back_plane',mat('pet_back'),petRoot,{
+  tags:{hobunjiShoulderPetStencilForeground:true},
+});
+const petSplit=mesh('shoulder_split',[mat('npc_avatar_skinned_front_material'),mat('pet_split_rear')],petRoot,{
+  skinned:true,tags:{hobunjiShoulderSplitOverlay:true,hobunjiShoulderPetStencilForeground:true},
+});
+assert.equal(runtime.isFrontPortraitMesh(petSplit),true,'active shoulder split overlay qualifies for player owner mask');
+assert.equal(runtime.portraitStencilOwner(petBack,scene),player,'foreground pet rear sprite shares carrier stencil owner');
+const shoulderAssigned=runtime.assignPortraitStencilOwners([playerWeapon],
+  [playerPortrait,petFront,petBack,petSplit],scene);
+assert.equal(shoulderAssigned.portraits.length,4,
+  'player weapon is covered by player portrait plus foreground pet front, back and split cards');
+assert.equal(shoulderAssigned.gearIds.get(playerWeapon),shoulderAssigned.ownerIds.get(player),
+  'shoulder art and player gear use exactly one stencil ID');
+const petStates=runtime.prepareFrontPortraitStencilMaterials(shoulderAssigned.portraits,
+  shoulderAssigned.ownerIds,scene);
+assert.equal(petFront.material.stencilWrite,true,'foreground pet front stamps owner pixels');
+assert.equal(petBack.material.stencilWrite,true,'foreground pet back stamps owner pixels');
+assert.equal(petSplit.material[0].stencilWrite,true,'foreground split front stamps owner pixels');
+assert.equal(petSplit.material[1].stencilWrite,true,'foreground split rear stamps owner pixels');
+assert.equal(petSplit.material[1].colorWrite,false,'foreground split stencil is colorless');
+runtime.restoreMaterialStates(petStates);
+petRoot.userData.hobunjiShoulderPetLayering.playerDrawsOnTop=true;
+delete petSplit.userData.hobunjiShoulderPetStencilForeground;
+assert.equal(runtime.isFrontPortraitMesh(petSplit),false,
+  'background split overlay is excluded from automatic front-mask registration');
+assert.notEqual(runtime.portraitStencilOwner(petBack,scene),player,
+  'background pet is no longer mapped to the player weapon owner');
+const behindAssigned=runtime.assignPortraitStencilOwners([playerWeapon],
+  [playerPortrait,petFront,petBack,petSplit],scene);
+assert.equal(behindAssigned.portraits.length,1,'pet behind the player does not erase player-held weapon pixels');
 
 const hand=mesh('hand',mat('hand'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralHand:true}});
 const foot=mesh('foot',mat('foot'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralFoot:true}});

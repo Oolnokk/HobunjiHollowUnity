@@ -39,7 +39,7 @@ let mode = 'authored';
 const masks = new Set();
 let synced = 0;
 const windowStub = { HobunjiShoulderSplitLayerParity: { syncAvatar: () => { synced++; } } };
-const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh) };
+const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh), delete: mesh => masks.delete(mesh) };
 const api = new Function('window', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
   'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER',
   render.slice(start, end) +
@@ -53,7 +53,7 @@ const api = new Function('window', 'forEachMaterial', 'xrayRule', 'isFrontPortra
   );
 const makeMesh = name => ({
   name, isMesh: true, renderOrder: 2, material: { depthWrite: true },
-  layers: { mask: 1, enable(layer) { this.mask |= 1 << layer; } },
+  layers: { mask: 1, enable(layer) { this.mask |= 1 << layer; }, disable(layer) { this.mask &= ~(1 << layer); } },
   userData: {},
 });
 const front = makeMesh('player_avatar_front_plane');
@@ -61,8 +61,11 @@ const back = makeMesh('player_avatar_back_plane');
 const makePet = () => {
   const petFront = makeMesh('pet_front');
   const petBack = makeMesh('pet_back');
+  const petSplit = makeMesh('pet_split');
+  petSplit.userData.hobunjiShoulderSplitOverlay = true;
   return { __hobunjiShoulderFacingInward: false, avatarRef: {
-    group: { userData: {} }, frontPlane: petFront, backPlane: petBack,
+    group: { userData: {}, children: [petFront, petBack, petSplit] },
+    frontPlane: petFront, backPlane: petBack, petSplit,
   } };
 };
 const pet = makePet();
@@ -75,6 +78,8 @@ assert.equal(back.material.depthWrite, false);
 assert.equal(pet.avatarRef.frontPlane.material.depthWrite, false);
 assert.equal(pet.avatarRef.backPlane.material.depthWrite, false);
 assert.equal(front.renderOrder, 8, 'authored outward pose: player appears in front from the front camera');
+assert.equal(masks.has(pet.avatarRef.frontPlane), false, 'background pet front cannot hide held gear');
+assert.equal(masks.has(pet.avatarRef.backPlane), false, 'background pet back cannot hide held gear');
 assert.equal(pet.avatarRef.frontPlane.renderOrder, 6);
 assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetLayering.playerDrawsOnTop, true);
 assert.ok(masks.has(front), 'the owner front portrait is explicitly available to stencil even without depth writes');
@@ -83,9 +88,19 @@ assert.equal(api.state.mode, 'authored');
 
 use(pet, false);
 assert.equal(front.renderOrder, 4, 'rear view reverses the authored shoulder foreground decision');
+for (const plane of pet.avatarRef.group.children) {
+  assert.equal(masks.has(plane), true, 'foreground pet front/back/split plane joins the player owner stencil');
+  assert.equal(plane.userData.hobunjiShoulderPetStencilForeground, true, 'pet foreground mask state is tagged');
+  assert.ok(plane.layers.mask & (1 << 24), 'pet source/split card is in private stencil camera layer');
+}
 pet.__hobunjiShoulderFacingInward = true;
 use(pet, false);
 assert.equal(front.renderOrder, 8, 'inward pose reverses foreground again');
+for (const plane of pet.avatarRef.group.children) {
+  assert.equal(masks.has(plane), false, 'background pet no longer masks player gear');
+  assert.equal(plane.userData.hobunjiShoulderPetStencilForeground, undefined);
+  assert.equal(plane.layers.mask & (1 << 24), 0, 'background pet mask layer cleaned');
+}
 
 mode = 'player-over';
 api.syncShoulderPetLayering();
@@ -93,6 +108,7 @@ assert.equal(front.renderOrder, 8, 'front-of-pet preset overrides camera/pose');
 mode = 'pet-over';
 api.syncShoulderPetLayering();
 assert.equal(front.renderOrder, 4, 'behind-pet preset overrides camera/pose');
+assert.equal(masks.has(pet.avatarRef.petSplit), true, 'pet-over preset masks split artwork too');
 
 front.material.depthWrite = true;
 front.renderOrder = 91;
@@ -113,6 +129,7 @@ use(replacement, true);
 assert.equal(pet.avatarRef.frontPlane.material.depthWrite, true, 'replacing pets restores the previous pet material');
 assert.equal(pet.avatarRef.frontPlane.renderOrder, 2, 'old pet rejoins normal actor sprite order');
 assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined, 'removed pet no longer masquerades as player-attached');
+assert.equal(masks.has(pet.avatarRef.petSplit), false, 'replaced pet has no stale owner mask');
 assert.equal(replacement.avatarRef.frontPlane.material.depthWrite, false);
 
 use(null, false);
