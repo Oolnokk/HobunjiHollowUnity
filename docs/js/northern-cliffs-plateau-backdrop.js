@@ -173,14 +173,14 @@
       shader.vertexShader = shader.vertexShader.replace(
         '#include <fog_vertex>',
         '#include <fog_vertex>\n#ifdef USE_FOG\n' +
-          'vFogDepth = ' + FOG_NEAR_DISTANCE.toFixed(1) +
-          ' + max(0.0, vFogDepth - ' + FOG_NEAR_DISTANCE.toFixed(1) +
+          'vFogDepth = min(vFogDepth, ' + FOG_NEAR_DISTANCE.toFixed(1) +
+          ') + max(0.0, vFogDepth - ' + FOG_NEAR_DISTANCE.toFixed(1) +
           ') * ' + BACKDROP_FOG_DISTANCE_SCALE + ';\n' +
           '#endif'
       );
     };
     const priorCacheKey = material.customProgramCacheKey?.bind(material); // Ensures the new fogged shader has its own compiled program instead of reusing the unfogged skyline shader.
-    material.customProgramCacheKey = () => (priorCacheKey?.() || '') + '-northern-plateau-scene-fog-v1';
+    material.customProgramCacheKey = () => (priorCacheKey?.() || '') + '-northern-plateau-scene-fog-v2';
   }
 
   function makeBackdropMaterials(materials, T) {
