@@ -351,7 +351,7 @@ stampStencil([wetHeld], 1);
 assert.equal(sharedMaterial.stencilRef, 1, 'wet equipment stamps bit 0 with 1');
 stampStencil([dryHeld], 0);
 assert.equal(sharedMaterial.stencilRef, 0, 'dry equipment clears bit 0 rather than falsely acquiring water');
-assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef\)/,
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef,\s*portraitGearIds\)/,
   'each depth group actually uses its own water-tint stencil value');
 
 assert.match(testedWaterMaterial.fragmentShader,
@@ -875,7 +875,7 @@ for (const phrase of [
 const selectiveReplayStart = heldRender.indexOf('  function replaySelectiveHeldOverlay(');
 const depthClearAt = heldRender.indexOf('renderer.clearDepth();', selectiveReplayStart);
 const depthDrawAt = heldRender.indexOf('rawRender.call(renderer, scene, camera)', depthClearAt);
-const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef)', depthDrawAt);
+const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef, portraitGearIds)', depthDrawAt);
 const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
 const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);');
 const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);');
@@ -907,7 +907,7 @@ assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?
   'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
 assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
   'translucent water and slush render through their dedicated private layer');
-assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef\)/,
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef,\s*portraitGearIds\)/,
   'each actor-elevation group stamps its visible held/hand/foot silhouettes into the shared stencil bit');
 assert.match(heldRender, /material.depthTest = true;\s*material.depthWrite = true;\s*material.stencilWrite = true/,
   'temporary held depth writes ensure water behind a PNG cannot tint it');

@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  // The torch PNG's top is +Y in its plane. Work through the actual parent
-  // hierarchy: mirrored body/weapon scales cannot be represented by a chain
-  // of quaternions alone, and omitting them can point the tip downward.
+  // Correct the artwork's authored business-end axis, not its grip coordinates.
+  // Most sprites have a +Y tip; torch.png has its flaming end at -Y.
+  // Traverse the full hierarchy because signed scales can reverse either tip.
   let scratch = null; // Reused direction, quaternion and ancestor storage for every rendered idle frame.
   let scratchThree = null; // Rebuild scratch only if an editor supplies a different THREE instance.
   function workspace(THREE) {
@@ -25,10 +25,10 @@
       && scale.x !== 0 && scale.y !== 0 && scale.z !== 0;
   }
 
-  function apply(holder, plane, THREE) {
+  function apply(holder, plane, THREE, localTipYSign = 1) {
     if (!holder?.quaternion || !plane || !THREE) return false;
     const work = workspace(THREE);
-    const imageUp = work.imageUp.set(0, 1, 0); // +Y is the physical wooden tip in torch.png, not the gripped end.
+    const imageUp = work.imageUp.set(0, localTipYSign === -1 ? -1 : 1, 0); // Torch supplies -Y; keep the generic +Y default for other sprites.
     let node = plane;
     let reachedHolder = false; // Reject stale visuals that are no longer parented beneath the active tool holder.
     while (node && node !== holder.parent) {

@@ -21131,6 +21131,15 @@
           return;
         }
 
+        // Adventuring torch borrows the authored forehand pose and timing without triggering the combat lunge.
+        // The visual helper resets pendingAction, so schedule the real torch contact AFTER starting its animation.
+        const torchVisual = activeTool === 'adventuring' && activeAction === 'torch_swing'
+          ? window.AdventuringTools?.forehandSwingVisual?.() : null; // Only the equipped torch owns the alternate tool swing.
+        if (torchVisual) {
+          const synchronizedSwing = window.Combat?.deps?.triggerWeaponSwingVisual; // Use WeaponToolStances' shared action-clock/hand-grip wrapper when installed.
+          if (typeof synchronizedSwing === 'function') synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options);
+          else triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options); // Defensive fallback before combat hooks finish bootstrapping.
+        }
         // All other actions are queued to fire at the start of the strike phase
         const reticle = getReticleTile();
         pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
@@ -24170,7 +24179,7 @@
       // only) reach/turn multiplier for an extra-telegraphed finisher, and an
       // explicit post-strike pause length in seconds (holdS).
       function triggerWeaponSwingVisual(durationS, opts = {}) {
-        if (activeTool !== 'weapon') return;
+        if (activeTool !== 'weapon' && !(activeTool === 'adventuring' && opts.toolSlot === 'adventuring' && equipmentSlots.adventuring === 'torch')) return; // The torch borrows only the visual timeline; combat-lunge ownership remains weapon-only.
         const windupFrac = opts.windupFrac ?? 0.16;
         const strikeFrac = opts.strikeFrac ?? 0.28;
         // Abilities that don't budget their own return-to-neutral tail
@@ -25429,7 +25438,7 @@
           return;
         }
         heldItemHolder.visible = false;
-        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && !!combatSwingPose && toolSwingT > 0; // Only real tool work and held fishing poses suppress the idle-stance rebase.
+        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && toolSwingT > 0 && (!!combatSwingPose || activeTool === 'adventuring'); // The torch's swing/throw disables world-up idle rotation for its full active animation.
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.

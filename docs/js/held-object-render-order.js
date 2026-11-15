@@ -46,6 +46,10 @@
   const SHELL_MASK = (1 << SHELL_LAYER) >>> 0;
   const MATERIAL_ID_LAYER = 3;
   const PNG_OCCLUDER_LAYER = 4;
+  const FRONT_PORTRAIT_MASK_LAYER = 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
+  const FRONT_PORTRAIT_STENCIL_MASK = 0xFC; // Bits 2..7 identify up to 63 distinct owners; bit 0 stays reserved for water tint.
+  const FRONT_PORTRAIT_MAX_OWNERS = 63; // Stencil owner IDs share one draw without hiding weapons in front of unrelated NPCs.
+  const FRONT_PORTRAIT_MASK = (1 << FRONT_PORTRAIT_MASK_LAYER) >>> 0; // The camera layer for the one front-portrait stamp pass.
   const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
   const WATER_REPLAY_LAYER = 27;
   const GROUND_REPLAY_LAYER = 28;
@@ -118,6 +122,7 @@
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Procedural foot meshes, drawn in the selective x-ray overlay with real water/snow/grass depth.
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
+  const frontPortraitRegistry = new SceneRegistry(); // Visible player and NPC front portrait cutouts that cover their late-rendered weapons.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -156,6 +161,8 @@
   let baseWorldRenderCount = 0;
   let selectiveOverlayCount = 0;
   let nonGroundDepthReplayCount = 0;
+  let frontPortraitMaskPassCount = 0; // Cumulative once-per-world-frame silhouette stencil draws, exposed to mobile diagnostics.
+  let lastFrontPortraitMaskCount = 0; // Eligible portrait meshes in the latest held overlay, exposed to mobile diagnostics.
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
   let ordinaryShellMeshesDrawnOnce = 0; // Normal-depth outlines kept in the existing scene pass, shared by all actor types.
@@ -371,6 +378,71 @@
       : kind === 'water' || kind === 'slush' || kind === 'snow' || kind === 'billboard-grass';
   }
 
+  function isFrontPortraitMesh(object) {
+    if (!object?.isMesh) return false;
+    const name = String(object.name || '');
+    if (name === 'player_avatar_front_plane' || name === 'npc_avatar_front_plane') return true;
+    // Neck-rigged portraits combine front and back triangles in one SkinnedMesh.
+    return object.isSkinnedMesh === true && Array.isArray(object.material)
+      && String(object.material[0]?.name || '').includes('avatar_skinned_front_material');
+  }
+
+  function isPortraitMaskedGear(object) {
+    const data = object?.userData;
+    return data?.hobunjiHeldObjectPlane === true
+      && data.hobunjiProceduralHand !== true
+      && data.hobunjiProceduralFoot !== true;
+  }
+
+  function portraitStencilOwner(mesh, scene) {
+    // Scene-sibling NPC/hostile holders cannot be resolved by ancestry alone.
+    // Their creation-time owner tag connects them to the genuine portrait root.
+    for (let node = mesh; node && node !== scene; node = node.parent) {
+      if (node.userData?.hobunjiHeldPortraitOwner) return node.userData.hobunjiHeldPortraitOwner;
+    }
+    // Resolve both portrait and equipment to the SAME actor, not whichever
+    // nested hand/rig-scale pivot happens to hold this particular mesh.
+    const actor = actorRootForXrayMesh(mesh, scene);
+    if (actor?.isPlayer) return actor.root;
+    let rigOwner = actor?.root || null; // Fall back for named animals and unusual NPC rigs.
+    for (let node = mesh; node && node !== scene; node = node.parent) {
+      if (node.userData?.hobunjiXrayActorRoot === true
+          || String(node.name || '').startsWith('npc_walker_')
+          || node.name === 'bandit_avatar_group') return node;
+      if (!rigOwner && node.userData?.hobunjiCharacterRigScaleRoot === true) rigOwner = node;
+    }
+    return rigOwner;
+  }
+
+  function assignPortraitStencilOwners(gearMeshes, portraits, scene) {
+    const gearOwners = new Set(); // Only owners with a visible held weapon need a front-portrait stencil entry.
+    for (const mesh of gearMeshes) {
+      if (!isPortraitMaskedGear(mesh)) continue;
+      const root = portraitStencilOwner(mesh, scene);
+      if (root) gearOwners.add(root);
+    }
+    const ownerIds = new Map(); // Actor root -> unique 1..63 ID packed into stencil bits 2..7, per world frame.
+    const maskedPortraits = []; // Registered front planes whose owner has weapon art in this frame's overlay.
+    for (const portrait of portraits) {
+      const owner = portraitStencilOwner(portrait, scene);
+      if (!owner || !gearOwners.has(owner)) continue;
+      let id = ownerIds.get(owner);
+      if (!id) {
+        if (ownerIds.size >= FRONT_PORTRAIT_MAX_OWNERS) continue; // Overflow fails open, never masks someone else's weapon.
+        id = ownerIds.size + 1;
+        ownerIds.set(owner, id);
+      }
+      maskedPortraits.push(portrait);
+    }
+    const gearIds = new Map(); // Held mesh -> owning stencil ID, reused across all elevation/water groups.
+    for (const mesh of gearMeshes) {
+      if (!isPortraitMaskedGear(mesh)) continue;
+      const id = ownerIds.get(portraitStencilOwner(mesh, scene));
+      if (id) gearIds.set(mesh, id);
+    }
+    return { portraits: maskedPortraits, ownerIds, gearIds };
+  }
+
   function isLegacyHeldPlane(object) {
     if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false;
     if (object.userData?.hobunjiHeldObjectPlane === true) return true;
@@ -519,6 +591,10 @@
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
     if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);
     if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
+    if (isFrontPortraitMesh(object)) {
+      if (!hasLayer(object, FRONT_PORTRAIT_MASK_LAYER)) object.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
+      frontPortraitRegistry.add(object);
+    }
     if (isProtectedCover(object)) protectedCoverRegistry.add(object);
     if (isTintCover(object)) {
       tintCoverRegistry.add(object);
@@ -749,6 +825,7 @@
       colorWrite: material.colorWrite,
       depthWrite: material.depthWrite,
       depthTest: material.depthTest,
+      depthFunc: material.depthFunc,
       alphaTest: material.alphaTest,
       stencilWrite: material.stencilWrite,
       stencilWriteMask: material.stencilWriteMask,
@@ -767,6 +844,7 @@
       material.colorWrite = state.colorWrite;
       material.depthWrite = state.depthWrite;
       material.depthTest = state.depthTest;
+      material.depthFunc = state.depthFunc;
       if (state.alphaTest !== undefined) material.alphaTest = state.alphaTest;
       material.stencilWrite = state.stencilWrite;
       material.stencilWriteMask = state.stencilWriteMask;
@@ -842,6 +920,72 @@
     return states;
   }
 
+  function prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene) {
+    const states = new Map(); // Temporary state transaction: the visible portrait/material behavior is never changed permanently.
+    for (const portrait of portraits) {
+      const materials = Array.isArray(portrait.material) ? portrait.material : [portrait.material];
+      const front = materials[0]; // Skinned portraits store front geometry in slot 0 and rear geometry in slot 1.
+      const ownerId = ownerIds.get(portraitStencilOwner(portrait, scene)); // Match only this actor's held tools, not another NPC's weapon.
+      if (!front || !ownerId) continue;
+      for (const material of materials) {
+        if (!material) continue;
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        material.depthWrite = false; // Test against completed world depth; never overwrite walls, furniture, or the ground.
+        material.stencilWrite = material === front;
+      }
+      front.depthTest = true;
+      front.depthFunc = THREE.LessEqualDepth; // The front's silhouette must respect nearer world surfaces, even if an unrelated pose changed its normal depth function.
+      front.stencilWriteMask = FRONT_PORTRAIT_STENCIL_MASK;
+      front.stencilFunc = THREE.AlwaysStencilFunc;
+      front.stencilRef = ownerId << 2;
+      front.stencilFuncMask = FRONT_PORTRAIT_STENCIL_MASK;
+      front.stencilFail = THREE.KeepStencilOp;
+      front.stencilZFail = THREE.KeepStencilOp;
+      front.stencilZPass = THREE.ReplaceStencilOp;
+      if (front.map && Number(front.alphaTest) > 0) {
+        const cutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // The shared PNG cutout threshold, even before layer-4 registration catches up.
+        front.alphaTest = Math.max(Number(front.alphaTest), cutoff);
+      } // The solid portrait pixels, not the transparent rectangle, block weapons.
+    }
+    return states;
+  }
+
+  function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds) {
+    if (!portraits.length) return false;
+    const originalMask = camera.layers.mask; // Restores the caller's world mask even on an interrupted render.
+    const states = prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene);
+    try {
+      camera.layers.mask = FRONT_PORTRAIT_MASK;
+      rawRender.call(renderer, scene, camera); // One draw for all visible front portraits, not one per weapon/elevation group.
+      frontPortraitMaskPassCount++;
+      return true;
+    } finally {
+      camera.layers.mask = originalMask;
+      restoreMaterialStates(states);
+    }
+  }
+
+  function preparePortraitGearStencilMaterials(overlayMeshes, gearIds) {
+    const states = new Map(); // A dry weapon only tests its owner ID; it never writes a water-tint bit.
+    for (const object of overlayMeshes) {
+      const ownerId = gearIds.get(object);
+      if (!ownerId) continue;
+      forEachMaterial(object.material, material => {
+        saveMaterialState(states, material);
+        material.stencilWrite = true; // Three.js gates stencil testing on this flag.
+        material.stencilWriteMask = 0x00;
+        material.stencilFunc = THREE.NotEqualStencilFunc; // Unmasked pixels and OTHER characters are visible.
+        material.stencilRef = ownerId << 2;
+        material.stencilFuncMask = FRONT_PORTRAIT_STENCIL_MASK;
+        material.stencilFail = THREE.KeepStencilOp;
+        material.stencilZFail = THREE.KeepStencilOp;
+        material.stencilZPass = THREE.KeepStencilOp;
+      });
+    }
+    return states;
+  }
+
   function prepareHeldStencilMaterials(held) {
     const states = new Map();
     for (const object of held) {
@@ -864,7 +1008,7 @@
     return states;
   }
 
-  function prepareSubmergedOverlayStencilMaterials(overlayMeshes, stencilRef = 1) {
+  function prepareSubmergedOverlayStencilMaterials(overlayMeshes, stencilRef = 1, gearIds = null) {
     const states = new Map();
     for (const object of overlayMeshes) {
       forEachMaterial(object.material, material => {
@@ -878,9 +1022,10 @@
         material.depthWrite = true;
         material.stencilWrite = true;
         material.stencilWriteMask = 0x01;
-        material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilRef = stencilRef; // Wet owners stamp 1; dry owners clear bit 0 even when another actor shares this screen pixel.
-        material.stencilFuncMask = 0xFF;
+        const ownerId = gearIds?.get(object) || 0; // Only held weapon art with a registered matching portrait is shielded.
+        material.stencilFunc = ownerId ? THREE.NotEqualStencilFunc : THREE.AlwaysStencilFunc;
+        material.stencilRef = (ownerId << 2) | stencilRef; // Writes wet/dry bit 0 while comparing only the packed portrait owner ID.
+        material.stencilFuncMask = ownerId ? FRONT_PORTRAIT_STENCIL_MASK : 0xFF;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
         material.stencilZPass = THREE.ReplaceStencilOp;
@@ -1922,6 +2067,7 @@
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
     if (!held.length && !feet.length) {
+      lastFrontPortraitMaskCount = 0;
       lastBaseElevationGroups = 0;
       lastHeldFullscreenReason = 'no-visible-participants';
       return;
@@ -1971,6 +2117,7 @@
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
     let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
     let nearSnapshotFailed = false;
+    let portraitGearIds = null; // Null without 8-bit stencil; otherwise maps held weapon art to its exact character owner.
     try {
       distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
       waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, scopes, hasUnknownOwner);
@@ -2005,9 +2152,18 @@
       // visibility is restored between groups, but membership does not change.
       const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
       const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
+      // Stamp front silhouette against base world depth before clearing any
+      // same-level ground. Transparent portrait pixels do not protect weapons.
+      const portraitMask = lastBaseStencilBits >= 8 && overlayMeshes.some(isPortraitMaskedGear)
+        ? assignPortraitStencilOwners(overlayMeshes, collectVisible(frontPortraitRegistry, scene), scene)
+        : null;
+      lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
+      if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds)) {
+        portraitGearIds = portraitMask.gearIds;
+      }
 
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
@@ -2062,7 +2218,9 @@
         // Keep this group's scissor for the held color/stencil draw. Drawing outside
         // the group's reconstructed depth rectangle can reveal weapons through
         // unrelated foreground terrain and stamp invalid water-tint stencil bits.
-        const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef) : null;
+        const overlayStates = tintOverlay
+          ? prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef, portraitGearIds)
+          : portraitGearIds ? preparePortraitGearStencilMaterials(group.meshes, portraitGearIds) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
@@ -2530,6 +2688,8 @@
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
+      frontPortraitMasks: lastFrontPortraitMaskCount,
+      frontPortraitMaskPasses: frontPortraitMaskPassCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
       ordinaryShellMeshesDrawnOnce,
@@ -2551,7 +2711,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -2566,7 +2726,7 @@
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
-    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry];
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry];
     let removed = 0;
     for (const registry of registries) {
       const bucket = registry.byScene.get(scene);

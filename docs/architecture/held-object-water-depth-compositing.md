@@ -54,6 +54,37 @@ Do not opt these physical parts into `markHeldPlane()` or the reserved 1.5
 marker. `scripts/test-shattercasks.js` executes the production classifier
 against the held parts and tests the filled, terrain-projected blast preview.
 
+## Front portrait cover of held weapons
+
+The selective held-object compositor deliberately moves held PNG weapon color
+out of the base world pass. Reconstructing opaque world depth alone is not
+enough: a front-facing painted player/NPC portrait may have ordinary depth
+behind its weapon even when the artwork should cover the weapon pixels.
+
+`held-object-render-order.js` registers rigid front portraits and the
+front material of skinned front/back portraits on private camera layer **24**.
+Before any ground-exemption depth clear, it stamps visible front-art alpha
+cutouts into stencil **bits 2–7 (0xFC)** within the held overlay scissor rectangle.
+Each character with visible held PNG gear receives a unique per-frame stencil
+owner ID. A weapon skips only pixels marked by **its own character's** front
+art, rather than vanishing behind unrelated NPCs who are physically behind
+it. Procedural hands, feet, rear portraits and ordinary physical carryables
+keep their existing behavior. This reflects painted front layering rather
+than physical weapon depth, for both player and NPC rigs.
+
+The mask writes no depth or color. It respects normal foreground world
+depth and the shared solid-pixel PNG alpha cutoff, and restores camera and
+material state even when a render fails. Stencil bit 0 remains reserved
+for water/slush tint; tinted held weapons both test the portrait bit and
+write the existing tint bit without changing water passes. With fewer than
+eight stencil bits available the extra mask is skipped, preserving the
+original overlay behavior rather than risking tint or ground corruption.
+Up to 63 distinct gear owners fit in one scissored mask draw per world frame;
+additional owners fall back to ordinary held depth rather than masking a
+different actor's weapon.
+The existing renderer debug snapshot and mobile log expose
+`frontPortraitMasks` and `frontPortraitMaskPasses`.
+
 ## Elevation-aware ground x-ray
 
 Ground is no longer removed wholesale from the held/foot depth rebuild.
