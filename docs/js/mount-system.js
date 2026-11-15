@@ -683,7 +683,8 @@
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Perception Mode halves mounted speed too.
     if (inputStrength > 0.001) {
       mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      const desiredAngle = Math.atan2(iy, ix);
+      const assisted = window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, ix, iy, deps.TILE, deps.canPlayerOccupy, dt); // Nearby tiles route the carrier; raw input still owns the rider's intended direction.
+      const desiredAngle = Math.atan2(assisted?.y ?? iy, assisted?.x ?? ix);
       const speedRatio = topSpeed > 0 ? deps.clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
       const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
       const diff = deps.angleDiff(desiredAngle, mountAngle);
