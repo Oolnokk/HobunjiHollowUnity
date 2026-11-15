@@ -35,6 +35,7 @@
   let building = false; // Prevents overlapping asynchronous avatar rebuilds.
   let errors = ''; // On-screen error report available without browser devtools.
   let frameIndex = 0, frameLastTime = 0; // Throttled debug display and frame-independent gamepad camera motion.
+  let stopPreviewFrame = null; // Owns the one shared scheduler subscription; removed on exit.
 
   function isolatedStorage(map) {
     const api = { // Real Storage methods mirrored with a Map, including bracket notation.
@@ -117,6 +118,8 @@
   window.addEventListener('pagehide', () => {
     window.PlayerBodyTransformComposer?.clearChannel?.(YAW_CHANNEL);
     if (window.CinematicCameraRuntime?.activeRecord?.() === lockedShot) window.CinematicCameraRuntime.deactivate();
+    stopPreviewFrame?.(); // The real game scheduler keeps running; only this guest input subscriber goes away.
+    stopPreviewFrame = null;
     for (const name of previewDbs) try { originalDb?.deleteDatabase(name); } catch (_) {}
   });
 
@@ -371,7 +374,6 @@
       if (window.CinematicCameraRuntime?.activeRecord?.() !== lockedShot) lockCamera();
       debugUpdate();
     }
-    requestAnimationFrame(frame);
   }
   function selectTab(name) {
     $('precreatorAppearance').hidden = name !== 'appearance';
@@ -447,7 +449,15 @@
         show('Real Testing Arena ready. Equipping a real starter outfit…');
         randomClothes(); // Dress the initial guest in the same native deforming pants as subsequent rerolls.
         debugUpdate();
-        requestAnimationFrame(frame);
+        const scheduler = window.RuntimeFrameScheduler; // Join the existing gameplay frame, never start a second RAF owner.
+        if (!scheduler?.register) {
+          show('Native frame scheduler unavailable; preview input could not start.', true);
+        } else {
+          stopPreviewFrame = scheduler.register('precreator-arena-preview', ctx => frame(ctx.timestamp), {
+            phase: 'pre-game', owner: 'HobunjiPrecreatorArena',
+            description: 'Temporary Testing Arena camera pan and native character yaw; disabled outside preview mode',
+          });
+        }
       } else if (checks > 700) {
         clearInterval(watcher);
         show('Arena failed to initialize: game=' + (window.__hobunjiGameStarted === true) + ', area=' + getArea() +
