@@ -49,6 +49,7 @@
   let lastRumbleAt = 0;
   let flashEl = null, flashTimer = 0;
   let audioCtx = null;
+  let ruinAudioUnlockInstalled = false; // Ensures the GameFeel-only audio context is unlocked by the next trusted gesture on mobile.
   const debug = { shakes: 0, hitStops: 0, reveals: 0, revealSkipped: null, chimes: 0, hurtFlashes: 0, lastTrauma: 0 };
 
   function shakeEnabled() {
@@ -207,7 +208,13 @@
     hurtFlash(0.55 + frac * 2);
   }
 
-  // ── Solve chime (original motif; synthesized so it needs no asset) ────
+  // ── Ruin melodies (the bundled Kurraya pluck, independently pitched) ───
+  const RUIN_PLUCK_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared with the real Kurraya instrument and the ruin melody plates.
+  const RUIN_PLUCK_ROOT_HZ = 261.625565; // KurrayaPuzzle's bundled sample is rooted at MIDI 60 (C4); pitches below are in Hz.
+  let ruinPluckBuffer = null; // Decoded once and reused by simultaneous solve, progress, and treasure notes.
+  let ruinPluckLoad = null; // Deduplicates first-load requests when multiple ruin events fire before the asset is decoded.
+  let ruinPluckError = null; // Retained in the mobile GameFeel debug snapshot if a sample is missing or cannot decode.
+
   function audioContext() {
     if (audioCtx && audioCtx.state !== 'closed') return audioCtx;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -215,13 +222,24 @@
     try { audioCtx = new Ctx(); } catch (_) { audioCtx = null; }
     return audioCtx;
   }
+  function installRuinAudioUnlock() {
+    if (ruinAudioUnlockInstalled || typeof window.addEventListener !== 'function') return;
+    ruinAudioUnlockInstalled = true;
+    const unlock = () => {
+      if (!audioCtx || (audioCtx.state !== 'suspended' && audioCtx.state !== 'interrupted')) return;
+      try { audioCtx.resume?.()?.catch?.(error => { debug.ruinAudioError = String(error?.message || error); }); }
+      catch (error) { debug.ruinAudioError = String(error?.message || error); }
+    }; // Resume happens in a real pointer/touch/key event, not only at an automatic puzzle-completion callback.
+    for (const event of ['pointerdown', 'touchstart', 'keydown'])
+      window.addEventListener(event, unlock, { capture: true, passive: true });
+  }
   function sfxVolume() {
     const cfg = window.AudioSystem?.gameAudioConfig?.() || {};
     if (cfg.enabled === false) return 0;
     return Math.max(0, Math.min(1.5, Number(cfg.sfxVolume ?? 1)));
   }
   function bell(ctx, out, freq, at, length, gain) {
-    for (const [mul, g] of [[1, 1], [2.01, 0.28], [3.02, 0.09]]) { // Slightly inharmonic partials give a struck-stone bell rather than a pure beep.
+    for (const [mul, g] of [[1, 1], [2.01, 0.28], [3.02, 0.09]]) { // Retained for lock-on blips and the missing/undecodable sample fallback.
       const osc = ctx.createOscillator();
       const env = ctx.createGain();
       osc.type = mul === 1 ? 'triangle' : 'sine';
@@ -233,20 +251,70 @@
       osc.start(at); osc.stop(at + length + 0.05);
     }
   }
-  function solveChime() {
-    const vol = sfxVolume();
-    if (vol <= 0) return false;
+  function ensureRuinPluck(ctx) {
+    if (ruinPluckBuffer || ruinPluckError) return Promise.resolve(ruinPluckBuffer);
+    if (!ruinPluckLoad) {
+      debug.ruinPluckStatus = 'loading'; // Pixel Probe distinguishes a late decode from a missing or silent Kurraya clip.
+      ruinPluckLoad = (async () => {
+      if (typeof fetch !== 'function' || typeof ctx?.decodeAudioData !== 'function') throw new Error('Kurraya sample decoder unavailable');
+      const response = await fetch(RUIN_PLUCK_URL);
+      if (!response.ok) throw new Error('Kurraya pluck HTTP ' + response.status);
+      const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
+      if (!buffer?.duration) throw new Error('Kurraya pluck decoded without audio');
+      ruinPluckBuffer = buffer;
+      debug.ruinPluckStatus = 'ready'; // The next chime will sample the decoded Kurraya pluck.
+      return buffer;
+    })().catch(error => {
+      ruinPluckError = String(error?.message || error); // An absent asset keeps ordinary synthesized cues audible; never retry it every note.
+      debug.ruinPluckError = ruinPluckError;
+      debug.ruinPluckStatus = 'fallback';
+      return null;
+    });
+    }
+    return ruinPluckLoad;
+  }
+  function pitchedRuinNote(ctx, out, freq, at, length, gain) {
+    if (!ruinPluckBuffer) { bell(ctx, out, freq, at, length, gain); return; }
+    const rate = Math.max(0.25, Math.min(8, freq / RUIN_PLUCK_ROOT_HZ)); // Same C4-relative transposition as the bundled Kurraya sampler.
+    const duration = Math.min(length, ruinPluckBuffer.duration / rate); // Let each pluck decay naturally instead of looping a percussive transient.
+    if (!(duration > 0.01)) return;
+    const source = ctx.createBufferSource();
+    const envelope = ctx.createGain();
+    source.buffer = ruinPluckBuffer;
+    source.playbackRate.setValueAtTime(rate, at);
+    const attack = Math.min(0.012, duration * 0.2);
+    const release = Math.min(0.09, duration * 0.45);
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.linearRampToValueAtTime(gain, at + attack);
+    envelope.gain.setValueAtTime(gain, at + Math.max(attack, duration - release));
+    envelope.gain.linearRampToValueAtTime(0.0001, at + duration);
+    source.connect(envelope); envelope.connect(out);
+    source.start(at); source.stop(at + duration + 0.02);
+  }
+  function playRuinNotes(outputGain, notes) {
+    if (sfxVolume() <= 0) return false;
     const ctx = audioContext();
     if (!ctx) return false;
     if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
-    const out = ctx.createGain();
-    out.gain.value = 0.16 * vol;
-    out.connect(ctx.destination);
-    const t0 = ctx.currentTime + 0.05;
-    // Rising open-fifth figure that lands on a held major-sixth shimmer.
-    const notes = [[587.33, 0], [880.0, 0.11], [783.99, 0.22], [1174.66, 0.33], [987.77, 0.47]];
-    notes.forEach(([f, dt], i) => bell(ctx, out, f, t0 + dt, i === notes.length - 1 ? 1.6 : 0.55, i === notes.length - 1 ? 0.9 : 0.7));
-    bell(ctx, out, 1479.98, t0 + 0.47, 1.4, 0.25);
+    const schedule = () => {
+      const volume = sfxVolume(); // Loading may finish after the player mutes SFX or leaves the page.
+      if (volume <= 0) return;
+      const out = ctx.createGain();
+      out.gain.value = outputGain * volume;
+      out.connect(ctx.destination);
+      const t0 = ctx.currentTime + 0.05;
+      for (const [freq, offset, length, gain] of notes) pitchedRuinNote(ctx, out, freq, t0 + offset, length, gain);
+      debug.lastRuinNoteSource = ruinPluckBuffer ? 'kurraya-pluck' : 'bell-fallback'; // Pixel Probe can confirm the actual backend on mobile.
+    };
+    if (ruinPluckBuffer || ruinPluckError) schedule();
+    else void ensureRuinPluck(ctx).then(schedule); // First cue waits for the real pluck; no synthesized first-note race.
+    return true;
+  }
+  function solveChime() {
+    // Rising open-fifth figure, held sixth shimmer. Timing/intervals stay unchanged; only the instrument changes.
+    const notes = [[587.33, 0, 0.55, 0.7], [880, 0.11, 0.55, 0.7], [783.99, 0.22, 0.55, 0.7],
+      [1174.66, 0.33, 0.55, 0.7], [987.77, 0.47, 1.6, 0.9], [1479.98, 0.47, 1.4, 0.25]];
+    if (!playRuinNotes(0.16, notes)) return false;
     debug.chimes++;
     return true;
   }
@@ -269,23 +337,15 @@
     for (const { el, side } of bars) el.style.transform = on ? 'translateY(0)' : `translateY(${side === 'top' ? '-100%' : '100%'})`;
   }
 
-  // One rising bell per partial success (glyph 2/3, brazier 4/6): you can
-  // hear you are on the right track before the full solve motif plays.
+  // One rising Kurraya pluck per partial success (glyph 2/3, brazier 4/6):
+  // the same scored pitches lead into the complete ruin melody.
   const PROGRESS_SCALE = [587.33, 659.25, 739.99, 880.0, 987.77]; // D major pentatonic.
   function progressNote(step, total) {
-    const vol = sfxVolume();
-    if (vol <= 0) return false;
-    const ctx = audioContext();
-    if (!ctx) return false;
-    if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
     const n = Math.max(1, Math.floor(Number(step) || 1));
     const t = Math.max(n, Math.floor(Number(total) || n));
     const index = Math.round((n - 1) / Math.max(1, t - 1) * (Math.min(t, 8) - 1)); // Spread any total across at most 8 rungs so long chains still climb.
     const freq = PROGRESS_SCALE[index % PROGRESS_SCALE.length] * Math.pow(2, Math.floor(index / PROGRESS_SCALE.length));
-    const out = ctx.createGain();
-    out.gain.value = 0.13 * vol;
-    out.connect(ctx.destination);
-    bell(ctx, out, freq, ctx.currentTime + 0.02, 0.7, 0.8);
+    if (!playRuinNotes(0.13, [[freq, 0, 0.7, 0.8]])) return false;
     debug.progressNotes = (debug.progressNotes || 0) + 1;
     return true;
   }
@@ -293,20 +353,13 @@
   // Treasure motif for opening a chest: a quick upward run that lands on a
   // sustained chord. Higher tiers add a top note and a longer shimmer.
   function treasureFanfare(tier = 1, boss = false) {
-    const vol = sfxVolume();
-    const ctx = vol > 0 ? audioContext() : null;
-    if (!ctx) return false;
-    if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
-    const out = ctx.createGain();
-    out.gain.value = 0.15 * vol;
-    out.connect(ctx.destination);
-    const t0 = ctx.currentTime + 0.04;
-    const run = [523.25, 659.25, 783.99, 1046.5]; // C major run up an octave.
-    run.forEach((f, i) => bell(ctx, out, f, t0 + i * 0.075, 0.35, 0.55));
-    const land = t0 + run.length * 0.075 + 0.05;
+    const run = [523.25, 659.25, 783.99, 1046.5]; // The chest melody remains an upward C major run.
     const level = Math.max(1, Math.min(4, Number(tier) || 1)) + (boss ? 1 : 0);
     const chord = [783.99, 987.77, 1174.66].concat(level >= 3 ? [1567.98] : []);
-    chord.forEach(f => bell(ctx, out, f, land, 1.1 + level * 0.25, 0.45));
+    const land = run.length * 0.075 + 0.05;
+    const notes = run.map((freq, i) => [freq, i * 0.075, 0.35, 0.55])
+      .concat(chord.map(freq => [freq, land, 1.1 + level * 0.25, 0.45]));
+    if (!playRuinNotes(0.15, notes)) return false;
     addTrauma(boss ? 0.3 : 0.15);
     debug.fanfares = (debug.fanfares || 0) + 1;
     return true;
@@ -465,6 +518,9 @@
     deps = injected || null;
     wire();
     bindSettingsToggle();
+    installRuinAudioUnlock();
+    const ctx = audioContext(); // Decode the small shared Kurraya sample before the first real ruin solve on mobile.
+    if (ctx) void ensureRuinPluck(ctx);
   }
 
   window.GameFeel = Object.freeze({

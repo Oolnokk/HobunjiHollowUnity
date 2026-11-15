@@ -17,6 +17,7 @@ async function main() {
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
   const audioCalls = []; // Records each yawn playback to separate real recordings from fallback composition.
   let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
+  let playerSpatialChecks = 0; // Fails loudly if the player yawn is incorrectly gated by the NPC distance curve.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
   const toasts = []; // Ensures the exact authored text is emitted only on the daily ritual.
   const pendingChews = new Map(); // Models the drink-strike callback being withheld until a leaf is actually chewed.
@@ -96,7 +97,10 @@ async function main() {
     },
     AudioSystem: {
       gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }),
-      combatAudioSpatial: actor => { audioActor = actor; return { gain: 1 }; },
+      combatAudioSpatial: actor => {
+        if (actor.rec?.id === '__player_daily_koma__') { playerSpatialChecks++; return { gain: 0 }; }
+        audioActor = actor; return { gain: 1 };
+      },
     },
     AnimalVoiceIndependentPlayback: {
       playIndependent: (url, opts) => { audioOptions = opts; audioCalls.push({ url, opts }); return { stop() {} }; },
@@ -331,10 +335,20 @@ async function main() {
   hour += 2; ms += 600; frame({ timestamp: ms }); // Start an audible un-rested fallback yawn before its five-second cleanup.
   assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
   for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
-  assert.ok(audioCalls.some(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
+  const playerBreath = audioCalls.find(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
     && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
-    && call.opts.tempo === 1 && call.opts.pitchSemitones === 7),
-    'missing yawn recordings use a five-second composition with species pitch/cadence');
+    && call.opts.tempo === 1 && call.opts.pitchSemitones === 7); // Captures the last reconstructed player voice without assuming how many NPCs yawned.
+  assert.ok(playerBreath, 'missing yawn recordings use a five-second composition with species pitch/cadence');
+  assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
+  assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
+  const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url.includes('breath.m4a'));
+  playerEvents[playerEvents.length - 1]?.opts.onStarted?.();
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'playing', 'the actual audio start event confirms an audible player yawn');
+  assert.equal(playerBreath.opts.sourceActor, null, 'player voice originates at the listener, not a movable NPC sound source');
+  assert.equal(playerBreath.opts.position3d, null, 'player yawns have no directional HRTF offset');
+  assert.equal(playerBreath.opts.panX, 0, 'player yawns play centered in stereo');
+  assert.ok(playerBreath.opts.volume > 0.5, 'player yawn retains full local SFX volume');
   assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
     && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
   // A weapon held but not yet fired has no lunge/stagger flags; yawn must not consume the input before release.

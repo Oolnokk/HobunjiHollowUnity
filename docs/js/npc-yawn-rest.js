@@ -30,6 +30,7 @@
   let saved = {}; // Persistent NPC rest and Koma days for the current save character.
   let dirty = false; // Batches NPC checkpoint writes into at most one localStorage write per poll.
   let lastVoice = null; // Included in mobile diagnostics to verify actual clip and fallback modulation.
+  let lastPlayerVoice = null; // Retains the player's most recent request and actual playback status even if town NPCs yawn afterward.
   let lastYawn = null; // Included in mobile diagnostics to verify each scheduled wake or hourly trigger.
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
   let playerWakePending = false; // Set by a real Sleep passage or finished bed lie; consumed when the player's avatar/actions become ready.
@@ -72,6 +73,7 @@
         voicePlans.clear();
         playerWakePending = false;
         lastBedSleepCount = null;
+        lastPlayerVoice = null;
       }
       return false;
     }
@@ -86,6 +88,12 @@
     walkerStates = new WeakMap();
     playerWalker = null; // A different character never inherits this one's live yawn or Koma ritual.
     voicePlans.clear();
+    lastPlayerVoice = null;
+    const appearance = window.__hobunjiPlayerProfile?.appearance; // Supplies the correct player species/gender for the first playable yawn.
+    if (appearance?.speciesId && window.CombatVocalizations?.getVoiceModulation) {
+      const identity = sourceIdentity({ rec: { appearance } });
+      void voiceFor(identity.species, identity.gender).catch(error => { lastError = 'player voice prewarm: ' + String(error?.message || error); });
+    } // Resolve the absent/borrowed yawn clip while the world is loading, rather than eating the first five-second yawn.
     playerWakePending = false; // A pending wake from another selected character must not animate the new one.
     lastBedSleepCount = null; // BedLiePose counters are runtime-global, not per save character.
     dirty = false;
@@ -210,6 +218,8 @@
   }
 
   function stopVoice(entry) {
+    if (entry.voiceDebug && !['finished', 'error'].includes(entry.voiceDebug.status))
+      entry.voiceDebug.status = 'stopped'; // Distinguishes a clip canceled before decode from one the browser actually started.
     entry.voice?.stop?.(0.12);
     entry.voice = null;
     window.CharacterVoiceOwner?.release?.(entry.voiceClaim);
@@ -221,19 +231,21 @@
     const audioConfig = window.AudioSystem?.gameAudioConfig?.() || {};
     if (audioConfig.enabled === false || Number(audioConfig.sfxVolume ?? 1) <= 0) return;
     const tile = Number(window.Combat?.deps?.TILE) || 64;
-    const actor = {
+    const actor = entry.isPlayer ? null : {
       get x() { return walker.root.position.x * tile; },
       get y() { return walker.root.position.z * tile; },
       get areaId() { return walker.area; },
       rec: walker.rec,
-    }; // Voice renderer follows the live NPC position rather than a frozen spawn-point snapshot.
-    const audioSpatial = window.AudioSystem?.combatAudioSpatial;
-    if (Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // No audio asset probes for inaudible/off-area NPCs.
+    }; // Only NPCs are positional emitters; the player is the audio listener, as in CombatVocalizations.
+    const audioSpatial = entry.isPlayer ? null : window.AudioSystem?.combatAudioSpatial;
+    if (actor && Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // NPCs outside earshot do not request voice clips.
     const identity = sourceIdentity(walker);
     const plan = await voiceFor(identity.species, identity.gender);
     if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
-    const spatial = audioSpatial?.(actor, { earshotTiles: 14 }) || {};
-    if (Number(spatial.gain ?? 1) < 0.002) return;
+    const spatial = entry.isPlayer
+      ? { gain: 1, panX: 0, position3d: null, extraWetBoost: 0 }
+      : (audioSpatial?.(actor, { earshotTiles: 14 }) || {});
+    if (!entry.isPlayer && Number(spatial.gain ?? 1) < 0.002) return; // A late-moving NPC can leave earshot while the recording resolves.
     const owner = window.CharacterVoiceOwner;
     const claim = owner?.request?.(entry.isPlayer ? (window.Combat?.deps?.player || walker) : walker, {
       kind: 'active', priority: window.CombatVocalizations?.getVoicePriority?.('active') ?? 3,
@@ -242,9 +254,23 @@
     if (owner && !claim) return;
     const volume = Math.min(1, Math.max(0, 0.72 * plan.gain * Number(audioConfig.sfxVolume ?? 1) * Number(spatial.gain ?? 1)));
     const renderer = window.AnimalVoiceIndependentPlayback?.playIndependent;
-    if (!renderer) { owner?.release?.(claim); return; }
+    if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
+    const voiceDebug = {
+      npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
+      source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
+      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume,
+      positional: !entry.isPlayer, status: 'queued',
+    }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
+    entry.voiceDebug = voiceDebug;
+    lastVoice = voiceDebug;
+    if (entry.isPlayer) lastPlayerVoice = voiceDebug;
     entry.voiceClaim = claim;
     entry.voice = renderer(plan.url, {
+      onStarted: () => { voiceDebug.status = 'playing'; },
+      onError: error => {
+        voiceDebug.status = 'error';
+        lastError = 'audio: ' + String(error?.message || error);
+      },
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
       breathYawnDurationS: plan.cadence ? YAWN_DURATION_S : undefined, // Only breathing fallbacks are composed; authentic yawns never enter this path.
       breathYawnCadence: plan.cadence || undefined, // Keeps species-relative speaking/breathing cadence without stretching a transient 4x.
@@ -254,12 +280,16 @@
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
       lowpassHz: Math.round(4000 + 16000 * Math.pow(Math.max(0, Number(spatial.gain ?? 1)), 0.7)),
       area: walker.area,
-      onFinished: () => { if (entry.voiceClaim === claim) { owner?.release?.(claim); entry.voiceClaim = null; } },
+      onFinished: () => {
+        if (voiceDebug.status !== 'error' && voiceDebug.status !== 'stopped') voiceDebug.status = 'finished';
+        if (entry.voiceClaim === claim) { owner?.release?.(claim); entry.voiceClaim = null; }
+      },
     });
+    if (!entry.voice) {
+      owner?.release?.(claim); entry.voiceClaim = null;
+      voiceDebug.status = 'unavailable'; lastError = 'audio: voice renderer refused playback'; return;
+    }
     owner?.bindStop?.(claim, seconds => entry.voice?.stop?.(seconds));
-    lastVoice = { npcId: walker.rec?.id, species: identity.species, gender: identity.gender,
-      source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
-      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume };
   }
 
   function restorePose(entry) {
@@ -408,6 +438,9 @@
       playerWalker.neckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
       playerWalker.area = area;
     }
+    const identity = sourceIdentity(playerWalker);
+    if (window.CombatVocalizations?.getVoiceModulation && !voicePlans.has(identity.species + ':' + identity.gender))
+      void voiceFor(identity.species, identity.gender).catch(error => { lastError = 'player voice prewarm: ' + String(error?.message || error); });
     return playerWalker;
   }
   function playerAttackInputBusy() {
@@ -551,7 +584,7 @@
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastPlayerVoice, lastError,
       playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),

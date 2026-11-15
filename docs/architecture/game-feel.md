@@ -11,11 +11,11 @@ instead of re-implementing shake/sound/camera tricks locally.
 | Controller rumble | Same events (≥ 0.12 trauma), throttled, through `ControllerInput.frame().pad` | `addTrauma` |
 | Hit-stop | `gameLoop` asks `GameFeel.frameDt(dt)`; for 55–100 ms the simulation runs at 7 % speed | melee hits, player damage |
 | Hurt flash | Fixed red vignette div, DOM written only on the event | `game.js damagePlayer` → `playerHurt(amount)` |
-| Solve motif | Original synthesized bell figure (no asset) | `RuinInteractionAudio.puzzleComplete()` → `puzzleSolved()` |
-| Progress notes | One rising pentatonic bell per partial success | `RuinInteractionAudio.progress(step, total)` |
+| Solve motif | Kurraya pluck recording pitched into the existing five-note solve motif (bell fallback if asset unavailable) | `RuinInteractionAudio.puzzleComplete()` → `puzzleSolved()` |
+| Progress notes | One rising pitched Kurraya pluck per partial success | `RuinInteractionAudio.progress(step, total)` |
 | Reveal shot | If a mechanism starts moving ≤ 1.9 s after a solve, `CinematicCameraRuntime.activate()` pans to it for 2.3 s with letterbox bars and a `CharacterActionLocks` movement lock. Skipped in combat, mid-traversal (jump/ladder/rope/dodge), when already on screen, or on another floor/too far. | `RuinInteractionAudio.mechanism(object)` → `mechanismMoved()`; `beginReveal(object)` directly (Great Door waking) |
 | Sinking stone | Presentation-only slide-down + hide + restore of a gate whose collision the caller already opened | `sinkAway(object)` / `cancelSink(object)` (shaft wing + native chamber gates) |
-| Treasure motif | Upward run → chord, richer for tier 3+/boss | `DevRandomRuinDungeonChests.open` |
+| Treasure motif | Kurraya pluck run → chord, richer for tier 3+/boss | `DevRandomRuinDungeonChests.open` |
 
 Settings → Camera → **Screen Shake** turns off shake, rumble and hit-stop
 (`localStorage hobunjiScreenShake = '0'`).
