@@ -135,7 +135,7 @@
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
-  <script src="js/player-vitals.js?v=20261102h110ef3c"></script>
+  <script src="js/player-vitals.js?v=20261115h1c79fec"></script>
   <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
        derivation, and item-wheel eligibility, extracted out of game.js.
        Must load before game.js, which calls window.ItemProcessing.init(...)
@@ -158,7 +158,7 @@
   <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261114hperch1760"></script>
-  <link rel="stylesheet" href="style.css?v=20261114lichHearts1">
+  <link rel="stylesheet" href="style.css?v=20261115vitalsNames3">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -1790,6 +1790,20 @@
               <div class="settings-desc">Dark border on rocks, crops and terrain steps</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingOutlines" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Affliction Names on Bars</div>
+              <div class="settings-desc">Print each affliction's name across its segment of the Health, Stamina and Footing bars</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingVitalsNames" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Affliction Bar Animations</div>
+              <div class="settings-desc">Dripping, flickering and sweeping effects on afflicted bar segments. Off by default; they cost a lot on some devices</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingVitalsAnimations"><span class="toggle-slider"></span></span>
           </label>
           </div>
           <div data-ctrl-subtab id="settingsSection1" aria-label="Billboard Sprites">

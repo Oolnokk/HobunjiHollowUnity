@@ -402,6 +402,39 @@
       to { transform: translate3d(24%, 0, 0); }
     }
 
+    /* Affliction animations are opt-in (Settings > Visual Effects, class set by player-vitals.js): they were the dominant
+       per-frame cost of an afflicted player in software-composited browsers. Without the class every effect keeps its
+       static look and droplets (base opacity 0) simply do not appear; SVG drip/balloon morphs are paused in JS. */
+    #vitalsBar:not(.vb-fx-animated) .vb-affliction-segment,
+    #vitalsBar:not(.vb-fx-animated) .vb-affliction-segment::before,
+    #vitalsBar:not(.vb-fx-animated) .vb-affliction-segment::after { animation: none !important; }
+
+    /* Affliction name printed centrally on its segment. The label has its own overflow:hidden box over the segment,
+       so a long name is clipped by the segment's edges (and the bar's) without clipping droplets or shapes. */
+    #vitalsBar .vb-name { display: none; }
+    #vitalsBar.vb-fx-names .vb-name {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      inset: 0;
+      z-index: 41; /* Above the drop pseudo-elements (40) and the inline SVG shapes. */
+      overflow: hidden;
+      pointer-events: none;
+      white-space: nowrap;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
+      font-size: clamp(7px, 1.2dvh, 12px);
+      line-height: 1;
+      letter-spacing: .04em;
+      color: #fff;
+      /* Thin black outline on the glyphs themselves, in the HUD's own ink, so the name reads on any affliction colour.
+         The stroke is painted beneath the fill (paint-order) so only its outer half shows and the letters keep their
+         weight; the small shadow is the fallback where paint-order is not applied to HTML text. */
+      -webkit-text-stroke: .16em #000;
+      paint-order: stroke fill;
+      text-shadow: 0 0 1px #000;
+    }
+
     /* The actual brittle/starved bars are single reusable inline-SVG meshes.
        SVG draws over the straight underlying rim, and its opaque black ground
        reveals genuine notches instead of green fill peeking through. */
@@ -418,6 +451,7 @@
     }
     /* Match the viewport-scaled 4px-equivalent outer rim, even in SVG. */
     #vitalsBar .vb-shape-svg path { stroke-width: .556dvh; }
+    #vitalsBar .vb-outline-svg { z-index: 42; } /* Above the affliction name (41): the black outline occludes the text. */
     #vitalsBar .vb-cap {
       position: absolute;
       top: 0;
@@ -429,6 +463,7 @@
       pointer-events: none;
     }
     #vitalsBar .vb-cap[hidden] { display: none; }
+    #vitalsBar .vb-cap-piece { position: absolute; top: 0; bottom: 0; pointer-events: none; } /* One lost-capacity piece per capacity reducer, sized in % of the cap. */
     #vitalsBar .vb-cap.is-withered {
       background: transparent;
       border: 0;

@@ -18,6 +18,15 @@ function element(id) {
       contains(name) { return classes.has(name); },
     },
     append(...children) { this.children.push(...children); },
+    querySelectorAll(selector) { // Only the 'svg' descendants query used by the animation toggle.
+      const found = [];
+      const walk = node => { for (const child of node.children || []) { if (selector === 'svg' && child.id === 'svg') found.push(child); walk(child); } };
+      walk(this);
+      return found;
+    },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    pauseAnimations() { this.animationsPaused = true; },
+    unpauseAnimations() { this.animationsPaused = false; },
     appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
     setAttribute(name, value) { attributes[name] = String(value); this[name] = String(value); },
@@ -33,8 +42,10 @@ for (const resource of ['Health', 'Stamina', 'Footing']) {
     elements.set(id, element(id));
   }
 }
+const storage = new Map(); // Stands in for localStorage so the preferences can be toggled and re-read.
 const context = {
   console,
+  localStorage: { getItem: key => (storage.has(key) ? storage.get(key) : null), setItem: (key, value) => storage.set(key, String(value)) },
   performance: { now: () => 0 },
   document: {
     getElementById: id => elements.get(id) || null,
@@ -67,6 +78,8 @@ context.PlayerVitals.init({ player });
 const refresh = () => context.PlayerVitals.refreshVitalsHud(); // Invokes the game's actual DOM renderer without ticking time.
 const shown = id => elements.get(id).classList.contains('is-active'); // Checks per-resource HUD visibility.
 const bar = id => elements.get('vb' + id + 'Fill'); // Reads displayed width from the actual row fill.
+const capPieces = cap => cap.children.filter(child => child.className === 'vb-cap-piece'); // The lost-capacity cap holds one piece per capacity reducer.
+const pieceLabel = piece => piece.children.find(child => child.className === 'vb-name')?.textContent;
 
 refresh();
 assert.equal(shown('vitalsBar'), false, 'at full and unafflicted the entire HUD is hidden');
@@ -98,6 +111,43 @@ assert.equal(elements.get('vbHealthNormal').children.length, 1, 'underlying ordi
 assert.equal(elements.get('vbHealthNormal').children[0].style.width, '60.0%', 'ordinary top and bottom borders stop before the bleeding interval');
 const bleedingSpan = elements.get('vbHealthSegments').children[0];
 assert(bleedingSpan.className.includes('vb-effect-drip'), 'bleeding shows falling drops');
+// Affliction presentation preferences: names ON and animations OFF by default.
+const vitalsBar = elements.get('vitalsBar');
+assert.equal(vitalsBar.classList.contains('vb-fx-names'), true, 'affliction names are on by default');
+assert.equal(vitalsBar.classList.contains('vb-fx-animated'), false, 'affliction animations are off by default');
+const nameLabel = bleedingSpan.children.find(child => child.className === 'vb-name');
+assert.ok(nameLabel, 'each affliction segment carries a name label');
+assert.equal(context.ResourceSystem.AFFLICTIONS.bleedingHealth.name, 'Bleeding Health', 'fixture: the full affliction name carries the resource word');
+assert.equal(nameLabel.textContent, 'Bleeding', 'the label drops the resource word the bar already implies');
+assert.equal(bleedingSpan.title, 'Bleeding Health', 'the hover title keeps the full name');
+assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'one label per segment');
+const bleedingSvg = bleedingSpan.children[0];
+// The black outline of a shaped segment is repeated in a second SVG layered after (above) the label.
+const labelIndex = bleedingSpan.children.indexOf(nameLabel);
+const outlineSvg = bleedingSpan.children.find(child => child.id === 'svg' && child !== bleedingSvg);
+assert.ok(outlineSvg, 'a shaped segment gets an outline overlay SVG');
+assert.ok(bleedingSpan.children.indexOf(outlineSvg) > labelIndex, 'the outline overlay is after the label so it paints over the text');
+assert.equal(outlineSvg.classList.contains('vb-outline-svg'), true, 'the overlay carries the class style.css layers above the label');
+const strokePath = outlineSvg.children.find(child => child.id === 'path');
+assert.equal(strokePath.getAttribute('fill'), 'none', 'the overlay path is stroke only, so the coloured shape stays under the text');
+assert.equal(strokePath.getAttribute('stroke'), '#000');
+assert.equal(strokePath.getAttribute('d'), bleedingSvg.children[1].getAttribute('d'), 'the overlay traces the same shape');
+assert.equal(strokePath.children[0].id, 'animate', 'the drip morph is copied so the outline follows the animated shape');
+assert.equal(outlineSvg.children.length, 1, 'the overlay is just the stroke: the black backing stays under the label so names stay legible on pinched shapes');
+assert.equal(bleedingSpan.children.filter(child => child.id === 'svg').length, 2, 'one shape SVG and one outline overlay');
+assert.equal(bleedingSvg.animationsPaused, true, 'SMIL drip morph is paused while animations are off');
+context.PlayerVitals.setAnimationsEnabled(true);
+assert.equal(vitalsBar.classList.contains('vb-fx-animated'), true, 'enabling animations sets the class');
+assert.equal(bleedingSvg.animationsPaused, false, 'enabling animations resumes the SMIL morphs');
+assert.equal(context.PlayerVitals.animationsEnabled(), true, 'the animation preference persists');
+context.PlayerVitals.setNamesEnabled(false);
+assert.equal(vitalsBar.classList.contains('vb-fx-names'), false, 'disabling names clears the class');
+context.PlayerVitals.setNamesEnabled(true);
+context.PlayerVitals.setAnimationsEnabled(false);
+assert.equal(bleedingSvg.animationsPaused, true, 'disabling animations pauses the morphs again');
+refresh();
+assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the label');
+assert.equal(bleedingSpan.children.filter(child => child.id === 'svg').length, 2, 'refresh does not duplicate the outline overlay');
 player.afflictions.bleedingHealth = 38;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bleedingSpan, 'CSS animations survive frequent affliction-value updates');
@@ -118,6 +168,15 @@ assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged 
 assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'vertices do not reroll as the segment shrinks');
 player.afflictions.bruisedHealth = 0;
 
+// Labels on the other two bars drop their resource word too ("Frostbitten Stamina" -> "Frostbitten", "Resolute Footing" -> "Resolute").
+player.afflictions.frostbittenStamina = 15; player.afflictions.resoluteFooting = 15; player.stamina = 80; player.footing = 80;
+refresh();
+const labelOf = id => elements.get(id).children.map(segment => segment.children.find(child => child.className === 'vb-name')?.textContent);
+assert.deepEqual(labelOf('vbStaminaSegments'), ['Frostbitten'], 'Stamina bar label has no "Stamina"');
+assert.deepEqual(labelOf('vbFootingSegments'), ['Resolute'], 'Footing bar label has no "Footing"');
+player.afflictions.frostbittenStamina = 0; player.afflictions.resoluteFooting = 0; player.stamina = 100; player.footing = 100;
+refresh();
+
 player.afflictions.congealedHealth = 30;
 player.health = 70;
 refresh();
@@ -125,10 +184,24 @@ assert.equal(elements.get('vbHealthCap').hidden, false, 'lost effective maximum 
 assert.equal(elements.get('vbHealthCap').style.left, '70.0%');
 const congealedCap = elements.get('vbHealthCap');
 assert.equal(congealedCap.classList.contains('is-withered'), true, 'capacity damage creates a starved outline');
-assert.equal(congealedCap.children[0].id, 'svg', 'cap draws with a real SVG');
-const congealedShape = congealedCap.children[0].children[1].getAttribute('d');
+assert.equal(capPieces(congealedCap).length, 1, 'one capacity reducer, one cap piece');
+const congealedPiece = capPieces(congealedCap)[0];
+assert.equal(congealedPiece.children[0].id, 'svg', 'a cap piece draws with a real SVG');
+const congealedShape = congealedPiece.children[0].children[1].getAttribute('d');
 assert(congealedShape.includes(' C ') && congealedShape.includes(' L '), 'cap is a smooth spline with a flat central section');
-assert.equal(congealedCap.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
+assert.equal(congealedPiece.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
+// The right-anchored lost-capacity cap is labelled too, with the same outline layered over its text.
+const capLabel = congealedPiece.children.find(child => child.className === 'vb-name');
+assert.ok(capLabel, 'the lost-capacity cap carries a name label');
+assert.equal(capLabel.textContent, 'Congealed', 'the cap prints the reducing affliction without the resource word');
+const capOutline = congealedPiece.children.find(child => child.id === 'svg' && child.classList.contains('vb-outline-svg'));
+assert.ok(capOutline, 'the cap gets an outline overlay');
+assert.ok(congealedPiece.children.indexOf(capOutline) > congealedPiece.children.indexOf(capLabel), 'the cap outline is after its label so it paints over the text');
+refresh();
+assert.equal(capPieces(congealedCap)[0], congealedPiece, 'refresh keeps the same cap piece');
+assert.equal(congealedPiece.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the piece label');
+assert.equal(congealedPiece.children.filter(child => child.classList.contains('vb-outline-svg')).length, 1, 'refresh does not duplicate the piece outline');
+assert.equal(congealedPiece.style.width, '100.0%', 'a single reducer fills the whole cap');
 player.afflictions.congealedHealth = 0;
 player.health = 100;
 
@@ -179,11 +252,38 @@ player.afflictions.windedStamina = 25;
 player.stamina = 75;
 refresh();
 assert.equal(elements.get('vbStaminaCap').classList.contains('is-withered'), true, 'winded Stamina shows withered capacity');
-const windedSpan = elements.get('vbStaminaSegments').children.find(span => span.title === 'Winded Stamina');
-assert(windedSpan?.className.includes('vb-effect-starved'), 'flasker Winding affliction uses a genuinely pinched band');
-assert.equal(windedSpan.style.backgroundColor, 'transparent', 'starved band draws the SVG fill rather than a rectangular fill');
-assert.equal(windedSpan.children[0].id, 'svg', 'starved band owns an inline SVG');
-assert.equal(windedSpan.children[0].children[1].getAttribute('d'), congealedShape, 'band uses the same one-third-height starved spline as the missing cap');
+// A capacity reducer is drawn once, as the right-anchored cap: no second, left-anchored band for the same amount.
+assert.equal(elements.get('vbStaminaSegments').children.some(span => span.title === 'Winded Stamina'), false, 'Winded Stamina has no left-anchored band');
+assert.equal(pieceLabel(capPieces(elements.get('vbStaminaCap'))[0]), 'Winded', 'the cap is the one place Winded is drawn and named');
+assert.equal(capPieces(elements.get('vbStaminaCap'))[0].children[0].children[1].getAttribute('d'), congealedShape, 'the Stamina cap piece uses the same starved spline');
+// Several reducers on one bar split the cap: one piece each, in its own colour and width, strongest at the far right.
+player.afflictions.congealedHealth = 20; player.afflictions.rentHealth = 10; player.health = 60;
+refresh();
+const multiCap = elements.get('vbHealthCap');
+assert.equal(elements.get('vbHealthSegments').children.some(span => /Congealed|Rent/.test(span.title)), false, 'no reducer gets a left band on the Health bar either');
+const multiPieces = capPieces(multiCap);
+assert.equal(multiPieces.length, 2, 'two reducers, two cap pieces');
+assert.deepEqual(multiPieces.map(pieceLabel), ['Congealed', 'Rent'], 'weakest (Congealed, priority 50) leftmost, strongest (Rent, 57) at the far right');
+assert.deepEqual(multiPieces.map(piece => piece.style.left), ['0.0%', '66.7%'], 'pieces tile the cap from its left edge');
+assert.deepEqual(multiPieces.map(piece => piece.style.width), ['66.7%', '33.3%'], 'piece widths follow each reducer\'s amount (20 : 10)');
+const pieceFills = multiPieces.map(piece => piece.children[0].children[1].getAttribute('fill'));
+assert.equal(pieceFills[0], context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'each piece keeps its own affliction colour');
+assert.equal(pieceFills[1], context.HOBUNJI_CONFIG.resourceRings.afflictionColors.rentHealth);
+assert.notEqual(pieceFills[0], pieceFills[1], 'the two reducers are told apart by colour');
+for (const piece of multiPieces) {
+  assert.equal(piece.children.filter(child => child.className === 'vb-name').length, 1, 'one label per piece');
+  assert.ok(piece.children.findIndex(child => child.classList.contains('vb-outline-svg')) > piece.children.findIndex(child => child.className === 'vb-name'), 'each piece outlines over its own text');
+}
+player.afflictions.congealedHealth = 10; refresh(); // The same pieces just resize when an amount changes.
+assert.deepEqual(capPieces(multiCap), multiPieces, 'pieces persist across amount changes');
+assert.deepEqual(capPieces(multiCap).map(piece => piece.style.width), ['50.0%', '50.0%'], 'and resize to the new 10 : 10 split');
+player.afflictions.rentHealth = 0; refresh(); // A reducer clearing removes only its piece.
+assert.deepEqual(capPieces(multiCap).map(pieceLabel), ['Congealed'], 'a cleared reducer loses its piece');
+assert.equal(capPieces(multiCap)[0], multiPieces[0], 'the surviving piece is reused');
+player.afflictions.congealedHealth = 0; player.afflictions.rentHealth = 0; player.health = 90; // Still shown (damaged Health), but no reducer left.
+refresh();
+assert.equal(multiCap.children.length, 0, 'with no reducers left the cap holds no pieces');
+player.health = 100;
 player.afflictions.windedStamina = 0;
 player.stamina = 100;
 player.afflictions.poisonedHealth = 20;
@@ -201,8 +301,10 @@ player.stamina = 100;
 player.afflictions.shamblingFooting = 30;
 refresh();
 assert.equal(shown('vbFootingRow'), true, 'Footing afflictions also reveal their bar at full displayed points');
-assert.equal(elements.get('vbFootingSegments').children.length, 1);
-assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 1, 'mobile-readable debug snapshot includes HUD state');
+assert.equal(elements.get('vbFootingSegments').children.length, 0, 'Shambling Footing reserves maximum: drawn once, as the end-of-bar cap, not also as a band');
+assert.equal(elements.get('vbFootingCap').hidden, false, 'the reserved Footing shows as the end-of-bar cap');
+assert.equal(pieceLabel(capPieces(elements.get('vbFootingCap'))[0]), 'Shambling', 'the cap names the reserving affliction');
+assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 0, 'mobile-readable debug snapshot includes HUD state');
 
 // Enhanced resource visuals are driven by actual transaction metadata, not
 // one-off names: rapid attacks swell, efficient resources have crenellations.
@@ -312,7 +414,7 @@ assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its drop
 assert(css.includes('vb-fluid-drop 1.45s linear infinite'), 'droplets fall constantly on a fast loop');
 assert(css.includes('animation-delay: -.725s'), 'drip emitters stagger by half a cycle');
 assert.equal(bleedingSpan.children[0].children[1].children[0].getAttribute('dur'), '1.45s', 'SVG neck follows the faster droplet cycle');
-assert(congealedShape.includes('13.33') && congealedShape.includes('26.67'), 'starved throat is one-third of normal height');
+assert(congealedShape.includes(' 3.33 ') && congealedShape.includes(' 36.67 '), 'starved throat is a subtle pinch: 3.33 of 40 units closed in per side, leaving ~5/6 of the height open');
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
 assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');
@@ -322,4 +424,48 @@ assert(css.includes('.vb-effect-fire::after') && css.includes('.vb-effect-ember:
 assert(!css.includes('.vb-effect-brittle::before'), 'old fake chip slashes are gone');
 assert(!css.includes('clip-path: polygon('), 'starved cap no longer clips a rectangular border');
 assert(css.slice(css.indexOf('/* ── Player-only resource bars'), css.indexOf('/* ── Buff bar: active timed effects')).includes('background: transparent'), 'HUD root has no visible panel');
+
+// Three anchors, one per affliction: 'start' (0), 'current' (end of the current resource), 'end' (end of the bar).
+const expectedAnchors = {
+  woundedStamina: 'start', infectedStamina: 'start', frostbittenStamina: 'start', shatteredStamina: 'start',
+  bleedingHealth: 'current', entrancedHealth: 'current', bruisedHealth: 'current', poisonedHealth: 'current', burningHealth: 'current',
+  kindlingHealth: 'current', furiousStamina: 'current', moralizedStamina: 'current', resoluteFooting: 'current', resoluteHealth: 'current', mirroredHealth: 'current',
+  congealedHealth: 'end', rentHealth: 'end', windedStamina: 'end', shamblingFooting: 'end',
+};
+for (const [id, anchor] of Object.entries(expectedAnchors)) {
+  assert.equal(context.ResourceSystem.AFFLICTIONS[id] !== undefined, true, id + ' exists in the fixture');
+  assert.equal(context.PlayerVitals.afflictionAnchor(id, context.ResourceSystem.AFFLICTIONS[id]), anchor, id + ' hangs off the ' + anchor + ' anchor');
+}
+// Afflictions other modules register at runtime (combat-core.js drunk bands, amphibious-fishing.js Wounded Health, corroded health).
+assert.equal(context.PlayerVitals.afflictionAnchor('drunkenHealth', { extend: 'drunkBand' }), 'current', 'the Drunken Health buffer sits at the end of the current resource');
+assert.equal(context.PlayerVitals.afflictionAnchor('drunkenFooting', { extend: 'maxBack' }), 'end', 'Drunken Footing reserves the end of the bar');
+assert.equal(context.PlayerVitals.afflictionAnchor('woundedHealth', { extend: 'zero', reducesEffectiveMax: true }), 'end', 'Wounded Health locks maximum Health, so it is an end-of-bar affliction despite extend zero');
+assert.equal(context.PlayerVitals.afflictionAnchor('corrodedHealth', { extend: 'currentBack' }), 'current');
+assert.equal(context.PlayerVitals.afflictionAnchor('scentMarkedHealth', { extend: 'currentBack' }), 'current');
+const knownIds = new Set(Object.keys(context.ResourceSystem.AFFLICTIONS));
+for (const id of knownIds) assert.ok(['start', 'current', 'end'].includes(context.PlayerVitals.afflictionAnchor(id, context.ResourceSystem.AFFLICTIONS[id])), id + ' has exactly one of the three anchors');
+// Each affliction, applied alone, is drawn in exactly one place: a band (start/current) or the end-of-bar cap, never both.
+for (const [id, def] of Object.entries(context.ResourceSystem.AFFLICTIONS)) {
+  if (def.immutable && id !== 'shamblingFooting') continue;
+  const spec = { health: ['vbHealth', 'health', 'maxHealth'], stamina: ['vbStamina', 'stamina', 'maxStamina'], footing: ['vbFooting', 'footing', 'maxFooting'] }[def.resource];
+  if (!spec) continue;
+  const fresh = ['bleedingHealth', 'bruisedHealth', 'congealedHealth', 'rentHealth', 'windedStamina', 'shamblingFooting'];
+  for (const key of Object.keys(player.afflictions)) player.afflictions[key] = 0;
+  player.health = 100; player.stamina = 100; player.footing = 100; player.exhaustion.active = false;
+  player.afflictions[id] = 12; player[spec[1]] = 80;
+  refresh();
+  const bands = elements.get(spec[0] + 'Segments').children.filter(span => span.title === def.name);
+  const cap = elements.get(spec[0] + 'Cap');
+  const short = def.name.replace(new RegExp('\\s+' + def.resource + '$', 'i'), '');
+  const inCap = !cap.hidden && capPieces(cap).some(piece => pieceLabel(piece) === short);
+  const anchor = context.PlayerVitals.afflictionAnchor(id, def);
+  if (!(def.enhanced && fresh.indexOf(id) < 0 && bands.length === 0 && !inCap)) { // Enhanced bands need their own transaction setup to show.
+    assert.equal(bands.length + (inCap ? 1 : 0), 1, id + ' (' + anchor + ') is drawn in exactly one place, found ' + bands.length + ' band(s) and ' + (inCap ? 'the cap' : 'no cap'));
+    assert.equal(inCap, anchor === 'end', id + ' is in the cap only when it hangs off the end-of-bar anchor');
+    if (bands.length) assert.equal(bands[0].getAttribute('data-anchor'), anchor, id + ' band is tagged with its anchor');
+  }
+}
+for (const key of Object.keys(player.afflictions)) player.afflictions[key] = 0;
+player.health = 100; player.stamina = 100; player.footing = 100;
+refresh();
 console.log('player vitals HUD tests passed');

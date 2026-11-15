@@ -1,5 +1,170 @@
 # Performance investigation log
 
+## 15 Nov 2026 (applied): vitals-bar affliction animations off by default, affliction names printed on the segments
+
+Acting on the entry below: `player-vitals.js` now has two preferences (Settings > Visual Effects, persisted in
+`localStorage` as `hobunjiVitalsAnimations` / `hobunjiVitalsNames`, exposed as `PlayerVitals.animationsEnabled /
+setAnimationsEnabled / namesEnabled / setNamesEnabled`). Both are classes on `#vitalsBar` (`vb-fx-animated`,
+`vb-fx-names`) that `style.css` keys off, so toggling never rebuilds a segment:
+- **Animations: OFF by default.** Without `vb-fx-animated`, every `.vb-affliction-segment` and its `::before/::after`
+  gets `animation: none !important` (droplets, whose base opacity is 0, simply do not show; flame/ember/entranced/mirror
+  keep their static look), and the SVG SMIL drip/balloon morphs are paused with `svg.pauseAnimations()` (SMIL ignores
+  the CSS rule). New segments pick up the current play/pause state once, tracked per segment.
+- **Names: ON by default.** Each new affliction segment gets a `.vb-name` span printing the affliction's name,
+  centred, in `'KhymeryyanRomanLetters+Numbers'` (the project's HUD face from `style.css`), white with a black outline.
+  The label has its own `overflow: hidden` box over the segment, so a long name is clipped by the segment and bar edges
+  but droplets and SVG shapes are not. Added after any shape so the shape stays the segment's first child.
+
+Follow-ups the same day: the label drops the resource word the bar already implies ("Bleeding Health" -> "Bleeding",
+"Winded Stamina" -> "Winded"; the hover title keeps the full name); the glyphs get a thin black outline
+(`-webkit-text-stroke: .16em #000` with `paint-order: stroke fill`, so only the outer half shows); and the black outline
+of each SVG-shaped segment (brittle / drip / starved / balloon / crenellated) is repeated in a second stroke-only SVG
+(`.vb-outline-svg`, z-index 42) layered over the label (41) so the outline occludes the text. The opaque black backing
+rect around the shape deliberately stays under the label (a first version masked it too and hid the name on pinched
+shapes). A *starved* (pinched) segment such as Winded Stamina originally closed to 1/3 of the bar, leaving a couple of pixels
+between its two outline strokes, so its name was mostly hidden; the pinch is now `STARVED_PINCH = 3.33` of the 40
+viewBox units per side (a throat of ~5/6, still visibly concave, label fully readable; 13.33 restores the old shape). Plain bordered segments needed nothing: their
+label already sits inside the border's padding box.
+
+**Three anchors, one per affliction (player vitals bar).** Each affliction hangs off exactly one anchor and is drawn only
+there (`PlayerVitals.afflictionAnchor(id, def)`; bands carry `data-anchor`): `start` = the bar's zero (`extend: 'zero'`
+non-reducers: Wounded/Infected/Frostbitten/Shattered Stamina), `current` = the end of the current resource
+(`currentBack` and the Drunken Health buffer: Bleeding, Bruised, Poisoned, Burning, Kindling, Entranced, Scent-marked,
+Corroded, and the enhanced Resolute/Mirrored/Furious/Moralized bands), `end` = the end of the bar (anything that locks
+away maximum: Winded Stamina, Congealed/Rent/Wounded Health, Shambling/Drunken Footing). Before this, a capacity reducer
+was drawn twice, as its `zero` band at the left AND as the lost-capacity cap at the right (visible as "Wounded ...
+Wounded" on one bar); the code comment called that deliberate, the author's call was that it is a bug. End-anchored
+afflictions now live only in the lost-capacity cap (`.vb-cap`, drawn by `refreshVitalsHud`, not by
+`drawAfflictionSegments`), which is split into one piece per active reducer (`drawCapPieces`): each piece has its own
+colour, pinched shape, outline-over-text overlay and short name, its width is that reducer's share of the cap by
+amount (`getAffliction`), the strongest by priority sits at the far right and weaker ones stack leftwards from it.
+Pieces persist by affliction id (an amount change only resizes them), a cleared reducer loses only its piece, and all
+pieces are dropped once no reducer is left while the row is still shown. (An earlier version drew one cap in the
+strongest reducer's colour with the names joined by " / "; splitting it fixes simultaneous reducers being
+indistinguishable.) Checked in the real game with one affliction of each anchor on all three bars (Health cap: Congealed | Rent | Wounded
+as three coloured pieces), and in
+`scripts/test-player-vitals-hud.js` by applying each of the 20 base afflictions alone and asserting it is drawn in
+exactly one place (a band for `start`/`current`, the cap only for `end`).
+
+Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,
+toggles flip the classes and persist; burning with the defaults **190-191 ms vs 284-298 ms with animations on** (control
+174-205), wounded health 177-220 vs 234-262 (control level again). Screenshots show the names in the segments.
+`scripts/test-player-vitals-hud.js` covers the defaults, the label text, both toggles, SMIL pause/resume and no label
+duplication across refreshes (mutation-checked). `style.css` is not covered by `check-cache-busts.js`: its `?v=` token in
+`index.html` was bumped by hand (`20261115vitalsNames1`); do the same for any later stylesheet change.
+
+## 15 Nov 2026 (follow-up): afflictions, knockback, hit/knock-down/low-Footing animation, lunge ring trail (headless)
+
+Headless arena, player as the subject, per-tick frame wall time via a `Combat.update` hook, control = 14-24 neutral
+ticks in the same session (drifts +-10 ms): neutral 187-194 ms. Software WebGL and software-composited DOM, so
+absolute numbers are inflated; the ranking and the attributions are what carry over.
+
+**Cheap or free (inside noise, +-10%):**
+- *Knockback.* `damagePlayer` with no / default (260) / heavy (900) knockback: 195 / 200 / 198 ms vs 187 control. The
+  hit-reaction code is `ImpactRagdollPlayback.update` at ~0.1 ms per tick.
+- *Getting knocked over.* A real knock-down through `damagePlayer(..., {footingDamageMultiplier: 30})` (the
+  `applyHitStagger` -> `enterPronePose` path; `spendFooting` alone only drains Footing and never goes prone):
+  prone for all 69 recorded ticks in 4 of 4 cycles, **193 ms prone vs 194 neutral**, ragdoll JS 0.08 ms per tick.
+- *Walking with lowered Footing* (holding W; `drunk-locomotion.js` sway/gait): 160 ms full Footing, 164 at 25%,
+  173 at 5% (+8% at the extreme, near noise); standing at 25%: 179 vs 187.
+- *`ResourceSystem.tick` with many afflictions:* 11-18 us per entity whether it has 0 or all 18 afflictions
+  (24 defined, 18 non-immutable/non-enhanced), `applyDamage` 12.5 -> 21 us with 18 active. 30 NPCs would be well
+  under 1 ms. The `hobunji-resource-change` event itself costs 13 us per dispatch.
+- *Lunge ground-ring trail* (`spawnLungeTrailStamp`, game.js): 6-8 stamps per lunge. One stamp is a `Group` + a new
+  24-segment `RingGeometry` + a new additive `MeshBasicMaterial` + `bindGroundProjection` hooks: **32 us to build, 2 us
+  to dispose** (12 us build if the geometry were shared). About 0.25 ms per lunge. Frames with the trail (afflictions
+  picked) vs the same lunge with none (no trail by design): post/pre 1.08 vs 1.19, i.e. no measurable cost. Renderer
+  geometry count stays flat (disposed after 0.55 s). Not worth sharing the geometry.
+
+**The one real cost: afflictions that drain Health each tick, through the vitals HUD.** All 18 afflictions at once:
+**294 ms vs 187 (+57%)**. One at a time vs a 186 ms control: burningHealth +135, woundedHealth +102, kindlingHealth +89,
+entrancedHealth +81, poisonedHealth +61, bleedingHealth +57; every other affliction is under +25 (bruised, congealed,
+drunken, corroded, rent, wounded Stamina ... are free). What it is not: JS (tracked functions < 0.6 ms per tick, CPU
+profile of wounded vs control equal and ~90% native `(program)`), renderer work (draws 16-22 and triangles ~17k, render
+time 8-12 ms in every case), world popups (`WorldPopupText.showChange` suppressed: no change), the
+`hobunji-resource-change` listeners, SVG SMIL (pausing it: no change). What it is: the **vitals bar** (`#vitalsBar`,
+only 390x12 px). Hiding it removes the cost (wounded 303 -> 208, burning 302 -> 233); **disabling only its CSS
+animations** (`animation: none` on `#vitalsBar *`, `*::before`, `*::after`) takes wounded from +78 ms to +9 ms and
+burning from +153 to +47 over control, while disabling its transitions changes nothing. The animated pieces are in
+`style.css` (~lines 305-410): `.vb-effect-drip::before/::after` droplets (`vb-fluid-drop`, translating up to 10.5 dvh,
+z-index 40), `.vb-effect-fire::after` (`vb-flame-flutter`, repeating gradient with `inset: -.38dvh`),
+`.vb-effect-ember`, `.vb-effect-entranced` waves, `.vb-effect-mirror` sweep. 5-7 animations run at once while afflicted,
+against 1 in control. `player-vitals.js` itself compares before writing; its per-tick style writes (health fill width,
+segment left/width) are not the cost. Remaining burning cost with the bar hidden (+69 ms in that run) is something
+else (world Burning VFX / ground fire), not chased.
+
+**Caveat that matters:** this is software-composited Chromium; compositor-only animations (transform/opacity) are
+cheap on a GPU browser, so this is a pointer, not a proof. Before changing CSS, read a real-device `PerfProfiler`
+snapshot (and the browser's rendering/paint-flashing tools) with a burning/bleeding player. Cheap options if it holds:
+pause the vitals-bar effect animations when the effect is not on screen/paused, animate one shared layer instead of
+per-segment pseudo-elements, or give `#vitalsBar` `contain: layout paint style` so the animated layers are isolated.
+
+Harness traps from this run: `page.evaluate` closures do not carry local variables (pass them as arguments);
+`Combat.update` timing counts every frame (including the headless 200 ms ones), so compare within a run; `hold`-style
+refills (health reset every tick) make DoT afflictions look like they damage every tick, which is what a real DoT does
+anyway but inflates `hobunji-resource-change` traffic compared with a single hit.
+
+## 15 Nov 2026 (follow-up): strike frames with weapon mastery effects and Mercy Spike equipped (headless; no cost found)
+
+Same arena dummy harness (passive bandit grunt, 15% health so Mercy Spike's below-30% bonus applies, dummy 0.75 tile
+ahead, stamina refilled each attack). Weapon: this world's starter (`hoe_nativeCopper`; the starter differs per new
+world). Setup done in-page: `HobunjiMasteryPolicy._test.awardMastery(key, 300, ...)` (the `devBumpToolMasteryLevel`
+export is wrapped by the mastery policy and silently does nothing for a headless caller; the policy's own `award` is the
+supported hook) -> Mastery 5; `awardMotesOfProwess(200)`; `TechniqueScrolls.unlockAbility('mercySpike')` (the loadout
+refuses a quick attack that is not unlocked, `setSlot` returns false) then `Combat.loadout.setSlot('tap2', 'mercySpike')`;
+`CombatProgression.choose(...)` for levels 1-5 of both the weapon's combo and Mercy Spike (first option each).
+
+From `CombatAttackEvents` `hit` events (not from dummy health: the dummy regenerates, so health deltas went negative
+and are useless as a hit counter): left-click combo **10/10 attacks hit**, 3.6 damage, hit payload carried
+`afflictionBonuses` `bruisedHealth 1.69, windedStamina 0.63, shatteredStamina 0.55`; right-click Mercy Spike **7/10
+hit**, **37.8 damage, `quickConditionalBonus` and `quickBonusEffectProc` true**, payload `bruisedHealth 3.38,
+windedStamina 1.26, shatteredStamina 1.1` (the misses are Mercy Spike's narrow 14-degree cone, not mastery).
+**Not verified:** that those amounts actually landed on the dummy. The hit payload is what the attack hands to
+`ResourceSystem.applyDamage`, which calls `addAffliction` per entry; my attempts to read the dummy's afflictions back
+looked at the wrong ids (bleeding/wounded/infected/poisoned while this weapon's picks grant bruise/wind/shatter) and
+the dummy's own affliction state was not otherwise inspected, so "affliction cost at the hit" is only measured up to
+the payload, not the target-side `addAffliction`/`setAffliction`/`enforceCaps` work.
+
+Frame time, medians over the hit cycles: combo neutral 193 -> windup 192 -> recover 193 -> post-hit 184 ms (post/pre
+**0.95**); Mercy Spike 188 -> 172 -> 179 -> 181 ms (**0.96**; whiff cycles 0.92). With the unpicked baseline in the same
+session post/pre was 1.00-1.20 and noise is +-0.1, so **the mastery payload, the bonus-proc path and the Mercy Spike
+windup add nothing measurable at the moment of the hit** (target-side affliction application unverified, see above).
+
+Two traps and one finding from the setup:
+- A first attempt measured a "mastery" run that had no mastery (level stayed 0, every pick returned false): check
+  `toolMasteryLevel` and the `choose` results before trusting a mastery A/B.
+- Reading hits from `dummy.health` is wrong for anything that regenerates; use the hit event.
+- **Right-click with an empty tap2 slot overflows the stack.** `useActiveAction` (game.js, weapon branch) routes slot 2 to
+  `Combat.input.fireTap(2)`, which with no ability falls back to `legacyTapFallback` -> `fireLegacyWeaponAction` ->
+  `useActiveAction` -> `fireTap` ... until `RangeError: Maximum call stack size exceeded` (seen as a page error with
+  `isLockedIgnoringOwner` at the top). Every new weapon has tap2 empty until a quick attack is unlocked. It is harmless
+  to state but burns a full stack's worth of calls per click; a guard in `fireLegacyWeaponAction` would also decide
+  whether that click should perform the legacy swing it was written to fall back to, so it is left for a gameplay call.
+
+## 15 Nov 2026 (follow-up): what is left after the strike afterimage fix (headless; nothing further worth changing)
+
+Same arena dummy harness, run on `main` after the ghost decimation/cap merged (PR 1809). Questions: is the remaining
+post-swing frame-time lift caused by the hit, and what else could it be?
+
+- **Not the hit.** Interleaved hit vs whiff (dummy 14 tiles away, same weapon, 10 attacks each): post/pre frame ratio
+  **1.15 hit, 1.22 whiff**. The lift follows the swing, not the damage, so hit reaction, knockback, hit-flash, camera
+  shake (ruled out earlier) and `damageCreature` are not it.
+- **Not session drift.** No-swing control, 30 consecutive neutral ticks repeated 8 times: 165 / 161 / 168 / 170 ms across
+  ticks 2-8 / 9-16 / 17-24 / 25-30 (flat). A swing run in the same session: pre 164, post 182 (ticks 13-20), 174
+  (ticks 21-28): about **+11% decaying to +6% over ~0.5 s of game time**.
+- **Residual is near the noise floor.** Four interleaved modes, 8 attacks each (normal / afterimage ghosts hidden /
+  "no trail" / both): post/pre per-run median 1.10 / 1.03 / 1.03 / 1.04, pooled medians post 175-178 vs pre 174-179 ms.
+  The "no trail" mode never changed anything (`Combat.spawnMeleeTrail` was called 0 times: the player's weapon trail is
+  not built through that export), and it still read 1.03 against 1.10 for the identical normal mode, so run-to-run
+  noise is about +-0.05 and the ghost-hiding difference is not distinguishable from it.
+
+Conclusion: after the decimated, capped ghosts, nothing on the strike path measures above the headless noise floor
+(~5%); the earlier larger post-hit numbers were mostly the five full-density ghosts. Remaining unmeasured ground, if a
+real device still shows a hitch: the first lunge after the 4 s pool idle (entry creation: geometry/material clones, canvas
+copies, texture uploads, measured earlier at ~1 ms of JS but with real GPU upload costs headless cannot show), and
+skipping a snapshot when the previous frame was already over budget. Reading a device `PerfProfiler` snapshot across a
+fight would settle both.
+
 ## 15 Nov 2026: the moment a player strike lands on a non-fighting dummy (headless, measured; nothing fixed)
 
 Setup: Testing Arena, a `bandit:grunt` with `aggroRangePx = 0` and its attack cooldown pinned (it never swings back),

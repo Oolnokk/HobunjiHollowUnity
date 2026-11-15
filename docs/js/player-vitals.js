@@ -22,10 +22,78 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+  // Two player preferences for how afflictions read on the vitals bar (Settings > Visual Effects).
+  // Animated effects (falling droplets, flame flutter, ember breathing, entrancement waves, mirror sweep, SVG
+  // drip/balloon morphs) cost a lot where the page is software-composited (see
+  // docs/architecture/performance-investigation-log.md, 15 Nov 2026 follow-up), so they are OFF by default and the
+  // bar shows each affliction's name instead (ON by default). Both are plain classes on #vitalsBar that style.css
+  // keys off, so toggling never rebuilds a segment.
+  const ANIMATIONS_KEY = 'hobunjiVitalsAnimations';
+  const NAMES_KEY = 'hobunjiVitalsNames';
+  function readPref(key, fallbackOn) {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored === null ? fallbackOn : stored !== '0';
+    } catch (_) { return fallbackOn; }
+  }
+  function animationsEnabled() { return readPref(ANIMATIONS_KEY, false); }
+  function namesEnabled() { return readPref(NAMES_KEY, true); }
+  let appliedAnimations = null; // Last values pushed to the DOM, so a refresh with unchanged prefs writes nothing.
+  let appliedNames = null;
+  function applySvgAnimationState(root, animated) {
+    for (const svg of root.querySelectorAll?.('svg') || []) {
+      try { if (animated) svg.unpauseAnimations(); else svg.pauseAnimations(); } catch (_) {}
+    }
+  }
+  function applyVitalsPrefs() {
+    if (!hudRoot) return;
+    const animated = animationsEnabled();
+    const names = namesEnabled();
+    if (animated !== appliedAnimations) {
+      appliedAnimations = animated;
+      hudRoot.classList.toggle('vb-fx-animated', animated);
+      for (const spec of HUD_RESOURCES) { // SMIL drip/balloon morphs ignore CSS `animation: none`, so pause/resume the tracked shapes directly.
+        const nodes = hudNodes[spec.key];
+        if (!nodes) continue;
+        for (const segment of nodes.segmentsByKey.values()) { applySvgAnimationState(segment, animated); segment._vbSmilFor = animated; }
+        if (nodes.cap) applySvgAnimationState(nodes.cap, animated);
+      }
+    }
+    if (names !== appliedNames) {
+      appliedNames = names;
+      hudRoot.classList.toggle('vb-fx-names', names);
+    }
+  }
+  function setAnimationsEnabled(on) {
+    try { localStorage.setItem(ANIMATIONS_KEY, on ? '1' : '0'); } catch (_) {}
+    applyVitalsPrefs();
+  }
+  function setNamesEnabled(on) {
+    try { localStorage.setItem(NAMES_KEY, on ? '1' : '0'); } catch (_) {}
+    applyVitalsPrefs();
+  }
+  function bindSettingsToggles() {
+    if (typeof document === 'undefined') return;
+    const bind = (id, read, write) => {
+      const box = document.getElementById(id);
+      if (!box || box.dataset.vitalsBound) return;
+      box.dataset.vitalsBound = '1';
+      box.checked = read();
+      box.addEventListener('change', () => write(box.checked));
+    };
+    bind('settingVitalsAnimations', animationsEnabled, setAnimationsEnabled);
+    bind('settingVitalsNames', namesEnabled, setNamesEnabled);
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', bindSettingsToggles, { once: true });
+    else bindSettingsToggles();
+  }
+
   function resolveHudNodes() {
     if (hudRoot) return true;
     hudRoot = document.getElementById('vitalsBar');
     if (!hudRoot) return false; // The script loads before <body>; retry on the next tick.
+    applyVitalsPrefs();
     for (const spec of HUD_RESOURCES) {
       hudNodes[spec.key] = {
         row: document.getElementById('vb' + spec.label + 'Row'),
@@ -35,6 +103,7 @@
         cap: document.getElementById('vb' + spec.label + 'Cap'),
         segmentsByKey: new Map(), // Preserve CSS animations between ordinary resource ticks.
         normalByKey: new Map(), // Stable straight-edged ordinary resource bands.
+        capPieces: new Map(), // One lost-capacity piece per active capacity reducer, keyed by affliction id.
         fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
       };
     }
@@ -67,11 +136,28 @@
 
   // Clip lower-priority afflictions against higher-priority occupied portions,
   // as ResourceRings does. Normal-colored fill is drawn beneath the segments.
+  // Every affliction hangs off exactly ONE of three anchors on its bar, and is drawn only there:
+  //   'start'   - the bar's zero (extend 'zero': stamina debts such as Wounded/Infected/Frostbitten/Shattered Stamina)
+  //   'current' - the end of the current resource (extend 'currentBack' and the Drunken Health buffer, which sits at the
+  //               end of current: Bleeding, Bruised, Poisoned, Burning, ... and the enhanced Resolute/Mirrored bands)
+  //   'end'     - the end of the bar: afflictions that lock away part of the MAXIMUM (Winded Stamina, Congealed/Rent/
+  //               Wounded Health, Shambling/Drunken Footing). They are drawn as the lost-capacity cap and nowhere else,
+  //               not also as a band at their authored anchor (the same affliction at both ends of the bar).
+  // Late-registered reducers sometimes lack the canonical reducesEffectiveMax metadata, hence the two explicit ids.
+  function isCapacityReducer(id, def) {
+    return def?.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth';
+  }
+  function afflictionAnchor(id, def) {
+    if (isCapacityReducer(id, def) || def?.extend === 'maxBack') return 'end';
+    if (def?.extend === 'currentBack' || def?.extend === 'drunkBand') return 'current';
+    return 'start';
+  }
+
   function visibleAfflictionSegments(entity, resourceKey, entries, denominator, rs) {
     const claimed = []; // Keeps already-painted intervals from overlapping lower-priority afflictions.
     const visible = []; // Supplies exact [start,end] intervals to the DOM renderer.
     const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
-    for (const [id, def] of entries.sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
+    for (const [id, def] of entries.filter(([entryId, entryDef]) => !isCapacityReducer(entryId, entryDef)).sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
       const box = getHudAfflictionBox(entity, resourceKey, id, denominator, rs);
       if (!box) continue;
       const start = clamp(Number(box.leftPoints) || 0, 0, denominator);
@@ -113,9 +199,6 @@
   function visualTreatment(id, def, rs) {
     if (DRIP_EFFECTS[id]) return DRIP_EFFECTS[id];
     if (BRITTLE_EFFECTS.has(id)) return 'brittle';
-    // A zero-anchored capacity reducer must deform its afflicted band itself,
-    // not only the unavailable-cap overlay at the far end of the track.
-    if (def?.reducesEffectiveMax) return 'starved';
     const enhanced = rs.ENHANCED_RESOURCE_DEFS?.[id];
     if (Number(enhanced?.tempoMultiplier) > 1) return 'balloon';
     if (Number(enhanced?.conversionRate) > 1) return 'crenellated';
@@ -135,8 +218,16 @@
   // every tick; the short jagged shapes are seeded, stable and memoized.
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const SVG_HEIGHT = 40;
-  // Severely pinched throat: 13.34 of 40 units, or ~1/3 normal height.
-  const STARVED_PATH = 'M 0 0 C 7 10.5 16 13.33 34 13.33 L 66 13.33 C 84 13.33 93 10.5 100 0 L 100 40 C 93 29.5 84 26.67 66 26.67 L 34 26.67 C 16 26.67 7 29.5 0 40 Z';
+  // Pinched throat of a capacity-reduced ("starved") band: each side closes in by STARVED_PINCH of the 40 viewBox units,
+  // leaving 40 - 2 * STARVED_PINCH open in the middle. It was 13.33 (a throat of ~1/3 of the bar), which left almost no
+  // room between the two outline strokes for the affliction name; 3.33 (a throat of ~5/6) is a subtle pinch that still
+  // reads as a pinch and leaves room for the label. The curve control points keep the original 0.7875 ratio of the inset.
+  const STARVED_PINCH = 3.33;
+  const starvedY = value => Number(value.toFixed(2));
+  const STARVED_PATH = 'M 0 0 C 7 ' + starvedY(STARVED_PINCH * 0.7875) + ' 16 ' + starvedY(STARVED_PINCH) + ' 34 ' + starvedY(STARVED_PINCH)
+    + ' L 66 ' + starvedY(STARVED_PINCH) + ' C 84 ' + starvedY(STARVED_PINCH) + ' 93 ' + starvedY(STARVED_PINCH * 0.7875) + ' 100 0'
+    + ' L 100 40 C 93 ' + starvedY(40 - STARVED_PINCH * 0.7875) + ' 84 ' + starvedY(40 - STARVED_PINCH) + ' 66 ' + starvedY(40 - STARVED_PINCH)
+    + ' L 34 ' + starvedY(40 - STARVED_PINCH) + ' C 16 ' + starvedY(40 - STARVED_PINCH) + ' 7 ' + starvedY(40 - STARVED_PINCH * 0.7875) + ' 0 40 Z';
   const jaggedPaths = new Map();
 
   function stableSeed(text) {
@@ -249,6 +340,46 @@
     return { svg, path };
   }
 
+  // The bar a segment sits on already says which resource it is ("Bleeding Health" on the Health bar), so the printed
+  // label drops that trailing word. The hover title keeps the full name.
+  function shortAfflictionName(name, resource) {
+    const short = String(name || '').replace(new RegExp('\\s+' + String(resource || '') + '$', 'i'), '').trim();
+    return short || String(name || '');
+  }
+
+  // Draws the segment's black outline ABOVE its name label so the outline occludes the text. The shaped segments'
+  // outline is the black stroke of an SVG path that sits under the label; this overlay repeats just that stroke
+  // (fill none) in a second SVG layered over the label, with the drip/balloon animate children copied and created in the
+  // same tick as the shape so their SMIL timelines start together. The black backing rect around the shape is left under
+  // the label on purpose: it is background, and the name stays legible over pinched shapes such as Winded Stamina.
+  // Plain bordered segments need nothing: their label sits inside the padding box, clipped by the border.
+  const ANIMATE_ATTRIBUTES = ['attributeName', 'dur', 'keyTimes', 'values', 'repeatCount', 'calcMode', 'begin'];
+  function copyShapePath(source, attributes) {
+    const path = svgElement('path');
+    const d = source.getAttribute('d');
+    if (d != null) path.setAttribute('d', d);
+    for (const [name, value] of Object.entries(attributes)) path.setAttribute(name, value);
+    for (const child of source.children || []) {
+      if (child.id !== 'animate' && child.tagName !== 'animate') continue;
+      const copy = svgElement('animate');
+      for (const name of ANIMATE_ATTRIBUTES) {
+        const value = child.getAttribute(name);
+        if (value != null) copy.setAttribute(name, value);
+      }
+      path.appendChild(copy);
+    }
+    return path;
+  }
+  function buildOutlineOverlay(shape) {
+    const svg = svgElement('svg');
+    svg.setAttribute('viewBox', '0 0 100 ' + SVG_HEIGHT);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('vb-shape-svg', 'vb-outline-svg');
+    svg.appendChild(copyShapePath(shape.path, { fill: 'none', stroke: '#000', 'stroke-width': '4', 'vector-effect': 'non-scaling-stroke' }));
+    return svg;
+  }
+
   function ensureBrittleShape(segment, key, fraction, color) {
     if (!segment._vbShape) {
       segment._vbShape = shapeSvg('brittle');
@@ -332,6 +463,50 @@
     if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
   }
 
+  // The end-of-bar anchor: the lost-capacity region is split into one piece per active capacity reducer, each with its own
+  // width (that reducer's share of the lost maximum, by amount), colour, pinched shape, outline-over-text overlay and name.
+  // Strongest reducer at the far right, weaker ones stacking leftwards from it. Pieces persist by affliction id so a
+  // changing amount only resizes them.
+  function drawCapPieces(nodes, reducers, resourceKey, rs, entity) {
+    const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
+    const ordered = reducers.slice().reverse(); // Weakest first = leftmost.
+    const weights = ordered.map(([id]) => Math.max(0, Number(rs.getAffliction(entity, id)) || 0));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const shares = ordered.map((_, index) => (total > 0 ? weights[index] / total : 1 / ordered.length));
+    const next = new Map();
+    const order = [];
+    let used = 0;
+    ordered.forEach(([id, def], index) => {
+      let piece = nodes.capPieces.get(id);
+      if (!piece) {
+        piece = document.createElement('span');
+        piece.className = 'vb-cap-piece';
+        piece.title = def?.name || id;
+        piece.setAttribute('data-anchor', 'end');
+        const color = palette[id] || '#666';
+        ensureStarvedCap(piece, color === '#000000' ? '#555' : color); // Own shape + fill colour.
+        const label = document.createElement('span');
+        label.className = 'vb-name';
+        label.textContent = shortAfflictionName(def?.name || id, resourceKey);
+        piece.appendChild(label);
+        piece._vbName = label;
+        piece._vbOutline = buildOutlineOverlay(piece._vbShape); // After the label, above it.
+        piece.appendChild(piece._vbOutline);
+      }
+      const last = index === ordered.length - 1;
+      const left = (used * 100).toFixed(1) + '%';
+      const width = (last ? 100 - used * 100 : shares[index] * 100).toFixed(1) + '%'; // The last piece closes any rounding gap.
+      used += shares[index];
+      if (piece.style.left !== left) piece.style.left = left;
+      if (piece.style.width !== width) piece.style.width = width;
+      next.set(id, piece);
+      order.push(piece);
+    });
+    const rendered = nodes.cap.children;
+    if (rendered.length !== order.length || order.some((item, index) => rendered[index] !== item)) nodes.cap.replaceChildren(...order);
+    nodes.capPieces = next;
+  }
+
   function drawAfflictionSegments(nodes, pieces, denominator, rs) {
     const previous = nodes.segmentsByKey;
     const next = new Map();
@@ -347,6 +522,7 @@
         segment._vbTreatment = visualTreatment(piece.id, rs.AFFLICTIONS[piece.id], rs);
         segment.className = 'vb-affliction-segment' + effectClasses(segment._vbTreatment);
         segment.title = piece.name;
+        segment.setAttribute('data-anchor', afflictionAnchor(piece.id, rs.AFFLICTIONS[piece.id]));
       }
       const left = (piece.start / denominator * 100).toFixed(1) + '%';
       const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
@@ -355,17 +531,28 @@
       const treatment = segment._vbTreatment;
       const brittle = treatment === 'brittle';
       const dripping = treatment.includes('drip');
-      const shaped = brittle || dripping || treatment === 'starved'
+      const shaped = brittle || dripping
         || treatment === 'balloon' || treatment === 'crenellated';
       const base = shaped ? 'transparent' : piece.color;
       if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
       if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
       if (dripping) ensureDripShape(segment, piece.color);
-      if (treatment === 'starved') ensureStarvedCap(segment, piece.color);
       if (treatment === 'balloon' || treatment === 'crenellated') {
         ensureEnhancedShape(segment, treatment, (piece.end - piece.start) / denominator, piece.color);
       }
+      if (!segment._vbName) { // Added after any SVG shape above, so the shape stays the segment's first child.
+        const label = document.createElement('span'); // Clipped by its own overflow:hidden box, so the segment's droplets/shapes are unaffected.
+        label.className = 'vb-name';
+        label.textContent = shortAfflictionName(piece.name, rs.AFFLICTIONS[piece.id]?.resource);
+        segment.appendChild(label);
+        segment._vbName = label;
+      }
+      if (segment._vbShape && !segment._vbOutline) { // After the label in DOM order and z-index, so the black outline paints over the text.
+        segment._vbOutline = buildOutlineOverlay(segment._vbShape);
+        segment.appendChild(segment._vbOutline);
+      }
+      if (segment._vbSmilFor !== appliedAnimations && segment.querySelector?.('svg')) { applySvgAnimationState(segment, appliedAnimations === true); segment._vbSmilFor = appliedAnimations; } // A shape added after the last preference change picks up the current play/pause state once.
       next.set(key, segment);
       order.push(segment);
     }
@@ -452,16 +639,16 @@
       if (nodes.cap.hidden !== capHidden) nodes.cap.hidden = capHidden;
       // Late-registered reducer definitions sometimes lack the canonical
       // reducesEffectiveMax metadata; honor the observed drop in capacity.
-      const capAfflicted = activeAfflictions.some(([id, def]) =>
-        def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth');
-      const withered = !nodes.cap.hidden && capAfflicted;
+      const capReducers = activeAfflictions.filter(([id, def]) => isCapacityReducer(id, def))
+        .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0)); // Strongest first: it colours the cap.
+      const withered = !nodes.cap.hidden && capReducers.length > 0;
       nodes.cap.classList.toggle('is-withered', withered);
       if (withered) {
-        const reducer = activeAfflictions
-          .filter(([id, def]) => def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth')
-          .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))[0];
-        const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
-        ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
+        if (nodes.cap.getAttribute('data-anchor') !== 'end') nodes.cap.setAttribute('data-anchor', 'end');
+        drawCapPieces(nodes, capReducers, spec.key, rs, player);
+      } else if (nodes.capPieces.size) { // Reducers cleared (or the cap hid): drop their shapes rather than keep them mounted.
+        nodes.capPieces.clear();
+        nodes.cap.replaceChildren();
       }
       if (!nodes.cap.hidden) {
         const capLeft = (effectiveMax / denominator * 100).toFixed(1) + '%';
@@ -519,6 +706,7 @@
     init,
     updatePlayerVitals,
     refreshVitalsHud,
+    animationsEnabled, setAnimationsEnabled, namesEnabled, setNamesEnabled, bindSettingsToggles, afflictionAnchor,
     getDebug: () => ({
       health: Number(deps?.player?.health) || 0,
       maxHealth: Number(deps?.player?.maxHealth) || 0,
