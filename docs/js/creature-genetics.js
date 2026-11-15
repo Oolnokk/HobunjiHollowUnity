@@ -620,6 +620,7 @@
       child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
     }
     child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
+    if (kind === 'skeeri') window.SkeeriLivestockRegistration?.inheritAppearance?.(child, genotypeA, genotypeB); // Domestic flying eye/marking colors follow one parent's ruin lineage, independently of ordinary coat/Size genes.
     const childEnabledIds = patterns.filter(id => child[id].enabled);
     const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted/permanent pattern colors without desktop devtools.
     window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledSummary || 'none'}]`, 'wildlife');
