@@ -825,6 +825,15 @@
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
+      const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
+      if (automatic && !force && recoveryKind === 'auto' && delta && !delta.changed && !_lastError) {
+        _lastSaveWork = { written: 0, unchanged: delta.digests.size };
+        _unchangedAutosavesSkipped++;
+        _lastAction = 'autosync-skipped-unchanged';
+        _lastObservedFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
+        notify();
+        return getStatus(); // Do not churn manifest, canonical files, browser mirrors or recovery checkpoints.
+      }
 
       if (!force) {
         const risk = describeDataLossRisk(_lastKnownFolderMeta, meta);
@@ -836,9 +845,10 @@
           return getStatus();
         }
         if (_lastKnownFarmLayoutFingerprint !== null) {
-          const disk = await readFolderFarmLayouts(new Set((meta.worlds || []).map(world => world?.id).filter(Boolean))); // Compare only canonical layout names.
-          const diskFingerprint = farmLayoutFingerprint(disk.layouts);
-          if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
+          const unchangedOnDisk = automatic && await farmLayoutFilesUnmodified(); // Metadata-only fast path; uncertain cases retain the old full integrity check.
+          const disk = unchangedOnDisk ? null : await readFolderFarmLayouts(new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)));
+          const diskFingerprint = disk ? farmLayoutFingerprint(disk.layouts) : _lastKnownFarmLayoutFingerprint;
+          if (disk && (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint)) {
             _lastDataLossRisk = disk.corruptFiles.length
               ? 'farm-layout files on disk are unreadable'
               : disk.missingCanonicalBackups.length
@@ -862,9 +872,11 @@
 
       _lastDataLossRisk = null;
 
-      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
-      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
-      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
+      const nextFiles = new Map(); // The new per-file baseline is published only after the canonical commit succeeds.
+      const work = { written: 0, unchanged: 0 }; // Last save's filesystem work, visible without developer tools.
+      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname', delta, nextFiles, work);
+      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label', delta, nextFiles, work);
+      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts, delta, nextFiles, work);
       _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts); // A successful write becomes the next external-edit baseline.
       _folderSupportsFarmLayouts = true;
 
@@ -891,6 +903,8 @@
       });
       try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
 
+      _committedFileState = nextFiles;
+      _lastSaveWork = work;
       _lastKnownFolderMeta = meta;
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
@@ -926,6 +940,7 @@
       }
 
     } catch (error) {
+      _committedFileState = null; // A partial file write cannot authorize later no-op saves.
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
     }
@@ -954,6 +969,7 @@
     }
 
     try {
+      _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
         _lastAction = 'initialized-empty-folder';
@@ -1094,6 +1110,7 @@
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       _handle = handle;
+      _committedFileState = null; // Do not reuse signatures from another save folder.
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
@@ -1165,6 +1182,7 @@
       const granted = await ensurePermission(_handle, true);
       _state = granted ? 'ready' : 'needs-permission';
       stopAutoSync();
+      _committedFileState = null; // Reconnection may follow external changes during a permissions gap.
       if (granted) {
         await inspectConnectedFolder();
         _lastAction = 'permission-restored-awaiting-choice';
@@ -1193,6 +1211,8 @@
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
     _lastKnownFarmLayoutFingerprint = null;
+    _committedFileState = null;
+    _lastSaveWork = { written: 0, unchanged: 0 };
     _ignoredFarmLayoutBackupFiles = [];
     _lastDataLossRisk = null;
     _lastPatternMirror = null;
