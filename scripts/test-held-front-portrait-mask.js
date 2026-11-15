@@ -65,6 +65,8 @@ const npcFront=mat('npc_avatar_front_material');
 const npcPortrait=mesh('npc_avatar_front_plane',npcFront,npcRig);
 const npcWorldHolder = root('npc_watchman_holder',scene,{hobunjiHeldPortraitOwner:npc}); // Real watchman tools live beside, not below, walker.root.
 const npcWeapon=mesh('npc_tool',mat('axe'),npcWorldHolder,{tags:{hobunjiHeldObjectPlane:true}});
+const stationWorldHolder = root('npc_station_holder',scene,{hobunjiHeldPortraitOwner:npc}); // Some civilian station tools are also scene siblings.
+const stationWeapon=mesh('npc_station_tool',mat('hoe'),stationWorldHolder,{tags:{hobunjiHeldObjectPlane:true}});
 const unarmedPortrait=mesh('npc_avatar_front_plane',mat('npc_unarmed'),otherNpc);
 const banditPortrait=mesh('npc_avatar_front_plane',mat('bandit_front'),bandit);
 const banditWeapon=mesh('bandit_tool',mat('bandit_weapon'),banditWorldHolder,{tags:{hobunjiHeldObjectPlane:true}});
@@ -81,11 +83,12 @@ assert.equal(runtime.portraitStencilOwner(banditPortrait,scene),bandit,'enemy fr
 assert.equal(runtime.portraitStencilOwner(banditWeapon,scene),bandit,'scene-sibling enemy weapon resolves to its tagged avatar');
 
 const assigned=runtime.assignPortraitStencilOwners(
-  [playerWeapon,npcWeapon,banditWeapon],[playerPortrait,npcPortrait,unarmedPortrait,banditPortrait],scene);
+  [playerWeapon,npcWeapon,banditWeapon,stationWeapon],[playerPortrait,npcPortrait,unarmedPortrait,banditPortrait],scene);
 assert.equal(assigned.ownerIds.size,3,'three owners are assigned distinct IDs');
 assert.equal(assigned.portraits.length,3,'unarmed NPCs do not stamp unrelated weapon silhouettes');
 assert.equal(assigned.gearIds.get(playerWeapon),assigned.ownerIds.get(player),'player weapon has the player portrait ID');
 assert.equal(assigned.gearIds.get(npcWeapon),assigned.ownerIds.get(npc),'NPC weapon has NPC portrait ID');
+assert.equal(assigned.gearIds.get(stationWeapon),assigned.ownerIds.get(npc),'NPC station tool shares its walker's portrait ID');
 assert.equal(assigned.gearIds.get(banditWeapon),assigned.ownerIds.get(bandit),'bandit weapon has bandit portrait ID');
 assert.ok(assigned.gearIds.get(playerWeapon)!==assigned.gearIds.get(npcWeapon),'unrelated actors never share stencil IDs');
 
@@ -169,5 +172,6 @@ assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, po
 assert.ok(source.includes('frontPortraitRegistry.add(object)'),'front portraits are registered automatically');
 assert.match(fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),/holder\.userData\.hobunjiHeldPortraitOwner = avatarRef\.group/,'all hostile melee/ranged/flask holders receive their owner tag');
 assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/hobunjiHeldPortraitOwner: state\.walker\.root/,'watchman scene-sibling holder receives its owner tag');
+assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/walker\.stationToolMesh\.userData\.hobunjiHeldPortraitOwner = walker\.root/,'station tool receives its own walker owner tag');
 
 console.log('Held front-portrait owner stencil regression: PASS');
