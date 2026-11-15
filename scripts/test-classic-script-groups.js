@@ -38,7 +38,7 @@ for (const group of groups) {
   const urls = [...manifestWrites[0].matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
   assert(urls.length > 0, group + ' must contain at least one script');
   assert.equal(new Set(urls.map(u => u.split('?')[0])).size, urls.length, group + ' must not duplicate module paths');
-  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+$/.test(url)), group + ' modules need versioned URLs');
+  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+(?:&amp;surfaceUv=[a-zA-Z0-9_-]+)?$/.test(url)), group + ' modules need versioned URLs (house bootstrap may pass its independent surfaceUv generation)');
   const names = urls.map(url => url.replace(/^js\/|\.js\?.*$/g, '')); // Module names used for baseline ordering checks.
   let previous = -1; // Tracks each baseline member's position as new modules are inserted.
   for (const anchor of baseline[group] || []) {
