@@ -497,8 +497,12 @@
     return { nickname, greetings: window.SpouseSocialLife?.greetingsFor?.(npcId, greetings) || greetings }; // The same live reminders serve ambient and direct dialogue.
   }
 
+  function outingEventEnded() {
+    const kind = state.outing?.kind; // Only scheduled ceremonies and celebrations must finish before the generic four-hour cap.
+    return (kind === 'communion' || kind === 'festival') && !window.SpouseSocialLife?.outingAvailable?.(kind);
+  }
   function activeSpouseOuting() {
-    return state.outing && state.spouse?.npcId === state.outing.npcId && hourStamp() < num(state.outing.endHour, -Infinity)
+    return state.outing && state.spouse?.npcId === state.outing.npcId && hourStamp() < num(state.outing.endHour, -Infinity) && !outingEventEnded()
       ? { ...state.outing, target: { ...state.outing.target } } : null;
   }
   function startSpouseOuting(kind, target) {
@@ -597,8 +601,9 @@
     const scfg = cfg().spouse || {};
     const hour = clockHour();
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
-    if (state.outing?.npcId === rec.id && hourStamp() < num(state.outing.endHour, -Infinity))
-      return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' }; // An explicitly accepted midnight Communion outing takes precedence over ordinary sleep.
+    const outing = activeSpouseOuting(); // Consult the live ceremony/festival window, not just the original four-hour promise.
+    if (outing?.npcId === rec.id)
+      return { ...outing.target, activity: outing.target.activity || 'out with you' }; // A live midnight Communion outing takes precedence over ordinary sleep.
     const festivalGoing = !window.RomanceFamily?.isAssignedToVat?.(rec.id) && !!window.FestivalSystem?.festivalHours?.(); // The event's real clock also keeps married residents at celebrations past ordinary bedtime.
     if (!festivalGoing && inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
@@ -669,7 +674,7 @@
       }
     }
     maybeStartWedding();
-    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || hourStamp() >= num(state.outing.endHour, -Infinity))) endSpouseOuting(); // Retire the accepted trip at its game-hour expiry.
+    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || hourStamp() >= num(state.outing.endHour, -Infinity) || outingEventEnded())) endSpouseOuting(); // End time-bound events when their venue closes, not four hours into an empty venue.
     installKissBuffProviders();
     if (state.kissBuff) {
       if (remainingKissHours() <= 0) {
