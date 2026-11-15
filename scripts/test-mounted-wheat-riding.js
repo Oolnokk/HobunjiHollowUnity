@@ -46,6 +46,14 @@ const beforeLegacy = scheduled.length;
 assert.equal(voiceWindow.AnimalVocalizations.mountExertion({ creatureKey: 'drenkirra', health: 10 }), true);
 assert.equal(scheduled.length, beforeLegacy + 1, 'legacy growls seed only one single exertion sound');
 assert.deepEqual(Array.from(scheduled[beforeLegacy].allowedClips || []), ['sfx_rattle-caw.ogg']);
+voiceWindow.AnimalVocalizations.setAuthoredProfiles({
+  default: {}, drenkirra: { exertion: { allowedClips: ['sfx_rattle-caw.ogg'], utterances: [
+    { tempo: 1, pitchSemitones: 0 }, { tempo: 1.3, pitchSemitones: 1 }, { tempo: 0.8, pitchSemitones: -1 },
+  ] } },
+});
+const beforeOverspecified = scheduled.length;
+assert.equal(voiceWindow.AnimalVocalizations.mountExertion({ creatureKey: 'drenkirra', health: 10 }), true);
+assert.equal(scheduled.length, beforeOverspecified + 1, 'even imported multi-slot exertion responses play exactly one sound');
 voiceWindow.AnimalVocalizations.setAuthoredProfiles(voices);
 
 const T = 64;
