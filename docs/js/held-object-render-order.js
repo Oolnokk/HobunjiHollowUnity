@@ -173,6 +173,8 @@
   let lastFrontPortraitMaskedGear = 0; // Gear parts actually assigned a portrait stencil ID in the latest held overlay.
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
+  let heldOrderNormalizations = 0; // Counts registered held parts whose authored renderOrder is normalized before selective replay.
+  let lastHeldOrderNormalization = null; // Shows which held mesh was most recently overridden in mobile X-ray diagnostics.
   let ordinaryShellMeshesDrawnOnce = 0; // Normal-depth outlines kept in the existing scene pass, shared by all actor types.
   let ordinaryShellReplaysAvoided = 0; // Entire depth-rebuild shell sequences skipped when no part needs a tile exception.
   let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects against elevation-filtered ground depth.
@@ -574,6 +576,14 @@
     return 'material.opaque';
   }
 
+  function protectedDrawPhase(item) {
+    // Three's -100000 render-time pose sentinels must precede visible geometry;
+    // >=900 overlay art and the 100000 cloud depth masks must retain their late
+    // order. An editable visual category must never move these across a pass.
+    const order = Number(item?.renderOrder) || 0;
+    return order <= -10000 ? -1 : order >= 900 ? 1 : 0;
+  }
+
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
     if (!manual && !portraitOrder) return draw();
@@ -588,9 +598,18 @@
       : a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || b.z - a.z || a.id - b.id;
     const legacyOpaque = (a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder
       || (a.material?.id || 0) - (b.material?.id || 0) || a.z - b.z || a.id - b.id;
-    if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => rank(a) - rank(b) || legacyOpaque(a, b));
+    if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => {
+      const phaseA = protectedDrawPhase(a), phaseB = protectedDrawPhase(b);
+      const boundary = a.groupOrder - b.groupOrder || phaseA - phaseB;
+      if (boundary) return boundary; // Preserve group and reserved pre/post-render phases.
+      return phaseA ? legacyOpaque(a, b) : rank(a) - rank(b) || legacyOpaque(a, b);
+    });
     renderer.setTransparentSort(manual
       ? (a, b) => {
+          const phaseA = protectedDrawPhase(a), phaseB = protectedDrawPhase(b);
+          const boundary = a.groupOrder - b.groupOrder || phaseA - phaseB;
+          if (boundary) return boundary;
+          if (phaseA) return legacyTransparent(a, b); // Depth masks, pose sentinels and final overlays cannot move by a UI rank.
           // Prioritize actor-to-actor depth before editable intra-actor layers.
           // Otherwise a distant NPC hand ranked above a front portrait paints
           // over the nearby player's body even with ordinary depth protected.
@@ -790,6 +809,9 @@
     // any non-overlay/debug view. The selective depth replay supplies the one
     // exceptional ground-x-ray rule.
     if (mesh.renderOrder !== 0 && mesh.userData?.hobunjiWeaponAssemblyPart !== true) {
+      lastHeldOrderNormalization = { mesh: String(mesh.name || mesh.type || 'held mesh').slice(0, 90),
+        from: Number(mesh.renderOrder), to: 0 };
+      heldOrderNormalizations++; // The authored value is not the live overlay layer; record when the renderer replaces it.
       mesh.renderOrder = 0;
       repaired = true;
     } // Ordered multi-sprite weapon children retain their deliberate back→fuel→fire→front draw order; the ordinary held haft still normalizes to 0.
@@ -3457,6 +3479,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
+      heldOrderNormalizations,
+      lastHeldOrderNormalization: lastHeldOrderNormalization ? { ...lastHeldOrderNormalization } : null,
       ordinaryShellMeshesDrawnOnce,
       ordinaryShellReplaysAvoided,
       shellXrayPasses: shellXrayPassCount,
