@@ -588,7 +588,8 @@
   function syncInputClaims(rows) {
     const registry=window.WorldActionInputClaims;
     if(!registry)return;
-    const claims=rows.filter(row=>!row.nativeInput&&row.inputAction).map(row=>({
+    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Preserve Torch Swing on Action 1; doors remain available through Interact or the touch arch.
+    const claims=rows.filter(row=>!row.nativeInput&&row.inputAction && !(torchHeld && PROXIMITY_DOOR_KINDS.has(row.kind))).map(row=>({
       actionId:row.inputAction,
       label:row.label,
       priority:1000+(Number(row.priority)||0), // World interactions intentionally outrank ordinary gameplay for an explicitly claimed input while remaining below menus/selectors in game.js.
@@ -713,6 +714,20 @@
       // Called from game.js's action bar every frame; rows only need the 12.5 Hz refresh below.
       const rows = inRuin() && performance.now() - lastRowsAt < 80 ? lastRows : refreshRows(false);
       return actionButtonsFromRows(rows);
+    },
+    getDoorActionButtons() {
+      if (!inRuin()) return [];
+      const rows = performance.now() - lastRowsAt < 80 ? lastRows : refreshRows(false); // Reuse the interaction provider's already validated distance/facing checks.
+      return actionButtonsFromRows(rows.filter(row => PROXIMITY_DOOR_KINDS.has(row.kind))).map(button => ({
+        ...button, inputAction: 'interact', style: 'secondary',
+      })); // Door is an extra explicit Interact action; never displace Torch Swing/Throw.
+    },
+    invokeDoorAction(action) {
+      if (!inRuin()) return false;
+      const row = lastRows.find(entry => entry.action === action && PROXIMITY_DOOR_KINDS.has(entry.kind)); // Only validated door rows are callable by the torch-specific action.
+      if (!row || typeof row.onPress !== 'function') return false;
+      row.onPress();
+      return true;
     },
     invoke(index = 0) {
       const row = lastRows[index];
