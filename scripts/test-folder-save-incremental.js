@@ -30,7 +30,14 @@ function directory(name, counters) {
         let modified = ++counters.clock; // Used by the incremental writer's external-edit protection.
         files.set(key, {
           kind: 'file',
-          getFile: async () => ({ text: async () => raw, size: raw.length, lastModified: modified }),
+          getFile: async () => {
+            if (counters.onFileRead) {
+              const listener = counters.onFileRead; // Single injected in-flight edit for no-op race regression.
+              counters.onFileRead = null;
+              listener(name, key);
+            }
+            return { text: async () => raw, size: raw.length, lastModified: modified };
+          },
           async createWritable() {
             if (counters.fail) throw new Error('Simulated disk failure');
             let pending = ''; // Staged data never appears as committed until close succeeds.
@@ -90,6 +97,10 @@ async function main() {
   const window = {
     addEventListener() {},
     showDirectoryPicker: async () => folder,
+    HobunjiSaveSnapshot: {
+      browserCacheParts: () => [localStorage.getItem('hobunjiSaveMeta'), 'world', localStorage.getItem('hobunji_farm_layout_v3:world')],
+      apply() {}, // The fake browser already contains the generated snapshot's own source data.
+    },
   };
   const source = fs.readFileSync('docs/js/local-save-folder-core.js', 'utf8');
   new Function(source); // Syntax must be valid even before a save folder is connected.
@@ -120,6 +131,21 @@ async function main() {
   const idle = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(idle.lastAction, 'autosync-skipped-unchanged');
   assert.equal(counters.writes.length, writesBeforeIdle, 'identical autosave does not rewrite files or manifest');
+
+  folder.files.delete('manifest.json');
+  const repairedManifest = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(repairedManifest.lastError, null, 'missing manifest is repaired before skipping a no-op autosave');
+  assert.ok(folder.files.has('manifest.json'), 'the repaired manifest exists on disk');
+
+  counters.onFileRead = () => {
+    const newer = JSON.parse(localStorage.getItem('hobunjiSaveMeta')); // User edits happen while the file metadata await resolves.
+    newer.characters[0].nickname = 'In-flight browser edit';
+    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(newer));
+  };
+  const concurrent = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(concurrent.lastAction, 'autosync-skipped-unchanged');
+  assert.equal(concurrent.changeSyncPending, true, 'in-flight edits are queued for the next autosave');
+  assert.match(concurrent.browserMirrorWarning, /newer browser changes/i, 'in-flight edit remains mobile-visible');
 
   meta.worlds[0].day = 2;
   saveMeta();
