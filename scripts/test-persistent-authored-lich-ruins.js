@@ -136,12 +136,15 @@ async function main() {
   assert.equal(ruins.isActiveRuinBossDefeated(seed),true);
   // Shift again while still inside: leaving by the ordinary entrance should surface at the NEW ladder.
   h.shift();
+  const secondLocation=ruins.authoredBuriedSites(h.zone)[0]; // The current Tothal layout chooses the new tile, not the old scene's coordinates.
+  assert.notEqual(secondLocation.col+','+secondLocation.row,buried[0].col+','+buried[0].row,
+    'a shifted tomb must relocate rather than reuse the last entrance');
   const shiftedExit=ruins.relocatedReturnAnchor();
   assert.equal(shiftedExit.area,h.zone);
-  assert.equal(shiftedExit.x,(32+.5)*32);
-  assert.equal(shiftedExit.y,(35+1.5)*32);
+  assert.equal(shiftedExit.x,(secondLocation.col+.5)*32);
+  assert.equal(shiftedExit.y,(secondLocation.row+1.5)*32);
   assert.equal(h.saved().authored.tothal.dug,true,'leaving from below exposes the new burrow');
-  assert.equal(h.grid()[35][32].type,'trench');
+  assert.equal(h.grid()[secondLocation.row][secondLocation.col].type,'trench');
   assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east','second shift retains progress');
 
   h.setWritable(false);
