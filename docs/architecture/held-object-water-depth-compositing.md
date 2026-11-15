@@ -187,6 +187,30 @@ without color-mask locking retain the ground restore and original ordering.
 `test-held-ordinary-depth-budget.js` executes these pass budgets and restoration
 on both success and a thrown render.
 
+## Actor-centered ground X-ray zone
+
+The optional floor exception now uses a **filled circle in world X/Z**, rather
+than a square of nearby tiles. The shipped authored radius of one tile on each
+side corresponds to a 1.5-world-unit circle, preserving the previous three-tile
+diameter without snapping its center to a grid corner. The shader checks the
+squared distance of each eligible ground fragment to the actor's world X/Z,
+after applying the existing standing-elevation and upward-floor-face tests.
+Actual 3D geometry, walls, raised floors, water, snow and grass billboards
+continue to follow their own physical depth rules.
+
+The existing per-tile lookup remains only a CPU batching index: characters
+standing at different coordinates inside one tile have separate circle centers.
+Both the standard clear-and-rebuild pass and stencil floor-punch use the same
+circle centers. The patch-refill cull uses a conservative bounding square plus
+the existing margin; it is an optimization, not the visible boundary.
+
+Dev Companion → X-ray and layer compositing → **Show ground X-ray circle in the
+world** toggles a translucent filled disc and rim at the player's standing
+elevation. That geometry is created lazily, follows the player, and is removed
+when disabled or when switching scenes. It does not write depth and cannot
+change the X-ray mask. This switch is a developer-only browser override, not
+part of save data.
+
 ## Shared surface occlusion composer
 
 `surface-occlusion-composer.js` is the policy layer shared by world/character

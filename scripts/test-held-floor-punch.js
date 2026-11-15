@@ -3,7 +3,7 @@
 
 // X-ray groups keep the saved depth and punch out only the holder's nearby
 // floor (stencil-marked where frontmost, then reset to far), redrawing only
-// objects that touch that 3x3-tile patch. Runs the real helpers.
+// objects that touch that actor-centered circular patch. Runs the real helpers.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -23,20 +23,20 @@ const rawRender = { call(renderer, scene, camera) {
 const forEachMaterial = (m, fn) => (Array.isArray(m) ? m : [m]).forEach(fn);
 const restoreVisibility = states => { for (const [o, v] of states) o.visible = v; };
 const mat = supported => ({ colorWrite: true, depthWrite: true, depthTest: true, depthFunc: 'LEQUAL_D', stencilWrite: false, stencilFunc: 'ALWAYS_S', stencilRef: 0, stencilFuncMask: 0xff, stencilWriteMask: 0xff, stencilFail: 'KEEP', stencilZFail: 'KEEP', stencilZPass: 'KEEP',
-  userData: { hobunjiXrayElevationShader: { supported, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, tileCount: { value: 0 }, tiles: { value: null } } } } });
+  userData: { hobunjiXrayElevationShader: { supported, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, centerCount: { value: 0 }, centers: { value: null } } } } });
 const grass = mat(true), dirt = mat(true), custom = mat(false);
 const groundMats = new Set([grass, dirt, custom]);
 const filteredMesh = { visible: true, material: grass }, unsupportedMesh = { visible: true, material: custom };
 const farGround = { visible: true, material: dirt, matrixWorld: {}, geometry: { boundingBox: { min: { x: 40, y: 0, z: 40 }, max: { x: 48, y: 1, z: 48 } } } }; // Cannot contain the holder's floor.
 const hasLayer = (o, l) => (((o.layers?.mask ?? 1) >>> 0) & (1 << l)) !== 0;
-const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_TILE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', code +
+const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', code +
   '\nreturn { punchHeldGroupFloor, hideOutsideFloorPatch, setGroundElevationFilter, setEnabled: v => { floorPunchEnabled = v; }, stats: () => ({ floorPunches, floorPunchRefillHidden, floorPunchRefillKept }) };')(
-  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1, 1 << 28, 28, hasLayer, 0.08);
+  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 28, hasLayer, 0.08);
 
 const camera = { layers: { mask: 0xffffffff } };
 const colorLog = [];
 const colorBuffer = { setMask: v => colorLog.push(['mask', v]), setLocked: v => colorLog.push(['lock', v]) };
-const group = { elevation: 0, regions: [{ col: 10, row: 10 }], tiles: new Float32Array([10, 10]) };
+const group = { elevation: 0, regions: [{ col: 10, row: 10, x: 10.5, z: 10.5 }], centers: new Float32Array([10.5, 10.5]) };
 assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [filteredMesh, unsupportedMesh, farGround], groundMats, colorBuffer), true);
 assert.equal(draws.length, 2, 'one ground-layer stencil pass, one far-depth quad');
 const [groundPass, quadPass] = draws;
@@ -59,7 +59,7 @@ assert.equal(unsupportedMesh.visible, true, 'hidden meshes come back');
 assert.equal(camera.layers.mask, 0xffffffff);
 assert.deepEqual(colorLog, [['mask', false], ['lock', true], ['lock', false], ['mask', true]], 'colour is locked off only during the punch');
 
-// Patch cull: objects touching the 3x3 patch column (+1.5 margin) stay; far ones leave; unbounded stay.
+// Patch cull: objects touching the circle's conservative bounds (+1.5 margin) stay; far ones leave; unbounded stay.
 const boxed = (x0, x1, z0, z1) => ({ visible: true, matrixWorld: {}, geometry: { boundingBox: { min: { x: x0, y: 0, z: z0 }, max: { x: x1, y: 5, z: z1 } } } });
 const inside = boxed(10, 11, 10, 11), edge = boxed(12.9, 14, 10, 11), far = boxed(30, 31, 30, 31), unbounded = { visible: true, matrixWorld: {}, geometry: {} };
 const patchGround = { ...boxed(9, 12, 9, 12), layers: { mask: 1 | (1 << 28) } }; // The floor chunk under the holder.
@@ -75,5 +75,5 @@ assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [], groundMats, colo
 
 // Shader: mode 2 keeps ONLY the nearby floor, mode 1 discards it, 0 is off.
 assert.match(source, /if \(uHobunjiXrayElevationEnabled > 1\.5\) \{ if \(hobunjiXrayNearFloor < 0\.5\) discard; \}\s*\nelse if \(hobunjiXrayNearFloor > 0\.5\) discard;/);
-assert.match(source, /hobunji-ground-tile-xray-v5/, 'shader change bumps the program cache key');
+assert.match(source, /hobunji-ground-circle-xray-v6/, 'shader change bumps the program cache key');
 console.log('ok - x-ray groups punch only the holder\'s nearby floor and redraw only its patch');

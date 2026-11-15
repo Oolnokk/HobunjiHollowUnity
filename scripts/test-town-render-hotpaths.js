@@ -305,8 +305,8 @@ const dryActor = scope(18, 18);
 const tintScopes = new Map([[wetHeld, wetActor], [dryHeld, dryActor]]);
 const mixedGroup = {
   elevation: 0.2,
-  regions: [{ col: 5, row: 5, elevation: 0.2, meshes: [wetHeld] },
-    { col: 18, row: 18, elevation: 0.2, meshes: [dryHeld] }],
+  regions: [{ col: 5, row: 5, x: 5.5, z: 5.5, elevation: 0.2, meshes: [wetHeld] },
+    { col: 18, row: 18, x: 18.5, z: 18.5, elevation: 0.2, meshes: [dryHeld] }],
   meshes: [wetHeld, dryHeld],
 };
 const separatedTintGroups = splitTintGroups([mixedGroup], tintScopes, [sparseWaterMesh]);
@@ -318,10 +318,10 @@ assert.equal(separatedTintGroups[1].tintStencilRef, 0,
   'dry actor clears water-tint stencil');
 assert.deepEqual(separatedTintGroups.map(group => group.meshes[0]), [wetHeld, dryHeld],
   'each holder still receives exactly one overlay draw');
-assert.equal(separatedTintGroups[0].tiles[0], 5,
-  'wet x-ray group keeps the correct local ground tile');
-assert.equal(separatedTintGroups[1].tiles[0], 18,
-  'dry x-ray group retains its own ground tile rather than inheriting the wet actor tile');
+assert.equal(separatedTintGroups[0].centers[0], 5.5,
+  'wet x-ray group keeps its physical world-space center');
+assert.equal(separatedTintGroups[1].centers[0], 18.5,
+  'dry x-ray group retains its own actor center rather than inheriting the wet actor center');
 const ordinaryMixed = splitTintGroups([
   { elevation: undefined, regions: [], meshes: [wetHeld, dryHeld] },
 ], tintScopes, [sparseWaterMesh]);
@@ -531,14 +531,14 @@ const playerRoot = actorAt('player_mesh', -0.1, 1, 3.95);
 const playerHandRoot = actorAt('player_hand_external_root', 13, 0, 14);
 const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) } };
 const resolveScope = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorXrayScope;')(elevationWindow);
-const playerScope = { elevation: 1.3, col: -1, row: 3, root: playerRoot };
+const playerScope = { elevation: 1.3, col: -1, row: 3, x: -0.1, z: 3.95, root: playerRoot };
 assert.deepEqual(resolveScope({ parent: playerRoot }, actorScene, new Map()), playerScope, 'world tile uses floor, including negative coordinates');
 assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), playerScope, 'detached rig parts inherit the holder tile and standing elevation');
 elevationWindow.DevRandomRuin = { getPlayerGroundSupportY: () => 6 };
 assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), { ...playerScope, elevation: 6 }, 'ruin support height remains authoritative');
 const npcRoot = actorAt('npc_walker_test', 4, 2.5, 6);
 const animalVisual = { name: 'animal_avatar_visual', position: { y: 8 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 13: 8 }) }, parent: npcRoot, userData: { namedAnimalNpc: true } };
-assert.deepEqual(resolveScope({ parent: animalVisual }, actorScene, new Map()), { elevation: 2.5, col: 4, row: 6, root: npcRoot },
+assert.deepEqual(resolveScope({ parent: animalVisual }, actorScene, new Map()), { elevation: 2.5, col: 4, row: 6, x: 4, z: 6, root: npcRoot },
   'named-animal visual offsets defer to the enclosing floor-level walker root');
 assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot = true'),
   'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
@@ -546,7 +546,7 @@ assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 
 
 const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
-  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_TILE_EDGE_EPSILON = 0.0001, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
+  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_CIRCLE_RADIUS = 1.5, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
   let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
@@ -569,20 +569,24 @@ const grouped = groupMeshes({}, actorScene, {}, [a, sameTile, far, nearby, upper
 assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far], [nearby], [upper], [uncertain]],
   'only screen-separated same-height holder neighborhoods share a depth rebuild');
 assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
-assert.deepEqual([...grouped.groups[0].tiles.slice(0, 4)], [0, 0, 10, 0], 'one batch carries both tile origins to the shader');
+assert.deepEqual([...grouped.groups[0].centers.slice(0, 4)], [0.5, 0.5, 10.5, 0.5], 'one batch carries both world-space circle centers to the shader');
 assert.match(heldRender, /const regionsByTile = new Map\(\)/,
-  'held x-ray scopes are indexed by exact tile rather than scanning every NPC for each mesh');
+  'held x-ray scopes are bucketed by tile while preserving per-actor positions');
 const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
 const sameTileFloors = groupMeshes({}, actorScene, {}, [a, nearFloor, differentFloor]);
 assert.deepEqual(sameTileFloors.groups.map(group => group.meshes), [[a, nearFloor], [differentFloor]],
   'tile-indexed scopes preserve epsilon-based elevation grouping and prevent overlapping floors from batching');
+const offCenterA = { ...part(0, 0, 0, 0.2, 0.2), scope: { col: 0, row: 0, x: 0.2, z: 0.2, elevation: 0 } };
+const offCenterB = { ...part(0, 0, 0, 0.8, 0.8), scope: { col: 0, row: 0, x: 0.8, z: 0.8, elevation: 0 } };
+assert.equal(groupMeshes({}, actorScene, {}, [offCenterA, offCenterB]).groups.length, 2,
+  'characters on one tile but at different world positions get separate, correctly centered circles');
 const eyeAbove = { isPerspectiveCamera: true, matrixWorld: { elements: { 13: 4 } } };
 assert.deepEqual(groupMeshes({}, actorScene, eyeAbove, [a]).ordinary, [a], 'perspective eye and rigid gear above the floor need no floor exemption');
 assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 'shell extrusion uses projection rather than the base-part height shortcut');
 
 const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
 const shaderEnd = heldRender.indexOf('  function collectGroundElevationMaterials(', shaderStart);
-const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_TILE_RADIUS', 'XRAY_TILE_EDGE_EPSILON', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1, 0.0001);
+const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_CIRCLE_RADIUS', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1.5);
 const groundMaterial = { userData: {}, needsUpdate: false };
 const groundShaderState = installElevationShader(groundMaterial);
 groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
@@ -713,7 +717,7 @@ assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs on
 assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
 assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
   'the selective depth shader still binds the clone-specific elevation after running the prior hook');
-assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-tile-xray-v5',
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v6',
   'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
@@ -760,12 +764,12 @@ setFilter(filterStates, tileBatch);
 const uniforms = filterMaterial.userData.hobunjiXrayElevationShader.uniforms;
 assert.equal(uniforms.enabled.value, 1);
 assert.equal(uniforms.elevation.value, tileBatch.elevation);
-assert.equal(uniforms.tileCount.value, 2);
-assert.equal(uniforms.tiles.value, tileBatch.tiles);
+assert.equal(uniforms.centerCount.value, 2);
+assert.equal(uniforms.centers.value, tileBatch.centers);
 setFilter(filterStates, null);
 assert.equal(uniforms.enabled.value, 0, 'ordinary depth and subsequent lighting passes disable the tile filter');
-assert.match(standardGroundShader.fragmentShader, /lessThanEqual\(abs\(groundTile - uHobunjiXrayTiles\[i\]\), vec2\(1\.0\)\)/,
-  'shader accepts the holder tile and one tile on both world axes');
+assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= 2\.250000/,
+  'shader performs one world-space circular radius test per candidate center');
 assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldXZ = hobunjiXrayWorldPosition.xz;'));
 const sharedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
