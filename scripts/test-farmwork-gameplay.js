@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const { expandClassicScriptGroups } = require('./classic-script-group-index.js'); // The shipped farm scripts are registered through a parser-time feature manifest.
 const root = path.resolve(__dirname, '..'); // Resolves shipped source files under docs/.
 const read = p => fs.readFileSync(path.join(root, p), 'utf8'); // Reads the same module files loaded by index.html.
 
@@ -226,5 +227,6 @@ assert.match(editor, /farmworkTileAccess[\s\S]{0,1600}_screenToFarmTile/, 'world
 assert.match(editor, /startWorldPointer\(e\.pointerId/, 'touch/mouse pointer capture is connected');
 assert.match(index, /id="farmworkPanel"[^>]*data-ctrl-panel/, 'gamepad panel is registered for the ordinary menu navigator');
 assert.match(index, /id="farmworkContents"/);
-assert.match(index, /js\/farmwork-ui\.js\?v=/, 'new module is loaded before the game boots');
+const expandedIndex = expandClassicScriptGroups(index); // Resolve farm feature manifest without requiring the game/browser to start.
+assert.match(expandedIndex, /js\/farmwork-ui\.js\?v=/, 'farmwork module is loaded before the game boots');
 console.log('Gameplay Farmwork/controller regression checks passed');
