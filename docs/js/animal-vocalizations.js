@@ -139,7 +139,7 @@
 
   function speciesProfileKey(c) {
     const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
-    if (/^skeeri-(?:small|medium|large)$/.test(raw)) return 'skeeri-small'; // Three ruin Skeeri sizes share the Small Skeeri's authored vocal repertoire.
+    if (raw === 'skeeri' || /^skeeri-(?:small|medium|large)$/.test(raw)) return 'skeeri-small'; // Domestic and three ruin Skeeri sizes share their authored species voice.
     return raw
       .replace(/-hatchling$/, '') // Young Tzatzul reuse the adult's sounds with Small size pitch.
       .replace(/-herd-mother$/, '') // Herd-mother Voorg-Ass use their species' voice, not a silent variant identity.
