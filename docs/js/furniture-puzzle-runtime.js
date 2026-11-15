@@ -112,6 +112,7 @@
     });
     for (const entry of object.userData.puzzleEmitterVisuals || []) entry.visual.dispose?.();
     object.userData.puzzleEmitterVisuals = (object.userData.authoredParticleEmitters || [])
+      .filter(emitter => emitter.type !== 'glowingSphere') // These already exist on the ordinary authored furniture group.
       .map(emitter => ({ record:emitter, visual:window.AuthoredFurniture?.createEmitterVisual?.(object, emitter) }))
       .filter(entry => entry.visual);
     const linkedLight = object.userData.mapEditorAux?.light;
