@@ -365,6 +365,7 @@ async function main() {
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
   assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.tempo, 0.35, 'mobile diagnostics show the exact fallback utterance tempo');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.fallbackBreath, true, 'mobile diagnostics expose stable fallback identity for audio lifetime decisions');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.composedDurationS, undefined, 'mobile diagnostics cannot report obsolete yawn synthesis');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
   const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url === expectedYawnBreathUrl);
