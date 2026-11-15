@@ -324,10 +324,10 @@
       z: cz + (-midX * sin + midZ * cos) * rigX,
     }; // Current sphere centre, halfway between the two rendered shoulder targets.
     const rawCenter = {
-      x: cx + midX * cos + midZ * sin,
+      x: center.x,
       y: floorY + midY,
-      z: cz - midX * sin + midZ * cos,
-    }; // Same midpoint in the pose's unscaled input frame, needed by the inverse.
+      z: center.z,
+    }; // X/Z hand bases are already rig-scaled in gameplay and editor; only the pose's vertical base is unscaled.
     return {
       center, rawCenter, diameter, radius: diameter / 2,
       shoulderGap, finalArmLength, referenceRadius,
