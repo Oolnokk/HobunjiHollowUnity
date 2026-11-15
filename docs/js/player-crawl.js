@@ -217,6 +217,7 @@
     const sway = Math.sin(phase * TAU) * 3 * DEG * activity;
     composer.setChannel('crawl', {
       priority: 95,
+      leaseMs: 500, // Continuous crawl pose must disappear after an interrupted update.
       mode: 'override',
       absoluteYaw: bodyYaw,
       rotation: { pitch: sway * b, yaw: 0, roll: -CFG.rollDeg * DEG * b }, // Roll about the forward axis: negative = onto the character's left.
@@ -225,6 +226,7 @@
     });
     composer.setChannel('crawl-weapon', {
       priority: 95,
+      leaseMs: 500, // Weapon follows the same per-frame crawl ownership.
       space: 'world',
       includePlayer: false,
       excludeExternalProviders: ['shoulderPets'],
