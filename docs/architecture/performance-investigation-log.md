@@ -1,5 +1,37 @@
 # Performance investigation log
 
+## 15 Nov 2026 (follow-up): strike frames with weapon mastery effects and Mercy Spike equipped (headless; no cost found)
+
+Same arena dummy harness (passive bandit grunt, 15% health so Mercy Spike's below-30% bonus applies, dummy 0.75 tile
+ahead, stamina refilled each attack). Weapon: this world's starter (`hoe_nativeCopper`; the starter differs per new
+world). Setup done in-page: `HobunjiMasteryPolicy._test.awardMastery(key, 300, ...)` (the `devBumpToolMasteryLevel`
+export is wrapped by the mastery policy and silently does nothing for a headless caller; the policy's own `award` is the
+supported hook) -> Mastery 5; `awardMotesOfProwess(200)`; `TechniqueScrolls.unlockAbility('mercySpike')` (the loadout
+refuses a quick attack that is not unlocked, `setSlot` returns false) then `Combat.loadout.setSlot('tap2', 'mercySpike')`;
+`CombatProgression.choose(...)` for levels 1-5 of both the weapon's combo and Mercy Spike (first option each).
+
+Verified from `CombatAttackEvents` `hit` events (not from dummy health: the dummy regenerates, so health deltas went
+negative and are useless as a hit counter): left-click combo **10/10 attacks hit**, 3.6 damage, afflictions applied per
+hit `bruisedHealth 1.69, windedStamina 0.63, shatteredStamina 0.55`; right-click Mercy Spike **7/10 hit**, **37.8
+damage, `quickConditionalBonus` and `quickBonusEffectProc` true**, afflictions `bruisedHealth 3.38, windedStamina 1.26,
+shatteredStamina 1.1` (the misses are Mercy Spike's narrow 14-degree cone, not mastery).
+
+Frame time, medians over the hit cycles: combo neutral 193 -> windup 192 -> recover 193 -> post-hit 184 ms (post/pre
+**0.95**); Mercy Spike 188 -> 172 -> 179 -> 181 ms (**0.96**; whiff cycles 0.92). With the unpicked baseline in the same
+session post/pre was 1.00-1.20 and noise is +-0.1, so **mastery afflictions, the bonus-proc path and the
+Mercy Spike windup add nothing measurable at the moment of the hit**.
+
+Two traps and one finding from the setup:
+- A first attempt measured a "mastery" run that had no mastery (level stayed 0, every pick returned false): check
+  `toolMasteryLevel` and the `choose` results before trusting a mastery A/B.
+- Reading hits from `dummy.health` is wrong for anything that regenerates; use the hit event.
+- **Right-click with an empty tap2 slot overflows the stack.** `useActiveAction` (game.js, weapon branch) routes slot 2 to
+  `Combat.input.fireTap(2)`, which with no ability falls back to `legacyTapFallback` -> `fireLegacyWeaponAction` ->
+  `useActiveAction` -> `fireTap` ... until `RangeError: Maximum call stack size exceeded` (seen as a page error with
+  `isLockedIgnoringOwner` at the top). Every new weapon has tap2 empty until a quick attack is unlocked. It is harmless
+  to state but burns a full stack's worth of calls per click; a guard in `fireLegacyWeaponAction` would also decide
+  whether that click should perform the legacy swing it was written to fall back to, so it is left for a gameplay call.
+
 ## 15 Nov 2026 (follow-up): what is left after the strike afterimage fix (headless; nothing further worth changing)
 
 Same arena dummy harness, run on `main` after the ghost decimation/cap merged (PR 1809). Questions: is the remaining
