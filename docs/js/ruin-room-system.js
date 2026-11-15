@@ -172,6 +172,18 @@
     return best;
   }
 
+  function roomLightFootprint(room,project){
+    if(!room?.wingId||typeof project!=='function')return null; // Native V50 rooms have authored irregular plateaus; only the rectangular generated wings use this shortcut.
+    const inset=.1,y=room.y+1.4; // Interior wall-facing plane at ordinary lantern height; room roofs/floors are never projected into the light mask.
+    const corners=[[room.x+inset,room.z+inset],[room.x+room.w-inset,room.z+inset],
+      [room.x+room.w-inset,room.z+room.d-inset],[room.x+inset,room.z+room.d-inset]];
+    const points=corners.map(([x,z])=>project(x,y,z));
+    if(points.some(p=>!Number.isFinite(p?.x)||!Number.isFinite(p?.y)))return null;
+    let area=0; // Reject collapsed edge-on camera projections rather than inserting an invalid Canvas clip.
+    for(let i=0;i<4;i++)area+=points[i].x*points[(i+1)%4].y-points[(i+1)%4].x*points[i].y;
+    return Math.abs(area)>.1?points:null;
+  }
+
   function visual(record,show){
     if(show){
       for(const [node,original] of record.hidden||[])node.visible=original;
@@ -200,6 +212,7 @@
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false; // Room ownership is reused by lighting and encounter suspension without projecting room boxes.
+    let localLightClipPasses=0; // On-demand mobile diagnostics: one physical room-footprint clip around each lighting redraw, not per source.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -276,7 +289,28 @@
       isRoomActive(id){return !!active&&active.id===id;},
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
-      prepareLightClip(){}, // Compatibility hook: full-screen room tint needs no per-light camera projections.
+      prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
+      withLightRegion(ctx,project,draw){
+        if(typeof draw!=='function')return false;
+        if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
+        const footprint=roomLightFootprint(active,project); // Only four corners on one world-height plane, computed once per lighting redraw.
+        if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
+        ctx.save();
+        try{
+          ctx.beginPath();ctx.moveTo(footprint[0].x,footprint[0].y);
+          for(let i=1;i<4;i++)ctx.lineTo(footprint[i].x,footprint[i].y);
+          ctx.closePath();ctx.clip();localLightClipPasses++;
+          draw(); // Only local light holes and glows are contained; the low-opacity room tint is painted afterward over the whole screen.
+        }finally{ctx.restore();}
+        return true;
+      },
+      roomGlowRadius(light,radius){
+        const desired=Number(radius),source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
+        if(!(desired>0)||!source?.wingId||source.id!==active?.id)return radius;
+        const edge=Math.min(light.x-source.x,source.x+source.w-light.x,
+          light.z-source.z,source.z+source.d-light.z);
+        return Math.min(desired,Math.max(.1,edge-.1)); // Solved-room ambient pools fade to zero before a wall; no illuminated rectangular frame.
+      },
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         return active?source?.id===active.id:!source; // Sources in other rooms stay dormant; no visible rectangular light cutoffs.
@@ -313,7 +347,8 @@
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
-        lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0}};},
+        lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
+        localLightBoundary:{mode:'room-floor-footprint',active:!!active?.wingId,canvasPasses:localLightClipPasses}};},
     };
     live=session;
     return session;
@@ -324,6 +359,8 @@
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
     withLightClip:(ctx,light,project,draw)=>live?live.withLightClip(ctx,light,project,draw):(draw(),true),
+    withLightRegion:(ctx,project,draw)=>live?live.withLightRegion(ctx,project,draw):(typeof draw==='function'?(draw(),true):false),
+    roomGlowRadius:(source,radius)=>live?live.roomGlowRadius(source,radius):radius,
     prepareLightClip:project=>live?.prepareLightClip(project),
     debugSnapshot:()=>live?.snapshot()||{activeRoomId:null,totalRooms:0,sleepingEnemies:0}});
 });
