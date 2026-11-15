@@ -448,6 +448,12 @@
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
       if (current) output = { ...output, ...current, ingredientKeys: output.ingredientKeys, giftIngredientKeys: output.giftIngredientKeys };
     }
+    const tags = (output?.tags || []).map(tag => String(tag).toLowerCase()); // Used to migrate fish oils saved when Fish tags also granted the raw-fish cooking category.
+    const isFishOil = (tags.includes('fish') || output?.cookingCategories?.includes('fish')) &&
+      (tags.includes('oil') || output?.cookingCategories?.includes('oil') || (output?.cat === 'processed' && /Oil$/i.test(output?.key || '')));
+    if (isFishOil) {
+      output = { ...output, cookingCategories: [...new Set([...(output.cookingCategories || []).filter(category => category !== 'fish'), 'oil'])] };
+    } // Keep legacy fats useful as oil without turning them back into fish after a save/load cycle.
     const presentationMetadata = {
       ...(output.icon ? { icon: output.icon } : {}),
       ...(output.label ? { label: output.label } : {}),

@@ -208,8 +208,15 @@ itemProcessor.ensureProcessedItemDef(churnedRiverFish);
 assert.equal(churnedRiverFish.key, 'margarine', 'processed fish oil may go to a different station once');
 assert.equal(itemProcessor.getProcessingOutputs('churning', churnedRiverFish.key), null, 'the same processing method cannot be repeated after churning');
 const savedProcessed = JSON.parse(JSON.stringify(itemProcessor.serializeProcessedDefinitions()));
-itemProcessor.restoreProcessedDefinitions(savedProcessed);
+const obsoleteFishOil = {
+  key: 'legacyFishOil', label: 'Legacy Fish Oil', icon: '🫗', cat: 'processed',
+  tags: ['Processed', 'Fish', 'Oil'], cookingCategories: ['fish', 'oil'],
+  cookingProcessMultiplier: 1.5, cookingProcessSteps: [{ method: 'squeezing', multiplier: 1.5 }],
+}; // Simulates a historical persisted definition that reintroduced Fish after initial catalog registration.
+itemProcessor.restoreProcessedDefinitions([...savedProcessed, obsoleteFishOil]);
 assert.equal(itemProcessor.getProcessingOutputs('squeezing', pressedRiverFish.key), null, 'reloaded processed definitions retain stage history');
+assert(!liveDefs.legacyFishOil.cookingCategories.includes('fish'), 'restoring saved fish oil must not resurrect its obsolete fish recipe category');
+assert(liveDefs.legacyFishOil.cookingCategories.includes('oil'), 'legacy rendered fish oil remains a usable cooking fat');
 
 const cookingTerminal = terminalContext.window.CookingSystem; // Exercises generated hearth food with normal ingredient categories.
 cookingTerminal.init({
