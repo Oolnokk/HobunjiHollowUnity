@@ -390,6 +390,8 @@
 
   function isFrontPortraitMesh(object) {
     if (!object?.isMesh) return false;
+    if (object.userData?.hobunjiShoulderSplitOverlay === true
+        && object.userData?.hobunjiShoulderPetStencilForeground !== true) return false; // Split halves join the private stencil only while actually in front of their player.
     const name = String(object.name || '');
     if (name === 'player_avatar_front_plane' || name === 'npc_avatar_front_plane') return true;
     // Neck-rigged portraits combine front and back triangles in one SkinnedMesh.
