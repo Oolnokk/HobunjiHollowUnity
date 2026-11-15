@@ -356,7 +356,10 @@
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, deps.resolveTileMat(mapId, deps.TileType.ROCK)); // Shared natural-rock material used by every terrain rock surface.
     mesh.userData.retainNaturalSurfaceShellOutline = true; // Preserve the rounded shell through PNG material and UV remapping.
-    deps.markOutline(mesh);
+    // Use the game's outline registrar when provided. Some zone preview/re-init paths omit it;
+    // keep natural shell meshes on outline layer 1 rather than failing the entire streamed chunk.
+    if (typeof deps.markOutline === 'function') deps.markOutline(mesh);
+    else if (mesh.userData.noOutline !== true) mesh.layers.enable(1);
     mesh.name = 'undiggable_boulder_shell_' + rangeKey(bounds); // Pixel Probe label makes the new combined renderer visible on mobile.
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.userData.wildernessChunkOwnsGeometry = true;
