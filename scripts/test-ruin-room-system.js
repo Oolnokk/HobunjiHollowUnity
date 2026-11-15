@@ -117,8 +117,8 @@ assert.equal(session.snapshot().lightClip.feathered,true,'mobile diagnostics rep
 session.prepareLightClip(()=>({x:4,y:4})); // Camera-edge degeneracy must not draw outside the valid room.
 const clipsBeforeFallback=clips;
 let fallbackDraws=0;
-assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('fallback projection must stay cached');},()=>{fallbackDraws++;}),true);
-assert.equal(fallbackDraws,1,'a collapsed camera projection still draws its light once');
+assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('fallback projection must stay cached');},()=>{fallbackDraws++;}),false);
+assert.equal(fallbackDraws,0,'a collapsed camera projection never opens an unbounded light hole');
 assert.equal(clips,clipsBeforeFallback,'collapsed projections do not install invalid clip paths');
 assert.equal(session.snapshot().lightClip.feathered,false,'mobile diagnostics report the safe unfeathered fallback');
 assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{draws++;}),false);
