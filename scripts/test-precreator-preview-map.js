@@ -7,8 +7,9 @@ const index = read('docs/index.html');
 const entry = read('docs/tools/preview-map/index.html');
 const source = read('docs/js/precreator-arena.js');
 const arena = read('docs/js/dev-arena-pond-dummy.js');
-assert(index.indexOf('js/precreator-arena.js?') > 0
-  && index.indexOf('js/precreator-arena.js?') < index.indexOf('js/storage-quota-guard.js?'));
+assert(index.indexOf('js/storage-quota-guard.js?') > 0
+  && index.indexOf('js/storage-quota-guard.js?') < index.indexOf('js/precreator-arena.js?')
+  && index.indexOf('js/precreator-arena.js?') < index.indexOf('js/substance-cover-shell.js?'));
 assert(entry.includes('index.html?previewArena=1'));
 assert(entry.includes('tap-reliability.js'));
 assert(read('docs/onboarding-core.js').includes('window.__hobunjiPrecreatorArena'));
