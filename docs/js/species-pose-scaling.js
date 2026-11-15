@@ -361,16 +361,19 @@
     if (!(referenceRadius > 0) || !(diameter > 0)) return null;
     const yaw = Number(options.yawRad) || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
     const cx = Number(options.cx) || 0, cz = Number(options.cz) || 0, floorY = Number(options.floorY) || 0;
+    const shift = orbitShift(options, orbitShiftScratch); // The finished 3D center follows the spine; do not shift the posed tool a second time.
+    const unshiftedX = cx + (midX * cos + midZ * sin) * rigX;
+    const unshiftedZ = cz + (-midX * sin + midZ * cos) * rigX;
     const center = {
-      x: cx + (midX * cos + midZ * sin) * rigX,
-      y: floorY + midY * rigY,
-      z: cz + (-midX * sin + midZ * cos) * rigX,
-    }; // Current sphere centre, halfway between the two rendered shoulder targets.
+      x: unshiftedX + shift.x,
+      y: floorY + midY * rigY + shift.y,
+      z: unshiftedZ + shift.z,
+    }; // Actual final sphere centre, including the hunched shoulders.
     const rawCenter = {
-      x: center.x,
+      x: unshiftedX,
       y: floorY + midY,
-      z: center.z,
-    }; // X/Z hand bases are already rig-scaled in gameplay and editor; only the pose's vertical base is unscaled.
+      z: unshiftedZ,
+    }; // X/Z input hand bases are already rig-scaled; input Y is still unscaled.
     return {
       center, rawCenter, diameter, radius: diameter / 2,
       shoulderGap, finalArmLength, referenceRadius,
@@ -394,17 +397,18 @@
     const floorY = Number(options.floorY) || 0, baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
     const orbit = shoulderOrbitGeometry(options); // Geometry-led sphere replaces authored scale when both shoulders exist.
-    const shift = orbitShift(options, orbitShiftScratch);
     if (orbit) {
       const factor = orbit.scale, center = orbit.center, source = orbit.rawCenter;
-      const nx = center.x + (x - source.x) * factor + shift.x;
-      const ny = center.y + (y - source.y) * factor + shift.y;
-      const nz = center.z + (z - source.z) * factor + shift.z;
+      const nx = center.x + (x - source.x) * factor;
+      const ny = center.y + (y - source.y) * factor;
+      const nz = center.z + (z - source.z) * factor;
       if (typeof point.set === 'function') point.set(nx, ny, nz);
       else { point.x = nx; point.y = ny; point.z = nz; }
       return point;
     }
     // Missing/incomplete shoulders: preserve the older config and height mapper.
+    const shift = orbitShift(options, orbitShiftScratch);
+    const shift = orbitShift(options, orbitShiftScratch);
     const cy = Number.isFinite(options.cy) ? options.cy : baseY;
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
@@ -424,12 +428,11 @@
     const floorY = Number(options.floorY) || 0, baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
     const orbit = shoulderOrbitGeometry(options); // Inverts the same measured sphere used by gameplay/editor.
-    const shift = orbitShift(options, orbitShiftScratch);
     if (orbit) {
       const factor = orbit.scale, center = orbit.center, source = orbit.rawCenter;
-      const nx = source.x + (x - center.x - shift.x) / factor;
-      const ny = source.y + (y - center.y - shift.y) / factor;
-      const nz = source.z + (z - center.z - shift.z) / factor;
+      const nx = source.x + (x - center.x) / factor;
+      const ny = source.y + (y - center.y) / factor;
+      const nz = source.z + (z - center.z) / factor;
       if (typeof point.set === 'function') point.set(nx, ny, nz);
       else { point.x = nx; point.y = ny; point.z = nz; }
       return point;
