@@ -64,7 +64,7 @@
     if (!ink || !mesh?.material || !mesh?.geometry) return null;
     const material = mesh.material;
     material.color.set(ink.color);
-    material.blending = ink.glowStrength > 0 ? THREE.AdditiveBlending : THREE.NormalBlending;
+    material.blending = THREE.NormalBlending; // Keep the authored color intact: additive core + additive halo bleaches luminous glyphs toward white.
     material.transparent = true;
     material.depthWrite = false;
     tintFromAlpha(material);
@@ -78,7 +78,7 @@
     const height = Math.max(.001, Number(mesh.geometry.parameters?.height) || 1);
     const haloMaterial = new THREE.MeshBasicMaterial({
       color: ink.color, map: material.map || null,
-      transparent: true, opacity: ink.glowStrength,
+      transparent: true, opacity: ink.glowStrength * .35, // Attenuated additive fringe: glow without overexposing the exact ink hue.
       depthTest: true, depthWrite: false, side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
