@@ -434,6 +434,37 @@ assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follo
 assert.match(driverSource, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip(?:, visualBasis)?\)/, 'frame driver must retain the raw weapon grip target before Grip Mode and hand-model calibration');
 assert.match(driverSource, /const ownedHolder = record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder/, 'hand socket resolution must distinguish actor-owned hostile holders from the player singleton');
 assert.match(driverSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'only the actual player holder may consume WeaponToolStances\' singleton baked matrix');
+// The actual gameplay path is wrapped by procedural-hand-scale-free-world.js;
+// it needs a scale-free snapshot from the temporarily stanced player holder,
+// not Quaternion.decompose(matrixWorld), which can absorb a negative scale as a 180° flip.
+assert.match(weaponStanceSource, /lastBakedHolderWorldQuaternion = hierarchyWorldQuaternion\(this\)/, 'the rendered idle/attack holder must snapshot its scale-free orientation before the temporary stance is reverted');
+assert.match(weaponStanceSource, /lastHolderWorldQuaternion: \(\) =>/, 'the held-item driver must be able to retrieve that baked orientation');
+assert.match(weaponStanceSource, /invalidateHolderMatrixWorld: \(\) => \{ lastBakedHolderMatrixWorld = null; lastBakedHolderWorldQuaternion = null;/, 'scene transitions must invalidate position and rotation together');
+assert.match(driverSource, /lastHolderWorldQuaternion\?\.\(\)/, 'player hand sockets must consume the baked scale-free holder orientation');
+{
+  // Run the real socket resolver with a reflected (nondecomposable) world matrix.
+  const start = driverSource.indexOf('function toolSocketWorld(');
+  const end = driverSource.indexOf('function handSocketAfterGripMode(', start);
+  assert(start >= 0 && end > start);
+  class Q { constructor(yaw = 0) { this.yaw = yaw; } multiply(q) { this.yaw += q.yaw; return this; } }
+  class V {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    setFromMatrixPosition(matrix) { this.x = matrix.elements[12]; this.y = matrix.elements[13]; this.z = matrix.elements[14]; return this; }
+  }
+  const parent = {};
+  const holder = { parent, quaternion: new Q(), position: new V() };
+  const bakedWorldMatrix = { elements: [1,0,0,0, 0,1,0,0, 0,0,-1,0, 2,3,4,1], decompose() { throw new Error('reflected matrix rotation was decomposed'); } };
+  const bindings = {
+    global: { WeaponToolStances: { lastHolderMatrixWorld: () => bakedWorldMatrix, lastHolderWorldQuaternion: () => new Q(0.7) } },
+    gameDeps: { playerMesh: parent, toolHolder: holder },
+    inAttackEditor: () => false,
+    visualGripBasisDelta: () => ({ quaternion: new Q() }),
+  };
+  const resolve = vm.runInNewContext(`${driverSource.slice(start, end)}\ntoolSocketWorld`, bindings, { filename: 'mirrored-baked-weapon-hand-socket.js' });
+  const grip = resolve({ avatarRoot: { userData: {} }, rig: { parent } }, holder, null, { quaternion: new Q() });
+  assert.strictEqual(grip.quaternion.yaw, 0.7, 'the hand must inherit the baked holder rotation without matrix reflection');
+  assert.deepStrictEqual([grip.position.x, grip.position.y, grip.position.z], [2,3,4], 'the hand must still inherit the baked holder position');
+}
 assert.match(driverSource, /playerOwnedHolder[\s\S]*lastHolderMatrixWorld\?\.\(\)[\s\S]*: null/, 'hostile hands must resolve from their own holder hierarchy instead of the player baked matrix');
 assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'locked paper hand must be placed on the raw target before Grip Mode moves the socket');
 assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
