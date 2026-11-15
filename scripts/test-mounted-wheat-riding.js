@@ -235,4 +235,12 @@ for (let i = 0; i < 180; i++) {
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, beforeTallRock, 'tall boulders are not eligible for automatic jumps');
 assert(mount.x < 20 * T, 'the horse stops at the boulder instead of passing through it');
 
-console.log('mounted wheat, whistles, low rock and boulder collision, device input and animal exertion checks passed');
+// Dismounting mid-jump releases visual hop state immediately, without losing the rider/mount transition.
+assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
+assert.equal(win.Mounts.ridingDebug.jumping, true);
+win.Mounts.toggleMount();
+assert.equal(win.Mounts.rideState, 'dismountingDown');
+assert.equal(mount._mountHop, null, 'dismount cancels an in-progress rock hop');
+assert.equal(mount._banditLungeHopCurrent, 0, 'dismount clears airborne visual offset');
+
+console.log('mounted wheat, whistles, rock and boulder collision, device input, dismount and animal exertion checks passed');
