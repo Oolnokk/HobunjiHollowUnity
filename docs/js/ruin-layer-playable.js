@@ -110,7 +110,7 @@
     const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
-      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0,wallMeshCount:0}; // wallMeshCount is reported by mobile ruin diagnostics; no scene traversal on each status request. // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
     owner.roomLights=()=>owner.disposed?[]:roomLights;
     liveOwner=owner;
     owner.lightSources=()=>owner.disposed?[]:brazierLights; // Exposes already-created light records without scene traversals during the compositor's 60 Hz pass.
@@ -167,7 +167,9 @@
       const Faces=root.RuinWallFaces;
       const add=(name,data,parent=activeRoot,surfaceMaterial=material)=>{
         if(!data.positions.length)return null;
-        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),surfaceMaterial);node.name=name;parent.add(node);owner.geometryCount++;return node;
+        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),surfaceMaterial);node.name=name;parent.add(node);owner.geometryCount++;
+        if(name==='wing-feature-wall'||name.endsWith('-walls'))owner.wallMeshCount++; // Count actual rendered masonry meshes once during generation.
+        return node;
       };
       if(floorCells.length){
         let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
@@ -295,7 +297,7 @@
           const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
             material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
-          if(shell.meshes[1])shell.meshes[1].material=wallMaterial; // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
+          if(shell.meshes[1]){shell.meshes[1].material=wallMaterial;owner.wallMeshCount++;} // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
           owner.geometryCount+=shell.meshes.length;
           const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ); // Verify actual exposed wall faces before accepting the generated room.
           if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');
@@ -575,6 +577,7 @@
         .map(c=>({id:c.id,linked:!!c.ropeLinked,count:c.ropesRequested||0,
           geometry:c.ropeGeometry||null,error:c.error||null}))), // Mobile getState shows baseline range, rope offsets and puzzle linkage without devtools.
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
+      wallRender:{doubleSided:wallMaterial?.side===THREE.DoubleSide,meshes:owner.wallMeshCount}, // Mobile diagnostics identify the actual one-sided-wall failure without a scene traverse.
       roomEnclosures:{...roomSession?.snapshot(),audits:roomAudits,
         closedDoors:[...roomDoors.values()].filter(d=>d.blocked).length,
         doorCount:roomDoors.size}, // Mobile debug includes room ID, structural audit and suspended NPC totals.
