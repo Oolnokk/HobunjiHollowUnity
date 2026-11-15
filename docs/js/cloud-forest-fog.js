@@ -831,6 +831,10 @@
     return lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'
       ||window.RuinRoomSystem?.lightAllowed?.(source)!==false; // Sealed rooms do not share light sources.
   }
+  function withRuinLightRegion(ctx,draw){
+    if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'||!window.RuinRoomSystem?.withLightRegion)return draw();
+    return window.RuinRoomSystem.withLightRegion(ctx,(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),draw); // One room-footprint clip around the entire light pass; never a painted room-shaped tint.
+  }
   function withRuinRoomLightClip(ctx,source,draw){
     if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'||!window.RuinRoomSystem?.withLightClip)return draw();
     return window.RuinRoomSystem.withLightClip(ctx,source,null,draw); // Existing source-room filter, but no camera-projected rectangular paint mask.
@@ -863,9 +867,11 @@
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
-      if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, light.radius)) continue;
-      visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,light.radius)});
+      const radiusTiles = light.roomBound===true
+        ? (window.RuinRoomSystem?.roomGlowRadius?.(light,light.radius) ?? light.radius) : light.radius; // Solved-room glows fade naturally before stone instead of making a bright rectangle.
+      const radius = lightScreenRadius(light.x, light.z, light.y, radiusTiles);
+      if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, radiusTiles)) continue;
+      visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,radiusTiles)});
     }
     ruinFireMaskStats.projected=visible.length; // Distinguishes source state from sources actually in the camera viewport.
     ctx.globalCompositeOperation = 'destination-out';
@@ -1154,14 +1160,16 @@
         :ruinTradition === 'tothal' ? 'rgba(6,18,44,'+effectiveDarknessAlpha+')'
         :ruinTradition === 'hronal' ? 'rgba(20,7,2,'+effectiveDarknessAlpha+')' : 'rgba(0,0,0,'+effectiveDarknessAlpha+')';
       ctx.fillRect(0, 0, rect.width, rect.height);
-      drawLanternMasksCompat(1);
-      if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
-      if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
-      if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
-      if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
-      if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
-      if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
-      if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
+      withRuinLightRegion(ctx,()=>{
+        drawLanternMasksCompat(1);
+        if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
+        if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
+        if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+        if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
+        if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
+        if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
+        if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
+      }); // Clip ONLY local light contributions; the tradition tint below always covers the whole viewport.
       if (ruinTradition) paintRuinScreenTint(ctx,rect,ruinTradition); // Low-opacity full-screen ambience, with no rectangular room boundary.
       if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
@@ -1181,12 +1189,14 @@
     ctx.globalCompositeOperation = 'source-over';
 
     // Outdoor carried/watch lanterns still clear darkness, but preserve a configurable amount of the active weather tint.
-    drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
-    if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
-    if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
-    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
-    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
-    if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
+    withRuinLightRegion(ctx,()=>{
+      drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
+      if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
+      if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
+    });
     if (currentArea === 'map_i_dev_random_ruin') paintRuinScreenTint(ctx,rect,activeRuinTradition()); // Fog-backed ruins receive the same low-opacity full-screen tint.
 
     if (lightningAlpha > 0) {

@@ -175,5 +175,13 @@
     return geometry;
   }
 
-  return Object.freeze({ mergeMask, voxelFaces, buildQuads, mergeEdges, buildEdgeWallQuads, toGeometry, TANGENTS });
+  function visibleWallMaterial(THREE, source) {
+    if (!source?.clone || THREE?.DoubleSide === undefined) return source;
+    const material = source.clone(); // Used by shaft/wing vertical stone only; preserve the source texture without turning floors and ceilings two-sided.
+    material.side = THREE.DoubleSide;
+    material.needsUpdate = true;
+    return material;
+  }
+
+  return Object.freeze({ mergeMask, voxelFaces, buildQuads, mergeEdges, buildEdgeWallQuads, toGeometry, visibleWallMaterial, TANGENTS });
 });

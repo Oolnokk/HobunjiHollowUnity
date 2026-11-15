@@ -316,13 +316,14 @@
     // walls read like the older V50 rooms and can be engraved by FurniturePatternSurfaces.decorateRuin. The
     // masonry group is kept apart from the climb markings so only stone is ever patterned. Roof faces point
     // inward only, so the overhead game camera sees the interior; collision stays on the voxel grid.
+    const wallMaterial = Faces.visibleWallMaterial(THREE, material); // Both camera-facing and reverse-facing stone render; shared roof/floor material stays front-sided.
     const masonry = new THREE.Group();
     masonry.name = 'shaft-hub-masonry';
     shell.add(masonry);
     const frame = { origin:{ x:grid.colToX(0), y:grid.levelToY(0), z:grid.rowToZ(0) }, size:{ x:grid.cellSize, y:grid.cellHeight, z:grid.cellSize }, patch:{ h:PATCH, v:PATCH } };
-    const part = (name, rects, parent = masonry) => {
+    const part = (name, rects, parent = masonry, surfaceMaterial = material) => {
       if (!rects.length) return null;
-      const mesh = new THREE.Mesh(Faces.toGeometry(THREE, Faces.buildQuads(rects, frame)), material);
+      const mesh = new THREE.Mesh(Faces.toGeometry(THREE, Faces.buildQuads(rects, frame)), surfaceMaterial);
       mesh.name = name;
       parent.add(mesh);
       return mesh;
@@ -341,10 +342,10 @@
     features.userData.ruinFeatureWalls = true; // The style pass engraves every group carrying this flag (js/ruin-multifloor-v50-style.js).
     masonry.add(features);
     for (const rect of sides.filter(isFeature)) {
-      const wall = part('shaft-hub-feature-wall', [rect], features); // One shared name: one pattern type.
+      const wall = part('shaft-hub-feature-wall', [rect], features, wallMaterial); // One shared name: one pattern type.
       wall.userData.cameraObstacle = true; // Engraved panels are part of the shaft's real wall.
     }
-    part('shaft-hub-walls', sides.filter(rect => !isFeature(rect)));
+    part('shaft-hub-walls', sides.filter(rect => !isFeature(rect)), masonry, wallMaterial);
     const ledges = part('shaft-hub-ledges', faces.filter(rect => rect.axis === 'y')); // Balcony tops, undersides and the roof.
     if (ledges) {
       ledges.userData.cameraObstacle = true;

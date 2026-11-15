@@ -172,6 +172,36 @@
     return best;
   }
 
+  function roomLightFootprint(room,project){
+    if(!room?.wingId||typeof project!=='function')return null; // Only rectangular generated-wing rooms use this geometry; irregular native V50 floors do not.
+    const inset=.1,levels=[room.y+.05,room.y+WALL_HEIGHT-.05]; // Bound the lit room from floor to wall top, not just a slice through a player's torso.
+    const corners=[[room.x+inset,room.z+inset],[room.x+room.w-inset,room.z+inset],
+      [room.x+room.w-inset,room.z+room.d-inset],[room.x+inset,room.z+room.d-inset]];
+    const projected=[]; // Eight actual wall-volume corners bound local light only; the 7% full-screen tradition tint never uses this path.
+    for(const y of levels)for(const [x,z] of corners){
+      const p=project(x,y,z);
+      if(!Number.isFinite(p?.x)||!Number.isFinite(p?.y))return null;
+      projected.push({x:p.x,y:p.y});
+    }
+    projected.sort((a,b)=>a.x-b.x||a.y-b.y);
+    const turn=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    const lower=[],upper=[]; // Convex hull covers both wall heights under the angled camera without per-light clipping.
+    for(const p of projected){
+      while(lower.length>1&&turn(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();
+      lower.push(p);
+    }
+    for(let i=projected.length-1;i>=0;i--){
+      const p=projected[i];
+      while(upper.length>1&&turn(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();
+      upper.push(p);
+    }
+    const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+    if(hull.length<3)return null;
+    let area=0; // Degenerate camera projections should not extinguish every lamp.
+    for(let i=0;i<hull.length;i++)area+=hull[i].x*hull[(i+1)%hull.length].y-hull[(i+1)%hull.length].x*hull[i].y;
+    return Math.abs(area)>.1?hull:null;
+  }
+
   function visual(record,show){
     if(show){
       for(const [node,original] of record.hidden||[])node.visible=original;
@@ -200,6 +230,7 @@
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false; // Room ownership is reused by lighting and encounter suspension without projecting room boxes.
+    let localLightClipPasses=0; // On-demand mobile diagnostics: one physical room-footprint clip around each lighting redraw, not per source.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -276,7 +307,29 @@
       isRoomActive(id){return !!active&&active.id===id;},
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
-      prepareLightClip(){}, // Compatibility hook: full-screen room tint needs no per-light camera projections.
+      prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
+      withLightRegion(ctx,project,draw){
+        if(typeof draw!=='function')return false;
+        if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
+        const footprint=roomLightFootprint(active,project); // One eight-corner wall-volume projection per lighting redraw, not one mask per light.
+        if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
+        ctx.save();
+        try{
+          ctx.beginPath();ctx.moveTo(footprint[0].x,footprint[0].y);
+          for(let i=1;i<footprint.length;i++)ctx.lineTo(footprint[i].x,footprint[i].y); // Every projected wall-height extreme belongs inside the mask.
+          ctx.closePath();ctx.clip();localLightClipPasses++;
+          draw(); // Only local light holes and glows are contained; the low-opacity room tint is painted afterward over the whole screen.
+        }finally{ctx.restore();}
+        return true;
+      },
+      roomGlowRadius(light,radius){
+        const desired=Number(radius),x=Number(light?.x),z=Number(light?.z),y=Number(light?.y);
+        if(!(desired>0)||!active?.wingId||!Number.isFinite(x)||!Number.isFinite(z)
+          ||!Number.isFinite(y)||!inside(active,x,z)
+          ||y<active.y-.65||y>active.y+WALL_HEIGHT+1)return radius;
+        const edge=Math.min(x-active.x,active.x+active.w-x,z-active.z,active.z+active.d-z);
+        return Math.min(desired,Math.max(.1,edge-.1)); // After source-room filtering, use the active rectangle directly: no second all-room scan per light.
+      },
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         return active?source?.id===active.id:!source; // Sources in other rooms stay dormant; no visible rectangular light cutoffs.
@@ -313,7 +366,8 @@
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
-        lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0}};},
+        lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
+        localLightBoundary:{mode:'room-volume-light-clip',active:!!active?.wingId,canvasPasses:localLightClipPasses}};},
     };
     live=session;
     return session;
@@ -324,6 +378,8 @@
     ambient:()=>live?.ambient()||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
     withLightClip:(ctx,light,project,draw)=>live?live.withLightClip(ctx,light,project,draw):(draw(),true),
+    withLightRegion:(ctx,project,draw)=>live?live.withLightRegion(ctx,project,draw):(typeof draw==='function'?(draw(),true):false),
+    roomGlowRadius:(source,radius)=>live?live.roomGlowRadius(source,radius):radius,
     prepareLightClip:project=>live?.prepareLightClip(project),
     debugSnapshot:()=>live?.snapshot()||{activeRoomId:null,totalRooms:0,sleepingEnemies:0}});
 });

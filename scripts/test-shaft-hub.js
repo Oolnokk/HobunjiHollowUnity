@@ -397,7 +397,7 @@ class Mesh extends Group{
     this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
     this.scale={x:1,y:1,z:1};this.rotation={x:0,y:0,z:0};} // Include rotation for the horizontal rope-abyss fog plane.
 }
-class Material {clone(){return new Material()}dispose(){}}
+class Material {constructor(){this.side=0;}clone(){return new Material()}dispose(){}}
 class BufferAttribute {constructor(array,itemSize){this.array=array;this.itemSize=itemSize}}
 class BufferGeometry {constructor(){this.attributes={}}setAttribute(name,attribute){this.attributes[name]=attribute}setIndex(index){this.index=index}dispose(){}} // The shaft's stone is real merged faces now (js/ruin-wall-faces.js).
 class InstancedMesh {
@@ -406,7 +406,7 @@ class InstancedMesh {
   setMatrixAt(i,matrix){this.instances[i]=matrix.xyz}
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,BufferGeometry,BufferAttribute,Matrix4,
-  CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+  CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0,DoubleSide:2};
 const Defense={create:options=>({
   id:options.id,kind:'statueDefense',ready:true,solved:false,
   tick(){},dispose(){this.disposed=true;},
@@ -597,6 +597,8 @@ for(const side of ['north','east','south','west']){
   for(const name of ['shaft-hub-walls','shaft-hub-ledges','shaft-hub-octagonal-floor'])
     assert(stone[name]?.geometry?.attributes?.position?.array?.length>0,name+' has real merged geometry');
   assert(stone['shaft-hub-walls'].geometry.attributes.uv.array.every(value=>value>=0&&value<=1),'every wall patch stretches its texture 0..1');
+  assert.equal(stone['shaft-hub-walls'].material.side,THREE.DoubleSide,'shaft masonry remains visible from both sides');
+  assert.notEqual(stone['shaft-hub-ledges'].material.side,THREE.DoubleSide,'shaft ledges remain one-sided');
   // Broad walls are separate meshes in their own group: the pattern decorator makes one atlas per mesh, so engraving
   // hundreds of disjoint strips in one mesh would shrink the atlas to nothing.
   const featureGroup=masonry.children.find(node=>node.name==='shaft-hub-feature-walls');
@@ -662,6 +664,10 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(wingBoxes,[],'no instanced one-unit boxes remain in any wing');
   assert(wingFloors.length>=2&&wingFloors.every(mesh=>mesh.geometry.attributes.position.array.length>0&&mesh.geometry.attributes.uv.array.every(v=>v>=0&&v<=1)),'each wing floor is merged stretch-to-fit faces');
   assert(wingWalls.length>=1,'wing walls are merged faces');
+  assert(network.getState().wallRender.doubleSided,'mobile diagnostics report the actual two-sided stone material');
+  assert(network.getState().wallRender.meshes>=wingWalls.length,'mobile diagnostics count the constructed wall meshes once');
+  assert(wingWalls.every(w=>w.material.side===THREE.DoubleSide),'wing walls render from both camera directions');
+  assert(wingFloors.every(f=>f.material.side!==THREE.DoubleSide),'wing floors remain one-sided');
   const caps=[],partitions=[],corridorCaps=[];
   network.group.traverse(node=>{
     if(node.name?.startsWith('ruin-room-ceiling-'))caps.push(node);
@@ -671,7 +677,9 @@ for(const side of ['north','east','south','west']){
   const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.rooms));
   assert.equal(caps.length,plannedRooms.length,'each wing room owns a real ceiling');
   assert.equal(partitions.length,plannedRooms.length,'each room has an entrance partition with a door aperture');
+  assert(partitions.every(w=>w.material.side===THREE.DoubleSide),'entrance wall flanks render from both sides');
   assert.equal(corridorCaps.length,connected.plan.totalWings,'all connecting hallways have ceiling coverage too');
+  assert(caps.every(roof=>roof.material.side!==THREE.DoubleSide),'room roofs keep one-sided rendering');
   assert(caps.every(roof=>roof.geometry.attributes.normal.array.every((n,i)=>i%3!==1||n===-1)),
     'roof faces point down into the rooms, not into the overhead camera');
   assert(network.getState().roomEnclosures.audits.every(a=>a.ok&&a.ceilingTiles>0),
@@ -682,6 +690,7 @@ for(const side of ['north','east','south','west']){
     assert(Math.min(across(0),across(2))<1e-6,'a feature wall is one flat face, not a two-faced slab');
     assert(new Set(Array.from({length:n.length/3},(_,i)=>n[i*3]+','+n[i*3+2])).size===1,'and every patch of it faces the same way');
   }
+  assert(wingFeatureGroups.every(g=>g.children.every(w=>w.material.side===THREE.DoubleSide)),'engravable walls render from both sides without duplicate geometry');
   assert(wingFeatureGroups.length>=1&&wingFeatureGroups.every(group=>group.children.length>=1&&group.children.length<=4&&group.children.every(mesh=>mesh.name==='wing-feature-wall')),
     'each wing has between one and four engravable feature walls, one mesh each (the cap bounds engraving atlas memory)');
   const upperVisual=network.group.children.find(c=>c.name==='ruin-layer-floor-1');

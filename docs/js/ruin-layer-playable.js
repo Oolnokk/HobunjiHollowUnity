@@ -89,12 +89,13 @@
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
       materialFillEnabled:true,materialFillColor:hex,materialFillMode:'always',color:hex,
     })||new THREE.MeshBasicMaterial({color:fallback}); // Recolor the author's stone PNG rather than substituting flat-colored dungeon furniture.
+    const wallMaterial=root.RuinWallFaces?.visibleWallMaterial?.(THREE,material)||material; // Wall backfaces remain visible without changing downward-only ceilings or solid floor depth.
     const plateMat=tintedStone('#8c735b',0x8c735b);
     const gateMat=tintedStone('#4f3b32',0x4f3b32);
     const brazierMat=tintedStone('#665346',0x665346);
     const cameraWalls=[]; // Detached geometry is only visible to the camera boom's raycasts.
     const cameraWallMaterial=new THREE.MeshBasicMaterial();
-    const materials=[material,plateMat,gateMat,brazierMat,cameraWallMaterial]; // Disposed together with the geometry and owned interactive controls.
+    const materials=[material,wallMaterial,plateMat,gateMat,brazierMat,cameraWallMaterial]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const roomLights=[]; // One light per puzzle room (and, outside Kanthic, each goal room): a room fills with light when its puzzle is solved.
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
@@ -109,7 +110,7 @@
     const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
-      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0,wallMeshCount:0}; // wallMeshCount is reported by mobile ruin diagnostics; no scene traversal on each status request. // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
     owner.roomLights=()=>owner.disposed?[]:roomLights;
     liveOwner=owner;
     owner.lightSources=()=>owner.disposed?[]:brazierLights; // Exposes already-created light records without scene traversals during the compositor's 60 Hz pass.
@@ -164,9 +165,11 @@
     const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=RoomSystem.WALL_HEIGHT,WALL_THICKNESS=.14,PATCH={h:6,v:6};
     function masonry(wingName,y,floorCells,wallsX,wallsZ){
       const Faces=root.RuinWallFaces;
-      const add=(name,data,parent=activeRoot)=>{
+      const add=(name,data,parent=activeRoot,surfaceMaterial=material)=>{
         if(!data.positions.length)return null;
-        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),material);node.name=name;parent.add(node);owner.geometryCount++;return node;
+        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),surfaceMaterial);node.name=name;parent.add(node);owner.geometryCount++;
+        if(name==='wing-feature-wall'||name.endsWith('-walls'))owner.wallMeshCount++; // Count actual rendered masonry meshes once during generation.
+        return node;
       };
       if(floorCells.length){
         let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
@@ -198,9 +201,9 @@
       const wallOptions={y0:y,y1:y+WALL_HEIGHT,thickness:WALL_THICKNESS,patch:PATCH};
       if(features.length){
         const group=new THREE.Group();group.name='ruin-wing-feature-walls';group.userData.ruinFeatureWalls=true;activeRoot.add(group);
-        for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group);
+        for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group,wallMaterial);
       }
-      add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
+      add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions),activeRoot,wallMaterial);
       if(rec.occlusionMeshes&&runs.length){
         const boundary=Faces.buildEdgeWallQuads(runs,{...wallOptions,y0:y+WALL_HEIGHT,y1:y+plan.options.floorHeight});
         const wall=new THREE.Mesh(Faces.toGeometry(THREE,boundary),cameraWallMaterial);
@@ -294,6 +297,7 @@
           const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
             material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
+          if(shell.meshes[1]){shell.meshes[1].material=wallMaterial;owner.wallMeshCount++;} // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
           owner.geometryCount+=shell.meshes.length;
           const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ); // Verify actual exposed wall faces before accepting the generated room.
           if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');
@@ -373,7 +377,7 @@
           const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
           const roomHex=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
           const roomRgb=[1,3,5].map(n=>parseInt(String(roomHex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220); // The lich's colour, washed toward white: a lit room, not a coloured spotlight.
-          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,active:false};
+          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,roomBound:true,active:false};
           roomLights.push(roomLight);
           let gateLight=null; // Lights the doorway the solve is about to open (assigned below once the gate is known).
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
@@ -458,9 +462,9 @@
           if(flameVisual)wingFlameVisuals.push({...flameVisual,roomId:goal.id}); // Uses the exact player-placeable campfire emitter recipe.
         }
         const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
-        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),active:false}; // Kanthic's goal room is already lit by its brazier record below.
+        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),roomBound:true,active:false}; // Kanthic's goal room is already lit by its brazier record below.
         if(goalLight)roomLights.push(goalLight);
-        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
+        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,roomBound:true,
           color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
@@ -573,6 +577,7 @@
         .map(c=>({id:c.id,linked:!!c.ropeLinked,count:c.ropesRequested||0,
           geometry:c.ropeGeometry||null,error:c.error||null}))), // Mobile getState shows baseline range, rope offsets and puzzle linkage without devtools.
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
+      wallRender:{doubleSided:wallMaterial?.side===THREE.DoubleSide,meshes:owner.wallMeshCount}, // Mobile diagnostics identify the actual one-sided-wall failure without a scene traverse.
       roomEnclosures:{...roomSession?.snapshot(),audits:roomAudits,
         closedDoors:[...roomDoors.values()].filter(d=>d.blocked).length,
         doorCount:roomDoors.size}, // Mobile debug includes room ID, structural audit and suspended NPC totals.
