@@ -6,7 +6,7 @@
     "js/ruin-site-locales.js?v=20261002hb4d3f2d",
     "js/stampable-locale-defs.js?v=20261102h082455e",
     "js/tothal-zone-cache.js?v=20261110banubuNightAudit2",
-    "js/ruin-sites.js?v=20261114authoredBurrow1"
+    "js/ruin-sites.js?v=20261114lichHearts1"
   ]; // Parser-ordered script URLs; dependency/load order stays unchanged.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   document.write(scriptUrls.map(src => '<script src="' + src.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"><\/script>').join('\n'));
