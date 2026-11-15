@@ -12,7 +12,7 @@ const store = {};
 const panels = [];
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
-  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1 }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2 }) },
   __hobunjiGameStarted: true,
 };
 global.window = win;
@@ -51,11 +51,23 @@ X.reset();
 
 // Manual rank editing, strict validation, clipboard persistence and reset.
 const shippedOrder = X.DEFAULT_DRAW_ORDER.slice();
-assert.strictEqual(X.describeLayers().length, 18, 'all visual categories (including material types, hands, feet and weapons) are exposed');
+assert.strictEqual(X.describeLayers().length, 18, 'every category remains in persisted/exported visual order');
+assert.strictEqual(X.editableLayers().length, 17, 'linked weapons are not a fake independent UI control');
+assert.ok(!X.editableLayers().some(layer => layer.id === 'item.weapons'));
+assert.match(X.editableLayers().find(layer => layer.id === 'actor.hands').label, /held tools/);
+assert.strictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'), 'linked gear has exactly one effective rank');
 assert.strictEqual(X.setDrawOrder(['actor.hands']), false, 'cannot remove layers');
 assert.strictEqual(X.setDrawOrder([...shippedOrder.slice(1), shippedOrder[1]]), false, 'cannot duplicate layers');
-assert.strictEqual(X.moveLayer('actor.hands', '__end'), true, 'can move between category groups');
+assert.strictEqual(X.moveLayer('item.weapons', '__end'), true, 'moving a linked weapon changes the effective hand rank, not a phantom weapon rank');
 assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
+assert.strictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'));
+assert.strictEqual(X.shiftLayer('item.weapons', -1), true, 'linked weapon nudge moves the hand entry across active categories');
+assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 2);
+assert.strictEqual(X.moveLayer('item.weapons', '__end'), true);
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(X.editableLayers().length, 18, 'unlinked weapons expose their own independently editable rank');
+assert.notStrictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'), 'only explicit unlink enables independent positioning');
+X.set('weapon.followHandLayer', 'on');
 assert.ok(Array.isArray(JSON.parse(store['hobunji.xrayHierarchy.v1']).__drawOrder), 'manual order survives reload storage');
 const orderExport = X.exportDiff();
 X.reset();
@@ -64,14 +76,19 @@ assert.strictEqual(X.importDiff(orderExport).ok, true, 'layer ranks round-trip t
 assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
 X.reset();
 
-// Dev Companion panel: hierarchy rows, dropdowns, nested action paths and export text.
+// Dev Companion panel: pass-aware, flat functional controls, live diagnostics, reset to repo and export.
 assert.strictEqual(panels.length, 1);
 const panel = panels[0];
 assert.strictEqual(panel.when(), true);
 const view = panel.render();
 const dropdowns = view.actions.filter(a => a.options);
 assert.ok(dropdowns.length >= X.keys().length, 'all rules and the layer pickers have dropdowns');
-assert.ok(view.actions.some(action => action.id === 'move-before' && action.path.length === 2), 'manual reorder picker is inside a nested branch');
+assert.ok(view.actions.every(action => !action.path?.length), 'there is no misleading nested hierarchy');
+assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 'Reset all to repo' && action.confirm), 'explicit confirmed reset to repository defaults exists');
+assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 17), 'one picker lists all active cross-category visual ranks');
+assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
+assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
+assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
 assert.ok(view.rows.some(r => /Hands behind front plane/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
 assert.deepStrictEqual(panel.onAction('set', { key: 'pants.sortWithActor', value: 'off' }), { ok: true });
 assert.strictEqual(X.get('pants.sortWithActor'), 'off');
@@ -80,8 +97,17 @@ const exportResult = panel.onAction('export', {});
 assert.ok(exportResult.text.includes('pants.sortWithActor') && exportResult.title);
 panel.onAction('reset', {});
 assert.strictEqual(X.get('pants.sortWithActor'), 'on');
+assert.deepStrictEqual(X.diff(), {}, 'reset button clears every override, including rank edits');
+assert.strictEqual(store['hobunji.xrayHierarchy.v1'], undefined, 'reset button removes stored browser overrides');
 assert.deepStrictEqual(panel.onAction('shift', { delta: 1 }), { ok: true }, 'nudge changes the live hierarchy');
 assert.strictEqual(X.get('layers.manualOrder'), 'on', 'moving a layer automatically enables the color sorter');
+panel.onAction('reset', {});
+panel.onAction('set', { key: 'weapon.followHandLayer', value: 'off' });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 18);
+assert.deepStrictEqual(panel.onAction('focus-layer', { value: 'item.weapons' }), { ok: true });
+panel.onAction('set', { key: 'weapon.followHandLayer', value: 'on' });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').value, 'actor.hands',
+  'relinking switches the editor away from the now-inert weapon position');
 panel.onAction('reset', {});
 
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
@@ -105,6 +131,9 @@ assert.ok(/isPresentationBackdrop\(object\).*backgroundDepthRegistry\.add\(objec
   'sky and horizon meshes are registered without a new scene traversal per gear draw');
 assert.ok(/backgroundDepthMeshesExcluded/.test(render) && /airborneDepthRebuilds/.test(render),
   'mobile Dev Companion diagnostics expose both airborne fixes');
+assert.ok(/frontPortraitGearCandidates: lastFrontPortraitGearCandidates/.test(render)
+  && /frontPortraitMaskedGear: lastFrontPortraitMaskedGear/.test(render),
+  'renderer reports whether stencil masking actually covered tools rather than merely reading the UI rank');
 
 // Execute the renderer classification and live render-list sorting (without a GL context).
 const backdropStart = render.indexOf('  function isPresentationBackdrop(');
@@ -184,7 +213,7 @@ const maskScope = new Function('window', 'xrayRule', 'maskedHands',
 X.set('layers.manualOrder', 'on');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
   'weapon remains behind front portrait while the hand is behind');
-X.moveLayer('actor.hands', '__end');
+X.moveLayer('item.weapons', '__end');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
   'moving the hand in front also brings its held weapon forward through the portrait mask');
 X.set('weapon.followHandLayer', 'off');
