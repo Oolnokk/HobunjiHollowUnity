@@ -113,6 +113,14 @@ assert.equal(projections,8,'active-room clip is projected once per unified light
 session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('cached light clip must not reproject per light');},()=>{fills++;});
 assert.equal(fills,6,'subsequent lights reuse the same cached feathered boundaries');
 assert.equal(projections,8,'second light reuses the already-projected clip');
+assert.equal(session.snapshot().lightClip.feathered,true,'mobile diagnostics report the active feathered room clip');
+session.prepareLightClip(()=>({x:4,y:4})); // Camera-edge degeneracy must not draw outside the valid room.
+const clipsBeforeFallback=clips;
+let fallbackDraws=0;
+assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('fallback projection must stay cached');},()=>{fallbackDraws++;}),true);
+assert.equal(fallbackDraws,1,'a collapsed camera projection still draws its light once');
+assert.equal(clips,clipsBeforeFallback,'collapsed projections do not install invalid clip paths');
+assert.equal(session.snapshot().lightClip.feathered,false,'mobile diagnostics report the safe unfeathered fallback');
 assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{draws++;}),false);
 assert.equal(draws,0,'neighboring room light never paints over this room');
 assert.equal(ctxStack.length,0,'the feathered compositor never leaks a Canvas save stack frame');
