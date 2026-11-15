@@ -573,6 +573,10 @@
     mountActionsClaimed = false;
     refreshMountWheatHud(); // Dismount immediately discards stored obstacle waypoints.
     if (!mountRideEntity) { mountRideState = 'none'; return; }
+    // Dismounting while a low-rock jump is still active must not leave the mount
+    // permanently in an airborne hop or carry its visual lift into rush-out.
+    mountRideEntity._mountHop = null;
+    mountRideEntity._banditLungeHopCurrent = 0;
     mountRideState = 'dismountingDown';
     mountTransitionT = 0;
     mountTransitionFromX = deps.player.x; mountTransitionFromY = deps.player.y;
