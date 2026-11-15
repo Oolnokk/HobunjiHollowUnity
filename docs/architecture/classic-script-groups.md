@@ -54,6 +54,36 @@ literally in `index.html`.
 This first migration intentionally leaves early startup scripts and inline
 boot handoff scripts in place. They have stronger parser/side-effect coupling.
 
+## Stable feature entrypoints (buff-menu conflict prevention)
+
+These five entrypoint modules are now loaded at their original parser positions
+by separate, single-child manifests rather than by cache-version URLs in
+`docs/index.html`:
+
+| Manifest | Module | Required position |
+| --- | --- | --- |
+| `combat-config.js` | `combat/combat-config-loader.js` | After the bounty board, before shared buff/skill systems |
+| `cooking-runtime.js` | `cooking-system.js` | After food processing, before key-item registration |
+| `alchemy-runtime.js` | `alchemy-system.js` | After cooking/key items, before tea grinder |
+| `house-runtime.js` | `house-pieces.js` | After farm troughs, before creature death |
+| `romance-runtime.js` | `romance-system.js` | After spouse kiss motion, before NPC command wheel |
+
+Update the respective manifest's child `?v=` token when changing one of
+these modules. **Do not change the shared index page just to refresh their
+cache.** The `house-runtime.js` manifest additionally owns `surfaceUv=`,
+which must stay equal to the default natural-surface generation declared by
+`house-pieces.js` when that mapper stack changes. HTML writers escape this as
+`&amp;surfaceUv`; the browser restores `&surfaceUv` in the script URL.
+
+The independent manifests preserve parser-blocking execution order and the
+loader's existing on-screen startup failure notice. The tradeoff is five tiny
+fresh manifest fetches during initial load; unlike cache-busting entire modules
+every time, their versioned children stay browser-cacheable. If mobile startup
+profiling shows these fetches are significant, consolidate only after proving
+the affected parser-order constraints. Check
+`scripts/test-active-buff-entrypoint-groups.js` for the exact-order contract
+and `scripts/test-natural-surface-loader-cache.js` for `surfaceUv` parity.
+
 ## Independently owned pre-game startup manifests
 
 Four parser-ordered classic groups occupy the original tool-icon position:
