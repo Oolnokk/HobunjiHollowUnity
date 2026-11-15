@@ -377,6 +377,7 @@
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
+            ruinTier:ruin.tier??plan.options?.tier??null, // The original cave/hole/lich rarity is shared by every wing's song.
             theme:ruin.theme||null,
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
             isActive:()=>record.solved===i&&!owner.disposed

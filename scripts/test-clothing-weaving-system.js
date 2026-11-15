@@ -598,7 +598,7 @@ assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.
 assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel, width, height\)/, 'visible animal pattern outline receives the actual source image dimensions');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
 const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
-const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the outer cache key so a commit-pinned build cannot reuse an older combat loader that points at stale weaving code.
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Guards the real combat-loader cache key after parser-time manifests expand; old raw-index assertions miss it.
 const combatLoaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Guards the inner cache key for the weaving runtime itself.
 const colorFillSource = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Canonical source-art shading/value-fill math shared across rendered game assets.
 const spriteRecolorSource = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8'); // Compatibility wrapper used by authored item sprites and existing callers.

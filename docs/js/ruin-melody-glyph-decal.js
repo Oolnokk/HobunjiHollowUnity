@@ -172,7 +172,7 @@
     return {...candidates[(Number(seed)>>>0)%candidates.length],vertical:true,fallback:false};
   }
 
-  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0,maxColumns=MAX_COLUMNS} = {}) {
+  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0,maxColumns=MAX_COLUMNS,backingMode='stone'} = {}) {
     if (!root?.add || !plate || typeof sampleSupport !== 'function') return null;
     const noteLimit = window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8; // Only the eight playable pitches have matching Scratchbone number sprites.
     const valid = value => Array.isArray(value) && value.length > 0 &&
@@ -210,14 +210,18 @@
         || choosePlacement(plate,layout,axis,hallway,bounds,sampleSupport,blockedAt);
       if(!nextPlacement.vertical)nextPlacement.yaw=Math.atan2(plate.x-nextPlacement.x,plate.z-nextPlacement.z); // Floor fallback reads upright from its own plate.
       clearParts();
-      const backingMaterial = makeStoneMaterial?.() || new THREE.MeshBasicMaterial({color:0xc2b39b});
-      const backing = new THREE.Mesh(new THREE.BoxGeometry(layout.width,nextPlacement.vertical?layout.depth:.03,nextPlacement.vertical?.03:layout.depth),backingMaterial);
-      backing.name = 'dev_ruin_melody_decal_stone';
-      backing.position.y = nextPlacement.vertical?0:.027;
-      backing.userData.devRuinFootprintIgnore = true;
-      backing.userData.hobunjiGroundSurface = true;
-      backing.raycast = () => {}; // Decorative stone and ink must never steal an interaction or projectile hit.
-      group.add(backing);
+      if(backingMode!=='carved'||!nextPlacement.vertical){
+        const backingMaterial=makeStoneMaterial?.()||new THREE.MeshBasicMaterial({
+          color:backingMode==='carved'?0x514b43:0xc2b39b,
+        }); // A floor-only fallback is dark stone; vertical carved glyphs sit directly on the existing stone face.
+        const backing=new THREE.Mesh(new THREE.BoxGeometry(layout.width,nextPlacement.vertical?layout.depth:.03,nextPlacement.vertical?.03:layout.depth),backingMaterial);
+        backing.name='dev_ruin_melody_decal_stone';
+        backing.position.y=nextPlacement.vertical?0:.027;
+        backing.userData.devRuinFootprintIgnore=true;
+        backing.userData.hobunjiGroundSurface=true;
+        backing.raycast=()=>{}; // The stationary backing never catches a hit or prevents use of the plate.
+        group.add(backing);
+      }
 
       for (let index=0; index<nextNotes.length; index++) {
         const note = nextNotes[index]; // Exact generated scale-button index, not a pitch converted back to its nearest numeral.

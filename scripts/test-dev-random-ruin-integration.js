@@ -201,7 +201,10 @@ assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePu
 assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
 assert(game.includes('c.surfaceYOverride?.()') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
 assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
-assert(simplePuzzles.includes('notes:melody') && simplePuzzles.includes("const song=composer.generate('ruin:'") && simplePuzzles.includes('song.notes.map(note=>note.index)'), 'every ruin melody must have a stable per-puzzle timed song and its exact Scratchbone notes');
+assert(simplePuzzles.includes('notes:melody') && simplePuzzles.includes("const scoreId='ruin:'")
+  && simplePuzzles.includes('composer.generate(scoreId,') && simplePuzzles.includes('state.context?.tier')
+  && simplePuzzles.includes('song.notes.map(note=>note.index)'),
+  'every ruin melody must derive its score from a stable seed and ruin tier, then display the exact Scratchbone notes');
 assert(audioSystem.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
 assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
 assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzzles.includes('const authoredDoorways=roomDoorways(context,room)'), 'compound completion must choose an onward door only from the current room graph');

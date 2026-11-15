@@ -187,6 +187,13 @@ assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'the fully raised music s
 assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),"the music gate\'s unbreakable rock flanks persist after unlocking");
 assert.equal(closed,0,'finishing the song must not close a manually equipped instrument');
 timed.dispose();
+for(const [tier,difficulty] of [['cave',3],['hole',4],['lich',5]]){
+  const ruin=compose({THREE,parent,room,id:'ruin-music-difficulty-test',kind:'timedMelody',y:0,
+    isActive:()=>false,onSolved:()=>{},puzzleCaveMelody:Song,ruinTier:tier}); // Same chamber ID, different parent ruin rarity.
+  assert.equal(ruin.song.difficulty,difficulty,'layered ruin song difficulty follows the supplied ruin tier');
+  assert(ruin.song.measures>=2,'layered ruin melodies preserve the cave composer\'s multi-bar rhythm');
+  ruin.dispose();
+}
 assert.equal(blockers.size,0,'music cave disposes the registered collider');
 assert.equal(areaFootprints.providerIds().length,0,'music cave also unregisters the movement collider');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),0,'cave teardown unregisters live music events');

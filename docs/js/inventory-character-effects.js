@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.InventoryCharacterEffects?.version) >= 1) return;
+  if (Number(window.InventoryCharacterEffects?.version) >= 2) return;
 
-  const VERSION = 1;
+  const VERSION = 2;
   const STYLE_ID = 'inventoryCharacterEffectsStyles'; // Used to keep the split gear-effects panel styling idempotent.
   const BASE_DODGE_PROFILE = Object.freeze({ durationS: 0.22, iframeMs: 380 }); // Used to turn outfit dodge efficacy into the ordinary player's stable dodge timing readout.
   const REFRESH_INTERVAL_MS = 1000; // Used only while the inventory exists; keeps expiring buffs reflected without frame-level work.
@@ -305,6 +305,25 @@
       #mpInventory .gear-character-effects-trinkets .gear-effect-row.penalty .gear-effect-value { color:#ffaaa0; }
       #mpInventory .gear-character-effects-trinkets .gear-effect-row.neutral .gear-effect-value { color:#d8eef7; }
       #mpInventory .gear-character-effects-trinkets .gear-effect-row.empty { grid-column:1 / -1; }
+      /* Active effects are a full-width card inside the Gear summary's existing scrolling rail. */
+      #mpInventory .gear-character-effects-active-buffs .gear-active-buff-list {
+        display:flex !important; flex-direction:column !important; gap:3px !important;
+        height:auto !important; min-height:0 !important; overflow:visible !important;
+      }
+      #mpInventory .gear-active-buff-entry {
+        display:flex; align-items:flex-start; gap:5px; min-width:0;
+        padding:5px; border:1px solid #ffffff23; border-radius:var(--inv-radius); background:#ffffff0b;
+      }
+      #mpInventory .gear-active-buff-entry.bane { border-color:#e89a7d55; }
+      #mpInventory .gear-active-buff-entry.empty { border-style:dashed; }
+      #mpInventory .gear-active-buff-icon { flex:0 0 1.55em; text-align:center; font-size:clamp(15px,calc(.85 * var(--inv-row)),22px); line-height:1.1; }
+      #mpInventory .gear-active-buff-detail { flex:1 1 auto; min-width:0; font-size:clamp(11px,calc(.56 * var(--inv-row)),13px); line-height:1.25; }
+      #mpInventory .gear-active-buff-head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:2px 6px; }
+      #mpInventory .gear-active-buff-name { color:#f5eac3; overflow-wrap:anywhere; }
+      #mpInventory .gear-active-buff-entry.bane .gear-active-buff-name { color:#ffc7b7; }
+      #mpInventory .gear-active-buff-time { color:#a8d9fa; font-variant-numeric:tabular-nums; font-size:.91em; }
+      #mpInventory .gear-active-buff-description { padding-top:2px; color:#e3eae4; white-space:normal; overflow-wrap:anywhere; }
+      #mpInventory .gear-active-buff-source { padding-top:2px; color:#b0bcb5; font-size:.86em; }
       @media (max-width:720px) {
         #mpInventory .gear-character-effects-card .gear-effect-row {
           gap:2px;
@@ -325,7 +344,7 @@
     heading.className = 'gear-loadout-heading';
     heading.textContent = headingText;
     const list = document.createElement('div');
-    list.className = 'gear-stat-list gear-effects-list'; // gear-stat-list also tells InventoryUI's observer these presentation-only mutations are ignorable.
+    list.className = kind === 'active-buffs' ? 'gear-stat-list gear-active-buff-list' : 'gear-stat-list gear-effects-list'; // Buffs need one full-width row per effect; gear-stat-list avoids triggering a gear rebuild.
     card.append(heading, list);
     return card;
   }
@@ -335,16 +354,18 @@
     const panel = document.querySelector('#mpInventory .gear-outfit-stats');
     if (!panel) return null;
     if (!panel.classList.contains('gear-character-effects-host')) panel.classList.add('gear-character-effects-host'); // Avoid redundant class mutations that wake the Gear layout observer.
+    let buffsCard = panel.querySelector('.gear-character-effects-active-buffs'); // First card in the effects stack; uses the existing HUD provider registry.
     let trinketCard = panel.querySelector('.gear-character-effects-trinkets');
     let outfitCard = panel.querySelector('.gear-character-effects-outfit');
     let finalCard = panel.querySelector('.gear-character-effects-final');
-    if (!trinketCard || !outfitCard || !finalCard) {
+    if (!buffsCard || !trinketCard || !outfitCard || !finalCard) {
+      buffsCard = makeCard('active-buffs', 'Active buffs & debuffs'); // Always visible, even when no buffs are active.
       trinketCard = makeCard('trinkets', 'Trinket effects'); // First card in the left-rail stat list, before Outfit and Final Values.
       outfitCard = makeCard('outfit', 'Outfit effects');
       finalCard = makeCard('final', 'Final values');
-      panel.replaceChildren(trinketCard, outfitCard, finalCard);
+      panel.replaceChildren(buffsCard, trinketCard, outfitCard, finalCard);
     }
-    return { panel, trinketCard, outfitCard, finalCard };
+    return { panel, buffsCard, trinketCard, outfitCard, finalCard };
   }
 
   function formatMultiplier(value) {
@@ -387,12 +408,74 @@
     });
   }
 
+  function formatBuffDuration(entry) {
+    if (entry?.timeBasis === 'conditional' || entry?.sourceId === 'harlyao-terror') return entry.remainingLabel || 'While nearby';
+    if (entry?.timeBasis === 'day' || (entry?.sourceId === 'festivals' && entry.key === 'ancestor-blessing'))
+      return Math.ceil(Math.max(0, Number(entry.remainingS) || 0)) + 'd game'; // This provider publishes calendar days, not seconds.
+    const seconds = Math.ceil(Math.max(0, Number(entry?.remainingS) || 0)); // Other HUD providers supply seconds, either in-game or wall-clock.
+    const value = seconds >= 86400 ? Math.floor(seconds / 86400) + 'd' + (seconds % 86400 >= 3600 ? ' ' + Math.floor(seconds % 86400 / 3600) + 'h' : '')
+      : seconds >= 3600 ? Math.floor(seconds / 3600) + 'h' + (seconds % 3600 >= 60 ? ' ' + Math.floor(seconds % 3600 / 60) + 'm' : '')
+      : seconds >= 60 ? Math.floor(seconds / 60) + 'm' + (seconds % 60 ? ' ' + seconds % 60 + 's' : '')
+      : seconds + 's';
+    return value + (entry?.timeBasis === 'real' || entry?.sourceId === 'alchemy' || entry?.sourceId === 'rangedImpact' ? ' real' : ' game');
+  }
+
+  function activeBuffEntries() {
+    try {
+      const entries = window.EffectBuffBar?.getEntries?.(); // Shared HUD provider output is the single live icon, stack, and countdown authority.
+      return Array.isArray(entries) ? entries : [];
+    } catch (error) {
+      lastError = 'active buffs: ' + String(error?.message || error);
+      return [];
+    }
+  }
+
+  function renderActiveBuffs(list, effects) {
+    if (!list) return;
+    const display = effects.length ? effects : [{
+      domId: 'no-effects', icon: '○', label: 'No active buffs or debuffs', kind: 'empty',
+      description: 'Sleep, food, potions, prayers and other effects appear here.',
+    }]; // Keeps the section discoverable when no effects exist.
+    while (list.children.length < display.length) {
+      const row = document.createElement('div'); row.className = 'gear-active-buff-entry';
+      const icon = document.createElement('span'); icon.className = 'gear-active-buff-icon';
+      const detail = document.createElement('div'); detail.className = 'gear-active-buff-detail';
+      const head = document.createElement('div'); head.className = 'gear-active-buff-head';
+      const name = document.createElement('strong'); name.className = 'gear-active-buff-name';
+      const remaining = document.createElement('span'); remaining.className = 'gear-active-buff-time';
+      head.append(name, remaining);
+      const description = document.createElement('div'); description.className = 'gear-active-buff-description';
+      const source = document.createElement('div'); source.className = 'gear-active-buff-source';
+      detail.append(head, description, source); row.append(icon, detail); list.appendChild(row);
+    }
+    while (list.children.length > display.length) list.lastElementChild?.remove();
+    display.forEach((entry, index) => {
+      const row = list.children[index]; // Reuse DOM nodes as the one-second menu refresh updates countdown labels.
+      const icon = row.children[0], detail = row.children[1], head = detail.children[0];
+      const name = head.children[0], timer = head.children[1], description = detail.children[1], source = detail.children[2];
+      const kind = entry.kind === 'bane' ? 'bane' : entry.kind === 'empty' ? 'empty' : 'boon';
+      const nextClass = 'gear-active-buff-entry ' + kind;
+      const glyph = String(entry.icon || '✦');
+      const label = String(entry.label || entry.key || 'Effect') + (Number(entry.stacks) > 1 ? ' ×' + Math.floor(entry.stacks) : '');
+      const remaining = kind === 'empty' ? '' : formatBuffDuration(entry);
+      const details = String(entry.description || entry.desc || (kind === 'empty' ? '' : 'Details are not yet provided for this effect.'));
+      const sourceLabel = kind === 'empty' ? '' : String(entry.sourceLabel || entry.sourceId || '');
+      if (row.className !== nextClass) row.className = nextClass;
+      if (icon.textContent !== glyph) icon.textContent = glyph;
+      if (name.textContent !== label) name.textContent = label;
+      if (timer.textContent !== remaining) timer.textContent = remaining;
+      if (description.textContent !== details) description.textContent = details;
+      if (source.textContent !== sourceLabel) source.textContent = sourceLabel;
+    });
+  }
+
   function refresh() {
     try {
       const ui = ensurePanel();
       if (!ui) return null;
       const snapshot = composeSnapshot();
       lastSnapshot = snapshot;
+      renderActiveBuffs(ui.buffsCard.querySelector('.gear-active-buff-list'), activeBuffEntries()); // Buff icons and descriptions stay in sync with the HUD.
       const outfit = snapshot.outfit;
       const final = snapshot.final;
       const trinketHeading = ui.trinketCard.querySelector('.gear-loadout-heading'); // Shows current Attunement without a second read of saved equipment.
@@ -495,6 +578,7 @@
       version: VERSION,
       inventoryUiPatched,
       panelReady: typeof document !== 'undefined' && !!document.querySelector('#mpInventory .gear-character-effects-final'),
+      activeBuffs: activeBuffEntries().map(entry => ({ name: entry.label, icon: entry.icon, description: entry.description || entry.desc || null, remainingS: entry.remainingS })), // Mobile-copyable report reflects exactly what the menu displays.
       outfitWeight: lastSnapshot?.outfit?.weightUnits ?? null,
       trinkets: lastSnapshot?.trinkets ? { ...lastSnapshot.trinkets, rows: lastSnapshot.trinkets.rows.map(row => ({ ...row })) } : null, // Mobile diagnostics include exactly the displayed combined bonuses.
       final: lastSnapshot?.final ? { ...lastSnapshot.final } : null,
@@ -507,7 +591,7 @@
     refresh,
     snapshot: () => composeSnapshot(),
     debugSnapshot,
-    __test: Object.freeze({ composeSnapshot, composeTrinketEffects, BASE_DODGE_PROFILE }),
+    __test: Object.freeze({ composeSnapshot, composeTrinketEffects, formatBuffDuration, activeBuffEntries, renderActiveBuffs, BASE_DODGE_PROFILE }),
   });
   window.__inventoryCharacterEffectsDebug = debugSnapshot;
 

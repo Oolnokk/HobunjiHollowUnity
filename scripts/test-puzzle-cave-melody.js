@@ -1,6 +1,20 @@
 'use strict';
 const assert=require('node:assert/strict');
 const Song=require('../docs/js/puzzle-cave-melody.js'); // Exercises the exact browser module via its CommonJS export.
+const ruinTierDifficulties={cave:3,hole:4,lich:5}; // The source-of-truth ruin rarity maps to a fixed melodic difficulty.
+for(const [tier,difficulty] of Object.entries(ruinTierDifficulties)){
+  assert.equal(Song.ruinDifficulty(tier),difficulty,'ruin rarity, not its random seed, selects the difficulty');
+  for(let i=0;i<12;i++){
+    const id='ruin-'+tier+'-seed-'+i;
+    const tune=Song.generate(id,{difficulty:Song.ruinDifficulty(tier)});
+    assert.equal(tune.difficulty,difficulty,'the generated score follows its owning tier');
+    assert.deepEqual(tune,Song.generate(id,{difficulty}),'the same tier and seed always reproduce the same score');
+    assert(tune.measures>=2&&[2,4].includes(tune.measures),'ruin music uses full cave-style multi-bar phrases');
+    assert(tune.notes.every(note=>note.lengthTicks>=2),'ruin songs preserve the eighth-note timing floor');
+  }
+}
+assert.equal(Song.ruinDifficulty(null),3,'untiered developer rooms have a safe medium difficulty default');
+assert.equal(Song.ruinDifficulty('unknown'),3,'unknown tiers never roll a random difficulty');
 
 const first=Song.generate('wilderness:puzzle:1',{difficulty:1});
 assert.deepEqual(first,Song.generate('wilderness:puzzle:1',{difficulty:1}),'one cave retains its score on reload');
