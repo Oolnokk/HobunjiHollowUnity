@@ -408,7 +408,6 @@
     }
     // Missing/incomplete shoulders: preserve the older config and height mapper.
     const shift = orbitShift(options, orbitShiftScratch);
-    const shift = orbitShift(options, orbitShiftScratch);
     const cy = Number.isFinite(options.cy) ? options.cy : baseY;
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
@@ -437,6 +436,7 @@
       else { point.x = nx; point.y = ny; point.z = nz; }
       return point;
     }
+    const shift = orbitShift(options, orbitShiftScratch); // Legacy fallback retains the original spine-relative inverse.
     const cy = Number.isFinite(options.cy) ? options.cy : baseY;
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
