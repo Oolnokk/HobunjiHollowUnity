@@ -56,13 +56,27 @@ replay draws):
 
 Replays were 60-75% of all draws. Most of that was **NPC rigs**: every visible NPC's hands and feet joined the
 ground x-ray (town: 4 elevation groups, 42 participating meshes; western slope: 2 groups, 13), each group
-re-submitting nearby scenery and the union widening the scissor. `held-object-render-order.js` now x-rays only the
-player's own hands, feet and held items (plus parts with no resolvable owner, the old fail-safe); NPC and creature
-hands/feet draw with ordinary depth like the rest of their body and are hidden from the replays' overlay passes so
-they are not drawn twice. Town screenshots with the old and new policy show no visible difference.
-`HeldObjectRenderOrder.setReplayParticipants('all')` restores the old set; `snapshot()` has
-`nonParticipantReplaySkips`. Tradeoff: an NPC's foot or held weapon can now be clipped by uneven ground the same way
-its body is. `scripts/test-held-replay-participants.js` runs the real ownership code on a fake rig hierarchy.
+re-submitting nearby scenery and the union widening the scissor. The x-ray only matters where the floor can swallow a
+part, and it only ever exempts the holder's own tile and its 8 neighbours (`XRAY_TILE_RADIUS = 1`). The participant
+rule in `held-object-render-order.js` (agreed with the player) is now:
+
+- weapons and other held items: every character;
+- hands: the player and short species (`SHORT_XRAY_SPECIES`, default `['porakaneki']`);
+- feet: the player and short species, only within 6 units of the camera;
+- parts with no resolvable owner keep the old fail-safe x-ray.
+
+Everything else draws with ordinary depth and is hidden from the replays' overlay passes so it is not drawn twice.
+Same session, same frames, new rule vs old: town 1,411 -> 1,022 draws per frame, western slope 528 -> 301. Town
+screenshots showed no visible difference. `HeldObjectRenderOrder.setReplayParticipants('all')` restores the old set;
+`setShortXraySpecies([...])` and `setFeetXrayDistance(units)` tune the rule; `snapshot()` reports them and
+`nonParticipantReplaySkips`. Tradeoff: a tall NPC's hands and feet, and any distant feet, can be clipped by uneven
+ground the way the rest of the body already is. `scripts/test-held-replay-participants.js` runs the real ownership
+code on a fake rig hierarchy.
+
+**Next lever (not done):** because only that 3x3-tile patch is ever x-rayed, the depth rebuild does not need to
+redraw every occluder in the holder's screen rectangle. With the existing `ScissorDepthSnapshot` copy, a replay could
+keep the saved depth, punch out only the holder's nearby floor (depth-equal draw writing far depth), and redraw just
+the objects inside that patch. That would remove most remaining replay draws, but it rewrites the core of the module.
 
 Also: replay-inert detection now covers sprites with alpha cutoffs (sun/moon; only meshes get depth forced for
 cutouts) and Points (campfire/bonfire particles), and, only when the replay restores depth by copy, objects whose

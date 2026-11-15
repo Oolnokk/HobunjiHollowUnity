@@ -725,8 +725,9 @@
   function collectVisible(registry, scene, others = null) {
     const result = others ? collectVisible(registry, scene) : null;
     if (result) {
+      const isFoot = registry === waterOccludedRegistry;
       if (registry === heldRegistry) for (const mesh of result) if (!isReplayParticipant(mesh, scene)) enforceHeldMesh(mesh); // Same invariant repair the participants get.
-      return splitReplayParticipants(result, scene, others);
+      return splitReplayParticipants(result, scene, others, isFoot);
     }
     const visible = [];
     for (const object of registry.pending) {
@@ -1634,33 +1635,68 @@
     return namedAnimalRoot ? { root: namedAnimalRoot, isPlayer: false } : null;
   }
 
-  // Who gets the hand/foot ground x-ray. Every replay redraws nearby scenery
-  // once per actor elevation group, and in town every visible NPC's hands and
-  // feet joined in: a census found 60-75% of all draw calls per frame were
-  // these replays, most of them NPC rigs. By default only the player's own
-  // hands, feet and held items (and parts with no resolvable owner, which keep
-  // the old fail-safe behaviour) are x-rayed; NPC and creature hands/feet draw
-  // with ordinary depth like the rest of their body.
-  // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set.
-  let replayParticipantPolicy = 'player';
+  // Who gets the ground x-ray. Every replay redraws nearby scenery once per
+  // actor elevation group; in town every visible NPC's hands and feet joined
+  // in and replays became 60-75% of all draw calls. The x-ray exists so the
+  // floor does not swallow parts that sit at or below it:
+  //   - weapons and other held items: every character (a swing can dip into
+  //     the ground whatever the holder's height);
+  //   - hands: the player and short species only (SHORT_XRAY_SPECIES; taller
+  //     species never hold their hands that low);
+  //   - feet: the player and short species, and only within
+  //     FEET_XRAY_DISTANCE of the camera, where a sunken foot is noticeable.
+  // Parts with no resolvable owner keep the old fail-safe x-ray. Everything
+  // else draws with ordinary depth like the rest of its body.
+  // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
+  // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
+  let replayParticipantPolicy = 'rule';
+  const shortXraySpecies = new Set(['porakaneki']);
+  let feetXrayDistance = 6; // World units (tiles) from the camera.
+  let replayCameraPosition = null; // Set by wrappedRender before it collects participants.
   let nonParticipantReplaySkips = 0; // Meshes left to ordinary depth by the policy (snapshot()).
-  const participantCache = new WeakMap(); // mesh -> { at, parent, keep }; ownership rarely changes.
+  const participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
+  const actorSpeciesCache = new WeakMap(); // actor root -> species id (or '')
   const PARTICIPANT_CACHE_MS = 250;
-  function isReplayParticipant(mesh, scene) {
-    if (replayParticipantPolicy === 'all') return true;
+  function actorSpecies(root) {
+    if (actorSpeciesCache.has(root)) return actorSpeciesCache.get(root);
+    let species = root.userData?.speciesId || '';
+    if (!species) {
+      root.traverse?.(node => { if (!species && node.userData?.speciesId) species = node.userData.speciesId; });
+    }
+    species = String(species || '').toLowerCase();
+    actorSpeciesCache.set(root, species);
+    return species;
+  }
+  function participantOwner(mesh, scene) {
     const now = performance.now();
     const cached = participantCache.get(mesh);
-    if (cached && cached.parent === mesh.parent && now - cached.at < PARTICIPANT_CACHE_MS) return cached.keep;
+    if (cached && cached.parent === mesh.parent && now - cached.at < PARTICIPANT_CACHE_MS) return cached.owner;
     const actor = actorRootForXrayMesh(mesh, scene);
-    const keep = !actor || actor.isPlayer === true;
-    participantCache.set(mesh, { at: now, parent: mesh.parent, keep });
-    return keep;
+    const owner = !actor ? 'unknown' : actor.isPlayer === true ? 'player' : shortXraySpecies.has(actorSpecies(actor.root)) ? 'short' : 'other';
+    participantCache.set(mesh, { at: now, parent: mesh.parent, owner });
+    return owner;
   }
-  function splitReplayParticipants(meshes, scene, others) {
+  function withinFeetXrayDistance(mesh) {
+    const cam = replayCameraPosition;
+    const e = mesh.matrixWorld?.elements;
+    if (!cam || !e) return true; // No camera context: keep the old behaviour.
+    const dx = e[12] - cam.x, dy = e[13] - cam.y, dz = e[14] - cam.z;
+    return dx * dx + dy * dy + dz * dz <= feetXrayDistance * feetXrayDistance;
+  }
+  function isReplayParticipant(mesh, scene, isFoot = false) {
+    if (replayParticipantPolicy === 'all') return true;
+    const isHand = mesh.userData?.hobunjiProceduralHand === true;
+    if (!isFoot && !isHand) return true; // Weapons and other held items: every character.
+    const owner = participantOwner(mesh, scene);
+    if (owner === 'unknown') return true;
+    if (owner === 'other') return false;
+    return isFoot ? withinFeetXrayDistance(mesh) : true;
+  }
+  function splitReplayParticipants(meshes, scene, others, isFoot = false) {
     if (replayParticipantPolicy === 'all') return meshes;
     const keep = [];
     for (const mesh of meshes) {
-      if (isReplayParticipant(mesh, scene)) keep.push(mesh);
+      if (isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
       else { others.push(mesh); nonParticipantReplaySkips++; }
     }
     return keep;
@@ -2594,6 +2630,7 @@
     if (internalReplay || !scene?.isScene || !camera?.isCamera || retiredScenes.has(scene)) {
       return originalRender.call(this, scene, camera);
     }
+    replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
 
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
@@ -2751,7 +2788,7 @@
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, replayParticipants: replayParticipantPolicy, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -2829,7 +2866,9 @@
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
-    setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'player'; return replayParticipantPolicy; },
+    setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
+    setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
+    setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
