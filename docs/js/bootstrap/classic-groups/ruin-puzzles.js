@@ -8,7 +8,7 @@
     "js/ruin-melody-glyph-decal.js?v=20261114ruinCaveParity1",
     "js/ruin-layer-challenges.js?v=20261115tierMelody1",
     "js/ruin-hidden-secrets.js?v=20261115skeeriEgg2",
-    "js/ruin-room-system.js?v=20261115v50PlateauOwnership1",
+    "js/ruin-room-system.js?v=20261115fullscreenTint1",
     "js/ruin-layer-playable.js?v=20261115hiddenSecrets1",
     "js/ruin-v50-native-mechanisms.js?v=20261115dormantCubeComplete1",
     "js/ruin-v50-native-floors.js?v=20261115dormantCubeComplete1",
