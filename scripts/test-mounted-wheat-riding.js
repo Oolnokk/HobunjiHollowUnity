@@ -184,7 +184,7 @@ assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeController - 1, 'remap
 now += 200;
 const beforePointer = win.Mounts.ridingDebug.wheatRemaining;
 function tapEvent(id) {
-  return { target: { closest: () => ({ id }) }, preventDefault() {}, stopImmediatePropagation() {} };
+  return { target: { closest: selector => selector.includes('#dodgeBtn') ? { id } : null }, preventDefault() {}, stopImmediatePropagation() {} };
 }
 pointerListeners.get('pointerdown')(tapEvent('dodgeBtn'));
 pointerListeners.get('click')(tapEvent('dodgeBtn'));
