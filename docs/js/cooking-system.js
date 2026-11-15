@@ -635,6 +635,7 @@
   function repairPreservedInventory() {
     const repaired = window.ItemProcessing?.repairPreservedDefs?.(deps?.inventory) || 0; // Older world saves can hold fish without serialized processed-item definitions.
     if (repaired) {
+      window.__farmLog?.(`[inventory-restore] Recovered ${repaired} preserved-food item definition(s); saved item counts were not changed.`, 'info', 'items'); // Visible in the existing mobile debug log.
       deps.buildInventoryGrid?.(); // Rebuild the open Pack only after new definitions were registered.
       deps.refreshItemScroll?.(); // Make the repaired items available on the held-item wheel immediately.
     }
