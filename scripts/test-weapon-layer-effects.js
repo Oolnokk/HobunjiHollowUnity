@@ -225,8 +225,10 @@ assert.match(hub, /baseFireMode/, 'tool editor exposes single-PNG effects');
 const handheld = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.torch; // Production Torch-Staff-derived fire, not a duplicate test recipe.
 const bareTip = pixels(4, 10, [[1, 8, [222, 212, 193, 255]], [2, 8, [222, 212, 193, 255]], [1, 9, [160, 140, 120, 255]]]);
 const litPlane = new Group(); litPlane.renderOrder = 1.5;
-litPlane.layers.mask = (1 << 0) | (1 << 4); // Source plane participates in both ordinary and held-object overlay draws.
-window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: 4 };
+const actualOverlayLayer = Number(held.match(/const HELD_OVERLAY_LAYER = (\d+);/)?.[1]); // Read the actual held-overlay layer from gameplay.
+assert(Number.isInteger(actualOverlayLayer), 'the test can locate the actual held overlay layer');
+litPlane.layers.mask = (1 << 0) | (1 << actualOverlayLayer); // Torch plane participates in ordinary and real held overlay draws.
+window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: actualOverlayLayer };
 let lit = false; // Simulated player's actual lit/stowed torch state.
 window.AdventuringTools = { isLit: () => lit };
 const litState = { THREE, plane: litPlane, itemKey: 'torch', masteryLevel: () => 0 };
@@ -241,7 +243,7 @@ assert.equal(tipFx.particles.length, 0, 'unlit torch does not produce fire');
 lit = true;
 api.stepFire(litState, .15);
 assert(tipFx.particles.length > 0, 'lighting the held torch produces flames without recreating its weapon mesh');
-assert(tipFx.particles.every(p => (p.sprite.layers.mask & 1) && (p.sprite.layers.mask & (1 << 4))),
+assert(tipFx.particles.every(p => (p.sprite.layers.mask & 1) && (p.sprite.layers.mask & (1 << actualOverlayLayer))),
   'flames render in both the normal world and the held-object overlay passes');
 lit = false;
 api.stepFire(litState, .02);
