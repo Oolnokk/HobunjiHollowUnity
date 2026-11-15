@@ -49,6 +49,7 @@
   let lastRumbleAt = 0;
   let flashEl = null, flashTimer = 0;
   let audioCtx = null;
+  let ruinAudioUnlockInstalled = false; // Ensures the GameFeel-only audio context is unlocked by the next trusted gesture on mobile.
   const debug = { shakes: 0, hitStops: 0, reveals: 0, revealSkipped: null, chimes: 0, hurtFlashes: 0, lastTrauma: 0 };
 
   function shakeEnabled() {
@@ -221,6 +222,17 @@
     try { audioCtx = new Ctx(); } catch (_) { audioCtx = null; }
     return audioCtx;
   }
+  function installRuinAudioUnlock() {
+    if (ruinAudioUnlockInstalled || typeof window.addEventListener !== 'function') return;
+    ruinAudioUnlockInstalled = true;
+    const unlock = () => {
+      if (!audioCtx || (audioCtx.state !== 'suspended' && audioCtx.state !== 'interrupted')) return;
+      try { audioCtx.resume?.()?.catch?.(error => { debug.ruinAudioError = String(error?.message || error); }); }
+      catch (error) { debug.ruinAudioError = String(error?.message || error); }
+    }; // Resume happens in a real pointer/touch/key event, not only at an automatic puzzle-completion callback.
+    for (const event of ['pointerdown', 'touchstart', 'keydown'])
+      window.addEventListener(event, unlock, { capture: true, passive: true });
+  }
   function sfxVolume() {
     const cfg = window.AudioSystem?.gameAudioConfig?.() || {};
     if (cfg.enabled === false) return 0;
@@ -241,19 +253,24 @@
   }
   function ensureRuinPluck(ctx) {
     if (ruinPluckBuffer || ruinPluckError) return Promise.resolve(ruinPluckBuffer);
-    if (!ruinPluckLoad) ruinPluckLoad = (async () => {
+    if (!ruinPluckLoad) {
+      debug.ruinPluckStatus = 'loading'; // Pixel Probe distinguishes a late decode from a missing or silent Kurraya clip.
+      ruinPluckLoad = (async () => {
       if (typeof fetch !== 'function' || typeof ctx?.decodeAudioData !== 'function') throw new Error('Kurraya sample decoder unavailable');
       const response = await fetch(RUIN_PLUCK_URL);
       if (!response.ok) throw new Error('Kurraya pluck HTTP ' + response.status);
       const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
       if (!buffer?.duration) throw new Error('Kurraya pluck decoded without audio');
       ruinPluckBuffer = buffer;
+      debug.ruinPluckStatus = 'ready'; // The next chime will sample the decoded Kurraya pluck.
       return buffer;
     })().catch(error => {
       ruinPluckError = String(error?.message || error); // An absent asset keeps ordinary synthesized cues audible; never retry it every note.
       debug.ruinPluckError = ruinPluckError;
+      debug.ruinPluckStatus = 'fallback';
       return null;
     });
+    }
     return ruinPluckLoad;
   }
   function pitchedRuinNote(ctx, out, freq, at, length, gain) {
@@ -501,6 +518,7 @@
     deps = injected || null;
     wire();
     bindSettingsToggle();
+    installRuinAudioUnlock();
     const ctx = audioContext(); // Decode the small shared Kurraya sample before the first real ruin solve on mobile.
     if (ctx) void ensureRuinPluck(ctx);
   }

@@ -340,6 +340,11 @@ async function main() {
     && call.opts.tempo === 1 && call.opts.pitchSemitones === 7); // Captures the last reconstructed player voice without assuming how many NPCs yawned.
   assert.ok(playerBreath, 'missing yawn recordings use a five-second composition with species pitch/cadence');
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
+  assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
+  const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url.includes('breath.m4a'));
+  playerEvents[playerEvents.length - 1]?.opts.onStarted?.();
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'playing', 'the actual audio start event confirms an audible player yawn');
   assert.equal(playerBreath.opts.sourceActor, null, 'player voice originates at the listener, not a movable NPC sound source');
   assert.equal(playerBreath.opts.position3d, null, 'player yawns have no directional HRTF offset');
   assert.equal(playerBreath.opts.panX, 0, 'player yawns play centered in stereo');

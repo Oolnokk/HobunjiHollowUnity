@@ -722,6 +722,12 @@
     if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
     const stoneAudio=window.RuinInteractionAudio?.debugSnapshot?.(); // The Debug tab exposes the latest recorded cue/pitch on mobile without a console.
     if(stoneAudio)lines.push(`Ruin stone/fire audio: ${JSON.stringify(stoneAudio)}`);
+    const ruinMusic = window.GameFeel?.debugSnapshot?.(); // Inspect the actual sample/fallback backend from a phone after a Zelda-style cue.
+    if (ruinMusic) lines.push(`Ruin Kurraya cues: ${JSON.stringify({
+      status: ruinMusic.ruinPluckStatus || 'not-requested', lastSource: ruinMusic.lastRuinNoteSource || null,
+      error: ruinMusic.ruinPluckError || ruinMusic.ruinAudioError || null,
+      chimes: ruinMusic.chimes || 0, progressNotes: ruinMusic.progressNotes || 0, fanfares: ruinMusic.fanfares || 0,
+    })}`);
     const stoneBeatTransport=window.AudioSystem?.stoneBeatDebugSnapshot?.(); // Mobile-readable Web Audio vs native fallback, decoded buffers, queued voices, and decode failures.
     if(stoneBeatTransport) lines.push(`Stonebeat transport: ${JSON.stringify(stoneBeatTransport)}`);
     const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.

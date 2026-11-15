@@ -22,7 +22,9 @@ async function main() {
     createOscillator() { oscillators++; throw new Error('unexpected synthesizer oscillator'); }
   }
   let enabled = true; // Mirrors the actual SFX mute setting across a later cue.
-  const window = { AudioContext: FakeAudioContext, AudioSystem: { gameAudioConfig: () => ({ enabled, sfxVolume: 1 }) } };
+  const gestures = new Map(); // Captures unlock hooks so suspended contexts can be exercised without a browser.
+  const window = { AudioContext: FakeAudioContext, addEventListener: (name, handler) => gestures.set(name, handler),
+    AudioSystem: { gameAudioConfig: () => ({ enabled, sfxVolume: 1 }) } };
   const context = { window, performance: { now: () => 100 }, localStorage: { getItem: () => '1' },
     fetch: async url => {
       assert.equal(url, 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a');
@@ -31,7 +33,9 @@ async function main() {
   vm.runInNewContext(source, context);
   const feel = window.GameFeel;
   feel.init({ getCurrentArea: () => 'map_i_dev_random_ruin' }); // Start decode at game init, before the first treasure or puzzle.
+  assert.equal(typeof gestures.get('touchstart'), 'function', 'a real mobile gesture unlocks the separate GameFeel audio context');
   await new Promise(resolve => setImmediate(resolve));
+  assert.equal(feel.debugSnapshot().ruinPluckStatus, 'ready', 'the first ruin cue has a predecoded playable sample');
   assert.equal(feel.solveChime(), true);
   assert.equal(feel.progressNote(3, 5), true);
   assert.equal(feel.treasureFanfare(3), true);
@@ -64,6 +68,22 @@ async function main() {
   assert.equal(fallbackContext.window.GameFeel.solveChime(), true, 'missing sample falls back to a playable cue');
   assert.equal(fallbackOscillators, 18, 'six chord/melody notes each synthesize three bell partials');
   assert.equal(fallbackContext.window.GameFeel.debugSnapshot().lastRuinNoteSource, 'bell-fallback');
+  assert.equal(fallbackContext.window.GameFeel.debugSnapshot().ruinPluckStatus, 'fallback');
+  // Android's AudioContext starts suspended if GameFeel initializes before a trusted input.
+  let suspended = null; // Inspected context owns the mobile gesture transition under test.
+  const suspendedContext = { ...context, window: {
+    AudioContext: class extends FakeAudioContext {
+      constructor() { super(); suspended = this; this.state = 'suspended'; }
+      resume() { this.state = 'running'; return Promise.resolve(); }
+    },
+    addEventListener: (name, callback) => gestures.set(name, callback),
+    AudioSystem: { gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }) },
+  } };
+  vm.runInNewContext(source, suspendedContext);
+  suspendedContext.window.GameFeel.init({});
+  assert.equal(suspended.state, 'suspended');
+  gestures.get('touchstart')();
+  assert.equal(suspended.state, 'running', 'touching the screen resumes the ruin Web Audio context');
   console.log('Kurraya ruin MIDI cue playback: OK');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
