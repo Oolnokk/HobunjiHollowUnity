@@ -111,7 +111,7 @@
     if (!existing.__hobunjiCeilingLadderKeyAlias) {
       function buildFurnitureGroupWithCeilingLadderAlias(key, baseColor) {
         const visualKey = key === IKMC_LADDER_ITEM_KEY ? IKMC_LADDER_VISUAL_KEY : key; // Alias only this outpost furniture, leaving all other assets unchanged.
-        if (visualKey !== key) lastLadderBuildKey = visualKey;
+        if (visualKey === IKMC_LADDER_VISUAL_KEY) lastLadderBuildKey = visualKey; // Record canonical calls from the real map lookup as well as direct item-key aliases.
         return existing.call(this, visualKey, baseColor);
       }
       Object.assign(buildFurnitureGroupWithCeilingLadderAlias, existing);
@@ -128,11 +128,16 @@
     const defs = deps?.DECORATIVE_FURNITURE_DEFS; // Runtime item metadata consulted during building-scene furniture creation.
     if (!defs) return false;
     const definition = {
-      name: 'Roof Access Ladder', icon: '🪜', fw: 1, fd: 1,
-      procKey: 'ikmcBalconyLadder', color: 0x906c4b,
+      itemKey: IKMC_LADDER_ITEM_KEY, name: 'Roof Access Ladder', icon: '🪜',
+      price: 0, area: 'interior', fixture: true, fw: 1, fd: 1,
+      procKey: IKMC_LADDER_VISUAL_KEY, color: 0x906c4b,
       desc: 'Ceiling-fitting ladder with rigid rungs and a roof hatch.',
-    }; // The map's Furniture-suffixed key selects its authored geometry and interim procedural model.
-    if (!defs[IKMC_LADDER_ITEM_KEY]) defs[IKMC_LADDER_ITEM_KEY] = definition;
+    }; // game.js indexes Object.entries(DECORATIVE_FURNITURE_DEFS) by def.itemKey when building interiors.
+    // Register under the authored *visual key* (like mineLadder), never under
+    // the item key: both the dictionary key and itemKey field are needed to
+    // reach the correct recipe instead of game.js's default gray/white cube.
+    if (!defs[IKMC_LADDER_VISUAL_KEY]) defs[IKMC_LADDER_VISUAL_KEY] = definition;
+    else if (!defs[IKMC_LADDER_VISUAL_KEY].itemKey) defs[IKMC_LADDER_VISUAL_KEY].itemKey = IKMC_LADDER_ITEM_KEY;
     const items = deps.ITEM_DEFS; // Optional inventory metadata for any granted ladder item.
     if (items && !items[IKMC_LADDER_ITEM_KEY]) {
       items[IKMC_LADDER_ITEM_KEY] = {
