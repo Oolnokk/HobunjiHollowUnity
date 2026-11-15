@@ -20995,6 +20995,10 @@
           refreshActionBar(); // Native ruin transit doors use the same validated world-interaction owner.
           return; // Do not queue a torch strike when opening a door.
         }
+        if (activeAction.startsWith('dev_ruin_world_')) {
+          if (window.DevRandomRuinInteractions?.invokeAction?.(activeAction)) refreshActionBar();
+          return; // Unknown or stale ruin actions must never fall through to a terrain swing.
+        }
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
