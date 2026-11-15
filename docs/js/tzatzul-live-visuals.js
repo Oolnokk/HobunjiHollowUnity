@@ -18,6 +18,7 @@
     tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
+  const isSkeeriActor = actor => actor?.isRuinSkeeri === true || (kind(actor) === 'skeeri' && actor?.isCompanion === true); // Shared native wing rig for authored ruin enemies and trained Skeeri.
   function stableIndex(actor) {
     const seed = String(actor.tzatzulNestId || actor.nestTreeKey || actor.id
       || [actor.homeX ?? actor.x, actor.homeY ?? actor.y].map(n => Math.round(Number(n) || 0)).join(':'));
@@ -114,7 +115,7 @@
   }
   function present(actor, state, camera) {
     if (!state.rig) return;
-    const flightPose = actor.isRuinSkeeri ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
+    const flightPose = isSkeeriActor(actor) ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
     const hatchling = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND; // Perched artwork with no adult seated deformation.
     const pose = hatchling ? 'hatchling' : flightPose === 'perched' || flightPose === 'glide'
       || flightPose === 'flap' ? flightPose
@@ -148,7 +149,7 @@
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
-        state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(actor.isRuinSkeeri ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
+        state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(isSkeeriActor(actor) ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
         if (hatchling && state.rig.root.position) {
           const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
           state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
@@ -165,9 +166,12 @@
     const group = actor.avatarRef?.group;
     if (!group?.add || !group.parent || actor._wildlifeVisualsReleased) return;
     state.loading = true;
-    const create = actor.isRuinSkeeri ? window.SkeeriRuins?.createRig : kind(actor)==='pingdort' ? window.PingdortRegistration?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
+    const create = isSkeeriActor(actor) ? window.SkeeriRuins?.createRig : kind(actor)==='pingdort' ? window.PingdortRegistration?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
     if (!create) { state.loading = false; return; }
-    const appearance = actor.isRuinSkeeri ? actor
+    const appearance = isSkeeriActor(actor) ? (actor.isRuinSkeeri ? actor : {
+      skeeriPalette: window.SkeeriLivestockRegistration?.paletteForGenotype?.(
+        actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('skeeri'), actor.id),
+    })
       : kind(actor) === 'pingdort'
         ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort'))
         : actor.tzatzulIdentity; // Preserve each species' authored palette source and individual identity.
@@ -196,7 +200,7 @@
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
       group.add(rig.root);
       group.userData ||= {};
-      group.userData[actor.isRuinSkeeri ? 'skeeriFlyingRig' : kind(actor)==='pingdort' ? 'pingdortFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
+      group.userData[isSkeeriActor(actor) ? 'skeeriFlyingRig' : kind(actor)==='pingdort' ? 'pingdortFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
       debug.mounts++;
       debug.lastBird = String(actor.id || 'tzatzul') + ':mounted';
     }).catch(error => {
@@ -242,7 +246,7 @@
       scanT = SCAN_PERIOD_S;
       debug.scans++;
       for (const actor of new Set([...deps.hostileObjects,...(deps.companionObjects||[])])) { // Include player-owned Pingdort companions in the same scan, never a second renderer.
-        const isSkeeri = actor.isRuinSkeeri === true && Object.values(window.SkeeriRuins?.SPECIES || {}).some(spec => spec.key === kind(actor)); // Only the ruin encounter owns Skeeri rigs; generic creatures cannot impersonate them.
+        const isSkeeri = isSkeeriActor(actor) && (kind(actor) === 'skeeri' || Object.values(window.SkeeriRuins?.SPECIES || {}).some(spec => spec.key === kind(actor))); // Stable Skeeri can fly without allowing arbitrary hostile lookalikes to acquire ruin rigs.
         const isPingdort = kind(actor)==='pingdort' && (actor.isWildPingdort || actor.isCompanion); // Wild flocks and active trained companions get wings, not farm pen renderers.
         if (!isSkeeri && !isPingdort && ![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
         if (tracked.has(actor)) continue;

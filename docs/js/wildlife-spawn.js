@@ -129,11 +129,13 @@
     window.MootRegistration?.register?.(injectedDeps); // Independent Northern Cliffs grazing groups and usable Ranch starter; no den insertion.
     window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
     window.SkeeriRuins?.register?.(injectedDeps); // The shared wildlife creature factory also recognizes ruin-only Skeeri species.
+    window.SkeeriLivestockRegistration?.register?.(injectedDeps); // Independent tame Skeeri and their fertile egg inventory items.
     window.PingdortRegistration?.register?.(injectedDeps); // Native Pingdort sprites, fertile eggs, farm livestock and companion sizes.
     window.TzatzulLiveVisuals?.init?.(injectedDeps);
     window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
     window.TzatzulFlightRuntime?.init?.(injectedDeps); // Shared wildlife population and movement owner.
     window.SkeeriRuins?.init?.(injectedDeps); // No extra RAF: the existing wildlife tick owns Skeeri flight.
+    window.SkeeriLivestockRegistration?.init?.(injectedDeps); // Reuse the wildlife inventory/save seam for ruin nest eggs.
     window.PingdortFlocks?.init?.(injectedDeps); // Native wild flock and companion attack owners use the shared combat/world clock.
     window.TzatzulNestEncounter?.init?.(injectedDeps); // Indoor boss encounter uses the same hostile roster and wildlife tick. // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
