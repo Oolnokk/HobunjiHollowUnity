@@ -23,7 +23,7 @@
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
   if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261107combined1520_1524_1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
-  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261114adventAudit1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
+  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261115h3e99277"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261031hcefb03e"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261108h50f63e6"></scr' + 'ipt>');

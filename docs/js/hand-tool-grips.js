@@ -245,7 +245,7 @@
     const source = global.ModularWeapons?.sourceShape?.(value); // Custom gear inherits the live donor grip and scale rather than copying stale values.
     const key = normalizeKey(source || value).replace(CRAFTED_METAL_SUFFIX, '');
     // Unbound relic instance IDs must share their shape's editable grip, not create one grip per dropped relic.
-    if (key === 'harlyaolongsword' || key === 'harlyao-longsword' || key.startsWith('harlyaorelic-longsword-')) return 'harlyaolongsword';
+    if (key === 'torch' || key === 'harlyaolongsword' || key === 'harlyao-longsword' || key.startsWith('harlyaorelic-longsword-')) return 'harlyaolongsword';
     if (key === 'harlyaobroadsword' || key === 'harlyao-broadsword' || key.startsWith('harlyaorelic-broadsword-')) return 'harlyaobroadsword';
     if (key.includes('warhammer') || key.includes('war-hammer')) return 'warhammer';
     if (key.includes('workhammer') || key.includes('work-hammer')) return 'workhammer';
@@ -568,7 +568,6 @@
   function ensureTool(value) {
     const key = toolKeyFor(value);
     if (!key) return null;
-    if (key === 'torch' && !data.tools.torch) data.tools.torch = clone(ensureTool('harlyaolongsword')); // Copy the live Harlyao Longsword's grip/scale, including any existing authored changes.
     if (!data.tools[key]) data.tools[key] = {};
     const entry = data.tools[key];
     const fallbackEntry = DEFAULT_DATA.tools[key] || {}; // Used when older data does not yet carry the shape's base scale.

@@ -303,8 +303,9 @@
   function prepareCombatOptions(rawOpts = {}) {
     const state = activeState();
     const useDualWieldIdle = dualWieldIdleRequested(rawOpts);
-    const targetNeutral = currentCombatNeutral({ dualWield: useDualWieldIdle });
-    if (!targetNeutral || state.activeSlot !== 'weapon') return rawOpts || {};
+    const torchAttack = rawOpts.toolSlot === 'adventuring' && state.activeSlot === 'adventuring' && state.itemKey === 'torch';
+    const targetNeutral = torchAttack ? idleStances.lightWeapon : currentCombatNeutral({ dualWield: useDualWieldIdle });
+    if (!targetNeutral) return rawOpts;
 
     const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
     const authoredPose = rawOpts.pose && typeof rawOpts.pose === 'object' ? rawOpts.pose : null;
@@ -351,6 +352,7 @@
     const neutralMirrorSign = Number(opts?.pose?.neutralMirrorSign) === -1 ? -1 : 1;
     const returnNeutralMirrorSign = Number(opts?.pose?.returnNeutralMirrorSign) === -1 ? -1 : 1;
     combatVisualState = {
+      slot: opts.toolSlot || 'weapon', // Only the slot that began this attack can draw its baked neutral.
       anim: opts?.anim || activeState().def?.animStyle || 'thrust',
       dirSign: activeMirrorSign,
       neutralMirrorSign,
@@ -383,7 +385,7 @@
     // game.js owns the swing clock and caps its frame dt, so on slow frames the body/tool fall
     // behind wall time. Follow its timeline whenever it is live; a wall-clock step would run the
     // hands, grips and Neutral blend ahead of the pose the editor shows for the same phase.
-    const gameRemainingS = Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS);
+    const gameRemainingS = Number(window.Combat?.deps?.getWeaponAttackTimeline?.(state.slot === 'adventuring')?.remainingS);
     if (Number.isFinite(gameRemainingS) && gameRemainingS > 0) {
       const gameElapsedS = Math.max(0, state.totalS - gameRemainingS);
       state.elapsedS = Math.min(state.held ? windupEndS : state.totalS, Math.max(state.elapsedS, gameElapsedS));
@@ -423,9 +425,8 @@
   // the Attack Editor cancels it at every sweep-style Neutral, so an axe at rest would otherwise sit turned 90° about
   // its own face while the hands keep the editor's grip frame. Their own swings suppress the stance and keep the twist.
   function sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied) {
-    if (activeSlot !== 'weapon' && !stanceApplied) return 0;
-    if (activeSlot === 'weapon' && visual?.anim === 'sweep') return neutralWeightForVisual(visual);
-    return !visual && def?.animStyle === 'sweep' ? 1 : 0;
+    if (activeSlot === visual?.slot && visual.anim === 'sweep') return neutralWeightForVisual(visual);
+    return !visual && (stanceApplied || activeSlot === 'weapon') && def?.animStyle === 'sweep' ? 1 : 0;
   }
 
   function installCombatVisualHooks() {
@@ -528,9 +529,9 @@
       worldUprightApplied = false;
 
       const now = performance.now();
-      const visual = advanceCombatVisual(now);
       const { activeSlot, itemKey, def, mesh } = activeState();
-      const attackInProgress = activeSlot === 'weapon' && !!visual;
+      const visual = combatVisualState?.slot === activeSlot ? advanceCombatVisual(now) : null;
+      const attackInProgress = !!visual && (activeSlot === 'weapon' || holder.userData?.authoredToolActionActive === true);
       // Weapon attacks are explicitly tracked by the combat wrappers, so never let
       // their real holder rotation poison the tool-motion idle suppression timer.
       const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // The game has already posed a held tool/fishing attack against the selected Neutral.
@@ -569,7 +570,7 @@
       // directly on the child plane's own local axis instead of guessing a
       // compensating holder/global Euler rotation.
       if (toolPlane) {
-        const neutralWeight = sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied);
+        const neutralWeight = sweepTwistCancelWeight(activeSlot, def, attackInProgress ? visual : null, stanceApplied);
         if (neutralWeight > 0) {
           savedPlaneRotationZ = toolPlane.rotation.z;
           toolPlane.rotation.z += Math.PI / 2 * neutralWeight;
@@ -610,7 +611,7 @@
     const activeSlot = deps?.getActiveTool?.() || null; // Resolves the current equipment slot for the borrowed runtime view.
     const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null; // Resolves the current tool without allocating activeState().
     const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null; // Supplies the authored shape and animation style below.
-    const visual = combatVisualState; // Reads the same live animation state as debugSnapshot, without advancing its clock.
+    const visual = combatVisualState?.slot === activeSlot ? combatVisualState : null; // The hands read only their own slot's live animation.
     runtimeState.activeSlot = activeSlot;
     runtimeState.itemKey = itemKey;
     runtimeState.shape = shapeFor(itemKey, def);
@@ -639,7 +640,7 @@
   function debugSnapshot() {
     const state = activeState();
     const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
-    const visual = combatVisualState;
+    const visual = combatVisualState?.slot === state.activeSlot ? combatVisualState : null;
     return {
       activeSlot: state.activeSlot,
       itemKey: state.itemKey,
@@ -704,7 +705,7 @@
       target.reason = 'not-weapon-slot';
       return target;
     }
-    if (combatVisualState) {
+    if (combatVisualState?.slot === activeSlot) {
       target.active = false;
       target.yawDeg = 0;
       target.reason = 'attack-owns-body-yaw';
@@ -726,8 +727,10 @@
     if (window.__hobunjiFurnitureDebug?.sitInteraction && window.__hobunjiFurnitureDebug.sitInteraction.phase !== 'out') return false;
     const heldMode = deps?.getHeldMode?.();
     if (heldMode != null && heldMode !== 'tool') return false;
-    if (deps?.getActiveTool?.() !== 'weapon') return false;
-    if (combatVisualState) return true;
+    const slot = deps?.getActiveTool?.();
+    if (slot === 'adventuring') return deps?.toolHolder?.userData?.authoredToolActionActive === true && combatVisualState?.slot === slot;
+    if (slot !== 'weapon') return false;
+    if (combatVisualState?.slot === slot) return true;
     const itemKey = deps?.equipmentSlots?.weapon || null;
     const idleClass = itemKey ? weaponIdleClass(itemKey, deps?.TOOL_ITEM_DEFS?.[itemKey]) : null;
     return idleClass === 'light' || idleClass === 'heavy';
