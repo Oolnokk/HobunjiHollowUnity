@@ -229,10 +229,10 @@
         const live = window.HeldObjectRenderOrder?.snapshot?.() || {};
         const selected = describeLayers(selectedGroup);
         return {
-          summary: changes ? `${changes} edited setting${changes === 1 ? '' : 's'}` : 'defaults',
+          summary: changes ? `${changes} change${changes === 1 ? '' : 's'} from defaults` : 'defaults',
           rows: [
             ['Manual color sort', state['layers.manualOrder'] === 'on' ? 'active' : 'native render order'],
-            ['Draw sequence (back → front)', describeLayers().map(layer => layer.label).join(' → ')],
+            ['Editing layers', `${selectedGroup}: ${selected.map(layer => `${layer.position}. ${layer.label}`).join(' → ')}`],
             ['Ranked actors / masked portraits', `${live.rankedPortraitActors ?? '-'} / ${live.frontPortraitMasks ?? '-'}`],
             ['Hands behind front plane', String(live.handsBehindFrontPlane ?? '-')],
             ['Jump replay / backgrounds excluded', `${live.airborneDepthRebuilds ?? '-'} / ${live.backgroundDepthMeshesExcluded ?? '-'}`],
