@@ -34,6 +34,20 @@ for (const [species, config] of Object.entries(voices)) {
   assert.equal(scheduled[previous].meaning, 'exertion', 'the utterance does not pose as an aggression growl');
 }
 
+// Older imported animal profiles may have no exertion authoring yet: copy only
+// the aggression recording pool, never the whole aggressive multi-utterance sequence.
+voiceWindow.AnimalVocalizations.setAuthoredProfiles({
+  default: {},
+  drenkirra: { growl: { allowedClips: ['sfx_rattle-caw.ogg'], utterances: [
+    { tempo: 1, pitchSemitones: 0 }, { tempo: 1.3, pitchSemitones: 1 }, { tempo: 0.8, pitchSemitones: -1 },
+  ] } },
+});
+const beforeLegacy = scheduled.length;
+assert.equal(voiceWindow.AnimalVocalizations.mountExertion({ creatureKey: 'drenkirra', health: 10 }), true);
+assert.equal(scheduled.length, beforeLegacy + 1, 'legacy growls seed only one single exertion sound');
+assert.deepEqual(Array.from(scheduled[beforeLegacy].allowedClips || []), ['sfx_rattle-caw.ogg']);
+voiceWindow.AnimalVocalizations.setAuthoredProfiles(voices);
+
 const T = 64;
 const grid = Array.from({ length: 16 }, () => Array.from({ length: 80 }, () => ({ type: 'grass' }))); // Wide enough to observe breathing and wheat recovery during uninterrupted travel.
 grid[6][6] = { type: 'rock', projectileCoverHeightTiles: .75 }; // A pair of low wilderness rocks, both shorter than the mounted hop.
