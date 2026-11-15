@@ -120,8 +120,9 @@ const layerStart = render.indexOf('  function visualLayerFor(');
 const layerEnd = render.indexOf('\n  function nearbyPortraitOrder(', layerStart);
 const visualSort = new Function('window', 'xrayRule', 'isPresentationBackdrop', 'surfaceKindForObject', 'comparePortraitDraws', 'heldPriorityLayer',
   render.slice(layerStart, layerEnd) + '; return { visualLayerFor, withVisualSort };')(
-  win, key => X.get(key), isBackdrop, () => 'solid', (a, b, ranks) =>
-    (ranks.get(b.object)?.depth ?? b.z) - (ranks.get(a.object)?.depth ?? a.z),
+  win, key => X.get(key), isBackdrop, () => 'solid', (a, b, ranks, extras) =>
+    (ranks.get(b.object)?.depth ?? extras?.get(b.object)?.depth ?? b.z)
+      - (ranks.get(a.object)?.depth ?? extras?.get(a.object)?.depth ?? a.z),
   () => X.get('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands');
 const drawn = (data, name) => ({ object: { userData: data, name: name || '' }, material: { id: 3 }, groupOrder: 0, renderOrder: 0, z: 0, id: 1 });
 const handItem = drawn({ hobunjiProceduralHand: true });
