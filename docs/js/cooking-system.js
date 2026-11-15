@@ -111,6 +111,13 @@
 
     Object.entries(deps.ITEM_DEFS).forEach(([key, definition]) => {
       if (!definition.tags?.some(tag => String(tag).toLowerCase() === 'fish')) return;
+      const tags = (definition.tags || []).map(tag => String(tag).toLowerCase()); // Fish-tagged cooking oils must not gain a second role as raw fish ingredients.
+      const isFat = definition.cookingCategories?.includes('oil') || tags.some(tag => ['oil', 'lard', 'rendered fat'].includes(tag)) ||
+        (definition.cat === 'processed' && /(?:Oil|Lard)$/i.test(key));
+      if (isFat) {
+        definition.cookingCategories = (definition.cookingCategories || []).filter(category => category !== 'fish'); // Repair old stacks whose fish category was added by the legacy catalog pass.
+        return;
+      }
       definition.cookingCategories = [...new Set([...(definition.cookingCategories || []), 'fish'])];
       definition.cookingPrimaryEffect ||= 'fishing';
       definition.cookingBaseBoost ||= 1;

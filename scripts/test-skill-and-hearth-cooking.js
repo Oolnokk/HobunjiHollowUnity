@@ -220,6 +220,9 @@ cookingTerminal.registerCookedDefinition('fishPie', {
   foodEffects: { fishing: 50 }, cookingDefaultStars: 5,
 });
 terminalInventory.fishPie = 2;
+assert(!liveDefs.oldFishOil.cookingCategories.includes('fish'), 'old fish oil loses its incorrectly inherited raw-fish recipe category');
+assert(!liveDefs.oldRiverFishOil.cookingCategories.includes('fish'), 'old fish-oil keys also migrate without an Oil tag');
+assert(!liveDefs[pressedRiverFish.key].cookingCategories.includes('fish'), 'new pressed oils cannot occupy a recipe fish slot');
 for (const method of ['squeezing', 'smoking', 'churning', 'composting']) {
   assert.equal(itemProcessor.getProcessingOutputs(method, 'fishPie'), null, 'hearth food cannot be processed by ' + method);
 }
