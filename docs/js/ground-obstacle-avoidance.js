@@ -95,13 +95,14 @@
   function facingIntentionalStop(area, x, y, dx, dy, tile) {
     const player = window.__climbDebug?.getPlayer?.(); // The current live player, not a duplicated facing controller.
     if (!player || Math.hypot(player.x - x, player.y - y) > tile * 0.2) return false;
-    const facing = Number(player.angle); // Compare actual aim/facing with this movement input, not the deflected velocity.
-    if (!Number.isFinite(facing) || Math.cos(facing) * dx + Math.sin(facing) * dy < 0.9) return false;
+    const facing = Number(player.angle); // Intentional object focus follows facing, even while the left stick strafes.
+    if (!Number.isFinite(facing)) return false;
+    const faceX = Math.cos(facing), faceY = Math.sin(facing); // Only used for nearby interaction/jump priority.
     if (window.WorldPopupText?.debugSnapshot?.()?.interactionRows?.length) return true;
     if (window.ClimbSystem?.getClimbTarget?.() || window.ClimbSystem?.getWorldClimbTarget?.()) return true;
-    const frontX = x / tile + dx * 0.28, frontY = y / tile + dy * 0.28; // Just inside the adjacent obstacle, never a distant search.
+    const frontX = x / tile + faceX * 0.28, frontY = y / tile + faceY * 0.28; // Just inside the faced adjacent object.
     if (window.InteriorDoorTiles?.blocksBox?.(area, frontX, frontY, 0.12)) return true;
-    return window.PlayerJump?.hasJumpableSupportAhead?.(x, y, dx, dy, 0.42) === true;
+    return window.PlayerJump?.hasJumpableSupportAhead?.(x, y, faceX, faceY, 0.42) === true;
   }
 
   // On-foot behavior is intentionally NOT the mounted route follower. The
