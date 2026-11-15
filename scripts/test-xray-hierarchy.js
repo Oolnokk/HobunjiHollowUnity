@@ -61,6 +61,13 @@ assert.ok(exportResult.text.includes('pants.sortWithActor') && exportResult.titl
 panel.onAction('reset', {});
 assert.strictEqual(X.get('pants.sortWithActor'), 'on');
 
+// The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
+const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
+assert.ok(fallbackSource, 'renderer declares XRAY_RULE_FALLBACK');
+const fallback = new Function('return ' + fallbackSource[1])();
+for (const key of X.keys()) assert.strictEqual(fallback[key], X.RULES[key].default, `fallback default for ${key} matches the config`);
+assert.strictEqual(Object.keys(fallback).length, X.keys().length, 'fallback lists exactly the configured rules');
+
 // Renderer wiring: every rule is read where its behaviour lives.
 for (const key of X.keys()) assert.ok(render.includes(`'${key}'`), `renderer reads rule ${key}`);
 assert.ok(/updateFrontPlaneHands\(held, scene, camera\)/.test(render), 'hand rule runs each base world frame');

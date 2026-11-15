@@ -25,7 +25,7 @@ assert.equal(clampPitchOffsetDeg(NaN, {}, 9), 0, 'invalid pitch input safely res
 assert.equal(clampPitchOffsetDeg(Infinity, {}, 9), 0, 'infinite pitch input safely resets to neutral');
 assert.match(game, /function clampCameraPitchOffsetDeg\(value, baseAngleDeg = Number\(cameraModeConfig\(activeCameraMode\)/, 'game.js supplies the active camera mode base angle to the shared clamp');
 assert.match(game, /CameraLookClamp\.clampPitchOffsetDeg\(value, desktopControlsConfig\(\), baseAngleDeg\)/, 'game.js passes the base angle into the isolated clamp module');
-assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 5, 'mouse, touch, controller, mobile autotarget, and seated look share the camera pitch bridge');
+assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 6, 'mouse, touch, controller, mobile autotarget, seated look and the arena test-look accessor share the camera pitch bridge');
 assert.match(game, /getCameraBaseAngleDeg: \(\) => Number\(cameraModeConfig\(activeCameraMode\)/, 'Kurraya receives the live camera base angle');
 assert.match(game, /pitchSafeSetback = upwardPitchRad > 1e-4[\s\S]{0,220}targetHeadroom \/ Math\.tan\(upwardPitchRad\)/, 'upward look reduces the body-safe setback as the camera approaches vertical');
 assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,260}-clampDeg, clampDeg/, 'yaw keeps symmetric legacy clamp');

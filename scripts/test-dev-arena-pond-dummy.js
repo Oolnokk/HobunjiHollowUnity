@@ -50,6 +50,34 @@ mod.init({
 });
 
 (async () => {
+  // Test look: apply / equip / front view, then restore must put EVERYTHING back (nothing may leak into a save).
+  {
+    const profile = { appearance: { speciesId: 'mao-ao', gender: 'male', cosmetics: { hat: 'x' } } };
+    let offsets = [0.35, 0.6], pitch = 3, azimuth = 10, viewMode = false, rebuilds = 0, refreshes = 0;
+    const slots = { weapon: 'hatchet' }, tools = { hatchet: true };
+    const look = mod.makeTestLook({
+      getProfile: () => profile, getShoulderOffsets: () => offsets.slice(), setShoulderOffsets: (a, b) => { offsets = [a, b]; },
+      getCameraPitchOffset: () => pitch, setCameraPitchOffset: v => { pitch = v; },
+      getCameraAzimuthOffset: () => azimuth, setCameraAzimuthOffset: v => { azimuth = v; },
+      setCharacterViewMode: on => { viewMode = on; }, refreshPlayerAvatar: async () => { refreshes++; },
+      toolDefs: { 'modular:fishing-mace:grapple-flail:nativeCopper': {} }, gearTools: () => tools, equipmentSlots: slots,
+      rebuildToolMeshes: () => { rebuilds++; }, setActiveTool: () => {},
+    });
+    assert.strictEqual(await look.apply('kenkari', 'female', 0.02, -8), true);
+    assert.deepStrictEqual([profile.appearance.speciesId, profile.appearance.gender, offsets, pitch], ['kenkari', 'female', [0.02, 0.02], -8]);
+    assert.strictEqual(look.equipLoopedGrappleFlail(), 'modular:fishing-mace:grapple-flail:nativeCopper');
+    assert.strictEqual(slots.weapon, 'modular:fishing-mace:grapple-flail:nativeCopper');
+    assert.strictEqual(look.frontView(true), true);
+    assert.deepStrictEqual([viewMode, azimuth], [true, 190]);
+    assert.strictEqual(look.frontView(false), true);
+    assert.deepStrictEqual([viewMode, azimuth], [false, 10], 'front view restores the camera azimuth and leaves character view');
+    assert.strictEqual(await look.restore(), true);
+    assert.deepStrictEqual([profile.appearance.speciesId, profile.appearance.gender, profile.appearance.cosmetics.hat, offsets, pitch], ['mao-ao', 'male', 'x', [0.35, 0.6], 3], 'appearance, offsets and pitch restored');
+    assert.strictEqual(slots.weapon, 'hatchet', 'the real weapon slot is restored');
+    assert.strictEqual('modular:fishing-mace:grapple-flail:nativeCopper' in tools, false, 'the dev-granted inventory entry is removed');
+    assert.strictEqual(await look.restore(), false, 'a second restore is a no-op');
+  }
+
   const pond = mod.ensurePond();
   assert.strictEqual(grassGroups[0].visible, false, 'arena grass starts hidden');
   assert.strictEqual(grassGroups[1].visible, true, 'only grass chunk groups are hidden');

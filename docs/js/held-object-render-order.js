@@ -406,13 +406,13 @@
     return xrayRule('weapon.frontPlaneMask') !== 'off';
   }
 
-  // Hands: a hand whose centre sits behind its holder's front portrait plane (camera on the front side) must not
+  // Hands: a hand with a part behind its holder's front portrait plane (camera on the front side) must not
   // show through the front art, and neither may its shell outline (the loops around a gripping hand). The hand
   // joins the same stencil mask the weapons use and loses its shell layer while it is behind the plane.
   const handPlaneInverse = new THREE.Matrix4(); // Scratch: portrait plane's world->local transform.
-  const handPlaneLocal = new THREE.Vector3(); // Scratch: hand centre in plane space.
+  const handPlaneLocal = new THREE.Vector3(); // Scratch: hand origin in plane space (only when it has no geometry box).
   const handPlaneCamera = new THREE.Vector3(); // Scratch: camera in plane space.
-  const HAND_BEHIND_PLANE_EPS = 0.01; // World units behind the plane before a hand counts as behind.
+  const HAND_BEHIND_PLANE_EPS = 0.01; // Camera must be at least this far in front of the plane for front art to be on screen.
   const handShellSuppressed = new WeakSet(); // Hands whose shell layer this rule switched off.
   const handWingHidden = new WeakSet(); // Wing-continuation sub-meshes this rule hid with their hand.
 

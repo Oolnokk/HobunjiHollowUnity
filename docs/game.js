@@ -32608,64 +32608,23 @@
           return walker;
         },
         despawnNpcWalker: walker => despawnNpcVisitor(walker),
-        // Arena "test look" (js/dev-arena-pond-dummy.js): swaps the player's species/gender in memory only
-        // (never CharacterMetaSave) and sets the shoulder-surf horizontal offset; restore() undoes both.
-        devTestLook: (() => {
-          let saved = null;
-          let frontViewSaved = null;
-          return {
-            async apply(speciesId, gender, offsetH, pitchDeg = 0) {
-              const profile = _playerData || window.__hobunjiPlayerProfile;
-              if (!profile?.appearance) return false;
-              if (!saved) saved = { appearance: profile.appearance, h: [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat], pitch: cameraAngleOffsetDeg };
-              const appearance = { ...saved.appearance, speciesId, gender, cosmetics: {} }; // Other species' cosmetic ids do not apply; defaults resolve.
-              profile.appearance = appearance;
-              if (window.__hobunjiPlayerProfile && window.__hobunjiPlayerProfile !== profile) window.__hobunjiPlayerProfile.appearance = appearance;
-              s_shoulderSurfOffsetH_default = s_shoulderSurfOffsetH_combat = s_shoulderSurfOffsetH_current = offsetH;
-              cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(pitchDeg); // Negative lowers the camera so the view runs level enough to put the waterfall behind the portrait.
-              await refreshPlayerAvatar();
-              return true;
-            },
-            // Equips the Looped (fishing-mace haft) grapple-flail modular weapon in the weapon slot and draws it.
-            equipLoopedGrappleFlail() {
-              const key = Object.keys(TOOL_ITEM_DEFS).find(k => k.startsWith('modular:fishing-mace:grapple-flail:'));
-              if (!key) return null;
-              try { gearInventory.tools[key] = true; } catch (_) { /* Ownership is cosmetic for this dev equip. */ }
-              equipmentSlots.weapon = key;
-              rebuildToolMeshes();
-              setActiveTool('weapon', { silent: true });
-              return key;
-            },
-            // Character view with the camera swung round to the player's front, so the front portrait and the
-            // weapon held against it are on screen (weapon-vs-front-plane layering checks).
-            frontView(on) {
-              if (on) {
-                if (frontViewSaved) return true;
-                frontViewSaved = { az: cameraAzimuthOffsetDeg };
-                setCharacterViewMode(true, 'debug');
-                cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + 180);
-                return true;
-              }
-              if (!frontViewSaved) return false;
-              cameraAzimuthOffsetDeg = frontViewSaved.az;
-              frontViewSaved = null;
-              setCharacterViewMode(false, 'debug');
-              return true;
-            },
-            async restore() {
-              if (!saved) return false;
-              const profile = _playerData || window.__hobunjiPlayerProfile;
-              profile.appearance = saved.appearance;
-              if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = saved.appearance;
-              [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat] = saved.h;
-              s_shoulderSurfOffsetH_current = saved.h[0];
-              cameraAngleOffsetDeg = saved.pitch;
-              saved = null;
-              await refreshPlayerAvatar();
-              return true;
-            },
-          };
-        })(),
+        // Arena "test look" (logic now lives in js/dev-arena-pond-dummy.js): only the closure state it needs is exposed here.
+        devTestLookDeps: {
+          getProfile: () => _playerData || window.__hobunjiPlayerProfile,
+          getShoulderOffsets: () => [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat],
+          setShoulderOffsets: (standing, combat) => { s_shoulderSurfOffsetH_default = standing; s_shoulderSurfOffsetH_combat = combat; s_shoulderSurfOffsetH_current = standing; },
+          getCameraPitchOffset: () => cameraAngleOffsetDeg,
+          setCameraPitchOffset: deg => { cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(deg); },
+          getCameraAzimuthOffset: () => cameraAzimuthOffsetDeg,
+          setCameraAzimuthOffset: deg => { cameraAzimuthOffsetDeg = wrapAzimuthDeg(deg); },
+          setCharacterViewMode: on => setCharacterViewMode(on, 'debug'),
+          refreshPlayerAvatar,
+          toolDefs: TOOL_ITEM_DEFS,
+          gearTools: () => gearInventory.tools,
+          equipmentSlots,
+          rebuildToolMeshes,
+          setActiveTool,
+        },
         getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
         // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
         // returns display parts; used by Random Test Ruin Dungeon Chests.

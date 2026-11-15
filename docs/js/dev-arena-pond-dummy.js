@@ -197,22 +197,22 @@
   // Female Kenkari (the smallest species) with the shoulder camera almost centred behind the
   // player. In-memory only: "Restore look" brings back the saved species and camera offset.
   async function applyTestLook(pitchDeg = CAMERA_PITCH_DEG) {
-    if (!deps.devTestLook) return false;
+    if (!look) return false;
     setStatus('Applying female Kenkari + centred camera…');
-    const ok = await deps.devTestLook.apply('kenkari', 'female', CAMERA_OFFSET_H, pitchDeg);
+    const ok = await look.apply('kenkari', 'female', CAMERA_OFFSET_H, pitchDeg);
     setStatus(ok ? 'Player is now a female Kenkari; camera centred and tilted up. Restore look before saving.' : 'Player appearance is not ready.');
     return ok;
   }
 
   async function restoreLook() {
     if (frontViewOn) toggleFrontView(false);
-    const ok = await deps.devTestLook?.restore();
+    const ok = await look?.restore();
     setStatus(ok ? 'Original species and camera offset restored.' : 'Nothing to restore.');
     return ok;
   }
 
   function equipFlail() {
-    const key = deps.devTestLook?.equipLoopedGrappleFlail();
+    const key = look?.equipLoopedGrappleFlail();
     setStatus(key ? 'Equipped ' + key : 'Looped grapple-flail is not registered.');
     return key;
   }
@@ -220,7 +220,7 @@
   let frontViewOn = false;
   function toggleFrontView(force) {
     frontViewOn = force === undefined ? !frontViewOn : !!force;
-    const ok = deps.devTestLook?.frontView(frontViewOn);
+    const ok = look?.frontView(frontViewOn);
     if (!ok) frontViewOn = false;
     setStatus(frontViewOn ? 'Character view: camera is in front of the player.' : 'Front view off.');
     return frontViewOn;
@@ -271,16 +271,90 @@
     });
   }
 
+  // Test look: swaps the player's species/gender, camera offsets, weapon and character-view camera in memory only
+  // (never CharacterMetaSave). restore() puts every one of them back, including the real equipment slot and
+  // inventory entry the flail equip touched, so nothing leaks into a save.
+  function makeTestLook(d) {
+    let saved = null; // Appearance, shoulder offsets and pitch before apply().
+    let weaponBackup = null; // Weapon slot / ownership before equipLoopedGrappleFlail().
+    let frontViewSaved = null;
+    const flailKey = () => Object.keys(d.toolDefs).find(key => key.startsWith('modular:fishing-mace:grapple-flail:')) || null;
+    return {
+      async apply(speciesId, gender, offsetH, pitchDeg = 0) {
+        const profile = d.getProfile();
+        if (!profile?.appearance) return false;
+        if (!saved) saved = { appearance: profile.appearance, offsets: d.getShoulderOffsets(), pitch: d.getCameraPitchOffset() };
+        const appearance = { ...saved.appearance, speciesId, gender, cosmetics: {} }; // Other species' cosmetic ids do not apply; defaults resolve.
+        profile.appearance = appearance;
+        if (window.__hobunjiPlayerProfile && window.__hobunjiPlayerProfile !== profile) window.__hobunjiPlayerProfile.appearance = appearance;
+        d.setShoulderOffsets(offsetH, offsetH);
+        d.setCameraPitchOffset(pitchDeg); // Negative lowers the camera so the view runs level enough to put the waterfall behind the portrait.
+        await d.refreshPlayerAvatar();
+        return true;
+      },
+      // Equips the Looped (fishing-mace haft) grapple-flail modular weapon in the weapon slot and draws it.
+      equipLoopedGrappleFlail() {
+        const key = flailKey();
+        if (!key) return null;
+        if (!weaponBackup) weaponBackup = { key, previous: d.equipmentSlots.weapon, owned: !!d.gearTools()?.[key] };
+        try { d.gearTools()[key] = true; } catch (_) { /* Ownership is only so the slot accepts it. */ }
+        d.equipmentSlots.weapon = key;
+        d.rebuildToolMeshes();
+        d.setActiveTool('weapon', { silent: true });
+        return key;
+      },
+      // Character view with the camera swung round to the player's front, so the front portrait and the weapon held
+      // against it are on screen (weapon-vs-front-plane layering checks).
+      frontView(on) {
+        if (on) {
+          if (frontViewSaved) return true;
+          frontViewSaved = { az: d.getCameraAzimuthOffset() };
+          d.setCharacterViewMode(true);
+          d.setCameraAzimuthOffset(frontViewSaved.az + 180);
+          return true;
+        }
+        if (!frontViewSaved) return false;
+        d.setCameraAzimuthOffset(frontViewSaved.az);
+        frontViewSaved = null;
+        d.setCharacterViewMode(false);
+        return true;
+      },
+      async restore() {
+        let did = false;
+        if (weaponBackup) {
+          if (weaponBackup.previous !== undefined) d.equipmentSlots.weapon = weaponBackup.previous; else delete d.equipmentSlots.weapon;
+          if (!weaponBackup.owned) { try { delete d.gearTools()[weaponBackup.key]; } catch (_) { /* Already gone. */ } }
+          weaponBackup = null;
+          d.rebuildToolMeshes();
+          did = true;
+        }
+        if (saved) {
+          const profile = d.getProfile();
+          profile.appearance = saved.appearance;
+          if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = saved.appearance;
+          d.setShoulderOffsets(saved.offsets[0], saved.offsets[1]);
+          d.setCameraPitchOffset(saved.pitch);
+          saved = null;
+          await d.refreshPlayerAvatar();
+          did = true;
+        }
+        return did;
+      },
+    };
+  }
+  let look = null;
+
   let grassTimer = 0;
   function init(injected) {
     deps = injected;
+    look = injected?.devTestLookDeps ? makeTestLook(injected.devTestLookDeps) : null;
     injectUi();
     if (!grassTimer) { grassTimer = setInterval(() => { if (grassHidden && deps?.getCurrentArea?.() === ARENA_ID) applyGrassVisibility(); }, 1000); grassTimer.unref?.(); }
   }
 
   window.DevArenaPondDummy = {
     version: 1,
-    init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, equipFlail, equipFlail, spawnDummy, clearDummies,
+    init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, equipFlail, makeTestLook, equipFlail, spawnDummy, clearDummies,
     snapshot: () => ({ pond: !!arenaScene()?.userData?.devArenaPond, waterfall: !!arenaScene()?.userData?.devArenaWaterfall, dummies: [...dummies.keys()] }),
   };
 })();
