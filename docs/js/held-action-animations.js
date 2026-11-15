@@ -21,14 +21,14 @@
     "worldUpright": true,
     "poses": {
       "neutral": {
-        "x": -0.03,
-        "y": 0.08,
-        "z": 0.17,
-        "pitch": 10,
+        "x": -0.15,
+        "y": 0.1472916715500817,
+        "z": 0.198510001727785,
+        "pitch": -90,
         "yaw": 0,
         "bodyYaw": 0,
-        "roll": 0,
-        "scale": 0.64,
+        "roll": -15,
+        "scale": 0.68,
         "headRelative": false,
         "bodySink": 0,
         "flailLengthScale": 1,
@@ -48,10 +48,15 @@
           "enabled": false
         },
         "elbows": {
+          "left": {
+            "x": 0,
+            "y": -0.10531282069027048,
+            "z": 0.04110563392716065
+          },
           "right": {
-            "x": -0.04,
-            "y": -0.19,
-            "z": 0
+            "x": 0.002670316618150828,
+            "y": -0.06015679313571905,
+            "z": 0.03473534109483975
           }
         }
       },
@@ -473,7 +478,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261115hf6c5889', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261115torchGripIdle2', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261110flailorder2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,

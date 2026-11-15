@@ -77,14 +77,14 @@
       "roll": -96
     },
     "torchHold": {
-      "x": -0.03,
-      "y": 0.08,
-      "z": 0.17,
-      "pitch": 10,
+      "x": -0.15,
+      "y": 0.1472916715500817,
+      "z": 0.198510001727785,
+      "pitch": -90,
       "yaw": 0,
       "bodyYaw": 0,
-      "roll": 0,
-      "scale": 0.64,
+      "roll": -15,
+      "scale": 0.68,
       "headRelative": false,
       "bodySink": 0,
       "flailLengthScale": 1,
@@ -100,11 +100,19 @@
       "dualWield": {
         "enabled": false
       },
+      "offhandIdle": {
+        "enabled": false
+      },
       "elbows": {
+        "left": {
+          "x": 0,
+          "y": -0.10531282069027048,
+          "z": 0.04110563392716065
+        },
         "right": {
-          "x": -0.04,
-          "y": -0.19,
-          "z": 0
+          "x": 0.002670316618150828,
+          "y": -0.06015679313571905,
+          "z": 0.03473534109483975
         }
       },
       "worldUpright": true

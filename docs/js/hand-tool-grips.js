@@ -229,6 +229,65 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      // The starter torch and Harlyao longsword share this authored grip; local artist overrides retain precedence.
+      harlyaolongsword: {
+        "toolScale": 1,
+        "heightMultiplier": 0.5,
+        "primaryGrip": {
+          "position": {
+            "x": -0.08,
+            "y": 0,
+            "z": -0.05
+          },
+          "rotationDeg": {
+            "pitch": 0,
+            "yaw": -90,
+            "roll": 0
+          }
+        },
+        "customGripAxis": {
+          "enabled": false,
+          "start": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "end": {
+            "x": 0,
+            "y": 0,
+            "z": 0.5
+          }
+        },
+        "secondaryGripSpan": {
+          "enabled": false,
+          "startZ": 0,
+          "endZ": 0
+        },
+        "primaryGripSpan": {
+          "enabled": false,
+          "startZ": 0,
+          "endZ": 0
+        },
+        "gripMode": "palm-parallel",
+        "rangedPrimaryGrip": {
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotationDeg": {
+            "pitch": 0,
+            "yaw": 0,
+            "roll": 0
+          }
+        },
+        "rangedSecondaryGripSpan": {
+          "enabled": false,
+          "startZ": 0,
+          "endZ": 0
+        },
+        "rangedGripMode": "palm-parallel"
+      },
     },
   };
 
