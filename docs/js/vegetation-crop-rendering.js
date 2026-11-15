@@ -659,7 +659,12 @@
   function _buildFoliageMesh(crop, growth, col, row) {
     const FG = window.FoliageGenerator;
     if (!FG) return null;
-    if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
+    if (crop === 'needlegrain') {
+      const plant = FG.buildNeedlegrainMesh(growth, col, row); // Retains the authored needles and wood as separate meshes.
+      const needles = plant?.children?.[plant.children.length - 1]; // The generator appends the grain-bearing needle mesh after the brown bark.
+      if (needles?.userData) needles.userData.hobunjiCropTintRegion = 'grain';
+      return plant;
+    }
     if (crop === 'blackMustard' || crop === 'greenMustard') return _buildMustardMesh(crop, growth, col, row);
     if (crop === 'heftroot') {
       // Three plants in a triangle cluster, each with a unique seed offset
@@ -677,18 +682,55 @@
     return null;
   }
 
-  function _tintVarietyFoliage(group, color) {
-    if (color == null) return; // Native crops retain shared foliage materials.
-    const tint = new THREE.Color(color); // The inherited seed color is a target for leaves and grain heads.
+  const cultivarTextureCache = new Map(); // Shares one shade-filled PNG texture per authored crop shape and inherited RGB color.
+  const cultivarTextureState = new Map(); // Exposes on-device success/failure without requiring a developer console.
+  function _cultivarTexture(path, color) {
+    const key = path + ':' + color.toString(16).padStart(6, '0'); // Every cultivar with the same pigment can reuse the same GPU texture.
+    const cached = cultivarTextureCache.get(key);
+    if (cached) return cached;
+    if (!window.SpriteRecolor?.getRecoloredCanvas || !window.HobunjiSpritePngSurface?.makeCanvasTexture) return null;
+    cultivarTextureState.set(key, 'loading');
+    const pending = window.SpriteRecolor.getRecoloredCanvas(path, color, 'direct').then(canvas => {
+      const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, 'cultivar-' + key);
+      cultivarTextureState.set(key, 'loaded');
+      return texture;
+    }).catch(error => {
+      cultivarTextureState.set(key, 'failed');
+      cultivarTextureCache.delete(key); // A temporary asset/CORS error can be retried after the next plant rebuild.
+      window.__farmLog?.('[crop-art] foliage recolor failed ' + key + ': ' + String(error?.message || error), 'warn');
+      throw error;
+    });
+    cultivarTextureCache.set(key, pending);
+    return pending;
+  }
+
+  function _tintVarietyFoliage(group, color, family) {
+    if (color == null || !Number.isFinite(Number(color))) return; // Native foliage keeps its authored textures, shaded anatomy and materials.
+    const pigment = Number(color) & 0xffffff; // Canonical CropVarieties RGB drives every part that actually bears species color.
     group.traverse(child => {
       if (!child.isMesh || !child.material) return;
-      const recolor = material => {
-        if (!material?.clone || !material.color) return material;
-        const copy = material.clone(); // Never mutate shared materials belonging to ordinary crops.
-        copy.color.lerp(tint, .46); // Keep anatomical contrast while showing the cultivar pigment.
-        return copy;
-      };
-      child.material = Array.isArray(child.material) ? child.material.map(recolor) : recolor(child.material);
+      const material = child.material; // Per-plant clone prevents a crossbreed from altering neighboring native crops.
+      if (!material.clone || !material.color) return;
+
+      const isMustardLeaf = child.userData?.hobunjiMustardLeaf; // Both outer and inner mushtard leaves use authored transparent PNGs.
+      const isHeftrootSprite = child.userData?.hobunjiHeftrootBillboard; // Heftroot keeps its existing three-plant PNG footprint.
+      const isNeedlegrain = family === 'needlegrain' && child.userData?.hobunjiCropTintRegion === 'grain';
+      if (!isMustardLeaf && !isHeftrootSprite && !isNeedlegrain) return; // Preserve bark, stems and structural meshes unchanged.
+
+      const copy = material.clone(); // No global shared-material tint can leak onto native or unrelated cultivars.
+      copy.color.setHex(pigment); // Show the inherited hue immediately, even if an async canvas recolor is still loading.
+      child.material = copy;
+      if (isNeedlegrain) return; // Its grain is real geometry with a flat native hue, not a tinted image.
+
+      const spritePath = isMustardLeaf ? MUSHTARD_LEAF_ART[child.userData.hobunjiMustardShape]
+        : 'assets/objectsprites/heftroot.png'; // Uses the original authored art, not a previously recolored canvas.
+      const loaded = _cultivarTexture(spritePath, pigment);
+      loaded?.then(texture => {
+        if (child.material !== copy) return; // Do not overwrite a plant that has changed identity or been rebuilt.
+        copy.map = texture;
+        copy.color.setHex(0xffffff); // Shade-filled PNG already carries the exact inherited hue and source highlights.
+        copy.needsUpdate = true;
+      }).catch(() => {}); // Error is reported once by _cultivarTexture; temporary material multiplier remains visible.
     });
   }
 
@@ -714,11 +756,15 @@
         const growth = Math.min(tile.cropAge / data.growDays, 1.0);
         const surfY  = deps.tileSurfaceY(tile.type) + tile.water * deps.WATER_UNIT;
 
-        const family = _cropFamily(tile.crop, data); // Resolve saved/imported mushtard cultivars even when older cropData entries lack baseCrop.
-        const wantsFoliage = FOLIAGE_CROPS.has(family); // Determines which existing visual type is valid before reusing the tile mesh.
-        const previousMesh = cropMeshes[i]; // The previous crop can have been a different species or a legacy placeholder.
+        const family = _cropFamily(tile.crop, data); // Saved and imported cultivars inherit the geometry of their true crop family.
+        const inheritedColor = data.varietyColor ?? (tile.crop !== family ? window.CropVarieties?.colorOf?.(tile.crop) : null); // Older saves may omit the cached pigment.
+        const pigment = inheritedColor != null && Number.isFinite(Number(inheritedColor)) ? (Number(inheritedColor) & 0xffffff) : null; // Exact RGB identity used by every recolor path.
+        const wantsFoliage = FOLIAGE_CROPS.has(family); // Selects the existing foliage versus authored PNG-cluster route.
+        const previousMesh = cropMeshes[i]; // A tile may have held a different cultivar of the same species since the previous update.
         if (previousMesh && (
-          (previousMesh.userData?.hobunjiCropRootKey && previousMesh.userData.hobunjiCropRootKey !== family)
+          previousMesh.userData?.hobunjiCropId !== tile.crop
+          || previousMesh.userData?.hobunjiCropVarietyColor !== pigment
+          || (previousMesh.userData?.hobunjiCropRootKey && previousMesh.userData.hobunjiCropRootKey !== family)
           || (wantsFoliage && previousMesh.userData?.hobunjiFoliageMesh !== true)
           || (!wantsFoliage && !previousMesh.isMesh)
         )) {
@@ -738,8 +784,10 @@
             const group = _buildFoliageMesh(family, growth, col, row);
             if (group) {
               group.userData.hobunjiCropRootKey = family; // Prevent a tile switched to another crop from reusing the wrong foliage.
+              group.userData.hobunjiCropId = tile.crop; // Detects genetic color switches within the same family.
+              group.userData.hobunjiCropVarietyColor = pigment; // Tracks exactly which rendered shade-fill matches the current saved genotype.
               group.userData.hobunjiFoliageMesh = true; // Distinguishes foliage from legacy colored cube placeholders on restored fields.
-              _tintVarietyFoliage(group, data.varietyColor); // Only cultivar clones receive the inherited tint.
+              _tintVarietyFoliage(group, pigment, family); // Recolors authored source pixels instead of multiplying tinted PNGs.
               deps.scene.add(group);
               deps.markOutline(group);
               cropMeshes[i]       = group;
@@ -760,7 +808,7 @@
 
         } else {
           // ── Simple colored cube (all other crops) ────────────────
-          const variety = data.varietyColor; // Genetic ripe color is used by the existing simple crop-mesh path.
+          const variety = pigment; // Genetic ripe color is used by the existing simple crop-mesh path.
           const colors = variety == null ? (CROP_COLORS[tile.crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
           const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
           const color  = tile.cropReady ? colors.ripe
@@ -771,9 +819,10 @@
             const geo  = new THREE.BoxGeometry(1, 1, 1);
             const mat  = new THREE.MeshLambertMaterial({ color });
             const mesh = new THREE.Mesh(geo, mat);
-            mesh.userData.hobunjiCropBaseKey = family; // Authored PNG bridge still identifies imported garlink/ongyums without guessing their new color.
+            mesh.userData.hobunjiCropBaseKey = family; // Authored PNG bridge identifies imported/berry cultivars without guessing color.
             mesh.userData.hobunjiCropRootKey = family; // Soil anchoring applies to imported crops just as it does to native ones.
-            mesh.userData.hobunjiCropVarietyColor = variety ?? null; // Preserves the precise hybrid pigment on the billboard children.
+            mesh.userData.hobunjiCropId = tile.crop; // Replanting a different genotype triggers a fresh visual.
+            mesh.userData.hobunjiCropVarietyColor = pigment; // Exact inherited RGB used by the shade-fill sprite bridge.
             mesh.castShadow = true;
             deps.scene.add(mesh);
             mesh.layers.enable(1);
@@ -1024,13 +1073,16 @@
       if (!group) return null;
       group.userData.hobunjiCropRootKey = family; // Identifies the actual crop family in town and wilderness farm plots.
       group.userData.hobunjiFoliageMesh = true; // Keeps the same foliage identity contract as player farm crops.
-      _tintVarietyFoliage(group, variety?.color);
+      group.userData.hobunjiCropId = crop; // NPC plots use the same per-genotype visual identity.
+      group.userData.hobunjiCropVarietyColor = variety?.color ?? null; // NPC crops and player fields share the inherited color.
+      _tintVarietyFoliage(group, variety?.color, family);
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
     }
     const pigment = variety?.color; // Reuse the resolved genotype; redeclaring "variety" here broke the whole renderer.
     const colors = pigment == null ? (CROP_COLORS[crop] || CROP_COLORS.garlink) : { body: pigment, ripe: pigment, sprout: 0x6c9751 };
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: ready ? colors.ripe : g < 0.15 ? colors.sprout : colors.body }));
+    mesh.userData.hobunjiCropId = crop; // NPC planted berry/vegetable variants are independently identifiable in the sprite bridge.
     mesh.userData.hobunjiCropBaseKey = family; // Saved NPC plots use the same authored crop-art bridge.
     mesh.userData.hobunjiCropRootKey = family;
     mesh.userData.hobunjiCropVarietyColor = pigment ?? null;
@@ -1061,7 +1113,7 @@
     vegFoliageMeshes,
     vegFoliageActive: _vegFoliageActive,
     get cropMeshes() { return cropMeshes; },
-    getMustardDebug: () => ({ texture: MUSHTARD_LEAF_ART.outer, textures: { ...MUSHTARD_LEAF_ART }, textureStates: Object.fromEntries([...mushtardTextures].map(([shape, record]) => [shape, record.state])), nativeMaterialCount: mushtardMaterials.size, matureLeaves: 15, maxDrawCallsPerPlant: 2 }), // Lightweight mushtard PNG and card diagnostics for mobile.
+    getMustardDebug: () => ({ texture: MUSHTARD_LEAF_ART.outer, textures: { ...MUSHTARD_LEAF_ART }, textureStates: Object.fromEntries([...mushtardTextures].map(([shape, record]) => [shape, record.state])), cultivarTextureStates: Object.fromEntries(cultivarTextureState), nativeMaterialCount: mushtardMaterials.size, matureLeaves: 15, maxDrawCallsPerPlant: 2 }), // Lightweight mushtard PNG and card diagnostics for mobile.
     getGrassBillboardMat: () => grassBillboardMat,
     setGrassDistanceLod,
     getGrassDistanceLod,
