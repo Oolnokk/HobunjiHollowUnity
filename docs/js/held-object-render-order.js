@@ -1951,10 +1951,16 @@
     const [left, top, right, bottom] = footprint.bounds;
     if (max.x < left || min.x >= right || max.z < top || min.z >= bottom) return false;
     if (!footprint.tiles) return true; // The flood footprint is one solid rectangle.
-    // Use the dry/occupied world cells, not the projected overlap of an entire river.
+    // Check the rendered height of the intersected water tiles. A tall waterfall
+    // upstream must not make a weapon above the water here count as submerged.
+    const matrix = cover.matrixWorld?.elements; // Merged tile metadata has world X/Z and mesh-local heights.
+    const useTileHeight = matrix?.[1] === 0 && matrix[9] === 0 && matrix[5] > 0;
     for (let row = Math.max(top, Math.floor(min.z)); row < Math.min(bottom, Math.floor(max.z) + 1); row++) {
       for (let col = Math.max(left, Math.floor(min.x)); col < Math.min(right, Math.floor(max.x) + 1); col++) {
-        if (footprint.tiles.has(col + ',' + row)) return true;
+        const key = col + ',' + row; // Shared occupancy and rendered-height lookup for this water tile.
+        if (!footprint.tiles.has(key)) continue;
+        const localTop = footprint.tileMaxY?.get(key) ?? footprint.baselineMaxY;
+        if (!useTileHeight || !Number.isFinite(localTop) || min.y <= localTop * matrix[5] + matrix[13]) return true;
       }
     }
     return false;

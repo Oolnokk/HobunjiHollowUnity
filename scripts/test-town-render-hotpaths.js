@@ -185,26 +185,13 @@ class TestBufferAttribute {
 class TestMesh {
   constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; }
 }
-const meshDataForWaterTest = {
-  positions: [0, 0, 0, 1, 0, 0, 0, 0, 1], uvs: [0, 0, 1, 0, 0, 1],
-  depths: [1, 1, 1], coverages: [1, 1, 1], flows: [0, 0, 0, 0, 0, 0],
-  indices: [0, 1, 2], tileCount: 1, representation: 'test-water',
-};
-const meshWaterStats = {};
-const meshBuilderStart = mergedWater.indexOf('  function createMesh('); // Extracts the exact production mesh factory.
-const meshBuilderEnd = mergedWater.indexOf('  function clearStats(', meshBuilderStart);
-assert.ok(meshBuilderStart >= 0 && meshBuilderEnd > meshBuilderStart,
-  'extract the merged-water mesh factory');
-const makeWaterMesh = new Function(
-  'buildMapWidePlaneSurfaceData', 'buildInvertedSurfaceData', 'buildSurfaceData',
-  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
-  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\nreturn createMesh;'
-)(() => meshDataForWaterTest, () => meshDataForWaterTest, () => meshDataForWaterTest,
-  meshWaterStats, new Map(), 4, 0.12, 0.012, 0.035);
+const waterRendererContext = { window: {} }; // Run the complete production geometry and mesh factories with Three stubs.
+vm.runInNewContext(mergedWater, waterRendererContext);
+const { createMesh: makeWaterMesh, stats: meshWaterStats } = waterRendererContext.window.MergedWaterRenderer;
 const testedWaterMesh = makeWaterMesh({
   BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
   BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
-}, testedWaterMaterial, [], { mapWidePlane: true, statKey: 'scope-regression' });
+}, testedWaterMaterial, [], { mapWidePlane: true, cols: 1, rows: 1, baseline: { surfaceY: 0.2, depth: 1 }, statKey: 'scope-regression' });
 assert.ok(testedWaterMesh, 'town water mesh creation completes without a scope ReferenceError');
 assert.equal(meshWaterStats['scope-regression'].depthAlphaThreshold,
   surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD,
@@ -222,13 +209,13 @@ const sparseWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, wa
   { statKey: 'sparse-water-proximity' });
 assert.equal(sparseWaterMesh.userData.hobunjiWaterTileFootprint.tiles.size, 2,
   'merged water caches the actual occupied tiles instead of filling its bounding rectangle');
-assert.deepEqual(sparseWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [4, 4, 36, 36],
+assert.deepEqual(Array.from(sparseWaterMesh.userData.hobunjiWaterTileFootprint.bounds), [4, 4, 36, 36],
   'the merged water footprint also has cheap conservative world-tile bounds');
 const floodWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, [],
-  { statKey: 'flood-water-proximity', mapWidePlane: true, cols: 40, rows: 40 });
+  { statKey: 'flood-water-proximity', mapWidePlane: true, cols: 40, rows: 40, baseline: { surfaceY: 0.2, depth: 1 } });
 assert.equal(floodWaterMesh.userData.hobunjiWaterTileFootprint.tiles, null,
   'full-map flood uses bounds rather than allocating one entry for every wet tile');
-assert.deepEqual(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [0, 0, 40, 40]);
+assert.deepEqual(Array.from(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds), [0, 0, 40, 40]);
 assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopeCount.value, 0,
   'ordinary water shading is never clipped');
 assert.match(testedWaterMaterial.vertexShader, /vWaterWorldXZ = \(modelMatrix \* vec4\(position, 1\.0\)\)\.xz/,
@@ -370,6 +357,32 @@ assert(waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'the moving offhand
 flailHead.matrixWorld = atWorld(.5, .7, .5);
 assert(!waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'a raised weapon over a wet tile remains clear');
 assert(!waterVolume.meshOverlapsWaterVolume({ ...flailHead, isGear: false }, bank, false), 'the same world-surface check protects dry portraits');
+
+const steppedWaterCells = [ // One draw contains a shallow tile, a nearby high tile, and a dry gap.
+  { col: 0, row: 0, surfaceY: 0.2 },
+  { col: 2, row: 0, surfaceY: 0.8 },
+];
+for (const options of [{}, {
+  inverted: true, cols: 3, rows: 1, baseline: { surfaceY: 0.2, depth: 1 },
+}]) {
+  const steppedWater = makeWaterMesh(waterFixtureThree, testedWaterMaterial, steppedWaterCells, options);
+  steppedWater.geometry.boundingBox = bounds({ x: 0, y: .215, z: 0 }, { x: 3, y: .815, z: 1 }).boundingBox;
+  steppedWater.matrixWorld = { ...atWorld(0, 0, 0), elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] };
+  for (const isGear of [true, false]) {
+    const part = { ...flailHead, isGear, matrixWorld: atWorld(.5, .5, .5) };
+    assert(!waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'a raised section of the same mesh cannot tint the flail or portrait above the low tile');
+    part.matrixWorld = atWorld(2.5, .5, .5);
+    assert(waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the same flail or portrait is submerged below the actually raised tile');
+    part.matrixWorld = atWorld(.5, .25, .5);
+    assert(waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the low tile still tints an actually submerged portrait or flail');
+    part.matrixWorld = atWorld(1.5, .1, .5);
+    assert(!waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the gap remains dry even when an inverted baseline is active');
+  }
+}
 const stencilStart = heldRender.indexOf('  function prepareSubmergedOverlayStencilMaterials(');
 const stencilEnd = heldRender.indexOf('  function prepareOverlayCoverTintMaterials(', stencilStart);
 const stampStencil = new Function('THREE', 'saveMaterialState', 'forEachMaterial',
