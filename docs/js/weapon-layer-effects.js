@@ -183,6 +183,47 @@
     return canvas;
   }
 
+  function makeIgnitionCloth(mesh, sourceImage, fuelPixels) {
+    // An individual torch owns this canvas; the cached PNG/marker tint stays untouched.
+    const texture = mesh?.material?.map; // This weapon instance's cloned map receives the once-only wick brightness lerp.
+    if (!texture) return null;
+    const neutral = rgba(texture.image);
+    if (!neutral || neutral.width !== sourceImage.width || neutral.height !== sourceImage.height) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = neutral.width; canvas.height = neutral.height;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(canvas.width, canvas.height);
+      imageData.data.set(neutral.data);
+      ctx.putImageData(imageData, 0, 0);
+      texture.image = canvas; texture.needsUpdate = true;
+      return { texture, ctx, imageData, neutral: new Uint8ClampedArray(neutral.data), indices: fuelPixels, progress: 0 };
+    } catch (error) {
+      global.__farmLog?.('[weapon effects] Torch cloth unavailable: ' + (error?.message || error), 'warn');
+      return null;
+    }
+  }
+
+  function updateIgnitionCloth(fx, lit, dt) {
+    const cloth = fx.cloth; // Only lit-only torch fuel pixels change; fire staffs and flail heads keep their authored look.
+    if (!cloth) return;
+    const duration = Math.max(0.01, Number(fx.config.clothDarkenS) || 0.18);
+    const next = lit ? Math.min(1, cloth.progress + Math.max(0, dt) / duration) : 0;
+    if (next === cloth.progress) return; // Upload only during initial ignition; no looping brightness updates.
+    cloth.progress = next;
+    const eased = next * next * (3 - 2 * next);
+    const targetBrightness = Math.max(0, Math.min(1, Number(fx.config.clothLitBrightness) || 0.52));
+    const brightness = 1 - (1 - targetBrightness) * eased;
+    const colors = cloth.imageData.data;
+    for (const index of cloth.indices) {
+      const offset = index * 4;
+      for (let channel = 0; channel < 3; channel++)
+        colors[offset + channel] = Math.round(cloth.neutral[offset + channel] * brightness);
+    }
+    cloth.ctx.putImageData(cloth.imageData, 0, 0);
+    cloth.texture.needsUpdate = true;
+  }
+
   function registerLayer(state, mesh, layer, image) {
     if (!state.materialLayers) state.materialLayers = []; // Layer metadata drives per-weapon color refresh and montage masks.
     state.materialLayers.push({ mesh, config: layer, image });
@@ -303,12 +344,14 @@
         return { group: pivot, x, y };
       });
       const above = layers[index + 1]?.mesh;
-      const renderOrder = layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2;
+      const renderOrder = spec.frontOfSource === true ? layer.mesh.renderOrder + 0.01
+        : layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2; // Torch flame over the sprite; flail fire stays behind front hardware.
       emitters.push({
         config: spec, sourceLayer: layer.config, sourceMesh: layer.mesh, image: pix, sources,
         sourceFallback: !markedSources.length, // Mobile diagnostics distinguish a rescued torch emitter from its marker-driven staff counterpart.
         clusters, anchors, visualScale, // Geometric per-tip parent scaling matches the flail-head transform.
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
+        cloth: spec.litOnly ? makeIgnitionCloth(layer.mesh, pix, sources) : null, // Per-torch mask, not an effect on shared art.
         worldRise: spec.worldRise === true, // Opt in: torch-staff and brazier particles travel along world-up even as their weapons rotate.
         worldTarget: spec.worldRise === true ? new THREE.Vector3() : null, // Shared scratch vector avoids per-frame GC for world-space positions.
         inverseWorld: spec.worldRise === true ? new THREE.Matrix4() : null, // Reprojects motes through the rendered, stance-corrected matrix.
@@ -345,7 +388,9 @@
     if (!state.fireEmitters?.length) return;
     const THREE = state.THREE;
     for (const fx of state.fireEmitters) {
-      if (fx.config.litOnly && !window.AdventuringTools?.isLit?.()) {
+      const torchLit = !fx.config.litOnly || window.AdventuringTools?.isLit?.() === true;
+      if (fx.config.litOnly) updateIgnitionCloth(fx, torchLit, dt);
+      if (!torchLit) {
         for (const particle of fx.particles) {
           particle.sprite.visible=false;
           particle.sprite.parent?.remove(particle.sprite);

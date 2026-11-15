@@ -28,19 +28,19 @@ const back = pixels(2,2,[[0,0,metal],[1,0,metal],[0,1,metal]]);
 const handle = pixels(2,2,[[1,1,metal]]);
 const fuel = pixels(2,2,[[0,1,rag]]);
 const front = pixels(2,2,[[1,0,metal]]);
-let current = null; // Fake canvas source image, swapped by context.drawImage.
 const document = {createElement(type) {
   assert.equal(type,'canvas');
-  return {
-    width:0,height:0,
-    getContext() { return {
-      drawImage(img) {current=img;},
-      getImageData() {return {width:current.width,height:current.height,data:current.pixels};},
-      createImageData(w,h) {return {width:w,height:h,data:new Uint8ClampedArray(w*h*4)};},
-      putImageData(result) {this.output=result;},
-      createRadialGradient() {return {addColorStop(){}};},fillRect() {},
-    };},
+  const canvas = { width:0,height:0,pixels:null }; // Keeps the painted bytes for wick-brightness assertions.
+  const context = {
+    source:null,
+    drawImage(img) {this.source=img;},
+    getImageData() {return {width:this.source.width,height:this.source.height,data:this.source.pixels};},
+    createImageData(w,h) {return {width:w,height:h,data:new Uint8ClampedArray(w*h*4)};},
+    putImageData(result) {this.output=result;canvas.pixels=result.data.slice();},
+    createRadialGradient() {return {addColorStop(){}};},fillRect() {},
   };
+  canvas.getContext=()=>context;
+  return canvas;
 }};
 const window = {};
 vm.runInNewContext(src,{window,document,console,performance:{now:()=>1500}});
@@ -225,6 +225,7 @@ assert.match(hub, /baseFireMode/, 'tool editor exposes single-PNG effects');
 const handheld = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.torch; // Production Torch-Staff-derived fire, not a duplicate test recipe.
 const bareTip = pixels(4, 10, [[1, 8, [222, 212, 193, 255]], [2, 8, [222, 212, 193, 255]], [1, 9, [160, 140, 120, 255]]]);
 const litPlane = new Group(); litPlane.renderOrder = 1.5;
+litPlane.material = { map: { image: bareTip, needsUpdate:false } }; // Real torch clones its base map before per-instance cloth tint.
 const actualOverlayLayer = Number(held.match(/const HELD_OVERLAY_LAYER = (\d+);/)?.[1]); // Read the actual held-overlay layer from gameplay.
 assert(Number.isInteger(actualOverlayLayer), 'the test can locate the actual held overlay layer');
 litPlane.layers.mask = (1 << 0) | (1 << actualOverlayLayer); // Torch plane participates in ordinary and real held overlay draws.
@@ -235,19 +236,32 @@ const litState = { THREE, plane: litPlane, itemKey: 'torch', masteryLevel: () =>
 api.activateStatic(litState, handheld.base, [], [], bareTip, .002);
 assert.equal(litState.fireEmitters.length, 1, 'a fully off-white torch still creates an emitter at its opaque business end');
 const tipFx = litState.fireEmitters[0];
+assert(tipFx.renderOrder > litPlane.renderOrder, 'torch flame is rendered above its whole sprite');
+assert(tipFx.cloth, 'lit torch owns a pixel-mask cloth transition');
+assert.notEqual(litPlane.material.map.image, bareTip, 'never mutate the original torch art');
 assert.equal(tipFx.sourceFallback, true, 'diagnostics identify the missing-marker fallback');
 assert(tipFx.sources.every(index => Math.floor(index / bareTip.width) >= 8), 'torch flames originate at the authored -Y tip');
 assert.equal(tipFx.visualScale, 4, 'the held torch retains the Torch-Staff mastery-5 fire scale');
 api.stepFire(litState, .15);
 assert.equal(tipFx.particles.length, 0, 'unlit torch does not produce fire');
 lit = true;
-api.stepFire(litState, .15);
+api.stepFire(litState, .09);
+const halfBright = litPlane.material.map.image.pixels[(8*4+1)*4]; // Authored wick fuel pixel halfway through the one-shot lerp.
+assert(halfBright < 222 && halfBright > 100, 'the lit wick gradually darkens');
+api.stepFire(litState, .09);
+assert.equal(tipFx.cloth.progress, 1, 'the short ignition lerp reaches a stable brightness');
+const charredBright = litPlane.material.map.image.pixels[(8*4+1)*4];
+assert(charredBright < halfBright, 'the cloth reaches a darker steady state');
+api.stepFire(litState, .2);
+assert.equal(litPlane.material.map.image.pixels[(8*4+1)*4], charredBright, 'steady flame has no repeated cloth brightening');
+assert.equal(bareTip.pixels[(8*4+1)*4], 222, 'the shared artwork stays unchanged');
 assert(tipFx.particles.length > 0, 'lighting the held torch produces flames without recreating its weapon mesh');
 assert(tipFx.particles.every(p => (p.sprite.layers.mask & 1) && (p.sprite.layers.mask & (1 << actualOverlayLayer))),
   'flames render in both the normal world and the held-object overlay passes');
 lit = false;
 api.stepFire(litState, .02);
 assert.equal(tipFx.particles.length, 0, 'stowing immediately extinguishes existing flames');
+assert.equal(litPlane.material.map.image.pixels[(8*4+1)*4], 222, 'stowing restores the authored cloth brightness');
 api.dispose(litState);
 const markedTip = pixels(4, 10, [[1, 9, rag], [2, 9, rag]]);
 const markedPlane = new Group(); markedPlane.renderOrder = 1.5;

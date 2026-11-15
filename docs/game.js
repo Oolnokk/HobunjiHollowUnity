@@ -21011,6 +21011,18 @@
           if (climb) window.ClimbSystem.startClimb(climb);
           return;
         }
+        if (activeAction === 'obj_door_toggle') {
+          const door = resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
+          const result = door?.onAction?.(activeAction) || { ok: false, message: 'No door here.' };
+          if (result.message) showToast(result.message, result.ok !== false);
+          if (result.ok !== false && !result.deferMemberSave) saveMemberWorldData();
+          refreshActionBar();
+          return; // Door handling never starts a torch forehand or extinguishes its flame.
+        }
+        if (activeAction.startsWith('dev_ruin_world_') && window.DevRandomRuinInteractions?.invokeDoorAction?.(activeAction)) {
+          refreshActionBar(); // Native ruin transit doors use the same validated world-interaction owner.
+          return; // Do not queue a torch strike when opening a door.
+        }
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -21102,8 +21114,8 @@
           return;
         }
 
-        if (activeTool === 'adventuring' && (pendingAction?.tool === 'adventuring'
-            || (activeAction === 'torch_throw' && combatSwingAnim && toolSwingT > 0))) return; // Finish the active strike before accepting another torch action.
+        if (activeTool === 'adventuring' && activeAction === 'torch_throw') return; // A throw is owned by press/hold/release, never a pending strike.
+        if (activeTool === 'adventuring' && pendingAction?.tool === 'adventuring') return; // Finish a torch forehand before accepting another.
         const torchVisual = activeTool === 'adventuring' && activeAction === 'torch_swing'
           ? window.AdventuringTools?.forehandSwingVisual?.() : null;
         if (activeTool === 'adventuring' && activeAction === 'torch_swing' && !torchVisual) return;
@@ -21185,9 +21197,8 @@
         }
 
         if (tool === 'adventuring') {
-          const result = action === 'torch_swing'
-            ? window.AdventuringTools?.swingAtAim(combatSwingCone)
-            : window.AdventuringTools?.throwLit(); // Torch strikes use the exact geometry shown by their melee trail.
+          if (action !== 'torch_swing') return; // A torch throw can only fire from its matched held-input release.
+          const result = window.AdventuringTools?.swingAtAim(combatSwingCone); // Strikes use the geometry shown by their melee trail.
           if (result?.message) showToast(result.message, result.ok !== false);
           refreshActionBar();
           return;
@@ -27795,7 +27806,7 @@
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         heldMode = 'tool';
         activeTool = tool;
-        if (WHEEL_SLOTS.includes(tool)) lastHeldFarmTool = tool; // Direct hotkeys/cycling must update the same recall memory as arch selection.
+        if (WHEEL_SLOTS.includes(tool) || tool === 'adventuring') lastHeldFarmTool = tool; // Explicit tool choices include the torch gateway; weapon/item quick switches never replace this recall memory.
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
@@ -27928,7 +27939,7 @@
       function adventuringToolActionButtons() {
         const reticle = getReticleTile(); // Independent of the targeted world object or an underground floor tile.
         const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col];
-        return (toolActions.adventuring || []).map((action, i) => {
+        const torchActions = (toolActions.adventuring || []).map((action, i) => {
           const [fallbackIcon] = actionLabels[action];
           return {
             icon: attackActionIconHTML('adventuring', action, fallbackIcon),
@@ -27937,7 +27948,18 @@
             style: i === 0 ? 'primary' : 'secondary',
             allowed: canUseAction('adventuring', action, reticle.col, reticle.row),
           };
-        });
+        }); // Keep Swing and Throw in the original two physical action slots.
+        const doorTarget = currentArea === 'interior'
+          ? getInteriorInteractableAt(reticle.col, reticle.row)
+          : _isBuildingArea(currentArea) || currentArea === 'town'
+            ? _buildingInteractables.get(currentArea + ',' + reticle.col + ',' + reticle.row)
+            : window.FurnitureTableSystem?.objectAt?.(currentArea, reticle.col, reticle.row); // Only read the already-aimed door, never every nearby furniture prompt.
+        const woodenDoorActions = (doorTarget?.getButtons?.(reticle) || [])
+          .filter(button => button.action === 'obj_door_toggle' && button.allowed !== false)
+          .map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary' }));
+        const ruinDoorActions = currentArea === 'map_i_dev_random_ruin'
+          ? window.DevRandomRuinInteractions?.getDoorActionButtons?.() || [] : []; // Native V50 transit doors use their existing validated proximity/action owner.
+        return torchActions.concat(woodenDoorActions, ruinDoorActions);
       }
 
       function computeActionButtonsImpl() {
@@ -28588,6 +28610,7 @@
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _torchThrowPress = false; // This touch pointer owns a held torch throw until release/cancel.
             let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
@@ -28617,7 +28640,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('dev_ruin_world_') || act.startsWith('fish_') || act.startsWith('festival_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -28670,6 +28693,7 @@
               _sockR = rect.width * 0.70;
               _drag = false;
               _combatAimRelease = false;
+              _torchThrowPress = false;
               _socket = document.createElement('div');
               _socket.className = 'abt-socket';
               _socket.style.left   = _cx + 'px';
@@ -28722,7 +28746,10 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
-                _combatAimRelease = Boolean(_pressSlot || (activeTool === 'ranged' && act === 'shoot'));
+                _torchThrowPress = act === 'torch_throw' && heldMode === 'tool' && activeTool === 'adventuring'
+                  && window.AdventuringTools?.beginThrow?.('touch-arch', ev.pointerId) === true;
+                _combatAimRelease = Boolean(_pressSlot || _torchThrowPress || (activeTool === 'ranged' && act === 'shoot'));
+                if (_torchThrowPress) setMobileArchCombatAim(ev.pointerId, 0, 0, _sockR, act); // Update the throw's aim throughout the hold.
                 if (_pressSlot) { window.Combat.input.pressStart(_pressSlot, ev); }
               }
             });
@@ -28831,7 +28858,10 @@
                   if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
                   else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
                 } else if (!_chargeFiredOnPress) {
-                  if (_pressSlot) {
+                  if (_torchThrowPress) {
+                    if (pointerCanceled) window.AdventuringTools?.cancelThrow?.('touch-pointer-cancel');
+                    else window.AdventuringTools?.releaseThrow?.('touch-arch-release');
+                  } else if (_pressSlot) {
                     if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
                     else {
                       if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
@@ -28874,6 +28904,7 @@
                 _flaskCanceled = false;
                 _combatAimRelease = false;
                 _pressSlot = null;
+                _torchThrowPress = false;
                 try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
               }
             }
@@ -29424,6 +29455,10 @@
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
+        if (btn.action === 'torch_throw') {
+          if (window.AdventuringTools?.beginThrow?.(inputActionId)) torchThrowActionPresses.add(inputActionId);
+          return; // Action 2 press starts a held windup, never an immediate projectile.
+        }
         const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
         if (startsCharge) heldChargeInputId = inputActionId;
         actionHeldDown = slotIndex === 1 || startsCharge;
@@ -29500,6 +29535,11 @@
       });
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
+      const torchThrowActionPresses = new Set(); // Retains the original keyboard/controller/mouse press across action-bar changes.
+      window.addEventListener('blur', () => { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('window-blur'); });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('page-hidden'); }
+      });
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
@@ -29660,6 +29700,10 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot, physicalEvent); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (torchThrowActionPresses.delete(actionId)) {
+            window.AdventuringTools?.releaseThrow?.('input-action-release');
+            return;
+          }
           if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
             const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used so controller/keyboard/mouse Action 1 releases the same active thrown charge through shared input ownership.
             if (thrownBridge?.ownsThrownInput?.() ?? thrownBridge?.activeThrownChargeItemKey?.()) {
@@ -32680,6 +32724,11 @@
         getUnlocked: () => window.__hobunjiPlayerProfile?.adventuringToolUnlocks || [],
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getMeleeAimDirection: currentPlayerMeleeAimDirection,
+        beginThrowVisual: (durationS, options) => toolSwingT > 0 || pendingAction?.tool === 'adventuring'
+          ? false : triggerPoseDrivenToolVisual('adventuring', durationS, options), // Reuse the shared held Windup→Strike timeline.
+        getThrowPoseProgress: getWeaponSwingWindupPoseProgress,
+        releaseThrowVisual: releaseWeaponSwingHold,
+        cancelThrowVisual: cancelWeaponSwingHold,
         refreshActionBar,
         selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
       };

@@ -7,26 +7,39 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Loads the real runtime modules from repository root.
 const committedTorch = JSON.parse(read('docs/config/combat/weapon-idle-stances.json')).stances.torchHold; // Shared runtime/editor idle Y.
-assert.equal(committedTorch.y, 0.08, 'torch idle uses the newly authored neutral height');
-assert.equal(committedTorch.x, -0.03);
-assert.equal(committedTorch.z, 0.17);
-assert.equal(committedTorch.pitch, 10);
-assert.equal(committedTorch.scale, 0.64);
-assert.equal(committedTorch.elbows.right.y, -0.19);
+assert.equal(committedTorch.y, 0.1472916715500817, 'torch idle uses the newly authored neutral height');
+assert.equal(committedTorch.x, -0.15);
+assert.equal(committedTorch.z, 0.198510001727785);
+assert.equal(committedTorch.pitch, -90);
+assert.equal(committedTorch.scale, 0.68);
+assert.equal(committedTorch.elbows.right.y, -0.06015679313571905);
+const gripSource = read('docs/js/hand-tool-grips.js'); // Torch and Harlyao longsword share one deliberately authored grip entry.
+assert(gripSource.includes("if (key === 'torch' || key === 'harlyaolongsword'"), 'torch resolves to Harlyao grip');
+const gripStart = gripSource.indexOf('harlyaolongsword: {');
+const gripEnd = gripSource.indexOf('\n    },\n  };', gripStart);
+assert(gripStart >= 0 && gripEnd > gripStart, 'Harlyao grip has a committed default object');
+const gripLiteral = gripSource.slice(gripStart + 'harlyaolongsword: '.length, gripEnd).trim().replace(/,$/, '');
+const sharedGrip = vm.runInNewContext('(' + gripLiteral + ')');
+assert.deepEqual(JSON.parse(JSON.stringify(sharedGrip.primaryGrip.position)), { x: -0.08, y: 0, z: -0.05 });
+assert.deepEqual(JSON.parse(JSON.stringify(sharedGrip.primaryGrip.rotationDeg)), { pitch: 0, yaw: -90, roll: 0 });
+assert.equal(sharedGrip.toolScale, 1);
+assert.equal(sharedGrip.heightMultiplier, 0.5);
 const sharedSource = read('docs/js/held-action-animations.js'); // Exported still-action lives in the shared held-action registry.
 const start = sharedSource.indexOf('const torchIdle = ');
 const end = sharedSource.indexOf(';\n\n  const drink', start);
 assert(start >= 0 && end > start, 'shared authored torch action is present');
 const sharedTorch = vm.runInNewContext('(' + sharedSource.slice(start + 'const torchIdle = '.length, end) + ')');
 assert.equal(sharedTorch.actionId, 'torch_idle');
-assert.equal(sharedTorch.poses.neutral.y, 0.08);
-assert.equal(sharedTorch.poses.neutral.scale, 0.64);
-assert.equal(sharedTorch.poses.neutral.elbows.right.x, -0.04);
+assert.equal(sharedTorch.poses.neutral.y, 0.1472916715500817);
+assert.equal(sharedTorch.poses.neutral.scale, 0.68);
+assert.equal(sharedTorch.poses.neutral.elbows.right.x, 0.002670316618150828);
 assert.equal(sharedTorch.poses.windup.x, 0.13);
 assert.equal(sharedTorch.poses.windup.y, 0);
 assert.equal(sharedTorch.poses.strike.pitch, 10.31);
 assert.equal(sharedTorch.gripMode, 'palm-parallel');
 assert.equal(sharedTorch.worldUpright, true);
+assert.deepEqual(JSON.parse(JSON.stringify(committedTorch)), JSON.parse(JSON.stringify({...sharedTorch.poses.neutral, worldUpright: true})), 'runtime neutral is identical to the uploaded action');
+assert.equal(sharedTorch.poses.neutral.elbows.left.y, -0.10531282069027048);
 for (const phase of ['neutral', 'windup', 'strike']) assert.equal(sharedTorch.poses[phase].offhandIdle?.enabled, false, phase + ': invisible authored offhand is disabled');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /id="torchIdleYDirect"/, 'attack editor exposes direct torch height slider');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /workingConfig.stances.torchHold.y = value/, 'slider writes the existing exported stance');
@@ -167,9 +180,9 @@ holder.updateMatrixWorld();
 let snapshot = window.WeaponToolStances.debugSnapshot();
 assert.equal(snapshot.stanceApplied, true, 'torch starts in its dedicated idle stance');
 assert.equal(snapshot.worldUprightApplied, true, 'torched PNG receives the world-up correction');
-assert.equal(renderedScale, 0.64, 'torch renders at the exported neutral size');
+assert.equal(renderedScale, 0.68, 'torch renders at the exported neutral size');
 assert.equal(holder.scale.x, 1, 'holder scale is restored after the pose bake');
-assert.equal(snapshot.poses.torchHold.y, 0.08, 'diagnostics expose authored neutral height');
+assert.equal(snapshot.poses.torchHold.y, 0.1472916715500817, 'diagnostics expose authored neutral height');
 assert(renderedUp.y < -.99999, 'rendered torch flame points up, even through mirrored scales');
 for (let i = 0; i < 4; i++) {
   time += 16;
@@ -190,7 +203,8 @@ const avatarRoot = { parent: body }; // Live player rig; NPC rigs must not inher
 const hands = window.HobunjiHandShoulderPoseRuntime;
 assert.equal(hands.currentWeights('right', avatarRoot).grip, 1);
 assert.equal(hands.currentWeights('right', avatarRoot).palmNormal, 1);
-assert.equal(hands.currentElbow('right', avatarRoot).y, -0.19, 'idle carries the exported right-elbow position');
+assert.equal(hands.currentElbow('right', avatarRoot).y, -0.06015679313571905, 'idle carries the exported right-elbow position');
+assert.equal(hands.currentElbow('left', avatarRoot)?.y, -0.10531282069027048, 'idle carries the exported left-elbow position');
 assert.equal(hands.currentElbow('right', { parent: root }), null, 'unrelated NPC rigs do not inherit player torch elbows');
 
 active.slot = 'axe';
