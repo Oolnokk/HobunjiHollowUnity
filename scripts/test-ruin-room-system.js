@@ -1,4 +1,4 @@
-// Runtime assertions for room-owned geometry, unclipped full-screen lighting and Zelda-style enemy resets.
+// Runtime assertions for room-owned geometry, full-screen ambience, room-local light bounds and Zelda-style enemy resets.
 const assert=require('node:assert/strict');
 const Rooms=require('../docs/js/ruin-room-system.js');
 const ruin='map_i_dev_random_ruin'; // All fixture actors belong to this single continuous interior map.
@@ -114,6 +114,26 @@ assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},project,()=>{fills++;}),f
 assert.equal(fills,81,'rejected lights do not draw');
 assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},project,null),false,
   'invalid drawing callbacks must be ignored');
+assert.equal(session.roomGlowRadius({x:35.5,y:1,z:15.5},20),5.4,
+  'the solved room light fades at the nearest world-space stone wall without a colored rectangle');
+assert.equal(session.roomGlowRadius({x:31,y:1,z:15},4),.9,
+  'off-center room lights fade before their adjacent wall');
+assert.equal(session.roomGlowRadius({x:14,y:1,z:14},4),4,
+  'light sources outside the active chamber keep their authored radius');
+let regionClips=0,saves=0,restores=0,regionPaints=0;
+const corners=[]; // Mobile overlay tests validate four physical floor-plane corners, not the obsolete eight-corner wall/roof silhouette.
+const regionCtx={save(){saves++;},restore(){restores++;},beginPath(){},
+  moveTo(x,y){corners.push([x,y]);},lineTo(x,y){corners.push([x,y]);},closePath(){},
+  clip(){regionClips++;}};
+const roomProjection=(x,y,z)=>({x:x*2+y*.1,y:z*2-y*.2});
+assert.equal(session.withLightRegion(regionCtx,roomProjection,()=>{regionPaints++;}),true);
+assert.equal(regionClips,1,'one enclosing clip covers the whole local-light pass, not each source');
+assert.equal(regionPaints,1);
+assert.equal(corners.length,4,'only the actual room floor footprint is projected');
+assert.equal(saves,1);assert.equal(restores,1,'the room mask does not leak Canvas state');
+assert.equal(session.withLightRegion(regionCtx,()=>({x:NaN,y:NaN}),()=>{regionPaints++;}),true);
+assert.equal(regionClips,1,'an invalid perspective projection does not install a broken clip');
+assert.equal(regionPaints,2,'invalid camera projections retain basic lighting');
 const lightDebug=session.snapshot().lightClip;
 assert.equal(lightDebug.mode,'full-screen-tint');
 assert.equal(lightDebug.feathered,false);
@@ -122,14 +142,25 @@ assert.equal(lightDebug.bands,0);
 assert.equal(projections,0);
 assert.equal(clips,0);
 assert.equal(ctx.globalAlpha,.8,'source filtering must not mutate shared Canvas state');
+const boundaryDebug=session.snapshot().localLightBoundary;
+assert.equal(boundaryDebug.mode,'room-floor-footprint');
+assert.equal(boundaryDebug.active,true);
+assert.equal(boundaryDebug.canvasPasses,1);
 const fogSource=require('node:fs').readFileSync(require('node:path').join(__dirname,'../docs/js/cloud-forest-fog.js'),'utf8');
 assert.match(fogSource,/RUIN_SCREEN_TINT_ALPHA\s*=\s*0\.07/,'the new full-screen tradition overlay is intentionally subtle');
 assert.match(fogSource,/ctx\.fillRect\(0,0,rect\.width,rect\.height\)/,'the tint fills the entire viewport');
 assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,ruinTradition\)/,'ordinary enclosed ruins render the full-screen tint');
 assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,activeRuinTradition\(\)\)/,'fog-backed ruins use that same tint');
 assert.doesNotMatch(fogSource,/prepareLightClip\?\./,'lighting redraw cannot revive old room polygon precomputation');
+assert.equal((fogSource.match(/withRuinLightRegion\(ctx,\(\)=>\{/g)||[]).length,2,
+  'both enclosed and fog-backed lighting pass through one room-local clip');
+assert.match(fogSource,/roomBound===true[\s\S]*roomGlowRadius/,
+  'large solved-room lights fade naturally before the actual wall boundary');
 player.x=24;session.tick(.31);
 assert.equal(session.activeRoomId,null,'hallways are seamless transition space, not an extra sealed room');
+session.withLightRegion(regionCtx,roomProjection,()=>{regionPaints++;});
+assert.equal(regionClips,1,'hallway light remains unmasked until entering a real room');
+assert.equal(regionPaints,3);
 assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin,'leaving the room immediately breaks pursuit');
 assert.equal(walker.area,'__ruin_room_sleep__:'+ruin,'civilian NPCs also stop when the player leaves');
 session.dispose();
