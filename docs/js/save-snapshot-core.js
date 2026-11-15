@@ -114,7 +114,9 @@
 
     for (const [worldId, layout] of Object.entries(snapshot.farmLayouts || {})) {
       if (!validWorldIds.has(String(worldId))) continue;
-      localStorage.setItem(farmLayoutKey(worldId), JSON.stringify(layout));
+      const key = farmLayoutKey(worldId); // Browser layout mirror for this world; avoid synchronous storage writes when unchanged.
+      const raw = JSON.stringify(layout);
+      if (localStorage.getItem(key) !== raw) localStorage.setItem(key, raw);
     }
 
     return summary(snapshot);
