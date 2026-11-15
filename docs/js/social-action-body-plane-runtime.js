@@ -167,6 +167,7 @@
 
     composer.setChannel(CHANNEL, {
       priority: 60,
+      leaseMs: 500, // Dance sway is frame-authored and expires after an interrupted social action.
       rotation: { pitch: 0, yaw: global.SocialActionWheel?.spinRotation?.(t) ?? 0, roll: motion.bodySway },
       translation: { x: motion.tangentShift * sizeScale, y: motion.bounce * sizeScale, z: 0 },
     });

@@ -95,8 +95,9 @@
 
     const applied = ownsBody || !enabled() ? 0 : legs.getStanceDrop();
     if (applied > 1e-5) {
-      if (composerChanged || applied !== lastDrop) composer.setChannel(CHANNEL, {
+      if (composerChanged || applied !== lastDrop || !(composer.touchChannel?.(CHANNEL) ?? true)) composer.setChannel(CHANNEL, {
         priority: 4,
+        leaseMs: 500, // The constant stance drop is refreshed without allocating a new channel every frame.
         mode: 'additive',
         translation: { x: 0, y: -applied, z: 0 },
       });

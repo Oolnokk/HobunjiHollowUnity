@@ -27,6 +27,10 @@
 
   let forcedLoss = null;
   let activePlayerState = null;
+  function poseTimestampMs() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now() : Date.now(); // Monotonic browser time, shared with the render compositor's pose lease clock.
+  }
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -167,6 +171,7 @@
   function publishBodyChannel(state) {
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
+      leaseMs: 500, // Unsteady body sway is updated continuously and should not survive a lost animation owner.
       mode: 'additive',
       // Facing/dead-zone code owns Y rotation, so drunk sway contributes only
       // pitch/roll. The compositor no longer freezes a pre-tilt portrait side:
@@ -204,6 +209,7 @@
       blend: 0,
       speed: 0,
       disposed: false,
+      lastUpdatedAtMs: null, // The renderer uses this timestamp to reject gait samples abandoned by a stopped animation tick.
     };
 
     function clearPreviousFootTwist() {
@@ -326,6 +332,7 @@
       clearPreviousBodyTilt();
       originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion);
       applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
+      if (isPlayer) state.lastUpdatedAtMs = poseTimestampMs(); // A draw pass cannot renew a pose without a real solver update.
     };
 
     handle.dispose = function footingDrunkWalkDispose() {
@@ -363,6 +370,7 @@
   api.__footingDrunkWalkInstalled = true;
 
   window.HobunjiDrunkWalk = {
+    currentPlayerPoseSample() { return activePlayerState?.state || null; }, // Allocation-free read-only snapshot reference for the render hook; never mutate it.
     getDebug() {
       const state = activePlayerState?.state;
       const player = window.Combat?.deps?.player;
@@ -375,6 +383,7 @@
         speed: state?.speed ?? 0,
         pitchDeg: (state?.pitch || 0) / DEG,
         rollDeg: (state?.roll || 0) / DEG,
+        lastUpdatedAtMs: state?.lastUpdatedAtMs ?? null, // Guards against stale render-only re-publication after an interrupted gait.
         yawDeg: 0,
         bodyYawOwnedByFacing: true,
         forcedLoss,

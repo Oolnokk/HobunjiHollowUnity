@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Hobunji Hollow — Real Testing Arena Character Preview</title>
+  <script src="../../js/tap-reliability.js?v=20261010a"></script>
+  <style>
+    :root{background:#16291f;color:#f0e8ce;font:16px system-ui}
+    body{padding:2em;max-width:550px;margin:5vh auto}
+    a{color:#f6d88e}
+  </style>
+</head>
+<body>
+  <h1>Temporary Testing Arena</h1>
+  <p>Opening the real game engine with a fully rigged, temporary character. The arena preview does not use or update your saved characters or worlds.</p>
+  <p><a id="enterNativeArena" href="../../index.html?previewArena=1">Enter the real combat arena preview</a></p>
+  <p><a href="../../index.html">Return to character selection</a></p>
+  <script>
+    // This address remains stable for previous preview-map links, but the
+    // character is now hosted in the genuine game/Testing Arena renderer.
+    location.replace(document.getElementById('enterNativeArena').href);
+  </script>
+</body>
+</html>

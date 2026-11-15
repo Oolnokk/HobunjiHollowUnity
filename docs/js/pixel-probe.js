@@ -1226,7 +1226,8 @@
     if (obstacleRoutes) {
       const footRoute = obstacleRoutes.foot || {};
       const mountRoute = obstacleRoutes.mounted || {};
-      lines.push(`Ground steering: foot=${footRoute.status || '-'} blocked=${!!footRoute.blocked} waypoint=${footRoute.waypoint ? footRoute.waypoint.col + ',' + footRoute.waypoint.row : '-'} plans=${footRoute.plans ?? 0} mount=${mountRoute.status || '-'} blocked=${!!mountRoute.blocked} waypoint=${mountRoute.waypoint ? mountRoute.waypoint.col + ',' + mountRoute.waypoint.row : '-'} plans=${mountRoute.plans ?? 0}`);
+      const footSide = footRoute.side > 0 ? 'right' : footRoute.side < 0 ? 'left' : 'none'; // Exposes the contact slide direction on phones.
+      lines.push(`Ground steering: foot=${footRoute.status || '-'} blocked=${!!footRoute.blocked} side=${footSide} contact=${Number(footRoute.contactTiles || 0).toFixed(3)}t plans=${footRoute.plans ?? 0} mount=${mountRoute.status || '-'} blocked=${!!mountRoute.blocked} waypoint=${mountRoute.waypoint ? mountRoute.waypoint.col + ',' + mountRoute.waypoint.row : '-'} plans=${mountRoute.plans ?? 0}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {

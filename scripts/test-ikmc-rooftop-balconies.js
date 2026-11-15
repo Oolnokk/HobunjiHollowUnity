@@ -108,17 +108,83 @@ assert.match(fs.readFileSync('docs/js/grid-tile-accessors.js','utf8'),/HobunjiWa
 assert.match(movement,/HobunjiWalkableElevation\?\.isAboveBalconyAt/,
   'jump collision fallback also checks airborne balcony clearance');
 assert(movement.includes('kind: window.HobunjiWalkableElevation?.isBalconyAt?.'),'roof landing retains elevated support ownership');
-const envGlobals={THREE:{},FarmPanel:{init(){}},FarmEditor:{init(){}},GridTileAccessors:{init(){}}}; // Minimal runtime init test.
+const ladderVisualBuilds=[]; // Observes the actual visual key reaching the shared furniture builder.
+const ladderFallbackRecipe=[{kind:'box'},{kind:'box'},{kind:'box'}]; // Existing stiles + hatch before the ceiling runtime adds temporary rungs.
+const envGlobals={
+  THREE:{},FarmPanel:{init(){}},FarmEditor:{init(){}},GridTileAccessors:{init(){}},
+  ProceduralFurniture:{
+    CATALOG:{ikmcBalconyLadder:ladderFallbackRecipe},
+    buildFurnitureGroup(key){
+      ladderVisualBuilds.push(key);
+      return {key,children:this.CATALOG[key] || []}; // Empty unknown keys are white-cube candidates in production.
+    },
+  },
+}; // Realistic furniture alias path instead of a definitions-only test.
 vm.runInNewContext(fs.readFileSync('docs/js/interior-environment-runtime.js','utf8'),{
   window:envGlobals,location:{pathname:'/docs/index.html'},performance:{now:()=>0},
   setInterval:()=>0,clearInterval(){},console,
 },{filename:'interior-environment-runtime.js'});
 const registry={DECORATIVE_FURNITURE_DEFS:{},ITEM_DEFS:{}};
 envGlobals.FarmPanel.init(registry);
-assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadderFurniture?.procKey,'ikmcBalconyLadder',
-  'the placed ladder resolves to its authored model, not a white box');
-assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadderFurniture.fw,1);
+assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder?.itemKey,'ikmcBalconyLadderFurniture',
+  'the canonical furniture entry carries the itemKey game.js actually indexes');
+assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder?.procKey,'ikmcBalconyLadder');
+assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder.fw,1);
+assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder.area,'interior');
+assert.equal(registry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder.fixture,true,'roof access cannot appear as an ordinary shop item');
+assert(!Object.hasOwn(registry.DECORATIVE_FURNITURE_DEFS,'ikmcBalconyLadderFurniture'),
+  'the itemKey is not mistakenly installed as a second dictionary key');
 assert(registry.ITEM_DEFS.ikmcBalconyLadderFurniture,'ladder item metadata is registered');
+
+// Exercise the actual game.js itemKey lookup fragment, not a hand-written
+// approximation. The previous test only invoked a rendering wrapper directly
+// and passed while the real map still used its missing-key cube fallback.
+const gameplay=fs.readFileSync('docs/game.js','utf8'); // Current production lookup used by loadBuildingScene.
+const lookupStart=gameplay.indexOf('          const allFurnDefs = {};'); // Begin at the real scene furniture index.
+const lookupEnd=gameplay.indexOf('          // Dev Companion map-furniture overlay',lookupStart); // End before scene/camera dependencies.
+assert(lookupStart>=0&&lookupEnd>lookupStart,'production furniture dictionary lookup can be isolated');
+const lookupFurniture=new Function('DECORATIVE_FURNITURE_DEFS','PROCESSING_FURNITURE_DEFS',
+  gameplay.slice(lookupStart,lookupEnd)+';return {allFurnDefs,furnKeyByItemKey};'); // Runs unchanged lookup logic against the registered definitions.
+const lookup=lookupFurniture(registry.DECORATIVE_FURNITURE_DEFS,{});
+const placedLadder=interior.furniture.find(f=>f.id==='f_ikmc_roof_ladder'); // Actual IKMC authored map placement.
+const placedDefinition=lookup.allFurnDefs[placedLadder.itemKey]; // Production must find this by itemKey, not by catalog object key.
+const placedVisualKey=lookup.furnKeyByItemKey[placedLadder.itemKey]; // Actual furnitureKey derived by game.js.
+const renderKey=placedDefinition?.procKey && placedDefinition.procKey!==placedVisualKey
+  ? placedDefinition.procKey : placedVisualKey; // Exact game.js authored alias choice.
+assert(placedDefinition,'game.js would render the white cube without a matching itemKey definition');
+assert.equal(placedVisualKey,'ikmcBalconyLadder','the real building loader finds the canonical visual key');
+assert.equal(renderKey,ladder.key,'the placed furniture resolves to the shipped authored JSON');
+const ladderMesh=envGlobals.ProceduralFurniture.buildFurnitureGroup('ikmcBalconyLadderFurniture');
+assert.equal(ladderMesh.key,'ikmcBalconyLadder','the map item key must reach the authored/procedural model key');
+assert.equal(ladderVisualBuilds.at(-1),'ikmcBalconyLadder','the delegate receives the canonical key before it can return an empty mesh');
+assert.equal(ladderMesh.children.length,13,'fallback remains a complete 2-stile, hatch, foot and 9-rung ladder while JSON loads');
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup(renderKey).children.length,13,
+  'the actual map-derived key renders a real ladder, not the generic 0.8 cube placeholder');
+assert.equal(ladderFallbackRecipe.filter(p=>/^ikmc_fallback_rung_\d+$/.test(p.id||'')).length,9);
+assert.equal(envGlobals.ProceduralFurniture.CATALOG.ikmcBalconyLadderFurniture,ladderFallbackRecipe,
+  'direct catalog callers also resolve the inventory-key alias');
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup('chairSimple').key,'chairSimple',
+  'unrelated furniture retains its original model key');
+const gridRegistry={DECORATIVE_FURNITURE_DEFS:{},ITEM_DEFS:{}};
+envGlobals.GridTileAccessors.init(gridRegistry);
+assert.equal(gridRegistry.DECORATIVE_FURNITURE_DEFS.ikmcBalconyLadder?.itemKey,'ikmcBalconyLadderFurniture',
+  'the scene-loader initialization registers the canonical ladder including itemKey without FarmPanel');
+assert.equal(envGlobals.__interiorEnvironmentDebug().ladderFallbackRungs,9,
+  'mobile debug snapshot exposes the exact provisional rung count');
+assert.equal(envGlobals.__interiorEnvironmentDebug().lastLadderBuildKey,'ikmcBalconyLadder',
+  'mobile debug snapshot confirms that the placed ladder hit the authored visual key');
+// The existing fire-furniture alias decorator is installed after the ladder
+// bridge during boot; verify both wrappers cooperate instead of replacing one another.
+envGlobals.ProceduralFurniture.CATALOG.campfire=[{kind:'box'}];
+vm.runInNewContext(fs.readFileSync('docs/js/interior-fire-void-runtime.js','utf8'),{
+  window:envGlobals,location:{pathname:'/docs/index.html'},setTimeout:()=>0,console,
+},{filename:'interior-fire-void-runtime.js'});
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup('campfireFurniture').key,'campfire',
+  'the fire alias still works alongside the IKMC ladder decorator');
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup('ikmcBalconyLadderFurniture').key,'ikmcBalconyLadder',
+  'the ladder alias survives installation of the fire and black-void decorator');
+assert.equal(ladderFallbackRecipe.filter(p=>/^ikmc_fallback_rung_\d+$/.test(p.id||'')).length,9,
+  'decorator composition never duplicates provisional ladder rungs');
 const environmentSource=fs.readFileSync('docs/js/interior-environment-runtime.js','utf8'); // Ceiling stretch height ownership comes from the actual shared runtime.
 const fitStart=environmentSource.indexOf('  function fitCeilingFurniture(');
 const fitEnd=environmentSource.indexOf('  function applyEnvironmentToScene(',fitStart);

@@ -360,7 +360,8 @@
       'frontPortraitMaskedGear', 'handsBehindFrontPlane', 'baseReplayCandidates',
       'baseOffscreenFiltered', 'registeredBackgroundDepthMeshes', 'airborneDepthRebuilds',
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
-      'selectiveOverlays', 'lastHeldFullscreenReason']) {
+      'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
+      'lastHeldOrderNormalization']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -512,6 +513,10 @@
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
+            ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
+            ['Last held order override', live.lastHeldOrderNormalization
+              ? live.lastHeldOrderNormalization.mesh + ': ' + live.lastHeldOrderNormalization.from + ' → ' + live.lastHeldOrderNormalization.to
+              : 'None recorded'],
             ['Tool vs its own front art', frontPriority],
             ['Front mask stencil', maskStatus],
             ['Visible front portraits', String(live.frontPortraitMasks ?? '-')],
@@ -519,7 +524,7 @@
             ['Airborne depth rebuilds / backdrop exclusions',
               String(live.airborneDepthRebuilds ?? '-') + ' / ' + String(live.backgroundDepthMeshesExcluded ?? '-')],
           ],
-          note: 'Test the SAME camera, pose and scene with Repository baseline, then one suspected cause. Presets replace all X-ray rules and ranks with a reproducible test setup; they do not stack. Restore pre-test settings when finished. The stencil, physical depth, water and outline passes remain independent of same-pass visual ordering.',
+          note: 'Test the SAME camera, pose and scene with Repository baseline, then one suspected cause. Presets replace all X-ray rules and ranks with a reproducible test setup; they do not stack. Restore pre-test settings when finished. The stencil, physical depth, water and outline passes remain independent of same-pass visual ordering. Reserved pose-synchronization and late-overlay render orders are protected from manual rank changes.',
           actions: [
             { id: 'focus-preset', label: 'Possible explanation to test', value: selectedPresetId,
               options: DIAGNOSTIC_PRESETS.map(preset => ({ value: preset.id, label: preset.label })),
