@@ -1,5 +1,29 @@
 # Performance investigation log
 
+## 15 Nov 2026 (follow-up): what is left after the strike afterimage fix (headless; nothing further worth changing)
+
+Same arena dummy harness, run on `main` after the ghost decimation/cap merged (PR 1809). Questions: is the remaining
+post-swing frame-time lift caused by the hit, and what else could it be?
+
+- **Not the hit.** Interleaved hit vs whiff (dummy 14 tiles away, same weapon, 10 attacks each): post/pre frame ratio
+  **1.15 hit, 1.22 whiff**. The lift follows the swing, not the damage, so hit reaction, knockback, hit-flash, camera
+  shake (ruled out earlier) and `damageCreature` are not it.
+- **Not session drift.** No-swing control, 30 consecutive neutral ticks repeated 8 times: 165 / 161 / 168 / 170 ms across
+  ticks 2-8 / 9-16 / 17-24 / 25-30 (flat). A swing run in the same session: pre 164, post 182 (ticks 13-20), 174
+  (ticks 21-28): about **+11% decaying to +6% over ~0.5 s of game time**.
+- **Residual is near the noise floor.** Four interleaved modes, 8 attacks each (normal / afterimage ghosts hidden /
+  "no trail" / both): post/pre per-run median 1.10 / 1.03 / 1.03 / 1.04, pooled medians post 175-178 vs pre 174-179 ms.
+  The "no trail" mode never changed anything (`Combat.spawnMeleeTrail` was called 0 times: the player's weapon trail is
+  not built through that export), and it still read 1.03 against 1.10 for the identical normal mode, so run-to-run
+  noise is about +-0.05 and the ghost-hiding difference is not distinguishable from it.
+
+Conclusion: after the decimated, capped ghosts, nothing on the strike path measures above the headless noise floor
+(~5%); the earlier larger post-hit numbers were mostly the five full-density ghosts. Remaining unmeasured ground, if a
+real device still shows a hitch: the first lunge after the 4 s pool idle (entry creation: geometry/material clones, canvas
+copies, texture uploads, measured earlier at ~1 ms of JS but with real GPU upload costs headless cannot show), and
+skipping a snapshot when the previous frame was already over budget. Reading a device `PerfProfiler` snapshot across a
+fight would settle both.
+
 ## 15 Nov 2026: the moment a player strike lands on a non-fighting dummy (headless, measured; nothing fixed)
 
 Setup: Testing Arena, a `bandit:grunt` with `aggroRangePx = 0` and its attack cooldown pinned (it never swings back),
