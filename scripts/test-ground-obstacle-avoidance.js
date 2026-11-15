@@ -30,23 +30,64 @@ assert.equal(steering.debugSnapshot().mounted.plans, 0, 'no planner cost is paid
 assert.equal(steering.steer('mounted', 'field', 2.5 * tile, 3.5 * tile, 0, 0, tile, occupied, 1 / 60), null,
   'letting go of the stick never starts autopilot');
 
-// The foot correction is deliberately bounded even when the nearby
-// obstacle would call for an orthogonal A* waypoint.
-const foot = steering.steer('foot', 'field', 5.1 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60);
-assert(foot, 'on-foot steering recognizes the nearby rock');
-assert(Math.abs(Math.atan2(foot.y, foot.x)) <= Math.PI / 7 + 1e-8, 'walking only bends a small amount');
-assert(steering.debugSnapshot().foot.plans > 0, 'on-foot avoidance uses a bounded route');
+// Nothing moves sideways until the actual forward footprint is about to collide.
+const early = steering.steer('foot', 'field', 5.1 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60);
+assert.equal(early, null, 'on-foot movement stays perfectly direct before contact');
+assert.equal(steering.debugSnapshot().foot.plans, 0, 'walking never runs A* or tracks a waypoint');
 
-// A gradual analog-stick rotation crosses the old intent cone over several
-// frames. It must invalidate the original eastbound route, not compare only
-// against the immediately preceding (small) input adjustment.
+const footX = 5.8 * tile, footY = 6.5 * tile; // Fixture is within the 0.055-tile contact threshold of the rock.
+const foot = steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60);
+assert(foot?.y > 0, 'on-foot avoidance adds only a small sideways slide at physical contact');
+assert(Math.abs(Math.atan2(foot.y, foot.x)) <= Math.PI / 9 + 1e-8, 'walking bends by at most 20 degrees');
+assert.equal(steering.debugSnapshot().foot.status, 'sliding');
+assert.equal(steering.debugSnapshot().foot.plans, 0, 'foot steering never calls the tile path planner');
+assert.equal(steering.steer('foot', 'field', 3.5 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60), null,
+  'leaving the blocked surface stops the slide immediately');
+
+// Facing a usable object takes precedence over movement assistance.
+const player = { x: footX, y: footY, angle: 0 }; // Same player pointer normally exposed by the game debug bridge.
+context.window.__climbDebug = { getPlayer: () => player };
+context.window.WorldPopupText = { debugSnapshot: () => ({ interactionRows: [{ action: 'open-door' }] }) };
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'facing a nearby interactable does not steer the player away from its action');
+assert.equal(steering.debugSnapshot().foot.status, 'yielding');
+context.window.WorldPopupText = { debugSnapshot: () => ({ interactionRows: [] }) };
+context.window.ClimbSystem = { getClimbTarget: () => ({ type: 'wall' }), getWorldClimbTarget: () => null };
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'facing a climb target preserves the climb input');
+context.window.ClimbSystem = { getClimbTarget: () => null, getWorldClimbTarget: () => null };
+context.window.PlayerJump = { hasJumpableSupportAhead: () => true };
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'a jumpable surface is not treated as vegetation to auto-route around');
+context.window.PlayerJump = { hasJumpableSupportAhead: () => false };
+steering.reset('foot');
+player.angle = Math.PI / 2;
+assert(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60),
+  'an object outside player facing does not claim a deliberate stop');
+player.angle = 0;
+context.window.InteriorDoorTiles = { blocksBox: () => true };
+steering.reset('foot');
+assert.equal(steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60), null,
+  'closed interactive doors must not side-step their action');
+delete context.window.InteriorDoorTiles;
+delete context.window.__climbDebug;
+delete context.window.WorldPopupText;
+delete context.window.ClimbSystem;
+delete context.window.PlayerJump;
+
+// A gradual analog-stick turn should clear contact once the new direction is free.
+steering.reset('foot');
+steering.steer('foot', 'field', footX, footY, 1, 0, tile, occupied, 1 / 60);
 for (const degrees of [15, 30, 45]) {
   const angle = degrees * Math.PI / 180;
-  steering.steer('foot', 'field', 5.1 * tile, 6.5 * tile,
+  steering.steer('foot', 'field', footX, footY,
     Math.cos(angle), Math.sin(angle), tile, occupied, 1 / 60);
 }
 assert.equal(steering.debugSnapshot().foot.status, 'clear',
-  'a gradual turn into free terrain cancels the original detour immediately');
+  'turning into open terrain cancels the on-foot slide');
 
 // Mounted steering sees the obstruction earlier and can turn far enough to
 // pass it without ever moving the entity through a solid tile.
