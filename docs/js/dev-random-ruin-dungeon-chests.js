@@ -107,6 +107,7 @@
       poolId:'dungeonChest_tier' + tier,
       boss:options.boss === true, // Boss-vault chests also roll a bound Harlyao relic weapon (js/harlyao-relics.js).
       secret:options.secret===true, // Optional room caches use the low-tier lock and their own modest discovery rewards.
+      secretRevealed:options.secret!==true||options.initialRevealed===true, // Glow is extremely faint until the hiding mechanism is discovered.
       culture:options.culture==='hachutu'?'hachutu':'harlyao', // Only the dev Hachutu temple requests this culture.
       theme:options.theme || window.DevRandomRuin?.getState?.()?.theme || null, // Capture the owning ruin's theme so another generated ruin cannot change this chest's loot family.
       group, hinge, glow,
@@ -204,7 +205,8 @@
         chest.lidAngle = Math.max(LID_OPEN_ANGLE, chest.lidAngle - LID_SPEED * dt);
         chest.hinge.rotation.x = chest.lidAngle;
       }
-      chest.glow.material.opacity = chest.opened ? Math.max(0, chest.glow.material.opacity - dt) : .35 + .3 * pulse;
+      chest.glow.material.opacity = chest.opened ? Math.max(0, chest.glow.material.opacity - dt)
+        : chest.secret&&!chest.secretRevealed?.035+.045*pulse:.35+.3*pulse; // Stone corners keep a subdued clue, not a bright loot beacon.
     }
   });
 
