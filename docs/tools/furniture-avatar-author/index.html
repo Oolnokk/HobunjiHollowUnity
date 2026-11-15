@@ -2480,7 +2480,7 @@ function presetGlowGlyphOrb(){
   const part=pushPart('transparentBillboardSurface',{id:'orbBillboard',name:'Orb Glyph Billboard',transform:{x:0,y:.8,z:0,rx:0,ry:0,rz:0,sx:.325,sy:.325,sz:.001}});
   const glow=normalizeEmitter({id:'orbGlow',name:'Stationary Radial Glow',type:'glowingSphere',attachedPartId:part.id,position:{x:0,y:0,z:0},size:1.1,colorA:'#efffff',colorB:'#438eff'});
   state.particleEmitters=[glow];
-  state.decals=[{id:'orbGlyphDecal',name:'Floating Glyph',surfaceId:part.id+':surface:0',surfacePartId:part.id,surfaceType:'vertical side',surfaceFaces:[0,1],imageSource:'../../../docs/assets/textures/decals/ruin_glyph_rune.png',imageName:'ruin_glyph_rune.png',offsetU:0,offsetV:0,width:.15,height:.15,rotationDeg:0,normalOffset:.002,opacity:1,visible:true,glyphInk:{enabled:true,color:'#d4f5ff',glowStrength:.75,glowRadius:.07}}];
+  state.decals=[{id:'orbGlyphDecal',name:'Floating Glyph',surfaceId:part.id+':surface:0',surfacePartId:part.id,surfaceType:'vertical side',surfaceFaces:[0,1],imageSource:'../../../docs/assets/textures/decals/ruin_glyph_rune.png',imageName:'ruin_glyph_rune.png',offsetU:0,offsetV:0,width:.8,height:.8,rotationDeg:0,normalOffset:.002,opacity:1,visible:true,glyphInk:{enabled:true,color:'#d4f5ff',glowStrength:.75,glowRadius:.07}}];
   rebuildAll();
   setEditorMode('effects');selectObject('emitter',glow.id,{force:true});frameFurniture();
   log('Glowing Glyph Orb ready: a transparent camera-facing decal surface and stationary radial glow. JSON export retains both.','ok');
