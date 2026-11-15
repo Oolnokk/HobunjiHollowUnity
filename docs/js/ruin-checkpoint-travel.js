@@ -1,4 +1,4 @@
-// RuinCheckpointTravel — one shaft waystone and mutually replacing white checkpoint braziers.
+// RuinCheckpointTravel — persistent per-floor shaft waystones and mutually replacing wing checkpoints.
 // Wing completion remains owned by RuinLayerPlayable / RuinV50NativeFloors.
 (function(root,factory){
   const api=factory(root);
@@ -29,8 +29,10 @@
     })||new THREE.MeshBasicMaterial({color:0x6a6965}); // Preserve the ruin's carved-stone material.
     const bowl=new THREE.CylinderGeometry(.4,.34,.24,9); // Shared small checkpoint/shaft bowl.
     const foot=new THREE.CylinderGeometry(.25,.36,.59,8); // Shared narrow pedestal, non-colliding.
-    const records=new Map(),controls=[],flames=[],lights=[]; // All interaction, lighting and particle ownership is local to this ruin.
-    let disposed=false,activeId=null,shaftLit=false; // Current checkpoint and shaft ignition persist in the world save.
+    const records=new Map(),controls=[],flames=[],lights=[],shaftBraziers=[]; // Session-owned destinations, input controls, particles, and light records.
+    const unlockedShaftIds=new Set(); // Saved floor identities; only personally discovered shaft braziers may receive teleports.
+    let disposed=false,activeId=null,shaftLit=false; // Existing floor-zero ignition and checkpoint save fields remain compatible.
+    let activeTravelWheel=null,travelPointerCleanup=null; // One held shaft control and pointer-drag listener may own the existing selection arch.
     let lastBlink=0; // Checkpoint particle presentation reuses the shaft's existing frame callback.
     const now=()=>typeof performance!=='undefined'?performance.now():Date.now();
     const player=()=>{
@@ -85,6 +87,18 @@
     if(!shaftCell)throw new Error('Shared shaft has no safe floor-zero brazier support.');
     const g=hub.grid,shaftAt=point(g.colToX(shaftCell[0]+.5),g.rowToZ(shaftCell[1]+.5),g.levelToY(0));
     const shaft=fixture('shaft','shaft',shaftAt,1.35);
+    shaft.story=0;shaftBraziers.push(shaft);
+    for(const floor of plan.floors){
+      const story=Number(floor.floor);
+      if(!Number.isInteger(story)||story<=0)continue;
+      const cell=root.RuinMultifloorV50Style?.chooseHubBrazierCell?.(hub,story);
+      if(!cell)throw new Error('Shaft floor '+(story+1)+' has no safe recovery brazier support.');
+      const level=story*Number(hub.options?.spacing||plan.options?.floorHeight||16);
+      const at=point(g.colToX(cell[0]+.5),g.rowToZ(cell[1]+.5),g.levelToY(level));
+      const record=fixture('shaft:'+story,'shaft',at,1.35);
+      if(!record)throw new Error('Shaft floor '+(story+1)+' recovery brazier placement is invalid.');
+      record.story=story;shaftBraziers.push(record);
+    }
     function floorCanStand(x,z,y){
       for(const entry of ruin.shaftGrids?.values?.()||[]){
         if(entry.contains&&!entry.contains(x,z))continue;
@@ -154,13 +168,18 @@
       const loc=first&&root.RuinV50NativeFloors?.nativeRoom?.(first,record.place);
       if(loc)roomCheckpoint(loc,record.floorY??(plan.floors[record.floor]?.y||0),'native:'+record.floor,record.supportYAt);
     }
-    function igniteShaft(){
-      if(shaftLit)return;
-      shaftLit=true;render(shaft,true); // Once lit, the shaft never extinguishes for this ruin.
-      if(!activeId)activeId='shaft'; // A discovered wing checkpoint always wins over the shaft's fallback.
+    function igniteShaft(record){
+      if(disposed||!record||unlockedShaftIds.has(record.id))return false;
+      unlockedShaftIds.add(record.id);render(record,true); // Every discovered story remains a permanently lit recovery destination.
+      if(record.story===0)shaftLit=true;
+      if(!activeId||record.story>0){
+        if(activeId&&records.get(activeId)?.kind==='small')render(records.get(activeId),false);
+        activeId=record.id; // First discovery of a new upper floor becomes the new death-recovery checkpoint.
+      }
       root.RuinInteractionAudio?.igniteTorch?.();
-      showToast?.('Shaft brazier awakened.',true);
+      showToast?.('Floor '+(record.story+1)+' shaft brazier awakened — travel unlocked.',true);
       remember();
+      return true;
     }
     function teleport(destination,message){
       const at=destination?.at||destination;
@@ -178,28 +197,83 @@
         ?teleport(shaftAt,'Returned to the shaft brazier.')
         :toEntrance(); // Before first shaft ignition, wing Action 2 has a usable entrance fallback.
     }
-    function fromShaftTap(){
-      const dest=activeId&&activeId!=='shaft'?records.get(activeId):null;
+    function fromShaftTap(from){
+      const dest=activeId&&activeId!==from?.id?records.get(activeId):null;
       if(!dest){showToast?.('No other checkpoint has been discovered.',false);return false;}
       return teleport(dest,'Returned to the last checkpoint.');
     }
+    function travelToShaft(sourceId,destinationId){
+      const source=records.get(sourceId),destination=records.get(destinationId);
+      if(disposed||!source||!destination||source.kind!=='shaft'||destination.kind!=='shaft'
+        ||source===destination||!unlockedShaftIds.has(sourceId)||!unlockedShaftIds.has(destinationId)
+        ||!closeEnough(player(),source.at,2.1))return false; // Never trust a stale UI callback or an undiscovered floor.
+      return teleport(destination,'Travelled to floor '+(destination.story+1)+' shaft brazier.');
+    }
+    function travelEntries(source){
+      const entries=shaftBraziers.filter(record=>unlockedShaftIds.has(record.id)).map(record=>({
+        id:record.id,icon:'✦',label:'Floor '+(record.story+1)+(record.id===source.id?' · Here':''),
+        disabled:record.id===source.id,
+        onSelect:()=>travelToShaft(source.id,record.id),
+      })); // List exactly the discovered shaft fires; the active story is visibly non-selectable.
+      entries.push({id:'entrance',icon:'↩',label:'Ruin Entrance',
+        onSelect:()=>!disposed&&unlockedShaftIds.has(source.id)&&closeEnough(player(),source.at,2.1)&&toEntrance()});
+      entries.push({id:'cancel',icon:'×',label:'Cancel',initial:true,onSelect:()=>{}});
+      return entries;
+    }
     function holdAction(record,onTap,onHold){
-      let pressedAt=null; // This particular brazier owns one press/release pair for remapped touch/controller bindings.
+      let pressedAt=null,timer=null,wheelOpen=false; // Per-fixture input ownership protects against stale release after a reroll.
+      function openTravelWheel(){
+        timer=null;
+        if(pressedAt===null||disposed||record.kind!=='shaft'||!unlockedShaftIds.has(record.id)
+          ||!closeEnough(player(),record.at,2.1)||typeof root._desktopSelectionArc?.openEntries!=='function')return;
+        if(activeTravelWheel&&activeTravelWheel!==record.id)return;
+        root._desktopSelectionArc.openEntries('ruin-shaft-travel',travelEntries(record)); // Reuse keyboard/controller/touch held-selection arch, not a second radial menu.
+        wheelOpen=true;activeTravelWheel=record.id;
+        const doc=root.document; // Pointer events from mobile Action 1 remain captured by its original button after the arch opens.
+        if(doc?.addEventListener){
+          const move=event=>{
+            if(activeTravelWheel===record.id&&event.isPrimary!==false
+            &&root._desktopSelectionArc?.currentMode?.()==='entries:ruin-shaft-travel')
+              root._desktopSelectionArc?.movePointer?.(event.clientX,event.clientY);
+          };
+          doc.addEventListener('pointermove',move,true);
+          travelPointerCleanup=()=>doc.removeEventListener('pointermove',move,true); // Only while a shaft travel wheel is visible.
+        }
+      }
       const control={kind:record.kind==='shaft'?'ruinShaftTravel':'ruinCheckpointTravel',
         object:record.holder,promptRoot:record.holder,floorY:record.at.y,
         inputAction:'action1',range:1.8,priority:35,touchIcon:'✦',
-        label:()=>record.kind==='shaft'?'Tap: checkpoint · Hold: entrance':'Hold: return to shaft',
-        onHoldStart:()=>{pressedAt=now();},
+        label:()=>record.kind==='shaft'?'Tap: checkpoint · Hold: shaft travel':'Hold: return to shaft',
+        onHoldStart:()=>{
+          pressedAt=now();
+          if(timer!==null)clearTimeout(timer);
+          wheelOpen=false;
+          if(record.kind==='shaft'&&unlockedShaftIds.has(record.id)&&root._desktopSelectionArc?.openEntries)
+            timer=setTimeout(openTravelWheel,350); // Taps remain instant; the destination wheel appears before the hold threshold.
+        },
         onHoldEnd:(detail)=>{
           if(pressedAt===null)return;
           const held=now()-pressedAt;pressedAt=null;
-          if(detail?.canceled||!closeEnough(player(),record.at,2.1))return; // Canceled inputs or stale held prompts cannot teleport the player from elsewhere.
-          if(held>=HOLD_MS)onHold();else onTap?.();
+          if(timer!==null){clearTimeout(timer);timer=null;}
+          const valid=!disposed&&!detail?.canceled&&!detail?.cancelled&&closeEnough(player(),record.at,2.1);
+          if(wheelOpen){
+            wheelOpen=false;activeTravelWheel=null;
+            travelPointerCleanup?.();travelPointerCleanup=null;
+            if(root._desktopSelectionArc?.currentMode?.()!=='entries:ruin-shaft-travel')return;
+            if(valid)root._desktopSelectionArc?.releaseSelection?.();
+            else root._desktopSelectionArc?.close?.(); // Canceled input/movement cannot commit a destination.
+            return;
+          }
+          if(!valid)return;
+          if(held>=HOLD_MS){
+            if(record.kind==='shaft'&&root._desktopSelectionArc?.openEntries)showToast?.('Hold and select a destination to travel.',false);
+            else onHold?.(); // Standalone authoring previews without the game's wheel retain the old entrance hold.
+          }else onTap?.();
         },
       };
       ruin.controls.push(control);controls.push(control);
     }
-    holdAction(shaft,fromShaftTap,toEntrance);
+    for(const record of shaftBraziers)holdAction(record,()=>fromShaftTap(record),toEntrance);
     for(const record of records.values())if(record.kind==='small')
       holdAction(record,null,()=>toShaft(false));
     // Already-lit wing braziers keep their original Action 1 ignition control.
@@ -214,13 +288,21 @@
     }
     function restore(saved){
       if(!snapshotValid(saved,ruin.seed))return false;
-      shaftLit=saved.shaftLit===true;render(shaft,shaftLit);
+      unlockedShaftIds.clear(); // Reroll/save restore must never carry travel access to a different seed.
+      for(const story of (Array.isArray(saved.unlockedShaftFloors)?saved.unlockedShaftFloors:[])){
+        if(!Number.isInteger(story))continue;
+        const record=shaftBraziers.find(entry=>entry.story===story);
+        if(record){unlockedShaftIds.add(record.id);render(record,true);}
+      }
+      if(saved.shaftLit===true){unlockedShaftIds.add('shaft');render(shaft,true);} // Version-1 worlds predate multi-floor unlocks.
+      shaftLit=unlockedShaftIds.has('shaft');
       activeId=null;
       const wanted=typeof saved.activeCheckpoint==='string'?saved.activeCheckpoint:null;
-      if(wanted==='shaft'&&shaftLit)activeId='shaft';
+      if(records.get(wanted)?.kind==='shaft'&&unlockedShaftIds.has(wanted))activeId=wanted;
       else if(records.get(wanted)?.kind==='small'){
         activeId=wanted;render(records.get(wanted),true);
       }else if(shaftLit)activeId='shaft';
+      else activeId=shaftBraziers.find(record=>unlockedShaftIds.has(record.id))?.id||null;
       return true;
     }
     function tick(dt=0){
@@ -230,7 +312,11 @@
         const visible=record.at.y<=p.y+.8; // Match wing meshes: never render an upper-floor checkpoint through the floor below.
         if(record.holder.visible!==visible)record.holder.visible=visible;
       }
-      if(!shaftLit&&closeEnough(p,shaft.at,2.1))igniteShaft();
+      for(const record of shaftBraziers)
+        if(!unlockedShaftIds.has(record.id)&&closeEnough(p,record.at,2.1))igniteShaft(record);
+      if(activeTravelWheel&&root._desktopSelectionArc?.currentMode?.()!=='entries:ruin-shaft-travel'){
+        activeTravelWheel=null;travelPointerCleanup?.();travelPointerCleanup=null; // Backdrop cancel or Dodge must not strand the held input owner.
+      }
       for(const record of records.values())if(record.kind==='small'
         &&closeEnough(p,record.at,1.55)){becomeCheckpoint(record.id);break;}
       const t=now(); // One shared particle-update cadence; the caller need not supply a frame delta.
@@ -241,10 +327,16 @@
       return !disposed&&at?point(at.x,at.z,at.y):null; // The white shaft/small brazier is authoritative for every ruin death.
     }
     function serializeProgress(){
-      return {shaftLit,activeCheckpoint:activeId}; // Stable IDs, never Three.js objects or source pointers.
+      return {shaftLit,activeCheckpoint:activeId,
+        unlockedShaftFloors:shaftBraziers.filter(record=>unlockedShaftIds.has(record.id)).map(record=>record.story)}; // Stable story identities, no scene objects.
     }
     function dispose(){
       if(disposed)return;disposed=true;
+      if(activeTravelWheel){
+        if(root._desktopSelectionArc?.currentMode?.()==='entries:ruin-shaft-travel')root._desktopSelectionArc.close();
+        activeTravelWheel=null;
+      }
+      travelPointerCleanup?.();travelPointerCleanup=null;
       if(liveOwner===owner)liveOwner=null;
       for(const c of controls){const index=ruin.controls.indexOf(c);if(index>=0)ruin.controls.splice(index,1);}
       for(const f of flames)f.dispose?.();
@@ -254,7 +346,10 @@
     }
     const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
       litSourceObjects:()=>disposed?[]:[...records.values()].filter(record=>record.lit).map(record=>record.holder), // Reuse the actual live furniture geometry instead of 2D tile lookups.
-      getState:()=>({shaftLit,activeCheckpoint:activeId,ignitionSources:ignitionSources.map(r=>({id:r.id,x:r.at.x,z:r.at.z,y:r.at.y})),
+      getState:()=>({shaftLit,activeCheckpoint:activeId,
+       shaftTravel:{wheelOpen:!!activeTravelWheel,unlocked:[...unlockedShaftIds],
+         floors:shaftBraziers.map(r=>({id:r.id,floor:r.story+1,unlocked:unlockedShaftIds.has(r.id),x:r.at.x,z:r.at.z,y:r.at.y}))},
+       ignitionSources:ignitionSources.map(r=>({id:r.id,x:r.at.x,z:r.at.z,y:r.at.y})),
        shaftIgnitionAvailable:tothal,checkpoints:[...records.values()].filter(r=>r.kind!=='source').map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
     return owner;

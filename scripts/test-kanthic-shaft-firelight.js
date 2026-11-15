@@ -40,9 +40,9 @@ const cleanup=style.apply({rec:{scene},ruin,hub,seed:7,THREE,getPlayerY:()=>play
 const lights=style.lightSources(),sconces=lights.filter(l=>l.anchor);
 const braziers=ruin.controls.filter(c=>c.kind==='kanthicShaftBrazier');
 assert(sconces.length>=12,'giant sconces should occupy shaft walls, wings and towers');
-assert.equal(braziers.length,2,'the floor-zero shaft now has the shared white brazier; only higher Kanthic stories have optional fires');
+assert.equal(braziers.length,0,'all stories use the shared checkpoint travel braziers, never overlapping Kanthic-only bowls');
 assert.equal(ruin.shaftConnection.kanthicSconces,sconces.length,'diagnostics report real sconce count');
-assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,2,'diagnostics report higher-story optional fires');
+assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,0,'Kanthic lighting creates no duplicate fire on the universal travel pedestal');
 assert.equal(ruin.shaftConnection.kanthicRequiredBrazierLights,2,'real required wing and native sources feed the same light list');
 assert(lights.includes(wingGoal)&&lights.includes(nativeGoal),'no completed-wing flame can be omitted from Kanthic projection');
 assert(!wingGoal.active&&!nativeGoal.active,'unlit goal braziers do not reveal their chamber');
@@ -57,14 +57,11 @@ const moving=sconces.find(l=>l.anchor.parent===tower);
 assert(moving,'moving obelisk has its own attached fire fixture');
 const before=moving.x;tower.position.x+=2;cleanup.tick();
 assert.equal(moving.x-before,2,'light follows the raised or rotating tower owner');
-braziers.find(c=>c.floorY===16).onPress();
-assert(!lights.some(l=>!l.anchor&&l.floorY===16&&l.active),'cannot ignite upstairs from downstairs');
-playerY=16;braziers.find(c=>c.floorY===16).onPress();
-assert(lights.some(l=>!l.anchor&&l.floorY===16&&l.active),'igniting a higher-story Kanthic brazier activates its light pool');
-assert.equal(notices,1,'ignition provides mobile feedback');
-assert(style.lightDebug().litBraziers===1,'only the optional brazier currently contributes new visible light');
-wingGoal.active=true;nativeGoal.active=true; // Each owner's actual existing ignition routine activates its own source, tested below by source contract.
-assert.equal(style.lightDebug().litBraziers,3,'all three ignited brazier types are observable to the shared overlay');
+assert(!lights.some(l=>!l.anchor&&l.floorY===16&&l.active),'a white checkpoint is the only free-standing upper shaft fire; it owns its lighting independently');
+assert.equal(notices,0,'the decorative Kanthic wall style never claims shaft recovery interactions');
+assert.equal(style.lightDebug().litBraziers,0,'the two required wing goal lights are initially unlit');
+wingGoal.active=true;nativeGoal.active=true; // Required goal braziers still feed the Kanthic style compositor independently.
+assert.equal(style.lightDebug().litBraziers,2,'both required wing and native goal braziers still project their own lights');
 assert(fs.readFileSync('docs/js/ruin-layer-playable.js','utf8').includes('brazier.lit=true;flame.visible=true;brazierLight.active=true'),
   'required wing lighting uses the same real action that marks the puzzle brazier lit');
 assert(fs.readFileSync('docs/js/ruin-v50-native-floors.js','utf8').includes('record.lit=true;flame.visible=true;brazierLight.active=true'),

@@ -37,11 +37,16 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       && render.visibleDoorSources===render.sourceDoorMeshes
       && render.visibleActivatorSources+hiddenPatternOverlays===render.sourceActivatorMeshes
       && collision?.blocked?.length>0&&render.totalProxyCount===0;
-  }, null, { timeout:10000, polling:250 }).catch(async error => { // Headless/WebGL rAF can stall even after all visibility conditions are true.
+  }, null, { timeout:30000, polling:500 }).catch(async error => { // Allow slow headless initialization, but still fail when the authoritative collision grid never appears.
     // Keep the original assertion, but report the exact failed counts when CI
     // cannot display WebGL. These are also available from Pixel Probe in-game.
     const sceneDebug = await page.evaluate(() => ({
       render:window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
+      collision:(() => {
+        const grid = window.DevRandomRuin?.getShaftCollisionMap?.(0); // Explain whether floor-zero voxel readiness, rather than render visibility, caused the timeout.
+        return grid ? {floor:grid.floor, floorCount:grid.floorCount, blocked:grid.blocked?.length ?? null, open:grid.open?.length ?? null} : null;
+      })(),
+      shaftNavigation:window.DevRandomRuin?.getState?.()?.shaftNavigation || null, // Show registered shaft grids if the collision map has not been populated.
       occupancy:window.DevRandomRuin?.getOccupancySnapshot?.()?.revision ?? null,
       area:window.GridTileAccessors?.getCurrentArea?.() || null,
       ruin:window.DevRandomRuin?.getState?.()?.materialStats || null,
