@@ -19,7 +19,7 @@
   const PLAYER_KOMA_ID = '__player_daily_koma__'; // Separate per-character cooldown key for the player's own daily Koma dose.
   const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v2:'; // New per-character namespace avoids importing old, non-monotonic midnight timestamps.
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
-  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity1.m4a'; // Shared combat-breath recording if no yawn exists.
+  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Intensity-5 combat breath supplies the full yawn when no recording exists.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
   const activeById = new Map(); // O(1) lookups from each NPC's movement-speed chokepoint, even during crowd-wide yawns.
   const fileProbes = new Map(); // One HEAD lookup per future yawn-asset filename, reused for every NPC.
@@ -206,7 +206,7 @@
         }
       }
       return {
-        url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['1'] || BREATH_FALLBACK,
+        url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
         pitch: Number(mod.pitchSemitones) || 0,
         tempo: 1, // The source breath's natural pitch/time contours stay intact; the composer owns its five-second duration.
         cadence: Number(mod.tempo) || 1, // Reuses each species/gender's combat voice tempo as the grain pacing.
