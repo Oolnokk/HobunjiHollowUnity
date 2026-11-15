@@ -37,6 +37,17 @@ assert(foot, 'on-foot steering recognizes the nearby rock');
 assert(Math.abs(Math.atan2(foot.y, foot.x)) <= Math.PI / 7 + 1e-8, 'walking only bends a small amount');
 assert(steering.debugSnapshot().foot.plans > 0, 'on-foot avoidance uses a bounded route');
 
+// A gradual analog-stick rotation crosses the old intent cone over several
+// frames. It must invalidate the original eastbound route, not compare only
+// against the immediately preceding (small) input adjustment.
+for (const degrees of [15, 30, 45]) {
+  const angle = degrees * Math.PI / 180;
+  steering.steer('foot', 'field', 5.1 * tile, 6.5 * tile,
+    Math.cos(angle), Math.sin(angle), tile, occupied, 1 / 60);
+}
+assert.equal(steering.debugSnapshot().foot.status, 'clear',
+  'a gradual turn into free terrain cancels the original detour immediately');
+
 // Mounted steering sees the obstruction earlier and can turn far enough to
 // pass it without ever moving the entity through a solid tile.
 let x = 3.5 * tile, y = 6.5 * tile;
