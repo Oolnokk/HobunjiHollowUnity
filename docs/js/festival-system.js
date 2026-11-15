@@ -219,9 +219,11 @@
       sourceLabel:'Gorkunash meal',kind:'boon',stacks:entry.portions,
       durationS:FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS*3600,remainingS:(entry.expiresHour-now)*3600,
       fractionLabel:`${Math.ceil(entry.expiresHour-now)}h/${FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS}h`,
+       description: Object.entries(entry.foodEffects || {}).map(([key, amount]) => `+${amount} ${window.CookingSystem?.effectLabel?.(key) || key} food stacks`).join(', ') || 'Festival meal food benefits remain active until the timer expires.',
     })).concat(currentFullness() ? [{
       key:'festival-fullness',label:'Fullness',icon:'🥣',kind:'bane',sourceLabel:'Gorkunash',
-      stacks:currentFullness(),durationS:FULLNESS_DURATION_HOURS*3600,remainingS:Math.max(1,(state.fullness.expiresHour-worldHour())*3600),
+      description:'You are too full to eat more festival servings; fullness wears off over a full in-game day.',
+       stacks:currentFullness(),durationS:FULLNESS_DURATION_HOURS*3600,remainingS:Math.max(1,(state.fullness.expiresHour-worldHour())*3600),
     }] : []);
   }
   function festivalFoodStacks(effectKey) {
@@ -604,7 +606,7 @@
     const buff = state.blessing; // EffectBuffBar handles display alongside food and alchemy.
     if (!deps || !window.CalendarSystem?.isInitialized?.() || !buff || day() >= buff.expiresDay) return [];
     const def = window.FestivalCalendar.blessings[buff.stat];
-    return def ? [{ key: 'ancestor-blessing', label: `${def.label} ${buff.level} · ${Math.ceil(buff.expiresDay - day())} days`, icon: def.icon, sourceLabel: 'Ancestor offering', durationS: 336, remainingS: buff.expiresDay - day(), stacks: buff.level }] : [];
+    return def ? [{ key: 'ancestor-blessing', label: `${def.label} ${buff.level} · ${Math.ceil(buff.expiresDay - day())} days`, icon: def.icon, sourceLabel: 'Ancestor offering', description: `Your ancestor offering increases ${def.label} at blessing level ${buff.level}.`, durationS: 336, remainingS: buff.expiresDay - day(), stacks: buff.level }] : [];
   }
   function serialize() {
     const copy=JSON.parse(JSON.stringify(state));
