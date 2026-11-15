@@ -404,8 +404,8 @@ function disposeDecalMesh(id) {
   mesh.geometry?.dispose?.();
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const material of materials.filter(Boolean)) material.dispose?.();
-  const halo = mesh.userData?.glyphInkHalo; // Editor rebuilds many meshes; dispose the effect's separate GPU geometry/material.
-  if (halo) { halo.geometry?.dispose?.(); halo.material?.dispose?.(); }
+  const halos = mesh.userData?.glyphInkHalos || (mesh.userData?.glyphInkHalo ? [mesh.userData.glyphInkHalo] : []); // Both colored glow passes own disposable mesh resources.
+  for (const halo of halos) { halo.geometry?.dispose?.(); halo.material?.dispose?.(); }
   const outline = mesh.userData?.outline;
   if (outline) {
     outline.geometry?.dispose?.();
