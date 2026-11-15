@@ -294,7 +294,7 @@ const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
 const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
 assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
   'owner-aware wet/dry grouping is part of the production renderer');
-const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isPortraitMaskedGear',
+const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
   heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
 )(8, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
 const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
@@ -348,10 +348,13 @@ const bank = {
 };
 const flailHead = {
   isGear: true,
+  userData: { hobunjiHeldObjectPlane: true }, // Physical weapon marker, regardless of portrait-mask configuration.
   geometry: bounds({ x: -.1, y: -.1, z: -.1 }, { x: .1, y: .1, z: .1 }),
   matrixWorld: atWorld(1.5, .25, .5)
 };
 assert(!waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'nearby water in the same merged river leaves a flail in a dry tile clear');
+assert(waterVolume.gearOverlapsWaterVolume({ ...flailHead, userData: { hobunjiProceduralHand: true } }, bank), 'hands retain their separate water policy');
+assert(!waterVolume.gearOverlapsWaterVolume({ ...flailHead, userData: { hobunjiWeaponAssemblyPart: true } }, bank), 'modular weapon pieces use physical bounds even when not marked as a held portrait mesh');
 flailHead.matrixWorld = atWorld(.5, .25, .5);
 assert(waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'the moving offhand head receives tint when it reaches a wet tile below the surface');
 flailHead.matrixWorld = atWorld(.5, .7, .5);
