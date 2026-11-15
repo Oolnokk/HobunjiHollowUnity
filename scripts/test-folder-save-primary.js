@@ -435,6 +435,100 @@ function verifySavedProcessingRestoresAfterStaleProduction() {
 
 verifySavedProcessingRestoresAfterStaleProduction();
 
+function verifyMovedHouseUnblocksAllSavedProcessors() {
+  const editorSource = read('docs/js/farm-editor.js'); // Real farm loader, including the moved-house restoration order.
+  const objectMap = new Map(); // Simulates the same worldObjects tile occupancy used by canPlaceFurnitureAt in game.js.
+  const processors = new Set(); // Counts fully restored processing objects, rather than just parsed JSON records.
+  const houses = [
+    { id: 'house_starter', pieceKey: 'starter', col: 26, row: 2, w: 4, h: 3, stage: 'built' },
+    { id: 'house_starter_annex', pieceKey: 'starter', col: 30, row: 2, w: 3, h: 3, stage: 'built' },
+  ]; // Default house + annex reserve six tiles where the player's moved-house save has processors.
+  const savedFurniture = [
+    { key: 'squeezer', col: 25, row: 3 },
+    { key: 'butterChurn', col: 31, row: 3 },
+    { key: 'squeezer', col: 26, row: 3 },
+    { key: 'squeezer', col: 28, row: 3 },
+    { key: 'butterChurn', col: 29, row: 3 },
+    { key: 'butterChurn', col: 30, row: 3 },
+    { key: 'agingBarrel', col: 32, row: 2 },
+  ]; // Exact restored furniture type/coordinates from the affected world's recovered layout.
+  const savedHouses = [
+    { id: 'house_starter', pieceKey: 'starter', col: 25, row: 0, w: 4, h: 3, stage: 'built' },
+    { id: 'house_starter_annex', pieceKey: 'starter', col: 29, row: 0, w: 3, h: 3, stage: 'built' },
+  ]; // Saved house is one tile west and two tiles north of the temporary defaults.
+  const occupy = house => {
+    house._footprintObject = { id: house.id }; // Stable registry ownership lets clearAll remove only its own old footprint.
+    for (let row = house.row; row < house.row + house.h; row++) {
+      for (let col = house.col; col < house.col + house.w; col++) objectMap.set(col + ',' + row, house._footprintObject);
+    }
+  };
+  houses.forEach(occupy);
+  assert.equal(savedFurniture.filter(item => objectMap.has(item.col + ',' + item.row)).length, 6,
+    'regression fixture recreates the six saved processing tiles blocked by the default house');
+  const layout = {
+    version: 3, objects: {}, tiles: [], decor: [], buildings: [],
+    furniture: savedFurniture, housePieces: savedHouses,
+  }; // Load all seven processors from the same world whose saved house was moved.
+  const window = {
+    __hobunjiPlayerProfile: { worldId: 'world_p6bt8ho6' },
+    __hobunjiGameStarted: true,
+    addEventListener() {},
+    HousePieces: {
+      clearAll() {
+        for (const house of houses) {
+          for (let row = house.row; row < house.row + house.h; row++) {
+            for (let col = house.col; col < house.col + house.w; col++) {
+              const key = col + ',' + row;
+              if (objectMap.get(key) === house._footprintObject) objectMap.delete(key);
+            }
+          }
+        }
+        houses.length = 0;
+      },
+      spawnEntry: occupy,
+      loadFixtureInventory() {},
+    },
+    DewVats: { rebuildMeshesFromGrid() {} },
+    FarmhouseRoomPlanner: { restore() {} },
+    FarmProduction: { serialize: () => [] },
+  }; // Minimal authentic house footprints: spawning registers tiles, clearing releases them.
+  const ctx = {
+    window, console,
+    localStorage: { getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? JSON.stringify(layout) : null; } },
+    document: { getElementById() { return null; }, querySelector() { return null; } },
+  }; // Test reads the on-disk layout mirror without DevTools or a graphical scene.
+  vm.runInNewContext(editorSource, ctx, { filename: 'farm-editor.js' });
+  window.FarmEditor.init({
+    threeContainer: { addEventListener() {} },
+    getPlayerData: () => window.__hobunjiPlayerProfile,
+    PROCESSING_FURNITURE_DEFS: { squeezer: {}, butterChurn: {}, agingBarrel: {} },
+    DECORATIVE_FURNITURE_DEFS: {},
+    getShippingBoxObject: () => null, getSupplyBoxObject: () => null,
+    getHousePieces: () => houses, getFarmBuildings: () => [],
+    getBarnTiers: () => ({}),
+    getHousePieceCatalog: () => ({ starter: { w: 4, h: 3 } }),
+    getCurrentArea: () => 'farm', getGrid: () => [],
+    canPlaceFurnitureAt: (col, row) => !objectMap.has(col + ',' + row),
+    makeProcessingFurniture: (col, row, furnitureKey) => ({ col, row, furnitureKey }),
+    worldObjects: objectMap, processingFurnitureObjects: processors,
+    interiorFurnitureObjects: [],
+    rebuildInteriorGeometry() {},
+    transformFurnitureWithHousePiece() {},
+    reconcileInteriorFurniture: () => [],
+    debugLog() {},
+  });
+  window.FarmEditor.applyFarmLayoutObjects(layout);
+  assert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
+  assert.equal(houses.length, 2, 'the restored house still includes the complete saved main room and annex');
+  assert.deepEqual(houses.map(house => [house.col, house.row]), [[25, 0], [29, 0]], 'saved house coordinates win over bootstrap defaults');
+  const diagnostics = window.FarmEditor.inspectFarmRestore(); // Inspect the same mobile-visible counters users will check after importing.
+  assert.equal(diagnostics.expected.processing, 7);
+  assert.equal(diagnostics.live.processing, 7);
+  assert.equal(diagnostics.missing.processing.length, 0, 'all seven processors occupy their exact saved tiles');
+}
+
+verifyMovedHouseUnblocksAllSavedProcessors();
+
 async function verifyCanonicalFarmDiskDiagnostics() {
   const worldId = 'world_p6bt8ho6'; // Real-world-style world ID selects exactly one canonical layout in the portable folder.
   const key = 'hobunji_farm_layout_v3:' + worldId; // Existing browser mirror key used by the farm editor and folder snapshot.
