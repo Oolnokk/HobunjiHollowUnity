@@ -1628,11 +1628,6 @@ const TOOL_PRESETS = [
     neutral: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windup: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114), strike: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windupFrac: 0.16, strikeFrac: 0.28 },
-  { id:'torch_idle', label:'Torch — Upright Hold (still)', style:'sweep', toolKey:'torch', still:true, worldUpright:true,
-    neutral:defaultPose(.13,0,.03,10.31,0,0,0),
-    windup:defaultPose(.13,0,.03,10.31,0,0,0),
-    strike:defaultPose(.13,0,.03,10.31,0,0,0),
-    windupFrac:.16,strikeFrac:.28 },
   { id:'torch_swing', label:'Torch — Forehand Swing (no lunge)',style:'sweep',toolKey:'torch',still:false,worldUpright:false,
     ...sharedAttackPoses('hatchet_swing'), // The same forehand as the longsword, with its Light attack neutral baked below.
     windupFrac:.345/.99025,strikeFrac:.415/.99025,holdFrac:.845/.99025,durationS:.99025 }, // .415s windup+strike, .43s hold and .14525s automatic return.
@@ -1702,7 +1697,7 @@ async function loadWeaponIdlePresets() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const config = await response.json();
-    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon'], ['torch_idle', 'torchHold']]; // Every still-action template, including the handheld torch, follows the shared authored JSON.
+    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]; // Weapon stances load from JSON; torch_idle uses the full HeldActionAnimations.torchIdle phases.
     if (config?.kind !== 'hobunji_weapon_idle_stances' || !pairs.every(([, key]) =>
       WEAPON_IDLE_POSE_FIELDS.every(field => typeof config.stances?.[key]?.[field] === 'number' &&
         Number.isFinite(config.stances[key][field])))) throw new Error('incomplete stance config');
@@ -1727,7 +1722,7 @@ async function loadWeaponIdlePresets() {
       }
     }
     weaponIdlePresetRetryCount = 0;
-    logDebug('Loaded Heavy/Light/Torch idle stances from weapon-idle-stances.json');
+    logDebug('Loaded Heavy/Light idle stances from weapon-idle-stances.json (Torch Idle uses shared action)');
   } catch (error) {
     weaponIdlePresetRetryCount += 1;
     const retryMs = Math.min(30000, 1000 * (2 ** Math.min(weaponIdlePresetRetryCount - 1, 5))); // Recover without reloading the editor.
@@ -1989,7 +1984,7 @@ const ACTION_DEFS = [
   { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
   { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
   { id: 'light_idle', group: 'Non-attack held actions', label: 'Light Weapon — Idle', templateId: 'light_weapon_idle', practical: false },
-  { id: 'torch_idle', group: 'Non-attack held actions', label: 'Torch — Upright Hold (Idle)', templateId: 'torch_idle', practical: false }, // True still action for adjusting the independent torchHold stance.
+  { id: 'torch_idle', group: 'Non-attack held actions', label: 'Torch — Upright Hold (Idle)', heldAnimationKey: 'torchIdle', toolKey: 'torch', practical: false }, // The full exported pose set stays intact; the sidebar edits its live Neutral only.
 ];
 
 let attackValuesConfig = null;
@@ -2441,10 +2436,8 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolKey() { return currentToolKey; },
   previewTorchIdlePose(pose) {
     if (currentActionId !== 'torch_idle' || !pose) return false;
-    for (const phase of ['neutral', 'windup', 'strike']) {
-      anim.poses[phase] = { ...anim.poses[phase], ...pose }; // Keep all three phases identical for this still-only torch action.
-      syncPosePanelFromState(phase);
-    }
+    anim.poses.neutral = { ...anim.poses.neutral, ...pose }; // The exported torch has distinct Windup/Strike: sidebar edits only the live Neutral.
+    syncPosePanelFromState('neutral');
     refreshJsonView();
     refreshPreviewDebug();
     return true;
