@@ -439,7 +439,7 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   const editorSource = read('docs/js/farm-editor.js'); // Real farm loader, including the moved-house restoration order.
   const objectMap = new Map(); // Simulates the same worldObjects tile occupancy used by canPlaceFurnitureAt in game.js.
   const processors = new Set(); // Counts fully restored processing objects, rather than just parsed JSON records.
-  const houses = [
+  let houses = [ // HousePieces.clearAll replaces the backing registry; test must reproduce real reassignment.
     { id: 'house_starter', pieceKey: 'starter', col: 26, row: 2, w: 4, h: 3, stage: 'built' },
     { id: 'house_starter_annex', pieceKey: 'starter', col: 30, row: 2, w: 3, h: 3, stage: 'built' },
   ]; // Default house + annex reserve six tiles where the player's moved-house save has processors.
@@ -483,7 +483,7 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
             }
           }
         }
-        houses.length = 0;
+        houses = []; // Actual HousePieces.clearAll invokes setHousePieces([]), rather than mutating its old array.
       },
       spawnEntry: occupy,
       loadFixtureInventory() {},
@@ -520,6 +520,7 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   window.FarmEditor.applyFarmLayoutObjects(layout);
   assert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
   assert.equal(houses.length, 2, 'the restored house still includes the complete saved main room and annex');
+  assert(houses.every(entry => entry._footprintObject), 'house registry contains spawned saved entries, not stale objects from before clearAll');
   assert.deepEqual(houses.map(house => [house.col, house.row]), [[25, 0], [29, 0]], 'saved house coordinates win over bootstrap defaults');
   const diagnostics = window.FarmEditor.inspectFarmRestore(); // Inspect the same mobile-visible counters users will check after importing.
   assert.equal(diagnostics.expected.processing, 7);
