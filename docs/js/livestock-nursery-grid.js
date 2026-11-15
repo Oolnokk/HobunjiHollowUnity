@@ -37,6 +37,7 @@
     'voorg-ass': '🫏',
     honeyfuzzle: '🐝',
     pingdort: '🐦', // Fallback until the authored flying/folded sprite atlas is composited.
+    skeeri: '🐦', // Fallback portrait for domestic planebent Skeeri.
   }); // Used only until/if an accurate composed genetics portrait cannot be produced.
 
   let animalDeps = null; // Captured from FarmAnimals.init; used for Nursery records, permissions, persistence, breeding cleanup, and toasts.
