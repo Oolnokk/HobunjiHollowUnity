@@ -503,7 +503,7 @@
   }
   function startSpouseOuting(kind, target) {
     if (!state.spouse?.npcId || !target?.area || !Number.isFinite(Number(target.c)) || !Number.isFinite(Number(target.r))) return false;
-    if (window.RomanceFamily?.spouseHoldingEgg?.() || state.date?.npcId === state.spouse.npcId) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.() || window.RomanceFamily?.isAssignedToVat?.(state.spouse.npcId) || state.date?.npcId === state.spouse.npcId) return false; // Never accept a trip the spouse's higher-priority family duties prevent.
     if (!window.SpouseSocialLife?.outingAvailable?.(kind)) return false; // Invitations must still be eligible when accepted.
     state.outing = {
       npcId: state.spouse.npcId, kind, target: { ...target }, startedHour: hourStamp(), endHour: hourStamp() + 4,
@@ -597,12 +597,12 @@
     const scfg = cfg().spouse || {};
     const hour = clockHour();
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
+    if (state.outing?.npcId === rec.id && hourStamp() < num(state.outing.endHour, -Infinity))
+      return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' }; // An explicitly accepted midnight Communion outing takes precedence over ordinary sleep.
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
       if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    if (state.outing?.npcId === rec.id && hourStamp() < num(state.outing.endHour, -Infinity))
-      return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' };
     const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Family work takes precedence over the spouse's former trade.
     if (chore) return chore;
     if (spouseTownVisitNow(rec.id)) return null; // The original NPC agenda owns work and its real visitor windows.
