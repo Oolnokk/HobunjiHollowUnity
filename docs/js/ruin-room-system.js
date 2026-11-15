@@ -193,6 +193,81 @@
     hull.pop();
     return hull; // The active room's camera silhouette is identical for all lights in one overlay redraw.
   }
+  const LIGHT_CLIP_FEATHER_PX=24; // The shared darkness overlay feathers the inside of each room silhouette; no light crosses a sealed wall.
+  function hullArea(points){
+    let area=0;
+    for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];
+      area+=a.x*b.y-b.x*a.y;
+    }
+    return area/2;
+  }
+  function insetHull(points,distance){
+    if(points.length<3||!(distance>0))return null;
+    const area=hullArea(points),sign=Math.sign(area);
+    if(!sign||!Number.isFinite(area))return null;
+    const result=[];
+    for(let i=0;i<points.length;i++){
+      const prev=points[(i+points.length-1)%points.length],p=points[i],next=points[(i+1)%points.length];
+      const ax=p.x-prev.x,ay=p.y-prev.y,bx=next.x-p.x,by=next.y-p.y;
+      const alen=Math.hypot(ax,ay),blen=Math.hypot(bx,by);
+      if(alen<.001||blen<.001)return null;
+      const anx=-sign*ay/alen,any=sign*ax/alen,bnx=-sign*by/blen,bny=sign*bx/blen;
+      const denominator=1+anx*bnx+any*bny;
+      if(denominator<.08)return null; // A near-zero interior angle would send the inset far beyond the room.
+      const offset=distance/denominator;
+      const point={x:p.x+(anx+bnx)*offset,y:p.y+(any+bny)*offset};
+      if(!Number.isFinite(point.x)||!Number.isFinite(point.y))return null;
+      result.push(point);
+    }
+    const innerArea=hullArea(result);
+    if(Math.sign(innerArea)!==sign||Math.abs(innerArea)>=Math.abs(area))return null;
+    for(const point of result)for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];
+      if(sign*((b.x-a.x)*(point.y-a.y)-(b.y-a.y)*(point.x-a.x))<-.01)return null;
+    }
+    return result; // Convex inset stays inside the real room projection, including all stacked-story silhouettes.
+  }
+  function roomLightClip(room,project){
+    const outer=projectHull(room,project);
+    if(outer.length<3)return {outer,mid:null,inner:null};
+    const xs=outer.map(p=>p.x),ys=outer.map(p=>p.y);
+    const width=Math.max(...xs)-Math.min(...xs),height=Math.max(...ys)-Math.min(...ys);
+    const feather=Math.min(LIGHT_CLIP_FEATHER_PX,(Math.min(width,height)-2)/4);
+    const mid=insetHull(outer,feather/2),inner=insetHull(outer,feather);
+    return {outer,mid:inner&&mid?mid:null,inner:inner&&mid?inner:null};
+  }
+  function traceHull(ctx,hull){
+    ctx.moveTo(hull[0].x,hull[0].y);
+    for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
+    ctx.closePath();
+  }
+  function drawClippedRoomLight(ctx,clip,draw){
+    if(clip.outer.length<3){draw();return;}
+    ctx.save();
+    try{
+      if(!clip.inner||!clip.mid){ // Degenerate/very narrow projections still retain strict isolation.
+        ctx.beginPath();traceHull(ctx,clip.outer);ctx.clip();draw();return;
+      }
+      // Nonoverlapping convex bands fade to zero at the room's actual edge.
+      // Keep the original destination-out/source-over operation and don't draw outside the room.
+      for(const band of [
+        {outer:clip.inner,inner:null,alpha:1},
+        {outer:clip.mid,inner:clip.inner,alpha:.65},
+        {outer:clip.outer,inner:clip.mid,alpha:.22},
+      ]){
+        ctx.save();
+        try{
+          ctx.globalAlpha*=band.alpha;
+          ctx.beginPath();traceHull(ctx,band.outer);
+          if(band.inner)traceHull(ctx,band.inner);
+          ctx.clip(band.inner?'evenodd':'nonzero');
+          draw();
+        }finally{ctx.restore();}
+      }
+    }finally{ctx.restore();}
+  }
+
   function visual(record,show){
     if(show){
       for(const [node,original] of record.hidden||[])node.visible=original;
@@ -298,7 +373,7 @@
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
       prepareLightClip(project){
-        lightHull=active&&typeof project==='function'?projectHull(active,project):null;
+        lightHull=active&&typeof project==='function'?roomLightClip(active,project):null;
       }, // Called once by the shared lighting overlay, not once per flame/rune/torch.
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
@@ -308,14 +383,7 @@
         if(!session.lightAllowed(light))return false;
         const room=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         if(!room||!ctx?.save||!ctx?.clip||typeof project!=='function'){draw();return true;}
-        const hull=lightHull||projectHull(room,project);
-        if(hull.length<3){draw();return true;}
-        ctx.save();
-        try{
-          ctx.beginPath();ctx.moveTo(hull[0].x,hull[0].y);
-          for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
-          ctx.closePath();ctx.clip();draw();
-        }finally{ctx.restore();}
+        drawClippedRoomLight(ctx,lightHull||roomLightClip(room,project),draw);
         return true;
       },
       tick(dt){
