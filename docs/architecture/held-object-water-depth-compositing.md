@@ -490,3 +490,45 @@ procedural hands/feet, depth textures or render-target setup:
   included in the overlap/stencil/tint ordering; a new opaque ground
   cover must remain an occluder unless it is specifically intended to be
   the game's x-rayed **base** grass/path.
+
+## Dev Companion manual layer hierarchy and airborne horizon mask
+
+The **X-ray hierarchy** panel now separates logical visual priority from the
+existing protected occlusion pipeline. Expand **Draw order** to select one of
+World / Materials / Characters / Equipment, then choose a layer and move it
+before another layer (or nudge one slot at a time). Its list includes
+terrain/path/floor, the sky and visual-only backdrops, opaque/cutout/transparent
+materials, front/back body planes, hands, feet, pants, headwear and held
+weapons/tools. Edits are stored only in the existing browser-scoped
+`hobunji.xrayHierarchy.v1` override record and round-trip through **Export
+all changes**. Moving a layer activates `layers.manualOrder`; **Reset all**
+restores the shipped visual hierarchy and the established mask rules.
+
+The configurable visual sorter runs on the ordinary base color draw and on
+the separate held gear/hand/foot color draw. It never reorders the renderer's
+depth, shell, stencil or water restoration passes, never changes physical
+depth tests, and cannot swap the underlying opaque and transparent WebGL
+passes; these are necessary rendering boundaries, not missing UI choices.
+A single skinned portrait can have separate material-specific (front/rear)
+draw-list entries.
+
+**Jumping regression:** a player airborne in `PlayerJump.debug` has
+physically raised gear. The compositor's ordinary-depth shortcut previously
+reused scene depth, including artificial far-plane sky/cloud-mask depth and
+visual-only distant plateau/ridge geometry. Those background masks can have
+irregular silhouettes and must not be treated as physical occluders of a
+nearby weapon. While physically airborne, the ordinary held group now
+rebuilds its depth (rather than supplementing cached base depth) and omits
+only registered visual background meshes during that depth submission.
+Actual terrain, nearby floors, walls, snow, foliage, water and NPC bodies
+remain occluders. Elevation-replay groups and hand/foot shell depth draws
+also exclude these visual-only backdrop meshes. Their ordinary color draw,
+final depth restoration and postprocess paths still see the original sky and
+distant scenery. The default `background.gearDepth=ignore` and
+`airborne.rebuildDepth=on` options can be toggled independently in
+**Exceptions → Airborne** to A/B-test the issue.
+
+`HeldObjectRenderOrder.snapshot()` reports
+`airborneDepthRebuilds`, `backgroundDepthMeshesExcluded` and
+`registeredBackgroundDepthMeshes` for mobile diagnostics.
+
