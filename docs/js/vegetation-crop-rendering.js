@@ -866,7 +866,7 @@
           if (tile.cropReady && !isRootedBush && family !== 'blackMustard' && family !== 'greenMustard') mesh.rotation.y = _now / 2200 + col; // Rooted leaf rosettes/bushes stay planted.
 
         } else {
-          // ── Simple colored cube (all other crops) ────────────────
+          // ── Temporary cube anchors for garlink/ongyums PNG clusters ──
           const variety = pigment; // Genetic ripe color is used by the existing simple crop-mesh path.
           const colors = variety == null ? (CROP_COLORS[tile.crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
           const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
