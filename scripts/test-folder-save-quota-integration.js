@@ -329,10 +329,19 @@ async function boot(folder, nativeData, sessionData = new Map()) {
 
   disk.failWrites = true;
   assert.match((await second.window.LocalSaveFolder.syncNow()).lastError, /Disk write failed/, 'staging cannot hide a real folder write failure');
-  disk.failWrites = false;
-  const layoutDir = await folder.getDirectoryHandle('farm-layouts'); // External Google Drive version restoration targets the canonical file, not browser storage.
+  // Separate sandbox: the preceding disk-failure test deliberately leaves an
+  // unreadable character file, which the production loader correctly refuses.
+  const externalDisk = { failWrites: false }; // Clean disk for Google Drive version replacement.
+  const externalFolder = directory('Externally Restored Farm', externalDisk);
+  const externalBrowser = new Map([
+    ['hobunjiSaveMeta', JSON.stringify(initial)],
+    ['hobunji_farm_layout_v3:hollow', JSON.stringify(reloaded.farmLayouts.hollow)],
+  ]); // Baseline browser layout is intentionally missing any squeezers.
+  const externalSession = await boot(externalFolder, externalBrowser);
+  assert.equal((await externalSession.window.LocalSaveFolder.syncNow()).lastError, null);
+  const layoutDir = await externalFolder.getDirectoryHandle('farm-layouts');
   const layoutFile = await layoutDir.getFileHandle('hollow.json');
-  const restoredLayout = JSON.parse(await (await layoutFile.getFile()).text()); // Preserve the entire current layout while restoring two historical squeezers.
+  const restoredLayout = JSON.parse(await (await layoutFile.getFile()).text()); // Preserve the current layout and transplant just the historical squeeze station records.
   restoredLayout.layout.furniture = [
     { key: 'squeezer', col: 25, row: 3, rotYDeg: 0 },
     { key: 'squeezer', col: 26, row: 3, rotYDeg: 0 },
@@ -340,14 +349,14 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   const edit = await layoutFile.createWritable();
   await edit.write(JSON.stringify(restoredLayout));
   await edit.close();
-  const blockedExternalEdit = await first.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' });
+  const blockedExternalEdit = await externalSession.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' });
   assert.equal(blockedExternalEdit.lastAction, 'autosync-blocked-external-layout', 'autosync must not erase a farm restored outside the game');
   assert.match(blockedExternalEdit.lastError, /changed outside this game session/);
   assert.equal((JSON.parse(await (await layoutFile.getFile()).text())).layout.furniture.length, 2,
     'external farm restore survives the attempted autosync unchanged');
-  const explicitLoad = await first.window.LocalSaveFolder.loadFromFolder();
+  const explicitLoad = await externalSession.window.LocalSaveFolder.loadFromFolder();
   assert.equal(explicitLoad.ok, true, 'Load from Folder imports the external farm restoration: ' + JSON.stringify(explicitLoad));
-  assert.equal(first.window.HobunjiSaveSnapshot.capture().farmLayouts.hollow.furniture.length, 2,
+  assert.equal(externalSession.window.HobunjiSaveSnapshot.capture().farmLayouts.hollow.furniture.length, 2,
     'the restored processor positions reach browser storage after explicit load');
 
   console.log('folder quota integration: actual gameplay/farm serializers, linked-window quota failure, zero-write capture, manual/campfire/travel/autosync/quit, browser mirror errors, reloads, and real capture/disk errors verified');
