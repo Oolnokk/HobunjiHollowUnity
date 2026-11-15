@@ -386,14 +386,15 @@
   function currentPreservedOutput(key, sourceKey) {
     if (!sourceKey || !deps.ITEM_DEFS[sourceKey]) return null;
     for (const method of ['smoking', 'drying']) {
-      const current = getProcessingOutput(method, sourceKey);
-      if (current?.key === key) return current;
+      const current = getProcessingOutputs(method, sourceKey)?.find(output => output?.key === key);
+      if (current) return current; // Preserve smoking/drying stage provenance so recovered definitions persist on later saves.
     }
     return null;
   }
 
   // stock: { itemKey: count }; repairs the definition of every held preserved good.
   function repairPreservedDefs(stock) {
+    if (!deps?.ITEM_DEFS) return 0; // Late source registration retries after ItemProcessing.init instead of losing older stacks.
     let repaired = 0;
     for (const key of Object.keys(stock || {})) {
       if (!(Number(stock[key]) > 0)) continue;
