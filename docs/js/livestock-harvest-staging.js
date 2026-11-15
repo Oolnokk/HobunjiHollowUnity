@@ -314,6 +314,7 @@
       .multiplyScalar(weight);
     composer.setChannel(PLAYER_ANIMATION_CHANNEL, {
       priority: PLAYER_ANIMATION_PRIORITY,
+      leaseMs: 500, // The handler pose is resampled every frame; interrupted staging cannot leave a stale override.
       mode: 'override',
       translationMode: 'override',
       quaternion: weightedDeltaQuaternion,

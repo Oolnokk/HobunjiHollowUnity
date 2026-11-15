@@ -113,7 +113,7 @@
   const base = src ? new URL('.', src).href : 'js/';
   const chathead = new URL('animal-chathead-frame.js?v=20261115skeeriEgg2', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
-  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260923review1', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
+  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20261115hposelease08', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20261019h4a26302', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
   const controllerSelectionUi = new URL('controller-selection-ui.js?v=20261022shattercaskguard1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
@@ -125,7 +125,7 @@
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
   const npcSocialInhibitionRuntime = new URL('npc-social-inhibition-runtime.js?v=20261017h6bf2377', base).href;
   const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20261015h7e50202', base).href;
-  const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20261015hf36ede5', base).href;
+  const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20261115hposelease07', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20261115hPoseDance2', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20261114h4966a9e', base).href;

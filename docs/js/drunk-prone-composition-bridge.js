@@ -30,6 +30,9 @@
   const RUN_CHANNEL = 'run-lean'; // Separate additive player channel keeps running compatible with Footing sway.
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
+  const DRUNK_SAMPLE_MAX_AGE_MS = 500; // Match the composer's channel lease: only live gait frames can renew render-time sway.
+  let lastDrunkPoseSyncReason = 'waiting'; // Existing mobile debug report explains why a render reused or rejected sway.
+  let lastDrunkPoseSampleAgeMs = null; // Latest age measured at the renderer boundary, not a guessed animation progress value.
   const DEG = Math.PI / 180;
   const banditStateByLegHandle = new WeakMap(); // Binds a pre-entity bandit leg attachment to its entity once makeEntity finishes.
   const banditStates = new Set(); // Iterated only at render time to compose visible sway without touching persistent facing state.
@@ -228,7 +231,7 @@
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         const heading = resolvePlayerRunHeading(player, dt, speedWorldUnitsPerSecond); // Raised ruin supports can move the player while native vx/vy stay at zero.
         if (pitch && Number.isFinite(heading) && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
-          priority: 100, mode: 'additive', space: 'world',
+          priority: 100, mode: 'additive', space: 'world', leaseMs: 500, // Remove abandoned movement lean after interrupted gait updates.
           excludeExternalProviders: ['equippedTool', 'heldItem'], // Scene-level weapons/tools and player-nested bag items (including Kurraya) ignore movement lean.
           quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, heading),
         });
@@ -314,33 +317,53 @@
 
   function syncDrunkComposerChannel() {
     const player = window.Combat?.deps?.player;
-    if (!player) return;
-
-    // Prone/knockdown playback owns the pose completely. Removing only the
-    // unsteady-walk channel leaves the ragdoll/recovery channel and every other
-    // body contribution untouched. Stored drunkenness remains on the entity.
-    if (player.prone) {
-      composer.clearChannel(RUN_CHANNEL);
+    if (!player) {
       composer.clearChannel(DRUNK_CHANNEL);
+      lastDrunkPoseSyncReason = 'no-player';
+      lastDrunkPoseSampleAgeMs = null;
       return;
     }
 
-    const debug = window.HobunjiDrunkWalk?.getDebug?.();
-    if (!debug) return;
-    const pitch = Number(debug.pitchDeg) * DEG;
-    const roll = Number(debug.rollDeg) * DEG;
-    if (!Number.isFinite(pitch) || !Number.isFinite(roll)) return;
+    // Explicit pose owners always beat unsteady locomotion, including the
+    // standing recovery arc where player.prone may already be false.
+    if (player.prone || window.ImpactRagdollPlayback?.isActive?.()
+        || window.CharacterActionLocks?.isLocked?.('player', 'pose')) {
+      composer.clearChannel(RUN_CHANNEL);
+      composer.clearChannel(DRUNK_CHANNEL);
+      lastDrunkPoseSyncReason = 'body-pose-owned';
+      lastDrunkPoseSampleAgeMs = null;
+      return;
+    }
 
-    // Reassert at the render boundary, after game.js has resolved this frame's
-    // normal facing/auto-target yaw. The composer then post-composes this local
-    // pitch/roll onto that base orientation, so target tracking cannot replace
-    // the low-Footing lean; it can only rotate the already-leaning body to face
-    // the target. Attack/ragdoll channels continue to compose by priority.
+    const sample = window.HobunjiDrunkWalk?.currentPlayerPoseSample?.(); // Direct live solver state; a full mobile diagnostics snapshot is too expensive to build per draw.
+    const stamp = sample?.lastUpdatedAtMs;
+    const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now() : Date.now(); // Must use the same time origin as the gait writer and composer.
+    const sampleAgeMs = typeof stamp === 'number' && Number.isFinite(stamp) ? nowMs - stamp : NaN;
+    lastDrunkPoseSampleAgeMs = Number.isFinite(sampleAgeMs) ? sampleAgeMs : null;
+    if (!Number.isFinite(sampleAgeMs) || sampleAgeMs < 0 || sampleAgeMs >= DRUNK_SAMPLE_MAX_AGE_MS) {
+      composer.clearChannel(DRUNK_CHANNEL);
+      lastDrunkPoseSyncReason = 'stale-gait-sample'; // Rendering without simulation must never keep renewing a stale pitch/roll.
+      return;
+    }
+
+    const pitch = Number(sample.pitch); // Sampled gait pitch is already in radians, unlike the debug-only pitchDeg value.
+    const roll = Number(sample.roll); // Sampled gait roll shares the composer's local rotation convention.
+    if (!Number.isFinite(pitch) || !Number.isFinite(roll)) {
+      composer.clearChannel(DRUNK_CHANNEL);
+      lastDrunkPoseSyncReason = 'invalid-gait-sample';
+      return;
+    }
+
+    // Gameplay has resolved this frame's base facing. Only the fresh gait's
+    // pitch/roll may be republished at this boundary, never a cached debug pose.
     composer.setChannel(DRUNK_CHANNEL, {
       priority: DRUNK_PRIORITY,
+      leaseMs: DRUNK_SAMPLE_MAX_AGE_MS,
       mode: 'additive',
       rotation: { pitch, roll },
     });
+    lastDrunkPoseSyncReason = 'fresh-gait-sample';
   }
 
   // combat-config-loader makes r128 renderer instances delegate render() to
@@ -393,6 +416,8 @@
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
         drunkWalk: window.HobunjiDrunkWalk?.getDebug?.() || null,
+        drunkPoseSyncReason: lastDrunkPoseSyncReason, // Visible on mobile when animation updates freeze but drawing continues.
+        drunkPoseSampleAgeMs: lastDrunkPoseSampleAgeMs,
         composer: composer.getDebug?.() || null,
       };
     },

@@ -509,8 +509,8 @@
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
   } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
-    handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20261110flailorder3', docsBase).href);
-    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261111kurraya2', docsBase).href);
+    handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20261115hposelease05', docsBase).href);
+    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261115hposelease06', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
     handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261115h9c3b24e', docsBase).href);

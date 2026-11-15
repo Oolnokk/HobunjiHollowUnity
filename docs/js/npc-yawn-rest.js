@@ -379,7 +379,7 @@
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
     if (progress >= 1) { finish(entry); return; }
-    if (entry.walker._bedLieActive) return;
+    if (entry.walker._bedLieActive) { finish(entry, 'bed-pose-owned'); return; } // A newly acquired bed pose must not retain a frozen additive neck/chest bend.
     const envelope = Math.sin(Math.PI * progress) ** 2;
     const neck = entry.walker.neckJoint;
     const state = entry.state;
@@ -397,7 +397,7 @@
     }
     if (entry.isPlayer) {
       window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
-        priority: 400, rotation: { pitch: -0.16 * envelope }, includeExternal: false,
+        priority: 400, leaseMs: 500, rotation: { pitch: -0.16 * envelope }, includeExternal: false, // Refreshes throughout the yawn; expires if gesture teardown is skipped.
       }); // The backward chest extension complements the arms-raised stretch without changing the player's world-facing orientation.
       window.PlayerYawnStretchPresentation?.update?.(entry, progress);
     }
