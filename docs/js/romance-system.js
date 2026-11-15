@@ -599,17 +599,18 @@
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
     if (state.outing?.npcId === rec.id && hourStamp() < num(state.outing.endHour, -Infinity))
       return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' }; // An explicitly accepted midnight Communion outing takes precedence over ordinary sleep.
-    if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
+    const festivalGoing = !window.RomanceFamily?.isAssignedToVat?.(rec.id) && !!window.FestivalSystem?.festivalHours?.(); // The event's real clock also keeps married residents at celebrations past ordinary bedtime.
+    if (!festivalGoing && inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
       if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Family work takes precedence over the spouse's former trade.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Assigned household fieldwork still wins during festival hours.
     if (chore) return chore;
-    if (spouseTownVisitNow(rec.id)) return null; // The original NPC agenda owns work and its real visitor windows.
-    if (!window.RomanceFamily?.isAssignedToVat?.(rec.id) && window.FestivalSystem?.festivalHours?.()) {
-      if (rec.id === 'jubmir') return window.SpouseSocialLife?.destinationFor?.('festival') || null; // Don't let his old visitor absence suppress marital festival attendance.
-      return null; // Ordinary residents follow the town's shared festival agenda.
+    if (festivalGoing) {
+      if (rec.id === 'jubmir') return window.SpouseSocialLife?.destinationFor?.('festival') || null; // His former visitor absence must not hide a married Jubmir from festivals.
+      return null; // Ordinary residents follow the town's shared festival agenda through the actual closing hour.
     }
+    if (spouseTownVisitNow(rec.id)) return null; // The original NPC agenda owns work and its real visitor windows.
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
