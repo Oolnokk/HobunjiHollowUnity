@@ -18,7 +18,7 @@ const gameSource = source('docs/game.js'); // Used to verify source-colored crop
 const foliageFamiliesMatch = cropRenderingSource.match(/const FOLIAGE_CROPS = new Set\(\[([^\]]+)\]\);/); // Reads the actual foliage family list rather than freezing it to two crop IDs.
 assert.ok(foliageFamiliesMatch, 'crop foliage renderer exposes its foliage-crop family set');
 const foliageFamilies = [...foliageFamiliesMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]); // Parsed family IDs let this test permit future foliage crops.
-for (const family of ['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']) {
+for (const family of ['needlegrain', 'heftroot', 'blackMustard', 'greenMustard', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']) {
   assert.ok(foliageFamilies.includes(family), `${family} remains owned by the foliage renderer lifecycle`);
 }
 for (const billboardCrop of ['garlink', 'ongyums']) {
@@ -28,8 +28,13 @@ assert.match(cropRenderingSource, /assets\/leaves\/small_leaf\.png/, 'outer mush
 assert.match(cropRenderingSource, /assets\/leaves\/speartip_leaf\.png/, 'inner mushtard leaves reuse existing pointed source PNG');
 assert.match(cropRenderingSource, /new THREE\.InstancedMesh\(/, 'mushtard leaf cards are batched for mobile rendering');
 assert.match(cropRenderingSource, /group\.userData\.hobunjiMustardLeafCount/, 'mushtard rosettes expose debug leaf counts');
-assert.match(cropRenderingSource, /Simple colored cube \(all other crops\)/,
-  'non-foliage crops still expose the generic placeholder path that crop-sprite-art upgrades or tags');
+assert.match(cropRenderingSource, /buildShrubMesh\?\.\(col, row\)/, 'berry bushes reuse the cached existing shrub foliage builder');
+assert.match(cropRenderingSource, /new THREE\.SphereGeometry\(/, 'fruit clusters use actual 3D spheres, not billboard decorations');
+for (const family of ['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']) {
+  assert.match(cropArtSource, new RegExp(family + ": Object\\.freeze\\(\\{ spriteIcon: 'berries\\.png', worldMode: 'procedural'"), family + ' must bypass the sprite-cube conversion route');
+}
+assert.match(cropRenderingSource, /Temporary cube anchors for garlink\/ongyums PNG clusters/,
+  'only garlink and ongyums still pass through PNG cube anchors; every berry species grows a real bush');
 assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB \}\)/,
   'garlink uses its PNG for held/icon art and world billboard clusters');
 assert.match(cropArtSource, /ongyums:\s*Object\.freeze\(\{ spriteIcon: 'ongyum\.png', worldMode: 'billboard', ingredientColor: 0x627F20 \}\)/,
