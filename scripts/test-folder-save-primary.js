@@ -292,4 +292,80 @@ assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without 
 assert(debugUi.includes('wilderness treasure meshes are excluded from save JSON') && debugUi.includes('unreadable character/world files block folder import'), 'Settings includes the current audited save-corruption protection summary');
 assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
-console.log('\nFolder-save primary regression checks passed.');
+// A canonical file can be identical to the browser cache while the already-running farm
+// still contains default objects. Explicit Load Folder must rehydrate that runtime.
+async function verifySettingsLoadRebuild(started, changed, ok = true) {
+  const callbacks = new Map(); // Registered button listeners are invoked like Settings clicks.
+  const storage = new Map(); // One-shot folder-load handoff is asserted without real browser storage.
+  const events = []; // Ordered reload and exit-guard actions prove stale state is never saved over the folder.
+  const button = {
+    dataset: {}, style: {}, textContent: 'Load Folder', disabled: false,
+    addEventListener(type, fn) { callbacks.set(type, fn); },
+  }; // Only the real Settings Load button is needed for this isolated regression.
+  const row = {
+    classList: { contains() { return false; }, add() {} },
+    previousElementSibling: null, parentElement: null,
+    querySelector() { return null; },
+  }; // Minimal Settings row allows the real primary UI to attach its existing handler.
+  const status = { state: 'ready', supported: true, folderName: 'farm-backup', autoSyncArmed: false }; // A valid connected folder already imported into browser JSON.
+  const localSave = {
+    isSupported: () => true,
+    getStatus: () => status,
+    onChange() {},
+    syncNow: async () => status,
+    loadFromFolder: async () => ({ ok, changed, message: ok ? 'Browser save already matches folder.' : 'Import failed.' }),
+  }; // No writes are permitted: this is a folder-to-browser reload, not Save to Folder.
+  const window = {
+    LocalSaveFolder: localSave,
+    __hobunjiGameStarted: started,
+    addEventListener() {},
+    HobunjiSessionPersistenceStartupGuard: {
+      suppressExitFlush(reason) { events.push('guard:' + reason); },
+    },
+  }; // Real runtime start flag is the missing condition in the previous implementation.
+  const document = {
+    body: null,
+    addEventListener() {},
+    querySelector() { return null; },
+    getElementById(id) {
+      if (id === 'localSaveFolderRow') return row;
+      if (id === 'localSaveFolderLoadBtn') return button;
+      return null;
+    },
+  }; // DOM only includes the elements accessed by the Settings Load handler.
+  const context = {
+    window, document,
+    sessionStorage: {
+      setItem(key, value) { storage.set(key, String(value)); },
+      getItem(key) { return storage.get(key) || null; },
+      removeItem(key) { storage.delete(key); },
+    },
+    localStorage: { getItem() { return null; } },
+    navigator: {},
+    MutationObserver: class { observe() {} },
+    requestAnimationFrame(fn) { fn(); },
+    confirm: () => true,
+    alert: message => events.push('alert:' + message),
+    location: { reload() { events.push('reload'); } },
+    console,
+  }; // Executes the actual production module without a browser/console dependency.
+  vm.runInNewContext(primary, context, { filename: 'folder-save-primary.js' });
+  window.FolderSavePrimary.refreshUi(); // Installs the actual Load Folder click path.
+  assert(callbacks.has('click'), 'Settings Load Folder handler installs in the test runtime');
+  await callbacks.get('click')({ currentTarget: button });
+  const mustReload = ok && (started || changed);
+  assert(events.includes('reload') === mustReload, `folder import started=${started}, changed=${changed}, ok=${ok}: rebuilds live runtime iff necessary`);
+  assert(events.includes('guard:settings-folder-load') === mustReload, 'reload protects the restored browser cache from exit-time stale-world writes');
+  if (mustReload) assert(storage.get('hobunjiFolderPrimarySkipOnce') === 'folder-loaded-in-settings', 'intentional reload carries its one-shot folder-import handoff');
+}
+
+Promise.resolve()
+  .then(() => verifySettingsLoadRebuild(true, false))
+  .then(() => verifySettingsLoadRebuild(true, true))
+  .then(() => verifySettingsLoadRebuild(false, false))
+  .then(() => verifySettingsLoadRebuild(true, false, false))
+  .then(() => {
+    assert(debugUi.includes('FarmEditor?.inspectFarmRestore'), 'mobile Save Diagnostics exposes actual spawned farm furniture/building counts');
+    console.log('\nFolder-save primary regression checks passed.');
+  })
+  .catch(error => { console.error(error); process.exitCode = 1; });
