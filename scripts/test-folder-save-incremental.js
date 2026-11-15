@@ -183,6 +183,25 @@ async function main() {
   const other = await window.LocalSaveFolder.syncNow({ automatic: false });
   assert.equal(other.saveFileWork.written, 3, 'new folder receives a complete initial save, not a no-op');
 
+  const recoveredFolder = directory('recovery-picked', counters); // A recovery-only folder switch must invalidate the same incremental catalog.
+  window.showDirectoryPicker = async () => recoveredFolder;
+  await window.LocalSaveFolder.chooseRecoveryFolder();
+  const recoverySelected = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(recoverySelected.lastError, null);
+  assert.equal(recoverySelected.saveFileWork.written, 3, 'recovery folder re-selection writes all canonical files to its new destination');
+
+  // Mutation after the delta scan must never install stale content hashes as
+  // proof of a durable save. A caller-owned pinned snapshot can be mutable.
+  meta.worlds[0].day = 5;
+  const pinned = { snapshotVersion: 1, meta, farmLayouts: { world: layout } }; // Explicit save uses the same data objects so the injected edit is observable.
+  counters.onFileRead = () => { meta.worlds[0].day = 6; }; // Edit arrives while the farm integrity check is awaiting disk.
+  const mutated = await window.LocalSaveFolder.syncSnapshot(pinned, { automatic: false });
+  assert.equal(mutated.lastAction, 'save-error', 'mutated snapshot is rejected before publishing a stale delta fingerprint');
+  assert.match(mutated.lastError, /snapshot changed/i);
+  saveMeta();
+  const recoveredMutation = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(recoveredMutation.lastError, null, 'a stable retry can persist the newer world state safely');
+
   // A failed write must not publish a new delta baseline.
   meta.worlds[0].day = 5; saveMeta();
   counters.fail = true;
