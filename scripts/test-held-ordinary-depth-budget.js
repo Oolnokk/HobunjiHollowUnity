@@ -6,8 +6,9 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false } = {}) {
   const opaque = { isMesh: true, visible: true, children: [] }; // Base world depth has already drawn this terrain/cover.
+  const sky = { isMesh: true, visible: true, children: [], layers: { mask: 1 } }; // Far-plane cloud mask, not a physical gear occluder.
   const cutout = { isMesh: true, visible: true, children: [] }; // Portrait PNG needs forced alpha-tested depth.
   const cover = { isMesh: true, visible: true, children: [] }; // Water/grass must preserve occlusion of held parts.
   const weapon = { isMesh: true, visible: true, children: [], layers: { mask: 3 } }; // Ordinary held source.
@@ -16,7 +17,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const parent = { isMesh: true, visible: true, children: [cutout] }; // A mesh ancestor of a required cutout cannot be hidden.
   const hooked = { isMesh: true, visible: true, children: [], onBeforeRender() {} }; // Unknown draw-time behavior is retained.
   const scene = { background: 'sky', autoUpdate: true,
-    traverseVisible(fn) { for (const node of [opaque, cover, weapon, ...(!nested ? [hand] : []), parent, hooked]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
+    traverseVisible(fn) { for (const node of [sky, opaque, cover, weapon, ...(!nested ? [hand] : []), parent, hooked]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
   };
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
@@ -27,14 +28,20 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   };
   const hideObjects = objects => { const states = new Map(); for (const object of objects) { states.set(object, object.visible); object.visible = false; } return states; }; // Visibility transaction used by the owner.
   const scope = {
-    window: {}, objectProto: { onBeforeRender: undefined }, internalReplay: false,
+    window: airborne ? { PlayerJump: { debug: { active: true, phase: 'air', heightAboveGround: 1 } } } : {},
+    xrayRule: key => key === 'background.gearDepth' ? 'ignore' : key === 'airborne.rebuildDepth' ? 'on' : 'off',
+    withPortraitDrawOrder: (_renderer, _order, draw) => draw(), // Visual sorter is covered by test-xray-hierarchy.js.
+    backgroundDepthRegistry: 'background',
+    airborneDepthRebuilds: 0, backgroundDepthMeshesExcluded: 0,
+    objectProto: { onBeforeRender: undefined }, internalReplay: false,
     lastBaseStencilBits: tint ? 1 : 0, replayScissorEnabled: false, replayCullEnabled: false,
     buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => tint,
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
-    collectVisible: registry => registry === 'png' ? [cutout] : [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
+    collectVisible: registry => registry === 'png' ? [cutout] : registry === 'background' ? [sky] : [cover],
+    pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),
     restoreMaterialStates() {}, prepareGroundDepthMaterials: () => new Map(),
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
@@ -56,19 +63,26 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const participants = [...(ordinary ? [weapon] : []), ...(bounded ? [hand] : [])]; // Only active sources are hidden by this render.
   const run = () => scope.replaySelectiveHeldOverlay(renderer, scene, camera, participants, [], [opaque], [], [cover], 1);
   if (fail) assert.throws(run, /render failure/); else run();
-  assert.equal(opaque.visible, true); assert.equal(cutout.visible, true); assert.equal(cover.visible, true);
+  assert.equal(opaque.visible, true); assert.equal(cutout.visible, true); assert.equal(cover.visible, true); assert.equal(sky.visible, true);
   assert.equal(weapon.visible, true); assert.equal(hand.visible, true);
   assert.equal(weapon.layers.mask, 3); assert.equal(hand.layers.mask, 3);
   assert.equal(camera.layers.mask, 1); assert.equal(scene.background, 'sky'); assert.equal(scene.autoUpdate, true);
   assert.equal(renderer.autoClear, before.autoClear); assert.equal(renderer.shadowMap.autoUpdate, true);
   assert.equal(scope.internalReplay, false);
-  return { draws, clears, opaque, cutout, cover, parent, hooked, scope, weapon, hand };
+  return { draws, clears, opaque, cutout, cover, sky, parent, hooked, scope, weapon, hand };
 }
 const normal = fixture(); // Common above-floor case: supplement + source draw, without a terrain redraw/restore.
 assert.equal(normal.clears, 0);
 assert.equal(normal.draws.length, 2);
 assert(!normal.draws[0].nodes.includes(normal.opaque), 'opaque terrain is absent from the depth supplement');
 for (const required of [normal.cutout, normal.cover, normal.parent, normal.hooked]) assert(normal.draws[0].nodes.includes(required));
+const airborneNormal = fixture({ airborne: true });
+assert(airborneNormal.clears >= 2, 'airborne ordinary group and the fallback scene restore both rebuild depth');
+assert(!airborneNormal.draws[0].nodes.includes(airborneNormal.sky), 'visual sky masks are omitted from weapon depth reconstruction');
+assert(airborneNormal.draws.some(draw => draw.nodes.includes(airborneNormal.sky)), 'full original world depth, including sky, is restored afterwards');
+assert(airborneNormal.draws.some(draw => draw.mask === 2 && draw.nodes.includes(airborneNormal.weapon)), 'held depth is rebuilt after restoring sky');
+assert(airborneNormal.scope.airborneDepthRebuilds > 0 && airborneNormal.scope.backgroundDepthMeshesExcluded > 0,
+  'mobile counters confirm the airborne mask exemption ran');
 const mixed = fixture({ bounded: true }); // The later holder-local floor replay must still rebuild depth normally.
 assert.equal(mixed.clears, 1);
 assert.equal(mixed.draws.length, 5);
