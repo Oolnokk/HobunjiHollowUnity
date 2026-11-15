@@ -299,8 +299,12 @@
   <script src="js/condition-registry.js?v=20261109missingNpcRestore1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
-       game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261115externalLayoutCopies3"></script>
+       game.js already use. See docs/js/local-save-folder.js.
+       That file is the save system's manifest (each save module keeps its
+       own ?v= token there); it is fetched fresh on every load, like the
+       classic-script group manifests, so bumping a save module never has to
+       touch this shared page. -->
+  <script>document.write('<script src="js/local-save-folder.js?load=' + Date.now() + '"><\/script>');</script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
@@ -770,7 +774,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261110stoneclockmerge1"></script>
+  <script src="js/equipment-panel.js?v=20261115h9f0b49d"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2909,7 +2913,7 @@
   <script src="js/bed-lie-pose.js?v=20261113legacySleepHours1"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261114torchForehandRigLayers1"></script>
+  <script src="game.js?v=20261115hb9c7989"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
