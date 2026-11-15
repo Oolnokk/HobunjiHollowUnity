@@ -31,6 +31,7 @@
   // that needs the pose actually rendered this frame (e.g. the procedural
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
+  let lastBakedHolderWorldQuaternion = null; // The hand driver reads the temporary stance's scale-free rotation without decomposing mirrored tool matrices.
 
   const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261115torchGripIdle2';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
@@ -605,6 +606,7 @@
       try {
         result = originalUpdateMatrixWorld.call(this, force);
         lastBakedHolderMatrixWorld = this.matrixWorld.clone();
+        lastBakedHolderWorldQuaternion = hierarchyWorldQuaternion(this); // Capture before the temporary holder stance is restored in finally.
       } finally {
         if (savedPlaneRotationZ != null && toolPlane) {
           toolPlane.rotation.z = savedPlaneRotationZ;
@@ -787,7 +789,8 @@
     getRuntimeState,
     debugSnapshot,
     lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
-    invalidateHolderMatrixWorld: () => { lastBakedHolderMatrixWorld = null; }, // Map/cinematic handoffs discard world-space sockets from the outgoing scene.
+    lastHolderWorldQuaternion: () => lastBakedHolderWorldQuaternion ? lastBakedHolderWorldQuaternion.clone() : null,
+    invalidateHolderMatrixWorld: () => { lastBakedHolderMatrixWorld = null; lastBakedHolderWorldQuaternion = null; }, // Map/cinematic handoffs discard both world-space grip coordinates and rotation. // Map/cinematic handoffs discard world-space sockets from the outgoing scene.
     poses: idleStances,
   };
 })();
