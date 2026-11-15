@@ -76,6 +76,7 @@
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
       spouse: null, // { npcId, marriedRawDay, marriedHourStamp, perfume? }; a gifted perfume remains worn until replaced.
       kissBuff: null, // { npcId, startedAtHour, expiresAtHour }; serialized with this member's romance state.
+      outing: null, // Accepted, timed spouse trips live with the marriage rather than transient dating state.
       family: null, // owned by js/romance-family.js
     };
   }
@@ -492,7 +493,28 @@
       || String(authored.nickname || dialogue.nickname || 'love').trim(); // New short-y form; legacy endearments remain a fallback if the nickname module is unavailable.
     const greetings = Array.isArray(authored.greetings) && authored.greetings.length
       ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
-    return { nickname, greetings };
+    return { nickname, greetings: window.SpouseSocialLife?.greetingsFor?.(npcId, greetings) || greetings }; // The same live reminders serve ambient and direct dialogue.
+  }
+
+  function activeSpouseOuting() {
+    return state.outing && state.spouse?.npcId === state.outing.npcId && hourStamp() < num(state.outing.endHour, -Infinity)
+      ? { ...state.outing, target: { ...state.outing.target } } : null;
+  }
+  function startSpouseOuting(kind, target) {
+    if (!state.spouse?.npcId || !target?.area || !Number.isFinite(Number(target.c)) || !Number.isFinite(Number(target.r))) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.() || state.date?.npcId === state.spouse.npcId) return false;
+    if (!window.SpouseSocialLife?.outingAvailable?.(kind)) return false; // Invitations must still be eligible when accepted.
+    state.outing = {
+      npcId: state.spouse.npcId, kind, target: { ...target }, startedHour: hourStamp(), endHour: hourStamp() + 4,
+    }; // Shared journey expires after four game hours; the player's position and controls are never commandeered.
+    persist();
+    return true;
+  }
+  function endSpouseOuting() {
+    if (!state.outing) return false;
+    state.outing = null;
+    persist();
+    return true;
   }
 
   // ── Spouse routine ────────────────────────────────────────────────────
@@ -549,18 +571,14 @@
   // never suppresses the Ginju's real field work on an authorized town afternoon.
   function spouseTownVisitNow(npcId) {
     if (!npcId || state.spouse?.npcId !== npcId || state.date?.npcId === npcId) return false;
-    if (window.RomanceFamily?.spouseHoldingEgg?.()) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.() || state.outing?.npcId === npcId || window.RomanceFamily?.isAssignedToVat?.(npcId)) return false;
     const scfg = cfg().spouse || {};
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
     const hour = clockHour();
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) return false;
-    const town = scfg.townVisitsByNpc?.[npcId] || scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
-    const weekdays = Array.isArray(town.weekdays) ? town.weekdays : null;
-    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
-    const visitDay = weekdays?.length
-      ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
-      : (rawDay() + hashInt(npcId)) % mod === 0;
-    return visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17));
+    // Family harvesting/tilling wins; when free, an ordinary occupation may resume.
+    if (window.NpcFarmPlots?.targetFor?.({ id: npcId }, { familyOnly: true })) return false;
+    return inHourWindow(hour, 8, 18);
   }
 
   // Spouse target: sleep in the farmhouse bed, sit in chairs, potter around
@@ -577,9 +595,11 @@
       const bed = bedSpot();
       if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
-    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    if (state.outing?.npcId === rec.id && hourStamp() < num(state.outing.endHour, -Infinity))
+      return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' };
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Family work takes precedence over the spouse's former trade.
     if (chore) return chore;
+    if (inHourWindow(hour, 8, 18) || window.FestivalSystem?.festivalHours?.()) return null; // Free spouses return to their ordinary authored occupations/social events.
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
@@ -638,6 +658,7 @@
       }
     }
     maybeStartWedding();
+    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || hourStamp() >= num(state.outing.endHour, -Infinity))) endSpouseOuting(); // Retire the accepted trip at its game-hour expiry.
     installKissBuffProviders();
     if (state.kissBuff) {
       if (remainingKissHours() <= 0) {
@@ -738,6 +759,7 @@
     const options = [];
     if (state.spouse?.npcId === npcId) {
       options.push({ id: 'spouse_kiss', icon: '💋', label: 'Kiss', run: () => kissSpouse(walker) });
+      if (activeSpouseOuting()) options.push({ id: 'spouse_end_outing', icon: '🏠', label: 'Head Home', run: endSpouseOuting });
     }
     if (isOnDateWith(npcId)) {
       const mode = state.date.mode;
@@ -776,6 +798,7 @@
       if (valid) state.spouse.perfume = { recipeId: valid.recipeId, potencyTier: valid.potencyTier };
       else delete state.spouse.perfume;
     }
+    if (state.outing && (!state.spouse || state.outing.npcId !== state.spouse.npcId || !state.outing.target?.area || !Number.isFinite(Number(state.outing.endHour)))) state.outing = null;
     if (state.kissBuff && (!state.spouse || state.kissBuff.npcId !== state.spouse.npcId ||
       !Number.isFinite(Number(state.kissBuff.expiresAtHour)))) state.kissBuff = null;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
@@ -808,6 +831,7 @@
       lastDatedNpcId: getLastDatedNpcId(), // Mobile diagnostic: last romantic form of address follows this NPC after the date.
       engagement: state.engagement ? { ...state.engagement } : null,
       spouse: state.spouse ? { ...state.spouse } : null,
+      spouseOuting: activeSpouseOuting(), // Mobile-readable destination and time remaining.
       spouseKiss: {
         active: remainingKissHours() > 0,
         effect: currentKissEffect(), // Mobile-friendly live readout of the selected perfume and its exact resource channel.
@@ -853,6 +877,7 @@
     activeKissPerfumeEffect, // Alchemy getter integration excludes default and expired kiss buffs.
     getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
+    startSpouseOuting, endSpouseOuting, activeSpouseOuting, // Consent-based invitation routing and a manual return-home command.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
     // Shared helpers for js/romance-family.js
