@@ -18,7 +18,7 @@ vm.runInContext(source, context, { filename: 'inventory-character-effects.js' })
 
 const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
-assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
+assert.equal(api.version, 2, 'character effects module includes the active HUD buff list');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads the character-effects module');
 assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=[A-Za-z0-9_-]+/, 'combat bootstrap loads the three-panel Gear layout module revision');
 assert.match(loaderSource, /hud-x-control-polish\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
@@ -159,7 +159,13 @@ assert.match(dodgeSource, /BASE_DODGE_SOMERSAULT_DUR_S = 0\.22/, 'UI dodge-durat
 assert.deepEqual({ ...api.__test.BASE_DODGE_PROFILE }, { durationS: 0.22, iframeMs: 380 }, 'module exposes its dodge timing baseline for regression tests');
 
 
-assert.match(source, /panel\.replaceChildren\(trinketCard, outfitCard, finalCard\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
+assert.ok(source.includes('panel.replaceChildren(buffsCard, trinketCard, outfitCard, finalCard)'), 'active buffs lead the Character Effects stack');
+assert.ok(source.includes('gear-active-buff-icon'), 'active effects show the original icon beside the explanation');
+assert.ok(source.includes('entry.description || entry.desc'), 'active effects show descriptions in the menu, not just hover titles');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'temple-prayer-rest', remainingS: 86400 }), '1d game');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'alchemy', remainingS: 90 }), '1m 30s real');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'harlyao-terror', remainingS: 1 }), 'While nearby');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', key: 'ancestor-blessing', remainingS: 7 }), '7d game');
 assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
 assert.match(source, /trinketHeading\.textContent !== headingText/, 'stable Attunement heading must not trigger redundant mutation/layout work');
 assert.match(source, /row\.classList\.contains\(tone\) !== active/, 'the 1 Hz effect refresh must not rewrite unchanged bonus/drawback classes');
