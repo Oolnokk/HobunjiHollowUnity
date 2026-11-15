@@ -52,6 +52,7 @@
     puktuk: '🐑',
     honeyfuzzle: '🐝',
     pingdort: '🐦', // Wild eggs hatch into small shoulder pets or medium/large companions.
+    skeeri: '🐦', // Same role limits as Pingdort: Large Skeeri are companions, never mounts.
   };
 
   const STABLE_ROLE_META = {
