@@ -1970,6 +1970,17 @@
     return !isPortraitMaskedGear(mesh) || meshOverlapsWaterVolume(mesh, cover); // Hands/feet retain their existing submersion policy.
   }
 
+  // A character portrait is a flat card wider than the actor, so its bounds overlap wet tiles whenever the
+  // actor merely stands beside water. Tint a portrait only when the tile the actor stands on is itself wet.
+  // Covers without a tile footprint (scenery water/slush) keep the bounds test alone.
+  function actorStandsInWater(cover, scope) {
+    const footprint = cover.userData?.hobunjiWaterTileFootprint;
+    if (!Array.isArray(footprint?.bounds)) return true;
+    const [left, top, right, bottom] = footprint.bounds;
+    if (scope.col < left || scope.col >= right || scope.row < top || scope.row >= bottom) return false;
+    return !footprint.tiles || footprint.tiles.has(scope.col + ',' + scope.row); // No tile set = map-wide flood rectangle.
+  }
+
   function submergedPortraits(camera, covers, visiblePortraits) {
     const portraits = []; // Visible portrait meshes with a physically overlapping water/slush surface.
     const scopes = []; // Elected portrait world tiles join gear owners in the clipped water draw.
@@ -1981,7 +1992,7 @@
       const scope = { col: Math.floor(world[12]), row: Math.floor(world[14]) };
       let wet = false;
       for (const cover of covers) {
-        if (!tintCoverNearActor(cover, [scope]) || !meshOverlapsWaterVolume(portrait, cover, false)) continue;
+        if (!tintCoverNearActor(cover, [scope]) || !actorStandsInWater(cover, scope) || !meshOverlapsWaterVolume(portrait, cover, false)) continue;
         touchingCovers.add(cover);
         wet = true;
       }

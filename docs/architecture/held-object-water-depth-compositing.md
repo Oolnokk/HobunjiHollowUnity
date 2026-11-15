@@ -227,6 +227,15 @@ while another dry NPC is on screen. Source-level regressions cover sparse merged
 water, broad floods, scenery bounds, and mixed wet/dry shared-material groups;
 a real GPU screenshot is still required to validate final pixels.
 
+## Portrait water tint: the actor's own tile must be wet
+
+Front/rear portrait cards are wider than the actor, so their bounds overlap wet tiles whenever a character
+merely stands beside a pond, river or flood edge. `submergedPortraits()` therefore also requires
+`actorStandsInWater()`: the tile under the portrait's world origin must be in the water footprint (or inside a
+map-wide flood rectangle). Standing on the bank must leave the portrait untinted; standing on a wet tile tints it.
+Scenery water/slush without a tile footprint keeps the bounds test alone. `scripts/test-portrait-water-bank.js`
+executes the production predicate. The Testing Arena's "Stand on the bank" button reproduces the bank case.
+
 ## Head-relative tools
 
 Head-relative (mouth-anchored) tools now draw alongside ordinary held equipment
