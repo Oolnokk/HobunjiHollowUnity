@@ -16,6 +16,7 @@
   const IS_INTERIOR_EDITOR = /\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname || '');
   const DEFAULT_WALL_HEIGHT = 1.75; // Existing authored-interior wall height; maps without wallHeight stay unchanged.
   const IKMC_LADDER_ITEM_KEY = 'ikmcBalconyLadderFurniture'; // Map furniture key resolved into authored ladder visuals.
+  const IKMC_LADDER_VISUAL_KEY = 'ikmcBalconyLadder'; // Actual authored JSON/procedural recipe key used by the furniture builders.
   const EDITOR_SYNC_MS = 500; // Matches the existing external floor-control sync cadence.
   const LIGHTING_UPDATE_MS = 250; // Smooth enough for the slow game clock without doing light work every render frame.
   let isOrdinaryBuildingArea = () => false; // Captured from GridTileAccessors so runtime authored-lighting metadata follows the same ordinary-building policy as the farmhouse overlay route.
@@ -30,6 +31,9 @@
   let lastLightingMode = 'default'; // Debug snapshot/log state showing whether the latest map used authored Three.js lighting or overlay-only darkness.
   let lastError = null; // Most recent config/runtime error without requiring desktop devtools.
   let ceilingLadderRegistered = false; // Debug state of the interior ladder catalog registration.
+  let ladderVisualBridgeInstalled = false; // Confirms that the item-key-to-visual-key bridge intercepts game furniture builds.
+  let ladderFallbackRungs = 0; // Counts visible procedural rungs supplied while authored furniture JSON loads.
+  let lastLadderBuildKey = null; // Mobile-readable proof that this placed ladder reached its authored key.
   let editorLastSignature = null; // Prevents repeated native reimports while polling Server Layout / Library loads.
   let editorReimports = 0; // Diagnostic count for the editor's native import bridge.
 
@@ -68,6 +72,54 @@
         lightRadiusMultiplier: 1,
       },
     };
+  }
+
+  // Gameplay sometimes passes the interior's *itemKey* straight to the mesh
+  // builder before consulting the decorative-item registry. The authored JSON
+  // and procedural recipe use a different key, so the builder otherwise returns
+  // an empty group and loadBuildingScene replaces it with a white cube.
+  function installLadderVisualBridge() {
+    const furniture = window.ProceduralFurniture; // Shared authored-aware furniture builder used by game interiors and the editor.
+    const catalog = furniture?.CATALOG; // Immediate recipe source for the loading/failure fallback.
+    const existing = furniture?.buildFurnitureGroup; // Preserve every already-installed authored/VFX decorator.
+    if (!catalog || typeof existing !== 'function') return false;
+    const recipe = catalog[IKMC_LADDER_VISUAL_KEY]; // Existing two stiles and ceiling hatch, not a new competing asset.
+    if (Array.isArray(recipe)) {
+      if (!recipe.some(part => part?.id === 'ikmc_fallback_floor')) {
+        recipe.push({ id: 'ikmc_fallback_floor', kind: 'box', tint: .85,
+          transform: { x: 0, y: .035, z: .08, sx: .8, sy: .07, sz: .22 } });
+      }
+      for (let i = 0; i < 9; i++) {
+        const id = 'ikmc_fallback_rung_' + i; // Stable identity makes retries safe and keeps exactly nine visible steps.
+        if (!recipe.some(part => part?.id === id)) {
+          recipe.push({ id, kind: 'box', tint: .85,
+            transform: { x: 0, y: .19 + i * .169, z: .08, sx: .74, sy: .08, sz: .1 } });
+        }
+      }
+      ladderFallbackRungs = recipe.filter(part => /^ikmc_fallback_rung_\d+$/.test(part?.id || '')).length;
+    }
+    // Direct catalog consumers may bypass buildFurnitureGroup. Their alias
+    // must also see the existing recipe rather than an unknown-key placeholder.
+    if (!Object.prototype.hasOwnProperty.call(catalog, IKMC_LADDER_ITEM_KEY)) {
+      Object.defineProperty(catalog, IKMC_LADDER_ITEM_KEY, {
+        configurable: true, enumerable: false,
+        get() { return catalog[IKMC_LADDER_VISUAL_KEY]; },
+        set(value) { Object.defineProperty(this, IKMC_LADDER_ITEM_KEY,
+          { configurable: true, enumerable: true, writable: true, value }); },
+      });
+    }
+    if (!existing.__hobunjiCeilingLadderKeyAlias) {
+      function buildFurnitureGroupWithCeilingLadderAlias(key, baseColor) {
+        const visualKey = key === IKMC_LADDER_ITEM_KEY ? IKMC_LADDER_VISUAL_KEY : key; // Alias only this outpost furniture, leaving all other assets unchanged.
+        if (visualKey !== key) lastLadderBuildKey = visualKey;
+        return existing.call(this, visualKey, baseColor);
+      }
+      Object.assign(buildFurnitureGroupWithCeilingLadderAlias, existing);
+      buildFurnitureGroupWithCeilingLadderAlias.__hobunjiCeilingLadderKeyAlias = true;
+      furniture.buildFurnitureGroup = buildFurnitureGroupWithCeilingLadderAlias;
+    }
+    ladderVisualBridgeInstalled = true;
+    return true;
   }
 
   // Install ceiling furniture in the same interior definitions used by ordinary
@@ -374,6 +426,7 @@
     if (!namespace?.init || namespace.__hobunjiInteriorEnvironmentInitHook) return false;
     const originalInit = namespace.init;
     namespace.init = function initWithInteriorEnvironment(injectedDeps) {
+      registerCeilingFurnitureDefinitions(injectedDeps); // Also register on the scene-loading path, even if FarmPanel is lazy-loaded.
       hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
       return originalInit.call(this, injectedDeps);
     };
@@ -566,6 +619,9 @@
       installed: true,
       defaultWallHeight: DEFAULT_WALL_HEIGHT,
       ceilingLadderRegistered, // Mobile-readable via window.__interiorEnvironmentDebug().
+      ladderVisualBridgeInstalled,
+      ladderFallbackRungs,
+      lastLadderBuildKey,
       buildingSceneMapHooked: !!buildingSceneMap?.__hobunjiInteriorEnvironmentSetHook,
       configCacheKeys: [...configCache.keys()],
       overlayOnlyLightingPolicy: IS_INTERIOR_EDITOR ? 'editor-preview' : 'ordinary-authored-buildings',
@@ -586,6 +642,7 @@
   }
 
   installWallBuilderBridge();
+  installLadderVisualBridge();
   wrapInitForCeilingFurniture('FarmPanel');
   wrapInitForCeilingFurniture('FarmEditor');
   wrapGridTileAccessorsInit();
@@ -594,13 +651,17 @@
   const startedAt = performance.now(); // Bounded startup retry for alternate dev-page script orders.
   const installTimer = setInterval(() => {
     installWallBuilderBridge();
+    installLadderVisualBridge();
     wrapInitForCeilingFurniture('FarmPanel');
     wrapInitForCeilingFurniture('FarmEditor');
     wrapGridTileAccessorsInit();
     if (IS_INTERIOR_EDITOR) installEditor();
     const runtimeReady = !IS_INTERIOR_EDITOR && !!window.GridTileAccessors?.__hobunjiInteriorEnvironmentInitHook;
     const editorReady = IS_INTERIOR_EDITOR && !!document.getElementById('biaInteriorEnvironmentSection');
-    if (runtimeReady || editorReady || performance.now() - startedAt > 5000) clearInterval(installTimer);
+    const definitionsHooked = !!(window.FarmPanel?.__hobunjiCeilingFurnitureDefinitionHook
+      || window.FarmEditor?.__hobunjiCeilingFurnitureDefinitionHook); // Do not stop polling before a lazy farm initializer can supply the definitions.
+    if ((runtimeReady && ladderVisualBridgeInstalled && definitionsHooked)
+      || (editorReady && ladderVisualBridgeInstalled) || performance.now() - startedAt > 5000) clearInterval(installTimer);
   }, 25);
 
   window.InteriorEnvironmentRuntime = Object.freeze({
