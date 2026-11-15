@@ -126,6 +126,10 @@ renderer.init({
   markOutline(root) { root.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); }); },
 });
 renderer.updateCropMeshes();
+const unrelatedWhiteCube = new Mesh(new Geometry(), new MeshLambertMaterial({ color: 0xffffff })); // Non-crop scenery deliberately shares a whiteberries growth color.
+unrelatedWhiteCube.position.set(.5, .5, .5); // Matches the old color-only crop detector's tile-centred position and height.
+unrelatedWhiteCube.scale.setScalar(.5); // Keeps the exact uniform scale expected of a partially grown crop.
+scene.add(unrelatedWhiteCube); // The production scanner must not silently turn unrelated scenery into a berry cluster.
 const camera = { quaternion: {} };
 const fullRender = new THREE.WebGLRenderer();
 async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } // Gives shade-fill and its loaded GPU texture a chance to resolve.
@@ -174,6 +178,8 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
     }
   }
 
+  assert.equal(unrelatedWhiteCube.geometry.type, 'BoxGeometry', 'untagged white scenery stays a cube, never a whiteberry plant');
+  assert.equal(unrelatedWhiteCube.userData.hobunjiCropSpriteKey, undefined, 'unrelated scenery receives no crop identity');
   assert.ok(fills.some(call => call.url.endsWith('berries.png') && call.color === pigmentFor('whiteberries')),
     'berry variants use authored fruit pixels rather than a colored cube');
   const oldVariant = renderer.cropMeshes[1]; // Replanting a new color within one species must not retain the previous texture.
