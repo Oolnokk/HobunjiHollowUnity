@@ -39,10 +39,15 @@ const ink = inkApi.decorate(mesh, settings);
 assert.equal(ink.color, '#aabbcc');
 assert.equal(mesh.material.color.value, '#aabbcc', 'the motif uses selected ink rather than source PNG RGB');
 assert.equal(mesh.material.blending, THREE.NormalBlending, 'glyph core uses normal blending to preserve hue');
-assert.equal(mesh.children.length, 1, 'soft halo is a child of the glyph, not a separate world effect');
+assert.equal(mesh.children.length, 2, 'wide glow and concentrated hot glow are both attached to the glyph');
 const halo = mesh.userData.glyphInkHalo; // Independently visible background falloff.
-assert.ok(Math.abs(halo.material.opacity - .75 * .35) < 1e-9, 'halo intensity is restrained to avoid white clipping');
-assert.equal(halo.visible, false, 'halo is hidden while the asynchronous image has not loaded');
+assert.ok(Math.abs(halo.material.opacity - .75 * .8) < 1e-9, 'outer glow restores strong color emission');
+const hotHalo = mesh.userData.glyphInkHalos[1]; // A tight glow around the letter strokes, independent of the broader aura.
+assert.equal(hotHalo.name, 'decal_ink_hot_glow');
+assert.ok(Math.abs(hotHalo.material.opacity - .75 * 1.15) < 1e-9, 'hot glow is stronger than the wide aura');
+assert.equal(hotHalo.material.blending, THREE.AdditiveBlending);
+assert.equal(halo.visible, false, 'outer halo is hidden until the decal PNG loads');
+assert.equal(hotHalo.visible, false, 'hot halo is also hidden until the decal PNG loads');
 assert.ok(halo.geometry.parameters.width > mesh.geometry.parameters.width, 'halo footprint extends beyond motif');
 const coreShader = { fragmentShader:'void main(){ #include <map_fragment> }' }; // Shader fragment replacement is the production behavior.
 mesh.material.onBeforeCompile(coreShader);
@@ -55,6 +60,8 @@ const loadedTexture = { source:'decal.png' }; // Shared WebGL texture feeds both
 inkApi.setTexture(mesh, loadedTexture);
 assert.equal(mesh.material.map, loadedTexture);
 assert.equal(halo.material.map, loadedTexture);
+assert.equal(hotHalo.material.map, loadedTexture);
+assert.equal(hotHalo.visible, true, 'hot glow appears with the source alpha mask');
 assert.equal(halo.visible, true);
 assert.equal(halo.material.needsUpdate, true);
 const recolorOnly = new Mesh(new PlaneGeometry(.3,.4),new Material({map:loadedTexture}));
@@ -88,8 +95,8 @@ for (const key of ['glowGlyphOrb','flamingLichHeart','unsleepingLichHeart','sigh
   assert.ok(Math.abs(surface.area-.325*.325)<1e-10);
   assert.equal(surface.bounds.minU,-.1625);
   assert.equal(surface.bounds.maxV,.1625);
-  assert.equal(decal.width, .3, 'decal width is reduced independently of billboard');
-  assert.equal(decal.height, .3, 'decal height is reduced independently of billboard');
+  assert.equal(decal.width, .15, 'decal width halved again independently of billboard');
+  assert.equal(decal.height, .15, 'decal height halved again independently of billboard');
   assert.equal(decal.glyphInk?.enabled,true);
   assert.ok(decal.glyphInk.glowStrength>0);
   assert.ok(decal.glyphInk.glowRadius>0);
