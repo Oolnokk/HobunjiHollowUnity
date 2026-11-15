@@ -1,10 +1,10 @@
 // Shared species/gender weapon-pose orbit scaling.
 //
-// Attack poses remain authored in Mao'ao space. The finished weapon point is
-// orbited around the avatar's visual/body centroid. Orbit size is an explicit
-// species+gender authoring value; anatomical armLength remains a separate
-// measurement and is used only as a backwards-compatible fallback for
-// old/missing config.
+// Attack poses remain authored in Mao'ao space. When the attachment rig has
+// both shoulder targets, the weapon orbit is centred on their 3D midpoint.
+// Its final diameter is twice the rendered arm reach plus the 3D shoulder
+// separation. Older species-orbit multipliers remain only as fallback for
+// characters whose shoulder geometry is unavailable.
 //
 // An entry is either one number (the same X/Y/Z multiplier: spherical scaling)
 // or { x, y, z } for deliberately non-spherical, independently authored axes:
@@ -260,29 +260,114 @@
   }
   const orbitShiftScratch = { x: 0, y: 0, z: 0 };
 
+  // Resolve the exact shoulder targets used by ProceduralHandShoulderAim (the
+  // attachment-rig profile is its first-choice source). Read live: rig-author
+  // edits must affect the orbit without an avatar rebuild.
+  function shoulderTargetsFor(speciesId, gender) {
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
+    const alias = window.hobunjiTransformSpeciesId?.(speciesId) || normalizeSpeciesId(speciesId);
+    let key = alias;
+    while (key) {
+      const profile = characters?.[`${key}::${normalizeGender(gender)}`];
+      const left = profile?.anchors?.leftHandShoulder?.position;
+      const right = profile?.anchors?.rightHandShoulder?.position;
+      if (left && right && [left.x, left.y, left.z, right.x, right.y, right.z]
+        .every(value => Number.isFinite(value))) return { profile, left, right };
+      key = ORBIT_PARENTS[key];
+    }
+    return null;
+  }
+
+  // Return the *rendered* sphere, not the old authored species scale. All
+  // positions use the same floor-relative, pose-facing frame as the shoulder
+  // targets; the optional spine shift is applied once, after this mapping.
+  // armLength is the completed rigger reach (PNGPlaneAvatar.userData.armLength),
+  // before the whole-character Y scale. The shoulder gap is a true 3D distance.
+  function shoulderOrbitGeometry(options = {}) {
+    const speciesId = options.speciesId, gender = options.gender;
+    const shoulders = shoulderTargetsFor(speciesId, gender);
+    const reach = validScale(options.armLength);
+    if (!shoulders || reach == null) return null;
+    const rigY = resolveRigScaleY(speciesId, gender, options.rigScaleY);
+    const authoredRig = window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender);
+    const defaultRigY = resolveRigScaleY(speciesId, gender);
+    const explicitRigX = validScale(options.rigScaleX);
+    const rigX = explicitRigX ?? (
+      Math.abs(rigY - defaultRigY) < 1e-8 ? validScale(authoredRig?.x) ?? 1 : rigY
+    ); // If a caller supplies a different Y frame (e.g. world-space NPC), keep the two axes in that same frame.
+    const { left, right } = shoulders;
+    const midX = (left.x + right.x) / 2, midY = (left.y + right.y) / 2, midZ = (left.z + right.z) / 2;
+    const shoulderGap = Math.hypot((left.x - right.x) * rigX, (left.y - right.y) * rigY, (left.z - right.z) * rigX);
+    const finalArmLength = reach * rigY; // The completed vertical shoulder-to-wrist reach in displayed units.
+    const diameter = 2 * finalArmLength + shoulderGap;
+    const reference = shoulderTargetsFor('mao-ao', 'male');
+    const referenceHeight = portraitModelHeightFor('mao-ao', 'male');
+    const referenceReach = validScale(window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterArmLength?.(
+      reference?.profile, referenceHeight, referenceHeight / 2, null,
+      reference?.profile?.anatomy?.portraitScale, reference?.profile?.anatomy?.portraitVerticalPlacementRatio
+    ));
+    if (!reference || referenceReach == null) return null;
+    const refRigY = resolveRigScaleY('mao-ao', 'male');
+    const refRigX = validScale(window.HobunjiCharacterRigScale?.scaleFor?.('mao-ao', 'male')?.x) ?? 1;
+    const refGap = Math.hypot(
+      (reference.left.x - reference.right.x) * refRigX,
+      (reference.left.y - reference.right.y) * refRigY,
+      (reference.left.z - reference.right.z) * refRigX
+    );
+    const referenceRadius = referenceReach * refRigY + refGap / 2;
+    if (!(referenceRadius > 0) || !(diameter > 0)) return null;
+    const yaw = Number(options.yawRad) || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const cx = Number(options.cx) || 0, cz = Number(options.cz) || 0, floorY = Number(options.floorY) || 0;
+    const center = {
+      x: cx + (midX * cos + midZ * sin) * rigX,
+      y: floorY + midY * rigY,
+      z: cz + (-midX * sin + midZ * cos) * rigX,
+    }; // Current sphere centre, halfway between the two rendered shoulder targets.
+    const rawCenter = {
+      x: cx + midX * cos + midZ * sin,
+      y: floorY + midY,
+      z: cz - midX * sin + midZ * cos,
+    }; // Same midpoint in the pose's unscaled input frame, needed by the inverse.
+    return {
+      center, rawCenter, diameter, radius: diameter / 2,
+      shoulderGap, finalArmLength, referenceRadius,
+      scale: diameter / (2 * referenceRadius),
+    };
+  }
+
   // Applies the complete weapon-position mapping. baseY is the UNSCALED
   // floor-relative hand/tool anchor produced by PNGPlaneAvatar. That anchor
   // already includes portrait scale, vertical placement, and real opaque-art
   // grounding. The rigger's whole-body Y scale is applied around floorY, then
   // authored pose displacement from that hand anchor is mapped by the ratio
   // of the character's real height to the canonical Mao'ao-male height. The
-  // orbit then scales X/Y/Z about one body centroid (cx/cy/cz); missing cy
-  // defaults to baseY only for older callers. options.yawRad: see scaleHorizontal.
+  // orbit uses the midpoint of the two shoulder targets and a sphere radius
+  // of final arm reach plus half the shoulder gap. The old centroid/axes are
+  // retained for assets missing an attachment-rig shoulder pair.
   function transformPosePoint(point, options = {}) {
     if (!point) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
-    const cx = Number(options.cx) || 0;
-    const cz = Number(options.cz) || 0;
-    const floorY = Number(options.floorY) || 0;
-    const baseY = Number(options.baseY);
+    const cx = Number(options.cx) || 0, cz = Number(options.cz) || 0;
+    const floorY = Number(options.floorY) || 0, baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
-    const cy = Number.isFinite(options.cy) ? options.cy : baseY; // Raw vertical body-centroid pivot, shared with the horizontal orbit.
+    const orbit = shoulderOrbitGeometry(options); // Geometry-led sphere replaces authored scale when both shoulders exist.
+    const shift = orbitShift(options, orbitShiftScratch);
+    if (orbit) {
+      const factor = orbit.scale, center = orbit.center, source = orbit.rawCenter;
+      const nx = center.x + (x - source.x) * factor + shift.x;
+      const ny = center.y + (y - source.y) * factor + shift.y;
+      const nz = center.z + (z - source.z) * factor + shift.z;
+      if (typeof point.set === 'function') point.set(nx, ny, nz);
+      else { point.x = nx; point.y = ny; point.z = nz; }
+      return point;
+    }
+    // Missing/incomplete shoulders: preserve the older config and height mapper.
+    const cy = Number.isFinite(options.cy) ? options.cy : baseY;
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, options.yawRad);
-    const shift = orbitShift(options, orbitShiftScratch); // A hunched spine (HobunjiCharacterSpine) moves the whole orbit centre, not just the hand.
-    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio; // Use the same rigger-adjusted body pivot for Y.
+    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio;
     const nextY = scaledCentroidY + shift.y + (y - cy) * metrics.heightRatio * axes.y;
     if (typeof point.set === 'function') point.set(cx + dx + shift.x, nextY, cz + dz + shift.z);
     else { point.x = cx + dx + shift.x; point.y = nextY; point.z = cz + dz + shift.z; }
@@ -292,19 +377,27 @@
   function untransformPosePoint(point, options = {}) {
     if (!point) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
-    const cx = Number(options.cx) || 0;
-    const cz = Number(options.cz) || 0;
-    const floorY = Number(options.floorY) || 0;
-    const baseY = Number(options.baseY);
+    const cx = Number(options.cx) || 0, cz = Number(options.cz) || 0;
+    const floorY = Number(options.floorY) || 0, baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
-    const cy = Number.isFinite(options.cy) ? options.cy : baseY; // Raw vertical body-centroid pivot, shared with the horizontal orbit.
+    const orbit = shoulderOrbitGeometry(options); // Inverts the same measured sphere used by gameplay/editor.
+    const shift = orbitShift(options, orbitShiftScratch);
+    if (orbit) {
+      const factor = orbit.scale, center = orbit.center, source = orbit.rawCenter;
+      const nx = source.x + (x - center.x - shift.x) / factor;
+      const ny = source.y + (y - center.y - shift.y) / factor;
+      const nz = source.z + (z - center.z - shift.z) / factor;
+      if (typeof point.set === 'function') point.set(nx, ny, nz);
+      else { point.x = nx; point.y = ny; point.z = nz; }
+      return point;
+    }
+    const cy = Number.isFinite(options.cy) ? options.cy : baseY;
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     if (!(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0) || !(metrics.heightRatio > 0)) return point;
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
-    const shift = orbitShift(options, orbitShiftScratch); // The exact inverse of transformPosePoint's orbit shift.
     const [dx, dz] = scaleHorizontal(x - cx - shift.x, z - cz - shift.z, 1 / axes.x, 1 / axes.z, options.yawRad);
-    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio; // Exact inverse of the spherical vertical orbit.
+    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio;
     const nextY = cy + (y - scaledCentroidY - shift.y) / (metrics.heightRatio * axes.y);
     if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
     else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
@@ -360,6 +453,7 @@
     resolveRigScaleY,
     portraitModelHeightFor,
     heightMetrics,
+    shoulderOrbitGeometry, // Shared rig-derived sphere geometry for gameplay and editor diagnostics.
     setScale,
     replaceConfig,
     getConfig,
