@@ -99,6 +99,8 @@ assert.equal(canvasCreations, 1, 'radial texture is cached rather than regenerat
 
 const index = JSON.parse(read('docs/config/furniture-authored/index.json')); // Catalog wiring guard.
 assert.ok(index.furniture.some(entry => entry.key === fixture.key), 'orb is included in authored furniture index');
+assert.equal(fixture.decals[0].width, .3, 'orb glyph width is 0.3');
+assert.equal(fixture.decals[0].height, .3, 'orb glyph height is 0.3');
 assert.equal(fixture.decals[0].surfacePartId, part.id, 'transparent glyph is attached to the billboard');
 assert.equal(fixture.decals[0].surfaceId, fixture.recognizedSurfaces[0].id);
 console.log('PASS furniture billboard surface and stationary glowing sphere');
