@@ -258,7 +258,7 @@
         const maskStatus = stencil < 8 ? 'Unavailable: ' + stencil + '-bit stencil target (needs 8)'
           : masked + ' / ' + intended + ' eligible gear parts masked';
         const frontPriority = state['layers.manualOrder'] === 'on'
-          ? (layerRank('actor.hands') < layerRank('actor.front') ? 'behind front art' : 'in front of front art')
+          ? (layerRank(linked ? 'actor.hands' : 'item.weapons') < layerRank('actor.front') ? 'behind front art' : 'in front of front art')
           : 'native ordering (front art masks eligible tools)';
         return {
           summary: changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults',
