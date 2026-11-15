@@ -12,7 +12,7 @@ function hashString(text) {
   return hash;
 }
 
-function harness({ oldSite, oldProgress } = {}) {
+function harness({ oldSite, oldProgress, enableHeart = false } = {}) {
   const zone = 'map_western_slope';
   const world = 'test-world';
   const storage = new Map();
@@ -53,6 +53,7 @@ function harness({ oldSite, oldProgress } = {}) {
   const zones=new Map([[zone,zi]]);
   const layouts=new Map([[zone,makeLayout()]]);
   const generated=[];
+  const ownedHearts = new Set(); // Simulates the current character's saved relic ownership independently of the world's completed ruins.
   const window={
     THREE,WorldMetaStore:meta,
     RuinSiteLocales:{CATEGORY:'ruin_entrance',hashString},
@@ -66,6 +67,10 @@ function harness({ oldSite, oldProgress } = {}) {
       getRuntimeContext:()=>({}),
     },
   };
+  if(enableHeart)window.LichHeartSystem={
+    forType:theme=>['hronal','tothal','kanthic'].includes(theme)?{itemId:theme+'_lich_heart'}:null,
+    has:theme=>ownedHearts.has(theme),
+  }; // The production site logic only needs the character's KeyItemSystem-backed entitlement API.
   const ctx=vm.createContext({window,localStorage,THREE,console,setTimeout:()=>{}});
   vm.runInContext(source,ctx);
   const deps={
@@ -88,6 +93,8 @@ function harness({ oldSite, oldProgress } = {}) {
     restoreZoneScene:()=>{zones.set(zone,zi);},
     newWorld:()=>{currentWorld='another-world';savedWorlds.set(currentWorld,null);},
     grid:()=>zi.grid,
+    claimHeart:theme=>ownedHearts.add(theme),
+    releaseHeart:theme=>ownedHearts.delete(theme),
   };
 }
 
@@ -190,6 +197,47 @@ async function main() {
   assert.equal(older.saved().authored.tothal.progress.travel.activeCheckpoint,'shaft');
   assert(fs.readFileSync(path.join(__dirname,'../docs/js/dev-random-ruin-interior-map.js'),'utf8').includes('window.RuinSites?.relocatedReturnAnchor?.()'),
     'ordinary exit must consult the shifted named tomb, not only the story vault');
-  console.log('Persistent authored Lich ruins: PASS');
+  // A world completed before Lich-hearts were introduced must still offer the missing personal relic.
+  const clearedId='legacy-completed-nanahi';
+  const cleared=harness({enableHeart:true,oldProgress:{
+    version:1,cycle:1,sites:{},authored:{tothal:{
+      siteId:clearedId,zoneId:'map_western_slope',seed:77,cycle:1,
+      buried:false,dug:false,completed:true,
+    }},
+  }});
+  const recovery=cleared.window.RuinSites;
+  const recovered=recovery.authoredBuriedSites(cleared.zone);
+  assert.equal(recovered.length,1,'a cleared pre-heart tomb reappears only when its character has not claimed the heart');
+  assert.equal(recovered[0].siteId,clearedId,'the recovered entrance must retain the original tomb identity');
+  assert.equal(recovered[0].buried,true,'previously retired non-buried entrances become a new dig spot');
+  assert.equal(recovered[0].dug,false,'the recovery dig spot is not automatically opened');
+  cleared.grid()[recovered[0].row][recovered[0].col].type='trench';
+  cleared.window.WildTreasure.syncZoneInteractivity(cleared.zone); // The production dig hook exposes the original burrow ladder.
+  assert.equal(recovery.authoredBuriedSites(cleared.zone)[0].dug,true);
+  const visit={kind:'authored',theme:'tothal',id:clearedId,zoneId:cleared.zone,
+    returnAt:{x:recovered[0].col+.5,z:recovered[0].row+1.5}};
+  assert.equal(recovery.debugEnterVisit(visit),true);
+  await Promise.resolve();
+  assert.equal(cleared.generated.at(-1).opts.specialBoss,true,'recovery uses the original named sanctum, not a random ordinary ruin');
+  assert.equal(cleared.generated.at(-1).seed,77,'recovery uses the original generated dungeon seed');
+  assert.equal(recovery.activeRuinProgress().bossDefeated,true,'recovery must not resurrect an already defeated boss');
+  assert.equal(recovery.isActiveRuinBossDefeated(77),true);
+  assert.equal(recovery.isActiveRuinChestOpened('any-chest',77),true,'every completed chest is treated as looted on relic-only visits');
+  assert.equal(recovery.markActiveRuinChestOpened('any-chest',77),false,'chest persistence rejects duplicate loot from completed tombs');
+  assert.equal(recovery.saveActiveRuinProgress({version:1,seed:77,bossDefeated:false}),true,'recovery plays without overwriting completed progress');
+  assert.equal(recovery.activeRuinProgress().bossDefeated,true,'failed puzzle progress cannot resurrect the lich');
+  assert.equal(recovery.completeActiveRuin(),true,'leaving without claiming cannot retire the last chance for a heart');
+  assert.equal(cleared.saved().authored.tothal.completed,true,'the original world completion marker remains intact');
+  assert.equal(recovery.authoredBuriedSites(cleared.zone).length,1,'an unclaimed relic remains accessible after a return to the surface');
+  assert.equal(recovery.debugEnterVisit(visit),true,'the player can revisit the cleared sanctum to collect the missing heart');
+  await Promise.resolve();
+  cleared.claimHeart('tothal');
+  assert.equal(recovery.completeActiveRuin(),true,'claiming a missing heart allows normal exit without rewriting the completed tomb');
+  assert.equal(recovery.authoredBuriedSites(cleared.zone).length,0,'a character who owns the heart no longer sees the retired tomb');
+  cleared.releaseHeart('tothal'); // A second character in the same world has not collected the personal reward.
+  assert.equal(recovery.authoredBuriedSites(cleared.zone).length,1,'a different character can still recover their own heart from the completed world');
+  assert.equal(cleared.saved().authored.tothal.completed,true,'switching characters does not roll back world completion');
+
+  console.log('Persistent authored Lich ruins and legacy heart recovery: PASS');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
