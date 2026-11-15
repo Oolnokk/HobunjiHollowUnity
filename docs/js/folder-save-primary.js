@@ -91,8 +91,9 @@
   }
 
   function folderActionSucceeded(result) {
-    const status = localSave.getStatus();
-    return Boolean(result?.ok || (!status.lastError && status.state === 'ready' && status.autoSyncArmed));
+    // A connected, autosyncing folder is not proof that this particular import succeeded.
+    // Especially after a refused/corrupt read, never reload stale browser data as if it were recovered.
+    return result?.ok === true;
   }
 
   function waitForCoreStatus() {
@@ -564,11 +565,28 @@
     }
   }
 
+  function reloadImportedFolderRuntime(result, reason) {
+    // A Settings folder load is a world restore, even when file and browser JSON are equal.
+    // First-run empty folders are connected for later saves, not a replacement world to hydrate.
+    if (!folderActionSucceeded(result)
+        || result.action === 'empty-folder-connected-awaiting-first-save'
+        || result.action === 'initialized-empty-folder'
+        || !(result.changed || window.__hobunjiGameStarted === true)) return false;
+    markFolderAlreadyApplied('folder-loaded-in-settings');
+    window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.(reason); // The departing runtime still contains the old farm and inventory.
+    location.reload(); // Only one shared reload path; the new boot applies the folder's complete save.
+    return true;
+  }
+
   async function handleSettingsFolderAction(button, mode) {
     setBusy(button, true, mode === 'reconnect' ? 'Reconnecting…' : 'Opening Folder…');
     try {
       const result = await establishPrimaryFolder(mode);
-      if (!result.ok && result.message) alert(result.message);
+      if (!result.ok) {
+        if (result.message) alert(result.message);
+        return;
+      }
+      if (reloadImportedFolderRuntime(result, 'settings-folder-' + mode)) return;
       refreshSettingsButtons(localSave.getStatus());
     } catch (error) {
       lastUiError = String(error?.message || error);
@@ -612,13 +630,7 @@
         return;
       }
       lastUiAction = 'settings-load-folder';
-      const runtimeNeedsRebuild = window.__hobunjiGameStarted === true; // Browser/folder JSON equality does not prove that the live farm was actually reconstructed.
-      if (result.changed || runtimeNeedsRebuild) {
-        markFolderAlreadyApplied('folder-loaded-in-settings');
-        window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('settings-folder-load'); // The departing runtime still contains the old inventory.
-        location.reload();
-        return;
-      }
+      if (reloadImportedFolderRuntime(result, 'settings-folder-load')) return;
       refreshSettingsButtons(localSave.getStatus());
     } catch (error) {
       lastUiError = String(error?.message || error);
