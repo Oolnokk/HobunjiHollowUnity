@@ -88,7 +88,7 @@ assert.equal(assigned.ownerIds.size,3,'three owners are assigned distinct IDs');
 assert.equal(assigned.portraits.length,3,'unarmed NPCs do not stamp unrelated weapon silhouettes');
 assert.equal(assigned.gearIds.get(playerWeapon),assigned.ownerIds.get(player),'player weapon has the player portrait ID');
 assert.equal(assigned.gearIds.get(npcWeapon),assigned.ownerIds.get(npc),'NPC weapon has NPC portrait ID');
-assert.equal(assigned.gearIds.get(stationWeapon),assigned.ownerIds.get(npc),'NPC station tool shares its walker's portrait ID');
+assert.equal(assigned.gearIds.get(stationWeapon),assigned.ownerIds.get(npc),'NPC station tool shares its walker portrait ID');
 assert.equal(assigned.gearIds.get(banditWeapon),assigned.ownerIds.get(bandit),'bandit weapon has bandit portrait ID');
 assert.ok(assigned.gearIds.get(playerWeapon)!==assigned.gearIds.get(npcWeapon),'unrelated actors never share stencil IDs');
 
