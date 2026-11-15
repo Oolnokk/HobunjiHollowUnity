@@ -172,6 +172,7 @@ assert.equal(social.relationshipFor('gorobi_ginju'), 'Father-in-law');
 assert.equal(social.relationshipFor('gikali_ginju'), 'Mother-in-law');
 assert.equal(social.relationshipFor('dzahiri_khibu'), null, 'previous spouse family does not leak into new marriage');
 // Exercise the actual family farmwork planner, not a stub: an existing claim must be released for an outing.
+delete w.NpcFarmPlots; // Replace the earlier town/work scheduling stub with the actual family farmwork runtime.
 vm.runInContext(sourceFile('docs/js/npc-farm-plots.js'), context, { filename: 'npc-farm-plots.js' });
 const farm = w.NpcFarmPlots; // The real planner's availability checks cover in-flight work claims.
 farm.init({ farmTileInfo: () => ({ canTill: true, tilled: false, ready: false }), getCurrentArea: () => 'farm' });
