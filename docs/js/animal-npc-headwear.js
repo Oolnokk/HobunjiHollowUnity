@@ -15,6 +15,8 @@
     coordinateSpace: 'sprite-normalized-top-left',
     anchor: Object.freeze({ x: 0.5, y: 0.2 }),
     width: 0.34,
+    heightScale: 1, // Species-specific vertical hat deformation; 1 preserves existing artwork proportions.
+    skewXDeg: 0, // Species-specific horizontal shear in degrees, evaluated around the hat's art anchor.
     rotationDeg: 0,
     flipX: false,
     artAnchor: Object.freeze({ x: 0.5, y: 0.86 }),
@@ -118,6 +120,8 @@
         y: clamp(anchor.y ?? raw.y ?? fallback.anchor.y),
       },
       width: clamp(raw.width ?? raw.scale ?? fallback.width, 0.02, 2),
+      heightScale: clamp(raw.heightScale ?? fallback.heightScale ?? 1, 0.2, 3),
+      skewXDeg: clamp(raw.skewXDeg ?? fallback.skewXDeg ?? 0, -45, 45),
       rotationDeg: Math.max(-180, Math.min(180, Number(raw.rotationDeg ?? raw.rotDeg ?? fallback.rotationDeg) || 0)),
       flipX: raw.flipX === true || raw.mirrorX === true || fallback.flipX === true,
       artAnchor: {
@@ -254,12 +258,13 @@
   function drawAttachedLayer(ctx, crop, attachment, targetWidth, targetHeight) {
     if (!crop?.canvas || !attachment?.enabled) return;
     const drawWidth = Math.max(1, attachment.width * targetWidth);
-    const drawHeight = drawWidth * crop.height / Math.max(1, crop.width);
+    const drawHeight = drawWidth * crop.height / Math.max(1, crop.width) * attachment.heightScale; // Vertical hat scaling only.
     const ax = attachment.anchor.x * targetWidth;
     const ay = attachment.anchor.y * targetHeight;
     ctx.save();
     ctx.translate(ax, ay);
     ctx.rotate(attachment.rotationDeg * Math.PI / 180);
+    ctx.transform(1, 0, Math.tan(attachment.skewXDeg * Math.PI / 180), 1, 0, 0); // Skew around the authored anchor.
     if (attachment.flipX) ctx.scale(-1, 1); // Species-level mirror keeps the authored art anchor pinned while reversing asymmetric hat art.
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(crop.canvas, -attachment.artAnchor.x * drawWidth, -attachment.artAnchor.y * drawHeight, drawWidth, drawHeight);
