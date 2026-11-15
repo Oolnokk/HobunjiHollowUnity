@@ -89,9 +89,11 @@ for (let frame = 0; frame < 360; frame++) {
 assert(redirected, 'mount visibly steers around the solid rock');
 assert(clearedRock, 'held forward input reaches clear tiles beyond the obstacle');
 
-input.x = 0; // On release, route memory must be discarded without fighting normal mount deceleration.
+input.x = 0; // Releasing the reins now preserves autonomous forward cruise and routing.
+const releasedX = mount.x;
 window.Mounts.updateMountedMovement(1 / 60);
-assert.equal(window.GroundObstacleAvoidance.debugSnapshot().mounted.status, 'idle',
-  'releasing movement immediately clears the cached mounted path');
+assert(mount.x > releasedX, 'mount continues traveling forward when directional input is released');
+assert.notEqual(window.GroundObstacleAvoidance.debugSnapshot().mounted.status, 'idle',
+  'the autonomous route remains active instead of resetting when reins are released');
 
 console.log('mounted ground obstacle integration checks passed');
