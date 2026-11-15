@@ -123,6 +123,10 @@ for (const axis of ['x', 'y', 'z']) {
 for (const yawRad of [0, Math.PI / 2, -2.3]) {
   const opts = { ...shoulderOpts, yawRad, orbitOffset: { x: 0.17, y: -0.08, z: 0.13 } };
   const sphere = api.shoulderOrbitGeometry(opts);
+  const uprightSphere = api.shoulderOrbitGeometry({ ...opts, orbitOffset: null });
+  near(sphere.center.x - uprightSphere.center.x, 0.17 * Math.cos(yawRad) + 0.13 * Math.sin(yawRad), 'reported orbit centre follows turned spine X');
+  near(sphere.center.y - uprightSphere.center.y, -0.08, 'reported orbit centre follows lowered shoulders Y');
+  near(sphere.center.z - uprightSphere.center.z, -0.17 * Math.sin(yawRad) + 0.13 * Math.cos(yawRad), 'reported orbit centre follows turned spine Z');
   const rawPoint = { x: sphere.rawCenter.x + 0.25, y: sphere.rawCenter.y - 0.14, z: sphere.rawCenter.z + 0.31 };
   const transformed = api.transformPosePoint({ ...rawPoint }, opts);
   const roundTrip = api.untransformPosePoint({ ...transformed }, opts);
