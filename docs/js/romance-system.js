@@ -470,6 +470,7 @@
     state.engagement = null;
     state.spouse = { npcId, marriedRawDay: rawDay(), marriedHourStamp: hourStamp() };
     state.kissBuff = null; // A new marriage never inherits another spouse's timed bonus.
+    state.outing = null; // New weddings cannot inherit the prior partner's invitations.
     debug.lastWedding = { npcId, rawDay: rawDay(), at: Date.now() };
     window.DialogueContent?.recordNpcMemory?.(npcId, 'married');
     toast(`💒 You married ${npcName(npcId)}! They'll move into the farmhouse.`, true);
