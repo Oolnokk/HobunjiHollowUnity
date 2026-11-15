@@ -30,7 +30,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const scope = {
     window: airborne ? { PlayerJump: { debug: { active: true, phase: 'air', heightAboveGround: 1 } } } : {},
     xrayRule: key => key === 'background.gearDepth' ? 'ignore' : key === 'airborne.rebuildDepth' ? 'on' : 'off',
-    withPortraitDrawOrder: (_renderer, _order, draw) => draw(), // Visual sorter is covered by test-xray-hierarchy.js.
+    withPortraitDrawOrder: (_renderer, _order, draw) => draw(), rankedHeldOverlayOrder: () => null, // Visual sorter and actor coupling are covered by test-xray-hierarchy.js.
     backgroundDepthRegistry: 'background',
     airborneDepthRebuilds: 0, backgroundDepthMeshesExcluded: 0,
     objectProto: { onBeforeRender: undefined }, internalReplay: false,
