@@ -77,6 +77,36 @@ assert.equal(api.remainingEggs(nest),0,'returning to the first world must recove
 assert.equal(api.paletteForGenotype(stats.genotypes[0].genotype,'bird-1').body,'#497a75');
 assert.equal(api.debugSnapshot().eggsCollected,4);
 assert.equal(api.debugSnapshot().clutchesExhausted,1);
+
+const actualGeneticsHost = {
+  SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
+  addEventListener() {},
+  __farmLog() {},
+}; // Isolated genuine genetics module, so size roles and breeding are checked behaviorally.
+vm.runInNewContext(read('docs/js/creature-genetics.js'),{window:actualGeneticsHost,console});
+actualGeneticsHost.CreatureGenetics.init({
+  CREATURE_DB:db,
+  clamp:(value,min,max)=>Math.max(min,Math.min(max,value)),
+});
+const genetic = actualGeneticsHost.CreatureGenetics; // The exact shipped farm/Stable role implementation.
+const colors = new Set(W.SCRATCHBONES_CONFIG.game.creatureGenetics.palettes.skeeri.map(entry=>entry.hex));
+for (const sizeClass of ['small','medium','large']) {
+  const parentA = genetic.makeDefaultGenotype('skeeri');
+  const parentB = genetic.makeDefaultGenotype('skeeri');
+  assert(colors.has(parentA.base.color) && colors.has(parentB.base.color),
+    'fresh Skeeri coats must use authored palette colors');
+  parentA.sizeClass=sizeClass;
+  parentB.sizeClass=sizeClass;
+  const offspring = genetic.crossOffspring(parentA,parentB,'skeeri',0);
+  assert.equal(offspring.sizeClass,sizeClass,'size must remain inherited when mutation chance is zero');
+  assert(colors.has(offspring.base.color),'offspring must retain an allowed Skeeri coat');
+  const role = sizeClass==='small'?'shoulderPet':'companion';
+  assert.equal(genetic.stableEntryRole({kind:'skeeri',genotype:offspring}),role,
+    'Stable must obey Pingdort size-to-role limits');
+  assert.equal(genetic.creatureSizeTrait('skeeri',offspring).role,role,
+    'on-screen traits must agree with actual Stable slot eligibility');
+}
+
 const geneticsSource=read('docs/js/creature-genetics.js');
 assert(geneticsSource.includes('skeeri: []'),'normal livestock genotype inheritance is required');
 assert(geneticsSource.includes("kind === 'skeeri'") && geneticsSource.includes("entry?.kind==='skeeri'"),
