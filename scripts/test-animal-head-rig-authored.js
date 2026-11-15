@@ -44,9 +44,9 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-15-uploads4-eight-independent-shoulders');
+assert.equal(api.version, '2026-11-15-uploads5-nine-independent-shoulders');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'uumkaoii', 'nazgraku']; // Eight independently editable shoulder registrations.
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'nazgraku']; // Seven Puktuk copies; Uumkao’ii and Voorg-Ass have distinct uploaded poses.
 const puktuk = api.get('puktuk');
 const expectedShoulder = puktuk.shoulderRest;
 assert.deepEqual(plain(puktuk.pivot), { x: .484375, y: .5 }, 'uploaded shoulder must not overwrite Puktuk head paint');
@@ -86,12 +86,39 @@ assert.equal(api.get('moot').weightMap.width, 2, 'Moot gets a body-only rig unti
 assert.equal(api.get('gar-wolf').shoulderRest.weightMap, undefined, 'new Puktuk shoulder does not inherit old Gar-wolf shoulder paint');
 
 assert.equal(api.get('grehlr').shoulderRest.frameShiftX, .54, 'Grehlr unchanged');
-assert.equal(api.get('voorg-ass').shoulderRest.frameShiftX, .48, 'Voorg-ass unchanged');
-assert.equal(api.get('uumkaoii').shoulderRest.useSpline, true, 'Uumkao\'ii now uses the uploaded shoulder pose');
-assert.deepEqual(plain(api.get('uumkaoii').shoulderRest), plain(expectedShoulder), 'Uumkao\'ii shoulder is a complete independent copy');
+const uumkaoiiShoulder = api.get('uumkaoii').shoulderRest; // Latest user-edited Uumkao'ii shoulder pose.
+assert.equal(uumkaoiiShoulder.useSpline, true);
+assert.equal(uumkaoiiShoulder.useRun1, false);
+assert.equal(uumkaoiiShoulder.splitFrame, false);
+assert.equal(uumkaoiiShoulder.splitRightUsesIdle, false);
+assert.equal(uumkaoiiShoulder.frameShiftX, .51);
+assert.equal(uumkaoiiShoulder.followFrameShiftX, false);
+assert.equal(uumkaoiiShoulder.separatorRotationDeg, -1);
+assert.equal(uumkaoiiShoulder.separatorAspect, 1.4212860310421287);
+assert.equal(uumkaoiiShoulder.beforePoints.length, 7);
+assert.equal(uumkaoiiShoulder.afterPoints.length, 7);
+assert.deepEqual(plain(uumkaoiiShoulder.beforePoints[6]), { x: 1.0399996666666664, y: .572691993389205 });
+assert.deepEqual(plain(uumkaoiiShoulder.afterPoints[6]), { x: .9672338415359367, y: .9348808700890657 });
+const voorgShoulder = api.get('voorg-ass').shoulderRest; // Latest user-edited Voorg-Ass shoulder pose.
+assert.equal(voorgShoulder.useSpline, true);
+assert.equal(voorgShoulder.useRun1, false);
+assert.equal(voorgShoulder.splitFrame, false);
+assert.equal(voorgShoulder.splitRightUsesIdle, false);
+assert.equal(voorgShoulder.frameShiftX, .46);
+assert.equal(voorgShoulder.followFrameShiftX, true);
+assert.equal(voorgShoulder.separatorRotationDeg, 0);
+assert.equal(voorgShoulder.separatorAspect, 1.7);
+assert.equal(voorgShoulder.beforePoints.length, 7);
+assert.equal(voorgShoulder.afterPoints.length, 7);
+assert.deepEqual(plain(voorgShoulder.beforePoints[6]), { x: .9599996666666666, y: .572691993389205 });
+assert.deepEqual(plain(voorgShoulder.afterPoints[6]), { x: .6976709902869936, y: 1.2729887486531961 });
+assert.equal(api.get('voorg-ass').pivot.x, .37400034701593793, 'Voorg-Ass original head paint and pivot retained');
+assert.equal(api.get('voorg-ass').weightMap.width, 128, 'Voorg-Ass original head map retained');
+assert.notStrictEqual(uumkaoiiShoulder.beforePoints, voorgShoulder.beforePoints, 'uploaded species have independent point arrays');
+assert.notStrictEqual(voorgShoulder.beforePoints, expectedShoulder.beforePoints, 'Voorg-Ass does not share Puktuk points');
 
 const originalX = expectedShoulder.beforePoints[0].x;
 api.get('gar-wolf').shoulderRest.beforePoints[0].x = -.5;
 assert.equal(expectedShoulder.beforePoints[0].x, originalX, 'editing Gar-wolf cannot move Puktuk');
 assert.notEqual(api.get('dabinggi-hound').shoulderRest.beforePoints[0].x, -.5, 'editing Gar-wolf cannot move Dabinggi');
-console.log('animal-head-rig-authored: eight independent copies, retained head paint, and unchanged Voorg-Ass/Grehlr passed');
+console.log('animal-head-rig-authored: nine independent shoulder rigs, two latest uploads, original head paint and unchanged Grehlr passed');
