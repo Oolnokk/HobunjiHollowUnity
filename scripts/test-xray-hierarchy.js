@@ -85,10 +85,14 @@ const dropdowns = view.actions.filter(a => a.options);
 assert.ok(dropdowns.length >= X.keys().length, 'all rules and the layer pickers have dropdowns');
 assert.ok(view.actions.every(action => !action.path?.length), 'there is no misleading nested hierarchy');
 assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 'Reset all to repo' && action.confirm), 'explicit confirmed reset to repository defaults exists');
-assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 17), 'one picker lists all active cross-category visual ranks');
+assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.options.length === 2), 'render passes are explicit choices');
+assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
 assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
+assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
+assert.ok(X.moveLayerInStage('item.weapons', 'actor.feet') === true, 'linked weapons can move within the held stage');
+X.reset();
 assert.ok(view.rows.some(r => /Hands behind front plane/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
 assert.deepStrictEqual(panel.onAction('set', { key: 'pants.sortWithActor', value: 'off' }), { ok: true });
 assert.strictEqual(X.get('pants.sortWithActor'), 'off');
@@ -99,16 +103,24 @@ panel.onAction('reset', {});
 assert.strictEqual(X.get('pants.sortWithActor'), 'on');
 assert.deepStrictEqual(X.diff(), {}, 'reset button clears every override, including rank edits');
 assert.strictEqual(store['hobunji.xrayHierarchy.v1'], undefined, 'reset button removes stored browser overrides');
-assert.deepStrictEqual(panel.onAction('shift', { delta: 1 }), { ok: true }, 'nudge changes the live hierarchy');
+assert.deepStrictEqual(panel.onAction('shift', { delta: -1 }), { ok: true }, 'nudge reorders only within the selected held stage');
 assert.strictEqual(X.get('layers.manualOrder'), 'on', 'moving a layer automatically enables the color sorter');
 panel.onAction('reset', {});
 panel.onAction('set', { key: 'weapon.followHandLayer', value: 'off' });
-assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 18);
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 3);
 assert.deepStrictEqual(panel.onAction('focus-layer', { value: 'item.weapons' }), { ok: true });
 panel.onAction('set', { key: 'weapon.followHandLayer', value: 'on' });
 assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').value, 'actor.hands',
   'relinking switches the editor away from the now-inert weapon position');
 panel.onAction('reset', {});
+assert.deepStrictEqual(panel.onAction('focus-stage', { value: 'world' }), { ok: true });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 15,
+  'world stage has its own 15 categories, excluding held/feet overlay entries');
+assert.deepStrictEqual(panel.onAction('move-before', { value: 'actor.hands' }).ok, false,
+  'cannot move world item into the held stage');
+panel.onAction('reset', {});
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-stage').value, 'held',
+  'full reset restores stage selection');
 
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
 const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
@@ -203,22 +215,27 @@ visualSort.withVisualSort(rendererMock, heldSort, () => {
 });
 X.reset();
 
-// The stencil owner rule must use manually chosen front-plane priorities, not
-// rely on WebGL draw-pass order (hands and their tools are in the held pass).
-const maskBegin = render.indexOf('  function manualBehindFront(');
+// Stencil and visual priority are independent: rank movement cannot reorder a later overlay over its owner's front portrait.
+const maskBegin = render.indexOf('  function heldPriorityLayer(');
 const maskEnd = render.indexOf('\n  // Hands:', maskBegin);
 const maskScope = new Function('window', 'xrayRule', 'maskedHands',
-  render.slice(maskBegin, maskEnd) + '; return { manualBehindFront, heldPriorityLayer, isPortraitMaskedGear };')(
+  render.slice(maskBegin, maskEnd) + '; return { heldPriorityLayer, isPortraitMaskedGear };')(
     win, key => X.get(key), new Set([handItem.object]));
-X.set('layers.manualOrder', 'on');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
-  'weapon remains behind front portrait while the hand is behind');
+  'front art masks a held weapon by direct stencil policy');
+X.set('layers.manualOrder', 'on');
 X.moveLayer('item.weapons', '__end');
-assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
-  'moving the hand in front also brings its held weapon forward through the portrait mask');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'no cross-pass movement silently removes the owner front-art mask');
 X.set('weapon.followHandLayer', 'off');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
-  'unlinked weapon retains its independent front-art mask');
+  'unlinking tool position has no effect on whether the front stencil masks it');
+X.set('weapon.frontPlaneMask', 'off');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'direct mask switch disables owner stencil regardless of rank');
+X.set('weapon.frontPlaneMask', 'on');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'direct mask switch re-enables owner stencil regardless of rank');
 X.reset();
 
 // Execute the production "hand behind its front plane" math with a tiny matrix stand-in.
