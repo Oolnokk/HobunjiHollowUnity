@@ -144,6 +144,7 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch
   };
   const scope = {
     window: { ScissorDepthSnapshot: fake }, THREE: { Sphere, Vector3: Vec3, Matrix4 }, objectProto: { onBeforeRender: undefined }, internalReplay: false, Map, Set, Infinity, Number, Math,
+    xrayRule: () => 'original', withPortraitDrawOrder: (_renderer, _order, draw) => draw(), // Backdrop tests opt in explicitly; this snapshot fixture isolates ordinary depth performance.
     lastBaseStencilBits: 0, replayScissorEnabled: scissored, replayCullEnabled: false, scissorRect: { x: 1, y: 2, z: 3, w: 4 },
     replayScissorRect: () => scissored, setReplayCullFrustum: () => false, scissoredReplayCount: 0, applyElevationScissor: () => false, restoreRendererScissor() {},
     buildXrayGroups: () => ({ groups: twoGroups ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }, { meshes: [hand], regions: [{ col: 9, row: 9 }] }] : [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }], ordinary: [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
