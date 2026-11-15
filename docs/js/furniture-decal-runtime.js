@@ -430,8 +430,9 @@
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.raycast = () => {};
+    const glyphInk = window.FurnitureDecalInk?.decorate?.(mesh, record.glyphInk); // Static recolored glyph takes precedence over state-driven puzzle glow.
     const glow = normalizeGlow(record.glow);
-    if (glow) {
+    if (glow && !glyphInk) {
       mesh.userData.decalGlow = glow;
       mesh.userData.decalGlowOverlay = true; // Pixel Probe and in-game reports can distinguish a live glow from an ordinary opaque decal.
       material.color.set(glow.off[0]);
