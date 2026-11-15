@@ -126,6 +126,7 @@
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastKnownFarmLayoutFingerprint = null; // Tracks last loaded/written layout files, guarding external restorations from autosync.
+  let _ignoredFarmLayoutBackupFiles = []; // Exposes version-copy filenames in existing mobile save diagnostics.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
@@ -141,6 +142,7 @@
       lastError: _lastError || null,
       lastAction: _lastAction,
       farmLayoutCount: _farmLayoutCount,
+      ignoredFarmLayoutBackupFiles: [..._ignoredFarmLayoutBackupFiles],
       portableFarmLayouts: _folderSupportsFarmLayouts,
       needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
       autoSyncArmed: _autoSyncArmed,
@@ -509,19 +511,32 @@
     return snapshot;
   }
 
-  async function readFolderFarmLayouts() {
+  async function readFolderFarmLayouts(validWorldIds = null) {
     const layouts = {};
     const corruptFiles = [];
+    const backupFiles = []; // Noncanonical JSON filenames are recovery copies, never competing live layouts.
+    const missingCanonicalBackups = []; // Prevent a folder with only version copies from silently yielding an empty farm.
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR); }
-    catch { return { layouts, corruptFiles }; }
+    catch { return { layouts, corruptFiles, backupFiles, missingCanonicalBackups }; }
 
+    const backupsByWorld = new Map(); // Used after enumeration to tell harmless backups from missing canonical files.
     for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind !== 'file') continue;
+      if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue;
       try {
         const payload = JSON.parse(await (await entry.getFile()).text());
-        if (!payload || typeof payload.worldId !== 'string' || !payload.worldId || !payload.layout || typeof payload.layout !== 'object') {
+        if (!payload || typeof payload.worldId !== 'string' || !payload.worldId || !payload.layout || typeof payload.layout !== 'object' || Array.isArray(payload.layout)) {
           corruptFiles.push(name);
+          continue;
+        }
+        if (name !== farmLayoutFilename(payload.worldId)) {
+          backupFiles.push(name);
+          if (!backupsByWorld.has(payload.worldId)) backupsByWorld.set(payload.worldId, []);
+          backupsByWorld.get(payload.worldId).push(name);
+          continue; // e.g. world_p6bt8ho6(3).json must not override world_p6bt8ho6.json.
+        }
+        if (Object.prototype.hasOwnProperty.call(layouts, payload.worldId)) {
+          corruptFiles.push(name + ': duplicate canonical layout');
           continue;
         }
         layouts[payload.worldId] = payload.layout;
@@ -529,7 +544,12 @@
         corruptFiles.push(name);
       }
     }
-    return { layouts, corruptFiles };
+    for (const [worldId, filenames] of backupsByWorld) {
+      if ((!validWorldIds || validWorldIds.has(worldId)) && !Object.prototype.hasOwnProperty.call(layouts, worldId)) {
+        missingCanonicalBackups.push(worldId + ': restore one copy as ' + farmLayoutFilename(worldId) + ' (found ' + filenames.join(', ') + ')');
+      }
+    }
+    return { layouts, corruptFiles, backupFiles, missingCanonicalBackups };
   }
 
   async function writeFarmLayouts(meta, layouts) {
@@ -562,7 +582,7 @@
     const characters = characterRead.entities;
     const worlds = worldRead.entities;
     const corruptEntityFiles = [...characterRead.corruptFiles, ...worldRead.corruptFiles]; // Used to block destructive folder-to-browser reconciliation.
-    const farm = await readFolderFarmLayouts();
+    const farm = await readFolderFarmLayouts(new Set(worlds.map(world => world?.id).filter(Boolean)));
     let manifest = null;
     let manifestExists = false;
 
@@ -595,6 +615,8 @@
       hasPortableFarmLayouts,
       corruptEntityFiles,
       corruptFarmLayoutFiles: farm.corruptFiles,
+      ignoredFarmLayoutBackupFiles: farm.backupFiles,
+      missingCanonicalLayoutBackups: farm.missingCanonicalBackups,
       meta: {
         version: manifest?.version ?? 1,
         characters,
@@ -631,6 +653,7 @@
     const folder = await readFolderSnapshot();
     const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
     const canonicalCorruption = canonicalCorruptionMessage(folder); // Shown in diagnostics/settings while keeping the folder connected for deliberate recovery.
+    _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Visible through the mobile folder-save status.
     _folderSupportsFarmLayouts = !canonicalCorruption && folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
     _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
     _lastSyncedAt = folder.savedAt || 0;
@@ -699,12 +722,14 @@
           return getStatus();
         }
         if (_lastKnownFarmLayoutFingerprint !== null) {
-          const disk = await readFolderFarmLayouts(); // A Drive version restore can change the disk file without touching browser localStorage.
+          const disk = await readFolderFarmLayouts(new Set((meta.worlds || []).map(world => world?.id).filter(Boolean))); // Compare only canonical layout names.
           const diskFingerprint = farmLayoutFingerprint(disk.layouts);
-          if (disk.corruptFiles.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
+          if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
             _lastDataLossRisk = disk.corruptFiles.length
               ? 'farm-layout files on disk are unreadable'
-              : 'farm-layout files changed outside this game session';
+              : disk.missingCanonicalBackups.length
+                ? 'a canonical farm-layout filename is missing (only version copies remain)'
+                : 'farm-layout files changed outside this game session';
             _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Use Load from Folder to recover the new layout before saving.';
             _lastAction = automatic ? 'autosync-blocked-external-layout' : 'save-blocked-external-layout';
             notify();
@@ -843,6 +868,15 @@
         };
       }
 
+      if (folder.missingCanonicalLayoutBackups?.length) {
+        stopAutoSync();
+        _lastError = 'Cannot load farm from version copies alone: ' + folder.missingCanonicalLayoutBackups.join('; ');
+        _lastAction = 'load-blocked-missing-canonical-layout';
+        notify();
+        return { ok: false, action: _lastAction, changed: false, message: _lastError };
+      }
+
+      _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Show ignored copies in the mobile save diagnostics.
       const browserMeta = readBrowserMeta();
       const browserLayouts = readBrowserFarmLayouts(browserMeta, false);
       const metaChanged = !browserMeta || !saveMetaMatches(browserMeta, folder.meta);
@@ -952,6 +986,7 @@
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
       _lastKnownFarmLayoutFingerprint = null; // The new folder needs its own independent layout baseline.
+      _ignoredFarmLayoutBackupFiles = []; // Clear the previous folder's version-copy diagnostics.
       _recoveryHandleFresh = true;
       stopAutoSync();
       await inspectConnectedFolder();
@@ -983,6 +1018,7 @@
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
       _lastKnownFarmLayoutFingerprint = null; // Switching folders must not compare against a different directory.
+      _ignoredFarmLayoutBackupFiles = []; // Recompute version-copy diagnostics for this directory.
       _recoveryHandleFresh = true;
       stopAutoSync();
       _lastAction = 'recovery-folder-reselected';
@@ -1043,6 +1079,7 @@
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
     _lastKnownFarmLayoutFingerprint = null;
+    _ignoredFarmLayoutBackupFiles = [];
     _lastDataLossRisk = null;
     _lastPatternMirror = null;
     _recoveryHandleFresh = false;
