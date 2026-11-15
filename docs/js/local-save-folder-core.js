@@ -654,14 +654,16 @@
     const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
     const canonicalCorruption = canonicalCorruptionMessage(folder); // Shown in diagnostics/settings while keeping the folder connected for deliberate recovery.
     _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Visible through the mobile folder-save status.
-    _folderSupportsFarmLayouts = !canonicalCorruption && folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
+    _folderSupportsFarmLayouts = !canonicalCorruption && !folder.missingCanonicalLayoutBackups?.length && folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
     _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
     _lastSyncedAt = folder.savedAt || 0;
-    _lastError = canonicalCorruption || (folder.corruptFarmLayoutFiles.length
-      ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
-      : '');
+    _lastError = canonicalCorruption || (folder.missingCanonicalLayoutBackups?.length
+      ? `Canonical farm layout missing: ${folder.missingCanonicalLayoutBackups.join('; ')}`
+      : folder.corruptFarmLayoutFiles.length
+        ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
+        : '');
     _lastKnownFolderMeta = folder.exists && !canonicalCorruption ? folder.meta : null;
-    if (_lastKnownFarmLayoutFingerprint === null && !folder.corruptFarmLayoutFiles.length) {
+    if (_lastKnownFarmLayoutFingerprint === null && !folder.corruptFarmLayoutFiles.length && !folder.missingCanonicalLayoutBackups?.length) {
       _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(folder.farmLayouts); // Establish once; diagnostics must not silently bless a later external replacement.
     }
     return folder;
