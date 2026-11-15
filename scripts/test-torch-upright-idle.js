@@ -11,6 +11,13 @@ assert.equal(committedTorch.y, 0, 'torch idle defaults to height zero');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /id="torchIdleYDirect"/, 'attack editor exposes direct torch height slider');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /workingConfig.stances.torchHold.y = value/, 'slider writes the existing exported stance');
 assert.match(read('docs/js/weapon-tool-stances.js'), /PREVIOUS_TORCH_HOLD_STANCE/, 'untouched legacy browser overrides migrate to Y=0');
+const torchEditor = read('docs/tools/attack-animation-editor/index.html'); // Authoring action list must expose the torch itself, not just preview its PNG.
+assert.match(torchEditor, /id: 'torch_idle', group: 'Non-attack held actions'[^\n]*templateId: 'torch_idle'/, 'torch idle is a selectable action');
+assert.match(torchEditor, /id: 'torch_swing', group: 'Melee attacks'[^\n]*templateId: 'torch_swing'/, 'torch swing is a selectable action');
+assert.match(torchEditor, /\['torch_idle', 'torchHold'\]/, 'torch idle editor loads its stance from committed JSON');
+assert.match(torchEditor, /previewTorchIdlePose\(pose\)/, 'editor provides one dedicated still-pose preview bridge');
+assert.match(read('docs/js/attack-idle-stance-editor.js'), /actionSelect\.value = 'torch_idle'/, 'direct idle editor shortcut selects the actual Torch Idle action');
+
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
