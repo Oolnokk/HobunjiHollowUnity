@@ -100,7 +100,8 @@
       .map(world => String(world?.id || ''))
       .filter(Boolean));
 
-    localStorage.setItem(SAVE_META_KEY, JSON.stringify(snapshot.meta));
+    const metaJson = JSON.stringify(snapshot.meta); // Reused for change detection so unchanged large browser mirrors are not rewritten.
+    if (localStorage.getItem(SAVE_META_KEY) !== metaJson) localStorage.setItem(SAVE_META_KEY, metaJson);
 
     // Cloud snapshots are full snapshots, so remove obsolete farm-layout entries
     // before restoring the layouts belonging to the imported worlds.
