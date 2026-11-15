@@ -18,8 +18,12 @@ The second, top-level **Hats** tab is a separate workbench: the existing neck/sh
 paint, pose, undo history, and two canvases remain intact when switching tabs.
 
 1. Load/select an animal through either tab. Hat placement is stored on the **animal
-   record** as `hatAttachment`; the current `headRig` is also given that placement
-   for the existing **Save rig for game preview** workflow. Unedited species keep the
+   record** as `hatAttachment`; the **Save in-game fit preview** button writes to independent
+   `hobunji_animal_hat_fits_v1` browser storage, not the complete neck-rig
+   `hobunji_animal_head_rigs_v1` storage. The runtime checks hat previews before
+   reading published animal hat placement; saving hats therefore cannot replace
+   neck influence or shoulder deformation maps. Neck-rig exports may still
+   carry a `hatAttachment` for backwards compatibility. Unedited species keep the
    runtime's default head-influence-derived hat fit.
 2. Use **Load hat catalog** to inspect current repo cosmetics, choose an existing hat,
    or supply a PNG path/import a local PNG. Cosmetics with multiple front/back art
@@ -35,12 +39,15 @@ paint, pose, undo history, and two canvases remain intact when switching tabs.
    classifies *all opaque hat pixels* as movable instead of filtering only metal
    colors. This preserves black outlines, fabrics and multicolored materials as pixels
    move. Restore selectively brings back the source PNG. Each pointer drag is one
-   undo step, with independent history per layer.
+   undo step, with independent history per layer. Cancelling a touch gesture rolls
+   its pixels back; undo history is bounded for mobile memory usage.
 5. Export the selected PNG or all modified layers and place them at the cosmetic's
    existing sprite paths. **Raster edits do not go into animal JSON or browser local
-   storage**, so saving a game-preview rig previews the species placement but will not
+   storage**, so saving a hat-fit preview previews the species placement but will not
    magically replace a source asset PNG. Downloading the animal JSON separately saves
-   placement and geometry only. The authoring page does not overwrite repo assets.
+   placement and geometry only. The authoring page does not overwrite repo assets. **Clear hat preview** removes
+   only the currently selected animal's hat fit from the independent preview
+   store; **Clear all in-game previews** clears both hat and neck previews.
 
 The lower image canvas rejects pictures larger than 2048 px on either axis or
 2 megapixels total to bound browser memory use, especially on mobile.
