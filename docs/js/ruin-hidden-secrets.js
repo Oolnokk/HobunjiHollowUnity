@@ -190,6 +190,8 @@
         targetAt(center.x+sx*.83,height+.16,center.z+sz*.20,unlock); // A visible clasp outside the ice block and net strands, so ranged hits actually reach it.
       }
     }
+    const cameraForBrood=()=>root.DevRandomRuinInteractions?.activeCamera?.()
+      ||root.Combat?.deps?.getActiveCamera?.()||null; // Shared camera for the entire active-room hatchling rig update.
     if(spec.babies){
       // A separate opposite corner shelf preserves the chest's hidden sightline and does
       // not overlap the main objective. These are real planebent flying rigs, not eggs.
@@ -201,8 +203,7 @@
       if(!nest.parent){nest.name='secret-skeeri-nest-'+rec.id;nest.position.set(bx,floor+2.19,bz);
         nest.scale.setScalar(.67);nest.userData.devRuinFootprintIgnore=true;group.add(nest);}
       rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest,anim:[],elapsed:0}; // Dormant hatchling motion updates only in the active room.
-      const cameraForBrood=()=>root.DevRandomRuinInteractions?.activeCamera?.()
-        ||root.Combat?.deps?.getActiveCamera?.()||null; // Existing live camera, also used by native Skeeri/Tzatzul visuals.
+
       for(let i=0;i<spec.babies;i++){
         const identity=String(seed)+':'+room.id+':baby:'+i;
         const palette=root.SkeeriRuins?.paletteFor?.(spec.theme,identity);
