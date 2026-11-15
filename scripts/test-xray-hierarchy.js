@@ -88,6 +88,12 @@ assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 
 assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.options.length === 2), 'render passes are explicit choices');
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
 assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
+const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
+assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
+assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
+assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
+assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: false }), { ok: true }, 'checkbox disables the visualizer');
+assert.strictEqual(X.get('ground.showZone'), 'off');
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
 assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
