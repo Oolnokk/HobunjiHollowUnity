@@ -155,12 +155,14 @@
     if(!saved)debug.progressSaveError='Defeated boss state could not be saved';
     return saved;
   }
-  function forgetActiveRuinProgress() {
-    if(!activeVisit)return false;
-    const store=progressStore(),authored=authoredRecordForVisit(activeVisit,store);
-    if(authored) delete authored.progress; // Completion retires the saved named tomb's checkpoint, not its unique identity.
-    delete store.sites[activeVisit.id];
-    return window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+  function completeActiveRuinProgress(visit) {
+    const store=progressStore(),authored=authoredRecordForVisit(visit,store); // All completion state goes into one canonical world-save write.
+    if(visit.specialBoss&&!authored)return false; // Never drop a named tomb's checkpoint if its unique assignment cannot be found.
+    if(authored){authored.completed=true;delete authored.progress;}
+    delete store.sites[visit.id]; // Ordinary, cycle-scoped ruins still release their checkpoint on completion.
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Ruin completion could not be saved';
+    return saved;
   }
   function normalizeEntrance(saved = {}) {
     return { open:false, spent:false, ...saved, struck:Array.isArray(saved.struck) ? saved.struck : [] };
@@ -783,40 +785,69 @@
 
   // Sanctum exit ladder. Returns true when this module handled the exit.
   function completeActiveRuin() {
-    const visit = activeVisit;
-    const R = window.DevRandomRuin;
-    if (!visit || !R?.exitTo) return false;
-    if (visit.kind === 'entrance') updateEntrance(visit.id, { spent:true, open:true });
+    const visit=activeVisit,R=window.DevRandomRuin;
+    if(!visit||!R?.exitTo)return false;
+    const exit=randomExit(visit.zoneId); // A failed exit lookup must not consume a checkpoint or complete a named tomb.
+    if(!exit)return false;
+    if(!completeActiveRuinProgress(visit))return false; // Never allow re-entry to mint loot again after a failed save.
+    if(visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
     else if(visit.kind==='hole'){
-      const entry = state();
-      if (entry.holes[visit.id]) { entry.holes[visit.id].state = 'cleared'; saveState(entry); }
+      const entry=state();
+      if(entry.holes[visit.id]){entry.holes[visit.id].state='cleared';saveState(entry);}
     }
-    forgetActiveRuinProgress(); // Delete cleared checkpoints without erasing the authored tomb's world identity.
-    if(visit.specialBoss){
-      const store=progressStore(),record=store.authored[visit.theme];
-      if(record?.siteId===visit.id){record.completed=true;delete record.progress;
-        if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store))debug.progressSaveError='Named tomb completion could not be saved';
-        if(visit.kind==='authored'&&record.dug){
-          const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
-          if(tile?.type===deps.TileType?.TRENCH){tile.type=deps.TileType.GRASS;tile.depth=0;
-            deps.recordWildernessChunkTileDelta?.(record.zoneId,record.col,record.row);
-            setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,record.col,record.row),0);
-          }
-        } // The completed tomb's surface burrow seals, unlike unfinished recoverable entrances.
-      }
+    if(visit.specialBoss&&visit.kind==='authored'){
+      const record=progressStore().authored?.[visit.theme];
+      if(record?.siteId===visit.id&&record.dug){
+        const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
+        if(tile?.type===deps.TileType?.TRENCH){
+          tile.type=deps.TileType.GRASS;tile.depth=0;
+          deps.recordWildernessChunkTileDelta?.(record.zoneId,record.col,record.row);
+          setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,record.col,record.row),0);
+        }
+      } // The completed tomb's excavated entrance seals; the unique guardian never respawns.
     }
     syncMapMarkers();
-    const exit = randomExit(visit.zoneId);
-    debug.lastExit = { visit, exit, at:Date.now() };
-    activeVisit = null;
-    if (!exit) return false;
+    debug.lastExit={visit,exit,at:Date.now()};
+    activeVisit=null;
     window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
-    R.exitTo(() => Promise.resolve(deps.enterZone(exit.zoneId, exit.col ?? undefined, exit.row ?? undefined)).then(() => {
-      const zi = deps._zoneScenes?.get?.(visit.zoneId);
-      if (zi) buildZoneMeshes(zi.scene, zi.grid, visit.zoneId); // Spent door becomes rubble / hole fills in right away.
+    R.exitTo(()=>Promise.resolve(deps.enterZone(exit.zoneId,exit.col??undefined,exit.row??undefined)).then(()=>{
+      const zi=deps._zoneScenes?.get?.(visit.zoneId);
+      if(zi)buildZoneMeshes(zi.scene,zi.grid,visit.zoneId); // Completed hole or cliff doorway disappears.
     }));
-    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.', true);
+    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.',true);
     return true;
+  }
+
+  // Called by the ordinary entrance exit when Tothal shifts the landscape while the player is underground.
+  function relocatedReturnAnchor() {
+    const visit=activeVisit;
+    if(!visit?.specialBoss)return null;
+    let record=progressStore().authored?.[visit.theme];
+    if(!record||record.completed||record.siteId!==visit.id)return null;
+    if(record.cycle!==cycle()&&!deps?._zoneScenes?.get?.(record.zoneId)?.grid){
+      deps?.buildZoneScene?.(record.zoneId); // Relocation needs actual current-cycle diggable terrain, not guessed map pixels.
+    }
+    const site=authoredBuriedSites(record.zoneId).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
+    if(!site)return null;
+    if(!site.dug){
+      const store=progressStore();
+      record=store.authored[visit.theme];
+      if(!record||record.siteId!==visit.id||record.cycle!==cycle())return null;
+      record.dug=true; // Emerging through the moved shaft exposes the same ladder from below.
+      if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+        debug.progressSaveError='Relocated ruin exit could not be saved';return null;
+      }
+    }
+    const zi=deps?._zoneScenes?.get?.(record.zoneId);
+    const tile=zi?.grid?.[site.row]?.[site.col];
+    if(tile&&tile.type!==deps.TileType?.TRENCH){
+      tile.type=deps.TileType.TRENCH;tile.depth=1;
+      deps.recordWildernessChunkTileDelta?.(record.zoneId,site.col,site.row);
+      setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,site.col,site.row),0);
+    }
+    syncMapMarkers();
+    if(zi?.scene)buildZoneMeshes(zi.scene,zi.grid,record.zoneId);
+    return {area:record.zoneId,x:(site.col+.5)*deps.TILE,y:(site.row+1.5)*deps.TILE};
   }
 
   // The ruin's ordinary entrance exit just steps back outside.
@@ -979,7 +1010,7 @@
   }
 
   window.RuinSites = Object.freeze({
-    init, registerWorkspace, sourceCensus, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
+    init, registerWorkspace, sourceCensus, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft, relocatedReturnAnchor,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     authoredBuriedSites,authoredDigSpots,authoredDigCheck,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
