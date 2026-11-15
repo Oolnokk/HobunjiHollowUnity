@@ -50,6 +50,10 @@
       order: 8, label: 'Rebuild gear depth while airborne', default: 'on', options: ['on', 'off'],
       help: 'on: while a jump is active, rebuild even the ordinary gear group without horizon depth. This avoids irregular sky/distant-tile masks on raised weapons.',
     },
+    'weapon.followHandLayer': {
+      order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
+      help: 'on: weapons and tools inherit their owner-hand draw priority and front-art occlusion when manual ordering is active. off: weapons use the separately editable weapon layer.',
+    },
   });
 
 
@@ -237,7 +241,7 @@
             ['Hands behind front plane', String(live.handsBehindFrontPlane ?? '-')],
             ['Jump replay / backgrounds excluded', `${live.airborneDepthRebuilds ?? '-'} / ${live.backgroundDepthMeshesExcluded ?? '-'}`],
           ],
-          note: 'Move before or nudge a layer in the full hierarchy. These controls sort within color passes; depth, opaque vs transparent pass boundaries, water/stencil masks, and camera layer numbers are separate. Export diff preserves every rank.',
+          note: 'Move before or nudge a layer in the full hierarchy. Tools follow hands unless unlinked in Exceptions → Equipment. Cross-pass front-art occlusion follows the chosen rank; physical depth, WebGL pass boundaries, and water/stencil stages remain protected. Export preserves every rank.',
           actions: [
             { id: 'set', args: { key: 'layers.manualOrder' }, label: 'Manual draw order', value: state['layers.manualOrder'],
               options: ['off', 'on'].map(value => ({ value, label: value })), group: 'Draw order', path: ['Draw order'], title: RULES['layers.manualOrder'].help },
@@ -258,10 +262,14 @@
               group: 'Layer position', path: ['Draw order', selectedGroup] },
             { id: 'shift', label: 'Move selected layer toward front', args: { delta: 1 },
               group: 'Layer position', path: ['Draw order', selectedGroup] },
-            ...describe().filter(rule => !['layers.manualOrder', 'background.gearDepth', 'airborne.rebuildDepth'].includes(rule.key))
+            ...describe().filter(rule => !['layers.manualOrder', 'background.gearDepth', 'airborne.rebuildDepth', 'weapon.followHandLayer'].includes(rule.key))
               .map(rule => ({ id: 'set', label: rule.label, args: { key: rule.key }, value: rule.value,
                 options: rule.options.map(value => ({ value, label: value })), group: 'Masks and behavior',
                 path: ['Exceptions', rule.key.split('.')[0]], title: rule.help })),
+            ...describe().filter(rule => ['weapon.followHandLayer'].includes(rule.key))
+              .map(rule => ({ id: 'set', label: rule.label, args: { key: rule.key }, value: rule.value,
+                options: rule.options.map(value => ({ value, label: value })), group: 'Weapon/hand coupling',
+                path: ['Exceptions', 'Equipment'], title: rule.help })),
             ...describe().filter(rule => ['background.gearDepth', 'airborne.rebuildDepth'].includes(rule.key))
               .map(rule => ({ id: 'set', label: rule.label, args: { key: rule.key }, value: rule.value,
                 options: rule.options.map(value => ({ value, label: value })), group: 'Airborne / distant scenery',
