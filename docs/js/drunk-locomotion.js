@@ -27,6 +27,10 @@
 
   let forcedLoss = null;
   let activePlayerState = null;
+  function poseTimestampMs() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now() : Date.now(); // Monotonic browser time, shared with the render compositor's pose lease clock.
+  }
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -205,6 +209,7 @@
       blend: 0,
       speed: 0,
       disposed: false,
+      lastUpdatedAtMs: null, // The renderer uses this timestamp to reject gait samples abandoned by a stopped animation tick.
     };
 
     function clearPreviousFootTwist() {
@@ -327,6 +332,7 @@
       clearPreviousBodyTilt();
       originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion);
       applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
+      if (isPlayer) state.lastUpdatedAtMs = poseTimestampMs(); // A draw pass cannot renew a pose without a real solver update.
     };
 
     handle.dispose = function footingDrunkWalkDispose() {
@@ -376,6 +382,7 @@
         speed: state?.speed ?? 0,
         pitchDeg: (state?.pitch || 0) / DEG,
         rollDeg: (state?.roll || 0) / DEG,
+        lastUpdatedAtMs: state?.lastUpdatedAtMs ?? null, // Guards against stale render-only re-publication after an interrupted gait.
         yawDeg: 0,
         bodyYawOwnedByFacing: true,
         forcedLoss,
