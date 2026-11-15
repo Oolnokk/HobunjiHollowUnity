@@ -1,5 +1,52 @@
 # Performance investigation log
 
+## 15 Nov 2026: the moment a player strike lands on a non-fighting dummy (headless, measured; nothing fixed)
+
+Setup: Testing Arena, a `bandit:grunt` with `aggroRangePx = 0` and its attack cooldown pinned (it never swings back),
+placed 1.3 tiles ahead, player hitting with a real mouse click. 480x270 viewport, outlines on, software WebGL. The
+tick hook wrapped `Combat.update` (called mid-`gameLoop`), tagged each frame with the staged-action phase and took the
+wall time between ticks. Phases for the starter weapons seen (fishing spear, pick-shovel): `windupS` 0.23-0.32 s,
+**`strikeS` 0** (the hit lands at the end of the windup, so there is no separate strike or lunge frame in the
+staged action; a "lunge" shows up as player displacement only for abilities that move), `recoverS` 0.20-0.28 s.
+
+Frame wall time by phase, medians over 8-16 attacks per run (runs differ by +-15% in absolute terms, so compare
+within a run): neutral before **182-211 ms**, align 171-207, windup 202-226, strike/recover 208-254, neutral after
+**199-246**. So the hit frame is **about 5-25% heavier than neutral and the heaviness lasts through the first ~12
+ticks after the hit (~0.5 s of game time)**; there is no single-frame hitch. Per-phase `console.profile` switching
+cannot be used for this: each switch costs ~750 ms of self time and drowns the signal (measurement trap, see below).
+
+Where the extra time is, from per-function accumulators wrapped around ~620 module functions and the THREE/GL calls:
+
+- **JS attributable to the attack is small, ~3-10 ms per tick in a ~200 ms frame:** `ProceduralHandFrameDriver.syncNow`
+  (+1.7 ms on the first windup tick only), `ResourceSystem.applyDamage` (~1 ms, once), `AudioSystem.playWeaponSlashSfx`
+  (~0.8 ms, once), `ResourceRings.updateRingHud` (0.4 -> 0.9-1.3 ms for a few ticks).
+- **The largest repeating item is the portrait afterimage in `combat-blink-dodge.js`.** While the player lunges, every
+  forced-move sample (`AFTERIMAGE_FORCED_MOVE_INTERVAL_S` 0.055 s) bakes the player's skinned portrait planes into a
+  ghost: **12,096 `SkinnedMesh.boneTransform` calls = 2.5-7 ms per snapshot**, plus one `BufferGeometry.clone`
+  (0.8-1.4 ms) whenever the pool has no matching entry, and a canvas copy + texture upload when an entry is created
+  (the pool is dropped after `AFTERIMAGE_POOL_IDLE_S` 4 s, so the first attack after idle re-creates them). Scene diff
+  before/after one swing: **+5 `combat_portrait_afterimage` meshes, +20,160 triangles per snapshot** (up to ~5
+  snapshots are alive at once with the 0.28 s lifetime), i.e. renderer triangles 17k -> 24k and draws 18 -> 22.
+  That native triangle work is where most of the post-hit +20% shows up in software GL, and the garbage collector
+  (0.4 -> 7.7 ms/tick) follows the clones/disposals.
+- **Ruled out:** camera shake / hit-stop (`GameFeel.setShakeEnabled(false)` alternating with on over 16 attacks:
+  post/pre frame ratio 1.22 off vs 1.18 on, no difference); creature hit-flash tint (a `traverse` on the dummy rig
+  only); `damageCreature` JS itself (~1 ms).
+- **Tried and dropped:** replacing the per-vertex `boneTransform` call in `bakePortraitGeometry` with precomputed
+  per-bone matrices and scalar math produced bit-compatible output (checked against three r128) but ran at **1.0x**:
+  V8 already optimises stock `boneTransform`, the cost is the 12k-vertex walk, not the matrix products. Not shipped.
+
+Leads, not applied (each changes how the lunge blur looks, so they are a design call): lower the snapshot rate or
+cap live snapshots at ~3; bake the ghosts from a decimated index (4,032 triangles per portrait plane is the
+skinning-friendly mesh, a ghost at 0.34 opacity does not need it); skip the snapshot when the previous frame was
+already over budget.
+
+Measurement traps from this run: `console.profile`/`profileEnd` inside the loop (~750 ms each, appears as a function
+named after the caller); `lastDurationMs`/EMA scheduler timers read mid-frame are the *previous* frame's smoothed
+values and do not change at the hit; `renderer.info.render.calls` read after the frame only holds the last pass
+(sum it inside a wrapped `render`); wrapping every function of ~70 namespaces plus a 400 MB heap crashed the tab
+(Chromium OOM) after a few hundred attacks, so run those A/Bs with a fresh page and under ~10 cycles.
+
 ## 15 Nov 2026: the farm draws every tile separately, with its own cloned texture
 
 Player readings on the farm (CPU-bound, GPU 10-17%): 10.6-14.5 FPS, game loop 45-52 ms, plus 20-42 ms "unattributed"
