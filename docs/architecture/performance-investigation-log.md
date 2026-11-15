@@ -15,6 +15,16 @@ setAnimationsEnabled / namesEnabled / setNamesEnabled`). Both are classes on `#v
   The label has its own `overflow: hidden` box over the segment, so a long name is clipped by the segment and bar edges
   but droplets and SVG shapes are not. Added after any shape so the shape stays the segment's first child.
 
+Follow-ups the same day: the label drops the resource word the bar already implies ("Bleeding Health" -> "Bleeding",
+"Winded Stamina" -> "Winded"; the hover title keeps the full name); the glyphs get a thin black outline
+(`-webkit-text-stroke: .16em #000` with `paint-order: stroke fill`, so only the outer half shows); and the black outline
+of each SVG-shaped segment (brittle / drip / starved / balloon / crenellated) is repeated in a second stroke-only SVG
+(`.vb-outline-svg`, z-index 42) layered over the label (41) so the outline occludes the text. The opaque black backing
+rect around the shape deliberately stays under the label (a first version masked it too and hid the name on pinched
+shapes). Known consequence: a *starved* (pinched) segment such as Winded Stamina leaves only a couple of pixels between
+its two outline strokes, so its name is mostly hidden by the outline. Plain bordered segments needed nothing: their
+label already sits inside the border's padding box.
+
 Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,
 toggles flip the classes and persist; burning with the defaults **190-191 ms vs 284-298 ms with animations on** (control
 174-205), wounded health 177-220 vs 234-262 (control level again). Screenshots show the names in the segments.

@@ -115,9 +115,24 @@ assert.equal(vitalsBar.classList.contains('vb-fx-names'), true, 'affliction name
 assert.equal(vitalsBar.classList.contains('vb-fx-animated'), false, 'affliction animations are off by default');
 const nameLabel = bleedingSpan.children.find(child => child.className === 'vb-name');
 assert.ok(nameLabel, 'each affliction segment carries a name label');
-assert.equal(nameLabel.textContent, context.ResourceSystem.AFFLICTIONS.bleedingHealth.name, 'the label prints the affliction name');
+assert.equal(context.ResourceSystem.AFFLICTIONS.bleedingHealth.name, 'Bleeding Health', 'fixture: the full affliction name carries the resource word');
+assert.equal(nameLabel.textContent, 'Bleeding', 'the label drops the resource word the bar already implies');
+assert.equal(bleedingSpan.title, 'Bleeding Health', 'the hover title keeps the full name');
 assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'one label per segment');
 const bleedingSvg = bleedingSpan.children[0];
+// The black outline of a shaped segment is repeated in a second SVG layered after (above) the label.
+const labelIndex = bleedingSpan.children.indexOf(nameLabel);
+const outlineSvg = bleedingSpan.children.find(child => child.id === 'svg' && child !== bleedingSvg);
+assert.ok(outlineSvg, 'a shaped segment gets an outline overlay SVG');
+assert.ok(bleedingSpan.children.indexOf(outlineSvg) > labelIndex, 'the outline overlay is after the label so it paints over the text');
+assert.equal(outlineSvg.classList.contains('vb-outline-svg'), true, 'the overlay carries the class style.css layers above the label');
+const strokePath = outlineSvg.children.find(child => child.id === 'path');
+assert.equal(strokePath.getAttribute('fill'), 'none', 'the overlay path is stroke only, so the coloured shape stays under the text');
+assert.equal(strokePath.getAttribute('stroke'), '#000');
+assert.equal(strokePath.getAttribute('d'), bleedingSvg.children[1].getAttribute('d'), 'the overlay traces the same shape');
+assert.equal(strokePath.children[0].id, 'animate', 'the drip morph is copied so the outline follows the animated shape');
+assert.equal(outlineSvg.children.length, 1, 'the overlay is just the stroke: the black backing stays under the label so names stay legible on pinched shapes');
+assert.equal(bleedingSpan.children.filter(child => child.id === 'svg').length, 2, 'one shape SVG and one outline overlay');
 assert.equal(bleedingSvg.animationsPaused, true, 'SMIL drip morph is paused while animations are off');
 context.PlayerVitals.setAnimationsEnabled(true);
 assert.equal(vitalsBar.classList.contains('vb-fx-animated'), true, 'enabling animations sets the class');
@@ -130,6 +145,7 @@ context.PlayerVitals.setAnimationsEnabled(false);
 assert.equal(bleedingSvg.animationsPaused, true, 'disabling animations pauses the morphs again');
 refresh();
 assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the label');
+assert.equal(bleedingSpan.children.filter(child => child.id === 'svg').length, 2, 'refresh does not duplicate the outline overlay');
 player.afflictions.bleedingHealth = 38;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bleedingSpan, 'CSS animations survive frequent affliction-value updates');
@@ -149,6 +165,15 @@ refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged mesh remains stable across frames');
 assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'vertices do not reroll as the segment shrinks');
 player.afflictions.bruisedHealth = 0;
+
+// Labels on the other two bars drop their resource word too ("Winded Stamina" -> "Winded", "Resolute Footing" -> "Resolute").
+player.afflictions.windedStamina = 15; player.afflictions.resoluteFooting = 15; player.stamina = 80; player.footing = 80;
+refresh();
+const labelOf = id => elements.get(id).children.map(segment => segment.children.find(child => child.className === 'vb-name')?.textContent);
+assert.deepEqual(labelOf('vbStaminaSegments'), ['Winded'], 'Stamina bar label has no "Stamina"');
+assert.deepEqual(labelOf('vbFootingSegments'), ['Resolute'], 'Footing bar label has no "Footing"');
+player.afflictions.windedStamina = 0; player.afflictions.resoluteFooting = 0; player.stamina = 100; player.footing = 100;
+refresh();
 
 player.afflictions.congealedHealth = 30;
 player.health = 70;

@@ -427,7 +427,12 @@
       line-height: 1;
       letter-spacing: .04em;
       color: #fff;
-      text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 0 0 3px #000; /* Black outline in the HUD's own ink so it reads on any affliction colour. */
+      /* Thin black outline on the glyphs themselves, in the HUD's own ink, so the name reads on any affliction colour.
+         The stroke is painted beneath the fill (paint-order) so only its outer half shows and the letters keep their
+         weight; the small shadow is the fallback where paint-order is not applied to HTML text. */
+      -webkit-text-stroke: .16em #000;
+      paint-order: stroke fill;
+      text-shadow: 0 0 1px #000;
     }
 
     /* The actual brittle/starved bars are single reusable inline-SVG meshes.
@@ -446,6 +451,7 @@
     }
     /* Match the viewport-scaled 4px-equivalent outer rim, even in SVG. */
     #vitalsBar .vb-shape-svg path { stroke-width: .556dvh; }
+    #vitalsBar .vb-outline-svg { z-index: 42; } /* Above the affliction name (41): the black outline occludes the text. */
     #vitalsBar .vb-cap {
       position: absolute;
       top: 0;

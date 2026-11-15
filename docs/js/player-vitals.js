@@ -317,6 +317,46 @@
     return { svg, path };
   }
 
+  // The bar a segment sits on already says which resource it is ("Bleeding Health" on the Health bar), so the printed
+  // label drops that trailing word. The hover title keeps the full name.
+  function shortAfflictionName(name, resource) {
+    const short = String(name || '').replace(new RegExp('\\s+' + String(resource || '') + '$', 'i'), '').trim();
+    return short || String(name || '');
+  }
+
+  // Draws the segment's black outline ABOVE its name label so the outline occludes the text. The shaped segments'
+  // outline is the black stroke of an SVG path that sits under the label; this overlay repeats just that stroke
+  // (fill none) in a second SVG layered over the label, with the drip/balloon animate children copied and created in the
+  // same tick as the shape so their SMIL timelines start together. The black backing rect around the shape is left under
+  // the label on purpose: it is background, and the name stays legible over pinched shapes such as Winded Stamina.
+  // Plain bordered segments need nothing: their label sits inside the padding box, clipped by the border.
+  const ANIMATE_ATTRIBUTES = ['attributeName', 'dur', 'keyTimes', 'values', 'repeatCount', 'calcMode', 'begin'];
+  function copyShapePath(source, attributes) {
+    const path = svgElement('path');
+    const d = source.getAttribute('d');
+    if (d != null) path.setAttribute('d', d);
+    for (const [name, value] of Object.entries(attributes)) path.setAttribute(name, value);
+    for (const child of source.children || []) {
+      if (child.id !== 'animate' && child.tagName !== 'animate') continue;
+      const copy = svgElement('animate');
+      for (const name of ANIMATE_ATTRIBUTES) {
+        const value = child.getAttribute(name);
+        if (value != null) copy.setAttribute(name, value);
+      }
+      path.appendChild(copy);
+    }
+    return path;
+  }
+  function buildOutlineOverlay(shape) {
+    const svg = svgElement('svg');
+    svg.setAttribute('viewBox', '0 0 100 ' + SVG_HEIGHT);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('vb-shape-svg', 'vb-outline-svg');
+    svg.appendChild(copyShapePath(shape.path, { fill: 'none', stroke: '#000', 'stroke-width': '4', 'vector-effect': 'non-scaling-stroke' }));
+    return svg;
+  }
+
   function ensureBrittleShape(segment, key, fraction, color) {
     if (!segment._vbShape) {
       segment._vbShape = shapeSvg('brittle');
@@ -437,9 +477,13 @@
       if (!segment._vbName) { // Added after any SVG shape above, so the shape stays the segment's first child.
         const label = document.createElement('span'); // Clipped by its own overflow:hidden box, so the segment's droplets/shapes are unaffected.
         label.className = 'vb-name';
-        label.textContent = piece.name;
+        label.textContent = shortAfflictionName(piece.name, rs.AFFLICTIONS[piece.id]?.resource);
         segment.appendChild(label);
         segment._vbName = label;
+      }
+      if (segment._vbShape && !segment._vbOutline) { // After the label in DOM order and z-index, so the black outline paints over the text.
+        segment._vbOutline = buildOutlineOverlay(segment._vbShape);
+        segment.appendChild(segment._vbOutline);
       }
       if (segment._vbSmilFor !== appliedAnimations && segment.querySelector?.('svg')) { applySvgAnimationState(segment, appliedAnimations === true); segment._vbSmilFor = appliedAnimations; } // A shape added after the last preference change picks up the current play/pause state once.
       next.set(key, segment);
