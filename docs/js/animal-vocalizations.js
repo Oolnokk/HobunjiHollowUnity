@@ -10,7 +10,7 @@
   const resolvedProfileCache = new Map(); // Reuses authored species profiles across per-creature chatter checks and request playback.
   const states = new WeakMap();
   const tracked = new Set();
-  const PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
+  const PRIORITY = Object.freeze({ chatter: 1, exertion: 1.5, growl: 2, warning: 3 });
   const PULSE_DURATION_S = 0.18;
   const PULSE_ADD_SCALE = 0.025;
   const VOCAL_NOD_UP_DEG = -10;
@@ -68,6 +68,11 @@
       utterances: Object.freeze([Object.freeze({ tempo: 1, pitchSemitones: 0 })]),
       textEachUtterance: false,
       textLines: Object.freeze([]),
+    }),
+    exertion: Object.freeze({
+      intervalMs: 0, volume: 0.70, earshotTiles: 12, tailMs: 700,
+      utterances: Object.freeze([Object.freeze({ tempo: 1, pitchSemitones: 0 })]), // A mount uses one sound per fatigue breath, not the whole aggression sequence.
+      textEachUtterance: false, textLines: Object.freeze([]),
     }),
     discoveryText: Object.freeze({ 'animal-den': Object.freeze([]), 'bandit-camp': Object.freeze([]), 'bandit-camp-tracks': Object.freeze([]) }),
   });
@@ -230,6 +235,7 @@
       chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
       warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
       growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
+      exertion: mergeKind(PROFILE_DEFAULTS.exertion, common.exertion || common.growl, species.exertion || species.growl), // Older species configs seed exertion from aggression without coupling future edits.
       dialogueLines: Array.isArray(species.dialogueLines)
         ? [...species.dialogueLines]
         : Array.isArray(common.dialogueLines) ? [...common.dialogueLines] : [],
@@ -266,7 +272,7 @@
   async function loadAuthoredProfiles() {
     if (typeof fetch !== 'function') return;
     try {
-      const response = await fetch('config/dialogue/ambient-dialogue.json?v=20261109voiceimport37'); // Revisioned authored voices prevent cached pre-import animal calls on mobile.
+      const response = await fetch('config/dialogue/ambient-dialogue.json?v=20261115mountExertion01'); // Revisioned authored voices prevent cached pre-import animal calls on mobile.
       if (!response.ok) return;
       const config = await response.json();
       setAuthoredProfiles(config?.animalVocalizations || {});
@@ -385,7 +391,7 @@
         debug.pulsed++;
         debug.lastStartLatencyMs = Math.max(0, Date.now() - playbackRequestedAtMs);
         showUtteranceText(c, active, utteranceIndex);
-        if (utteranceIndex === 0 && active.kind !== 'chatter') {
+        if (utteranceIndex === 0 && active.kind !== 'chatter' && active.kind !== 'exertion') {
           window.HobunjiEmojiReactions?.trigger?.(c.avatarRef?.group, active.kind === 'warning' ? 'alarmed' : 'disgust', { height: c.modelHeight }); // Only the first real warning/growl utterance, never passive chatter, gets an emoji.
         }
       };
@@ -442,6 +448,7 @@
   function companionDiscovery(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
   function threatGrowl(c, reason, opts = {}) { return request(c, 'growl', { ...opts, reason }); }
   function warning(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
+  function mountExertion(c) { return request(c, 'exertion', { reason: 'mount-exertion' }); } // Single randomly pooled exertion clip; shares the normal species pitch/tuning/spatial renderer.
 
   function pulseEnvelope(c) {
     const remainingS = states.get(c)?.pulseRemainingS || 0;
@@ -482,6 +489,7 @@
     companionDiscovery,
     threatGrowl,
     warning,
+    mountExertion,
     pulseEnvelope,
     scalePulse,
     headNodOffsetDeg,
