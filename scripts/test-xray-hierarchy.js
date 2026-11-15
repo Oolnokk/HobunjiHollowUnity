@@ -27,6 +27,7 @@ assert.strictEqual(X.get('actors.order'), 'all');
 assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
 assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');
+assert.strictEqual(X.get('weapon.followHandLayer'), 'on', 'weapons inherit their gripping hand priority by default');
 let heard = null;
 X.onChange((k, v, prev) => { heard = [k, v, prev]; });
 assert.strictEqual(X.set('hand.frontPlaneMask', 'bogus'), false, 'rejects values outside the rule options');
@@ -117,15 +118,18 @@ assert.strictEqual(isBackdrop({ isMesh: true, userData: {}, material: { userData
   'ordinary solid walls stay real occluders');
 const layerStart = render.indexOf('  function visualLayerFor(');
 const layerEnd = render.indexOf('\n  function nearbyPortraitOrder(', layerStart);
-const visualSort = new Function('window', 'xrayRule', 'isPresentationBackdrop', 'surfaceKindForObject', 'comparePortraitDraws',
+const visualSort = new Function('window', 'xrayRule', 'isPresentationBackdrop', 'surfaceKindForObject', 'comparePortraitDraws', 'heldPriorityLayer',
   render.slice(layerStart, layerEnd) + '; return { visualLayerFor, withVisualSort };')(
-  win, key => X.get(key), isBackdrop, () => 'solid', () => 0);
+  win, key => X.get(key), isBackdrop, () => 'solid', () => 0,
+  () => X.get('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands');
 const drawn = (data, name) => ({ object: { userData: data, name: name || '' }, material: { id: 3 }, groupOrder: 0, renderOrder: 0, z: 0, id: 1 });
 const handItem = drawn({ hobunjiProceduralHand: true });
 const weaponItem = drawn({ hobunjiHeldObjectPlane: true });
 const footItem = drawn({ hobunjiProceduralFoot: true });
 assert.strictEqual(visualSort.visualLayerFor(handItem), 'actor.hands');
-assert.strictEqual(visualSort.visualLayerFor(weaponItem), 'item.weapons');
+assert.strictEqual(visualSort.visualLayerFor(weaponItem), 'actor.hands', 'held weapon takes its gripping hand layer by default');
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(visualSort.visualLayerFor(weaponItem), 'item.weapons', 'explicit unlink permits independent weapon rank');
 assert.strictEqual(visualSort.visualLayerFor(footItem), 'actor.feet');
 const rendererMock = { setTransparentSort(fn) { this.transparent = fn; }, setOpaqueSort(fn) { this.opaque = fn; } };
 X.set('layers.manualOrder', 'on');
@@ -136,6 +140,24 @@ visualSort.withVisualSort(rendererMock, null, () => {
 });
 assert.strictEqual(rendererMock.transparent, null, 'transparent renderer state restored after a sort');
 assert.strictEqual(rendererMock.opaque, null, 'opaque renderer state restored after a sort');
+X.reset();
+
+// The stencil owner rule must use manually chosen front-plane priorities, not
+// rely on WebGL draw-pass order (hands and their tools are in the held pass).
+const maskBegin = render.indexOf('  function manualBehindFront(');
+const maskEnd = render.indexOf('\n  // Hands:', maskBegin);
+const maskScope = new Function('window', 'xrayRule', 'maskedHands',
+  render.slice(maskBegin, maskEnd) + '; return { manualBehindFront, heldPriorityLayer, isPortraitMaskedGear };')(
+    win, key => X.get(key), new Set([handItem.object]));
+X.set('layers.manualOrder', 'on');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'weapon remains behind front portrait while the hand is behind');
+X.moveLayer('actor.hands', '__end');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'moving the hand in front also brings its held weapon forward through the portrait mask');
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'unlinked weapon retains its independent front-art mask');
 X.reset();
 
 // Execute the production "hand behind its front plane" math with a tiny matrix stand-in.
