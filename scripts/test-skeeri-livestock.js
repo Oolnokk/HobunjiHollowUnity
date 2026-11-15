@@ -121,6 +121,9 @@ assert(nestSource.includes('eggsRemaining:rec.nest?.eggsRemaining'),
 const visuals=read('docs/js/tzatzul-live-visuals.js');
 assert(visuals.includes("kind(actor) === 'skeeri' && actor?.isCompanion === true"),
   'trained domestic birds must receive their real authored flying rig');
+const vocalizations=read('docs/js/animal-vocalizations.js');
+assert(vocalizations.includes("raw === 'skeeri' || /^skeeri-(?:small|medium|large)$/.test(raw)"),
+  'farm and Stable Skeeri must reuse the native planebent Skeeri vocalizations');
 const html=read('docs/index.html');
 assert(html.indexOf('js/skeeri-livestock-registration.js')>html.indexOf('js/pingdort-registration.js'));
 assert(html.indexOf('js/skeeri-livestock-registration.js')<html.indexOf('js/creature-genetics.js'),
