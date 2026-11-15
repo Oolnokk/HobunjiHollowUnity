@@ -185,7 +185,7 @@
   function outingAvailable(kind) {
     const h = gameHour();
     if (!Number.isFinite(h)) return false;
-    if (kind === 'prayer') return isAnan() && !window.TemplePrayerRestBlessings?.activePrayer?.();
+    if (kind === 'prayer') return isAnan() && !!window.TemplePrayerRestBlessings && !window.TemplePrayerRestBlessings.activePrayer?.(); // No unavailable/duplicate weekly prayer invitations.
     if (kind === 'communion') return isAnan() && h >= 0 && h < 5;
     if (kind === 'festival') return !!festival() && h >= 12 && h < 22;
     if (kind === 'family') return spouseId() === 'nashka_khibu' && h >= 13 && h < 20;
@@ -201,8 +201,7 @@
     if (kind === 'communion' || kind === 'prayer') {
       const station = pickStation(kind === 'communion' ? 'spirit_communion' : 'sit', 'map_i_temple');
       if (station) return { ...station, activity: kind === 'communion' ? 'attending Spirit Communion with you' : 'praying together' };
-      if (kind === 'communion') return null; // Never invite to seats that the current temple layout has not actually registered.
-      return { area: 'map_i_temple', c: 9, r: 11, activity: 'praying together' }; // Existing center temple aisle, not an invented extra blessing source.
+      return { area: 'map_i_temple', c: 9, r: 11, activity: kind === 'communion' ? 'attending Spirit Communion with you' : 'praying together' }; // Known central aisle; works before distant interior seating is loaded.
     }
     if (kind === 'family') {
       const station = window.NpcScheduling?.resolveNpcStationTarget?.('furniture_chair_map_i_carpenters_13_10') || pickStation('sit', 'map_i_carpenters');
@@ -226,6 +225,15 @@
     for (const char of text) { value ^= char.charCodeAt(0); value = Math.imul(value, 16777619); }
     return value >>> 0;
   }
+  function hasFoodBuff() {
+    const entries = window.EffectBuffBar?.getEntries?.();
+    if (Array.isArray(entries)) {
+      if (entries.some(entry => entry.sourceId === 'food' ||
+        (entry.sourceId === 'festivals' && String(entry.key || '').startsWith('festival-meal:')))) return true;
+    }
+    return (window.CookingSystem?.foodBuffEntries?.() || []).length > 0; // Covers regular food when the HUD provider has not registered yet.
+  }
+
   function selectAdvice(npcId) {
     const voice = VOICES[npcId];
     if (!voice || spouseId() !== npcId) return null;
@@ -240,8 +248,7 @@
     if (outingAvailable('festival')) add('festival', 92, voice.festival, 'festival');
     if (harvestCount) add('harvest', 84, voice.harvest);
     if (window.RomanceSystem?.remainingKissHours?.() <= 0) add('kiss', 79, voice.kiss);
-    if (typeof window.CookingSystem?.foodBuffEntries === 'function' &&
-      window.CookingSystem.foodBuffEntries().length === 0) add('food', 71, voice.food);
+    if (typeof window.CookingSystem?.foodBuffEntries === 'function' && !hasFoodBuff()) add('food', 71, voice.food);
     if (window.TemplePrayerRestBlessings && !window.TemplePrayerRestBlessings.isWellRested?.()) add('tired', 62, voice.tired);
     if (outingAvailable('family')) add('family', 56, voice.family, 'family');
     if (outingAvailable('inn')) add('inn', 53, voice.inn, 'inn');
@@ -288,7 +295,7 @@
     if (defaultTree && !String(defaultTree.id || '').endsWith('_fallback')) return null; // Never suppress authored quests, shops, or cutscene conversations.
     if (spouseId() === rec.id && VOICES[rec.id]) return spouseConversation(rec);
     const relation = relationshipFor(rec.id);
-    if (!relation || relation === 'Spouse') return null;
+    if (!relation || relation === 'Spouse' || window.FestivalDialogue?.active?.()) return null; // Existing Gorkunash-specific conversations win over generic in-law greetings.
     lastSelection.relation = { npcId: rec.id, label: relation };
     return { id: 'marriage_family_' + rec.id + '_' + spouseId(), entryNode: 'intro', trigger: 'interact',
       nodes: [{ id: 'intro', type: 'text', text: inLawSpeech(rec.id).replace(/\{targetName\}/g, '{{playerLocalNickname}}') }] };
@@ -296,7 +303,7 @@
   function greetingFor(rec, context) {
     if (!rec?.id || rec.dead || rec.deceased) return null;
     const relation = relationshipFor(rec.id);
-    if (!relation || relation === 'Spouse') return null; // Spouse already flows through RomanceSystem.spouseDialogueFor.
+    if (!relation || relation === 'Spouse' || window.FestivalDialogue?.active?.()) return null; // Preserve special Gorkunash greetings.
     const targetName = context?.omitTargetName ? '' : String(context?.targetName || '');
     return inLawSpeech(rec.id).replace(/\s*,\s*\{targetName\}/g, targetName ? ', ' + targetName : '')
       .replace(/\{targetName\}/g, targetName);
