@@ -117,7 +117,7 @@ let failDuringRollback = false; // Simulates a stale attachment whose undo throw
 let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
 const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
-  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'postHeadAimHooks',
+  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks',
   'let renderSequence = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
     + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; return proto.render;'
 )(
@@ -129,7 +129,7 @@ const renderWrapper = new Function(
     if (failDuringPose) throw new Error('synthetic pose failure');
   },
   () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
-  { now: () => 1000 }, []
+  { now: () => 1000 }, () => 0, [] // No leased channels in this isolated render-restoration fixture; real expiry is exercised by test-composer-lease-recovery.js.
 );
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal render completes');
 assert.equal(temporaryYaw, 0, 'normal render restores the temporary orientation');
