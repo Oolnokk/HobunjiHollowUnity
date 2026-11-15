@@ -696,6 +696,18 @@
     finally { for (const material of changed) material.depthWrite = true; }
   }
 
+  function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {
+    if (xrayRule('layers.manualOrder') !== 'on' || !portraitOrder?.ranks?.size) return null;
+    const byOwner = new Map(); // Reuses the base portrait's actor-depth ranks for gear/hand draw entries.
+    for (const rank of portraitOrder.ranks.values()) if (rank?.owner) byOwner.set(rank.owner, rank);
+    const extras = new Map(portraitOrder.extras || []); // Existing pants continue to share their own actor's priority.
+    for (const mesh of meshes) {
+      const rank = byOwner.get(portraitStencilOwner(mesh, scene));
+      if (rank) extras.set(mesh, rank);
+    }
+    return { ...portraitOrder, extras };
+  }
+
   function assignPortraitStencilOwners(gearMeshes, portraits, scene) {
     const gearOwners = new Set(); // Only owners with a visible held weapon need a front-portrait stencil entry.
     for (const mesh of gearMeshes) {
@@ -2718,6 +2730,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const glState = renderer.state;
     const overlayMeshes = [...held, ...feet];
+    const overlayDrawOrder = rankedHeldOverlayOrder(portraitOrder, overlayMeshes, scene); // Preserve near/far actor stacking while editing equipment ranks.
     const scissorMeshes = bodyTint?.portraits.length ? [...overlayMeshes, ...bodyTint.portraits] : overlayMeshes; // Cover both gear and wet portraits in the final tint pass.
     const groundMeshes = [...ground, ...topFaceGround];
     // Gameplay PlayerJump is the physical movement owner: never infer airborne state from
@@ -2887,7 +2900,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
-          withPortraitDrawOrder(renderer, null, () => rawRender.call(renderer, scene, camera)); // User-ordered hands/feet/gear in this isolated color pass.
+          withPortraitDrawOrder(renderer, overlayDrawOrder, () => rawRender.call(renderer, scene, camera)); // Preserve actor-to-actor depth, then apply editable intra-actor gear ranks.
           window.PerfProfiler?.end(overlayPerf);
           selectiveOverlayCount++;
         } finally {
