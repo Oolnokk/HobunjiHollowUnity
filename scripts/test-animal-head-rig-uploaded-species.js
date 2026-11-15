@@ -48,7 +48,7 @@ const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
 assert.match(String(api.version), /uploads/, 'uploaded rig layer reports its data version');
 
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'nazgraku']; // Seven species retain the original Puktuk shoulder pose.
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six species retain the original Puktuk shoulder pose.
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
 assert.equal(puktuk.pivot.x, .484375, 'Puktuk retains its original head pivot');
 assert.equal(puktuk.pivot.y, .5);
@@ -76,6 +76,12 @@ assert.equal(voorg.shoulderRest.frameShiftX, .46);
 assert.equal(voorg.shoulderRest.splitRightUsesIdle, false);
 assert.equal(voorg.shoulderRest.afterPoints[6].y, 1.2729887486531961);
 assert.notStrictEqual(voorg.shoulderRest, uumkaoii.shoulderRest, 'uploaded shoulder profiles remain independent');
+const moot = renderer.ANIMAL_HEAD_RIGS.moot; // Own copy of the updated Voorg-Ass shoulder, not its head paint.
+assert.deepEqual(JSON.parse(JSON.stringify(moot.shoulderRest)), JSON.parse(JSON.stringify(voorg.shoulderRest)), 'Moot duplicates the entire latest Voorg-Ass shoulder settings');
+assert.notStrictEqual(moot.shoulderRest, voorg.shoulderRest, 'Moot shoulder is an independent record');
+assert.notStrictEqual(moot.shoulderRest.beforePoints, voorg.shoulderRest.beforePoints, 'Moot before points are independently editable');
+assert.notStrictEqual(moot.shoulderRest.afterPoints[6], voorg.shoulderRest.afterPoints[6], 'Moot after points are independently editable');
+assert.equal(moot.weightMap.width, 2, 'Moot does not inherit Voorg-Ass painted head geometry');
 assert.notStrictEqual(uumkaoii.shoulderRest, puktuk.shoulderRest, 'Uumkao’ii stays independent of Puktuk');
 const gar = renderer.ANIMAL_HEAD_RIGS['gar-wolf'];
 assert.equal(gar.pivot.x, .328125, 'Gar-wolf keeps its original head pivot');
@@ -89,4 +95,4 @@ assert.equal(grehlr.shoulderRest.frameShiftX, .54, 'Grehlr remains unchanged');
 const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
 assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
-console.log('uploaded animal head rigs: seven Puktuk shoulder copies plus Uumkao’ii/Voorg-Ass uploads passed');
+console.log('uploaded animal head rigs: Moot has an independent Voorg-Ass shoulder copy and its own head carrier');
