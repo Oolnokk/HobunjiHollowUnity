@@ -1702,7 +1702,7 @@ async function loadWeaponIdlePresets() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const config = await response.json();
-    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]; // The still-action templates sourced from the authored JSON.
+    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon'], ['torch_idle', 'torchHold']]; // Every still-action template, including the handheld torch, follows the shared authored JSON.
     if (config?.kind !== 'hobunji_weapon_idle_stances' || !pairs.every(([, key]) =>
       WEAPON_IDLE_POSE_FIELDS.every(field => typeof config.stances?.[key]?.[field] === 'number' &&
         Number.isFinite(config.stances[key][field])))) throw new Error('incomplete stance config');
@@ -1727,7 +1727,7 @@ async function loadWeaponIdlePresets() {
       }
     }
     weaponIdlePresetRetryCount = 0;
-    logDebug('Loaded Heavy/Light weapon stances from weapon-idle-stances.json');
+    logDebug('Loaded Heavy/Light/Torch idle stances from weapon-idle-stances.json');
   } catch (error) {
     weaponIdlePresetRetryCount += 1;
     const retryMs = Math.min(30000, 1000 * (2 ** Math.min(weaponIdlePresetRetryCount - 1, 5))); // Recover without reloading the editor.
@@ -1960,6 +1960,7 @@ const ACTION_DEFS = [
   { id: 'swing_forehand', group: 'Melee attacks', label: 'Forehand Swing', statsPath: ['combo','swingCombo',0], templateId: 'hatchet_swing', practical: true },
   { id: 'swing_backhand', group: 'Melee attacks', label: 'Backhand Swing', statsPath: ['combo','swingCombo',1], templateId: 'hatchet_swing', practical: true, mirror: true },
   { id: 'swing_cleave', group: 'Melee attacks', label: 'Cleave', statsPath: ['combo','swingCombo',2], templateId: 'hatchet_swing', practical: true, usePower: true },
+  { id: 'torch_swing', group: 'Melee attacks', label: 'Torch — Forehand Swing', templateId: 'torch_swing', practical: true }, // Uses the existing stationary torch pose template; game.js still owns torch contact and damage.
   { id: 'poke_short', group: 'Melee attacks', label: 'Short Thrust', statsPath: ['combo','pokeCombo',0], templateId: 'pickshovel_swing', practical: true },
   { id: 'poke_step', group: 'Melee attacks', label: 'Step Thrust', statsPath: ['combo','pokeCombo',1], templateId: 'pickshovel_swing', practical: true },
   { id: 'poke_long', group: 'Melee attacks', label: 'Long Lunge', statsPath: ['combo','pokeCombo',2], templateId: 'pickshovel_swing', practical: true, usePower: true },
@@ -1988,6 +1989,7 @@ const ACTION_DEFS = [
   { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
   { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
   { id: 'light_idle', group: 'Non-attack held actions', label: 'Light Weapon — Idle', templateId: 'light_weapon_idle', practical: false },
+  { id: 'torch_idle', group: 'Non-attack held actions', label: 'Torch — Upright Hold (Idle)', templateId: 'torch_idle', practical: false }, // True still action for adjusting the independent torchHold stance.
 ];
 
 let attackValuesConfig = null;
@@ -2437,6 +2439,16 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get transformControls() { return transformControls; },
   setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); refreshGizmoTarget(); },
   get toolKey() { return currentToolKey; },
+  previewTorchIdlePose(pose) {
+    if (currentActionId !== 'torch_idle' || !pose) return false;
+    for (const phase of ['neutral', 'windup', 'strike']) {
+      anim.poses[phase] = { ...anim.poses[phase], ...pose }; // Keep all three phases identical for this still-only torch action.
+      syncPosePanelFromState(phase);
+    }
+    refreshJsonView();
+    refreshPreviewDebug();
+    return true;
+  }, // The direct torch-height control only updates the selected idle preview, never an active swing.
   focusNeutral() {
     selectEditPhase('neutral');
   },
