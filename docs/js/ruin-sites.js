@@ -282,7 +282,7 @@
         .filter(o=>Number.isFinite(o.col)&&Number.isFinite(o.row));
       if(Number.isInteger(record.col)&&Number.isInteger(record.row))avoid.push({col:record.col,row:record.row}); // Relocation never repeats the previous entrance.
       const rng=rngFor(`authored-burrow|${theme}`); // Location seed changes with Tothal, dungeon seed stays fixed.
-      const layoutCandidates=zi?.grid?null:layoutBurrowCandidates(layout,rng); // No THREE scene construction just to show the Map marker.
+      const layoutCandidates=layout?.tiles?.length?layoutBurrowCandidates(layout,rng):null; // Prefer current Tothal terrain: an active zone may still hold its OLD scene until it is refreshed.
       const rawTileByPos=layoutCandidates?new Map(layout.tiles.map(tile=>[`${tile.c},${tile.r}`,tile])):null;
       let selected=null;
       for(const count of [48,160]) {
@@ -290,7 +290,7 @@
         selected=picks.find(({col,row})=>{
           const cols=zi?.cols??layout?.cols,rows=zi?.rows??layout?.rows;
           if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=cols-4||row>=rows-4)return false;
-          const tile=zi?.grid?.[row]?.[col]||rawTileByPos?.get(`${col},${row}`);
+          const tile=rawTileByPos?.get(`${col},${row}`)||zi?.grid?.[row]?.[col]; // Scene data may lag one shift behind the published map layout.
           if(!tile||tile.water||tile.incline||tile.skipFloor||tile.mapBoundary||tile.type===deps.TileType?.TRENCH
             ||tile.type===deps.TileType?.RAMP||tile.type===deps.TileType?.ROCK||tile.type===deps.TileType?.SHRUB
             ||tile.type===deps.TileType?.PATH||tile.type===deps.TileType?.RIVER
