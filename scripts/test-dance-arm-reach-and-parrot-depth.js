@@ -51,7 +51,7 @@ for (const beat of [0, 0.25, 0.5, 0.75, -0.5]) {
   const entry = { walker, left, right, session: null, handPoseState: {} }; // Mirrors the NPC sentinel's per-dancer record.
   const state = { handBaseRefreshes: 0, handBaseReuses: 0, handApplications: 0 }; // Tracks idempotent repeated draw behavior.
   const npcSource = read('npc-dance-presentation-runtime'); // Tests the final NPC presentation owner.
-  const helpers = ['arrivedForSocialPose', 'walkerDimensions', 'socketsFor', 'socketMatchesAppliedPose', 'baselineForSide', 'rememberAppliedPose', 'lateHandPose']; // Dependencies needed for a real late NPC hand update.
+  const helpers = ['arrivedForSocialPose', 'walkerDimensions', 'socketsFor', 'socketMatchesAppliedPose', 'baselineForSide', 'rememberAppliedPose', 'releaseHandPose', 'lateHandPose']; // Dependencies needed for a real late NPC hand update.
   const context = { state, global: { SocialRhythmClock: { dancerBeatAt: () => beat } }, nowMs: () => 0, entry, target }; // Keeps rhythm deterministic across repeated passes.
   vm.runInNewContext(helpers.map(name => functionSource(npcSource, name)).join('\n') + '\nlateHandPose(entry, target); lateHandPose(entry, target);', context);
   const expected = {}; // Reused below to compare both live adapters against the same envelope.

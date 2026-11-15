@@ -286,9 +286,13 @@
         sideState.x = damp(sideState.x, xTarget, 8.5, dt);
         sideState.y = damp(sideState.y, yTarget, 10.5, dt);
         sideState.z = damp(sideState.z, zTarget, 8.0, dt);
-        entry.thigh.position.x += sideState.x;
-        entry.thigh.position.y += sideState.y;
-        entry.thigh.position.z += sideState.z;
+        if (window.RigTransformLayers?.setPosition) {
+          window.RigTransformLayers.setPosition(entry.thigh, 'drunk-thigh-' + entry.key, sideState); // Named contribution survives seated/paired IK mode changes without being compounded.
+        } else {
+          entry.thigh.position.x += sideState.x;
+          entry.thigh.position.y += sideState.y;
+          entry.thigh.position.z += sideState.z;
+        }
       }
 
       const toeStrength = DRUNK_LEG_SWAY_SCALE * extreme * (0.35 + 0.65 * Math.sqrt(movement));
@@ -307,7 +311,14 @@
       publishOrApplyBodyTilt();
     }
 
+    function clearPreviousThighSway() {
+      const layers = window.RigTransformLayers; // The shared ledger owns this handle's optional thigh XYZ offsets across all solver modes.
+      if (!layers?.clear) return;
+      for (const side of ['left', 'right']) layers.clear(legPart(handle.group, side + '_thigh'), 'drunk-thigh-' + side);
+    }
+
     handle.update = function footingDrunkWalkUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
+      clearPreviousThighSway(); // Seated and external IK return early from the ordinary thigh reset: clear before invoking their solver.
       // Remove only the delta we added last frame. The normal procedural,
       // ragdoll, seat, and future foot-pose writers then resolve a clean base
       // quaternion before the current drunk twist is composed exactly once.
@@ -323,6 +334,7 @@
       syncToothAmbientBottle(false);
       clearPreviousFootTwist();
       clearPreviousBodyTilt();
+      clearPreviousThighSway(); // Dispose must not leave the last seated/drunk offset in an outgoing rig.
       state.pitch = state.roll = 0;
       if (isPlayer && activePlayerState?.handle === handle) activePlayerState = null;
       if (isPlayer) window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);

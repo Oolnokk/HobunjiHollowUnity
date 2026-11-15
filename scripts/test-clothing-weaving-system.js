@@ -162,6 +162,26 @@ assert.equal(sixUnitOutline[48 * outlineProbeSize + 8], 0, 'the doubled outline 
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'base'), true, 'base layer can independently swap cloth and pattern colors');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'trim'), false, 'trim layer keeps its own independent swap state');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ pattern: {} }, null), false, 'legacy single-pattern saves default to unswapped colors');
+const oppositeDyes = { crossDyePatterns: true, layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {}, swapPatternColors: true } } }; // Exercise both authored cloth roles and precedence over stored swaps.
+assert.equal(api.__test.weavingUsesCrossDyePatterns(oppositeDyes), true, 'new cross-dye mode lives on the garment, not the library motif');
+assert.equal(api.__test.weavingUsesCrossDyePatterns({ layers: oppositeDyes.layers }), false, 'old layered garments retain the independent pattern dye by default');
+assert.equal(api.__test.weavingSwapsPatternColorsForRole(oppositeDyes, 'base'), false, 'cross-dye mode overrides the old base-layer swap without erasing its saved flag');
+assert.equal(api.__test.weavingSwapsPatternColorsForRole(oppositeDyes, 'trim'), false, 'cross-dye mode overrides the old trim-layer swap while active');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'base', 'A', '#123456', '#fedcba', '#111111'), '#fedcba', 'base motifs use Dye B even if Dye C was formerly set');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'trim', 'B', '#123456', '#fedcba', '#111111'), '#123456', 'trim motifs use Dye A even if Dye C was formerly set');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'wrap', 'B', '#123456', '#fedcba', '#111111'), '#123456', 'authored B-palette parts use Dye A even if their role is not literally trim');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'trim', null, '#123456', '#fedcba', '#111111'), '#123456', 'trim role remains a fallback for legacy sprites without palette metadata');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, 'base', null, '#123456', null, '#111111'), '#123456', 'missing optional Dye B falls back safely without breaking older dye data');
+assert.equal(api.__test.patternInkHexForLayer({ layers: oppositeDyes.layers }, 'base', 'A', '#123456', '#fedcba', '#111111'), '#111111', 'unchecked mode keeps Dye C as the pattern color');
+assert.notEqual(api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: oppositeDyes }), api.__test.wovenIconVisualKey({ cosmeticId: 'fine_hood', weaving: { layers: oppositeDyes.layers } }), 'changing cross-dye mode invalidates previously cached inventory portraits');
+const customInkPattern = { motifDataUrl: 'data:image/png;base64,INK==', inkColorHex: '#ffff00' }; // Stand-in for an Advanced Loom overpass whose optional ink must yield to the new checkbox.
+const customInkStack = [customInkPattern, { ...customInkPattern, inkColorHex: '#ff00ff' }]; // Both pattern slots share the layer dye when crossed.
+const routedInkStack = api.__test.dyeRoutedPatterns(oppositeDyes, customInkStack);
+assert.equal(routedInkStack.length, 2, 'cross-dye routing keeps both advanced pattern layers');
+assert.equal(routedInkStack[0].inkColorHex, undefined, 'primary authored ink does not override Dye A/B when the box is checked');
+assert.equal(routedInkStack[1].inkColorHex, undefined, 'advanced overpass ink does not override Dye A/B when the box is checked');
+assert.equal(customInkStack[1].inkColorHex, '#ff00ff', 'routing never mutates the saved reusable overpass pattern');
+assert.equal(api.__test.dyeRoutedPatterns({}, customInkStack), customInkStack, 'unchecked mode continues to use authored ink overrides unchanged');
 assert.equal(api.__test.weavingHasOptionalTrim({ trim: { enabled: true, dyeSlot: 'C' } }), true, 'trim metadata is recognized without fabricating a reusable pattern');
 assert.equal(api.__test.weavingHasAnyDecoration({ trim: { enabled: true, dyeSlot: 'A' } }), true, 'trim-only garments enter the shared decorated render/save path');
 assert.equal(api.hasWovenPattern({ weaving: { trim: { enabled: true, dyeSlot: 'B' } } }), true, 'trim-only inventory icons are treated as fully composited so legacy tinting cannot wash them out');
@@ -187,6 +207,13 @@ assert.equal(api.__test.layersUseSecondaryDye(fineHoodLayers), true, 'Fine Hood 
 const anuriPonchoConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/anuri_poncho.json', 'utf8')); // Non-hood control protects positional back/front sandwich layers from hood-facing semantics.
 const anuriPonchoLayers = api.__test.resolveIconLayerUrls(anuriPonchoConfig, 'mao-ao', 'male'); // Falls back to the cosmetic's shared parts tree just like runtime resolution.
 assert.equal(api.__test.iconLayersForView(anuriPonchoLayers, 'front').length, anuriPonchoLayers.length, 'non-hood back/front layers remain composited together instead of becoming alternate facing views');
+const anuriTrimSprite = anuriPonchoLayers.find(layer => layer.role === 'layer1'); // This real garment's trim image uses B but the palette map calls its role 'overlay'.
+assert.equal(anuriTrimSprite?.paletteKey, 'B', 'loom preview recognizes sprite-level Dye B trim metadata even when the palette role map is incomplete');
+assert.equal(api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig).get(anuriTrimSprite.url), 'B', 'equipped portrait lookup recovers the same trim dye from that authored sprite URL');
+assert.strictEqual(api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig), api.__test.paletteKeysForCosmeticSprites(anuriPonchoConfig), 'repeated portrait renders reuse the loaded cosmetic palette lookup rather than rescanning all species sprites');
+assert.equal(api.__test.patternInkHexForLayer(oppositeDyes, anuriTrimSprite.role, anuriTrimSprite.paletteKey, '#123456', '#fedcba', '#111111'), '#123456', 'Anuri trim patterns use base dye A, not trim dye B');
+assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'base', image: { colors: ['B'] } }, { base: 'A' }), 'A', 'authoritative palette map overrides conflicting image hints');
+assert.equal(api.__test.spriteLayerPaletteKey({ layerRole: 'unknown', image: { colors: ['A', 'B'] } }, {}), null, 'ambiguous multicolor images do not guess a trim dye');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::basic_headband' }), true, 'basic non-leather headband is cloth-craftable');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::leather_headband' }), false, 'other hats are excluded');
 assert.equal(api.isCraftableCloth({ slot: 'torso', cosmeticId: 'bandolier1' }), false, 'bandolier is excluded');

@@ -216,7 +216,7 @@
       const mesh=new THREE.Mesh(geometry,mat);mesh.name=name;mesh.position.set(x,y,z);
       mesh.userData.devRuinFootprintIgnore=true;parent.add(mesh);return mesh;
     }
-    function setGate(stage,blocked,silent=false){
+    function setGatePhysical(stage,blocked,silent=false){
       const {grid,tiles,object,surfaceY,height}=stage.gate;
       const lower=grid.yToLevel(surfaceY+.01),upper=grid.yToLevel(surfaceY+height-.01); // Cover the actual plateau doorway, not the story's nominal Y=0 slice.
       if(lower<0||upper>=grid.levels)throw new Error('Native V50 gate exceeds its height-aware voxel grid');
@@ -227,6 +227,14 @@
       if(blocked){root.GameFeel?.cancelSink?.(object);object.visible=true;}
       else if(object.visible){if(!silent)root.RuinInteractionAudio?.mechanism?.(object,{size:4});if(silent||!root.GameFeel?.sinkAway?.(object))object.visible=false;} // Restored doors skip the cinematic sink and audio.
       else object.visible=false;
+    }
+    function setGate(stage,blocked,silent=false){
+      if(stage?.gate){
+        stage.gate.unlocked=!blocked; // Puzzle progression is permanent; physical open/close is reversible.
+        stage.gate.seenApproach=silent; // Restored saves start with normal auto-closing doors; a newly solved gate stays open through its reveal.
+        stage.gate.openPhysical=!blocked;
+      }
+      setGatePhysical(stage,blocked,silent);
     }
     function updateGoals(){
       ruin.shaftLayerRuntime?.setNativeGoalState?.(owner.total,owner.lit);
@@ -310,6 +318,25 @@
           group.add(particles);
         }
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
+        const RoomSystem=root.RuinRoomSystem,faces=root.RuinWallFaces; // Shared with authored wing rooms; no per-native-floor room manager or scene.
+        const nativeRooms=RoomSystem?.v50Rooms?.(meta,{
+          originX:place.originX,originZ:place.originZ,tileScale:options.tileScale||2,
+          y:floor.y+(Number(meta.floorSurfaceY)||0),prefix:'v50-f'+item.floor,theme:ruin.theme,
+        })||[];
+        ruin.shaftLayerRuntime?.registerRooms?.(nativeRooms); // Room IDs apply to AI/light isolation even on V50's original physical layout.
+        if(faces?.buildQuads&&faces?.toGeometry){
+          const roofHeight=floor.y+(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Every native room gets a ceiling at its own story's wall-top datum.
+          for(const room of nativeRooms){
+            const roofData=faces.buildQuads([{
+              axis:'y',side:-1,plane:0,a0:0,a1:room.w,b0:0,b1:room.d,
+            }],{origin:{x:room.x,y:roofHeight,z:room.z},size:{x:1,y:1,z:1},patch:{h:6,v:6}});
+            const roof=new THREE.Mesh(faces.toGeometry(THREE,roofData),material);
+            roof.name='ruin-native-room-ceiling-'+room.id;
+            roof.userData.ruinRoomId=room.id;
+            roof.userData.devRuinFootprintIgnore=true;
+            group.add(roof); // Downward-wound roof leaves the overhead third-person camera unobstructed.
+          }
+        }
         NativeMechanisms.namespace(nativeRoot,item.floor); // Prevent V50's per-generation mechanism IDs colliding across stacked stories.
         let minLocalY=0,maxLocalY=0;
         for(const localY of heights.values()){
@@ -445,6 +472,7 @@
               tick:()=>{
                 if(challenge.disposed||challenge.solved||owner.disposed||record.solved!==i
                   ||!record.nativeMechanisms.isSolved(authored.id))return;
+                record.nativeMechanisms.acceptSolution(authored.id); // Latched exit mechanism keeps opening after room progression advances.
                 challenge.solved=true;record.solved++;options.onProgressChange?.();root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
                 options.showToast?.('A mechanism grinds — the next chamber unlocks.',true);
                 options.onStateChange?.();
@@ -481,7 +509,8 @@
           const object=authoredGate?authoredGate.object:primitive(group,'v50-native-gate-'+item.floor+'-'+i,
             new THREE.BoxGeometry(door.axis==='x'?.8:span,gateHeight,door.axis==='x'?span:.8),
             gateMaterial,x,surfaceY+gateHeight/2,z);
-          challenge.gate={tiles,object,grid,surfaceY,height:gateHeight};
+          challenge.gate={tiles,object,grid,surfaceY,height:gateHeight,
+            proximityDoor:{x,y:surfaceY,z}}; // Reused by the shared room-door policy; never recomputed from a retracting slab every frame.
           setGate(challenge,true);
           record.challenges.push(challenge);
         }
@@ -538,10 +567,26 @@
       for(const {floor,root:group} of views)
         group.visible=plan.floors[floor].y<=y+.8;
       for(const fire of nativeFlames)fire.update?.(Math.max(0,Math.min(.05,dt))); // No second render clock.
+      const player=getPlayerPosition?.(); // Native V50 solved gates also close when traversed, without a map transition.
       for(const record of owner.records){
-        record.nativeMechanisms?.tick?.(dt); // V50 solution signals and moving-support transforms are applied before gates test completion.
-        record.challenges[record.solved]?.tick?.(dt);
-        for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
+        const currentStage=record.analysis.stages?.[record.solved];
+        const currentId=currentStage?'v50-f'+record.floor+':'+currentStage.id:null;
+        const active=!root.RuinRoomSystem?.isRoomActive||!currentId||root.RuinRoomSystem.isRoomActive(currentId);
+        if(active)record.nativeMechanisms?.tick?.(dt); // Current room owns its authored puzzle mechanisms.
+        else record.nativeMechanisms?.tickDormant?.(dt); // Complete accepted exit motion and transit doors, without waking inactive puzzles.
+        for(const challenge of record.challenges){
+          const gate=challenge.gate;
+          if(!gate?.unlocked||!player)continue;
+          const near=root.RuinRoomSystem?.doorNear?.(player,gate.proximityDoor,gate.openPhysical,y)
+            ??(Math.abs(y-gate.surfaceY)<1.5&&Math.hypot(player.x-gate.proximityDoor.x,player.z-gate.proximityDoor.z)<2.7);
+          if(near)gate.seenApproach=true;
+          const open=near||!gate.seenApproach; // Newly solved gate stays open for its first crossing and reveal pan.
+          if(open!==gate.openPhysical){
+            setGatePhysical(challenge,!open,true);gate.openPhysical=open;
+          }
+        }
+        if(active)record.challenges[record.solved]?.tick?.(dt);
+        if(active)for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
     };
     owner.serializeProgress=()=>Object.fromEntries(owner.records.map(record=>[
@@ -555,7 +600,10 @@
         if(!data||!Number.isInteger(data.solved)||data.solved<0||data.solved>record.challenges.length)continue;
         for(let i=0;i<data.solved;i++){
           const challenge=record.challenges[i];
-          if(challenge?.kind==='v50Authored')challenge.solved=true;
+          if(challenge?.kind==='v50Authored'){
+            challenge.solved=true;
+            record.nativeMechanisms?.acceptSolution?.(challenge.nativeMechanism.id,true); // Restored authored exit starts at its completed physical pose.
+          }
           setGate(challenge,false,true); // Restore the collision grid as well as the visible door.
         }
         record.solved=data.solved;

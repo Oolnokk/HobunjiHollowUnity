@@ -662,6 +662,20 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(wingBoxes,[],'no instanced one-unit boxes remain in any wing');
   assert(wingFloors.length>=2&&wingFloors.every(mesh=>mesh.geometry.attributes.position.array.length>0&&mesh.geometry.attributes.uv.array.every(v=>v>=0&&v<=1)),'each wing floor is merged stretch-to-fit faces');
   assert(wingWalls.length>=1,'wing walls are merged faces');
+  const caps=[],partitions=[],corridorCaps=[];
+  network.group.traverse(node=>{
+    if(node.name?.startsWith('ruin-room-ceiling-'))caps.push(node);
+    if(node.name?.startsWith('ruin-room-entry-partition-'))partitions.push(node);
+    if(node.name?.startsWith('ruin-wing-corridor-ceiling-'))corridorCaps.push(node);
+  });
+  const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.rooms));
+  assert.equal(caps.length,plannedRooms.length,'each wing room owns a real ceiling');
+  assert.equal(partitions.length,plannedRooms.length,'each room has an entrance partition with a door aperture');
+  assert.equal(corridorCaps.length,connected.plan.totalWings,'all connecting hallways have ceiling coverage too');
+  assert(caps.every(roof=>roof.geometry.attributes.normal.array.every((n,i)=>i%3!==1||n===-1)),
+    'roof faces point down into the rooms, not into the overhead camera');
+  assert(network.getState().roomEnclosures.audits.every(a=>a.ok&&a.ceilingTiles>0),
+    'structural audit validates the rendered room list and required floor support');
   for(const group of wingFeatureGroups)for(const mesh of group.children){ // One face only: two opposed faces collapse the pattern decorator's atlas to a sliver.
     const p=mesh.geometry.attributes.position.array,n=mesh.geometry.attributes.normal.array;
     const across=axis=>{let lo=1e9,hi=-1e9;for(let i=axis;i<p.length;i+=3){lo=Math.min(lo,p[i]);hi=Math.max(hi,p[i]);}return hi-lo;};
@@ -691,7 +705,14 @@ for(const side of ['north','east','south','west']){
   player={x:challenge.x,z:challenge.z,y:challenge.floorY};
   for(let i=0;i<17;i++)network.tick(.05);
   assert(challenge.solved,'standing on the stone plate for .8s opens its gate');
-  assert(!gateSolid(),'solving a plate removes the corresponding 3D gate obstruction');
+  assert(gateSolid(),'a solved chamber unlocks its auto door without leaving it permanently open');
+  const [gateC,gateR]=challenge.gate.tiles[1];
+  player={x:gateC+.5,z:gateR+.5,y:challenge.floorY}; // Close approach causes a solved door to retract without moving maps.
+  for(let i=0;i<18;i++)network.tick(.05); // The stone slab retracts before its four voxel layers stop blocking passage.
+  assert(!gateSolid(),'approaching the unlocked room door opens the corresponding 3D gate obstruction');
+  player={x:challenge.x,z:challenge.z,y:challenge.floorY};
+  for(let i=0;i<28;i++)network.tick(.05);
+  assert(gateSolid(),'the door physically closes once the player has moved safely away');
   const first=network.states[0],brazierControl=ruin.controls.find(c=>c.kind==='layerBrazier');
   brazierControl.onPress();
   assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');

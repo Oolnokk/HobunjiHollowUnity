@@ -126,8 +126,11 @@
 
     const next = {
       basePos: socket.position.clone(), // Ordinary hand-driver position used as the source for every dance reapplication until that driver changes it.
-      baseQuat: socket.quaternion.clone(), // Ordinary hand-driver rotation paired with basePos.
+      baseQuat: (previous?.appliedQuat && socket.quaternion?.dot
+        && Math.abs(Math.abs(socket.quaternion.dot(previous.appliedQuat)) - 1) < 1e-7
+        ? previous.baseQuat : socket.quaternion).clone(), // A position-only hand refresh must not rebase rotation on our own previous dance twist.
       appliedPos: null,
+      appliedQuat: null, // Track the last dance-authored rotation separately from the forearm driver's rotation.
     };
     entry.handPoseState[side] = next;
     state.handBaseRefreshes++;
@@ -137,6 +140,29 @@
   function rememberAppliedPose(socket, poseState) {
     if (!poseState.appliedPos) poseState.appliedPos = socket.position.clone();
     else poseState.appliedPos.copy(socket.position);
+    if (!poseState.appliedQuat) poseState.appliedQuat = socket.quaternion.clone();
+    else poseState.appliedQuat.copy(socket.quaternion);
+  }
+
+  function releaseHandPose(entry) {
+    // Release only the values this late render hook still owns. New hand-grip
+    // and forearm writers may have replaced either value independently.
+    for (const side of ['left', 'right']) {
+      const socket = entry[side], pose = entry.handPoseState?.[side];
+      if (!socket || !pose) continue;
+      let restored = false;
+      if (socketMatchesAppliedPose(socket, pose)) {
+        socket.position.copy(pose.basePos);
+        restored = true;
+      }
+      if (pose.appliedQuat && socket.quaternion?.dot
+          && Math.abs(Math.abs(socket.quaternion.dot(pose.appliedQuat)) - 1) < 1e-7) {
+        socket.quaternion.copy(pose.baseQuat);
+        restored = true;
+      }
+      if (restored) { socket.updateMatrix?.(); socket.updateMatrixWorld?.(true); }
+      entry.handPoseState[side] = null;
+    }
   }
 
   function lateHandPose(entry, target) {
@@ -149,6 +175,7 @@
 
     const session = `${presentation.stimulusId || 'dance'}:${presentation.style || 'loose-sway'}:${presentation.armStyle || 'overhead-punch'}`;
     if (entry.session !== session) {
+      releaseHandPose(entry); // A new dance style must not inherit a prior dance's hand offset.
       entry.session = session;
       entry.handPoseState = { left: null, right: null };
     }
@@ -210,6 +237,7 @@
   function disposeSentinel(entry) {
     const sentinel = entry?.sentinel;
     if (!sentinel) return;
+    releaseHandPose(entry); // Despawn/avatar replacement releases any pose still owned by dance.
     sentinel.parent?.remove?.(sentinel);
     sentinel.geometry?.dispose?.();
     sentinel.material?.dispose?.();
@@ -243,6 +271,7 @@
     sentinel.onBeforeRender = () => {
       const target = walker.currentScheduleTarget;
       if (!target?.socialDance && !target?.socialAncestorCeremony) {
+        releaseHandPose(entry); // Cancelled dances cannot leave an overhead punch stuck.
         entry.session = null;
         entry.handPoseState.left = null;
         entry.handPoseState.right = null;
