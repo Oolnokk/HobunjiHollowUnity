@@ -40,7 +40,7 @@
   <script src="js/building-door.js?v=20261114fullentry2"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
   <!-- Input-led local steering; keep next to the tile planner and ahead of game.js. -->
-  <script src="js/ground-obstacle-avoidance.js?v=20261115avoidanceAudit2"></script>
+  <script src="js/ground-obstacle-avoidance.js?v=20261115footContact1"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
@@ -526,7 +526,7 @@
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261115hbalconyexit"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261115footYield1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261114posobj1754"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
