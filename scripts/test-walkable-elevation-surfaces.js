@@ -145,6 +145,10 @@ assert.equal(registeredRailProviders.length, 1, 'rail collider reuses one shared
 assert.equal(api.railBlocksBox(10.1,20.5,0.12), true, 'a character cannot pass through modeled railing geometry');
 assert.equal(api.railBlocksBox(10.65,20.5,0.12), false, 'the clear interior of the same rail tile stays walkable');
 assert.equal(api.railBlocksBox(10.1,20.5,0.12,1.3), false, 'airborne feet above the rail are not blocked by its 2D footprint');
+assert.equal(api.railBlocksBox(10.1,20.5,0.12,0.1,1.25), true,
+  'standing collision checks the body height even when the feet are below the horizontal rails');
+assert.equal(api.railBlocksBox(10.1,20.5,0.12,1.3,1.25), false,
+  'even a full-height standing probe does not collide with a rail beneath the player');
 assert.equal(api.registerPieceRails(railGroup, { id: 'test-porch-rails' }, 10, 20), 1);
 assert.equal(registeredRailProviders.length, 1, 'replacing a piece does not duplicate the provider');
 
