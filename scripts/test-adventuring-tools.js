@@ -132,6 +132,25 @@ heldMode = 'item';
 assert.equal(torch.canThrow(), false);
 
 const game = read('docs/game.js');
+const damageStart = game.indexOf('      function damageCreature('); // Execute the real ingress checks before constructing the unrelated damage dependencies.
+const damageGateEnd = game.indexOf('        const damageSource =', damageStart);
+assert(damageStart >= 0 && damageGateEnd > damageStart);
+const damageGate = vm.createContext({
+  window: { RangedWeapons: { meleeReachCheck: (attacker, target) => ({
+    reachable: target.verticalGap <= 0.4, verticalGap: target.verticalGap, allowance: 0.4,
+  }) } },
+  performance: { now: () => 100 }, player, TILE: 64, heldMode: 'tool',
+  activeTool: 'adventuring', lastMeleeHeightBlock: null,
+});
+vm.runInContext(game.slice(damageStart, damageGateEnd) + 'return true; } return true; }', damageGate);
+const torchHit = { abilityId: 'torch_swing' };
+assert.equal(damageGate.damageCreature({ verticalGap: 0.8 }, 6, 0, 0, 0, torchHit), false,
+  'torch contact honors the same final vertical reach gate as a melee weapon');
+assert.equal(damageGate.lastMeleeHeightBlock.verticalGap, 0.8);
+assert.equal(damageGate.damageCreature({ verticalGap: 0.4 }, 6, 0, 0, 0, torchHit), true,
+  'a height gap at the weapon reach tolerance still allows a torch hit');
+assert.equal(damageGate.damageCreature({ verticalGap: 0.8 }, 6, 0, 0, 0, { ranged: true }), true,
+  'the held torch cannot impose melee reach on a projectile hit');
 const torchActionStart = game.indexOf("const torchVisual = activeTool === 'adventuring'"); // The central action dispatch must start the forehand before queuing the physical contact.
 const torchActionQueued = game.indexOf('pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };', torchActionStart);
 assert(torchActionStart >= 0 && torchActionQueued > torchActionStart, 'torch action queues contact after selecting its visual');

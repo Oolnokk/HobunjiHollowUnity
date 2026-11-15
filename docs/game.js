@@ -5651,7 +5651,8 @@
         // Bandit/tribe actor-vs-actor hits name their attacker; standing near
         // the player must not turn them into the player's own swing.
         const actorAttacker = dmgOpts?.attacker && dmgOpts.attacker !== player ? dmgOpts.attacker : null;
-        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        const activeMeleeStrike = activeTool === 'weapon' || (activeTool === 'adventuring' && dmgOpts?.abilityId === 'torch_swing'); // The stationary torch shares the final player melee reach gate.
+        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeMeleeStrike && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
