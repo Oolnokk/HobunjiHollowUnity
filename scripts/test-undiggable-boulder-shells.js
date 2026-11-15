@@ -117,8 +117,8 @@ if (THREE) {
   const fallbackChunk = new THREE.Group(); // Regression host for a chunk built after an incomplete dependency re-init.
   const [fallbackRock] = renderWindow.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(fallbackChunk, grid, 6, 5, 'map:test');
   assert(fallbackRock, 'missing outline callback must not prevent boulder mesh generation');
-  assert(fallbackRock.layers.isEnabled(1), 'fallback boulder must remain on the outline layer');
-  assert(fallbackRock.layers.isEnabled(3), 'fallback boulder must still register its terrain ID');
+  assert((fallbackRock.layers.mask & (1 << 1)) !== 0, 'fallback boulder must remain on the outline layer');
+  assert((fallbackRock.layers.mask & (1 << 3)) !== 0, 'fallback boulder must still register its terrain ID');
 }
 
 const TerrainPreview = require('../docs/js/terrain-preview.js'); // Actual generator-to-game tile fold, exercised without a WebGL renderer.
