@@ -22,7 +22,7 @@
   const FALLBACK_TELEPORT_SPEED = 24; // Scene units/second above which movement is treated as a snap, not a gait sample.
   let gameDeps = hands.gameDeps || null;
   let syncing = false;
-  const handSyncPerf = { nonSweepSearchesAvoided: 0, visualPlaneSearches: 0, sharedSocketUses: 0 }; // Read by on-demand mobile hand diagnostics; updated only during real hand synchronization.
+  const handSyncPerf = { nonSweepSearchesAvoided: 0, visualPlaneSearches: 0, sharedSocketUses: 0, freshHolderBakes: 0 }; // Read by on-demand mobile hand diagnostics; updated only during real hand synchronization.
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -692,6 +692,7 @@
         && toolHolder === gameDeps.toolHolder;
       if (playerOwnedHolder && global.WeaponToolStances?.lastHolderMatrixWorld) {
         toolHolder.updateMatrixWorld?.(true); // Re-bakes the transient stance using the CURRENT holder pose; both hands read the same snapshot.
+        handSyncPerf.freshHolderBakes++; // Existing mobile getPerfStats() exposes that the current-frame grip path ran.
       }
       const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
