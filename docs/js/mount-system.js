@@ -999,7 +999,8 @@
     m.facing = mountAngle;
     deps.player.x = m.x; deps.player.y = m.y;
     deps.player.vx = 0; deps.player.vy = 0;
-    updateMountLocomotion(m, dt, mountCurrentSpeedPxS > 5 && movedPx > 0, movedPx);
+    const airborne = !!m._mountHop || (m._banditLungeHopCurrent || 0) > 0; // Ground gait/footstep contacts must pause while the mount is visibly airborne.
+    updateMountLocomotion(m, dt, !airborne && mountCurrentSpeedPxS > 5 && movedPx > 0, airborne ? 0 : movedPx);
     updateWheatAndBreathing(m, dt, movedPx);
 
     // Rider facing remains independent of mount heading while look input is active.
