@@ -12,6 +12,7 @@ Currently migrated:
 - `qol.js`: toast, arrival, hotkeys, inventory search.
 - `guild.js`: guild progression, magic checkpoint, vault signal.
 - `render.js`: actor/mesh/grass culling and depth snapshot.
+- `farm-buildings.js`: barn construction, barn troughs and the modular house bootstrap. The house bootstrap and its natural-surface UV stack retain separate cache versions.
 - `festival.js`: ancestor figures, activities, festivals, offering rituals and festive UI.
 - `npc-schedule.js`: NPC agendas, social relations, seating, pathfinding, routes and Nohuknuk wilderness AI.
 - `combat-main.js`: weapon shape stats, combat runtime, attack abilities, input, progression and enchantments.

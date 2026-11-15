@@ -10,10 +10,11 @@ const root = path.resolve(__dirname, '..'); // Actual shipped scripts are the te
 const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Original parser positions.
 const loader = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-script-group-loader.js'), 'utf8');
 const baseline = { // Relative order anchors from the first migration, not an exhaustive registry.
-  farm: ['farm-editor', 'farm-plot-editor', 'farmwork-ui'], // The farm bootstrap owns these three modules in their original order.
+  farm: ['farm-editor', 'farm-plot-editor', 'farmwork-ui'], // The farm bootstrap owns these modules in their original parser order.
   qol: ['toast-notifications', 'location-arrival', 'qol-hotkeys', 'inventory-search'],
   guild: ['delvers-guild-story', 'town-magic-checkpoint', 'delvers-vault-signal'],
   render: ['npc-view-frustum-cull', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks', 'scissor-depth-snapshot', 'actor-render-occlusion'],
+  'farm-buildings': ['farm-buildings', 'farm-troughs', 'house-pieces'],
 };
 const groups = [...html.matchAll(/data-classic-group="([a-z][a-z0-9-]*)"/g)].map(m => m[1]); // Discovers future groups without changing this file.
 assert(groups.length > 0, 'the game page defines at least one classic group');
@@ -39,7 +40,7 @@ for (const group of groups) {
   const urls = [...manifestWrites[0].matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
   assert(urls.length > 0, group + ' must contain at least one script');
   assert.equal(new Set(urls.map(u => u.split('?')[0])).size, urls.length, group + ' must not duplicate module paths');
-  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+$/.test(url)), group + ' modules need versioned URLs');
+  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+(?:&amp;|$)/.test(url)), group + ' modules need versioned URLs');
   const names = urls.map(url => url.replace(/^js\/|\.js\?.*$/g, '')); // Module names used for baseline ordering checks.
   let previous = -1; // Tracks each baseline member's position as new modules are inserted.
   for (const anchor of baseline[group] || []) {
@@ -53,16 +54,18 @@ const urls = [...expanded.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m =
 for (const anchor of Object.values(baseline).flat()) {
   assert.equal(urls.filter(url => url.startsWith('js/' + anchor + '.js?v=')).length, 1, anchor + ' loads exactly once');
 }
-assert(!/<script src="js\/(?:farm-editor|farm-plot-editor|farmwork-ui)\.js\?v=/.test(html), 'individual farm script URLs must live in the farm manifest, not index.html');
-const farmEditorPos = expanded.indexOf('src="js/farm-editor.js?v='); // Effective parser position after expanding the new farm manifest.
-const farmPlotPos = expanded.indexOf('src="js/farm-plot-editor.js?v='); // Farm plot records must follow FarmEditor.
-const farmworkPos = expanded.indexOf('src="js/farmwork-ui.js?v='); // Farmwork registers after the shared plot loader.
-const worldSurfacePos = expanded.indexOf('src="js/terrain-geometry.js?v='); // Next startup group must not run before farm services.
-const gameplayPos = expanded.indexOf('src="game.js?v='); // Actual game boot calls FarmEditor.init after all three scripts.
-assert(farmEditorPos >= 0 && farmEditorPos < farmPlotPos && farmPlotPos < farmworkPos && farmworkPos < worldSurfacePos && worldSurfacePos < gameplayPos, 'farm scripts retain their parser order before world-surface and game.js');
+assert(!/<script src="js\/(?:farm-editor|farm-plot-editor|farmwork-ui)\.js\?v=/.test(html), 'farm module versions must be owned by their feature manifest');
+const farmEditorPos = expanded.indexOf('src="js/farm-editor.js?v='); // Farm editor must register before the plot and controls.
+const farmPlotPos = expanded.indexOf('src="js/farm-plot-editor.js?v='); // The shared plot data owner follows the editor.
+const farmworkPos = expanded.indexOf('src="js/farmwork-ui.js?v='); // Normal Farmwork UI follows its plot dependency.
+const worldSurfacePos = expanded.indexOf('src="js/terrain-geometry.js?v='); // The immediate next group is the terrain bootstrap.
+const gameplayPos = expanded.indexOf('src="game.js?v='); // Game boot depends on the loaded farm services.
+assert(farmEditorPos >= 0 && farmEditorPos < farmPlotPos && farmPlotPos < farmworkPos && farmworkPos < worldSurfacePos && worldSurfacePos < gameplayPos, 'farm group preserves original parser order before terrain and game.js');
 assert(expanded.indexOf('js/toast-notifications.js') < expanded.indexOf('js/delvers-guild-story.js'));
 assert(expanded.indexOf('js/delvers-vault-signal.js') < expanded.indexOf('js/bed-lie-pose.js'));
 assert(expanded.indexOf('js/actor-render-occlusion.js') < expanded.indexOf('src="game.js?v='));
+assert(expanded.indexOf('js/farm-animals.js?v=') < expanded.indexOf('js/farm-buildings.js?v='));
+assert(expanded.indexOf('js/house-pieces.js?v=') < expanded.indexOf('js/creature-death.js?v='));
 assert(!expanded.includes('data-classic-group='), 'the test view expands all registered groups');
 assert.throws(() => vm.runInNewContext(loader, {
   document: { readyState: 'complete', currentScript: { getAttribute: () => 'qol' }, write() {} },

@@ -1,5 +1,14 @@
 // Approved flail calibrations shared by gameplay, Attack Animation Editor and Tool Hub.
 // Connector scaleX is width (generated rope radius); scaleY is length. Both follow the handle size.
+const hachutuTorchFuel = Object.freeze({ material: 'marker', sourceHex: '#7F00FF', targetHex: '#E7DDC9' }); // Shared off-white fuel tint for the held torch and staff.
+const hachutuTorchFire = Object.freeze({
+  type: 'fire', sourceHex: hachutuTorchFuel.sourceHex,
+  rate: 22, // Full-strength motes per second at each tip.
+  colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
+  size: 0.02, life: 0.35, speed: 0.12, worldRise: true,
+  visualScale: 4, masteryFocus: 0.55, blendMode: 'normal', opacity: 0.65,
+}); // Shared per-tip profile from the Torch-Staff.
+
 window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
   schema: 'hobunji_weapon_sprite_assemblies.v1',
   weapons: {
@@ -39,31 +48,20 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
       },
     },
     torch: {
-      label:'Torch', sprite:'assets/toolsprites/torch.png',
+      label: 'Torch', sprite: 'assets/toolsprites/torch.png',
       base: {
-        material:'marker', sourceHex:'#7F00FF', targetHex:'#E7DDC9',
-        vfx: {type:'fire',sourceHex:'#7F00FF',litOnly:true,rate:44,
-          colors:['#FFE6A5','#FFAA3E','#FF5F20'],
-          size:.02,life:.35,speed:.12,worldRise:true,visualScale:4,
-          blendMode:'normal',opacity:.65}
+        ...hachutuTorchFuel, markerReferenceValue: 179, // The torch's painted purple midtone maps to the staff's off-white.
+        vfx: { ...hachutuTorchFire, litOnly: true, masteryClusters: 1, fixedMasteryRank: 5 },
       },
-      layers:[],
-    }, // Identical torch-staff wrapping treatment; flames run only while the torch is lit.
+      layers: [],
+    },
     hachutuTorchStaff: {
       label: 'Hachutu Torch-Staff',
       sprite: 'assets/toolsprites/hachutu_torch-staff.png',
       base: {
-        material: 'marker', sourceHex: '#7F00FF', targetHex: '#E7DDC9',
-        vfx: {
-          type: 'fire', sourceHex: '#7F00FF', masteryClusters: 2,
-          rate: 44, // Each of the two tips gets the Torch-Flail's full-strength 22 motes/s at mastery 5.
-          colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
-          size: 0.02, life: 0.35, speed: 0.12, worldRise: true, // Both staff tips emit world-up flames at all mastery ranks.
-          visualScale: 4, // Bigger than the 2.5x brazier, while keeping each tip anchored to the staff.
-          masteryFocus: 0.55, // Preserve the ignition footprint; don't stack every flame onto a single pixel.
-          blendMode: 'normal', opacity: 0.65, // Avoid additive whiteout when larger flame silhouettes overlap.
-        },
-      }, // One rigid PNG, two original-marker fire regions; deliberately no metal/verdigris surface.
+        ...hachutuTorchFuel,
+        vfx: { ...hachutuTorchFire, masteryClusters: 2, rate: hachutuTorchFire.rate * 2 },
+      }, // One rigid PNG with two independent fire regions.
       layers: [],
     },
     grappleFlail: {
