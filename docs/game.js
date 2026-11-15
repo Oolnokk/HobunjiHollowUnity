@@ -32612,6 +32612,7 @@
         // (never CharacterMetaSave) and sets the shoulder-surf horizontal offset; restore() undoes both.
         devTestLook: (() => {
           let saved = null;
+          let frontViewSaved = null;
           return {
             async apply(speciesId, gender, offsetH, pitchDeg = 0) {
               const profile = _playerData || window.__hobunjiPlayerProfile;
@@ -32623,6 +32624,22 @@
               s_shoulderSurfOffsetH_default = s_shoulderSurfOffsetH_combat = s_shoulderSurfOffsetH_current = offsetH;
               cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(pitchDeg); // Negative lowers the camera so the view runs level enough to put the waterfall behind the portrait.
               await refreshPlayerAvatar();
+              return true;
+            },
+            // Character view with the camera swung round to the player's front, so the front portrait and the
+            // weapon held against it are on screen (weapon-vs-front-plane layering checks).
+            frontView(on) {
+              if (on) {
+                if (frontViewSaved) return true;
+                frontViewSaved = { az: cameraAzimuthOffsetDeg };
+                setCharacterViewMode(true, 'debug');
+                cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + 180);
+                return true;
+              }
+              if (!frontViewSaved) return false;
+              cameraAzimuthOffsetDeg = frontViewSaved.az;
+              frontViewSaved = null;
+              setCharacterViewMode(false, 'debug');
               return true;
             },
             async restore() {

@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 
 const calls = { water: [], fall: [], override: null, spawned: [], despawned: [] };
-const scene = { userData: {}, children: [], add(o) { o.parent = this; this.children.push(o); } };
+const grassGroups = [{ visible: true, userData: { isWildernessGrassChunkGroup: true } }, { visible: true, userData: {} }];
+const scene = { userData: {}, children: [], add(o) { o.parent = this; this.children.push(o); }, traverse(fn) { grassGroups.forEach(fn); } };
 const THREE = {
   Vector3: class { constructor() { this.x = 0; this.y = 0; this.z = 0; } },
   Mesh: class { constructor(g, m) { this.geometry = g; this.material = m; this.position = { set() {} }; } },
@@ -50,6 +51,12 @@ mod.init({
 
 (async () => {
   const pond = mod.ensurePond();
+  assert.strictEqual(grassGroups[0].visible, false, 'arena grass starts hidden');
+  assert.strictEqual(grassGroups[1].visible, true, 'only grass chunk groups are hidden');
+  mod.setGrassHidden(false);
+  assert.strictEqual(grassGroups[0].visible, true, 'grass can be shown again');
+  mod.setGrassHidden(true);
+  assert.strictEqual(grassGroups[0].visible, false);
   assert.ok(pond && calls.water.length === 1, 'pond mesh built once');
   assert.strictEqual(calls.water[0].cells.length, 30, '10x3 pond cells');
   assert.ok(mod.ensurePond() === pond && calls.water.length === 1, 'ensurePond is idempotent');

@@ -27,6 +27,26 @@
     return deps?.zoneScenes?.get(ARENA_ID)?.scene || null;
   }
 
+  // Grass billboards hide characters at the low camera angles these tests need, so the arena starts with them
+  // hidden. Wilderness chunk streaming adds grass groups over time, so a slow scan re-applies the setting.
+  let grassHidden = true;
+  function applyGrassVisibility() {
+    const scene = arenaScene();
+    if (!scene?.traverse) return 0;
+    let changed = 0;
+    scene.traverse(object => {
+      if (object.userData?.isWildernessGrassChunkGroup === true && object.visible === grassHidden) { object.visible = !grassHidden; changed++; }
+    });
+    return changed;
+  }
+  function setGrassHidden(hidden) {
+    grassHidden = !!hidden;
+    applyGrassVisibility();
+    const button = document.getElementById('devArenaGrassBtn');
+    if (button) button.textContent = grassHidden ? '🌱 Show arena grass' : '🌱 Hide arena grass';
+    return grassHidden;
+  }
+
   function toast(message, ok = true) { deps?.showToast?.(message, ok); }
 
   // A rock ledge north of the pond with a waterfall curtain falling into it, so
@@ -81,6 +101,7 @@
     scene.userData = scene.userData || {};
     scene.userData.devArenaPond = mesh;
     scene.userData.devArenaWaterfall = buildWaterfall(scene);
+    applyGrassVisibility();
     deps.zoneWaterMeshes?.get(ARENA_ID)?.push(mesh);
     return mesh;
   }
@@ -184,9 +205,19 @@
   }
 
   async function restoreLook() {
+    if (frontViewOn) toggleFrontView(false);
     const ok = await deps.devTestLook?.restore();
     setStatus(ok ? 'Original species and camera offset restored.' : 'Nothing to restore.');
     return ok;
+  }
+
+  let frontViewOn = false;
+  function toggleFrontView(force) {
+    frontViewOn = force === undefined ? !frontViewOn : !!force;
+    const ok = deps.devTestLook?.frontView(frontViewOn);
+    if (!ok) frontViewOn = false;
+    setStatus(frontViewOn ? 'Character view: camera is in front of the player.' : 'Front view off.');
+    return frontViewOn;
   }
 
   function setStatus(message) {
@@ -204,6 +235,8 @@
       <div class="fed-label">Pond &amp; dummy NPC — stand by the water and drop a stationary NPC next to you to check draw order / x-ray</div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" id="devPondStandBtn">🏞️ Stand in front of pond</button>
+        <button type="button" class="fed-action-btn" id="devFrontViewBtn">🪞 Front view (character view)</button>
+        <button type="button" class="fed-action-btn" id="devArenaGrassBtn">🌱 Show arena grass</button>
         <button type="button" class="fed-action-btn" id="devPondBankBtn">🪵 Stand on the bank</button>
         <button type="button" class="fed-action-btn" id="devTestLookBtn">🧝 Female Kenkari + centred, tilted camera</button>
         <button type="button" class="fed-action-btn" id="devTestLookRestoreBtn">↩️ Restore look</button>
@@ -222,20 +255,24 @@
       if (spawnBtn) { spawnDummy(spawnBtn.dataset.dummy); return; }
       if (event.target.closest('#devPondStandBtn')) standAtPond();
       else if (event.target.closest('#devPondBankBtn')) standAtPond(0.3);
+      else if (event.target.closest('#devFrontViewBtn')) toggleFrontView();
+      else if (event.target.closest('#devArenaGrassBtn')) setGrassHidden(!grassHidden);
       else if (event.target.closest('#devTestLookBtn')) applyTestLook();
       else if (event.target.closest('#devTestLookRestoreBtn')) restoreLook();
       else if (event.target.closest('#devDummyClearBtn')) clearDummies();
     });
   }
 
+  let grassTimer = 0;
   function init(injected) {
     deps = injected;
     injectUi();
+    if (!grassTimer) { grassTimer = setInterval(() => { if (grassHidden && deps?.getCurrentArea?.() === ARENA_ID) applyGrassVisibility(); }, 1000); grassTimer.unref?.(); }
   }
 
   window.DevArenaPondDummy = {
     version: 1,
-    init, ensurePond, standAtPond, applyTestLook, restoreLook, spawnDummy, clearDummies,
+    init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, spawnDummy, clearDummies,
     snapshot: () => ({ pond: !!arenaScene()?.userData?.devArenaPond, waterfall: !!arenaScene()?.userData?.devArenaWaterfall, dummies: [...dummies.keys()] }),
   };
 })();
