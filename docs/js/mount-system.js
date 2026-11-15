@@ -204,7 +204,7 @@
       if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false || gameInputBlocked()) return;
       const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
       if (bindings.dodge && frame.pressed?.has?.(bindings.dodge)) pressMountedAction('dodge');
-      if ((bindings.jump || bindings.interact || 'Button0') && frame.pressed?.has?.(bindings.jump || bindings.interact || 'Button0')) pressMountedAction('jump'); // Default A/Interact is the controller's Jump/Climb input.
+      // The game's existing A/Interact handler prioritizes nearby interactions and invokes ClimbSystem.jumpAction when the world has nothing to interact with. A second controller Jump press here would trigger BOTH actions.
     }, 5);
   }
 
