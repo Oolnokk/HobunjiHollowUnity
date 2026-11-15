@@ -250,7 +250,7 @@
     const spent = WHEAT_MAX - wheatRemaining;
     if (spent > 0 && traveledPx > 0.2) {
       mountBreathClockS += dt;
-      const interval = Math.max(1.6, 9 - spent * 1.3); // More spent wheats = more frequent single exertion utterances.
+      const interval = Math.max(1.4, 5.2 - spent * 0.9); // More spent wheats = more frequent single exertion utterances.
       if (mountBreathClockS >= interval) {
         mountBreathClockS = 0;
         if (window.AnimalVocalizations?.mountExertion?.(m)) {
