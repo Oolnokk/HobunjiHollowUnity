@@ -69,6 +69,26 @@ new ledger. The preview now loads rig-transform-layers.js first, then the
 current drunken locomotion module; the editor module-import cache-bust chain
 was updated too. This prevents editor-only untracked thigh offsets.
 
+## Follow-up: pose handoff coverage
+
+- Tzatzul release now records the exact talon-authored quaternion and restores the
+  captured baseline only while that rotation is still present. A fall/impact or
+  locomotion writer that took over before release retains its own rotation.
+  The two-frame safety check corrects only a verified replay of the *old talon*
+  quaternion, never the ordinary new native pose; a new scene clears the check.
+  Its last-aligned quaternion is reused per animation frame without allocations.
+- NPC dance hand cleanup now occurs during the existing periodic walker poll
+  as well as before rendering. A canceled, replaced or departed social action
+  releases owned socket poses even when that NPC has no further render passes;
+  multi-pass dances continue to preserve hand poses while active.
+- Executable regression coverage includes release before visual alignment,
+  resumed combat on the first post-capture frame, stale talon reapplication,
+  fall takeover before release, offscreen dance cancel and walking away.
+
+These two handoffs are specifically addressed, **not proof that all animation
+paths use the ledger**. The player render composer, quaternion-based impact
+animation, and authored IK retain their existing independent owners.
+
 ## Recommended next migration/testing pass
 
 Prioritize NPC dance late-hand cancellation, Tzatzul talon release and grip
