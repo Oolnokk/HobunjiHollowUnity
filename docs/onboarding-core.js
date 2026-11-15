@@ -1021,6 +1021,10 @@
         <div style="padding:4px 4px 8px;line-height:1.45;color:var(--ob-muted,#aeb9bd);">${
           chars.length ? `${chars.length} farmer${chars.length === 1 ? '' : 's'} saved in this browser.` : `No farmers saved in this browser yet.`
         }</div>
+        <a href="tools/preview-map/index.html" class="ob-tab" id="slOpenPreviewMap"
+          style="display:inline-flex;align-items:center;margin:2px 4px 6px;text-decoration:none;min-height:44px;">
+          🧪 Explore tiny preview map
+        </a>
       </div>
       ${_localSaveFolderSectionHtml()}
       <div class="sl-section sl-local-save-section">
