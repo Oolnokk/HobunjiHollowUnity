@@ -116,7 +116,10 @@
       return null;
     }
 
-    if (!st.path || st.routeAge >= REPLAN_INTERVAL_S) {
+    // Failed searches are cached too: a solid fence must not trigger up to
+    // 21 bounded A* searches on every frame while the stick is held.
+    // A new blockage (previously 'clear') still plans immediately.
+    if (st.routeAge >= REPLAN_INTERVAL_S || (!st.path && st.status !== 'no-route')) {
       st.path = findRoute(st, profile, x, y, dx, dy, tile, canOccupy);
       st.index = 0;
       st.routeAge = 0;
