@@ -682,10 +682,46 @@
     };
   }
 
+  function inspectFarmRestore() {
+    if (!deps) return { ready: false }; // Save Diagnostics can be opened before the game has initialized the farm editor.
+    const worldId = (window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId || null; // The selected world determines the browser-mirror layout to compare against live objects.
+    const key = farmLayoutKey(); // Exact same storage key used by the actual farm loader.
+    const saved = parseStoredJson(key); // Read-only source of expected placement counts; never writes or repairs a save.
+    const processing = [...deps.processingFurnitureObjects]; // Current processor instances compared with saved squeezer/churn/barrel placements.
+    const decor = deps.interiorFurnitureObjects; // Current furniture instances compared by ID (or key and coordinates for older saves).
+    const barns = deps.getFarmBuildings(); // Live barn registry, including nursery and starter barn.
+    const houses = deps.getHousePieces(); // Live modular house registry.
+    const production = window.FarmProduction?.serialize?.(); // Loaded specialty production buildings; null means hydration is not finished.
+    const layout = saved?.version === 3 ? saved : null; // Avoid treating unsupported or absent layout records as empty farms.
+    const expected = {
+      processing: layout?.furniture?.length ?? 0,
+      decor: layout?.decor?.filter(item => !item.derivedLinkedWindow).length ?? 0,
+      barns: layout?.buildings?.length ?? 0,
+      houses: layout?.housePieces?.length ?? 0,
+      production: layout?.productionBuildings?.length ?? 0,
+    }; // Stored record counts shown next to runtime counts in mobile Save Diagnostics.
+    const live = {
+      processing: processing.length,
+      decor: decor.filter(item => !item.derivedLinkedWindow).length,
+      barns: barns.length,
+      houses: houses.length,
+      production: production?.length ?? null,
+    }; // Count actual spawned objects rather than assuming successful JSON import means successful hydration.
+    const missing = {
+      processing: (layout?.furniture || []).filter(item => !processing.some(actual => actual.furnitureKey === item.key && actual.col === item.col && actual.row === item.row)).map(item => item.key + '@' + item.col + ',' + item.row).slice(0, 8),
+      decor: (layout?.decor || []).filter(item => !item.derivedLinkedWindow && !decor.some(actual => item.id ? actual.id === item.id : actual.key === item.key && actual.col === item.col && actual.row === item.row && (actual.area || 'farm') === (item.area || 'farm'))).map(item => item.key + '@' + item.col + ',' + item.row).slice(0, 8),
+      barns: (layout?.buildings || []).filter(item => !barns.some(actual => actual.id === item.id)).map(item => String(item.id || item.tier)).slice(0, 8),
+      houses: (layout?.housePieces || []).filter(item => !houses.some(actual => actual.id === item.id)).map(item => String(item.id || item.pieceKey)).slice(0, 8),
+      production: (layout?.productionBuildings || []).filter(item => !production?.some(actual => actual.id === item.id)).map(item => String(item.id || item.key)).slice(0, 8),
+    }; // First eight absent objects in each group diagnose partial restores without requiring a browser console.
+    return { ready: window.__hobunjiGameStarted === true, worldId, key, storedLayoutVersion: saved?.version ?? null, expected, live, missing };
+  }
+
   window.FarmEditor = {
     init,
     toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
     farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
+    inspectFarmRestore, // Read-only selected-world layout versus live farm comparison for mobile Save Diagnostics.
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
     isRestoringLayout: () => _restoringLayoutObjects, // Prevent intermediate house-piece rebuilds from moving furniture during load.
   };
