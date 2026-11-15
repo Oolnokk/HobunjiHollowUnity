@@ -1989,7 +1989,7 @@
     // (runs before game.js) already synthesized window.__hobunjiPlayerProfile
     // for this session, so the save-select/character-creation overlay would
     // just be unnecessary UI sitting on top of the preview — skip it.
-    if (window.__hobunjiCutscenePreview) return;
+    if (window.__hobunjiCutscenePreview || window.__hobunjiPrecreatorArena) return;
 
     // Re-renders the save-select screen's Local Save Folder row whenever its
     // status changes (e.g. a folder picker resolving, or the periodic
