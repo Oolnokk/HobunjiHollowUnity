@@ -669,6 +669,19 @@
     shrub.scale.setScalar((Number.isFinite(nativeScale) && nativeScale > 0 ? nativeScale : 1) * 0.43);
     group.add(shrub); // Retain the generator's woody branches and alpha-tested leaves unchanged.
 
+    const leafMesh = shrub.children?.find(child => child?.userData?.noOutline && child.geometry); // The generator's final alpha-tested canopy mesh supplies actual bounds for fruit attachment.
+    const leafGeometry = leafMesh?.geometry; // Shared eight-variant geometry: its bounding box is cached, not recalculated per berry.
+    if (leafGeometry && !leafGeometry.boundingBox) leafGeometry.computeBoundingBox?.();
+    const bounds = leafGeometry?.boundingBox; // Used for each plant's vertical fruit range, after the shrub's cultivar-scale adjustment.
+    const canopyLocalRadius = Number(shrub.userData?.canopyLocal?.radius); // Cached canopy extent is calculated by FoliageGenerator for each bush shape.
+    const canopyRadius = Math.max(0.18, Math.min(0.52,
+      (Number.isFinite(canopyLocalRadius) && canopyLocalRadius > 0 ? canopyLocalRadius : 1) * shrub.scale.x)); // Cluster centers remain inside the existing leafy canopy.
+    const canopyMinY = Math.max(0.08, (Number.isFinite(bounds?.min?.y) ? bounds.min.y : 0.45) * shrub.scale.y);
+    const canopyMaxY = Math.max(canopyMinY + 0.16, (Number.isFinite(bounds?.max?.y) ? bounds.max.y : 1.35) * shrub.scale.y);
+    group.userData.hobunjiBerryCanopyRadius = canopyRadius; // Mobile inspector and instance-position tests can verify berries are actually attached to leaves.
+    group.userData.hobunjiBerryCanopyMinY = canopyMinY;
+    group.userData.hobunjiBerryCanopyMaxY = canopyMaxY;
+
     const stage = _growthBucket(growth); // Early plants are small leafy shrubs; berries develop only on older branches.
     const bunchCount = ready ? 10 : stage >= 3 ? 5 : stage === 2 ? 2 : 0; // Mature/harvestable bushes visibly carry many more berries.
     const fruitColor = varietyColor == null ? CROP_COLORS[family].ripe : varietyColor; // CropVarieties' exact RGB drives both native and crossbred fruit.
@@ -700,10 +713,10 @@
     let fruitIndex = 0; // Sequential instance index through the current bush's packed berry batch.
     for (let bunch = 0; bunch < bunchCount; bunch++) {
       const azimuth = (bunch + 0.2 + random() * 0.55) * Math.PI * 2 / bunchCount; // Spread fruit around the bush, not in a flat frontal row.
-      const radius = 0.34 + random() * 0.16; // Place clusters near leafy branch ends rather than the central trunk.
+      const radius = canopyRadius * (0.54 + random() * 0.28); // Fruit locations follow this actual bush variant's leaf spread instead of guessed fixed world offsets.
       const centerX = Math.cos(azimuth) * radius;
       const centerZ = Math.sin(azimuth) * radius;
-      const centerY = 0.33 + random() * 0.25; // Vary canopy elevation to produce a genuine rounded fruiting bush.
+      const centerY = canopyMinY + (canopyMaxY - canopyMinY) * (0.3 + random() * 0.48); // Distribute clusters through the leafy canopy, not above or below it.
       for (let berry = 0; berry < 3; berry++) {
         const offset = berry * Math.PI * 2 / 3 + random() * 0.24;
         const spread = 0.043 + random() * 0.018;
