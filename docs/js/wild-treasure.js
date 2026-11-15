@@ -256,7 +256,7 @@
         }
         return [{ icon: '🗝️', label: 'Open the buried chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
       },
-      onAction(action) {
+      onAction(action, lockAward = null) {
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
@@ -267,12 +267,12 @@
             && deps._zoneTreasureObjects.get(mapId)?.get(col + ',' + row) === chestObject
             && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH; // A replaced or weekly-rescattered chest cannot pay an obsolete victory.
           const started = window.ChestLockpicking?.open?.({
-            id: chestObject.id, title: 'Buried Chest', tier: 1, valid,
-            onSuccess: () => {
+            id: chestObject.id + ':week:' + weekIndex(), title: 'Buried Chest', tier: 1, valid,
+            onSuccess: lockAward => {
               let result; // The decorated action remains the only loot and rare-weapon reward authority.
               try {
                 completingPick = true; // Only this synchronous success reentry skips the minigame.
-                result = chestObject.onAction('obj_open_treasure_chest'); // Runs WeaponDiscoveryRewards after the normal treasure loot.
+                result = chestObject.onAction('obj_open_treasure_chest', lockAward); // Runs WeaponDiscoveryRewards after the normal treasure loot.
               } finally { completingPick = false; }
               if (result?.message) deps.showToast?.(result.message, result.ok === true);
               if (result?.ok) {
@@ -291,6 +291,19 @@
         }
         const { loot } = placement;
         const parts = [];
+        const extraCount = Math.min(4, Math.max(0, Math.floor(Number(lockAward?.bonusDrops) || 0))); // At most four extra single rewards from the same town-value-gated treasure picker.
+        for (let extra = 0; extra < extraCount; extra++) {
+          const metal = _rollTreasureMetalKeys()[0]; // Uses the existing buried-chest tier gate; does not reroll complete treasure bundles.
+          const itemKey = metal && deps.metalBarItemKey(metal);
+          if (itemKey) {
+            const before = Math.max(0, Number(deps.inventory[itemKey]) || 0);
+            deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, before + 1);
+            if (deps.inventory[itemKey] > before) parts.push('✨ ' + (deps.ITEM_DEFS[itemKey]?.label || deps.METAL_DEFS[metal]?.label + ' Bar'));
+          } else {
+            deps.inventory.gold = (deps.inventory.gold || 0) + 12; // Fallback if no metals are enabled in a custom loot/shop configuration.
+            parts.push('✨ 12g');
+          }
+        }
         for (const metalKey of loot.metalKeys) {
           const key = deps.metalBarItemKey(metalKey);
           deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);

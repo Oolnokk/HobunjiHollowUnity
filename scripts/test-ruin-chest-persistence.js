@@ -18,6 +18,7 @@ const THREE={Group:Node,Mesh,Sprite,SpriteMaterial:Material,CanvasTexture:Shape,
 const canvas={getContext:()=>({createRadialGradient:()=>({addColorStop(){}}),fillRect(){}})};
 const records=new Set(); // Minimal real-site persistence API, analogous to RuinSites' saved openedChests.
 let grantCount=0,savePossible=true;
+let lastGranted=null; // Inspects the exact earned bonus items passed into the normal inventory reward path.
 const scene=new Node();scene.isScene=true;
 const window={THREE,DynamicSurfaces:{addBeforeRenderClient(){}},DevSpawner:{init(){}},
   ProceduralFurniture:{makePartMaterial:()=>new Material({})},
@@ -32,11 +33,12 @@ const window={THREE,DynamicSurfaces:{addBeforeRenderClient(){}},DevSpawner:{init
 const context={window,THREE,document:{createElement:()=>canvas},performance:{now:()=>1000},console};
 vm.runInNewContext(fs.readFileSync('docs/js/dev-random-ruin-dungeon-chests.js','utf8'),context);
 const chests=window.DevRandomRuinDungeonChests;
-window.DevSpawner.init({grantLoot:()=>{grantCount++;return ['stone'];},showToast(){}});
+window.DevSpawner.init({grantLoot:gained=>{grantCount++;lastGranted=JSON.parse(JSON.stringify(gained));return ['stone'];},showToast(){}});
 const opts={id:'vault-chest-1',tier:3,parent:scene,x:4,z:3,theme:'hronal'};
 const first=chests.create(opts);
 assert.equal(first.opened,false);
-assert.equal(chests.open(first),true,'first lockpick grants loot');
+assert.equal(chests.open(first,{bonusDrops:2,bestStreak:2,bestScore:8}),true,'first lockpick grants loot');
+assert.equal(lastGranted.stone,6,'two earned bonus rolls add two more stone stacks without re-awarding boss relics');
 assert.equal(grantCount,1);
 assert(records.has(first.id),'loot claim is recorded in the persistent ruin site');
 const replacement=chests.create(opts);

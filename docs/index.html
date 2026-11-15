@@ -401,8 +401,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <!-- The same controller/touch ring lock guards wilderness, cave-cache and ruin rewards. -->
-  <script src="js/chest-lockpicking.js?v=20261104lockaudit2"></script>
+  <!-- The controller/touch chest lock and buried rewards are parser-loaded together by wilderness-treasure. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-treasure"></script> <!-- Buried treasure code and cache versions live in its own manifest. -->
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
