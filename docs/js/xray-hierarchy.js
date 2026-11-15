@@ -517,7 +517,7 @@
         const intended = Number(live.frontPortraitGearCandidates || 0);
         const masked = Number(live.frontPortraitMaskedGear || 0);
         const maskStatus = stencil < 8 ? 'Unavailable: ' + stencil + '-bit stencil target (needs 8)'
-          : masked + ' / ' + intended + ' eligible gear parts masked';
+          : masked + ' / ' + intended + ' gear parts assigned owner masks (not a pixel count)';
         const frontPriority = state['weapon.frontPlaneMask'] === 'on'
           ? 'Mask enabled: holder front art covers gear'
           : 'Mask disabled: gear may show through front art';
