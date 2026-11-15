@@ -235,7 +235,9 @@
       chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
       warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
       growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
-      exertion: mergeKind(PROFILE_DEFAULTS.exertion, common.exertion || common.growl, species.exertion || species.growl), // Older species configs seed exertion from aggression without coupling future edits.
+      exertion: mergeKind(PROFILE_DEFAULTS.exertion,
+        common.exertion || { allowedClips: common.growl?.allowedClips },
+        species.exertion || { allowedClips: species.growl?.allowedClips }), // Legacy profiles inherit the aggression recording pool, NOT its multi-utterance playback sequence.
       dialogueLines: Array.isArray(species.dialogueLines)
         ? [...species.dialogueLines]
         : Array.isArray(common.dialogueLines) ? [...common.dialogueLines] : [],
