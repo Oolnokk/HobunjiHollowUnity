@@ -86,44 +86,96 @@
     for (const entry of list.values()) if (entry.def.sit && entry.root?.parent && entry.record.col === (seat.col ?? seat.c) && entry.record.row === (seat.row ?? seat.r)) return entry;
     return null;
   }
-  // Resolve a scheduled bed from the exact placed surface, including building-map post offsets/scale.
-  // Station tiles may occupy either half of a double bed, so keep that tile's lateral position.
-  // Scheduled sleepers retain their authored station location for navigation while matching the mattress surface.
-  function lieTransform(area, target) {
-    if (!target || target.pose !== 'lie' || !window.THREE) return null;
-    const stationCol = Number(target.c ?? target.col), stationRow = Number(target.r ?? target.row); // Walkable navigation tile; may sit just beside the bed collider.
-    const col = Number(target.bedCol ?? stationCol), row = Number(target.bedRow ?? stationRow); // Explicit bed origin lets spouse sleep targets resolve even when navigation uses an adjacent tile.
-    if (![stationCol, stationRow, col, row].every(Number.isFinite)) return null;
-    const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Only actual sleeping furniture can supply a mattress, never a nearby wardrobe/table.
-    const id = target.furnitureId || target.bedId || null; // Map-editor furnished stations may have a specific bed reference.
-    let entry = id ? entries(area).get(String(id)) : null;
-    if (!entry || !bedKeys.has(entry.record.key)) {
-      entry = [...entries(area).values()].find(item => {
-        if (!item.root?.parent || !bedKeys.has(item.record.key)) return false;
-        const w = Number(item.def?.fw) || 1, d = Number(item.def?.fd) || 1;
-        return col >= item.record.col && row >= item.record.row && col < item.record.col + w && row < item.record.row + d;
-      });
-    }
-    if (!entry?.root?.parent) return null;
-    const data = window.AuthoredFurniture?.peek?.(entry.record.key);
-    const top = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
-    const mattressPart = window.AuthoredFurniture?.sleepSurfacePart?.(data);
-    const mattressMesh = mattressPart ? entry.root.userData?.meshById?.get(mattressPart.id) : null;
-    if (!Number.isFinite(top) || !mattressMesh?.isMesh) return null;
-    entry.root.updateWorldMatrix?.(true, false);
-    const location = new window.THREE.Vector3(0, top, 0);
-    entry.root.localToWorld(location);
-    const centerX = Number(entry.record.col) + (Number(entry.def?.fw) || 1) * 0.5;
-    const centerZ = Number(entry.record.row) + (Number(entry.def?.fd) || 1) * 0.5;
-    const stationOffsetX = target.bedCenter ? 0 : stationCol + 0.5 - centerX;
-    const stationOffsetZ = target.bedCenter ? 0 : stationRow + 0.5 - centerZ; // Spouses sleep on the mattress center; authored multi-station beds retain their individual side offsets.
-    const rot = (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180;
-    const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
-    const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);
-    const floor = deps?.surfaceY?.(areaId(area), x, z) || 0;
-    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key, mattressMesh };
+  const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Furniture eligible for scheduled and player sleep.
+  const lieClaims = new WeakMap(); // Sleeper -> claimed placement and side, retained across schedule refreshes.
+  const bedFull = Object.freeze({ occupied: true }); // Distinguishes a full bed from a floor sleep station.
+  function releaseLieSlot(owner) {
+    const claim = lieClaims.get(owner);
+    if (!claim) return;
+    if (claim.entry.lieSlots[claim.slot] === claim) claim.entry.lieSlots[claim.slot] = null;
+    lieClaims.delete(owner);
   }
 
+  function claimLieSlot(entry, owner, count, isPlayer) {
+    const now = seatNow(); // NPC claims expire if a walker stops updating.
+    const until = isPlayer ? Infinity : now + 5000; // The player keeps their slot during a paused lie-down animation.
+    const previous = lieClaims.get(owner);
+    if (previous?.entry === entry && entry.lieSlots[previous.slot] === previous) {
+      previous.until = until;
+      return previous.slot;
+    }
+    releaseLieSlot(owner);
+    const slots = entry.lieSlots ||= Array(count).fill(null);
+    const slot = slots.findIndex(claim => !claim || claim.until < now);
+    if (slot >= 0) {
+      const claim = { entry, slot, until }; // Only this placement's selected slot is reserved.
+      slots[slot] = claim;
+      lieClaims.set(owner, claim);
+    }
+    return slot;
+  }
+
+  function sleepPillowParts(data, mattress) {
+    const origin = mattress?.transform; // The authored basic/double beds use generic box names for their pillows.
+    if (!origin) return [];
+    return (data.parts || []).filter(part => {
+      const t = part.transform; // Find the raised fabric cushion on the head side of the mattress.
+      return part !== mattress && part.kind === 'box' && part.materialRole === 'fabric' && t
+        && t.y > origin.y && t.z < origin.z
+        && Math.abs(t.x - origin.x) + t.sx / 2 <= origin.sx / 2
+        && t.z - t.sz / 2 >= origin.z - origin.sz / 2 && t.z + t.sz / 2 <= origin.z;
+    });
+  }
+
+  function lieTransform(area, target, owner) {
+    if (target?.pose !== 'lie' || !window.THREE) {
+      if (owner) releaseLieSlot(owner);
+      return null;
+    }
+    const col = Number(target.bedCol ?? target.c ?? target.col), row = Number(target.bedRow ?? target.r ?? target.row); // Bed origin or legacy station tile.
+    const list = entries(area);
+    const id = target.furnitureId || target.bedId || (target.bedMesh?.userData?.furnitureRelationship?.id);
+    let entry = id ? list.get(String(id)) : null;
+    if (!entry?.root?.parent || !bedKeys.has(entry.record.key) || (target.bedMesh && entry.root !== target.bedMesh)) {
+      entry = null;
+      for (const item of list.values()) {
+        if (!item.root?.parent || !bedKeys.has(item.record.key)) continue;
+        const w = Number(item.def?.fw) || 1, d = Number(item.def?.fd) || 1; // Legacy authored lie stations point to a tile in the mattress footprint.
+        if (target.bedMesh ? item.root === target.bedMesh
+          : col >= item.record.col && row >= item.record.row && col < item.record.col + w && row < item.record.row + d) {
+          entry = item;
+          break;
+        }
+      }
+    }
+    if (!entry) {
+      if (owner) releaseLieSlot(owner);
+      return null;
+    }
+    const data = window.AuthoredFurniture?.peek?.(entry.record.key);
+    const mattressPart = window.AuthoredFurniture?.sleepSurfacePart?.(data);
+    const top = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
+    const meshById = entry.root.userData?.meshById;
+    const mattressMesh = mattressPart ? meshById?.get(mattressPart.id) : null;
+    if (!Number.isFinite(top) || !mattressMesh?.isMesh) return null;
+    const count = entry.record.key === 'doubleBed' ? 2 : 1;
+    const slot = owner ? claimLieSlot(entry, owner, count, !!target.bedMesh) : count === 2 && col > entry.record.col ? 1 : 0;
+    if (slot < 0) return bedFull;
+    const mattress = mattressPart.transform; // Sleep anchors are centered in each half of the actual mattress.
+    const offsetX = count === 2 ? (slot === 0 ? -1 : 1) * Number(mattress.sx) / 4 : 0;
+    const location = entry.lieScratch ||= new window.THREE.Vector3();
+    location.set((Number(mattress.x) || 0) + offsetX, top, Number(mattress.z) || 0);
+    entry.root.updateWorldMatrix?.(true, false);
+    entry.root.localToWorld(location);
+    const matrix = entry.root.matrixWorld?.elements; // Includes any parent transform and physical map rotation.
+    const facingRad = matrix ? Math.atan2(matrix[8], matrix[10]) : entry.root.rotation?.y || 0;
+    if (entry.lieMeshIndex !== meshById) {
+      entry.lieMeshIndex = meshById;
+      entry.lieCoverMeshes = sleepPillowParts(data, mattressPart)
+        .map(part => meshById.get(part.id)).filter(mesh => mesh?.isMesh); // Resolve authored pillow meshes once per furniture build.
+    }
+    return { x: location.x, z: location.z, y: location.y, facingRad, furnitureId: entry.id, slot, mattressMesh, pillowMeshes: entry.lieCoverMeshes };
+  }
 
   function tableForSeat(area, seat) {
     const entry = findSeat(area, seat); // Membership is explicit, never inferred from whichever table happens to be nearest.
@@ -596,5 +648,5 @@
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, focusedNpcDistance:focused?.walker ? npcDistance(focused.walker) : null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, releaseLieSlot, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
 })();

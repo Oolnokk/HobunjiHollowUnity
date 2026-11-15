@@ -536,8 +536,8 @@
     const spot = nearestWalkable('interior', bed.col, bed.row, 2);
     return spot ? {
       area: 'interior', c: spot.c, r: spot.r, rotY: bed.rotYDeg || 0, bed,
-      pose: 'lie', furnitureId: bed.id || '', bedCol: bed.col, bedRow: bed.row, bedCenter: true,
-    } : null; // Navigate to a walkable tile, then place the sleeping rig over the referenced bed's center.
+      pose: 'lie', furnitureId: bed.id || '', bedCol: bed.col, bedRow: bed.row,
+    } : null; // Navigate to a walkable tile, then lie in one free slot of the referenced bed.
   }
   function seatStations() {
     const find = window.NpcScheduling?.findStationsByRole;

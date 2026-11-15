@@ -126,7 +126,7 @@ assert(begin > 0 && end > begin);
 
 function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch = false, twoGroups = false } = {}) {
   const nearRock = mesh(3), farMesa = mesh(60, 5), straddling = mesh(11, 2), unbounded = { isMesh: true, visible: true, children: [], userData: {}, matrixWorld: at(90) };
-  const cover = mesh(4), hand = mesh(10, 0.5, handExtra);
+  const cover = mesh(4), hand = mesh(10, 0.5, { layers: { mask: 3 }, ...handExtra });
   const boxed = (depth, zMin, zMax) => mesh(depth, 100, { geometry: { boundingSphere: new Sphere(0, 100), boundingBox: { min: { x: -90, y: 0, z: zMin }, max: { x: 90, y: 0, z: zMax } } } });
   const wideFarFloor = boxed(60, -1, 1); // Its sphere reaches the camera; its real surface is 59+ units away.
   const wideNearFloor = boxed(60, -1, 55); // Same sphere, but the box extends to 5 units from the camera.
@@ -162,11 +162,15 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
     waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4,
     isReplayCullable: o => !!o.geometry?.boundingSphere, instancedReplaySphere: () => null, hasAuthoredInstanceBounds: () => false, hasAlternateReplayPose: () => false,
-    rawRender(_scene, _camera) { const nodes = []; _scene.traverseVisible(n => nodes.push(n)); draws.push({ mask: _camera.layers.mask, nodes, colorOff: colorLog[colorLog.length - 1] === false }); log.push('draw:' + _camera.layers.mask); },
+    rawRender(_scene, _camera) { const nodes = []; _scene.traverseVisible(n => { if ((n.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(n); }); draws.push({ mask: _camera.layers.mask, nodes, colorOff: colorLog[colorLog.length - 1] === false }); log.push('draw:' + _camera.layers.mask); },
   };
   for (const name of ['lastBaseElevationGroups', 'lastHeldFullscreenReason', 'fullscreenReplayCount', 'lastReplayScissorCoverage', 'nonGroundDepthReplayCount', 'selectiveOverlayCount', 'groundDepthRestoreCount', 'groupScissorCount']) scope[name] = 0;
   scope.scissorTargetWidth = 400; scope.scissorTargetHeight = 225;
+  const layerStart = heldSource.indexOf('  function suppressDraws(');
+  const layerEnd = heldSource.indexOf('  function getSurfaceOcclusionDepthOnly(', layerStart);
+  scope.MASK_ALL = 0xffffffff;
   vm.createContext(scope);
+  vm.runInContext(heldSource.slice(layerStart, layerEnd), scope);
   vm.runInContext(heldSource.slice(begin, end), scope);
   scope.replaySelectiveHeldOverlay(renderer, scene, camera, [hand], [], [nearRock], [], [], 1);
   for (const node of world) assert.equal(node.visible, true, 'every object is visible again after the replay');

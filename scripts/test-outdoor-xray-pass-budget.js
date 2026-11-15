@@ -86,7 +86,7 @@ assert.deepEqual(rectCalls, [{ x: 100, y: 20, z: 40, w: 60 }, rect],
 
 const held = block('  function replaySelectiveHeldOverlay(', '  function isShellOutlinePass(');
 const shell = block('  function replayShellOutlineXray(', '  function wrappedRender(');
-const hiddenAt = held.indexOf('overlayHidden = hideObjects('); // Runtime must first hide hands/tools/feet before collecting the ordinary depth blockers.
+const hiddenAt = held.indexOf('suppressedOverlay = suppressDraws('); // Runtime must first hide hands/tools/feet before collecting the ordinary depth blockers.
 const cutoutAt = held.indexOf('const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene)');
 const coverAt = held.indexOf('const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene)');
 const groupAt = held.indexOf('for (const group of groups)');

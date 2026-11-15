@@ -10,9 +10,10 @@ function section(start, end) {
   return source.slice(a,b);
 }
 const production = [
-  section('  function isFrontPortraitMesh(', '  function isLegacyHeldPlane('),
+  section('  function isFrontPortraitMesh(', '  const portraitSortPoint = '),
+  section('  function assignPortraitStencilOwners(', '  function isLegacyHeldPlane('),
   section('  function getSurfaceOcclusionDepthOnly(', '  function prepareNonGroundDepthMaterials('),
-  section('  function prepareFrontPortraitStencilMaterials(', '  function prepareHeldStencilMaterials('),
+  section('  function prepareFrontPortraitStencilMaterials(', '  function prepareSubmergedOverlayStencilMaterials('),
   section('  function prepareSubmergedOverlayStencilMaterials(', '  function prepareOverlayCoverTintMaterials('),
   section('  function isDescendantOf(', '  function worldYOf('),
   section('  function actorRootForXrayMesh(', '  function actorXrayScope('),
@@ -36,6 +37,7 @@ let failRender = false; // Simulates WebGL exceptions to verify state restoratio
 const runtime = new Function('THREE','window','rawRender',[
   'const PNG_OCCLUDER_LAYER=4, FRONT_PORTRAIT_STENCIL_MASK=0xFC, FRONT_PORTRAIT_MAX_OWNERS=63, FRONT_PORTRAIT_MASK=1<<24;',
   'const surfaceComposer=null;',
+  'const withPortraitDrawOrder=(_r,_order,draw)=>draw();',
   'const hasLayer=(o,layer)=>!!(o.layers.mask & (1<<layer));',
   'const forEachMaterial=(materials,fn)=>{for(const m of Array.isArray(materials)?materials:[materials])if(m)fn(m);};',
   'let frontPortraitMaskPassCount=0;',production,
@@ -167,8 +169,34 @@ assert.equal(overflow.ownerIds.size,63,'8-bit stencil owner allocation is capped
 assert.equal(overflow.portraits.length,63,'excess portraits are excluded instead of sharing wrong IDs');
 assert.equal(overflow.gearIds.size,63,'excess weapons safely retain original rendering without accidental NPC masking');
 
+// Execute the actual Three sort transaction with opposite plane-center depths.
+const portraitOrder = new Function('THREE', 'forEachMaterial', [
+  section('  const portraitSortPoint = ', '  function assignPortraitStencilOwners('),
+  'return { comparePortraitDraws, withPortraitDrawOrder };',
+].join('\n'))({ Vector3: class {} }, (material, fn) => fn(material));
+const fogged = { depthWrite: true }, nearby = { depthWrite: true };
+const npcDraw = { object: { material: fogged }, groupOrder: 0, renderOrder: 2, z: .1, id: 30 };
+const playerDraw = { object: { material: nearby }, groupOrder: 0, renderOrder: 4, z: .8, id: 31 };
+const npcRank = { owner: { id: 1 }, depth: .7 }, playerRank = { owner: { id: 2 }, depth: .3 };
+const ranks = new Map([[npcDraw.object, npcRank], [playerDraw.object, playerRank]]);
+let sort = null;
+const renderer = { setTransparentSort(fn) { sort = fn; } };
+portraitOrder.withPortraitDrawOrder(renderer, { ranks, nearest: playerRank }, () => {
+  assert.deepEqual([playerDraw,npcDraw].sort(sort), [npcDraw,playerDraw], 'actor depth wins over crossed NPC/player plane center depth and front/back draw order');
+  assert.equal(fogged.depthWrite, false, 'a farther NPC cannot punch through closer player pixels by writing real plane depth first');
+  assert.equal(nearby.depthWrite, true, 'the closest portrait still contributes normal depth');
+}, true);
+assert.equal(sort, null);
+assert.equal(fogged.depthWrite, true);
+assert.throws(() => portraitOrder.withPortraitDrawOrder(renderer, { ranks, nearest: npcRank }, () => {
+  assert.deepEqual([playerDraw,npcDraw].sort(sort), [npcDraw,playerDraw]);
+  throw Error('interrupted portrait draw');
+}, true), /interrupted portrait draw/);
+assert.equal(sort, null);
+assert.equal(nearby.depthWrite, true);
+
 assert.ok(source.includes('portraitGearIds = portraitMask.gearIds'),'overlay receives actual per-owner gear lookup');
-assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds)'),'mask is invoked from real render path');
+assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)'),'mask is invoked from real render path');
 assert.ok(source.includes('frontPortraitRegistry.add(object)'),'front portraits are registered automatically');
 assert.match(fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),/holder\.userData\.hobunjiHeldPortraitOwner = avatarRef\.group/,'all hostile melee/ranged/flask holders receive their owner tag');
 assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/hobunjiHeldPortraitOwner: state\.walker\.root/,'watchman scene-sibling holder receives its owner tag');

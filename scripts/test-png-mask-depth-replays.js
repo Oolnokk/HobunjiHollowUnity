@@ -40,7 +40,7 @@ const original = () => ({ map: { isTexture: true }, transparent: true, alphaTest
 {
   const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
   const start = source.indexOf('  function getSurfaceOcclusionDepthOnly(');
-  const end = source.indexOf('  function prepareHeldStencilMaterials(', start);
+  const end = source.indexOf('  function prepareSubmergedOverlayStencilMaterials(', start);
   assert(start > 0 && end > start, 'the held compositor retains its material replay utilities');
   const window = { HobunjiSpritePngSurface: { maskAlphaTest: () => CUTOFF } };
   const PNG_OCCLUDER_LAYER = 4; // Mirrors the real renderer's layer constant.

@@ -44,12 +44,14 @@ assert.equal(groundPass.mask, 1 << 28, 'only the ground replay layer is drawn');
 assert.ok(groundPass.hiddenUnsupported, 'a mesh whose material has no compiled filter is kept out of the punch');
 assert.ok(groundPass.hiddenFarGround && farGround.visible, 'ground that cannot touch the patch is skipped for the punch, then shown again');
 const g = groundPass.materials.find(m => m.userData === grass.userData);
-assert.deepEqual([g.colorWrite, g.depthWrite, g.depthFunc, g.stencilWrite, g.stencilFunc, g.stencilZPass, g.stencilWriteMask, g.enabled], [false, false, 'LEQUAL_D', true, 'ALWAYS_S', 'REPLACE', 0x80, 2],
-  'ground marks bit 0x80 only where its nearby floor passes LEQUAL against the existing depth, filter inverted (2)');
+assert.deepEqual([g.colorWrite, g.depthWrite, g.depthFunc, g.stencilWrite, g.stencilFunc, g.stencilZPass, g.stencilWriteMask, g.enabled], [false, false, 'LEQUAL_D', true, 'ALWAYS_S', 'REPLACE', 0x02, 2],
+  'ground marks bit 0x02 only where its nearby floor passes LEQUAL against the existing depth, filter inverted (2)');
 assert.equal(groundPass.materials.find(m => m.userData === custom.userData).stencilWrite, false, 'unsupported materials are not switched to stencil writes');
 const quad = quadPass.scene.children[0].material;
-assert.deepEqual([quad.depthFunc, quad.depthWrite, quad.colorWrite, quad.stencilFunc, quad.stencilRef, quad.stencilFuncMask, quad.stencilZPass, quad.stencilWriteMask], ['ALWAYS_D', true, false, 'EQUAL_S', 0x80, 0x80, 'ZERO', 0x80],
+assert.deepEqual([quad.depthFunc, quad.depthWrite, quad.colorWrite, quad.stencilFunc, quad.stencilRef, quad.stencilFuncMask, quad.stencilZPass, quad.stencilWriteMask], ['ALWAYS_D', true, false, 'EQUAL_S', 0x02, 0x02, 'ZERO', 0x02],
   'the quad writes far depth exactly on marked pixels and clears the mark');
+const portraitBits = Number(source.match(/const FRONT_PORTRAIT_STENCIL_MASK = (0x\w+)/)[1]);
+assert.equal(quad.stencilWriteMask & (portraitBits | 1), 0, 'the floor reset cannot erase portrait ownership or water tint');
 assert.match(quad.vertexShader, /gl_Position = vec4\(position\.xy, 1\.0, 1\.0\)/, 'quad depth is the far plane');
 assert.deepEqual([grass.colorWrite, grass.depthWrite, grass.stencilWrite, grass.stencilWriteMask, grass.userData.hobunjiXrayElevationShader.uniforms.enabled.value], [true, true, false, 0xff, 1],
   'material state is restored and the ordinary filter (1) is left on for the local refill');

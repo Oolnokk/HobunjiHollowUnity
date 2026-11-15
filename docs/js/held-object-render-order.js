@@ -50,6 +50,7 @@
   const FRONT_PORTRAIT_STENCIL_MASK = 0xFC; // Bits 2..7 identify up to 63 distinct owners; bit 0 stays reserved for water tint.
   const FRONT_PORTRAIT_MAX_OWNERS = 63; // Stencil owner IDs share one draw without hiding weapons in front of unrelated NPCs.
   const FRONT_PORTRAIT_MASK = (1 << FRONT_PORTRAIT_MASK_LAYER) >>> 0; // The camera layer for the one front-portrait stamp pass.
+  const PORTRAIT_WATER_MASK = 1 << 25; // Temporary colorless silhouette for eligible front and rear actor art.
   const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
   const WATER_REPLAY_LAYER = 27;
   const GROUND_REPLAY_LAYER = 28;
@@ -122,6 +123,7 @@
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Procedural foot meshes, drawn in the selective x-ray overlay with real water/snow/grass depth.
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
+  const waterPortraitRegistry = new SceneRegistry(); // Front and rear body PNGs that can receive translucent cover.
   const frontPortraitRegistry = new SceneRegistry(); // Visible player and NPC front portrait cutouts that cover their late-rendered weapons.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
@@ -140,6 +142,9 @@
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
+  let lastRankedPortraitActors = 0; // Player and nearby NPCs in the same camera-ordered portrait draw.
+  let lastWaterPortraits = 0; // Visible portrait planes eligible for water tint in the latest base world draw.
+  let lastDryGearWaterSkips = 0; // Gear bounds that rejected nearby water during the latest world draw.
   let lastWaterClipScopes = 0; // Active owner tiles applied to merged-water fragment clipping in the latest replay.
   let lastWaterClipOverflow = 0; // Number of owners when a crowded frame exceeds the conservative shader capacity.
   let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
@@ -414,6 +419,83 @@
     return rigOwner;
   }
 
+  const portraitSortPoint = new THREE.Vector3(); // Scratch projection of the standing actor, independent of its intersecting sprite angle.
+  const PORTRAIT_SORT_DISTANCE = 2; // Tile radius for close player/NPC silhouettes that can cross each other.
+  const PORTRAIT_SORT_ORDER = 2; // Common actor-body order; ordinary transparent items keep the existing Three.js sort keys.
+
+  function nearbyPortraitOrder(scene, camera, portraits) {
+    const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    if (!player || !camera.projectionMatrix || !camera.matrixWorldInverse) return null;
+    player.updateWorldMatrix(true, false);
+    camera.updateMatrixWorld();
+    const playerWorld = player.matrixWorld.elements;
+    const actors = new Map(); // A front/rear pair and any split materials share the same camera-depth key.
+    const ranks = new Map();
+    for (const portrait of portraits) {
+      if (portrait.renderOrder >= 900) continue; // A lying portrait keeps its bed overlay order.
+      let owner = portraitStencilOwner(portrait, scene);
+      for (let node = portrait; node && node !== scene; node = node.parent) {
+        if (node.userData?.hobunjiShoulderPetLayering) { owner = player; break; }
+      }
+      if (!owner || (owner !== player && !String(owner.name).startsWith('npc_walker_'))) continue;
+      if (!actors.has(owner)) {
+        owner.updateWorldMatrix(true, false);
+        const world = owner.matrixWorld.elements;
+        const close = Math.hypot(world[12] - playerWorld[12], world[13] - playerWorld[13], world[14] - playerWorld[14]) <= PORTRAIT_SORT_DISTANCE;
+        const depth = close ? portraitSortPoint.set(world[12], world[13], world[14])
+          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z : NaN;
+        actors.set(owner, Number.isFinite(depth) ? { owner, depth } : null);
+      }
+      const rank = actors.get(owner);
+      if (rank) ranks.set(portrait, rank);
+    }
+    if (!actors.get(player)) return null;
+    let nearest = null;
+    let count = 0;
+    for (const rank of actors.values()) {
+      if (!rank) continue;
+      count++;
+      if (!nearest || rank.depth < nearest.depth
+          || (rank.depth === nearest.depth && rank.owner.id > nearest.owner.id)) nearest = rank;
+    }
+    return count > 1 ? { ranks, nearest, count } : null;
+  }
+
+  function comparePortraitDraws(a, b, ranks) {
+    const actorA = ranks.get(a.object), actorB = ranks.get(b.object);
+    // Three r128 compares group, render order, projected Z, then object ID.
+    // A ranked portrait substitutes the actor's depth and keeps the original
+    // front/back/shoulder layer order within that one actor.
+    return (actorA ? 0 : a.groupOrder) - (actorB ? 0 : b.groupOrder)
+      || (actorA ? PORTRAIT_SORT_ORDER : a.renderOrder) - (actorB ? PORTRAIT_SORT_ORDER : b.renderOrder)
+      || (actorB?.depth ?? b.z) - (actorA?.depth ?? a.z)
+      || (actorA?.owner.id ?? a.id) - (actorB?.owner.id ?? b.id)
+      || a.renderOrder - b.renderOrder
+      || a.id - b.id;
+  }
+
+  function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
+    if (!order || !renderer.setTransparentSort) return draw();
+    const changed = new Set(); // Only the farther portraits defer depth writes during the ordinary color draw.
+    if (protectNearPortrait) {
+      for (const [mesh, rank] of order.ranks) {
+        if (rank === order.nearest) continue;
+        forEachMaterial(mesh.material, material => {
+          if (!material.depthWrite) return;
+          material.depthWrite = false;
+          changed.add(material);
+        });
+      }
+    }
+    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks));
+    try {
+      return draw();
+    } finally {
+      renderer.setTransparentSort(null);
+      for (const material of changed) material.depthWrite = true;
+    }
+  }
+
   function assignPortraitStencilOwners(gearMeshes, portraits, scene) {
     const gearOwners = new Set(); // Only owners with a visible held weapon need a front-portrait stencil entry.
     for (const mesh of gearMeshes) {
@@ -594,6 +676,9 @@
     if (isFrontPortraitMesh(object)) {
       if (!hasLayer(object, FRONT_PORTRAIT_MASK_LAYER)) object.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
       frontPortraitRegistry.add(object);
+      waterPortraitRegistry.add(object);
+    } else if (object.name === 'npc_avatar_back_plane' || object.name === 'player_avatar_back_plane') {
+      waterPortraitRegistry.add(object);
     }
     const surfaceKind = surfaceKindForObject(object); // Computed once for the three surface predicates below.
     if (isProtectedCover(object, surfaceKind)) protectedCoverRegistry.add(object);
@@ -811,6 +896,20 @@
     for (const [object, visible] of states) object.visible = visible;
   }
 
+  function suppressDraws(objects, excludedMask = MASK_ALL) {
+    const layers = new Map(); // Layer exclusion hides a draw without skipping its mesh children.
+    for (const object of objects) {
+      if (!object?.layers || layers.has(object)) continue;
+      layers.set(object, object.layers.mask);
+      object.layers.mask &= ~excludedMask;
+    }
+    return layers;
+  }
+
+  function restoreDraws(layers) {
+    for (const [object, mask] of layers) object.layers.mask = mask;
+  }
+
   function getSurfaceOcclusionDepthOnly(material) {
     const composerValue = surfaceComposer?.getDepthOnly?.(material);
     if (composerValue !== undefined) return composerValue;
@@ -960,13 +1059,13 @@
     return states;
   }
 
-  function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds) {
+  function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds, portraitOrder) {
     if (!portraits.length) return false;
     const originalMask = camera.layers.mask; // Restores the caller's world mask even on an interrupted render.
     const states = prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene);
     try {
       camera.layers.mask = FRONT_PORTRAIT_MASK;
-      rawRender.call(renderer, scene, camera); // One draw for all visible front portraits, not one per weapon/elevation group.
+      withPortraitDrawOrder(renderer, portraitOrder, () => rawRender.call(renderer, scene, camera)); // One stamp for all owners.
       frontPortraitMaskPassCount++;
       return true;
     } finally {
@@ -995,29 +1094,7 @@
     return states;
   }
 
-  function prepareHeldStencilMaterials(held) {
-    const states = new Map();
-    for (const object of held) {
-      forEachMaterial(object.material, (material) => {
-        saveMaterialState(states, material);
-        // Legacy bit-1 held-only stencil helper (not used by the current
-        // unified hands/weapons/feet tint pass). Do not revive the older
-        // feet-first/tint/held-last order: it paints weapons over their
-        // underwater tint. See the rendering architecture contract.
-        material.stencilWrite = true;
-        material.stencilWriteMask = 0x02;
-        material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilRef = 2;
-        material.stencilFuncMask = 0xFF;
-        material.stencilFail = THREE.KeepStencilOp;
-        material.stencilZFail = THREE.KeepStencilOp;
-        material.stencilZPass = THREE.ReplaceStencilOp;
-      });
-    }
-    return states;
-  }
-
-  function prepareSubmergedOverlayStencilMaterials(overlayMeshes, stencilRef = 1, gearIds = null) {
+  function prepareSubmergedOverlayStencilMaterials(overlayMeshes, stencilRef = 1, gearIds = null, depthOnly = false) {
     const states = new Map();
     for (const object of overlayMeshes) {
       forEachMaterial(object.material, material => {
@@ -1030,10 +1107,11 @@
         material.depthTest = true;
         material.depthWrite = true;
         material.stencilWrite = true;
-        material.stencilWriteMask = 0x01;
+        material.stencilWriteMask = depthOnly ? 0 : 0x01;
         const ownerId = gearIds?.get(object) || 0; // Only held weapon art with a registered matching portrait is shielded.
         material.stencilFunc = ownerId ? THREE.NotEqualStencilFunc : THREE.AlwaysStencilFunc;
-        material.stencilRef = (ownerId << 2) | stencilRef; // Writes wet/dry bit 0 while comparing only the packed portrait owner ID.
+        const meshTint = typeof stencilRef === 'number' ? stencilRef : (stencilRef.get(object) || 0); // Distinct flail parts share one depth draw where their materials allow it.
+        material.stencilRef = (ownerId << 2) | meshTint; // Writes wet/dry bit 0 while comparing only the packed portrait owner ID.
         material.stencilFuncMask = ownerId ? FRONT_PORTRAIT_STENCIL_MASK : 0xFF;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
@@ -1041,6 +1119,25 @@
       });
     }
     return states;
+  }
+
+  function stampSubmergedPortraits(renderer, scene, camera, portraits) {
+    const oldMask = camera.layers.mask; // Keep other transparent art and non-submerged portraits out of the stamp.
+    const layers = new Map(); // Temporary, so the private layer never participates in unrelated world passes.
+    const states = prepareSubmergedOverlayStencilMaterials(portraits);
+    try {
+      for (const portrait of portraits) {
+        layers.set(portrait, portrait.layers.mask);
+        portrait.layers.mask |= PORTRAIT_WATER_MASK;
+      }
+      for (const material of states.keys()) material.colorWrite = false;
+      camera.layers.mask = PORTRAIT_WATER_MASK;
+      rawRender.call(renderer, scene, camera);
+    } finally {
+      camera.layers.mask = oldMask;
+      restoreDraws(layers);
+      restoreMaterialStates(states);
+    }
   }
 
   function prepareOverlayCoverTintMaterials(covers) {
@@ -1834,22 +1931,76 @@
     return { groups, ordinary, scopes: [...actors.values(), ...fallbackTintScopes], hasUnknownOwner: unboundedTintOwners > 0, tintScopeByMesh };
   }
 
+  const gearWaterBounds = new THREE.Box3(); // Reused for the actual haft, rope and head, including either hand's pose.
+  function meshOverlapsWaterVolume(mesh, cover, unknown = true) {
+    if (!mesh.matrixWorld?.elements) return unknown;
+    const geometry = mesh.geometry;
+    if (!geometry?.boundingBox) geometry?.computeBoundingBox?.();
+    if (!geometry?.boundingBox) return unknown;
+    gearWaterBounds.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+    const { min, max } = gearWaterBounds;
+    if (![min.x, min.y, min.z, max.x, max.z].every(Number.isFinite)) return unknown;
+    const footprint = cover.userData?.hobunjiWaterTileFootprint;
+    if (!cover.geometry?.boundingBox) cover.geometry?.computeBoundingBox?.();
+    if (cover.geometry?.boundingBox && cover.matrixWorld?.elements) {
+      waterTintWorldBounds.copy(cover.geometry.boundingBox).applyMatrix4(cover.matrixWorld);
+      const water = waterTintWorldBounds; // Compare in world space so raised water and raised weapons are handled consistently.
+      if (min.y > water.max.y || min.x > water.max.x || max.x < water.min.x || min.z > water.max.z || max.z < water.min.z) return false;
+    }
+    if (!Array.isArray(footprint?.bounds)) return true;
+    const [left, top, right, bottom] = footprint.bounds;
+    if (max.x < left || min.x >= right || max.z < top || min.z >= bottom) return false;
+    if (!footprint.tiles) return true; // The flood footprint is one solid rectangle.
+    // Use the dry/occupied world cells, not the projected overlap of an entire river.
+    for (let row = Math.max(top, Math.floor(min.z)); row < Math.min(bottom, Math.floor(max.z) + 1); row++) {
+      for (let col = Math.max(left, Math.floor(min.x)); col < Math.min(right, Math.floor(max.x) + 1); col++) {
+        if (footprint.tiles.has(col + ',' + row)) return true;
+      }
+    }
+    return false;
+  }
+
+  function gearOverlapsWaterVolume(mesh, cover) {
+    return !isPortraitMaskedGear(mesh) || meshOverlapsWaterVolume(mesh, cover); // Hands/feet retain their existing submersion policy.
+  }
+
+  function submergedPortraits(camera, covers, visiblePortraits) {
+    const portraits = []; // Visible portrait meshes with a physically overlapping water/slush surface.
+    const scopes = []; // Elected portrait world tiles join gear owners in the clipped water draw.
+    const touchingCovers = new Set();
+    const visible = filterOffscreenReplayMeshes(camera, visiblePortraits);
+    for (const portrait of visible) {
+      const world = portrait.matrixWorld?.elements;
+      if (!world) continue;
+      const scope = { col: Math.floor(world[12]), row: Math.floor(world[14]) };
+      let wet = false;
+      for (const cover of covers) {
+        if (!tintCoverNearActor(cover, [scope]) || !meshOverlapsWaterVolume(portrait, cover, false)) continue;
+        touchingCovers.add(cover);
+        wet = true;
+      }
+      if (wet) { portraits.push(portrait); scopes.push(scope); }
+    }
+    return { portraits, scopes, touchingCovers };
+  }
+
   function splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers) {
     // Stencil is shared across the viewport, so a wet NPC must not cause
     // dry player/companion parts to receive that NPC's water color. Partition
-    // already-compatible depth groups by per-owner wet-tile proximity.
+    // already-compatible groups by owner proximity and the actual gear bounds.
     // Each partition draws once; this also handles shared sprite materials
     // without relying on per-object stencil flags in one material transaction.
-    const allowedByScope = new Map(); // Reuses the same water decision for every hand/tool owned by one actor.
+    const coversByScope = new Map(); // Each holder shares its candidate cover list across hands, hafts, ropes and flail heads.
     const wetMeshes = new Set(); // Used only to assign the existing depth groups to wet/dry stencil passes.
     for (const group of groups) {
       for (const mesh of group.meshes) {
         const scope = tintScopeByMesh.get(mesh);
-        if (!scope) { wetMeshes.add(mesh); continue; } // Unknown transforms retain the previous conservative tint behavior.
-        if (!allowedByScope.has(scope)) {
-          allowedByScope.set(scope, nearbyTintCovers.some(cover => tintCoverNearActor(cover, [scope])));
+        if (!coversByScope.has(scope)) {
+          coversByScope.set(scope, scope ? nearbyTintCovers.filter(cover => tintCoverNearActor(cover, [scope])) : nearbyTintCovers);
         }
-        if (allowedByScope.get(scope)) wetMeshes.add(mesh);
+        const covers = coversByScope.get(scope);
+        if (covers.some(cover => gearOverlapsWaterVolume(mesh, cover))) wetMeshes.add(mesh);
+        else if (covers.length && isPortraitMaskedGear(mesh)) lastDryGearWaterSkips++;
       }
     }
     const split = [];
@@ -1857,6 +2008,22 @@
       const wetCount = group.meshes.reduce((n, mesh) => n + (wetMeshes.has(mesh) ? 1 : 0), 0);
       if (wetCount === 0 || wetCount === group.meshes.length) {
         group.tintStencilRef = wetCount ? 1 : 0;
+        split.push(group);
+        continue;
+      }
+      const refs = new Map(); // Keep wet and dry parts in one depth batch when they own distinct materials.
+      const materialRefs = new Map();
+      let conflict = false;
+      for (const mesh of group.meshes) {
+        const ref = wetMeshes.has(mesh) ? 1 : 0;
+        refs.set(mesh, ref);
+        forEachMaterial(mesh.material, material => {
+          if (materialRefs.has(material) && materialRefs.get(material) !== ref) conflict = true;
+          materialRefs.set(material, ref);
+        });
+      }
+      if (!conflict) {
+        group.tintStencilRef = refs;
         split.push(group);
         continue;
       }
@@ -2043,7 +2210,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   // Everything outside the patch keeps the depth it already had. Without a
   // depth snapshot (WebGL1, outlines off) the original clear-and-redraw runs.
   // HeldObjectRenderOrder.setFloorPunchEnabled(false) is the A/B switch.
-  const FLOOR_PUNCH_STENCIL_BIT = 0x80; // Unused by the held/foot/tint stencil masks (bits 0-1 and small refs).
+  const FLOOR_PUNCH_STENCIL_BIT = 0x02; // Bit 0 is water tint; the portrait owner IDs occupy bits 2–7.
   const FLOOR_PUNCH_PATCH_MARGIN = 1.5; // World units past the 3x3 patch: oblique rays and parts poking past it.
   let floorPunchEnabled = true;
   let floorPunchResources = null;
@@ -2304,10 +2471,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return hidden;
   }
 
-  function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint = null, portraitOrder = null) {
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
-    if (!held.length && !feet.length) {
+    if (!held.length && !feet.length && !bodyTint?.portraits.length) {
       lastFrontPortraitMaskCount = 0;
       lastBaseElevationGroups = 0;
       lastHeldFullscreenReason = 'no-visible-participants';
@@ -2323,10 +2490,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const shadowMap = renderer.shadowMap;
     const oldShadowAutoUpdate = shadowMap?.autoUpdate;
 
-    internalReplay = true;
     const glState = renderer.state;
     const overlayMeshes = [...held, ...feet];
-    const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
+    const scissorMeshes = bodyTint?.portraits.length ? [...overlayMeshes, ...bodyTint.portraits] : overlayMeshes; // Cover both gear and wet portraits in the final tint pass.
     const groundMeshes = [...ground, ...topFaceGround];
     let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
@@ -2335,13 +2501,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // Screen-space overlap alone is insufficient: a long merged river can
     // project over the player's silhouette even when every wet tile is far away.
     // An unresolved owner falls back to the original conservative behavior.
-    const nearbyTintCovers = !hasUnknownOwner && scopes.length
-      ? tintCovers.filter(cover => tintCoverNearActor(cover, scopes))
+    const nearbyTintCovers = !hasUnknownOwner && (scopes.length || bodyTint?.portraits.length)
+      ? tintCovers.filter(cover => bodyTint?.touchingCovers.has(cover) || tintCoverNearActor(cover, scopes))
       : tintCovers;
     lastNearbyTintCovers = nearbyTintCovers.length;
     lastDistantTintCovers = tintCovers.length - nearbyTintCovers.length;
     const tintOverlay = lastBaseStencilBits >= 1
-      && hasOverlappingHeldCover(renderer, camera, overlayMeshes, nearbyTintCovers);
+      && hasOverlappingHeldCover(renderer, camera, scissorMeshes, nearbyTintCovers);
     if (tintOverlay) groups = splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers);
     const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
     let scissored = replayScissorEnabled && hasScissorApi && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
@@ -2349,7 +2515,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       : !hasScissorApi ? 'scissor-api-unavailable' : lastScissorFailureReason;
     const groupCullCandidates = groups.length > 1 ? [] : null; // Reuse the union cull traversal for tighter group depth draws.
     let replayCulled = null;
-    let overlayHidden = null;
+    let suppressedOverlay = null; // A flail head or rope can draw independently of its held haft.
+    let coversHidden = null;
     let distantTintHidden = null; // Far water is excluded before every depth rebuild, not only the last tint pass.
     let waterReplayClipStates = null; // Restores clipped water shader uniforms even after a failed render.
     const colorBuffer = renderer.state?.buffers?.color;
@@ -2361,9 +2528,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let nearSnapshotFailed = false;
     let baseDepthTouched = false; // A depth-modifying group already ran since the snapshot.
     let portraitGearIds = null; // Null without 8-bit stencil; otherwise maps held weapon art to its exact character owner.
+    internalReplay = true;
     try {
       distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
-      waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, scopes, hasUnknownOwner);
+      waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, bodyTint ? [...scopes, ...bodyTint.scopes] : scopes, hasUnknownOwner);
       if (scissored) {
         glState.scissor(scissorRect);
         glState.setScissorTest(true);
@@ -2389,7 +2557,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // Keep ground in the depth replay. A compatible ground material discards
       // only fragments at this actor's actual standing elevation. Unknown actor
       // ownership and unsupported shaders deliberately retain full occlusion.
-      overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? nearbyTintCovers : [])]);
+      suppressedOverlay = suppressDraws(overlayMeshes);
+      coversHidden = tintOverlay ? hideObjects(nearbyTintCovers) : null;
       // Multiple actor-elevation groups use the same depth-occluder registries.
       // Resolve visible entries once after hiding overlay participants; their
       // visibility is restored between groups, but membership does not change.
@@ -2404,7 +2573,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
-      if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds)) {
+      if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
         portraitGearIds = portraitMask.gearIds;
       }
 
@@ -2468,7 +2637,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
 
-        for (const mesh of group.meshes) mesh.visible = overlayHidden.get(mesh) !== false;
+        for (const mesh of group.meshes) mesh.layers.mask = HELD_OVERLAY_MASK;
         // Keep this group's scissor for the held color/stencil draw. Drawing outside
         // the group's reconstructed depth rectangle can reveal weapons through
         // unrelated foreground terrain and stamp invalid water-tint stencil bits.
@@ -2483,7 +2652,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           selectiveOverlayCount++;
         } finally {
           if (overlayStates) restoreMaterialStates(overlayStates);
-          for (const mesh of group.meshes) mesh.visible = false;
+          for (const mesh of group.meshes) mesh.layers.mask = 0;
         }
       }
 
@@ -2494,8 +2663,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
       }
       // Restore the original complete ground depth before water/slush tinting.
-      restoreVisibility(overlayHidden);
-      overlayHidden = null;
+      restoreDraws(suppressedOverlay);
+      suppressedOverlay = null;
+      if (coversHidden) { restoreVisibility(coversHidden); coversHidden = null; }
       // Near-only rebuilds left depth behind the held parts empty. Copy the
       // original back, then re-add the parts' own depth exactly as their
       // materials write it: where a part is in front of the original scene it
@@ -2506,10 +2676,19 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         if (!depthRestored) { // Target changed under us: rebuild complete depth the original way.
           nearReplayFallbacks++;
           renderer.clearDepth();
+          const withoutGear = suppressDraws(overlayMeshes);
           const fullStates = prepareNonGroundDepthMaterials(scene);
           try { camera.layers.mask = originalCameraMask; rawRender.call(renderer, scene, camera); }
-          finally { restoreMaterialStates(fullStates); }
+          finally { restoreMaterialStates(fullStates); restoreDraws(withoutGear); }
         }
+      }
+      // Recover gear depth lost by restoring the base snapshot (or by clearing
+      // depth for a later elevation group). Only visible weapon pixels can
+      // replace the portrait depth, and soft rope sprites must write depth here.
+      if (canLockColorMask && (nearToken || (tintOverlay && baseDepthTouched && groups.length > 1))) {
+        const gearDepthStates = tintOverlay
+          ? prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true)
+          : portraitGearIds ? preparePortraitGearStencilMaterials(overlayMeshes, portraitGearIds) : null;
         colorBuffer.setMask(false);
         colorBuffer.setLocked(true);
         try {
@@ -2518,6 +2697,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         } finally {
           colorBuffer.setLocked(false);
           colorBuffer.setMask(true);
+          if (gearDepthStates) restoreMaterialStates(gearDepthStates);
         }
       }
       const needsGroundRestore = !depthRestored && (groups.some(group => group.regions.length) || !canLockColorMask); // An ordinary supplement never removes existing floor depth.
@@ -2535,6 +2715,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       }
 
       if (tintOverlay) {
+        if (bodyTint?.portraits.length) stampSubmergedPortraits(renderer, scene, camera, bodyTint.portraits);
         // Distant meshes remain hidden from ALL replay stages, and the merged
         // shader rejects distant fragments of any nearby mesh as well.
         const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
@@ -2562,7 +2743,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       renderer.clearStencil?.();
     } finally {
       if (groundMaterials) setGroundElevationFilter(groundMaterials, null);
-      if (overlayHidden) restoreVisibility(overlayHidden);
+      if (suppressedOverlay) restoreDraws(suppressedOverlay);
+      if (coversHidden) restoreVisibility(coversHidden);
       if (replayCulled) restoreVisibility(replayCulled);
       if (waterReplayClipStates) endWaterReplayClip(waterReplayClipStates);
       if (distantTintHidden) restoreVisibility(distantTintHidden);
@@ -2856,8 +3038,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const water = collectVisible(waterRegistry, scene); // Existing water diagnostics and all tagged water surfaces.
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene, replayOthers); // Procedural foot meshes share selective ground x-ray.
-    if (!held.length && !feet.length) return originalRender.call(this, scene, camera);
-    if (!ground.length && !topFaceGround.length && !(tintCovers.length && (held.length || feet.length))) return originalRender.call(this, scene, camera);
+    const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
+    const portraits = canTintPortraits || window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+      ? collectVisible(waterPortraitRegistry, scene) : [];
+    const portraitOrder = nearbyPortraitOrder(scene, camera, portraits);
+    lastRankedPortraitActors = portraitOrder?.count || 0;
+    const renderBase = () => withPortraitDrawOrder(this, portraitOrder, () => originalRender.call(this, scene, camera), true);
+    lastWaterPortraits = 0;
+    lastDryGearWaterSkips = 0;
+    if (!held.length && !feet.length && !canTintPortraits) return renderBase();
+    if (!ground.length && !topFaceGround.length && !tintCovers.length) return renderBase();
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -2866,30 +3056,32 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // Draw held items and procedural feet exactly once, after reconstructed
     // cover depth. Normal water uses depthWrite=false, so feet left in this
     // base pass could otherwise render visibly over the water surface.
-    const heldVisibility = hideObjects([...held, ...feet]);
+    const heldDraws = suppressDraws([...held, ...feet]);
     let result;
     const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
     try {
-      result = originalRender.call(this, scene, camera);
+      result = renderBase();
     } finally {
       window.PerfProfiler?.end(basePerf);
-      restoreVisibility(heldVisibility);
+      restoreDraws(heldDraws);
     }
 
     const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
     window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
     const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
     const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
+    const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
+    lastWaterPortraits = bodyTint?.portraits.length || 0;
     lastBaseReplayCandidates = held.length + feet.length;
     lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
     const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
     // Non-participants were drawn normally above; keep them out of the replays,
     // whose overlay passes draw everything on the held-overlay layer.
-    const othersHidden = replayOthers.length ? hideObjects(replayOthers) : null;
+    const othersHidden = replayOthers.length ? suppressDraws(replayOthers, HELD_OVERLAY_MASK) : null;
     try {
-      replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask);
+      replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
     } finally {
-      if (othersHidden) restoreVisibility(othersHidden);
+      if (othersHidden) restoreDraws(othersHidden);
     }
     window.PerfProfiler?.end(replayPerf);
     // The replays are renders of their own that the outline wrapper sees after the base pass, and they
@@ -2927,6 +3119,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
+      rankedPortraitActors: lastRankedPortraitActors,
+      waterPortraits: lastWaterPortraits,
+      dryGearWaterSkips: lastDryGearWaterSkips,
       waterClipOverflow: lastWaterClipOverflow,
       stencilBits: lastBaseStencilBits,
       missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
@@ -2993,7 +3188,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
-    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry];
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry];
     let removed = 0;
     for (const registry of registries) {
       const bucket = registry.byScene.get(scene);
