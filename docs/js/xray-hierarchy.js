@@ -32,7 +32,7 @@
       help: 'on: a weapon pixel is hidden wherever its own holder\'s front portrait art is drawn (stencil mask).',
     },
     'hand.frontPlaneMask': {
-      order: 4, label: 'Hands and their outlines vs the front plane', default: 'behind', options: ['behind', 'always', 'off'],
+      order: 4, label: 'Hands and their outlines vs the front plane', default: 'off', options: ['behind', 'always', 'off'],
       help: 'behind: hands whose centre sits behind their holder\'s front plane (seen from the front) are hidden under the front art and lose their outline. always: every hand is masked like a weapon. off: hands are never masked.',
     },
     'portrait.waterTint': {
@@ -59,6 +59,10 @@
       order: 10, label: 'Shoulder pet and player portrait compositing', default: 'authored',
       options: ['authored', 'player-over', 'pet-over', 'world-depth'],
       help: 'authored: preserve the pet\'s facing-dependent foreground/background pose without portrait depth writes. The other choices are reversible diagnostic presets, not separate game settings.',
+    },
+    'ground.showZone': {
+      order: 11, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
+      help: 'Dev-only translucent circle at the player standing elevation; not a rendering behavior override.',
     },
   });
 
@@ -294,7 +298,7 @@
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
-        || (key === 'shoulderPet.presentation' && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || ((key === 'shoulderPet.presentation' || key === 'ground.showZone') && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
@@ -406,6 +410,52 @@
   const keys = Object.keys(RULES).sort((a, b) => RULES[a].order - RULES[b].order);
   const state = {};
   const listeners = new Set();
+  let groundZoneMarker = null; // Lazily created filled 3D debug circle; reused every frame.
+  let groundZoneScene = null; // Scene which owns the temporary debug preview.
+
+  function updateGroundZone(scene, scope, radius) {
+    if (state['ground.showZone'] !== 'on' || !scene?.isScene
+        || !scope || !Number.isFinite(scope.x) || !Number.isFinite(scope.z)
+        || !Number.isFinite(scope.elevation) || !(radius > 0)) {
+      if (groundZoneScene && groundZoneMarker) groundZoneScene.remove(groundZoneMarker);
+      groundZoneScene = null;
+      return false;
+    }
+    const THREE = window.THREE;
+    if (!THREE?.CircleGeometry || !THREE?.RingGeometry || !THREE?.Group) return false;
+    if (!groundZoneMarker || groundZoneMarker.userData.radius !== radius) {
+      if (groundZoneScene && groundZoneMarker) groundZoneScene.remove(groundZoneMarker);
+      if (groundZoneMarker) groundZoneMarker.traverse(node => {
+        node.geometry?.dispose?.();
+        node.material?.dispose?.();
+      });
+      groundZoneScene = null;
+      groundZoneMarker = new THREE.Group();
+      groundZoneMarker.name = 'debug_ground_xray_circle';
+      groundZoneMarker.userData.radius = radius; // Match the renderer's exact radius.
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(radius, 64),
+        new THREE.MeshBasicMaterial({ color: 0x31bdec, transparent: true, opacity: 0.15,
+          depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+      const rim = new THREE.Mesh(new THREE.RingGeometry(radius - 0.028, radius + 0.028, 64),
+        new THREE.MeshBasicMaterial({ color: 0x0ce6fa, transparent: true, opacity: 0.9,
+          depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+      for (const [mesh, order] of [[fill, 960], [rim, 961]]) {
+        mesh.rotation.x = -Math.PI / 2; // Flat on the actual world X/Z plane.
+        mesh.renderOrder = order; // Visible debug overlay, deliberately not physical depth.
+        mesh.userData.noOutline = true; // Debug art never acquires a generated outline; depthWrite:false already makes it replay-inert.
+        mesh.frustumCulled = false;
+        groundZoneMarker.add(mesh);
+      }
+    }
+    if (groundZoneScene !== scene) {
+      groundZoneScene?.remove(groundZoneMarker);
+      scene.add(groundZoneMarker);
+      groundZoneScene = scene;
+    }
+    groundZoneMarker.position.set(scope.x, scope.elevation + 0.025, scope.z);
+    return true;
+  }
+
   for (const key of keys) state[key] = RULES[key].default;
 
   function load() {
@@ -435,6 +485,7 @@
     const previous = state[key];
     state[key] = value;
     save();
+    if (key === 'ground.showZone' && value === 'off') updateGroundZone(null, null, 0); // Remove the scene marker immediately, even if gameplay is paused.
     for (const listener of listeners) { try { listener(key, value, previous); } catch (_) { /* A bad listener must not block the rule change. */ } }
     return true;
   }
@@ -539,6 +590,7 @@
             ...(selectedPresetId !== activePresetId && selectedPreset
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
+            ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
             ['Last held order override', live.lastHeldOrderNormalization
@@ -574,6 +626,8 @@
             { id: 'set', args: { key: 'hand.frontPlaneMask' }, label: 'Hands vs owner front art',
               value: state['hand.frontPlaneMask'], options: RULES['hand.frontPlaneMask'].options.map(value => ({ value, label: value })),
               group: 'Front portrait occlusion', title: RULES['hand.frontPlaneMask'].help },
+            { id: 'toggle-ground-zone', label: 'Show ground X-ray circle in the world', checkbox: true,
+               checked: state['ground.showZone'] === 'on', group: 'World depth and airborne replay', title: RULES['ground.showZone'].help },
             { id: 'set', args: { key: 'background.gearDepth' }, label: RULES['background.gearDepth'].label,
               value: state['background.gearDepth'], options: RULES['background.gearDepth'].options.map(value => ({ value, label: value })),
               group: 'World depth and airborne replay', title: RULES['background.gearDepth'].help },
@@ -630,6 +684,8 @@
         if (action === 'restore-original') return restoreBeforePresets()
           ? { ok: true } : { ok: false, error: 'No valid pre-test configuration to restore.' };
         if (action === 'report') return { ok: true, title: 'X-ray diagnosis (mobile)', text: diagnosticReport() };
+        if (action === 'toggle-ground-zone') return set('ground.showZone', args.checked === true ? 'on' : 'off')
+          ? { ok: true } : { ok: false, error: 'Could not toggle zone preview.' };
         if (action === 'set') {
           const ok = set(String(args.key || ''), String(args.value ?? ''));
           if (ok && args.key === 'weapon.followHandLayer' && args.value === 'on') selectedLayer = effectiveLayerId(selectedLayer);
@@ -670,7 +726,7 @@
 
   window.XrayHierarchy = {
     version: VERSION, RULES, keys: () => keys.slice(),
-    get, set, reset, diff, exportDiff, importDiff, describe, registerPanel,
+    get, set, reset, diff, exportDiff, importDiff, describe, registerPanel, updateGroundZone,
     DIAGNOSTIC_PRESETS, applyDiagnosticPreset, restoreBeforePresets, diagnosticReport,
     DRAW_LAYERS, DEFAULT_DRAW_ORDER, describeLayers, drawStage, editableLayers, effectiveLayerId, layerRank, setDrawOrder, moveLayer, shiftLayer, moveLayerInStage, shiftLayerInStage, resetDrawOrder,
     onChange(listener) { if (typeof listener === 'function') listeners.add(listener); return () => listeners.delete(listener); },
