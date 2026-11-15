@@ -221,19 +221,21 @@
     const audioConfig = window.AudioSystem?.gameAudioConfig?.() || {};
     if (audioConfig.enabled === false || Number(audioConfig.sfxVolume ?? 1) <= 0) return;
     const tile = Number(window.Combat?.deps?.TILE) || 64;
-    const actor = {
+    const actor = entry.isPlayer ? null : {
       get x() { return walker.root.position.x * tile; },
       get y() { return walker.root.position.z * tile; },
       get areaId() { return walker.area; },
       rec: walker.rec,
-    }; // Voice renderer follows the live NPC position rather than a frozen spawn-point snapshot.
-    const audioSpatial = window.AudioSystem?.combatAudioSpatial;
-    if (Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // No audio asset probes for inaudible/off-area NPCs.
+    }; // Only NPCs are positional emitters; the player is the audio listener, as in CombatVocalizations.
+    const audioSpatial = entry.isPlayer ? null : window.AudioSystem?.combatAudioSpatial;
+    if (actor && Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // NPCs outside earshot do not request voice clips.
     const identity = sourceIdentity(walker);
     const plan = await voiceFor(identity.species, identity.gender);
     if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
-    const spatial = audioSpatial?.(actor, { earshotTiles: 14 }) || {};
-    if (Number(spatial.gain ?? 1) < 0.002) return;
+    const spatial = entry.isPlayer
+      ? { gain: 1, panX: 0, position3d: null, extraWetBoost: 0 }
+      : (audioSpatial?.(actor, { earshotTiles: 14 }) || {});
+    if (!entry.isPlayer && Number(spatial.gain ?? 1) < 0.002) return; // A late-moving NPC can leave earshot while the recording resolves.
     const owner = window.CharacterVoiceOwner;
     const claim = owner?.request?.(entry.isPlayer ? (window.Combat?.deps?.player || walker) : walker, {
       kind: 'active', priority: window.CombatVocalizations?.getVoicePriority?.('active') ?? 3,
@@ -242,7 +244,7 @@
     if (owner && !claim) return;
     const volume = Math.min(1, Math.max(0, 0.72 * plan.gain * Number(audioConfig.sfxVolume ?? 1) * Number(spatial.gain ?? 1)));
     const renderer = window.AnimalVoiceIndependentPlayback?.playIndependent;
-    if (!renderer) { owner?.release?.(claim); return; }
+    if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     entry.voiceClaim = claim;
     entry.voice = renderer(plan.url, {
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
@@ -256,10 +258,12 @@
       area: walker.area,
       onFinished: () => { if (entry.voiceClaim === claim) { owner?.release?.(claim); entry.voiceClaim = null; } },
     });
+    if (!entry.voice) { owner?.release?.(claim); entry.voiceClaim = null; lastError = 'audio: voice renderer refused playback'; return; }
     owner?.bindStop?.(claim, seconds => entry.voice?.stop?.(seconds));
-    lastVoice = { npcId: walker.rec?.id, species: identity.species, gender: identity.gender,
+    lastVoice = { npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
       source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
-      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume };
+      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume,
+      positional: !entry.isPlayer }; // Mobile debug explicitly reports local player voices versus directional NPC voices.
   }
 
   function restorePose(entry) {
