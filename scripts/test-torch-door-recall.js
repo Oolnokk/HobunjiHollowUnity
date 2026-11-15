@@ -123,15 +123,15 @@ const doorContext = vm.createContext({
 }); // One actual action provider tested across outdoor, farmhouse and V50 settings.
 const doorButtons = vm.runInContext(doorFunction + '\nadventuringToolActionButtons', doorContext);
 const farmActions = doorButtons();
-assert.deepEqual(farmActions.map(x => x.action), ['torch_swing', 'torch_throw', 'obj_door_toggle']);
+assert.deepEqual(Array.from(farmActions, x => x.action), ['torch_swing', 'torch_throw', 'obj_door_toggle']);
 assert.equal(farmActions[2].inputAction, 'interact', 'wooden door has separate Interact instead of replacing Torch Swing');
 assert.equal(farmActions[2].worldInteraction, true);
 doorContext.currentArea = 'interior';
 assert.equal(doorButtons()[2].action, 'obj_door_toggle', 'house doors stay usable with a torch');
 doorContext.currentArea = 'map_i_dev_random_ruin';
-assert.deepEqual(doorButtons().map(x => x.action), ['torch_swing', 'torch_throw', 'dev_ruin_world_0'], 'native ruin door is an additional context action');
+assert.deepEqual(Array.from(doorButtons(), x => x.action), ['torch_swing', 'torch_throw', 'dev_ruin_world_0'], 'native ruin door is an additional context action');
 doorContext.window.DevRandomRuinInteractions.getDoorActionButtons = () => [];
-assert.deepEqual(doorButtons().map(x => x.action), ['torch_swing', 'torch_throw'], 'unrelated world prompts cannot suppress Swing/Throw');
+assert.deepEqual(Array.from(doorButtons(), x => x.action), ['torch_swing', 'torch_throw'], 'unrelated world prompts cannot suppress Swing/Throw');
 
 const methods = sourceBetween(ruin, '    getDoorActionButtons() {', '    invoke(index = 0) {'); // Tests native-door filtering and exact onPress ownership.
 let opens = 0;
@@ -148,7 +148,7 @@ const nativeContext = vm.createContext({
   actionButtonsFromRows: rows => rows.map(row => ({ action: row.action, label: row.label, inputAction: 'action1' })),
 }); // The real provider methods run against a controlled list of existing interaction rows.
 const native = vm.runInContext('({' + methods + '})', nativeContext);
-assert.deepEqual(native.getDoorActionButtons().map(x => x.action), ['dev_ruin_world_0', 'dev_ruin_world_2']);
+assert.deepEqual(Array.from(native.getDoorActionButtons(), x => x.action), ['dev_ruin_world_0', 'dev_ruin_world_2']);
 assert(native.getDoorActionButtons().every(x => x.inputAction === 'interact' && x.style === 'secondary'));
 assert.equal(native.invokeDoorAction('dev_ruin_world_1'), false, 'torch interaction cannot fire an unrelated mechanism');
 assert.equal(native.invokeDoorAction('dev_ruin_world_2'), true);
