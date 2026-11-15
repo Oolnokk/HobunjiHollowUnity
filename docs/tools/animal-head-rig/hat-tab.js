@@ -92,7 +92,7 @@
     workspace.hidden = !hats;
     el('riggerNeckTab').setAttribute('aria-selected', String(!hats));
     el('riggerHatsTab').setAttribute('aria-selected', String(hats));
-    if (hats) { syncSpecies(); resize(); }
+    if (hats) { if (!view.authored) fillAttachment(null); syncSpecies(); resize(); } // Derive from latest painted neck state.
     else resizeCanvases();
   }
   el('riggerNeckTab').onclick = () => switchTab('neck');
@@ -111,7 +111,7 @@
     });
   }
   function fillAttachment(raw) {
-    const a = hatApi.normalizeAttachment(raw, state.pendingRig || state.baseRecord?.headRig);
+    const a = hatApi.normalizeAttachment(raw, normalizedRig() || state.pendingRig || state.baseRecord?.headRig); // Use current head-paint edits when no hat fit was authored.
     view.attachment = a;
     el('hatEnabled').checked = a.enabled;
     el('hatAnchorX').value = a.anchor.x;
@@ -350,10 +350,11 @@
     el('hatRedo').disabled = !layer?.redo.length;
   }
   function snapshot(layer) {
+    const redoBeforeStroke = layer.redo.splice(0); // Restore this future history if the stroke is cancelled or has no effect.
     layer.undo.push(new Uint8ClampedArray(layer.pixels));
+    layer.pendingRedo = redoBeforeStroke; // One pointer gesture temporarily owns redo history.
     const maxHistory = Math.min(8, Math.max(1, Math.floor((24 * 1024 * 1024) / layer.pixels.byteLength))); // Per-layer mobile history budget.
     while (layer.undo.length > maxHistory) layer.undo.shift();
-    layer.redo.length = 0;
     refreshUndo();
   }
   function writePixels(layer, compareOriginal = false) {
@@ -422,7 +423,7 @@
     const fit = fitted(artCanvas, layer.canvas.width, layer.canvas.height);
     const p = pointOnCanvas(event, artCanvas, fit, layer.canvas.width, layer.canvas.height);
     snapshot(layer);
-    view.drag = { id: event.pointerId, last: p };
+    view.drag = { id: event.pointerId, last: p, layer }; // Pin the undo snapshot to its source layer for this pointer.
     artCanvas.setPointerCapture(event.pointerId);
     if (view.brush === 'restore') brushStroke(p, p); // Taps restore locally even with zero movement.
   });
@@ -440,7 +441,7 @@
   });
   function finishArt(event, cancelled = false) {
     if (!view.drag || view.drag.id !== event.pointerId) return;
-    const layer = selectedLayer(); // Active layer whose one-stroke snapshot must commit or roll back.
+    const layer = view.drag.layer; // The layer captured at pointerdown, even if UI selection changes.
     if (layer && !cancelled) {
       const fit = fitted(artCanvas, layer.canvas.width, layer.canvas.height);
       const last = pointOnCanvas(event, artCanvas, fit, layer.canvas.width, layer.canvas.height);
@@ -453,9 +454,12 @@
       if (cancelled && before) {
         layer.pixels = layer.undo.pop();
         writePixels(layer, true);
+        layer.redo = layer.pendingRedo || [];
       } else if (before && layer.pixels.every((v, i) => v === before[i])) {
         layer.undo.pop(); // No-op taps do not consume Undo history.
+        layer.redo = layer.pendingRedo || [];
       }
+      layer.pendingRedo = null;
     }
     refreshUndo();
     status(cancelled ? 'Cancelled the hat brush stroke; previous pixels restored.' :
