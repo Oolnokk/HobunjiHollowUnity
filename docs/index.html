@@ -98,8 +98,8 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261114shaftWheel1"></script>
-  <script src="js/adventuring-tools.js?v=20261115hfc1de39"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/action-arc-ui.js?v=20261115torchDoorRecall1"></script>
+  <script src="js/adventuring-tools.js?v=20261115torchRelease2"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -179,7 +179,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261115torchNoOffhand1"></script>
+  <script src="js/held-action-animations.js?v=20261115torchGripIdle2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -322,9 +322,9 @@
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261115torchFlame1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
-  <script src="js/weapon-layer-effects.js?v=20261115torchFlame1"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261115torchFlame1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="config/weapon-sprite-assemblies.js?v=20261115torchWick2"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261115torchWick2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
@@ -361,7 +361,7 @@
   <script src="js/skill-system.js?v=20261112he5ffaa9"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + base 8-point Attunement budget (expanded by character-owned Lich-hearts). -->
-  <script src="js/trinket-system.js?v=20261114heartRewards1"></script>
+  <script src="js/trinket-system.js?v=20261115buriedCurios3"></script>
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
@@ -832,7 +832,7 @@
   <script src="js/targetables.js?v=1"></script>
   <script src="js/shattercasks.js?v=20261114posobj1754"></script>
   <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261115bombImpact1"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261115bombImpact2"></script>
   <script src="js/pingdort-flocks.js?v=20261108hdenlineage4"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
@@ -2890,7 +2890,7 @@
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261115hd41294a"></script>
+  <script src="game.js?v=20261115torchDoorRecall1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

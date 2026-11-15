@@ -432,7 +432,8 @@
       if(slot.data==='adventuringGateway'){_openAdventuringArc();return;}
       if(slot.data==='backBurden')window.Shattercasks?.takeFromBack?.();
       else {
-        deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
+        deps.setHeldMode('tool');
+        if (deps.WHEEL_SLOTS.includes(slot.data)) deps.setLastHeldFarmTool(slot.data); // Selecting a weapon is temporary: keep the last farm/adventuring tool in memory.
         deps.setActiveTool(slot.data); // calls refreshActionBar internally
       }
     } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
@@ -467,11 +468,15 @@
       openPotions() { _openPotionRoot(); },
       openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
       openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
+      rememberedTool() {
+        const fallback = deps.WHEEL_SLOTS.find(slot => deps.equipmentSlots[slot]) || deps.WHEEL_SLOTS[0]; // Used when the selected tool was removed from its gear slot.
+        const remembered = deps.getLastHeldFarmTool(); // Also remembers 'adventuring' after explicitly selecting the torch.
+        return (deps.WHEEL_SLOTS.includes(remembered) || remembered === 'adventuring') && deps.equipmentSlots[remembered]
+          ? remembered : fallback;
+      },
       recallLastTool() {
         window.Spyglass?.stow?.('tool recalled');
-        const fallback = deps.WHEEL_SLOTS.find(slot => deps.equipmentSlots[slot]) || deps.WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
-        const lastHeldFarmTool = deps.getLastHeldFarmTool();
-        const recalled = deps.WHEEL_SLOTS.includes(lastHeldFarmTool) && deps.equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
+        const recalled = this.rememberedTool(); // Weapon quick-switch and item selection must not overwrite the selected tool.
         deps.setLastHeldFarmTool(recalled);
         deps.setHeldMode('tool');
         deps.setActiveTool(recalled);
@@ -487,7 +492,7 @@
         if(chosen==='adventuringGateway'){_openAdventuringArc();return;}
         if(chosen!=='backBurden'){
           deps.setHeldMode('tool');
-          deps.setLastHeldFarmTool(chosen);
+          if (deps.WHEEL_SLOTS.includes(chosen)) deps.setLastHeldFarmTool(chosen); // Scroll-selected weapons must not erase the selected torch.
           deps.setActiveTool(chosen);
         }
         _setActive(next); // Back-carried Burdens are taken into the hands only when the selector commits.
@@ -586,12 +591,11 @@
         window.Shattercasks?.toolArchTap?.();
       }else if (_arcOpen === 'tool') _arcUp();
       else if (!_tHeld && !_tMoved) {
-        // A Tool Select tap recalls the last valid held tool — unless a
-        // tool is already out, in which case the same tap now dequips
-        // instead (replacing the removed dedicated put-away button; see
-        // its matching case in itemBtn's own pointerup below).
+        // Tapping the selected tool again holsters it; a temporary weapon
+        // or item instead returns to the remembered tool without opening the arch.
         if (!window.Shattercasks?.toolArchTap?.()) {
-          if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
+          const selectedTool = window._desktopSelectionArc.rememberedTool(); // Tap while a temporary weapon is drawn returns to the selected tool.
+          if (deps.getHeldMode() === 'tool' && deps.getActiveTool() === selectedTool) deps.putAwayHeldEquipment();
           else window._desktopSelectionArc.recallLastTool();
         }
       }

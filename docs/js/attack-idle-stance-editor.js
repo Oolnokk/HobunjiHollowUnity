@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261115torchIdleExport1';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261115torchGripIdle2';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const STANCE_ORDER = ['tool', 'hoeTool', 'torchHold', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
@@ -32,7 +32,7 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-      torchHold: Object.freeze({x: -0.03,y: 0.08,z: 0.17,pitch: 10,yaw: 0,bodyYaw: 0,roll: 0,scale: 0.64,headRelative: false,bodySink: 0,flailLengthScale: 1,shoulderAim: {grip: true,palmNormal: true},secondaryGrip: {enabled: false,percent: 50,primaryPercent: 50},dualWield: {enabled: false},elbows: {right: {x: -0.04,y: -0.19,z: 0}},worldUpright: true}), // Same as committed torch idle pose.
+      torchHold: Object.freeze({"x":-0.15,"y":0.1472916715500817,"z":0.198510001727785,"pitch":-90,"yaw":0,"bodyYaw":0,"roll":-15,"scale":0.68,"headRelative":false,"bodySink":0,"flailLengthScale":1,"shoulderAim":{"grip":true,"palmNormal":true},"secondaryGrip":{"enabled":false,"percent":50,"primaryPercent":50},"dualWield":{"enabled":false},"offhandIdle":{"enabled":false},"elbows":{"left":{"x":0,"y":-0.10531282069027048,"z":0.04110563392716065},"right":{"x":0.002670316618150828,"y":-0.06015679313571905,"z":0.03473534109483975}},"worldUpright":true}), // Same as committed torch idle pose.
       topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -43,7 +43,7 @@
   });
 
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
-  const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }))); // Both shipped torch defaults are obsolete; customized stances remain untouched.
+  const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 })).concat([Object.freeze({ x: -0.03, y: 0.08, z: 0.17, pitch: 10, yaw: 0, bodyYaw: 0, roll: 0 })])); // Both shipped torch defaults are obsolete; customized stances remain untouched.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
