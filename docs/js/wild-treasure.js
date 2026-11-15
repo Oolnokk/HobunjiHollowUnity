@@ -159,7 +159,8 @@
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads or waterways.
     const storyVaultSite = window.RuinSites?.storyVaultSite?.(mapId); // Keep weekly diggable treasure off the world-persistent Harlyao vault's one hidden tile.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : [])];
+    const authoredDigSpots=window.RuinSites?.authoredDigSpots?.(mapId)||[]; // Keep weekly treasure off named tomb excavation sites.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : []),...authoredDigSpots];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.
@@ -179,7 +180,8 @@
     const blockedSet = new Set(blocked); // Used to retain all unaffected placements without relying on coordinate equality.
     const kept = persisted.placements.filter(placement => !blockedSet.has(placement)); // Used as the repaired placement list and as occupied positions during replacement search.
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to prevent replacement candidates from landing on any road or waterway tile.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...kept]; // Used to keep repairs off plants, berries, blocked terrain, and surviving treasure.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...kept,
+      ...(window.RuinSites?.authoredDigSpots?.(mapId)||[])]; // Keep repair placements away from named Lich burrows.
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure-access-repair:' + weekIndex())); // Used to make save repair deterministic for this zone/week.
     const replacements = deps.findZoneFlatEmptyTiles(mapId, blocked.length, rng, avoid); // Used one-for-one to relocate as many blocked chests as the zone can legally fit.
     let repaired = 0; // Used for repair diagnostics and to distinguish relocated chests from dropped inaccessible ones.
@@ -434,9 +436,9 @@
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
     const persisted = deps._zoneTreasurePersist.get(mapId);
-    if (!persisted) return null;
+    const authored=window.RuinSites?.authoredDigSpots?.(mapId)||[]; // Companions can point to named tomb excavation sites as well.
     let best = null, bestDist = Infinity;
-    for (const placement of persisted.placements || []) {
+    for (const placement of [...(persisted?.placements||[]),...authored]) {
       if (placement.found) continue;
       const tile = deps._zoneScenes.get(mapId)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no longer "buried"
@@ -498,9 +500,10 @@
     if (_treasureSparkleTimer > 0) return;
     _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
     const persisted = deps._zoneTreasurePersist.get(currentArea);
-    if (!persisted) return;
+    const authored=window.RuinSites?.authoredDigSpots?.(currentArea)||[]; // Named tombs reuse buried-treasure sparkle hints until excavated.
+    if(!persisted&&!authored.length)return;
     const rangePx = deps.TILE * TREASURE_SPARKLE_RANGE_PX_MUL;
-    for (const placement of persisted.placements || []) {
+    for (const placement of [...(persisted?.placements||[]),...authored]) {
       if (placement.found) continue;
       const tile = deps._zoneScenes.get(currentArea)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no hint needed
