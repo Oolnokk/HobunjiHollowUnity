@@ -183,7 +183,8 @@ const nativeAdapter={...NativeMechanisms,mount(options){
         {id:'authored-gate-1',kind:'glyphObelisk'}):choose(room,preferred),
     isSolved:id=>authoredSolved.has(id)||solved(id)};
 }};
-const oldBus=globalThis.DevRandomRuinSimplePuzzles,oldFire=globalThis.DungeonFire;
+const oldBus=globalThis.DevRandomRuinSimplePuzzles,oldFire=globalThis.DungeonFire,oldRooms=globalThis.RuinRoomSystem; // Restore every test-injected global when the fixture exits.
+globalThis.RuinRoomSystem=Rooms; // Use the real room adapter while mounting native V50 floors; this headless fixture normally has no window-owned room module.
 globalThis.DevRandomRuinSimplePuzzles={
   registerExternalProjectileTarget(t){targets.set(t.id,t);return ()=>targets.delete(t.id)},
   hasActiveRuinState:()=>true,
@@ -304,4 +305,5 @@ try{
   native?.dispose();
   globalThis.DevRandomRuinSimplePuzzles=oldBus;
   globalThis.DungeonFire=oldFire;
+  globalThis.RuinRoomSystem=oldRooms;
 }
