@@ -85,12 +85,29 @@ async function spritePng(page, animal) {
     // Real pointer gesture, Undo/Redo, and PNG download.
     const art = await page.locator('#hatArtCanvas').boundingBox();
     assert(art && art.width > 100 && art.width <= 412, 'canvas must fit a mobile viewport');
+    await page.evaluate(() => {
+      window.__hatPointerTrace = []; // Capture real event routing for CI/mobile diagnostics.
+      const canvas = document.getElementById('hatArtCanvas');
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+        canvas.addEventListener(type, event => {
+          window.__hatPointerTrace.push({ type, pointerId: event.pointerId, buttons: event.buttons,
+            target: event.target?.id, x: Math.round(event.clientX), y: Math.round(event.clientY) });
+        }, { capture: true });
+      }
+    });
     await page.mouse.move(art.x + art.width * .36, art.y + art.height * .5);
     await page.mouse.down();
     await page.mouse.move(art.x + art.width * .74, art.y + art.height * .5, { steps: 10 });
     await page.mouse.up();
     const debug = () => page.evaluate(() => window.HobunjiAnimalHatWorkbench.getDebug());
-    assert.equal((await debug()).layers[0].dirty, true, 'smudge must mark a hat as edited');
+    const changed = await debug();
+    if (!changed.layers[0].changedPixels) console.error('Hat gesture diagnostic:', JSON.stringify(await page.evaluate(() => ({
+      events: window.__hatPointerTrace, status: document.getElementById('hatStatus')?.textContent,
+      atStart: document.elementFromPoint(170, 500)?.id,
+      canvas: (() => { const r = document.getElementById('hatArtCanvas')?.getBoundingClientRect();
+        return r && { x:r.x,y:r.y,width:r.width,height:r.height }; })()
+    }))));
+    assert.equal(changed.layers[0].dirty, true, 'smudge must mark a hat as edited');
     assert((await debug()).layers[0].changedPixels > 0, 'smudge must actually move colored/outlined PNG pixels');
     await page.locator('#hatUndo').click();
     assert.equal((await debug()).layers[0].dirty, false, 'Undo restores source image');
