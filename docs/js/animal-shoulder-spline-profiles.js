@@ -1,13 +1,12 @@
-// Shoulder-spline species registration and temporary shared defaults.
+// Shoulder-spline species registration and fallbacks.
 //
-// Only the explicitly approved species receive shoulder-body spline support
-// for now. Gar-wolf/Dabinggi keep their own head paint. Voorg-Ass/Uumkao'ii get
-// a body-only support rig so the same skinned plane can carry the shoulder spline.
+// The six new ground-creature shoulder rigs are each independently authored in
+// animal-head-rig-authored.js. Existing head paint and Uumkao'ii remain intact.
 (() => {
   'use strict';
 
   const STORAGE_KEY = window.AnimalHeadRigRuntime?.STORAGE_KEY || 'hobunji_animal_head_rigs_v1';
-  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk']);
+  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk', 'moot', 'nelk', 'drenkirra']);
   const SPECIES_SET = new Set(SPECIES);
   const GREHLR_BEFORE = Object.freeze([
     Object.freeze({ x: 0.5423902927484727, y: 0.5694472546137244 }),
@@ -127,7 +126,7 @@
   }
 
   window.HobunjiShoulderSplineProfiles = {
-    version: 3, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
+    version: 4, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
     defaultShoulderRest, bodyOnlyRig, supportRigFor: resolveForKind, resolveForOptions, install,
   };
   install();
