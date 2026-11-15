@@ -4,6 +4,105 @@
 (() => {
   'use strict';
 
+  // Authored torch still-action, shared with the Attack Animation Editor; its neutral pose is the live torch rest stance.
+  const torchIdle = {
+    "version": 1,
+    "kind": "hobunji_held_action_animation",
+    "name": "Torch — Upright Hold (Idle)",
+    "actionId": "torch_idle",
+    "style": "sweep",
+    "sequence": "attack",
+    "windupFrac": 0.16,
+    "strikeFrac": 0.28,
+    "holdFrac": 0.496,
+    "durationS": 0.99025,
+    "headRelative": false,
+    "toolEndFlip": false,
+    "worldUpright": true,
+    "poses": {
+      "neutral": {
+        "x": -0.03,
+        "y": 0.08,
+        "z": 0.17,
+        "pitch": 10,
+        "yaw": 0,
+        "bodyYaw": 0,
+        "roll": 0,
+        "scale": 0.64,
+        "headRelative": false,
+        "bodySink": 0,
+        "flailLengthScale": 1,
+        "shoulderAim": {
+          "grip": true,
+          "palmNormal": true
+        },
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        },
+        "elbows": {
+          "right": {
+            "x": -0.04,
+            "y": -0.19,
+            "z": 0
+          }
+        }
+      },
+      "windup": {
+        "x": 0.13,
+        "y": 0,
+        "z": 0.03,
+        "pitch": 10.31,
+        "yaw": 0,
+        "bodyYaw": 0,
+        "roll": 0,
+        "headRelative": false,
+        "flailLengthScale": 1,
+        "shoulderAim": {
+          "grip": true,
+          "palmNormal": true
+        },
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      },
+      "strike": {
+        "x": 0.13,
+        "y": 0,
+        "z": 0.03,
+        "pitch": 10.31,
+        "yaw": 0,
+        "bodyYaw": 0,
+        "roll": 0,
+        "headRelative": false,
+        "flailLengthScale": 1,
+        "shoulderAim": {
+          "grip": true,
+          "palmNormal": true
+        },
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      }
+    },
+    "gripMode": "palm-parallel",
+    "still": true
+  };
+
   const drink = {
     version: 1,
     kind: 'hobunji_held_action_animation',
@@ -280,7 +379,7 @@
       },
     },
   };
-  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
+  window.HeldActionAnimations = Object.freeze({ torchIdle, blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
