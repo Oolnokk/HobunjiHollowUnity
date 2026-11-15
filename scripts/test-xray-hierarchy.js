@@ -190,7 +190,7 @@ global.window = win;
 panel.onAction('reset', {});
 assert.equal(store['hobunji.xrayHierarchy.v1'], undefined, 'reset to repo clears experiment values');
 assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'reset to repo clears the diagnostic session too');
-assert.deepStrictEqual(X.diff(), {}, 'regression's remaining renderer checks start at shipped defaults');
+assert.deepStrictEqual(X.diff(), {}, "remaining renderer checks start at shipped defaults");
 
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
 const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
