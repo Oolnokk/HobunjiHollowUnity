@@ -361,6 +361,7 @@
     if (!mount) return;
     deps.companionObjects.add(mount);
     mountRideEntity = mount;
+    window.GroundObstacleAvoidance?.reset('mounted'); // A summoned animal starts with no steering history from a prior ride.
     mountRideState = 'rushingIn';
     mountAngle = deps.player.angle;
     mountCurrentSpeedPxS = 0;
@@ -377,6 +378,7 @@
   }
 
   function beginDismissMount() {
+    window.GroundObstacleAvoidance?.reset('mounted'); // Dismount immediately discards stored obstacle waypoints.
     if (!mountRideEntity) { mountRideState = 'none'; return; }
     mountRideState = 'dismountingDown';
     mountTransitionT = 0;
@@ -683,13 +685,15 @@
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Perception Mode halves mounted speed too.
     if (inputStrength > 0.001) {
       mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      const desiredAngle = Math.atan2(iy, ix);
+      const assisted = window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, ix, iy, deps.TILE, deps.canPlayerOccupy, dt); // Nearby tiles route the carrier; raw input still owns the rider's intended direction.
+      const desiredAngle = Math.atan2(assisted?.y ?? iy, assisted?.x ?? ix);
       const speedRatio = topSpeed > 0 ? deps.clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
       const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
       const diff = deps.angleDiff(desiredAngle, mountAngle);
       mountAngle += deps.clamp(diff, -turnRate * dt, turnRate * dt);
     } else {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt);
+      window.GroundObstacleAvoidance?.reset('mounted'); // Releasing the reins discards any cached detour; inertia still decelerates normally.
     }
 
     const stepStartX = m.x, stepStartY = m.y;

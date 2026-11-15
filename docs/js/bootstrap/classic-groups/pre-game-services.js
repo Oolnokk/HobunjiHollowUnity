@@ -2,7 +2,7 @@
   'use strict';
   // Mounts, companion movement, sound effects and music (AudioSystem before its consumers).
   const scriptUrls = [
-    "js/mount-system.js?v=20261016he27d4d6",
+    "js/mount-system.js?v=20261115mountAvoidAudit2",
     "js/companion-movement-speed.js?v=20261114ownerpaceReview5",
     "js/audio-system.js?v=20261114posobj1754",
     "js/honeyfuzzle-audio.js?v=20261114queenPerf1",

@@ -19547,20 +19547,42 @@
         // pull of the left arm along its reach axis, and inputs outside that
         // cone pivot the body instead of moving it.
         const crawlMotion = window.PlayerCrawl?.isCrawling?.() ? window.PlayerCrawl.step(dt, ix, iy, inputStrength, speedMul) : null;
+        // Physical steering is independent of intended input, aim, and facing.
+        // Auto-walk already has its own path; ice, crawl and scripted motion
+        // keep their existing movement rules.
+        if (window.GroundObstacleAvoidance && (playerAutoWalk || icePhysics || crawlMotion)) {
+          window.GroundObstacleAvoidance.reset('foot'); // Scripted/low-traction movement must not resume an old manual route.
+        }
+        const groundSteer = window.GroundObstacleAvoidance && !playerAutoWalk && !icePhysics && !crawlMotion
+          ? window.GroundObstacleAvoidance?.steer('foot', currentArea, player.x, player.y,
+              inputStrength > 0.001 ? ix : 0, inputStrength > 0.001 ? iy : 0, TILE, canPlayerOccupy, dt)
+          : null;
+        const travelIx = groundSteer?.x ?? ix, travelIy = groundSteer?.y ?? iy; // Only the normal acceleration targets consume obstacle assistance.
         if (crawlMotion) {
           player.vx = crawlMotion.vx;
           player.vy = crawlMotion.vy;
         } else if (inputStrength > 0.001) {
-          const targetVx = ix * targetSpeed;
-          const targetVy = iy * targetSpeed;
+          const targetVx = travelIx * targetSpeed;
+          const targetVy = travelIy * targetSpeed;
           const currentSpeed = Math.hypot(player.vx, player.vy);
-          const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
+          const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * travelIx + (player.vy / currentSpeed) * travelIy : 1;
           const accel = icePhysics
             ? (targetDot < 0.35 ? TURN_ACCEL * icePhysics.turningFactor : ACCEL * icePhysics.accelerationFactor) * footingSpeedMul
             : (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
-          player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
-          player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
+          if (groundSteer) {
+            // With assisted bearings, clamp the acceleration VECTOR: the
+            // ordinary per-axis clamp can turn a tiny nudge into a 45-degree
+            // diagonal when accelerating from rest.
+            const changeX = targetVx - player.vx, changeY = targetVy - player.vy; // Velocity error used only for the steering frame's bounded acceleration.
+            const changeLen = Math.hypot(changeX, changeY);
+            const fraction = changeLen > step && changeLen > 0 ? step / changeLen : 1; // Avoids unexpectedly strong sideways acceleration.
+            player.vx += changeX * fraction;
+            player.vy += changeY * fraction;
+          } else {
+            player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
+            player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
+          }
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
