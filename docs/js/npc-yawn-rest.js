@@ -19,7 +19,7 @@
   const PLAYER_KOMA_ID = '__player_daily_koma__'; // Separate per-character cooldown key for the player's own daily Koma dose.
   const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v2:'; // New per-character namespace avoids importing old, non-monotonic midnight timestamps.
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
-  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity1.m4a'; // Shared combat-breath recording if no yawn exists.
+  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Intensity-5 combat breath supplies the full yawn when no recording exists.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
   const activeById = new Map(); // O(1) lookups from each NPC's movement-speed chokepoint, even during crowd-wide yawns.
   const fileProbes = new Map(); // One HEAD lookup per future yawn-asset filename, reused for every NPC.
@@ -206,7 +206,7 @@
         }
       }
       return {
-        url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['1'] || BREATH_FALLBACK,
+        url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
         pitch: Number(mod.pitchSemitones) || 0,
         tempo: 1, // The source breath's natural pitch/time contours stay intact; the composer owns its five-second duration.
         cadence: Number(mod.tempo) || 1, // Reuses each species/gender's combat voice tempo as the grain pacing.
@@ -379,7 +379,7 @@
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
     if (progress >= 1) { finish(entry); return; }
-    if (entry.walker._bedLieActive) return;
+    if (entry.walker._bedLieActive) { finish(entry, 'bed-pose-owned'); return; } // A newly acquired bed pose must not retain a frozen additive neck/chest bend.
     const envelope = Math.sin(Math.PI * progress) ** 2;
     const neck = entry.walker.neckJoint;
     const state = entry.state;
@@ -397,7 +397,7 @@
     }
     if (entry.isPlayer) {
       window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
-        priority: 400, rotation: { pitch: -0.16 * envelope }, includeExternal: false,
+        priority: 400, leaseMs: 500, rotation: { pitch: -0.16 * envelope }, includeExternal: false, // Refreshes throughout the yawn; expires if gesture teardown is skipped.
       }); // The backward chest extension complements the arms-raised stretch without changing the player's world-facing orientation.
       window.PlayerYawnStretchPresentation?.update?.(entry, progress);
     }

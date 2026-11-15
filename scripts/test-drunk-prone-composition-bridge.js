@@ -70,6 +70,9 @@ let composerSet = null;
 let composerCleared = null;
 let renderObserver = null; // Inspects temporary enemy transforms inside the real render hook.
 let baseRenderCount = 0;
+let poseSampleClockMs = 1000; // Controlled render clock for stale and fresh animation frame tests.
+let lastDrunkSampleAtMs = 1000; // Last solver sample; drawing must not renew this timestamp.
+let debugSnapshotCalls = 0; // A render must not allocate or request the expensive human-readable debug payload.
 let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
 
@@ -138,6 +141,7 @@ const documentStub = {
 
 const context = {
   console,
+  performance: { now: () => poseSampleClockMs }, // The same monotonic clock used by both production pose owners.
   document: documentStub,
   window: {
     ResourceSystem,
@@ -148,9 +152,10 @@ const context = {
     THREE,
     Combat: { deps: { player } },
     HobunjiDrunkWalk: {
-      getDebug() {
-        return { pitchDeg: 12, rollDeg: -18 };
+      currentPlayerPoseSample() {
+        return { pitch: 12 * Math.PI / 180, roll: -18 * Math.PI / 180, lastUpdatedAtMs: lastDrunkSampleAtMs }; // Real runtime returns its shared state without allocating.
       },
+      getDebug() { debugSnapshotCalls++; return { pitchDeg: 12, rollDeg: -18 }; }, // Human-requested diagnostics remain available outside the render hot path.
     },
   },
 };
@@ -374,13 +379,39 @@ vm.runInContext(source, context, { filename: modulePath });
   const renderer = new WebGLRenderer();
   composerSet = null;
   composerCleared = null;
+  const debugCallsBeforeRender = debugSnapshotCalls; // Used below to prove hot-path reads never request a full diagnostic object.
   assert.strictEqual(renderer.render(), 'rendered');
+  assert.strictEqual(debugSnapshotCalls, debugCallsBeforeRender, 'render hooks must use the allocation-free live gait sample');
   assert.strictEqual(baseRenderCount, 1);
   assert.strictEqual(composerSet?.name, 'drunk');
   assert.strictEqual(composerSet?.contribution?.mode, 'additive');
   assert.strictEqual(Object.hasOwn(composerSet?.contribution || {}, 'preserveFacingSide'), false);
   assert.ok(Math.abs(composerSet.contribution.rotation.pitch - 12 * Math.PI / 180) < 1e-12);
   assert.ok(Math.abs(composerSet.contribution.rotation.roll - (-18 * Math.PI / 180)) < 1e-12);
+
+  // Rendering continued but gait stopped: the compositor must NOT renew the
+  // stale drunken pose forever, even when the old debug sample stays nonzero.
+  poseSampleClockMs = 1600;
+  composerSet = null; composerCleared = null;
+  renderer.render();
+  assert.strictEqual(composerSet, null, 'render-only passes cannot republish old sway');
+  assert.strictEqual(composerCleared, 'drunk', 'stale sway ownership is released');
+  assert.strictEqual(context.window.HobunjiDrunkProneCompositionBridge.getDebug().drunkPoseSyncReason, 'stale-gait-sample');
+
+  // The next genuine gait update makes its sample fresh again.
+  lastDrunkSampleAtMs = poseSampleClockMs;
+  composerSet = null; composerCleared = null;
+  renderer.render();
+  assert.strictEqual(composerSet?.name, 'drunk', 'fresh gait resumes normal body sway');
+  assert.strictEqual(composerCleared, null);
+
+  // A standing recovery can still own the entire body even before prone=true.
+  context.window.ImpactRagdollPlayback = { isActive: () => true };
+  composerSet = null; composerCleared = null;
+  renderer.render();
+  assert.strictEqual(composerSet, null, 'standing ragdoll recovery suppresses drunken sway');
+  assert.strictEqual(composerCleared, 'drunk');
+  delete context.window.ImpactRagdollPlayback;
 
   // While prone, the player's low-Footing body channel is removed so physical
   // knockdown/recovery owns the pose exclusively.

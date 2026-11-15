@@ -43,13 +43,17 @@ assert(straight.vx > 0 && Math.abs(straight.vy) < 1e-8,
   'open ground leaves normal acceleration completely unchanged');
 
 window.GroundObstacleAvoidance.reset('foot'); // Test fixture teleports between independent scenario starting positions.
-const assisted = step(5.1 * TILE, 6.5 * TILE, 1, 0);
-assert(assisted.vx > 0 && assisted.vy > 0, 'real player acceleration turns gently around a nearby rock');
-assert(Math.atan2(Math.abs(assisted.vy), assisted.vx) <= Math.PI / 7 + 1e-8,
-  'the actual accelerated velocity respects the subtle on-foot correction limit');
+const premature = step(5.1 * TILE, 6.5 * TILE, 1, 0);
+assert(premature.vx > 0 && premature.vy === 0,
+  'foot velocity is untouched until the forward collision footprint is nearly blocked');
+const assisted = step(5.8 * TILE, 6.5 * TILE, 1, 0);
+assert(assisted.vx > 0 && assisted.vy > 0, 'real player acceleration gains a tiny sideways component on contact');
+assert(Math.atan2(Math.abs(assisted.vy), assisted.vx) <= Math.PI / 9 + 1e-8,
+  'the accelerated velocity respects the 20-degree contact slide limit');
 assert.equal(assisted.player.angle, 0, 'assistance never rotates player aim/facing');
 const intent = window.GroundObstacleAvoidance.debugSnapshot().foot;
-assert.equal(intent.status, 'detouring', 'Pixel Probe can inspect the active walking detour');
+assert.equal(intent.status, 'sliding', 'Pixel Probe can inspect a contact slide instead of a walking path');
+assert.equal(intent.plans, 0, 'the real foot movement never makes an A* plan');
 
 // Ice and explicit auto-walk have independent movement authorities. Their
 // native acceleration should not consume stale manual steering waypoints.
