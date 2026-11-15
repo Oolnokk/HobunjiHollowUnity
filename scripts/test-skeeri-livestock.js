@@ -82,6 +82,7 @@ const actualGeneticsHost = {
   SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
   addEventListener() {},
   __farmLog() {},
+  SkeeriLivestockRegistration:api, // Production crossOffspring delegates special eye/marking inheritance here.
 }; // Isolated genuine genetics module, so size roles and breeding are checked behaviorally.
 vm.runInNewContext(read('docs/js/creature-genetics.js'),{window:actualGeneticsHost,console});
 actualGeneticsHost.CreatureGenetics.init({
@@ -107,6 +108,17 @@ for (const sizeClass of ['small','medium','large']) {
     'on-screen traits must agree with actual Stable slot eligibility');
 }
 
+const sire=genetic.makeDefaultGenotype('skeeri');
+const dam=genetic.makeDefaultGenotype('skeeri');
+Object.assign(sire,{skeeriTradition:'hronal',skeeriPattern:'#967d55',skeeriEyes:'#ff8027'});
+Object.assign(dam,{skeeriTradition:'tothal',skeeriPattern:'#5f788d',skeeriEyes:'#2b98ff'});
+for(let n=0;n<25;n++){
+  const chick=genetic.crossOffspring(sire,dam,'skeeri',0);
+  const parent=[sire,dam].find(candidate=>candidate.skeeriTradition===chick.skeeriTradition);
+  assert(parent,'a domesticated offspring must inherit one real parent tradition');
+  assert.equal(chick.skeeriPattern,parent.skeeriPattern,'marking colors must follow the same parent');
+  assert.equal(chick.skeeriEyes,parent.skeeriEyes,'glowing eyes must follow the same parent');
+}
 const geneticsSource=read('docs/js/creature-genetics.js');
 assert(geneticsSource.includes('skeeri: []'),'normal livestock genotype inheritance is required');
 assert(geneticsSource.includes("kind === 'skeeri'") && geneticsSource.includes("entry?.kind==='skeeri'"),
