@@ -228,7 +228,7 @@
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         const heading = resolvePlayerRunHeading(player, dt, speedWorldUnitsPerSecond); // Raised ruin supports can move the player while native vx/vy stay at zero.
         if (pitch && Number.isFinite(heading) && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
-          priority: 100, mode: 'additive', space: 'world',
+          priority: 100, mode: 'additive', space: 'world', leaseMs: 500, // Remove abandoned movement lean after interrupted gait updates.
           excludeExternalProviders: ['equippedTool', 'heldItem'], // Scene-level weapons/tools and player-nested bag items (including Kurraya) ignore movement lean.
           quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, heading),
         });
@@ -338,6 +338,7 @@
     // the target. Attack/ragdoll channels continue to compose by priority.
     composer.setChannel(DRUNK_CHANNEL, {
       priority: DRUNK_PRIORITY,
+      leaseMs: 500, // Render-sampled drunken lean cannot persist without fresh ownership.
       mode: 'additive',
       rotation: { pitch, roll },
     });
