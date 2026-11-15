@@ -151,8 +151,8 @@ for (const experiment of X.DIAGNOSTIC_PRESETS) {
   const report = JSON.parse(panel.onAction('report', {}).text);
   assert.equal(report.xrayDiagnosis.activePreset, experiment.id, 'report carries the actual active preset');
   assert.equal(report.xrayDiagnosis.status, 'applied', 'report shows an unchanged experiment');
-  assert.equal(report.xrayDiagnosis.stencilAndReplay.frontPortraitMaskedGear, undefined,
-    'missing diagnostic counters do not create fake counts');
+  assert.equal(report.xrayDiagnosis.stencilAndReplay.frontPortraitMaskedGear, 2,
+    'mobile diagnosis includes the real owner-stencil assignment counter');
 }
 assert.ok(panel.render().actions.some(action => action.id === 'restore-original'),
   'the first configuration can be restored at any point in the experiment');
