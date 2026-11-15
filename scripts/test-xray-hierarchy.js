@@ -133,7 +133,16 @@ X.moveLayer('actor.hands', '__end');
 const pretestRules = Object.fromEntries(X.keys().map(key => [key, X.get(key)])); // Simulates the user's custom pre-diagnosis configuration.
 const pretestOrder = X.describeLayers().map(layer => layer.id); // Capture the exact non-default custom rank arrangement.
 for (const experiment of X.DIAGNOSTIC_PRESETS) {
+  const beforeActive = panel.render().rows.find(row => row[0] === 'Active experiment')?.[1];
+  const beforeGuidance = panel.render().rows.find(row => row[0] === 'Testing')?.[1];
   assert.deepStrictEqual(panel.onAction('focus-preset', { value: experiment.id }), { ok: true });
+  const pending = panel.render();
+  assert.equal(pending.rows.find(row => row[0] === 'Active experiment')?.[1], beforeActive,
+    'selecting a new experiment does not change the actual active one');
+  assert.equal(pending.rows.find(row => row[0] === 'Testing')?.[1], beforeGuidance,
+    'selected-but-not-applied setup never replaces guidance for the active experiment');
+  assert.ok(pending.rows.find(row => row[0] === 'Selected next experiment')?.[1].includes(experiment.label),
+    'pending selection clearly names the next experiment');
   assert.deepStrictEqual(panel.onAction('apply-preset', {}), { ok: true }, 'diagnostic preset applies from shipped defaults');
   for (const key of X.keys()) assert.equal(X.get(key), experiment.rules[key] ?? X.RULES[key].default,
     experiment.id + ' sets a reproducible ' + key + ' rather than preserving a previous experiment');
@@ -146,8 +155,10 @@ for (const experiment of X.DIAGNOSTIC_PRESETS) {
   if (experiment.id === 'tool-after-hand') {
     assert.ok(X.layerRank('item.weapons') > X.layerRank('actor.hands'), 'tool-over-hand preset reverses that rank');
   }
-  assert.ok(panel.render().rows.some(row => row[0] === 'Experiment' && row[1].includes('(applied)')),
-    'preset status distinguishes applied from manually edited');
+  assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(applied)')),
+    'active experiment status distinguishes applied from manually edited');
+  assert.equal(panel.render().rows.find(row => row[0] === 'Testing')?.[1], experiment.hypothesis,
+    'testing guidance refers to the actually applied setup, not the dropdown selection');
   const report = JSON.parse(panel.onAction('report', {}).text);
   assert.equal(report.xrayDiagnosis.activePreset, experiment.id, 'report carries the actual active preset');
   assert.equal(report.xrayDiagnosis.status, 'applied', 'report shows an unchanged experiment');
@@ -161,7 +172,7 @@ assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets reta
 assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
 assert.equal(savedOriginal.active, 'portrait-water-off', 'last applied experiment survives browser reload');
 X.set('hand.frontPlaneMask', 'off');
-assert.ok(panel.render().rows.some(row => row[0] === 'Experiment' && row[1].includes('(modified manually)')),
+assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(modified manually)')),
   'editing one rule after applying a preset is reported, not silently treated as the preset');
 const modifiedReport = JSON.parse(panel.onAction('report', {}).text);
 assert.equal(modifiedReport.xrayDiagnosis.status, 'modified after apply');
@@ -180,6 +191,8 @@ assert.equal(Y.get('hand.frontPlaneMask'), 'off', 'user edits during the experim
 assert.ok(reloadedPanels[0].render().actions.some(action => action.id === 'restore-original'),
   'the original configuration is available after a page reload');
 assert.equal(Y.restoreBeforePresets(), true, 'restoring after reload succeeds');
+assert.equal(reloadedPanels[0].render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
+  'restoration cannot leave the former experiment preselected');
 for (const key of X.keys()) assert.equal(Y.get(key), pretestRules[key],
   'restore brings back the rule values from before the first experiment');
 assert.deepStrictEqual(Y.describeLayers().map(layer => layer.id), pretestOrder,
@@ -188,6 +201,8 @@ assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'restorin
 assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup twice');
 global.window = win;
 panel.onAction('reset', {});
+assert.equal(panel.render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
+  'repo reset clears the previously highlighted experiment');
 assert.equal(store['hobunji.xrayHierarchy.v1'], undefined, 'reset to repo clears experiment values');
 assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'reset to repo clears the diagnostic session too');
 assert.deepStrictEqual(X.diff(), {}, "remaining renderer checks start at shipped defaults");
