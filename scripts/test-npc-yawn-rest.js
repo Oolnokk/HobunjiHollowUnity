@@ -104,7 +104,12 @@ async function main() {
       },
     },
     AnimalVoiceIndependentPlayback: {
-      playIndependent: (url, opts) => { audioOptions = opts; audioCalls.push({ url, opts }); return { stop() {} }; },
+      playIndependent: (url, opts) => {
+        audioOptions = opts;
+        const call = { url, opts, stops: 0 }; // Test observes whether the renderer is interrupted before its natural onFinished event.
+        audioCalls.push(call);
+        return { stop() { call.stops++; } };
+      },
     },
     CharacterVoiceOwner: { request: () => ({}), bindStop() {}, release() {} },
     __farmLog() {}, addEventListener(name, callback) { listeners[name] = callback; },
@@ -220,7 +225,9 @@ async function main() {
   assert.equal(noYawnClip.source, 'breath 5 (0.350x utterance tempo)');
   assert.equal(noYawnClip.tempo, 0.35, 'missing-yawn breath always uses the exact 0.350x utterance tempo');
   assert.equal(noYawnClip.cadence, undefined, 'fallback must not include any old grain-composer cadence');
-  assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
+  assert.equal(noYawnClip.pitch, 0, 'fallback does not pitch-shift the original intensity-5 breath');
+  assert.equal(noYawnClip.gain, 1, 'fallback does not apply species voice-gain modulation');
+  assert.equal(noYawnClip.fallbackBreath, true, 'fallback has explicit ownership distinct from recorded yawns');
   assert.equal(noYawnClip.url, expectedYawnBreathUrl, 'missing dedicated yawns use configured intensity-5 breathing');
   const configuredGetVoice = window.CombatVocalizations.getConfig; // Restored after verifying the built-in source without a loaded combat config.
   window.CombatVocalizations.getConfig = () => ({ assets: { breath: {} } });
@@ -350,10 +357,11 @@ async function main() {
   assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
   for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
   const playerBreath = audioCalls.find(call => call.url === expectedYawnBreathUrl
-    && call.opts.tempo === 0.35 && call.opts.pitchSemitones === 7
+    && call.opts.tempo === 0.35 && call.opts.pitchSemitones === 0
+    && call.opts.trimSilence === false
     && !Object.hasOwn(call.opts, 'breathYawnDurationS')
-    && !Object.hasOwn(call.opts, 'breathYawnCadence')); // Checks the real 0.350x utterance call never enables reconstruction.
-  assert.ok(playerBreath, 'missing yawn recordings play breath 5 directly with the exact tempo and species pitch');
+    && !Object.hasOwn(call.opts, 'breathYawnCadence')); // The sole authored change to the source waveform is utterance tempo.
+  assert.ok(playerBreath, 'missing yawn recordings play untrimmed breath 5 directly at 0.350x with no pitch shift');
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
   assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.tempo, 0.35, 'mobile diagnostics show the exact fallback utterance tempo');
@@ -367,7 +375,7 @@ async function main() {
   assert.equal(playerBreath.opts.panX, 0, 'player yawns play centered in stereo');
   assert.ok(playerBreath.opts.volume > 0.5, 'player yawn retains full local SFX volume');
   assert.ok(audioCalls.some(call => /sfx_yawn_tletingan_male/.test(call.url)
-    && call.opts.breathYawnDurationS == null), 'real yawn recordings retain their normal playback');
+    && call.opts.breathYawnDurationS == null && call.opts.trimSilence === true), 'real yawn recordings retain their normal playback and trimming');
   // A weapon held but not yet fired has no lunge/stagger flags; yawn must not consume the input before release.
   let weaponPress = null; // Injected public Combat.input state used by the guarded player yawn query.
   let queuedAttacks = []; // Simulates attacks waiting on vocal/pose ownership.
@@ -427,7 +435,36 @@ async function main() {
     'character unload releases the player stretch and action ownership');
   assert.equal(runtime.debugSnapshot().playerWakePending, false, 'unloaded saves clear stale waking triggers');
 
-  console.log('Player/NPC fatigue, reconstructed breathing fallback, voice ownership, and rested buffs: OK');
+  // A slowed fallback can exceed the five-second stretch pose. It must not be cut at the pose boundary.
+  window.__hobunjiPlayerProfile.characterId = 'tail-test-save'; // Fresh save starts its own fatigue timer without inheriting prior Koma data.
+  ms += 600; frame({ timestamp: ms }); // Initialize the new player adapter before its first hourly yawn is due.
+  hour += 2; ms += 600; frame({ timestamp: ms });
+  for (let index = 0; index < 32; index++) await Promise.resolve(); // Resolve cached missing-recording probes.
+  const tailCall = audioCalls.filter(call => call.url === expectedYawnBreathUrl && call.opts.sourceActor === null).at(-1); // The last player-specific breath is the newly started yawn.
+  assert.ok(tailCall, 'a fresh character can still start the same fallback utterance');
+  tailCall.opts.onStarted?.();
+  ms += 5100; frame({ timestamp: ms });
+  assert.equal(runtime.playerMovementMultiplier(), 1, 'the player returns to normal speed after the five-second pose');
+  assert.equal(tailCall.stops, 0, 'the five-second pose never cuts off a still-playing 0.350x breath');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'playing', 'mobile diagnostics accurately show the lingering breath');
+  assert.equal(runtime.debugSnapshot().trailingBreathCount, 1, 'the tail is tracked until its renderer signals completion');
+  tailCall.opts.onFinished?.(); // Simulate the shared renderer naturally ending the full-length recording.
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'finished', 'natural end retains the renderer completion status');
+  assert.equal(runtime.debugSnapshot().trailingBreathCount, 0, 'natural completion releases the tail without a frame callback');
+
+  hour += 2; ms += 600; frame({ timestamp: ms }); // Start another fallback to verify unloading interrupts even a completed pose's audio.
+  for (let index = 0; index < 32; index++) await Promise.resolve();
+  const unloadTailCall = audioCalls.filter(call => call.url === expectedYawnBreathUrl && call.opts.sourceActor === null).at(-1);
+  assert.ok(unloadTailCall && unloadTailCall !== tailCall, 'the second yawn uses a distinct voice handle');
+  unloadTailCall.opts.onStarted?.();
+  ms += 5100; frame({ timestamp: ms });
+  assert.equal(runtime.debugSnapshot().trailingBreathCount, 1, 'second fallback is audible after its animation');
+  window.__hobunjiPlayerProfile.characterId = null;
+  ms += 16; frame({ timestamp: ms });
+  assert.equal(unloadTailCall.stops, 1, 'leaving the save stops a fallback still playing after its pose');
+  assert.equal(runtime.debugSnapshot().trailingBreathCount, 0, 'save unload clears all outstanding audio tails');
+
+  console.log('Player/NPC fatigue, exact 0.350x untrimmed Breath 5 fallback, natural voice tails, and rested buffs: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
