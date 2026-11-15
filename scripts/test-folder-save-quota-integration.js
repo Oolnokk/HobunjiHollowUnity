@@ -319,11 +319,13 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   ], 'manual/restore snapshots cannot bypass the shared folder write lock');
 
   const beforeBadCapture = (await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot; // A serialization failure must not replace a good folder save with stale browser state.
+  const originalCookingSerialize = first.window.CookingSystem.serialize; // Restored after the intentional failure so later autosync tests can capture live state.
   first.window.CookingSystem.serialize = () => { throw new Error('cooking capture failed'); };
   const badCapture = await first.window.HobunjiSaveCheckpoints.saveManual();
   assert.equal(badCapture.ok, false);
   assert.match(badCapture.error, /cooking capture failed/);
   assert.equal(JSON.stringify((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot), JSON.stringify(beforeBadCapture));
+  first.window.CookingSystem.serialize = originalCookingSerialize;
 
   disk.failWrites = true;
   assert.match((await second.window.LocalSaveFolder.syncNow()).lastError, /Disk write failed/, 'staging cannot hide a real folder write failure');
