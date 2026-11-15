@@ -568,8 +568,8 @@
     return [...find('sit', { area: 'interior' }), ...find('sit', { area: 'farm' })];
   }
 
-  // Single source of truth for town visits, also consumed by farm-plot workers so marriage
-  // never suppresses the Ginju's real field work on an authorized town afternoon.
+  // Shared ordinary-work gate for marriage and family/town farm-plot claims. Active household jobs
+  // win, while free spouses keep their authored work hours (visitor Jubmir keeps his real visit days).
   function spouseTownVisitNow(npcId) {
     if (!npcId || state.spouse?.npcId !== npcId || state.date?.npcId === npcId) return false;
     if (window.RomanceFamily?.spouseHoldingEgg?.() || state.outing?.npcId === npcId || window.RomanceFamily?.isAssignedToVat?.(npcId)) return false;
@@ -579,6 +579,11 @@
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) return false;
     // Family harvesting/tilling wins; when free, an ordinary occupation may resume.
     if (window.NpcFarmPlots?.targetFor?.({ id: npcId }, { familyOnly: true })) return false;
+    if (npcId === 'jubmir') {
+      const weekday = window.CalendarSystem?.currentWeekdayName?.(); // His authored visitor schedule is not a daily town residence.
+      return ((weekday === 'Hronu' || weekday === 'Tothu') && inHourWindow(hour, 11, 17))
+        || ((weekday === 'Kruru' || weekday === 'Uung') && inHourWindow(hour, 9, 11));
+    }
     return inHourWindow(hour, 8, 18);
   }
 
@@ -600,7 +605,11 @@
       return { ...state.outing.target, activity: state.outing.target.activity || 'out with you' };
     const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Family work takes precedence over the spouse's former trade.
     if (chore) return chore;
-    if (inHourWindow(hour, 8, 18) || window.FestivalSystem?.festivalHours?.()) return null; // Free spouses return to their ordinary authored occupations/social events.
+    if (spouseTownVisitNow(rec.id)) return null; // The original NPC agenda owns work and its real visitor windows.
+    if (!window.RomanceFamily?.isAssignedToVat?.(rec.id) && window.FestivalSystem?.festivalHours?.()) {
+      if (rec.id === 'jubmir') return window.SpouseSocialLife?.destinationFor?.('festival') || null; // Don't let his old visitor absence suppress marital festival attendance.
+      return null; // Ordinary residents follow the town's shared festival agenda.
+    }
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
