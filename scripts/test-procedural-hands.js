@@ -455,6 +455,55 @@ for (const [label, startMarker, endMarker] of [
   assert.match(placement, /hierarchyWorldQuaternionScaleFree\(parent, tempParentQuaternion\)/, `${label} orientation must follow the grip's scale-free parent hierarchy`);
   assert.doesNotMatch(placement, /parent\.getWorldQuaternion\(/, `${label} must not use reflected-matrix decomposition`);
 }
+
+{
+  // Exercise the real placement methods under a negatively mirrored parent and camera-relative yaw.
+  const placementStart = handSource.indexOf('const tempParentQuaternion = new THREE.Quaternion();');
+  const placementEnd = handSource.indexOf('const calibrationParentWorldQuaternion', placementStart);
+  const hierarchyStart = handSource.indexOf('function hierarchyWorldQuaternionScaleFree(');
+  const hierarchyEnd = handSource.indexOf('function placeCalibrationPreviewWorld(', hierarchyStart);
+  assert(placementStart >= 0 && placementEnd > placementStart && hierarchyStart >= 0 && hierarchyEnd > hierarchyStart);
+  class TestQuaternion {
+    constructor(yaw = 0) { this.yaw = yaw; }
+    identity() { this.yaw = 0; return this; }
+    multiply(other) { this.yaw += other.yaw; return this; }
+    normalize() { return this; }
+    invert() { this.yaw = -this.yaw; return this; }
+    clone() { return new TestQuaternion(this.yaw); }
+    copy(other) { this.yaw = other.yaw; return this; }
+  }
+  class TestVector {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    clone() { return new TestVector(this.x, this.y, this.z); }
+    copy(other) { this.x = other.x; this.y = other.y; this.z = other.z; return this; }
+  }
+  const makeSocket = () => ({ position: new TestVector(), quaternion: new TestQuaternion(), scale: { set() {} }, updateMatrix() {}, updateMatrixWorld() {} });
+  const right = makeSocket();
+  const paper = makeSocket();
+  const parent = {
+    isObject3D: true, quaternion: new TestQuaternion(0.7),
+    parent: { isObject3D: true, quaternion: new TestQuaternion(0.3), parent: null },
+    updateWorldMatrix() {},
+    worldToLocal(point) { point.x *= -1; return point; }, // Mirrored -X parent: positions reflect, but rotations must not.
+    getWorldQuaternion() { throw new Error('Mirrored matrix decomposition must not run'); },
+  };
+  const fixture = {
+    THREE: { Quaternion: TestQuaternion }, parent, sockets: { right: { socket: right } },
+    paperReferenceSocket: paper, paperGuide: {}, paperGuidePlaced: false, showPaperHandGuide: true,
+    profileValues: () => ({}), syncPaperHandGuide() {}, hidePaperHandGuideTarget() {}, applyToolCalibration() {},
+  };
+  const methods = vm.runInNewContext(
+    `${handSource.slice(hierarchyStart, hierarchyEnd)}\n${handSource.slice(placementStart, placementEnd)}\n({ placeHandWorld, placePaperHandGuideWorld })`,
+    fixture, { filename: 'mirrored-character-view-hand-grips.js' },
+  );
+  const worldGrip = new TestQuaternion(1.35); // Ancestor yaw 0.3 + parent yaw 0.7 + grip-local yaw 0.35.
+  assert(methods.placeHandWorld('right', new TestVector(2, 3, 4), worldGrip));
+  assert(methods.placePaperHandGuideWorld(new TestVector(2, 3, 4), worldGrip));
+  for (const [label, socket] of [['hand', right], ['paper guide', paper]]) {
+    assert(Math.abs(socket.quaternion.yaw - 0.35) < 1e-10, `${label} must retain the same local weapon grip yaw`);
+    assert.strictEqual(socket.position.x, -2, `${label} must still respect the mirrored parent position`);
+  }
+}
 assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*const modelKey = modelKeyForRecord\(record\)/, 'frame driver must use one authoritative selected model identity for calibration');
 assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
