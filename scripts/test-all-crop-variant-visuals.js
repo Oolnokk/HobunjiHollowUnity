@@ -173,6 +173,7 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
         assert.ok(shrub.scale.x < 0.6, family + ': native large bush scales to a cultivated single-tile footprint');
         assert.equal(fruit.userData.hobunjiBerryFruit, true, family + ': berries are attached to the bush');
         assert.equal(fruit.geometry.type, 'SphereGeometry', family + ': fruit is 3D, not floating berry sprite cards');
+        assert.ok(fruit.geometry.boundingSphere.radius >= 0.9, family + ': cluster-wide frustum bounds prevent berry disappearance at camera edges');
         assert.equal(fruit.count, 15, family + ': one instanced draw batch per bush');
         assert.equal(fruit.material.color.getHex(), expectedColor, family + ': every fruit uses the exact genotype RGB');
         assert.equal(fruit.userData.noOutline, true, family + ': berry spheres do not generate oversized outlines');
