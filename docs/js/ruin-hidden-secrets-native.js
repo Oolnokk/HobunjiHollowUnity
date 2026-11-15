@@ -47,6 +47,7 @@
       });
       if(obstructed){refused.push(String(room.id)+': corner or hidden switch blocked');continue;}
       const owner=secrets.create({room:roomSpec,seed,theme,ruinTier:context.tier,
+        allowBrood:placements.filter(entry=>entry.babies>0).length<1, // Only one supplementary native-V50 brood per ruin.
         THREE:kit.THREE,parent:kit.group(),mapId:context.mapId||'map_i_dev_random_ruin',
         getPlayerPosition:()=>{const p=kit.playerWorld();return p&&{x:p.x,z:p.z};},
         getPlayerY:()=>{const physical=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Physical supported feet, not presentation/bob offsets.
