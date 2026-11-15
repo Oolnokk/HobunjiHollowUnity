@@ -29,14 +29,14 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-09-18-uploads2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261104nelkRig2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261104nelkRig2', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-15-uploads3-independent-shoulders') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders1', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261115independentShoulders1', 'animal-head-rig-authored');
     }
   }
-  if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 3) {
-    if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20260918spline3', 'animal-shoulder-spline-profiles')) {
-      lateLoad('js/animal-shoulder-spline-profiles.js?v=20260918spline3', 'animal-shoulder-spline-profiles');
+  if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 4) {
+    if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20261115groundRoster4', 'animal-shoulder-spline-profiles')) {
+      lateLoad('js/animal-shoulder-spline-profiles.js?v=20261115groundRoster4', 'animal-shoulder-spline-profiles');
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
