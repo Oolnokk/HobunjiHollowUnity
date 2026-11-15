@@ -397,7 +397,7 @@
     }
     if (entry.isPlayer) {
       window.PlayerBodyTransformComposer?.setChannel?.(PLAYER_YAWN_CHANNEL, {
-        priority: 400, rotation: { pitch: -0.16 * envelope }, includeExternal: false,
+        priority: 400, leaseMs: 500, rotation: { pitch: -0.16 * envelope }, includeExternal: false, // Refreshes throughout the yawn; expires if gesture teardown is skipped.
       }); // The backward chest extension complements the arms-raised stretch without changing the player's world-facing orientation.
       window.PlayerYawnStretchPresentation?.update?.(entry, progress);
     }
