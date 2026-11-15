@@ -6,7 +6,7 @@
   // Mounts use real tile paths. On foot, only a physical-contact-like probe
   // permits a very short lateral slide; interaction and jump targets win.
   const PROFILES = Object.freeze({
-    foot: { contactTiles: 0.055, lateralTiles: 0.20, maxTurn: Math.PI / 9 }, // Contact-only and left/right; never pathfind while walking.
+    foot: { contactTiles: 0.055, lateralTiles: 0.20, maxTurn: Math.PI / 9 }, // Minimum imminent contact probe; widen only to match a real movement step.
     mounted: { lookTiles: 3.7, goalTiles: 4.6, maxSide: 3, maxTurn: Math.PI * 0.49, maxNodes: 300, padding: 6 },
   }); // Shared tuning for both player and rider steering.
   const states = {
@@ -20,7 +20,8 @@
     return {
       area: null, lastX: NaN, lastY: NaN, dirX: 0, dirY: 0, planDirX: 0, planDirY: 0,
       scanAge: Infinity, routeAge: Infinity, blocked: false, clearScans: 0,
-      path: null, index: 0, footSide: 0, probes: 0, plans: 0, status: 'idle', // footSide remembers the chosen side during the current contact.
+      path: null, index: 0, footSide: 0, footStepTiles: 0, footStallS: 0,
+      probes: 0, plans: 0, status: 'idle', // Recent physical travel and stalling close the low-FPS collision gap.
       output: { x: 0, y: 0, engaged: true, turnRad: 0 },
     };
   }
@@ -31,6 +32,8 @@
     st.path = null;
     st.index = 0;
     st.footSide = 0;
+    st.footStepTiles = 0;
+    st.footStallS = 0;
     st.blocked = false;
     st.planDirX = st.planDirY = 0; // Tracks the intentional direction at the last route plan.
     st.clearScans = 0;
@@ -103,7 +106,12 @@
   // Once pressed against an obstacle, choose only a short free sideways lane
   // and bend velocity slightly toward it; native axis collision does the rest.
   function steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy) {
-    const contactX = x + dx * profile.contactTiles * tile, contactY = y + dy * profile.contactTiles * tile; // Movement's imminent footprint test.
+    // A fixed 0.055-tile probe can miss genuine native collision at low FPS.
+    // Use the last actual movement step, or a tiny fallback after stalled
+    // input, so this tests the imminent collision instead of seeing ahead.
+    const contactTiles = Math.min(0.22, Math.max(profile.contactTiles, st.footStepTiles * 1.05,
+      st.footStallS >= 0.07 ? 0.18 : 0)); // Always local, never a mounted route lookahead.
+    const contactX = x + dx * contactTiles * tile, contactY = y + dy * contactTiles * tile; // Native collision remains authoritative.
     if (canOccupy(contactX, contactY)) {
       st.blocked = false;
       st.footSide = 0;
@@ -111,7 +119,7 @@
       return null; // No pre-emptive steering, and no lingering slide after clearing the edge.
     }
     st.blocked = true;
-    if (st.scanAge >= SCAN_INTERVAL_S || st.status === 'idle' || st.status === 'clear') {
+    if (st.scanAge >= SCAN_INTERVAL_S || st.status === 'idle' || st.status === 'clear' || st.status === 'yielding') {
       st.scanAge = 0;
       st.probes++;
       if (facingIntentionalStop(area, x, y, dx, dy, tile)) {
@@ -153,17 +161,28 @@
       return null;
     }
     const dx = inputX / strength, dy = inputY / strength;
-    if (st.area !== area || Math.hypot(x - st.lastX, y - st.lastY) > tile * 1.8 ||
+    const priorX = st.lastX, priorY = st.lastY; // Actual prior position, only for contact-distance estimation.
+    const restarted = st.area !== area || Math.hypot(x - st.lastX, y - st.lastY) > tile * 1.8 ||
         dx * st.dirX + dy * st.dirY < 0.82 ||
-        ((st.path || st.status === 'no-route') && dx * st.planDirX + dy * st.planDirY < 0.82)) {
-      reset(mode); // New area, teleport, or deliberate turn cancels the previous detour.
-    }
+        ((st.path || st.status === 'no-route') && dx * st.planDirX + dy * st.planDirY < 0.82);
+    if (restarted) reset(mode); // New area, teleport, or deliberate turn cancels the previous detour.
     st.area = area;
     st.lastX = x; st.lastY = y;
     st.dirX = dx; st.dirY = dy;
     st.scanAge += Math.max(0, dt || 0);
     st.routeAge += Math.max(0, dt || 0);
-    if (mode === 'foot') return steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy); // Walking never enters A*.
+    if (mode === 'foot') {
+      if (!restarted && Number.isFinite(priorX) && Number.isFinite(priorY)) {
+        const advance = (x - priorX) * dx + (y - priorY) * dy; // Real progress along the held movement direction.
+        if (advance > tile * 0.007) {
+          st.footStepTiles = Math.min(0.22, advance / tile);
+          st.footStallS = 0;
+        } else {
+          st.footStallS += Math.max(0, dt || 0);
+        }
+      }
+      return steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy); // Walking never enters A*.
+    }
 
     if (st.scanAge >= SCAN_INTERVAL_S) {
       st.probes++;
@@ -226,6 +245,7 @@
         status: st.status, area: st.area, blocked: st.blocked,
         waypoint: st.path?.[st.index] || null, plans: st.plans, probes: st.probes,
         side: mode === 'foot' ? st.footSide : null,
+        contactTiles: mode === 'foot' ? Math.min(0.22, Math.max(profile.contactTiles, st.footStepTiles * 1.05, st.footStallS >= 0.07 ? 0.18 : 0)) : null,
       };
     }
     return out;
