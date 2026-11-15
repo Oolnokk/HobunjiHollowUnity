@@ -75,7 +75,7 @@ than physical weapon depth, for both player and NPC rigs.
 The mask writes no depth or color. It respects normal foreground world
 depth and the shared solid-pixel PNG alpha cutoff, and restores camera and
 material state even when a render fails. Stencil bit 0 remains reserved
-for water/slush tint; tinted held weapons both test the portrait bit and
+for water/slush tint and bit 1 belongs to the temporary floor reset; tinted held weapons both test the portrait bit and
 write the existing tint bit without changing water passes. With fewer than
 eight stencil bits available the extra mask is skipped, preserving the
 original overlay behavior rather than risking tint or ground corruption.
@@ -84,6 +84,13 @@ additional owners fall back to ordinary held depth rather than masking a
 different actor's weapon.
 The existing renderer debug snapshot and mobile log expose
 `frontPortraitMasks` and `frontPortraitMaskPasses`.
+
+Nearby player and NPC portrait planes can intersect at oblique camera angles.
+The base transparent draw sorts those actors by their root positions in camera
+space and keeps the existing front, back and shoulder draw order within an
+actor. Farther portrait planes temporarily defer depth writes so they cannot
+cut across the closer actor. Opaque world geometry still depth-tests against
+each portrait. The weapon stencil uses the same actor ordering.
 
 ## Elevation-aware ground x-ray
 
@@ -193,6 +200,14 @@ restore, tint, then colorless water-depth order still applies. Each held mesh
 continues to receive a single color draw, and normal water shader/color passes
 are unchanged. A three-tile neighborhood conservatively includes long gear
 near a bank without allowing arbitrarily distant streams to trigger tint.
+
+Rigid gear and portrait art also check their world bounds against the cover
+height and wet tiles. The relief matters when an offhand flail head swings
+below a bank while its haft stays dry. The color pass submits each part on its
+own camera layer without hiding renderable parents from the scene graph.
+After ground depth is restored, eligible portrait silhouettes join the
+existing tint stencil with a colorless depth-tested draw. A foreground
+riverbank cannot tint a portrait just because their screen pixels overlap.
 
 The previous proximity guard excluded remote water only from the last tint
 pass. Earlier depth reconstruction still forced remote translucent water to

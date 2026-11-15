@@ -13650,18 +13650,21 @@
               && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
+            const targetArea = target ? normalizeNpcArea(target.area) : null;
+            const bedTransform = window.FurnitureTableSystem?.lieTransform?.(
+              this.area, targetArea === this.area && !this.animalDef ? target : null, this);
+            this._bedLieSurface = null; // Clear stale bedroom contacts before state handlers can return early.
             if (window.NpcCharacterState?.update?.(this, dt, {
               resolveScheduleTarget: resolveNpcScheduleTarget,
               surfaceY: npcSurfaceY,
               shadowSurfaceOffset: characterGroundShadowSurfaceOffset,
             })) return;
-            const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
-            const bedTransform = targetArea === this.area && target?.pose === 'lie' ? window.FurnitureTableSystem?.lieTransform?.(this.area, target) : null; // NPC beds follow real authored mattress position/height, not an arbitrary tile Y.
-            const tx = seatTransform?.x ?? bedTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
-            const tz = seatTransform?.z ?? bedTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
-            this._bedLieSurface = target?.pose === 'lie' ? (bedTransform || { x: tx, z: tz, y: npcSurfaceY(this.area, target.c, target.r), facingRad: THREE.MathUtils.degToRad(Number(target.rotY) || 0) }) : null; // Non-bed tent sleepers lie on the existing floor surface instead.
+            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            this._bedLieSurface = targetArea === this.area && target?.pose === 'lie' && !bedTransform?.occupied
+              ? (bedTransform || { x: tx, z: tz, y: npcSurfaceY(this.area, target.c, target.r), facingRad: THREE.MathUtils.degToRad(Number(target.rotY) || 0) }) : null; // A full bed keeps later arrivals standing; unbound stations still support floor sleep.
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
             const seatedPose = seatedAtTarget ? {
@@ -13832,7 +13835,6 @@
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
-                if (bedTransform) { root.position.x = bedTransform.x; root.position.z = bedTransform.z; } // Real mattress's placed center offsets win over legacy station tile.
                 root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
@@ -13907,7 +13909,7 @@
             }
             if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && this.canBeelineDecision(seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
+            if (!target.routeId && this.canBeelineDecision(seatTransform ? tx - 0.5 : target.c, seatTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -13985,6 +13987,7 @@
       function despawnNpcVisitor(walker) {
         const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
         if (index < 0) return false;
+        window.BedLiePose?.releaseNpc?.(walker);
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
         if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
