@@ -370,6 +370,7 @@
   api.__footingDrunkWalkInstalled = true;
 
   window.HobunjiDrunkWalk = {
+    currentPlayerPoseSample() { return activePlayerState?.state || null; }, // Allocation-free read-only snapshot reference for the render hook; never mutate it.
     getDebug() {
       const state = activePlayerState?.state;
       const player = window.Combat?.deps?.player;
