@@ -323,11 +323,12 @@
         return true;
       },
       roomGlowRadius(light,radius){
-        const desired=Number(radius),source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
-        if(!(desired>0)||!source?.wingId||source.id!==active?.id)return radius;
-        const edge=Math.min(light.x-source.x,source.x+source.w-light.x,
-          light.z-source.z,source.z+source.d-light.z);
-        return Math.min(desired,Math.max(.1,edge-.1)); // Solved-room ambient pools fade to zero before a wall; no illuminated rectangular frame.
+        const desired=Number(radius),x=Number(light?.x),z=Number(light?.z),y=Number(light?.y);
+        if(!(desired>0)||!active?.wingId||!Number.isFinite(x)||!Number.isFinite(z)
+          ||!Number.isFinite(y)||!inside(active,x,z)
+          ||y<active.y-.65||y>active.y+WALL_HEIGHT+1)return radius;
+        const edge=Math.min(x-active.x,active.x+active.w-x,z-active.z,active.z+active.d-z);
+        return Math.min(desired,Math.max(.1,edge-.1)); // After source-room filtering, use the active rectangle directly: no second all-room scan per light.
       },
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
