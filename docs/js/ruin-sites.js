@@ -241,39 +241,72 @@
   function authoredName(theme) {
     return window.HarlyaoLiches?.DATA?.[theme]?.tomb || ({hronal:"Azgarlu's Tomb",tothal:"Nanahi's Tomb",kanthic:"Imlao's Tomb"})[theme] || 'Named Lich Tomb';
   }
+  function layoutBurrowCandidates(layout,rng) {
+    if(!Array.isArray(layout?.tiles)||!layout.tiles.length)return []; // The shift publishes this compact data before any zone's THREE scene is built.
+    const used=new Set(); // Occupied footprints from the same generated layout keep hidden shafts outside authored buildings and camp objects.
+    const mark=(x,y,w=1,h=1)=>{
+      if(!Number.isFinite(Number(x))||!Number.isFinite(Number(y)))return;
+      for(let row=Math.floor(y);row<Number(y)+Math.max(1,Number(h)||1);row++)
+        for(let col=Math.floor(x);col<Number(x)+Math.max(1,Number(w)||1);col++)used.add(`${col},${row}`);
+    };
+    for(const b of layout.buildings||[])mark(b.gridX??b.x,b.gridZ??b.y,b.footprintW??b.w,b.footprintD??b.h);
+    for(const d of layout.dens||[])mark(d.x,d.y,d.w,d.h);
+    for(const p of [...(layout.decor||[]),...(layout.furniture||[])])mark(p.col,p.row,p.w,p.h);
+    for(const p of layout.wildernessFoliageFurniture||[])mark(p.col,p.row,p.footprintW,p.footprintD);
+    for(const locale of layout.localeInstances||[])for(const obj of locale.objects||[])mark(obj.x,obj.y,obj.w,obj.h);
+    const candidates=[]; // Shuffled once at relocation, not at every Map-tab render or active companion frame.
+    for(const tile of layout.tiles){
+      const col=Number(tile.c),row=Number(tile.r);
+      if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=layout.cols-4||row>=layout.rows-4)continue;
+      if(tile.incline||tile.water||tile.skipFloor||tile.mapBoundary||used.has(`${col},${row}`))continue;
+      if(tile.type!==deps.TileType.GRASS&&tile.type!==deps.TileType.WEEDS)continue; // Only ordinary, shovel-diggable ground.
+      candidates.push({col,row});
+    }
+    for(let i=candidates.length-1;i>0;i--){
+      const j=Math.floor(rng()*(i+1));[candidates[i],candidates[j]]=[candidates[j],candidates[i]];
+    }
+    return candidates.slice(0,160);
+  }
   function authoredBuriedSites(zoneId) {
-    const store=progressStore();
-    const zi=deps?._zoneScenes?.get?.(zoneId);
+    const store=progressStore(),zi=deps?._zoneScenes?.get?.(zoneId);
+    const layout=deps?._zoneLayouts?.get?.(zoneId);
     let changed=false;
     for(const [theme,record] of Object.entries(store.authored)) {
-      if(!record || record.completed || record.zoneId!==zoneId || record.cycle===cycle() || !zi?.grid) continue;
-      const layout=deps?._zoneLayouts?.get?.(zoneId);
+      if(!record||record.completed||record.zoneId!==zoneId||record.cycle===cycle()||(!zi?.grid&&!layout?.tiles?.length))continue;
       const avoided=[...(layout?.dens||[]),...(layout?.buildings||[]),...(layout?.localeInstances||[]),
         ...(deps?._zoneTreasurePersist?.get?.(zoneId)?.placements||[]),
         ...Object.values(state().holes||{}),
         ...Object.values(store.authored).filter(other=>other?.cycle===cycle()&&!other.completed&&other.zoneId===zoneId),
-        ...[window.DelversGuild?.vaultSite?.()].filter(other=>other?.cycle===cycle()&&other.zoneId===zoneId)]; // Keep the unique story vault separate.
+        ...[window.DelversGuild?.vaultSite?.()].filter(other=>other?.cycle===cycle()&&other.zoneId===zoneId)];
       const avoid=avoided.map(o=>({col:Number(o.col??o.x??o.gridX),row:Number(o.row??o.y??o.gridZ)}))
         .filter(o=>Number.isFinite(o.col)&&Number.isFinite(o.row));
-      if(Number.isInteger(record.col)&&Number.isInteger(record.row))avoid.push({col:record.col,row:record.row}); // Never pick its previous buried site twice.
-      const rng=rngFor(`authored-burrow|${theme}`); // Tothal-specific but independent of the original ruin's stable interior seed.
+      if(Number.isInteger(record.col)&&Number.isInteger(record.row))avoid.push({col:record.col,row:record.row}); // Relocation never repeats the previous entrance.
+      const rng=rngFor(`authored-burrow|${theme}`); // Location seed changes with Tothal, dungeon seed stays fixed.
+      const layoutCandidates=zi?.grid?null:layoutBurrowCandidates(layout,rng); // No THREE scene construction just to show the Map marker.
+      const rawTileByPos=layoutCandidates?new Map(layout.tiles.map(tile=>[`${tile.c},${tile.r}`,tile])):null;
       let selected=null;
       for(const count of [48,160]) {
-        const picks=deps?.findZoneFlatEmptyTiles?.(zoneId,count,rng,avoid)||[];
+        const picks=layoutCandidates?layoutCandidates.slice(0,count):deps?.findZoneFlatEmptyTiles?.(zoneId,count,rng,avoid)||[];
         selected=picks.find(({col,row})=>{
-          if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=zi.cols-4||row>=zi.rows-4)return false;
-          const tile=zi.grid[row]?.[col];
-          if(!tile||tile.water||tile.incline||tile.type===deps.TileType?.TRENCH||tile.type===deps.TileType?.RAMP||tile.type===deps.TileType?.ROCK
-             ||tile.type===deps.TileType?.PATH||tile.type===deps.TileType?.RIVER||tile.type===deps.TileType?.STREAM||tile.type===deps.TileType?.WATERFALL)return false;
+          const cols=zi?.cols??layout?.cols,rows=zi?.rows??layout?.rows;
+          if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=cols-4||row>=rows-4)return false;
+          const tile=zi?.grid?.[row]?.[col]||rawTileByPos?.get(`${col},${row}`);
+          if(!tile||tile.water||tile.incline||tile.skipFloor||tile.mapBoundary||tile.type===deps.TileType?.TRENCH
+            ||tile.type===deps.TileType?.RAMP||tile.type===deps.TileType?.ROCK||tile.type===deps.TileType?.SHRUB
+            ||tile.type===deps.TileType?.PATH||tile.type===deps.TileType?.RIVER
+            ||tile.type===deps.TileType?.STREAM||tile.type===deps.TileType?.WATERFALL)return false;
           return !avoid.some(point=>Math.hypot(point.col-col,point.row-row)<5);
         });
         if(selected)break;
       }
       if(!selected){debug.authoredRelocationError=`No diggable site for ${theme} in ${zoneId}`;continue;}
-      Object.assign(record,{col:selected.col,row:selected.row,cycle:cycle(),buried:true,dug:false}); // A shifted tomb moves on the surface, not in its saved dungeon.
+      Object.assign(record,{col:selected.col,row:selected.row,cycle:cycle(),buried:true,dug:false}); // Only the surface entrance moves.
       changed=true;
     }
-    if(changed&&!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store))debug.authoredRelocationError='Named tomb relocation could not be saved';
+    if(changed&&!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+      debug.authoredRelocationError='Named tomb relocation could not be saved';
+      return []; // Never show a relocated marker that the canonical world save failed to retain.
+    }
     return Object.entries(store.authored).filter(([,record])=>record&&!record.completed&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
       .map(([theme,record])=>({...record,theme}));
   }
