@@ -179,6 +179,14 @@ async function main() {
   const correctedAfterInspection = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(correctedAfterInspection.lastError, null, 'restoring the original farm allows the pending world change to save');
 
+  localStorage.removeItem('hobunji_farm_layout_v3:world'); // Browser cache loses a layout that still exists in the primary folder.
+  const missingBrowserFarm = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(missingBrowserFarm.lastAction, 'autosync-blocked-missing-layout', 'a missing browser layout cannot shrink the committed farm');
+  assert.equal(await (await canonicalFarm.getFile()).text(), originalFarmBytes, 'previous canonical farm is preserved on disk');
+  saveLayout();
+  const recoveredBrowserFarm = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(recoveredBrowserFarm.lastError, null, 'repaired browser layout can be saved again');
+
   folder.folders.get('characters').files.delete('farmer-char.json');
   meta.worlds[0].day = 3; saveMeta();
   const missingFile = await window.LocalSaveFolder.syncNow({ automatic: true });
@@ -231,7 +239,21 @@ async function main() {
   assert.equal(retried.lastError, null);
   assert.equal(retried.saveFileWork.written, 3, 'retry after partial failure uses a complete, verified baseline');
 
-  console.log('OK  incremental saves, no-op autosaves, missing files, external edits, folder switching, and write retries');
+  // Explicit world deletion must remove the old canonical layout without
+  // destroying numbered user recovery copies kept beside it.
+  const layoutsDir = recoveredFolder.folders.get('farm-layouts'); // Canonical directory that owns the real current-world layout.
+  const backup = await layoutsDir.getFileHandle('world(1).json', { create: true }); // User's independent version-copy backup.
+  const backupWrite = await backup.createWritable();
+  await backupWrite.write(JSON.stringify({ worldId: 'world', layout }));
+  await backupWrite.close();
+  meta.worlds = [];
+  saveMeta();
+  const removedWorld = await window.LocalSaveFolder.syncNow({ force: true });
+  assert.equal(removedWorld.lastError, null, 'explicit force-save may remove a deliberately deleted world');
+  assert.equal(layoutsDir.files.has('world.json'), false, 'deleted world canonical farm layout is removed');
+  assert.equal(layoutsDir.files.has('world(1).json'), true, 'numbered backup copies survive world deletion');
+
+  console.log('OK  incremental saves, no-op autosaves, protected farm layouts, external edits, folder switching, write retries and world deletion');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
