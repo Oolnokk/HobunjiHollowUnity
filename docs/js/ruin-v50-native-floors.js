@@ -482,6 +482,7 @@
           }else{
             challenge=Challenges.compose({
               THREE,parent:group,room:world,id:challengeId,kind,y:challengeY,
+              ruinTier:ruin.tier??plan.options?.tier??null, // Native V50 stages inherit the same rarity as the shaft wings.
               isActive:()=>!owner.disposed&&record.solved===i,
               getPlayerPosition,getPlayerY,addControl,removeControl,
               onLink:options.onStateChange,onError:options.onError,
