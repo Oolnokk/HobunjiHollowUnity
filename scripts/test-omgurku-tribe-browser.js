@@ -152,14 +152,15 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
       const handY=Number(ref.handAttachY)||0;
       const centroidY=Number(ref.poseCentroidY??ref.modelHeight/2);
       const riderScale=Number(ref.riderMount.upper.scale.x)||1;
-      const shiftY=window.HobunjiCharacterSpine?.orbitOffsetWorld?.(ref.spine,ref.rigScale?.x,height.rigScaleY)?.y||0;
+      const orbitOffset=window.HobunjiCharacterSpine?.orbitOffsetWorld?.(ref.spine,ref.rigScale?.x,height.rigScaleY)||null; // Mounted shoulders include their spine shift in the final sphere centre.
+      const shiftY=orbitOffset?.y||0;
       const orbit=poseScale.shoulderOrbitGeometry({ // Same live shoulder pair and arm reach as the shared enemy pose mapper.
         speciesId:ref.speciesId,gender:ref.gender,modelHeight:ref.poseModelHeight||ref.modelHeight,
-        rigScaleY:height.rigScaleY,armLength:ref.armLength,floorY:0,baseY:handY,
+        rigScaleY:height.rigScaleY,armLength:ref.armLength,floorY:0,baseY:handY,orbitOffset,
       });
       const mappedCentroidY=handY*height.rigScaleY+(centroidY-handY)*height.heightRatio; // Backwards-compatible path for species lacking shoulder anchors.
       const mappedPoseY=orbit
-        ? orbit.center.y+(handY+poseY-orbit.rawCenter.y)*orbit.scale+shiftY-sinkWorld
+        ? orbit.center.y+(handY+poseY-orbit.rawCenter.y)*orbit.scale-sinkWorld
         : mappedCentroidY+(handY+poseY-centroidY)*height.heightRatio*axes.y+shiftY-sinkWorld; // The mounted height follows the actual 3D shoulder sphere whenever available.
       const expectedAboveFloor=rider.y-floorY+riderScale*mappedPoseY; // The mount re-expresses a floor-relative pose from the actual saddle, scaling its height only once.
       return {omg:!!omg,pora:!!pora,species:omg.rosterRecord?.appearance?.speciesId,compound:!!ref.riderMount,
