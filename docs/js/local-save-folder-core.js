@@ -672,12 +672,17 @@
       written++;
     }
 
-    for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind !== 'file' || keep.has(name)) continue;
-      try {
-        const payload = JSON.parse(await (await entry.getFile()).text());
-        if (payload?.worldId && !worldIds.has(String(payload.worldId))) await dirHandle.removeEntry(name);
-      } catch { /* preserve unreadable files for recovery */ }
+    // Only remove canonical layouts for worlds this folder previously owned.
+    // Never parse every version-copy / recovery JSON on each autosave: a folder
+    // containing many large "world(1).json" backups otherwise rereads them all.
+    const oldWorldIds = (_lastKnownFolderMeta?.worlds || []).map(world => world?.id).filter(Boolean); // Last accepted folder snapshot, not arbitrary filenames.
+    for (const oldId of oldWorldIds) {
+      if (worldIds.has(String(oldId))) continue;
+      const filename = farmLayoutFilename(oldId); // Known canonical name; versioned recovery copies are intentionally retained.
+      if (keep.has(filename)) continue;
+      try { await dirHandle.removeEntry(filename); } catch (error) {
+        if (error?.name !== 'NotFoundError') throw error; // Unexpected disk errors still fail the canonical save.
+      }
     }
     return written;
   }
