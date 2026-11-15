@@ -85,8 +85,9 @@ assert(reach.includes('senseTargets')&&reach.includes('liveLadderGroups.delete(g
 assert(sense.includes('window.RuinReachingObelisks?.senseTargets?.(scene)')&&
   sense.includes('window.ShaftHub?.senseTargets?.(scene)')&&shaft.includes('function senseTargets(scene)'),
   'sense mode must render both moving-pillar and static-buttress ladders through the stone');
-assert(fog.includes('withRuinShadowClip(ctx,shadows')&&fog.includes('ruinShadowPolygons(light,light.radius)'),
-  'every special-ruin fire mask, including tower sconces, uses per-light shadows');
+assert(fog.includes('withRuinShadowClip(ctx,shadows')&&ruinMask.includes('shadows:ruinShadowPolygons(light,radiusTiles)')
+  &&ruinMask.includes('light.roomBound===true')&&ruinMask.includes('roomGlowRadius?.(light,light.radius)'),
+  'special-ruin fire masks retain per-light shadows using the same wall-bounded radius as the radial glow');
 assert(fog.includes('node.userData?.ruinLadderRuneGlow'),
   'the darkness overlay must leave the ladder edge glyphs luminous');
 assert(index.indexOf('js/ruin-light-occlusion.js')<index.indexOf('js/cloud-forest-fog.js'),
