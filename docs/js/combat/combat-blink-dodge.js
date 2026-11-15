@@ -27,6 +27,8 @@
   const afterimageTravelByActor = new WeakMap(); // Stores per-action traveled distance without allocating state every frame.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
   const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
+  const AFTERIMAGE_MAX_PER_ROOT = 3; // Live snapshots per actor: with the 0.28 s fade the oldest of five were nearly invisible, yet each is a full portrait mesh in every scene pass.
+  const AFTERIMAGE_DECIMATE_CELLS = 2; // A ghost merges NxN cells of the portrait's skinned grid into one quad (28x36 cells -> 14x18): a quarter of the triangles and of the per-snapshot skinning work.
   const AFTERIMAGE_MAX_POOLED_ENTRIES = 24; // Maximum detached portrait mesh/material/texture sets retained for reuse between short combat movements.
   const AFTERIMAGE_POOL_IDLE_S = 4; // Maximum time an unused snapshot remains GPU-resident after the last dodge, lunge, or Blink burst.
   const AFTERIMAGE_TEXTURE_SLOTS = ['map', 'alphaMap', 'emissiveMap']; // Shared texture slots checked and refreshed when reusing a frozen portrait.
@@ -205,11 +207,91 @@
     return true;
   }
 
+  // The skinned portrait plane (png-plane-avatar.js buildSkinnedPlaneGeometry) is a NON-indexed grid: segmentsX x
+  // segmentsY cells, 6 vertices per cell (two triangles), front face then optional back face. A 0.34-opacity ghost that
+  // fades in 0.28 s does not need that density, so the ghost is rebuilt from the four corner vertices of every
+  // NxN block of cells: same UVs and same skinned positions at those corners, a quarter of the triangles (4,032 -> 1,008)
+  // and a quarter of the boneTransform calls per snapshot. Returns null for any geometry that is not that grid, and the
+  // caller falls back to the old full clone.
+  const decimationPlans = new WeakMap(); // source geometry -> { src: Uint32Array of source vertex per ghost vertex, groups, count } | null
+  function decimationPlanFor(sourceGeometry) {
+    if (decimationPlans.has(sourceGeometry)) return decimationPlans.get(sourceGeometry);
+    let plan = null;
+    const segX = Number(sourceGeometry?.userData?.segmentsX), segY = Number(sourceGeometry?.userData?.segmentsY);
+    const position = sourceGeometry?.getAttribute?.('position');
+    const faceGroups = (sourceGeometry?.groups || []).length;
+    if (AFTERIMAGE_DECIMATE_CELLS > 1 && segX >= 2 && segY >= 2 && position && !sourceGeometry.getIndex?.() && (faceGroups === 1 || faceGroups === 2)) {
+      const cellsPerFace = segX * segY;
+      const faces = position.count / (cellsPerFace * 6);
+      if (Number.isInteger(faces) && faces === faceGroups) {
+        const k = AFTERIMAGE_DECIMATE_CELLS;
+        const blocks = [];
+        for (let r = 0; r < segY; r += k) for (let c = 0; c < segX; c += k) blocks.push([c, r, Math.min(k, segX - c), Math.min(k, segY - r)]);
+        const perFace = blocks.length * 6;
+        const src = new Uint32Array(perFace * faces);
+        for (let face = 0; face < faces; face += 1) {
+          const faceBase = face * cellsPerFace * 6;
+          // Original cell order is v0=(x0,y1) v1=(x1,y1) v2=(x0,y0) v3=(x1,y1) v4=(x1,y0) v5=(x0,y0); the back face is the same list reversed.
+          const at = (c, r, i) => faceBase + (r * segX + c) * 6 + (face === 0 ? i : 5 - i);
+          let out = face * perFace;
+          for (const [c, r, w, h] of blocks) {
+            const A = at(c, r + h - 1, 0), B = at(c + w - 1, r + h - 1, 1), C = at(c, r, 2), D = at(c + w - 1, r, 4);
+            const quad = face === 0 ? [A, B, C, B, D, C] : [C, D, B, C, B, A];
+            for (const index of quad) src[out++] = index;
+          }
+        }
+        plan = { src, count: src.length, faces, perFace };
+      }
+    }
+    decimationPlans.set(sourceGeometry, plan);
+    return plan;
+  }
+
+  function buildDecimatedGhostGeometry(THREE, sourceGeometry, plan) {
+    const geometry = new THREE.BufferGeometry();
+    const uv = sourceGeometry.getAttribute('uv');
+    const normal = sourceGeometry.getAttribute('normal');
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(plan.count * 3), 3));
+    if (uv) {
+      const out = new Float32Array(plan.count * 2);
+      for (let i = 0; i < plan.count; i += 1) { out[i * 2] = uv.getX(plan.src[i]); out[i * 2 + 1] = uv.getY(plan.src[i]); }
+      geometry.setAttribute('uv', new THREE.BufferAttribute(out, 2));
+    }
+    if (normal) {
+      const out = new Float32Array(plan.count * 3);
+      for (let i = 0; i < plan.count; i += 1) { out[i * 3] = normal.getX(plan.src[i]); out[i * 3 + 1] = normal.getY(plan.src[i]); out[i * 3 + 2] = normal.getZ(plan.src[i]); }
+      geometry.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+    }
+    for (let face = 0; face < plan.faces; face += 1) geometry.addGroup(face * plan.perFace, plan.perFace, sourceGeometry.groups[face]?.materialIndex ?? face);
+    geometry.userData = { afterimageDecimated: true, sourceVertexCount: sourceGeometry.getAttribute('position').count };
+    return geometry;
+  }
+
   function bakePortraitGeometry(source, reusableGeometry = null) {
     const THREE = window.THREE;
     const sourceGeometry = source?.geometry;
     if (!THREE || !sourceGeometry?.clone) return null;
+    const plan = source.isSkinnedMesh && typeof source.boneTransform === 'function' && THREE.BufferGeometry ? decimationPlanFor(sourceGeometry) : null;
+    if (plan) {
+      // A pooled ghost is only reusable for the same decimated topology; anything else is rebuilt by the caller.
+      if (reusableGeometry && reusableGeometry.userData?.afterimageDecimated !== true) return null;
+      const sourcePositions = sourceGeometry.getAttribute('position');
+      if (reusableGeometry && reusableGeometry.getAttribute('position')?.count !== plan.count) return null;
+      const geometry = reusableGeometry || buildDecimatedGhostGeometry(THREE, sourceGeometry, plan);
+      const bakedPositions = geometry.getAttribute('position');
+      source.skeleton?.update?.();
+      const vertex = new THREE.Vector3();
+      for (let i = 0; i < plan.count; i += 1) {
+        const index = plan.src[i];
+        vertex.fromBufferAttribute(sourcePositions, index);
+        source.boneTransform(index, vertex);
+        bakedPositions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+      }
+      bakedPositions.needsUpdate = true;
+      return geometry;
+    }
     const geometry = reusableGeometry || sourceGeometry.clone(); // Reuses the same ghost buffer on later lunges while keeping it independent of the actor.
+    if (reusableGeometry && reusableGeometry.userData?.afterimageDecimated === true) return null; // Source stopped matching the grid: do not reuse the quarter-density ghost for it.
     if (reusableGeometry && !source.isSkinnedMesh && !refreshStaticAfterimageGeometry(sourceGeometry, geometry)) return null;
     if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
       const sourcePositions = sourceGeometry.getAttribute?.('position');
@@ -386,7 +468,16 @@
     return true;
   }
 
-  function trimAfterimagesToLimit() {
+  function trimAfterimagesToLimit(root) {
+    if (root) { // One actor's trail never keeps more than AFTERIMAGE_MAX_PER_ROOT ghosts alive, whatever the global cap allows.
+      let mine = 0;
+      for (const record of blinkAfterimages) if (record.root === root) mine += 1;
+      for (let i = 0; mine >= AFTERIMAGE_MAX_PER_ROOT && i < blinkAfterimages.length;) {
+        if (blinkAfterimages[i].root !== root) { i += 1; continue; }
+        recycleAfterimage(blinkAfterimages.splice(i, 1)[0]);
+        mine -= 1;
+      }
+    }
     while (blinkAfterimages.length >= AFTERIMAGE_MAX_ACTIVE) {
       const oldest = blinkAfterimages.shift();
       recycleAfterimage(oldest);
@@ -401,7 +492,7 @@
     if (!THREE || !sources.length || !scene) return false;
     scene.updateWorldMatrix?.(true, false);
     const worldToScene = scene.matrixWorld?.clone?.()?.invert?.() || null; // One parent-space conversion per snapshot, not one per portrait plane.
-    trimAfterimagesToLimit(); // Free the oldest live record before snapshotting: a full pool can immediately reuse its resources.
+    trimAfterimagesToLimit(root); // Free the oldest live record before snapshotting: a full pool can immediately reuse its resources.
     const entries = [];
     for (const source of sources) {
       source.updateWorldMatrix?.(true, !!source.isSkinnedMesh); // Refresh parent transforms and, for skinned rigs, the child bones before freezing the pose.
@@ -469,7 +560,7 @@
     if (!entries.length) return false;
 
     for (const entry of entries) scene.add(entry.mesh);
-    blinkAfterimages.push({ entries, ageS: 0, reason });
+    blinkAfterimages.push({ entries, ageS: 0, reason, root });
     afterimageRuntimeDebug.active = blinkAfterimages.length;
     afterimageRuntimeDebug.spawned += 1;
     if (String(reason).startsWith('enemy-')) afterimageRuntimeDebug.enemySnapshots += 1;
@@ -924,6 +1015,8 @@
             afterimageForcedMoveIntervalS: AFTERIMAGE_FORCED_MOVE_INTERVAL_S,
             afterimageHopSamples: AFTERIMAGE_HOP_SAMPLES,
             afterimageMaxActive: AFTERIMAGE_MAX_ACTIVE,
+            afterimageMaxPerRoot: AFTERIMAGE_MAX_PER_ROOT,
+            afterimageDecimateCells: AFTERIMAGE_DECIMATE_CELLS,
             afterimageMaxPooledEntries: AFTERIMAGE_MAX_POOLED_ENTRIES,
             afterimagePoolIdleS: AFTERIMAGE_POOL_IDLE_S,
           },
