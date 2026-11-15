@@ -97,7 +97,7 @@ function harness(roll, legacyPlacement = null) {
   const placement = persist.get(mapId).placements[0]; // Reads the actual saved placement, not test-generated loot.
   return {
     api, mapId, tile, objects, persist, placement, inventory, started, claimed, acquired, flushed, masteryRolls,
-    dig() { tile.type = TILE.TRENCH; api.syncZoneInteractivity(mapId); return objects.get('0,0'); },
+    dig() { tile.type = TILE.TRENCH; api.syncZoneInteractivity(mapId); return objects.get(mapId)?.get('0,0'); },
   };
 }
 
