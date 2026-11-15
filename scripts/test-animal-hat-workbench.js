@@ -174,7 +174,7 @@ assert.equal(hats.normalizeAttachment({ heightScale: -99 }).heightScale, .2);
     window: testWindow, document: { head: createNode(), querySelector: createNode,
       getElementById: node, createElement: createNode }, localStorage,
     state: { baseRecord: {}, pendingRig: null, image: null },
-    normalizedRig: () => null, applyRecord: () => {}, buildRecord: () => ({ id: 'hat_only_test' }),
+    normalizedRig: () => null, applyRigToPaint: () => {}, applyRecord: () => {}, buildRecord: () => ({ id: 'hat_only_test' }),
     populateAnimalSelect: () => {}, updateOutput: () => {}, resizeCanvases: () => {},
     requestAnimationFrame: callback => callback(), ResizeObserver: class { observe() {} },
     pretty: JSON.stringify, copyText() {}, downloadJson() {}, console
