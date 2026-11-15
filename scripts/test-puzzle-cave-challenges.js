@@ -189,7 +189,7 @@ assert.equal(closed,0,'finishing the song must not close a manually equipped ins
 timed.dispose();
 for(const [tier,difficulty] of [['cave',3],['hole',4],['lich',5]]){
   const ruin=compose({THREE,parent,room,id:'ruin-music-difficulty-test',kind:'timedMelody',y:0,
-    isActive:()=>false,puzzleCaveMelody:Song,ruinTier:tier}); // Same chamber ID, different parent ruin rarity.
+    isActive:()=>false,onSolved:()=>{},puzzleCaveMelody:Song,ruinTier:tier}); // Same chamber ID, different parent ruin rarity.
   assert.equal(ruin.song.difficulty,difficulty,'layered ruin song difficulty follows the supplied ruin tier');
   assert(ruin.song.measures>=2,'layered ruin melodies preserve the cave composer\'s multi-bar rhythm');
   ruin.dispose();
