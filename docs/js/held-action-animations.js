@@ -44,6 +44,9 @@
         "dualWield": {
           "enabled": false
         },
+        "offhandIdle": {
+          "enabled": false
+        },
         "elbows": {
           "right": {
             "x": -0.04,
@@ -73,6 +76,9 @@
         },
         "dualWield": {
           "enabled": false
+        },
+        "offhandIdle": {
+          "enabled": false
         }
       },
       "strike": {
@@ -95,6 +101,9 @@
           "primaryPercent": 50
         },
         "dualWield": {
+          "enabled": false
+        },
+        "offhandIdle": {
           "enabled": false
         }
       }

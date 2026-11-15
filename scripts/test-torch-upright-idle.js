@@ -27,6 +27,7 @@ assert.equal(sharedTorch.poses.windup.y, 0);
 assert.equal(sharedTorch.poses.strike.pitch, 10.31);
 assert.equal(sharedTorch.gripMode, 'palm-parallel');
 assert.equal(sharedTorch.worldUpright, true);
+for (const phase of ['neutral', 'windup', 'strike']) assert.equal(sharedTorch.poses[phase].offhandIdle?.enabled, false, phase + ': invisible authored offhand is disabled');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /id="torchIdleYDirect"/, 'attack editor exposes direct torch height slider');
 assert.match(read('docs/js/attack-idle-stance-editor.js'), /workingConfig.stances.torchHold.y = value/, 'slider writes the existing exported stance');
 assert.match(read('docs/js/weapon-tool-stances.js'), /PREVIOUS_TORCH_HOLD_STANCES/, 'untouched legacy browser overrides migrate to the authored neutral');

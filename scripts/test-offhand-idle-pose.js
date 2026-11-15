@@ -57,6 +57,23 @@ near(atWindup.offhandIdleBlend, 1, 'enabled windup'); near(atWindup.offhandIdleP
 const between = grips.animationGripAt(0.3, timing, mixed, 'attack', 'hatchet').offhandIdlePose;
 near(between.x, (0.5 + STANCE_OFFHAND.x) / 2, 'lerps from the authored windup toward the stance default at the strike');
 
+// Torch Hold deliberately keeps the free hand in its ordinary idle for every authored keyframe.
+const torchActionSource = fs.readFileSync('docs/js/held-action-animations.js', 'utf8'); // The shared authoring template, not a test-only copy.
+const torchStart = torchActionSource.indexOf('  const torchIdle = '); // Locates the committed action object without evaluating browser bootstraps.
+const torchEnd = torchActionSource.indexOf(';\n\n  const drink', torchStart); // Its end marker isolates the action from adjacent shared definitions.
+assert(torchStart >= 0 && torchEnd > torchStart, 'torch idle action must remain in the shared registry');
+const torchIdle = vm.runInNewContext('(' + torchActionSource.slice(torchStart + '  const torchIdle = '.length, torchEnd) + ')'); // Decode the actual committed authoring object.
+for (const phase of ['neutral', 'windup', 'strike']) {
+  assert.equal(torchIdle.poses[phase].offhandIdle?.enabled, false, 'Torch ' + phase + ': authored invisible-offhand toggle is off');
+  assert.equal(torchIdle.poses[phase].secondaryGrip?.enabled, false, 'Torch ' + phase + ': no unintended two-hand grip');
+  assert.equal(torchIdle.poses[phase].dualWield?.enabled, false, 'Torch ' + phase + ': no unintended dual wield');
+}
+for (const t of [0, .08, .16, .22, .28, .4, .496, .65, .9, 1]) {
+  const grip = grips.animationGripAt(t, torchIdle, torchIdle.poses, 'attack', 'torch'); // Real runtime sampler across windup, strike, hold, return.
+  near(grip.offhandIdleBlend, 0, 'torch invisible offhand disabled at t=' + t);
+  assert.equal(grips.offhandIdleStateForTool('torch', 'melee', { animationGripState: grip }), null, 'torch t=' + t + ' returns free hand to locomotion idle');
+}
+
 // Ranged / load-fire sequences never use it.
 near(grips.animationGripAt(0.3, timing, oneHand, 'fire', 'hatchet').offhandIdleBlend, 0, 'ranged');
 
