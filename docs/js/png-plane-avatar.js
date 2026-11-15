@@ -1325,8 +1325,8 @@
     // Explicit species+gender weapon orbit is independent from anatomy; old armLength is only a fallback.
     const poseOrbitAxes = orbitScaler?.axesFromValue?.(configuredOrbit)
       ?? orbitScaler?.resolveAxes?.(speciesId, gender, legacyArmLength)
-      ?? { x: fallbackOrbit, y: 1, z: fallbackOrbit };
-    const poseOrbitScale = poseOrbitAxes.x; // Horizontal X orbit as a single number, for callers that predate per-axis scales.
+      ?? { x: fallbackOrbit, y: fallbackOrbit, z: fallbackOrbit };
+    const poseOrbitScale = poseOrbitAxes.x; // Scalar compatibility view of the authoring orbit; numeric values are spherical on all axes.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();

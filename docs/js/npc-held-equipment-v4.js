@@ -188,7 +188,7 @@
           Number(avatar.userData?.visualCentroidLocalY) || 0,
           Number(avatar.userData?.visualCentroidLocalZ) || 0,
         );
-        const centroid = avatar.localToWorld(centroidLocal); // Horizontal X/Z orbit center in world space.
+        const centroid = avatar.localToWorld(centroidLocal); // Shared X/Y/Z orbit center in world space.
         // The pose is authored in the rig parent's frame; per-axis orbits scale its lateral/forward axes. Yaw of the
         // frame's +Z axis, read straight off the quaternion so no extra vector is allocated.
         const poseYawRad = Math.atan2(2 * (sourceWorldQ.x * sourceWorldQ.z + sourceWorldQ.w * sourceWorldQ.y), 1 - 2 * (sourceWorldQ.x * sourceWorldQ.x + sourceWorldQ.y * sourceWorldQ.y));
@@ -196,7 +196,7 @@
         const floorWorld = sourceParent.localToWorld(new three.Vector3(0, 0, 0)); // Actual already-scaled character floor.
         if (scaler?.transformPosePoint) {
           scaler.transformPosePoint(worldP, {
-            cx: centroid.x, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
+            cx: centroid.x, cy: centroid.y, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
             speciesId, gender, modelHeight, rigScaleY: 1,
             armLength, poseOrbitScale, yawRad: poseYawRad,
             orbitOffset: spine ? window.HobunjiCharacterSpine?.orbitOffsetWorld(spine, sourceParent.localToWorld(new three.Vector3(1, 0, 0)).sub(floorWorld).length(), sourceParent.localToWorld(new three.Vector3(0, 1, 0)).y - floorWorld.y) || null : null, // sourceParent already carries the body scale, so measure its world X and Y units.

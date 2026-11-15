@@ -179,7 +179,7 @@ const anchorCalls=[]; // The shared editor scale-pivot helper must be called wit
 window.SharedAttackPose={anchorScaleAtPoint:(holder,grip,scale)=>anchorCalls.push({holder,grip,scale})};
 vm.runInNewContext(gameSource.slice(branchStart,branchEnd)+'        }',{
   isKurraya:true,window,heldItemHolder:heldTransform,_gripAnchorCache:gripCache,playerToolBaseX:-0.45,playerToolBaseY:0.45,
-  playerAvatarModelHeight:0.9,playerArmLength:0.558,playerPoseOrbitScale:1,
+  playerAvatarModelHeight:0.9,playerArmLength:0.558,playerPoseOrbitScale:1,playerPoseCentroidY:0.45, // Isolated game-branch fixture: real player portrait's body-centroid orbit pivot.
   playerFacing,playerMesh,playerPoseIdentity:()=>({speciesId:'mao-ao',gender:'male'}),
   THREE:{MathUtils:{degToRad:value=>value*Math.PI/180}},
 });

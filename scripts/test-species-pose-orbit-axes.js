@@ -1,5 +1,5 @@
 'use strict';
-// A species/gender orbit may be one number (X and Z alike, Y untouched) or { x, y, z } so each axis is authored
+// A species/gender orbit may be one number (spherical scaling on X/Y/Z) or { x, y, z } so each axis is authored
 // independently. X/Z are the pose's own lateral/forward axes (they turn with the character's facing), and Y is an
 // extra multiplier on top of the rigger-derived height mapping.
 const assert = require('node:assert/strict');
@@ -15,7 +15,7 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
 const plain = value => JSON.parse(JSON.stringify(value));
 
 // Parsing: a number is the original contract; an object fills missing axes with 1; junk is rejected.
-assert.deepEqual(plain(api.axesFromValue(0.5)), { x: 0.5, y: 1, z: 0.5 });
+assert.deepEqual(plain(api.axesFromValue(0.5)), { x: 0.5, y: 0.5, z: 0.5 });
 assert.deepEqual(plain(api.axesFromValue({ x: 0.5, y: 0.9, z: 0.7 })), { x: 0.5, y: 0.9, z: 0.7 });
 assert.deepEqual(plain(api.axesFromValue({ z: 0.7 })), { x: 1, y: 1, z: 0.7 });
 assert.equal(api.axesFromValue({ x: -1, y: 'a' }), null);
@@ -30,23 +30,25 @@ assert.equal(exported.tletingan.female, 0.47, 'plain numbers stay numbers');
 assert.equal(exported.junk?.male, undefined, 'unusable entries are not stored');
 assert.equal(api.resolveScale('tletingan', 'male', 9), 0.5, 'single-number view of an object entry is its X orbit');
 assert.deepEqual(plain(api.resolveAxes('tletingan', 'male', 9)), { x: 0.5, y: 0.8, z: 0.3 });
-assert.deepEqual(plain(api.resolveAxes('tletingan', 'female', 9)), { x: 0.47, y: 1, z: 0.47 });
+assert.deepEqual(plain(api.resolveAxes('tletingan', 'female', 9)), { x: 0.47, y: 0.47, z: 0.47 });
 assert.deepEqual(plain(api.resolveAuthored('tletingan', 'male')), { x: 0.5, y: 0.8, z: 0.3 }, 'inheritance can copy the entry without flattening it');
 assert.ok(api.setScale('nuhongan', 'male', api.resolveAuthored('tletingan', 'male')));
 assert.deepEqual(plain(api.resolveAxes('nuhongan', 'male')), { x: 0.5, y: 0.8, z: 0.3 });
 
 // transformPosePoint: X, Y and Z are scaled independently (no facing yaw: coordinates are already the pose frame).
-const options = axes => ({ cx: 0.1, cz: -0.2, floorY: 0, baseY: 0.4, speciesId: 'mao-ao', gender: 'male', modelHeight: 0.9, rigScaleY: 1, armLength: 99, poseOrbitScale: axes });
+const options = axes => ({ cx: 0.1, cy: 0.5, cz: -0.2, floorY: 0, baseY: 0.4, speciesId: 'mao-ao', gender: 'male', modelHeight: 0.9, rigScaleY: 1, armLength: 99, poseOrbitScale: axes });
 const raw = { x: 0.6, y: 0.7, z: -0.5 };
 const uniform = api.transformPosePoint({ ...raw }, options(1));
 const stretched = api.transformPosePoint({ ...raw }, options({ x: 0.5, y: 0.8, z: 2 }));
 near(stretched.x - 0.1, (raw.x - 0.1) * 0.5, 'X scaled by its own factor');
 near(stretched.z + 0.2, (raw.z + 0.2) * 2, 'Z scaled by its own factor');
-near(stretched.y - 0.4, (uniform.y - 0.4) * 0.8, 'authored Y multiplies the rigger-derived vertical mapping');
+near(stretched.y - 0.5, (uniform.y - 0.5) * 0.8, 'authored Y scales around the body centroid');
 
-// A plain number still never touches Y, exactly as before.
+// A scalar must preserve the 3D orbit radius, not just its horizontal projection.
 const scalar = api.transformPosePoint({ ...raw }, options(0.5));
-near(scalar.y, uniform.y, 'plain-number orbit leaves Y alone');
+near(scalar.y - 0.5, (uniform.y - 0.5) * 0.5, 'numeric orbit scales Y about the body centroid');
+near(Math.hypot(scalar.x - 0.1, scalar.y - 0.5, scalar.z + 0.2),
+  Math.hypot(uniform.x - 0.1, uniform.y - 0.5, uniform.z + 0.2) * 0.5, 'spherical radius invariant');
 near(scalar.x - 0.1, (raw.x - 0.1) * 0.5, 'plain-number orbit scales X');
 near(scalar.z + 0.2, (raw.z + 0.2) * 0.5, 'plain-number orbit scales Z');
 
@@ -71,6 +73,8 @@ for (const axes of [{ x: 0.5, y: 0.8, z: 2 }, { x: 1.3, y: 1, z: 0.4 }, 0.65]) {
 
 // The legacy centroid helper honours the same axes.
 const legacy = api.scalePointAroundCentroid({ ...raw }, 0, 0.3, 0, 9, { x: 0.5, y: 0.5, z: 2 });
+const scalarLegacy = api.scalePointAroundCentroid({ ...raw }, 0, 0.3, 0, 9, 0.5);
+near(scalarLegacy.y, 0.3 + (raw.y - 0.3) * 0.5, 'legacy scalar orbit scales Y');
 near(legacy.x, 0.3, 'legacy X'); near(legacy.z, -1, 'legacy Z'); near(legacy.y, 0.3 + (0.7 - 0.3) * 0.5, 'legacy Y around the centroid');
 
 console.log('species pose orbit axes ok');

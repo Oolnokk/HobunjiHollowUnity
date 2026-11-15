@@ -93,9 +93,9 @@
     model.userData.proceduralHandGripContext='melee';
     state.sample=window.SharedAttackPose.createSample();state.posePoint=new THREE.Vector3();
     // The portrait already owns its anatomy scale; apply donor pose proportions once in the mounted floor frame.
-    state.poseOptions={cx:0,cz:0,floorY:0,baseY:upper.userData.handAttachY||0,
+    state.poseOptions={cx:0,cy:Number(upper.userData.poseCentroidY ?? upper.userData.portraitModelHeight / 2),cz:0,floorY:0,baseY:upper.userData.handAttachY||0,
       speciesId:'engh-sho',gender:'male',rigScaleY:1,modelHeight:upper.userData.portraitModelHeight,
-      armLength:upper.userData.armLength,poseOrbitScale:upper.userData.poseOrbitScale};
+      armLength:upper.userData.armLength,poseOrbitScale:upper.userData.poseOrbitAxes ?? upper.userData.poseOrbitScale};
     prepare();loadWeapon();
   }
   function update(dt) {

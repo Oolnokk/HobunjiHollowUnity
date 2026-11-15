@@ -293,7 +293,7 @@
       // affects both avatar and weapon afterward, so keep helper rigScaleY at 1
       // to avoid applying an ancestor scale twice.
       poseScale.transformPosePoint(finalPoint, {
-        cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+        cx: 0, cy: Number(model.userData?.poseCentroidY ?? modelHeight / 2), cz: 0, floorY: 0, baseY: toolBase.position.y,
         speciesId: identity.speciesId, gender: identity.gender,
         modelHeight, rigScaleY: 1,
         armLength, poseOrbitScale,
