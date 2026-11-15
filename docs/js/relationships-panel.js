@@ -561,7 +561,7 @@
     ensureKeepsakeStyles();
     list.innerHTML = '';
     const dlgState = window.DialogueContent?.npcDlgState;
-    const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
+    const knownIds = [...new Set([...(dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : []), ...(window.SpouseSocialLife?.relatedNpcIds?.() || [])])]; // Married relatives enter the list even when they have not been met.
     const factions = window.NpcFavorBalance?.factionStandings?.() || []; // Group standings have their own rank; individual friendship is never copied to other members.
     if (factions.length) {
       const section = document.createElement('div'); // Renders standing in the existing Relationships tab for mobile/controller players.
@@ -587,19 +587,19 @@
     knownIds
       .map(npcId => {
         const walker = deps.npcWalkers.find(w => w.rec?.id === npcId);
-        return { npcId, rec: walker?.rec, profile: walker?.profile, ...window.ProceduralTasks.friendshipTierProgress(npcId) };
+        return { npcId, rec: walker?.rec, profile: walker?.profile, relation: window.SpouseSocialLife?.relationshipFor?.(npcId) || null, ...window.ProceduralTasks.friendshipTierProgress(npcId) };
       })
-      .sort((a, b) => b.favor - a.favor)
-      .forEach(({ npcId, rec, profile, tier, favor, next }) => {
+      .sort((a, b) => Number(b.relation === 'Spouse') - Number(a.relation === 'Spouse') || b.favor - a.favor)
+      .forEach(({ npcId, rec, profile, tier, favor, next, relation }) => {
         ensureChathead(npcId, profile);
-        const name = rec?.name || npcId;
+        const name = rec?.name || npcId.split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' '); // Missing remote walker records still render readable family names.
         const favorDisplay = Math.round(favor * 10) / 10;
         const progressNote = next != null ? `${Math.round((next - favor) * 10) / 10} favor to Tier ${tier + 1}` : 'max tier';
         // Same renderer the dialogue box's heart readout uses (see
         // dialogue-content.js's renderRelationshipHearts) — the Friendship
         // Tier label and this heart row are two views of the identical
         // favor number/scale, not separate trackers.
-        const heartsHtml = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
+        const heartsHtml = rec ? window.DialogueContent?.renderRelationshipHearts?.(rec) || '' : ''; // An absent visitor may not have an active NPC walker.
         const rapport = Math.max(0, Math.min(100, Number(window.NpcRapport?.get?.(npcId) || 0))); // Used to render the NPC's temporary daily social affinity without altering permanent friendship sorting.
         const rapportPct = Number.isFinite(rapport) ? rapport : 0; // Used as the clamped width/value for the 0–100 rapport bar.
         const row = document.createElement('div');
@@ -610,6 +610,7 @@
             ${chatheadIconHtml(npcId)}
             <div class="sh-info">
               <div class="sh-name">${deps.esc(name)} — Friendship Tier ${tier}${heartsHtml ? ` ${heartsHtml}` : ''}</div>
+              ${relation ? `<div class="sh-desc" style="font-weight:700;margin:3px 0">${relation === 'Spouse' ? '💍' : '🏡'} ${deps.esc(relation)}</div>` : ''}
               <div class="sh-desc">${favorDisplay} favor (${progressNote})</div>
               <div class="sh-desc" style="margin-top:5px;display:flex;align-items:center;gap:7px">
                 <span style="min-width:78px">Rapport ${Math.round(rapportPct)}/100</span>

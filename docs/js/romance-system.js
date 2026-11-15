@@ -76,6 +76,7 @@
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
       spouse: null, // { npcId, marriedRawDay, marriedHourStamp, perfume? }; a gifted perfume remains worn until replaced.
       kissBuff: null, // { npcId, startedAtHour, expiresAtHour }; serialized with this member's romance state.
+      outing: null, // Accepted, timed spouse trips live with the marriage rather than transient dating state.
       family: null, // owned by js/romance-family.js
     };
   }
@@ -87,6 +88,12 @@
   // Continuous in-game hours since day 0, robust to the represented clock
   // not spanning a full 24h (a skipped night just reads as elapsed time).
   function hourStamp() { return rawDay() * 24 + hourOfDay(); }
+  function outingHourStamp() {
+    const absolute = Number(window.CalendarSystem?.getAbsoluteGameHour?.()); // The official monotonic clock remains stable when civil time wraps at midnight.
+    if (Number.isFinite(absolute)) return absolute;
+    const hour = clockHour(); // Headless tests and pre-init fallbacks still model the game's 06:00 raw-day rollover.
+    return rawDay() * 24 + hour + (hour < 6 ? 24 : 0);
+  }
   function inHourWindow(hour, start, end) { return start <= end ? hour >= start && hour < end : (hour >= start || hour < end); }
 
   // ── NPC lookups ───────────────────────────────────────────────────────
@@ -469,6 +476,7 @@
     state.engagement = null;
     state.spouse = { npcId, marriedRawDay: rawDay(), marriedHourStamp: hourStamp() };
     state.kissBuff = null; // A new marriage never inherits another spouse's timed bonus.
+    state.outing = null; // New weddings cannot inherit the prior partner's invitations.
     debug.lastWedding = { npcId, rawDay: rawDay(), at: Date.now() };
     window.DialogueContent?.recordNpcMemory?.(npcId, 'married');
     toast(`💒 You married ${npcName(npcId)}! They'll move into the farmhouse.`, true);
@@ -492,7 +500,32 @@
       || String(authored.nickname || dialogue.nickname || 'love').trim(); // New short-y form; legacy endearments remain a fallback if the nickname module is unavailable.
     const greetings = Array.isArray(authored.greetings) && authored.greetings.length
       ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
-    return { nickname, greetings };
+    return { nickname, greetings: window.SpouseSocialLife?.greetingsFor?.(npcId, greetings) || greetings }; // The same live reminders serve ambient and direct dialogue.
+  }
+
+  function outingEventEnded() {
+    const kind = state.outing?.kind; // Only scheduled ceremonies and celebrations must finish before the generic four-hour cap.
+    return (kind === 'communion' || kind === 'festival') && !window.SpouseSocialLife?.outingAvailable?.(kind);
+  }
+  function activeSpouseOuting() {
+    return state.outing && state.spouse?.npcId === state.outing.npcId && outingHourStamp() < num(state.outing.endHour, -Infinity) && !outingEventEnded()
+      ? { ...state.outing, target: { ...state.outing.target } } : null;
+  }
+  function startSpouseOuting(kind, target) {
+    if (!state.spouse?.npcId || !target?.area || !Number.isFinite(Number(target.c)) || !Number.isFinite(Number(target.r))) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.() || window.RomanceFamily?.isAssignedToVat?.(state.spouse.npcId) || state.date?.npcId === state.spouse.npcId) return false; // Never accept a trip the spouse's higher-priority family duties prevent.
+    if (!window.SpouseSocialLife?.outingAvailable?.(kind)) return false; // Invitations must still be eligible when accepted.
+    state.outing = {
+      npcId: state.spouse.npcId, kind, target: { ...target }, startedHour: outingHourStamp(), endHour: outingHourStamp() + 4,
+    }; // Shared journey expires after four game hours; the player's position and controls are never commandeered.
+    persist();
+    return true;
+  }
+  function endSpouseOuting() {
+    if (!state.outing) return false;
+    state.outing = null;
+    persist();
+    return true;
   }
 
   // ── Spouse routine ────────────────────────────────────────────────────
@@ -545,22 +578,23 @@
     return [...find('sit', { area: 'interior' }), ...find('sit', { area: 'farm' })];
   }
 
-  // Single source of truth for town visits, also consumed by farm-plot workers so marriage
-  // never suppresses the Ginju's real field work on an authorized town afternoon.
+  // Shared ordinary-work gate for marriage and family/town farm-plot claims. Active household jobs
+  // win, while free spouses keep their authored work hours (visitor Jubmir keeps his real visit days).
   function spouseTownVisitNow(npcId) {
     if (!npcId || state.spouse?.npcId !== npcId || state.date?.npcId === npcId) return false;
-    if (window.RomanceFamily?.spouseHoldingEgg?.()) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.() || state.outing?.npcId === npcId || window.RomanceFamily?.isAssignedToVat?.(npcId)) return false;
     const scfg = cfg().spouse || {};
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
     const hour = clockHour();
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) return false;
-    const town = scfg.townVisitsByNpc?.[npcId] || scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
-    const weekdays = Array.isArray(town.weekdays) ? town.weekdays : null;
-    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
-    const visitDay = weekdays?.length
-      ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
-      : (rawDay() + hashInt(npcId)) % mod === 0;
-    return visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17));
+    // Family harvesting/tilling wins; when free, an ordinary occupation may resume.
+    if (window.NpcFarmPlots?.targetFor?.({ id: npcId }, { familyOnly: true })) return false;
+    if (npcId === 'jubmir') {
+      const weekday = window.CalendarSystem?.currentWeekdayName?.(); // His authored visitor schedule is not a daily town residence.
+      return ((weekday === 'Hronu' || weekday === 'Tothu') && inHourWindow(hour, 11, 17))
+        || ((weekday === 'Kruru' || weekday === 'Uung') && inHourWindow(hour, 9, 11));
+    }
+    return inHourWindow(hour, 8, 18);
   }
 
   // Spouse target: sleep in the farmhouse bed, sit in chairs, potter around
@@ -573,13 +607,21 @@
     const scfg = cfg().spouse || {};
     const hour = clockHour();
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
-    if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
+    const outing = activeSpouseOuting(); // Consult the live ceremony/festival window, not just the original four-hour promise.
+    if (outing?.npcId === rec.id)
+      return { ...outing.target, activity: outing.target.activity || 'out with you' }; // A live midnight Communion outing takes precedence over ordinary sleep.
+    const festivalGoing = !window.RomanceFamily?.isAssignedToVat?.(rec.id) && !!window.FestivalSystem?.festivalHours?.(); // The event's real clock also keeps married residents at celebrations past ordinary bedtime.
+    if (!festivalGoing && inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
       if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
-    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Assigned household fieldwork still wins during festival hours.
     if (chore) return chore;
+    if (festivalGoing) {
+      if (rec.id === 'jubmir') return window.SpouseSocialLife?.destinationFor?.('festival') || null; // His former visitor absence must not hide a married Jubmir from festivals.
+      return null; // Ordinary residents follow the town's shared festival agenda through the actual closing hour.
+    }
+    if (spouseTownVisitNow(rec.id)) return null; // The original NPC agenda owns work and its real visitor windows.
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
@@ -638,6 +680,7 @@
       }
     }
     maybeStartWedding();
+    if (state.outing && (state.spouse?.npcId !== state.outing.npcId || outingHourStamp() >= num(state.outing.endHour, -Infinity) || outingEventEnded())) endSpouseOuting(); // End time-bound events when their venue closes, not four hours into an empty venue.
     installKissBuffProviders();
     if (state.kissBuff) {
       if (remainingKissHours() <= 0) {
@@ -738,6 +781,7 @@
     const options = [];
     if (state.spouse?.npcId === npcId) {
       options.push({ id: 'spouse_kiss', icon: '💋', label: 'Kiss', run: () => kissSpouse(walker) });
+      if (activeSpouseOuting()) options.push({ id: 'spouse_end_outing', icon: '🏠', label: 'Head Home', run: endSpouseOuting });
     }
     if (isOnDateWith(npcId)) {
       const mode = state.date.mode;
@@ -776,6 +820,7 @@
       if (valid) state.spouse.perfume = { recipeId: valid.recipeId, potencyTier: valid.potencyTier };
       else delete state.spouse.perfume;
     }
+    if (state.outing && (!state.spouse || state.outing.npcId !== state.spouse.npcId || !state.outing.target?.area || !Number.isFinite(Number(state.outing.endHour)))) state.outing = null;
     if (state.kissBuff && (!state.spouse || state.kissBuff.npcId !== state.spouse.npcId ||
       !Number.isFinite(Number(state.kissBuff.expiresAtHour)))) state.kissBuff = null;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
@@ -808,6 +853,7 @@
       lastDatedNpcId: getLastDatedNpcId(), // Mobile diagnostic: last romantic form of address follows this NPC after the date.
       engagement: state.engagement ? { ...state.engagement } : null,
       spouse: state.spouse ? { ...state.spouse } : null,
+      spouseOuting: activeSpouseOuting(), // Mobile-readable destination and time remaining.
       spouseKiss: {
         active: remainingKissHours() > 0,
         effect: currentKissEffect(), // Mobile-friendly live readout of the selected perfume and its exact resource channel.
@@ -853,6 +899,7 @@
     activeKissPerfumeEffect, // Alchemy getter integration excludes default and expired kiss buffs.
     getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
+    startSpouseOuting, endSpouseOuting, activeSpouseOuting, // Consent-based invitation routing and a manual return-home command.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
     // Shared helpers for js/romance-family.js

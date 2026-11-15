@@ -496,7 +496,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.RelationshipsPanel.init(...) during its own setup. -->
-  <script src="js/relationships-panel.js?v=20261104faction-luau1"></script>
+  <script src="js/relationships-panel.js?v=20261115spouseSocialLife1"></script>
   <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
        (window.DebugHitboxes) — self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -2784,7 +2784,7 @@
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/name-nicknames.js?v=20261108relationship2"></script> <!-- Shared first-syllable forms for friendship, dates and marriage. -->
-  <script src="js/ambient-dialogue.js?v=20261114wrapped1"></script>
+  <script src="js/ambient-dialogue.js?v=20261115spouseSocialLife1"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -2880,6 +2880,7 @@
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261109fullrig7"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>

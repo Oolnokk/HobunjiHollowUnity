@@ -290,14 +290,15 @@ for (let h = 7; h < 22; h += 0.5) { clock.hour = h; const t = W.RomanceSystem._t
 assert.ok(daytime.has('relaxing at home'), 'the spouse sits in the farmhouse chairs during the day');
 const townCfg = W.SCRATCHBONES_CONFIG.game.romance.spouse.townAfternoon;
 const oldTownMod = townCfg.daysOfWeekMod;
-townCfg.daysOfWeekMod = 1; // Force a scheduled town day and check farming cannot override it.
+townCfg.daysOfWeekMod = 1; // Legacy visit cadence must not displace an actual family fieldwork shift.
 clock.hour = 14;
 assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), true, 'shared town visit eligibility is available to the Ginju work planner');
 const plotTarget = { area: 'farm', c: 12, r: 14, activity: 'tilling family plot' };
 let plotLookups = 0;
 W.NpcFarmPlots = { targetFor(_rec, options) { plotLookups++; assert.equal(options?.familyOnly, true); return plotTarget; } };
-assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec), null, 'authored town visits beat assigned family plot jobs');
-assert.equal(plotLookups, 0, 'farmwork not consulted on town-visit afternoons');
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, plotTarget.activity, 'assigned family farmwork wins even when the old town visit cadence matches');
+assert(plotLookups > 0, 'farmwork is consulted before choosing ordinary work');
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false, 'a current family job suppresses ordinary town work');
 clock.hour = 11;
 assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
 assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, plotTarget.activity, 'morning assigned chores beat idle farm routines');
@@ -305,6 +306,9 @@ clock.hour = 23;
 assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
 assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, 'sleeping', 'bedtime beats assigned family plot jobs');
 delete W.NpcFarmPlots;
+clock.hour = 14;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), true, 'the spouse returns to their profession once the family shift finishes');
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec), null, 'free daytime hours release the NPC authored agenda');
 townCfg.daysOfWeekMod = oldTownMod;
 
 

@@ -138,7 +138,7 @@
   function playerGreetingPolicy(walker) {
     const npcId = walker?.rec?.id; // Used to apply the two NPC-specific greeting thresholds and the four actual-name exceptions in one event-time lookup.
     const favor = playerGreetingFavor(walker); // Used for both greeting eligibility and actual-name eligibility so favor is not fetched twice.
-    if (window.RomanceSystem?.spouseDialogueFor?.(npcId)) return { allowed: true, mayUseActualName: true }; // Marriage outranks old acquaintance greeting gates, even on a restored low-favor save.
+    if (window.RomanceSystem?.spouseDialogueFor?.(npcId) || window.SpouseSocialLife?.relationshipFor?.(npcId)) return { allowed: true, mayUseActualName: true }; // Married-in relatives may address the player by name regardless of their old Favor.
     const playerSpeciesId = npcId === 'kinami_kunji' ? playerGreetingSpeciesId() : ''; // Used only for Kinami's Mao'ao exception, avoiding a species lookup for every other NPC.
     let allowed = true; // Used by tryGreeting to decide whether this already-dwelled proximity entry may actually fire.
     if (npcId === 'takua_ao_hakaru') allowed = favor >= 1;
