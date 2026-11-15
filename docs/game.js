@@ -32608,6 +32608,35 @@
           return walker;
         },
         despawnNpcWalker: walker => despawnNpcVisitor(walker),
+        // Arena "test look" (js/dev-arena-pond-dummy.js): swaps the player's species/gender in memory only
+        // (never CharacterMetaSave) and sets the shoulder-surf horizontal offset; restore() undoes both.
+        devTestLook: (() => {
+          let saved = null;
+          return {
+            async apply(speciesId, gender, offsetH) {
+              const profile = _playerData || window.__hobunjiPlayerProfile;
+              if (!profile?.appearance) return false;
+              if (!saved) saved = { appearance: profile.appearance, h: [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat] };
+              const appearance = { ...saved.appearance, speciesId, gender, cosmetics: {} }; // Other species' cosmetic ids do not apply; defaults resolve.
+              profile.appearance = appearance;
+              if (window.__hobunjiPlayerProfile && window.__hobunjiPlayerProfile !== profile) window.__hobunjiPlayerProfile.appearance = appearance;
+              s_shoulderSurfOffsetH_default = s_shoulderSurfOffsetH_combat = s_shoulderSurfOffsetH_current = offsetH;
+              await refreshPlayerAvatar();
+              return true;
+            },
+            async restore() {
+              if (!saved) return false;
+              const profile = _playerData || window.__hobunjiPlayerProfile;
+              profile.appearance = saved.appearance;
+              if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = saved.appearance;
+              [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat] = saved.h;
+              s_shoulderSurfOffsetH_current = saved.h[0];
+              saved = null;
+              await refreshPlayerAvatar();
+              return true;
+            },
+          };
+        })(),
         getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
         // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
         // returns display parts; used by Random Test Ruin Dungeon Chests.

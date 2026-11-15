@@ -16,6 +16,7 @@
   const SPAWN_DISTANCE_TILES = 1.8; // Far enough that the dummy never overlaps the player's collision circle.
   const ARENA_MARGIN = 1.5; // Keep dummies inside the arena walls.
   const SPECIES = 'mao-ao';
+  const CAMERA_OFFSET_H = 0.02; // Shoulder-surf horizontal offset in tiles; the default is 0.35.
 
   let deps = null;
   let serial = 0;
@@ -171,6 +172,22 @@
     return true;
   }
 
+  // Female Kenkari (the smallest species) with the shoulder camera almost centred behind the
+  // player. In-memory only: "Restore look" brings back the saved species and camera offset.
+  async function applyTestLook() {
+    if (!deps.devTestLook) return false;
+    setStatus('Applying female Kenkari + centred camera…');
+    const ok = await deps.devTestLook.apply('kenkari', 'female', CAMERA_OFFSET_H);
+    setStatus(ok ? 'Player is now a female Kenkari; camera offset ≈ 0. Restore look before saving.' : 'Player appearance is not ready.');
+    return ok;
+  }
+
+  async function restoreLook() {
+    const ok = await deps.devTestLook?.restore();
+    setStatus(ok ? 'Original species and camera offset restored.' : 'Nothing to restore.');
+    return ok;
+  }
+
   function setStatus(message) {
     const el = document.getElementById('devPondDummyStatus');
     if (el && el.textContent !== message) el.textContent = message;
@@ -186,6 +203,8 @@
       <div class="fed-label">Pond &amp; dummy NPC — stand by the water and drop a stationary NPC next to you to check draw order / x-ray</div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" id="devPondStandBtn">🏞️ Stand in front of pond</button>
+        <button type="button" class="fed-action-btn" id="devTestLookBtn">🧝 Female Kenkari + centred camera</button>
+        <button type="button" class="fed-action-btn" id="devTestLookRestoreBtn">↩️ Restore look</button>
       </div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" data-dummy="front">🧍 Dummy ahead</button>
@@ -200,6 +219,8 @@
       const spawnBtn = event.target.closest('[data-dummy]');
       if (spawnBtn) { spawnDummy(spawnBtn.dataset.dummy); return; }
       if (event.target.closest('#devPondStandBtn')) standAtPond();
+      else if (event.target.closest('#devTestLookBtn')) applyTestLook();
+      else if (event.target.closest('#devTestLookRestoreBtn')) restoreLook();
       else if (event.target.closest('#devDummyClearBtn')) clearDummies();
     });
   }
@@ -211,7 +232,7 @@
 
   window.DevArenaPondDummy = {
     version: 1,
-    init, ensurePond, standAtPond, spawnDummy, clearDummies,
+    init, ensurePond, standAtPond, applyTestLook, restoreLook, spawnDummy, clearDummies,
     snapshot: () => ({ pond: !!arenaScene()?.userData?.devArenaPond, waterfall: !!arenaScene()?.userData?.devArenaWaterfall, dummies: [...dummies.keys()] }),
   };
 })();
