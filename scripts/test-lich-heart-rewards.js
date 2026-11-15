@@ -84,4 +84,97 @@ assert(sanctum.includes('syncLichHeart();'), 'the sanctum restores unclaimed hea
 assert(sanctum.includes('s.heart?.control'), 'reward must be interactable through the existing prompt system');
 assert(sanctum.includes('const result = window.LichHeartSystem?.collect?.(owner.bossType)'), 'save before removing the prop');
 assert(sites.includes('unclaimedHeart&&!completeActiveRuinProgress'), 'uncollected hearts cannot permanently complete their tombs');
+// Drive the REAL sanctum composer through its defeated-boss pickup lifecycle with minimal Three.js stubs.
+let composer = null; // Captures the shipped sanctum composer without constructing an entire procedural ruin.
+let allowClaim = true; // Simulates persistence success/failure for a world pickup.
+const collectedThemes = new Set(); // Distinct character-owned rewards drive removal and repeat-spawn gating.
+const sceneGroups = []; // Tracks spawned authored furniture and parent cleanup in the fake scene.
+const testRoot = { // Real THREE.Group's add/remove ownership contract used by the sanctum.
+  children: [],
+  add(child) { child.parent = this; this.children.push(child); },
+  remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; },
+};
+const sceneWindow = {
+  THREE: {}, DynamicSurfaces: {},
+  DevRandomRuinSimplePuzzles: { registerComposer: value => { composer = value; } },
+  DevRandomRuinConfig: { get:(_key, fallback)=>fallback },
+  DevRandomRuin: { getSeed:()=>44 },
+  RuinSites: { isActiveRuinBossDefeated:()=>true },
+  DevRandomRuinFurniturePieces: {
+    solid(key) {
+      const group = {
+        name:'', userData:{}, parent:null,
+        position:{set(x,y,z){this.x=x;this.y=y;this.z=z;}},
+        traverse(callback){callback(this);},
+      }; // Full authored furniture construction is separately covered by test-lich-heart-furniture.js.
+      group.userData.ruinFurnitureKey = key;
+      sceneGroups.push(group);
+      return group;
+    },
+  },
+  LichHeartSystem: {
+    forType:theme=>hearts.forType(theme),
+    has:theme=>collectedThemes.has(theme),
+    collect:theme=>{
+      if(!allowClaim) return {ok:false,granted:false,message:'Save failed'};
+      const granted = !collectedThemes.has(theme);
+      collectedThemes.add(theme);
+      return {ok:true,granted};
+    },
+  },
+};
+vm.runInNewContext(sanctum, {window:sceneWindow, THREE:sceneWindow.THREE, console, document:{}}, {filename:'dev-random-ruin-sanctum.js'});
+assert(composer, 'real sanctum composer registers');
+const sanctumContext = { // Saved defeated authored tomb from the actual ruin progress adapter.
+  specialBoss:true, hachutu:false, theme:'hronal', meta:{floorSurfaceY:2},
+  sanctumPlan:{
+    arena:{minX:10,maxX:24,minZ:10,maxZ:24},
+    vault:{minX:26,maxX:33,minZ:14,maxZ:20},
+  },
+};
+function loadSanctum(type='hronal', special=true) {
+  composer.buildRooms({deps:{}},{...sanctumContext, theme:type, specialBoss:special},()=>.5,[],{});
+  const state = sceneWindow.DevRandomRuinSanctum.getState();
+  state.built = true; // Skip structural meshes and exercise only the fully shipped reward lifecycle.
+  state.sanctumRoot = testRoot;
+  state.bossType = type;
+  return state;
+}
+let sanctumState = loadSanctum();
+assert.equal(sanctumState.bossDefeated,true,'saved defeated boss restores when the tomb reloads');
+composer.update({deps:{}},100,0.016);
+assert.equal(testRoot.children.length,1,'saved victory spawns exactly one heart');
+assert.equal(sanctumState.heart.furnitureKey,'flamingLichHeart');
+assert.equal(sanctumState.heart.group.position.x,17,'heart is at the arena center X');
+assert.equal(sanctumState.heart.group.position.y,2,'heart uses the sanctum floor elevation');
+assert.equal(sanctumState.heart.group.position.z,17,'heart is at the arena center Z');
+const control = composer.controls({}).find(item=>item.kind==='lichHeart');
+assert(control && control.claimAction1 && control.promptRoot === sanctumState.heart.group,'heart uses the real in-world Action 1 interaction pipeline');
+composer.update({deps:{}},101,0.016);
+assert.equal(sceneGroups.length,1,'per-frame updates cannot duplicate pickups');
+allowClaim = false;
+assert.equal(control.onPress(),false,'a failed save never claims the relic');
+assert.equal(testRoot.children.length,1,'failed save leaves the original heart in the world');
+allowClaim = true;
+assert.equal(control.onPress(),true,'successful interaction claims the heart');
+assert.equal(testRoot.children.length,0,'claimed heart is removed from the world');
+assert.equal(composer.controls({}).some(item=>item.kind==='lichHeart'),false,'collected heart interaction disappears');
+assert.equal(control.onPress(),false,'stale input cannot duplicate a collected reward');
+composer.update({deps:{}},102,0.016);
+assert.equal(testRoot.children.length,0,'owned heart does not respawn on later updates');
+sanctumState = loadSanctum();
+composer.update({deps:{}},103,0.016);
+assert.equal(testRoot.children.length,0,'owned heart does not return after reentering the saved tomb');
+sanctumState = loadSanctum('tothal');
+composer.update({deps:{}},104,0.016);
+assert.equal(sanctumState.heart?.furnitureKey,'unsleepingLichHeart','Nanahi receives the distinct authored reward');
+sanctumState.heart.group.parent.remove(sanctumState.heart.group);
+sanctumState = loadSanctum('kanthic');
+composer.update({deps:{}},105,0.016);
+assert.equal(sanctumState.heart?.furnitureKey,'sightlessLichHeart','Imlao receives the distinct authored reward');
+sanctumState.heart.group.parent.remove(sanctumState.heart.group);
+sanctumState = loadSanctum('tothal',false);
+composer.update({deps:{}},106,0.016);
+assert.equal(sanctumState.heart,undefined,'ordinary liches must not spawn authored hearts');
+
 console.log('Lich-heart character save, collection, Attunement, failed writes and sanctum integration: PASS');
