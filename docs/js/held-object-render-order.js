@@ -2926,9 +2926,11 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // depth for a later elevation group). Only visible weapon pixels can
       // replace the portrait depth, and soft rope sprites must write depth here.
       if (canLockColorMask && (nearToken || (tintOverlay && baseDepthTouched && groups.length > 1))) {
-        const gearDepthStates = tintOverlay
-          ? prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true)
-          : portraitGearIds ? preparePortraitGearStencilMaterials(overlayMeshes, portraitGearIds) : null;
+        // Depth restored from a snapshot has no guarantee of containing held
+        // PNGs: many normal color materials intentionally set depthWrite:false.
+        // Force depth writes for ALL held sources while keeping their owner
+        // portrait test, not just when a water-tint pass happens to be active.
+        const gearDepthStates = prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true);
         colorBuffer.setMask(false);
         colorBuffer.setLocked(true);
         try {
