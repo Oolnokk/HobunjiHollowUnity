@@ -591,7 +591,7 @@
     refresh,
     snapshot: () => composeSnapshot(),
     debugSnapshot,
-    __test: Object.freeze({ composeSnapshot, composeTrinketEffects, formatBuffDuration, activeBuffEntries, BASE_DODGE_PROFILE }),
+    __test: Object.freeze({ composeSnapshot, composeTrinketEffects, formatBuffDuration, activeBuffEntries, renderActiveBuffs, BASE_DODGE_PROFILE }),
   });
   window.__inventoryCharacterEffectsDebug = debugSnapshot;
 
