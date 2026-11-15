@@ -185,7 +185,7 @@
     if (typeof document === 'undefined' || window.AnimalNpcHeadwear || !MODULE_SCRIPT_URL) return;
     if (document.querySelector('script[src*="animal-npc-headwear.js"]')) return;
     const script = document.createElement('script');
-    script.src = new URL('animal-npc-headwear.js', MODULE_SCRIPT_URL).href;
+    script.src = new URL('animal-npc-headwear.js?v=20261115animalhat1', MODULE_SCRIPT_URL).href;
     script.async = false;
     script.dataset.hobunjiAnimalNpcHeadwear = '1';
     script.onerror = () => { debugState.lastError = 'animal-npc-headwear.js failed to load'; };
