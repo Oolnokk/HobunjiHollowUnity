@@ -210,7 +210,8 @@
         ||box('secret-skeeri-nest-'+rec.id,1.45,.14,.85,bx,floor+2.27,bz,accent);
       if(!nest.parent){nest.name='secret-skeeri-nest-'+rec.id;nest.position.set(bx,floor+2.19,bz);
         nest.scale.setScalar(.67);nest.userData.devRuinFootprintIgnore=true;group.add(nest);}
-      rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest,anim:[],elapsed:0}; // Dormant hatchling motion updates only in the active room.
+      rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest,anim:[],elapsed:0,
+        eggsRemaining:root.SkeeriLivestockRegistration?.remainingEggs?.({seed,roomId:String(room.id),count:spec.babies})??0}; // The clutch count survives ruin re-entry; it never changes the hatchling encounter.
 
       for(let i=0;i<spec.babies;i++){
         const identity=String(seed)+':'+room.id+':baby:'+i;
@@ -231,9 +232,19 @@
       registerControl({kind:'ruinSkeeriNest',object:nest,promptRoot:nest,floorY:floor,
         range:2,priority:16,touchIcon:'🐣', // Inspect uses normal Interact; a nearby nest must not override torch/combat Action 1.
         available:()=>!rec.disposed&&nearFloor(getPlayerY,floor),
-        label:()=>spec.babies+' Planebent Skeeri Hatchling'+(spec.babies===1?'':'s'),
-        onPress:()=>{rec.discovered=true;options.showToast?.(
-          'A hidden brood of '+spec.babies+' planebent Skeeri, coloured in the '+spec.theme+' tradition.',true);}});
+        label:()=>spec.babies+' Planebent Skeeri Hatchling'+(spec.babies===1?'':'s')
+          +(rec.nest.eggsRemaining?' · '+rec.nest.eggsRemaining+' fertile egg'+(rec.nest.eggsRemaining===1?'':'s'):' · empty clutch'),
+        onPress:()=>{
+          rec.discovered=true;
+          const remaining=rec.nest.eggsRemaining; // Keeps the next egg's deterministic identity stable on re-entry.
+          const result=root.SkeeriLivestockRegistration?.collectNestEgg?.({
+            seed,roomId:String(room.id),count:spec.babies,theme:spec.theme,
+            identity:String(seed)+':'+room.id+':egg:'+(spec.babies-remaining),
+          });
+          if(result?.ok)rec.nest.eggsRemaining=result.remaining;
+          options.showToast?.(result?.message||'A hidden brood of planebent Skeeri.',result?.ok===true);
+          return result;
+        }});
     }
     rec.tick=dt=>{
       if(rec.disposed)return;
@@ -287,6 +298,7 @@
     rec.snapshot=()=>({id:rec.id,kind:rec.kind,trigger:rec.kind==='closet'?rec.trigger:rec.suspension,
       tier:rec.tier,unlocked:rec.unlocked,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
       chestOpened:rec.chest?.opened??null,babies:rec.babies,nestLoaded:rec.nest?.loaded||0,
+      eggsRemaining:rec.nest?.eggsRemaining??0,
       nestDiscovered:rec.discovered});
     rec.dispose=()=>{
       if(rec.disposed)return;rec.disposed=true;
