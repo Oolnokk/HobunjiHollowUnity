@@ -166,13 +166,13 @@ assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged 
 assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'vertices do not reroll as the segment shrinks');
 player.afflictions.bruisedHealth = 0;
 
-// Labels on the other two bars drop their resource word too ("Winded Stamina" -> "Winded", "Resolute Footing" -> "Resolute").
-player.afflictions.windedStamina = 15; player.afflictions.resoluteFooting = 15; player.stamina = 80; player.footing = 80;
+// Labels on the other two bars drop their resource word too ("Frostbitten Stamina" -> "Frostbitten", "Resolute Footing" -> "Resolute").
+player.afflictions.frostbittenStamina = 15; player.afflictions.resoluteFooting = 15; player.stamina = 80; player.footing = 80;
 refresh();
 const labelOf = id => elements.get(id).children.map(segment => segment.children.find(child => child.className === 'vb-name')?.textContent);
-assert.deepEqual(labelOf('vbStaminaSegments'), ['Winded'], 'Stamina bar label has no "Stamina"');
+assert.deepEqual(labelOf('vbStaminaSegments'), ['Frostbitten'], 'Stamina bar label has no "Stamina"');
 assert.deepEqual(labelOf('vbFootingSegments'), ['Resolute'], 'Footing bar label has no "Footing"');
-player.afflictions.windedStamina = 0; player.afflictions.resoluteFooting = 0; player.stamina = 100; player.footing = 100;
+player.afflictions.frostbittenStamina = 0; player.afflictions.resoluteFooting = 0; player.stamina = 100; player.footing = 100;
 refresh();
 
 player.afflictions.congealedHealth = 30;
@@ -246,11 +246,18 @@ player.afflictions.windedStamina = 25;
 player.stamina = 75;
 refresh();
 assert.equal(elements.get('vbStaminaCap').classList.contains('is-withered'), true, 'winded Stamina shows withered capacity');
-const windedSpan = elements.get('vbStaminaSegments').children.find(span => span.title === 'Winded Stamina');
-assert(windedSpan?.className.includes('vb-effect-starved'), 'flasker Winding affliction uses a genuinely pinched band');
-assert.equal(windedSpan.style.backgroundColor, 'transparent', 'starved band draws the SVG fill rather than a rectangular fill');
-assert.equal(windedSpan.children[0].id, 'svg', 'starved band owns an inline SVG');
-assert.equal(windedSpan.children[0].children[1].getAttribute('d'), congealedShape, 'band uses the same starved spline as the missing cap');
+// A capacity reducer is drawn once, as the right-anchored cap: no second, left-anchored band for the same amount.
+assert.equal(elements.get('vbStaminaSegments').children.some(span => span.title === 'Winded Stamina'), false, 'Winded Stamina has no left-anchored band');
+assert.equal(elements.get('vbStaminaCap').children.find(child => child.className === 'vb-name')?.textContent, 'Winded', 'the cap is the one place Winded is drawn and named');
+assert.equal(elements.get('vbStaminaCap').children[0].children[1].getAttribute('d'), congealedShape, 'the Stamina cap uses the same starved spline');
+// Several reducers on one bar: the cap names all of them, strongest first, and takes the strongest one's colour.
+player.afflictions.congealedHealth = 20; player.afflictions.rentHealth = 10; player.health = 60;
+refresh();
+const multiCap = elements.get('vbHealthCap');
+assert.equal(elements.get('vbHealthSegments').children.some(span => /Congealed|Rent/.test(span.title)), false, 'no reducer gets a left band on the Health bar either');
+assert.equal(multiCap.children.find(child => child.className === 'vb-name').textContent, 'Rent / Congealed', 'the cap lists every active reducer, strongest first');
+assert.equal(multiCap.children.filter(child => child.className === 'vb-name').length, 1, 'one label for the cap');
+player.afflictions.congealedHealth = 0; player.afflictions.rentHealth = 0; player.health = 100;
 player.afflictions.windedStamina = 0;
 player.stamina = 100;
 player.afflictions.poisonedHealth = 20;

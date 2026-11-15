@@ -135,11 +135,19 @@
 
   // Clip lower-priority afflictions against higher-priority occupied portions,
   // as ResourceRings does. Normal-colored fill is drawn beneath the segments.
+  // Afflictions that lock away part of a resource's MAXIMUM (Winded Stamina, Congealed/Rent/Wounded Health, Shambling
+  // and Drunken Footing, ...). The lost-capacity cap at the far right of the bar is their one representation: drawing a
+  // second, left-anchored band for the same amount showed the same affliction at both ends of the bar. Late-registered
+  // reducers sometimes lack the canonical reducesEffectiveMax metadata, hence the two explicit ids.
+  function isCapacityReducer(id, def) {
+    return def?.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth';
+  }
+
   function visibleAfflictionSegments(entity, resourceKey, entries, denominator, rs) {
     const claimed = []; // Keeps already-painted intervals from overlapping lower-priority afflictions.
     const visible = []; // Supplies exact [start,end] intervals to the DOM renderer.
     const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
-    for (const [id, def] of entries.sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
+    for (const [id, def] of entries.filter(([entryId, entryDef]) => !isCapacityReducer(entryId, entryDef)).sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
       const box = getHudAfflictionBox(entity, resourceKey, id, denominator, rs);
       if (!box) continue;
       const start = clamp(Number(box.leftPoints) || 0, 0, denominator);
@@ -181,9 +189,6 @@
   function visualTreatment(id, def, rs) {
     if (DRIP_EFFECTS[id]) return DRIP_EFFECTS[id];
     if (BRITTLE_EFFECTS.has(id)) return 'brittle';
-    // A zero-anchored capacity reducer must deform its afflicted band itself,
-    // not only the unavailable-cap overlay at the far end of the track.
-    if (def?.reducesEffectiveMax) return 'starved';
     const enhanced = rs.ENHANCED_RESOURCE_DEFS?.[id];
     if (Number(enhanced?.tempoMultiplier) > 1) return 'balloon';
     if (Number(enhanced?.conversionRate) > 1) return 'crenellated';
@@ -471,14 +476,13 @@
       const treatment = segment._vbTreatment;
       const brittle = treatment === 'brittle';
       const dripping = treatment.includes('drip');
-      const shaped = brittle || dripping || treatment === 'starved'
+      const shaped = brittle || dripping
         || treatment === 'balloon' || treatment === 'crenellated';
       const base = shaped ? 'transparent' : piece.color;
       if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
       if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
       if (dripping) ensureDripShape(segment, piece.color);
-      if (treatment === 'starved') ensureStarvedCap(segment, piece.color);
       if (treatment === 'balloon' || treatment === 'crenellated') {
         ensureEnhancedShape(segment, treatment, (piece.end - piece.start) / denominator, piece.color);
       }
@@ -580,25 +584,23 @@
       if (nodes.cap.hidden !== capHidden) nodes.cap.hidden = capHidden;
       // Late-registered reducer definitions sometimes lack the canonical
       // reducesEffectiveMax metadata; honor the observed drop in capacity.
-      const capAfflicted = activeAfflictions.some(([id, def]) =>
-        def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth');
-      const withered = !nodes.cap.hidden && capAfflicted;
+      const capReducers = activeAfflictions.filter(([id, def]) => isCapacityReducer(id, def))
+        .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0)); // Strongest first: it colours the cap.
+      const withered = !nodes.cap.hidden && capReducers.length > 0;
       nodes.cap.classList.toggle('is-withered', withered);
       if (withered) {
-        const reducer = activeAfflictions
-          .filter(([id, def]) => def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth')
-          .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))[0];
+        const reducer = capReducers[0];
         const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
         ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
-        // The right-anchored lost-capacity region is its own element, not a segment: label it with the reducing
-        // affliction too, and give it the same outline-over-text layering.
-        const capName = shortAfflictionName(reducer?.[1]?.name || reducer?.[0], spec.key);
+        // The right-anchored lost-capacity region is the ONLY place these afflictions are drawn, so it names every
+        // active reducer (strongest first), and gets the same outline-over-text layering as the segments.
+        const capName = capReducers.map(([id, def]) => shortAfflictionName(def?.name || id, spec.key)).join(' / ');
         if (!nodes.cap._vbName) {
           nodes.cap._vbName = document.createElement('span');
           nodes.cap._vbName.className = 'vb-name';
           nodes.cap.appendChild(nodes.cap._vbName);
         }
-        if (nodes.cap._vbNameText !== capName) { nodes.cap._vbNameText = capName; nodes.cap._vbName.textContent = capName; } // The dominant reducer can change while the cap stays on screen.
+        if (nodes.cap._vbNameText !== capName) { nodes.cap._vbNameText = capName; nodes.cap._vbName.textContent = capName; } // The set of reducers can change while the cap stays on screen.
         if (nodes.cap._vbShape && !nodes.cap._vbOutline) {
           nodes.cap._vbOutline = buildOutlineOverlay(nodes.cap._vbShape);
           nodes.cap.appendChild(nodes.cap._vbOutline);
