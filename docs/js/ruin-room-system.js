@@ -316,7 +316,7 @@
         ctx.save();
         try{
           ctx.beginPath();ctx.moveTo(footprint[0].x,footprint[0].y);
-          for(let i=1;i<4;i++)ctx.lineTo(footprint[i].x,footprint[i].y);
+          for(let i=1;i<footprint.length;i++)ctx.lineTo(footprint[i].x,footprint[i].y); // Every projected wall-height extreme belongs inside the mask.
           ctx.closePath();ctx.clip();localLightClipPasses++;
           draw(); // Only local light holes and glows are contained; the low-opacity room tint is painted afterward over the whole screen.
         }finally{ctx.restore();}
