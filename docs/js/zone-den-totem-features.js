@@ -22,7 +22,7 @@
   ensureCompanionScript('NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js');
   ensureCompanionScript('NaturalSurfaceMaterials', 'natural-surface-materials.js');
   ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js?v=20261114ikmcRoof3');
-  ensureCompanionScript('FurnitureDecalInk', 'furniture-decal-ink.js?v=20261115lichInkHue2');
+  ensureCompanionScript('FurnitureDecalInk', 'furniture-decal-ink.js?v=20261115chromaticGlow3');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js?v=20261115lichInk1');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
   ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260926a');
