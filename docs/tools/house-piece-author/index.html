@@ -82,7 +82,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <script src="../../js/clothing-weaving-system.js?v=20261104hPatternQuick1435a"></script>
 <script src="../../js/furniture-pattern-surfaces.js?v=20261109shellaudit1"></script>
 <script src="../../js/house-wall-fixtures.js?v=20261027h412254d"></script>
-<script src="../../js/house-balconies.js?v=20261114roofbalcony2"></script>
+<script src="../../js/house-balconies.js?v=20261115hrail046"></script>
 <script src="../../js/HousePieceGen.js?v=20261114rooftop1"></script>
 </head>
 <body>
@@ -2497,7 +2497,7 @@ $('balconySelect').addEventListener('change',e=>{
 $('addBalconyBtn').onclick=()=>{
   pushUndo('Add rooftop balcony'); syncPieceFromSets();
   const id='balcony_'+newId('deck'); // Stable ID for this editor-authored elevated deck.
-  state.piece.balconies.push({id,cells:[],heightMode:'wall',height:state.piece.base.height,railings:true,railHeight:.72});
+  state.piece.balconies.push({id,cells:[],heightMode:'wall',height:state.piece.base.height,railings:true,railHeight:.46}); // New authored balcony fences must match the normal-jumpable default.
   activeBalconyId=id; balconySet.clear();setTool('balcony');refreshBalconyGeometry();drawGrid();refreshExport();
 };
 $('deleteBalconyBtn').onclick=()=>{

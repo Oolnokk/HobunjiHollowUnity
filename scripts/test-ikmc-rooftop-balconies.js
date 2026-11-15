@@ -20,6 +20,7 @@ assert(balcony,'named IKMC rooftop balcony exists');
 assert.equal(balcony.heightMode,'custom');
 assert.equal(balcony.height,interior.wallHeight,'the roof top matches the ladder ceiling');
 assert.equal(balcony.deckThickness,.18,'the deck underside envelopes upper logs');
+assert.equal(balcony.railHeight,.46,'short balcony fences must fit beneath the unbuffed jump apex');
 assert.deepEqual(balcony.cells,piece.footprint.cells,'the elevated footprint exactly matches the cabin shell');
 assert.equal(balcony.cells.length,24,'IKMC shell is 6 by 4');
 assert.equal(piece.footprint.extensions.porches.length,42,'the wraparound exterior porch remains untouched');
@@ -30,6 +31,11 @@ assert.equal(generated.filter(face=>face.extensionFace==='top').length,24,'walka
 assert(generated.filter(face=>face.extensionFace==='top').every(face=>face.v.every(vertex=>vertex[1]===interior.wallHeight)),
   'the balcony sits above the upper roof logs');
 assert(generated.some(face=>face.tag==='railing'&&face.extensionFace==='rail'),'railing beams are physical modeled faces');
+const roofRails=generated.filter(face=>face.tag==='railing'); // Serialized runtime fence geometry must match the authored lower height.
+assert(roofRails.every(face=>face.v.every(vertex=>vertex[1]<=balcony.height+balcony.railHeight+1e-7)),
+  'no old tall balcony fence vertices remain in the exported piece');
+assert(Math.abs(Math.max(...roofRails.flatMap(face=>face.v.map(v=>v[1])))-(balcony.height+balcony.railHeight))<1e-7,
+  'roof fence posts reach the requested short height');
 assert.equal(generated.filter(face=>face.tag==='doorOpening'&&face.extensionFace==='hatch').length,1,'hatch is rendered as one dark rooftop patch');
 const normalized=api.normalize(piece)[0];
 assert.equal(normalized.height,interior.wallHeight,'normalized custom balcony matches the ladder ceiling');
@@ -37,6 +43,8 @@ assert.equal(normalized.deckThickness,.18,'generator retains authored deck depth
 assert(generated.filter(face=>face.extensionFace==='underside').every(face=>face.v.every(v=>Math.abs(v[1]-1.57)<1e-8)),
   'underdeck sits on the rounded upper logs');
 assert.equal(api.generateFaces(piece).length,generated.length,'shipped roof geometry agrees with the reusable generator');
+assert.deepEqual(JSON.parse(JSON.stringify(api.generateFaces(piece))),generated,
+  'serialized balcony rails exactly match the editor generator after shortening');
 const copied=JSON.parse(JSON.stringify(piece));
 api.regenerate(copied);api.regenerate(copied);
 assert.equal(copied.base.faces.filter(face=>face.balconyGenerated).length,generated.length,'regeneration is idempotent');
@@ -132,6 +140,8 @@ assert.match(game,/roofHatch|roofAccess|roofY/);
 assert.match(movement,/enterRoofSupport/, 'roof access must adopt supported footing only after a confirmed interior exit');
 assert.match(support,/isBalconyAt|roofHatchAt/);
 assert.match(editor,/toolBalconyHatch|balconyAccessFurniture|balconyHeightMode/);
+assert.match(editor,/state\.piece\.balconies\.push\(\{[^\n]*railHeight:\.46\}/,
+  'House Piece Editor must author future balcony fences at the same jumpable height');
 assert.match(game,/sourcePiece\?\.balconies/, 'town generation must tolerate unloaded building pieces');
 assert.match(game,/transition\?\.roofAccess === true/, 'roof interactions preserve their descend labels');
 assert.match(support,/extensionType === 'balcony'\) return NaN/, 'missing roof geometry cannot become an invisible support');
