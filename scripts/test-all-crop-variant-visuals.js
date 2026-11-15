@@ -28,6 +28,7 @@ class Geometry {
 }
 class PlaneGeometry extends Geometry { constructor(...args) { super(...args); this.type = 'PlaneGeometry'; } }
 class BufferGeometry extends Geometry { constructor() { super(); this.type = 'BufferGeometry'; } }
+class SphereGeometry extends Geometry { constructor(radius, widthSegments, heightSegments) { super(); this.type = 'SphereGeometry'; this.parameters = { radius, widthSegments, heightSegments }; } }
 class Material {
   constructor(def = {}) { Object.assign(this, def); this.color = new Color(def.color instanceof Color ? def.color.getHex() : def.color ?? 0xffffff); }
   clone() { return new this.constructor({ ...this, color: this.color.getHex() }); }
@@ -67,14 +68,15 @@ class TextureLoader {
 }
 class WebGLRenderer { render() { return true; } }
 const THREE = {
-  Color, BoxGeometry: Geometry, PlaneGeometry, BufferGeometry, MeshBasicMaterial, MeshLambertMaterial,
+  Color, BoxGeometry: Geometry, PlaneGeometry, BufferGeometry, SphereGeometry, MeshBasicMaterial, MeshLambertMaterial,
   Mesh, Group, InstancedMesh, Object3D, TextureLoader, WebGLRenderer,
   Vector3: class { set(x, y, z) { Object.assign(this, { x, y, z }); return this; } },
   MathUtils: { degToRad: n => n * Math.PI / 180 },
   NearestFilter: 'nearest', DoubleSide: 'double', sRGBEncoding: 'srgb',
 };
 const families = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard']; // Same 11 canonical species as CropVarieties.FAMILIES.
-const berryColors = { redberries: 0xff4f62, blueberries: 0x5f80ff, yellowberries: 0xffe86a, whiteberries: 0xffffff, blackberries: 0x17121f }; // Native berry silhouettes must also get a color fill.
+const berryColors = { redberries: 0xff4f62, blueberries: 0x5f80ff, yellowberries: 0xffe86a, whiteberries: 0xffffff, blackberries: 0x17121f }; // Fruit hue of every native shrub.
+const berryFamilies = Object.keys(berryColors); // Tests all native fruit colors and their regional/crossbred variants.
 const pigmentFor = family => family === 'whiteberries' ? 0x8234a7 : 0xba7142; // Two visibly distinct inherited palettes, including nonnative whiteberries.
 const cultivarFor = family => 'cv_' + family + '_111111_' + pigmentFor(family).toString(16).padStart(6, '0'); // Saved genotype key follows the real registrar's current format.
 const fills = []; // Collects the production shade-fill calls and their source art so no crop family silently skips its tint.
@@ -96,6 +98,15 @@ const window = {
     colorOf: key => pigmentFor(families.find(f => key.startsWith('cv_' + f + '_'))),
   },
   FoliageGenerator: {
+    buildShrubMesh() {
+      const shrub = new Group(); // Simulates the existing cached foliage-generator bush (woody branches plus alpha-tested leaf cards).
+      shrub.add(new Mesh(new Geometry(), new MeshLambertMaterial({ color: 0x4a3b33 })));
+      const leaves = new Mesh(new PlaneGeometry(), new MeshBasicMaterial({ color: 0x52774f, alphaTest: .5, transparent: false }));
+      leaves.userData.noOutline = true; // Preserve the foliage generator's correct PNG cutout policy.
+      shrub.add(leaves);
+      shrub.scale.setScalar(.96); // Tests that the crop renderer retains per-instance shrub size variation.
+      return shrub;
+    },
     buildNeedlegrainMesh() { const root = new Group(); root.add(new Mesh(new Geometry(), new MeshBasicMaterial({ color: 0x60482f }))); root.add(new Mesh(new Geometry(), new MeshBasicMaterial({ color: 0x275b43 }))); return root; },
     buildHeftrootMesh() {
       const root = new Group();
@@ -148,7 +159,25 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
     assert.equal(native.userData.hobunjiCropRootKey, family, family + ': native base family');
     assert.equal(variant.userData.hobunjiCropRootKey, family, family + ': inherited base family');
     assert.equal(variant.userData.hobunjiCropId, cultivarFor(family), family + ': saved cultivar identity');
-    if (['needlegrain', 'heftroot', 'blackMustard', 'greenMustard'].includes(family)) {
+    if (berryFamilies.includes(family)) {
+      for (const [crop, expectedColor] of [[native, berryColors[family]], [variant, pigmentFor(family)]]) {
+        assert.equal(crop.userData.hobunjiFoliageMesh, true, family + ': planted crop is a real foliage bush');
+        assert.equal(crop.userData.hobunjiBerryBush, true, family + ': shrub/fruit builder metadata is retained');
+        assert.equal(crop.userData.hobunjiBerryFruitHex, expectedColor, family + ': native or inherited fruit pigment');
+        assert.equal(crop.userData.hobunjiBerryFruitCount, 15, family + ': unripe mature bush has five three-berry clusters');
+        assert.equal(crop.children.length, 2, family + ': one procedural shrub and one batched fruit mesh');
+        const [shrub, fruit] = crop.children;
+        assert.equal(shrub.children.length, 2, family + ': woody shrub has branches and transparent leaves');
+        assert.equal(shrub.children[1].userData.noOutline, true, family + ': alpha-tested foliage excludes shell rendering');
+        assert.equal(shrub.children[1].material.transparent, false, family + ': leaves render as stable alpha cutouts');
+        assert.ok(shrub.scale.x < 0.6, family + ': native large bush scales to a cultivated single-tile footprint');
+        assert.equal(fruit.userData.hobunjiBerryFruit, true, family + ': berries are attached to the bush');
+        assert.equal(fruit.geometry.type, 'SphereGeometry', family + ': fruit is 3D, not floating berry sprite cards');
+        assert.equal(fruit.count, 15, family + ': one instanced draw batch per bush');
+        assert.equal(fruit.material.color.getHex(), expectedColor, family + ': every fruit uses the exact genotype RGB');
+        assert.equal(fruit.userData.noOutline, true, family + ': berry spheres do not generate oversized outlines');
+      }
+    } else if (['needlegrain', 'heftroot', 'blackMustard', 'greenMustard'].includes(family)) {
       assert.equal(variant.userData.hobunjiFoliageMesh, true, family + ': authored non-cube crop geometry');
       assert.equal(native.userData.hobunjiFoliageMesh, true);
       if (family === 'needlegrain') {
@@ -165,7 +194,7 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
         }
       }
     } else {
-      for (const [crop, expectedColor] of [[native, berryColors[family] ?? null], [variant, pigmentFor(family)]]) {
+      for (const [crop, expectedColor] of [[native, null], [variant, pigmentFor(family)]]) {
         assert.equal(crop.geometry.type, 'BufferGeometry', family + ': source placeholder cube is now an invisible anchor');
         assert.equal(crop.children.length, 3, family + ': three authored fruit or vegetable planes');
         for (const child of crop.children) {
@@ -181,13 +210,30 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
     }
   }
 
-  assert.equal(npcBerry.mesh.geometry.type, 'BufferGeometry', 'NPC berry varieties use authored world PNGs instead of cubes');
-  assert.equal(npcBerry.mesh.children.length, 3, 'NPC berry clusters preserve the native planted shape');
-  assert.equal(npcBerry.mesh.children[0].material.map?.image?.color, pigmentFor('redberries'), 'NPC berry variant receives its inherited color');
+  assert.equal(npcBerry.mesh.userData.hobunjiBerryBush, true, 'NPC berry varieties grow true foliage bushes');
+  assert.equal(npcBerry.mesh.children.length, 2, 'NPC berry bushes have woody foliage plus separate fruit');
+  assert.equal(npcBerry.mesh.children[1].material.color.getHex(), pigmentFor('redberries'), 'NPC fruit inherits the exact crossbred pigment');
   assert.equal(unrelatedWhiteCube.geometry.type, 'BoxGeometry', 'untagged white scenery stays a cube, never a whiteberry plant');
   assert.equal(unrelatedWhiteCube.userData.hobunjiCropSpriteKey, undefined, 'unrelated scenery receives no crop identity');
-  assert.ok(fills.some(call => call.url.endsWith('berries.png') && call.color === pigmentFor('whiteberries')),
-    'berry variants use authored fruit pixels rather than a colored cube');
+  assert.ok(!fills.some(call => call.url.endsWith('berries.png')), 'world berry fruit uses 3D pigmented instances, not detached inventory PNGs');
+  const redIndex = families.indexOf('redberries') * 2; // Native redberry plot used to exercise bush life-cycle transitions.
+  grid[0][redIndex].cropReady = true;
+  renderer.updateCropMeshes();
+  assert.equal(renderer.cropMeshes[redIndex].userData.hobunjiBerryFruitCount, 30, 'ripe berry bush doubles its visible canopy fruit');
+  assert.equal(renderer.cropMeshes[redIndex].rotation.y, 0, 'rooted berry bushes do not spin when harvestable');
+  grid[0][redIndex].cropReady = false;
+  grid[0][redIndex].cropAge = 1;
+  renderer.updateCropMeshes();
+  assert.equal(renderer.cropMeshes[redIndex].userData.hobunjiBerryFruitCount, 0, 'young berry bush is leafy but has no floating fruit');
+  assert.equal(renderer.cropMeshes[redIndex].children.length, 1, 'young bush still has its foliage and wooden branch structure');
+  const blueIndex = families.indexOf('blueberries') * 2 + 1; // Existing berry cultivar plot for same-species recolor replacement.
+  const priorBlue = renderer.cropMeshes[blueIndex];
+  const newBlue = 'cv_blueberries_222222_8054da'; // A different inherited purple-blue pigment on the same native shrub shape.
+  cropDefs[newBlue] = { growDays: 5, baseCrop: 'blueberries', varietyColor: 0x8054da };
+  grid[0][blueIndex].crop = newBlue;
+  renderer.updateCropMeshes();
+  assert.notEqual(renderer.cropMeshes[blueIndex], priorBlue, 'berry cultivar swaps rebuild the shrub and fruit colors');
+  assert.equal(renderer.cropMeshes[blueIndex].children[1].material.color.getHex(), 0x8054da, 'new fruit instances display the new inherited RGB');
   const oldVariant = renderer.cropMeshes[1]; // Replanting within one species must not retain the previous cultivar texture.
   const newCultivar = 'cv_needlegrain_222222_129d86'; // Distinct genotype and RGB sharing the same needlegrain plant structure.
   cropDefs[newCultivar] = { growDays: 5, baseCrop: 'needlegrain', varietyColor: 0x129d86 }; // Saved seed data for an actual changed-color replant.
@@ -198,5 +244,5 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
   grid[0][1].crop = 'needlegrain';
   renderer.updateCropMeshes();
   assert.equal(renderer.cropMeshes[1].children[1].material.color.getHex(), 0x275b43, 'returning to native seed restores native grain shading');
-  console.log('ok - all eleven crops preserve native silhouettes and render inherited colors across foliage and PNG world meshes');
+  console.log('ok - all eleven crops preserve native silhouettes; berries are fruiting bushes with exact inherited RGB');
 })().catch(error => { console.error(error); process.exitCode = 1; });
