@@ -53,6 +53,18 @@ const parityOverlayMesh = { visible: false, renderOrder: 2, frustumCulled: false
 parityGroup.children.push(paritySourceMesh, parityOverlayMesh);
 parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
 assert.equal(parityOverlayMesh.visible, false, 'ordinary farm/wild/barn avatars keep shoulder-only split overlays hidden even while their source face is visible');
+paritySourceMesh.layers.mask |= 1 << 24;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.layers.mask & (1 << 24), 0,
+  'a background split sprite never inherits the private front-portrait stencil layer from its source');
+parityOverlayMesh.userData.hobunjiShoulderPetStencilForeground = true;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.layers.mask & (1 << 24), 1 << 24,
+  'a foreground shoulder split sprite joins its carrier owner stencil');
+delete parityOverlayMesh.userData.hobunjiShoulderPetStencilForeground;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.layers.mask & (1 << 24), 0,
+  'pose inversion removes the private layer without removing normal sprite rendering');
 parityGroup.userData.hobunjiShoulderRest.splitOverlayVisible = true;
 parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
 assert.equal(parityOverlayMesh.visible, true, 'shoulder presentation can explicitly enable the split foreground');
@@ -296,7 +308,10 @@ assert.match(splineSource, /rest\.separatorAspect = runtimeDimensions\.width \/ 
 assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/);
 assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
   'split foreground stays a live follower of pet x-ray render order');
-assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/);
+assert.match(paritySource, /const ownerStencilMask = 1 << 24/,
+  'private stencil layer is an explicit owner-compositor exception to general split parity');
+assert.match(paritySource, /hobunjiShoulderPetStencilForeground === true/,
+  'split overlays are only granted private stencil access while in front of their carrier');
 assert.match(paritySource, /const requestedVisible = overlay\.parent\?\.userData\?\.hobunjiShoulderRest\?\.splitOverlayVisible === true/,
   'split-layer parity reads the shoulder-presenter activation state instead of making every authored overlay visible');
 assert.match(paritySource, /overlay\.visible = requestedVisible && source\.visible !== false/,
