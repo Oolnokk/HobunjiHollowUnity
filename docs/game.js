@@ -21011,6 +21011,18 @@
           if (climb) window.ClimbSystem.startClimb(climb);
           return;
         }
+        if (activeAction === 'obj_door_toggle') {
+          const door = resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
+          const result = door?.onAction?.(activeAction) || { ok: false, message: 'No door here.' };
+          if (result.message) showToast(result.message, result.ok !== false);
+          if (result.ok !== false && !result.deferMemberSave) saveMemberWorldData();
+          refreshActionBar();
+          return; // Door handling never starts a torch forehand or extinguishes its flame.
+        }
+        if (activeAction.startsWith('dev_ruin_world_') && window.DevRandomRuinInteractions?.invokeDoorAction?.(activeAction)) {
+          refreshActionBar(); // Native ruin transit doors use the same validated world-interaction owner.
+          return; // Do not queue a torch strike when opening a door.
+        }
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -27794,7 +27806,7 @@
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         heldMode = 'tool';
         activeTool = tool;
-        if (WHEEL_SLOTS.includes(tool)) lastHeldFarmTool = tool; // Direct hotkeys/cycling must update the same recall memory as arch selection.
+        if (WHEEL_SLOTS.includes(tool) || tool === 'adventuring') lastHeldFarmTool = tool; // Explicit tool choices include the torch gateway; weapon/item quick switches never replace this recall memory.
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
@@ -27927,7 +27939,7 @@
       function adventuringToolActionButtons() {
         const reticle = getReticleTile(); // Independent of the targeted world object or an underground floor tile.
         const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col];
-        return (toolActions.adventuring || []).map((action, i) => {
+        const torchActions = (toolActions.adventuring || []).map((action, i) => {
           const [fallbackIcon] = actionLabels[action];
           return {
             icon: attackActionIconHTML('adventuring', action, fallbackIcon),
@@ -27936,7 +27948,18 @@
             style: i === 0 ? 'primary' : 'secondary',
             allowed: canUseAction('adventuring', action, reticle.col, reticle.row),
           };
-        });
+        }); // Keep Swing and Throw in the original two physical action slots.
+        const doorTarget = currentArea === 'interior'
+          ? getInteriorInteractableAt(reticle.col, reticle.row)
+          : _isBuildingArea(currentArea) || currentArea === 'town'
+            ? _buildingInteractables.get(currentArea + ',' + reticle.col + ',' + reticle.row)
+            : window.FurnitureTableSystem?.objectAt?.(currentArea, reticle.col, reticle.row); // Only read the already-aimed door, never every nearby furniture prompt.
+        const woodenDoorActions = (doorTarget?.getButtons?.(reticle) || [])
+          .filter(button => button.action === 'obj_door_toggle' && button.allowed !== false)
+          .map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary' }));
+        const ruinDoorActions = currentArea === 'map_i_dev_random_ruin'
+          ? window.DevRandomRuinInteractions?.getDoorActionButtons?.() || [] : []; // Native V50 transit doors use their existing validated proximity/action owner.
+        return torchActions.concat(woodenDoorActions, ruinDoorActions);
       }
 
       function computeActionButtonsImpl() {
@@ -28617,7 +28640,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('dev_ruin_world_') || act.startsWith('fish_') || act.startsWith('festival_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
