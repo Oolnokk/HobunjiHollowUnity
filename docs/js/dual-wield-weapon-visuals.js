@@ -146,7 +146,7 @@
     duplicate.castShadow = plane.castShadow;
     duplicate.receiveShadow = plane.receiveShadow;
     if (duplicate.layers && plane.layers) duplicate.layers.mask = plane.layers.mask;
-    duplicate.userData = { hobunjiDualWieldDuplicate: true, side };
+    duplicate.userData = { hobunjiDualWieldDuplicate: true, hobunjiHeldObjectPlane: true, side }; // The copy inherits the source's held-overlay layer; registering it as a held plane gives it the same front-portrait mask and replay as the original, instead of an unmasked second draw over the holder's front art (visible haft loops).
     return duplicate;
   }
 
