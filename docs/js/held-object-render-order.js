@@ -125,6 +125,7 @@
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const waterPortraitRegistry = new SceneRegistry(); // Front and rear body PNGs that can receive translucent cover.
   const frontPortraitRegistry = new SceneRegistry(); // Visible player and NPC front portrait cutouts that cover their late-rendered weapons.
+  const backgroundDepthRegistry = new SceneRegistry(); // Sky depth masks and visual-only distant scenery excluded from held overlay depth.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -392,12 +393,28 @@
       && String(object.material[0]?.name || '').includes('avatar_skinned_front_material');
   }
 
+  // Backdrop geometry uses projected far-plane shader depth, NOT physical world distance. The
+  // ordinary world still needs its cloud masks, but a held-gear reconstruction must never
+  // treat their irregular alpha shapes or distant landscape as foreground occluders.
+  function isPresentationBackdrop(object) {
+    if (!object || !(object.isMesh || object.isSprite || object.isLine || object.isPoints)) return false;
+    const data = object.userData || {};
+    if (data.backgroundScenery === true || data.northernCliffsDistantPlateau === true
+        || /^hobunji_cloud_depth_mask_/.test(String(object.name || ''))) return true;
+    if (data.hobunjiDepthReplayInert === true) return true; // Base sky/cloud shells: already depth-inert.
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    return materials.some(material => !!material?.userData &&
+      (Number.isFinite(material.userData.skyLayerDepthNdc) || Number.isFinite(material.userData.backgroundMaxDepthNdc)));
+  }
+
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'behind', 'portrait.waterTint': 'wet-tile' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'behind', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const maskedHands = new Set(); // Procedural hands the front-plane rule masks in the current world frame.
   let lastHandsBehindFrontPlane = 0; // Diagnostics: hands hidden under their holder's front art this frame.
+  let airborneDepthRebuilds = 0; // Counts raised-gear frames that rebuilt ordinary depth without horizon masks.
+  let backgroundDepthMeshesExcluded = 0; // Counts background depth submissions suppressed from gear/shell depth replays.
 
   function isPortraitMaskedGear(object) {
     const data = object?.userData;
@@ -521,6 +538,60 @@
   const PORTRAIT_SORT_DISTANCE = 2; // Tile radius for close player/NPC silhouettes that can cross each other.
   const PORTRAIT_SORT_ORDER = 2; // Common actor-body order; ordinary transparent items keep the existing Three.js sort keys.
 
+  // User-editable draw order is purely a color-pass sort. Do not change material.depthTest,
+  // WebGL camera layer numbers or the protected stencil/depth replay sequence.
+  function visualLayerFor(item) {
+    const object = item?.object;
+    const data = object?.userData || {};
+    const material = item?.material || object?.material;
+    const name = String(object?.name || '').toLowerCase();
+    const materialName = String(material?.name || '').toLowerCase();
+    if (isPresentationBackdrop(object)) return data.hobunjiDepthReplayInert === true
+      || /^hobunji_cloud_/.test(name) || Number.isFinite(material?.userData?.skyLayerDepthNdc) ? 'sky' : 'distant';
+    if (data.hobunjiProceduralHand === true || data.hobunjiPortraitOccludedWingLayer === true) return 'actor.hands';
+    if (data.hobunjiProceduralFoot === true) return 'actor.feet';
+    if (data.hobunjiHeldObjectPlane === true || data.hobunjiWeaponAssemblyPart === true) return 'item.weapons';
+    if (data.hobunjiPantsGarment === true) return 'garment.pants';
+    if (/hat_xray|headwear|hat_plane/.test(name)) return 'garment.headwear';
+    if (/skinned_front_material/.test(materialName) || /avatar_front_plane/.test(name)) return 'actor.front';
+    if (/skinned_back_material/.test(materialName) || /avatar_back_plane/.test(name)) return 'actor.rear';
+    if (/avatar|npc_walker|portrait|character/.test(name) || data.hobunjiXrayActorRoot === true) return 'actor.body';
+    const kind = surfaceKindForObject(object);
+    if (kind === 'base-ground' || kind === 'top-face-ground') return 'terrain';
+    if (kind === 'path') return 'paths';
+    if (kind === 'walkable-floor') return 'floors';
+    if (kind === 'water' || kind === 'slush') return 'water';
+    if (kind === 'billboard-grass') return 'foliage';
+    if (Number(material?.alphaTest) > 0) return 'material.cutout';
+    if (material?.transparent === true) return 'material.transparent';
+    return 'material.opaque';
+  }
+
+  function withVisualSort(renderer, portraitOrder, draw) {
+    const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
+    if (!manual && !portraitOrder) return draw();
+    if (!renderer.setTransparentSort) return draw();
+    const rankCache = new Map(); // One classification per render item, not per sort comparison.
+    const rank = item => {
+      if (!rankCache.has(item)) rankCache.set(item, window.XrayHierarchy.layerRank(visualLayerFor(item)));
+      return rankCache.get(item);
+    };
+    const legacyTransparent = (a, b) => portraitOrder
+      ? comparePortraitDraws(a, b, portraitOrder.ranks, portraitOrder.extras)
+      : a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || b.z - a.z || a.id - b.id;
+    const legacyOpaque = (a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder
+      || (a.material?.id || 0) - (b.material?.id || 0) || a.z - b.z || a.id - b.id;
+    if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => rank(a) - rank(b) || legacyOpaque(a, b));
+    renderer.setTransparentSort(manual
+      ? (a, b) => rank(a) - rank(b) || legacyTransparent(a, b)
+      : legacyTransparent);
+    try { return draw(); }
+    finally {
+      renderer.setTransparentSort(null);
+      if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort(null);
+    }
+  }
+
   function nearbyPortraitOrder(scene, camera, portraits) {
     const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
     if (!player || !camera.projectionMatrix || !camera.matrixWorldInverse) return null;
@@ -590,9 +661,9 @@
   }
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
-    if (!order || !renderer.setTransparentSort) return draw();
+    if ((!order && xrayRule('layers.manualOrder') !== 'on') || !renderer.setTransparentSort) return draw();
     const changed = new Set(); // Only the farther portraits near the player defer depth writes during the ordinary color draw.
-    if (protectNearPortrait) {
+    if (protectNearPortrait && order) {
       for (const [mesh, rank] of order.ranks) {
         if (rank === order.nearest || rank.close === false) continue;
         forEachMaterial(mesh.material, material => {
@@ -602,13 +673,8 @@
         });
       }
     }
-    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks, order.extras));
-    try {
-      return draw();
-    } finally {
-      renderer.setTransparentSort(null);
-      for (const material of changed) material.depthWrite = true;
-    }
+    try { return withVisualSort(renderer, order, draw); }
+    finally { for (const material of changed) material.depthWrite = true; }
   }
 
   function assignPortraitStencilOwners(gearMeshes, portraits, scene) {
@@ -785,6 +851,7 @@
     if (!object) return;
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
+    if (isPresentationBackdrop(object)) backgroundDepthRegistry.add(object); // Registered once, looked up only in the current scene.
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
     if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);
     if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
@@ -2628,6 +2695,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const overlayMeshes = [...held, ...feet];
     const scissorMeshes = bodyTint?.portraits.length ? [...overlayMeshes, ...bodyTint.portraits] : overlayMeshes; // Cover both gear and wet portraits in the final tint pass.
     const groundMeshes = [...ground, ...topFaceGround];
+    // Gameplay PlayerJump is the physical movement owner: never infer airborne state from
+    // visual hand/weapon transforms. Raised ordinary gear otherwise reuses the base depth
+    // containing far-plane clouds and distant decorative tiles.
+    const flight = window.PlayerJump?.debug;
+    const airborne = !!flight?.active && (flight.phase === 'air' || flight.phase === 'rope')
+      && Number(flight.heightAboveGround) > 0.05;
+    const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
+      ? collectVisible(backgroundDepthRegistry, scene) : [];
+    const rebuildAirborne = airborne && backgroundMeshes.length > 0 && xrayRule('airborne.rebuildDepth') !== 'off';
+    if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
     let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
     const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
@@ -2714,7 +2791,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
         if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
-        const supplementDepth = !group.regions.length && canLockColorMask; // The ordinary group runs first, while complete base depth is intact.
+        const supplementDepth = !group.regions.length && canLockColorMask && !rebuildAirborne; // Airborne gear must not reuse base sky/backdrop depth.
         let punched = false; // Floor punch kept the existing depth (see punchHeldGroupFloor).
         if (supplementDepth) ordinaryDepthClearsAvoided++;
         else {
@@ -2746,12 +2823,15 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let patchCulled = null; // After a floor punch, only objects touching the holder's patch are redrawn.
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
+        let backgroundHidden = null; // Only the colorless depth submission drops the visual horizon; the world and final depth restore retain it.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
           if (punched) patchCulled = hideOutsideFloorPatch(nearCandidates, group);
           if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
+          backgroundHidden = backgroundMeshes.length && !supplementDepth ? hideObjects(backgroundMeshes) : null;
+          if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
           camera.layers.mask = originalCameraMask;
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
@@ -2759,6 +2839,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           nonGroundDepthReplayCount++;
         } finally {
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
+          if (backgroundHidden) restoreVisibility(backgroundHidden);
           if (patchCulled) restoreVisibility(patchCulled);
           if (redundantDepth) restoreVisibility(redundantDepth);
           if (farCulled) restoreVisibility(farCulled);
@@ -2781,7 +2862,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
-          rawRender.call(renderer, scene, camera);
+          withPortraitDrawOrder(renderer, null, () => rawRender.call(renderer, scene, camera)); // User-ordered hands/feet/gear in this isolated color pass.
           window.PerfProfiler?.end(overlayPerf);
           selectiveOverlayCount++;
         } finally {
@@ -2971,6 +3052,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
     let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
     const nearReplay = nearReplaySupport(true); // This replay silences color per material, so no color-mask lock is needed.
+    const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
+      ? collectVisible(backgroundDepthRegistry, scene) : []; // Visual backgrounds are never true hand/foot shell occluders.
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
     let nearToken = null; // Saved depth of the replay rectangle as the shell pass found it.
     
@@ -3035,14 +3118,18 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let groupCulled = null; // Keep the final depth restore outside this group’s tighter cull.
         let farCulled = null; // Objects wholly behind this group's shells; the saved depth brings them back.
         let npcReplayRestore = null; // Skip remote NPC portraits/limbs during just this local depth rebuild.
+        let backgroundHidden = null; // Restore before source shell and final unfiltered depth.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
           if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
+          backgroundHidden = backgroundMeshes.length ? hideObjects(backgroundMeshes) : null;
+          if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
           rawRender.call(renderer, scene, camera);
           nonGroundDepthReplayCount++;
         } finally {
+          if (backgroundHidden) restoreVisibility(backgroundHidden);
           npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
           if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
@@ -3256,6 +3343,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       waterClipScopes: lastWaterClipScopes,
       rankedPortraitActors: lastRankedPortraitActors,
       handsBehindFrontPlane: lastHandsBehindFrontPlane,
+      airborneDepthRebuilds,
+      backgroundDepthMeshesExcluded,
+      registeredBackgroundDepthMeshes: backgroundDepthRegistry.all.size,
       handPlaneProbe: { ...handProbe },
       waterPortraits: lastWaterPortraits,
       dryGearWaterSkips: lastDryGearWaterSkips,
@@ -3325,7 +3415,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
-    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry];
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
     let removed = 0;
     for (const registry of registries) {
       const bucket = registry.byScene.get(scene);
