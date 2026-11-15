@@ -111,7 +111,7 @@ const window={
 vm.runInNewContext(source,{window,Math,Number,Object,Array,Map,WeakSet,Error,String});
 const api=window.NorthernCliffsPlateauBackdrop;
 assert(api?.installed);
-assert.equal(api.constants.HEIGHT_RATIO,0.7);
+assert.equal(api.constants.HEIGHT_RATIO,1.05,'the same plateau is 50% taller than its previous 0.70 peak ratio');
 assert.equal(api.constants.TOP_FLATTEN_START,0.7);
 const other=new Group();
 window.BorderTerrain.buildZoneBorderTerrain(other,200,200,'map_western_slope');
@@ -133,6 +133,12 @@ assert.notStrictEqual(mesh.material[0],canonicalFarmRock,'backdrop depth shader 
 assert.equal(mesh.material[0].map,'carved_smooth.png');
 assert.equal(mesh.material[0].userData.northernCliffsDistantPlateau,true);
 assert.equal(mesh.material[0].userData.naturalSurface,'rocks');
+assert.equal(mesh.material[0].fog,true,'both top and cliff slot must use the zone fog, not bypass it');
+const fogShader = { uniforms:{}, vertexShader:'void main() {\n#include <fog_vertex>\n}', fragmentShader:'' }; // Compiles the real plateau fog adapter against a minimal fog-enabled Three shader.
+mesh.material[0].onBeforeCompile(fogShader);
+assert.match(fogShader.vertexShader,/vFogDepth = 24\.0 \+ max\(0\.0, vFogDepth - 24\.0\) \* 0\.22;/,'far plateau must fade in the same scene fog without disappearing behind the camera limit');
+assert.match(fogShader.vertexShader,/#ifdef USE_FOG/,'fog distance compression applies only to fog-enabled scenes');
+assert.match(mesh.material[0].customProgramCacheKey(),/northern-plateau-scene-fog-v1/,'fog shader program must not reuse the old unfogged skyline variant');
 assert.equal(layout.materialSlotCount,2);
 assert.equal(layout.cliffMaterialSlot,1);
 assert.equal(mesh.geometry.groups.length,2,'keep the top and side material groups');
@@ -146,7 +152,10 @@ assert.equal(mesh.castShadow,false);
 assert.equal(mesh.frustumCulled,false,'existing distant-scenery view culler owns camera/offscreen visibility');
 assert.equal(mesh.userData.nonTraversable,true);
 assert.equal(mesh.userData.noOutline,true);
-assert.equal(layout.topWorldY,layout.referencePeakWorldY*0.7);
+assert.equal(layout.topWorldY,layout.referencePeakWorldY*1.05);
+assert.equal(layout.fogEnabled,true,'the Northern Cliffs plateau must participate in zone scene fog');
+assert.equal(layout.fogNearDistance,24,'the ordinary distant cliff border keeps its native fog distance');
+assert.equal(layout.fogDistanceScale,0.22,'beyond-far-plane backdrop uses bounded fog distance compression');
 assert.equal(layout.width,layout.referenceMountainChainWidth);
 assert.equal(layout.baseFrontZ,-24);
 assert.equal(layout.outsideSceneryClearance,6);
@@ -194,6 +203,7 @@ assert.equal(scene.children.length,1,'re-entering zone rebuilds just one rock');
 const single=scene.children[0].children[0]; // Exercises the no-ridge fallback after the grouped-cliff path.
 assert.equal(Array.isArray(single.material),false,'unsplit rock retains the normal single material contract');
 assert.equal(single.material.userData.northernCliffsDistantPlateau,true);
+assert.equal(single.material.fog,true,'the unsplit farm-rock material fallback also gets scene fog');
 assert.equal(api.getDebugState().lastLayout.materialSlotCount,1);
 assert.equal(api.getDebugState().lastLayout.cliffMaterialSlot,null);
 window.WildernessChunks.destroyZone('map_northern_cliffs');
@@ -231,4 +241,4 @@ assert(actualCap>0&&actualSteep>0,'the actual loose rock must contain both a fla
 assert.equal(realLayout.flatCapTriangles,actualCap,'debug cap count must match the real generator geometry');
 assert.equal(realLayout.sourceShape,'TerrainGeometry.buildRockTileGeo:stoneGeo');
 window.WildernessChunks.destroyZone('map_northern_cliffs');
-console.log('PASS Northern Cliffs giant flat rock: two-slot ridge, cliff-only UVs, farm material ownership, single-slot fallback, culling, clearance, lifecycle, actual rock seed.');
+console.log('PASS Northern Cliffs 50%-taller fogged plateau: two-slot ridge, scene fog shader, cliff-only UVs, farm material ownership, single-slot fallback, culling, clearance, lifecycle, actual rock seed.');
