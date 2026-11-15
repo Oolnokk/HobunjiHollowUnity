@@ -130,6 +130,9 @@ const unrelatedWhiteCube = new Mesh(new Geometry(), new MeshLambertMaterial({ co
 unrelatedWhiteCube.position.set(.5, .5, .5); // Matches the old color-only crop detector's tile-centred position and height.
 unrelatedWhiteCube.scale.setScalar(.5); // Keeps the exact uniform scale expected of a partially grown crop.
 scene.add(unrelatedWhiteCube); // The production scanner must not silently turn unrelated scenery into a berry cluster.
+const npcBerry = renderer.buildStandaloneCropMesh(cultivarFor('redberries'), .8, false, 12, 3); // Town/NPC farm plots use the same crop family and color metadata.
+npcBerry.mesh.position.set(12.5, npcBerry.lift, 3.5); // NPC planting code applies the returned lift and half-tile world origin.
+scene.add(npcBerry.mesh); // The normal authored-billboard discovery must include NPC fields, not just the player farm.
 const camera = { quaternion: {} };
 const fullRender = new THREE.WebGLRenderer();
 async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } // Gives shade-fill and its loaded GPU texture a chance to resolve.
@@ -178,13 +181,22 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
     }
   }
 
+  assert.equal(npcBerry.mesh.geometry.type, 'BufferGeometry', 'NPC berry varieties use authored world PNGs instead of cubes');
+  assert.equal(npcBerry.mesh.children.length, 3, 'NPC berry clusters preserve the native planted shape');
+  assert.equal(npcBerry.mesh.children[0].material.map?.image?.color, pigmentFor('redberries'), 'NPC berry variant receives its inherited color');
   assert.equal(unrelatedWhiteCube.geometry.type, 'BoxGeometry', 'untagged white scenery stays a cube, never a whiteberry plant');
   assert.equal(unrelatedWhiteCube.userData.hobunjiCropSpriteKey, undefined, 'unrelated scenery receives no crop identity');
   assert.ok(fills.some(call => call.url.endsWith('berries.png') && call.color === pigmentFor('whiteberries')),
     'berry variants use authored fruit pixels rather than a colored cube');
-  const oldVariant = renderer.cropMeshes[1]; // Replanting a new color within one species must not retain the previous texture.
+  const oldVariant = renderer.cropMeshes[1]; // Replanting within one species must not retain the previous cultivar texture.
+  const newCultivar = 'cv_needlegrain_222222_129d86'; // Distinct genotype and RGB sharing the same needlegrain plant structure.
+  cropDefs[newCultivar] = { growDays: 5, baseCrop: 'needlegrain', varietyColor: 0x129d86 }; // Saved seed data for an actual changed-color replant.
+  grid[0][1].crop = newCultivar;
+  renderer.updateCropMeshes();
+  assert.notEqual(renderer.cropMeshes[1], oldVariant, 'same-species genotype replacement discards the prior cultivar mesh');
+  assert.equal(renderer.cropMeshes[1].children[1].material.color.getHex(), 0x129d86, 'new same-species genotype has its actual inherited pigment');
   grid[0][1].crop = 'needlegrain';
   renderer.updateCropMeshes();
-  assert.notEqual(renderer.cropMeshes[1], oldVariant, 'same-tile crop replacement discards the prior cultivar mesh');
+  assert.equal(renderer.cropMeshes[1].children[1].material.color.getHex(), 0x275b43, 'returning to native seed restores native grain shading');
   console.log('ok - all eleven crops preserve native silhouettes and render inherited colors across foliage and PNG world meshes');
 })().catch(error => { console.error(error); process.exitCode = 1; });
