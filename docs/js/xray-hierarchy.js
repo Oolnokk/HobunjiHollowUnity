@@ -89,6 +89,7 @@
   let selectedPresetId = 'baseline'; // Highlighted hypothesis in the Dev Companion preset picker.
   let activePresetId = null; // Most recently applied diagnostic experiment, or null when not testing.
   let originalBeforePresets = null; // Complete original configuration saved before the first experiment.
+  let diagnosticStored = false; // UI warning: true only when browser storage actually preserved the backup.
   const DRAW_ORDER_KEY = '__drawOrder'; // Reserved key within the existing versioned override record.
 
   function validDrawOrder(order) {
@@ -309,8 +310,12 @@
         localStorage.setItem(DIAGNOSTIC_KEY, JSON.stringify({
           version: 1, original: originalBeforePresets, active: activePresetId,
         }));
-      } else localStorage.removeItem(DIAGNOSTIC_KEY);
-    } catch (_) { /* A blocked browser store still allows reversible testing until reload. */ }
+        diagnosticStored = true;
+      } else {
+        localStorage.removeItem(DIAGNOSTIC_KEY);
+        diagnosticStored = false;
+      }
+    } catch (_) { diagnosticStored = false; /* A blocked browser store allows restoration only until reload. */ }
   }
   function discardDiagnosticSession() {
     originalBeforePresets = null;
@@ -325,6 +330,7 @@
       originalBeforePresets = record.original;
       activePresetId = record.active;
       selectedPresetId = record.active;
+      diagnosticStored = true;
     } catch (_) { /* Never trust stale or partial browser data. */ }
   }
   function applyDiagnosticPreset(id) {
@@ -493,7 +499,8 @@
             ['Experiment', activePreset
               ? activePreset.label + (presetUnmodified ? ' (applied)' : ' (modified manually)')
               : 'None — original settings are in use'],
-            ['Original settings', originalBeforePresets ? 'Saved for restoration, including after reload' : 'No active experiment'],
+            ['Original settings', !originalBeforePresets ? 'No active experiment'
+              : diagnosticStored ? 'Saved in browser; survives reload' : 'In memory only; storage blocked, restore before reload'],
             ['Testing', selectedPreset?.hypothesis || '-'],
             ['If appearance changes', selectedPreset?.changed || '-'],
             ['If nothing changes', selectedPreset?.unchanged || '-'],
@@ -566,7 +573,7 @@
             { id: 'shift', label: 'Move toward front', args: { delta: 1 }, group: 'Same-pass draw priority' },
             { id: 'export', label: '📋 Export overrides and layer ranks', group: 'Transfer and restore' },
             { id: 'reset', label: 'Reset all to repo', group: 'Transfer and restore',
-              confirm: 'Discard all browser X-ray overrides and restore EVERY rule and draw-order position to the defaults shipped with this repository version? This does not reset the game save.' },
+              confirm: 'Reset ALL X-ray rules and ranks to repo defaults, and DELETE the saved pre-experiment backup? Use Restore my pre-test settings first if you want them back. This does not reset the game save.' },
           ],
         };
       },
