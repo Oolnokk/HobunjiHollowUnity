@@ -122,7 +122,7 @@
     const other = editableLayers(stage).filter(layer => layer.id !== activeId);
     if (!other.length) return true;
     const last = other[other.length - 1].id;
-    const anchor = drawOrder[drawOrder.indexOf(last) + 1] || '__end'; // Insert after the last same-stage layer.
+    const anchor = drawOrder.slice(drawOrder.indexOf(last) + 1).find(key => key !== activeId && effectiveLayerId(key) === key) || '__end'; // Skip the moved entry and inactive linked weapon.
     return moveLayer(activeId, anchor);
   }
   function shiftLayerInStage(id, delta) {
