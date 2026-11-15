@@ -193,5 +193,20 @@ now += 200;
 const beforeJump = win.Mounts.ridingDebug.manualJumps;
 keyboard('Space');
 assert.equal(win.Mounts.ridingDebug.manualJumps, beforeJump + 1, 'Space triggers a mounted jump through the Jump/Climb owner');
+for (let i = 0; i < 100 && win.Mounts.ridingDebug.jumping; i++) win.Mounts.updateMountedMovement(1 / 60);
+assert.equal(win.Mounts.ridingDebug.jumping, false, 'mounted manual hop completes before subsequent collision checks');
 
-console.log('mounted wheat, whistles, rock hopping, device input routing and animal exertion checks passed');
+// Deliberately tall, tagged wilderness boulders remain fully solid: never teleport across them.
+grid[6][20] = { type: 'rock', rockKind: 'undiggableBoulder', boulderId: 'tall', projectileCoverHeightTiles: 1.8 };
+rockCells.add('20,6');
+mount.x = 18.5 * T; mount.y = 6.5 * T;
+const beforeTallRock = win.Mounts.ridingDebug.autoRockJumps;
+for (let i = 0; i < 180; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+  assert(canOccupy(mount.x, mount.y), 'a tall boulder remains impassable to grounded riding');
+}
+assert.equal(win.Mounts.ridingDebug.autoRockJumps, beforeTallRock, 'tall boulders are not eligible for automatic jumps');
+assert(mount.x < 20 * T, 'the horse stops at the boulder instead of passing through it');
+
+console.log('mounted wheat, whistles, low rock and boulder collision, device input and animal exertion checks passed');
