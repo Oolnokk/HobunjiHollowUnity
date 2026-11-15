@@ -31,7 +31,7 @@ const farGround = { visible: true, material: dirt, matrixWorld: {}, geometry: { 
 const hasLayer = (o, l) => (((o.layers?.mask ?? 1) >>> 0) & (1 << l)) !== 0;
 const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', code +
   '\nreturn { punchHeldGroupFloor, hideOutsideFloorPatch, setGroundElevationFilter, setEnabled: v => { floorPunchEnabled = v; }, stats: () => ({ floorPunches, floorPunchRefillHidden, floorPunchRefillKept }) };')(
-  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1, 1 << 28, 28, hasLayer, 0.08);
+  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 28, hasLayer, 0.08);
 
 const camera = { layers: { mask: 0xffffffff } };
 const colorLog = [];
