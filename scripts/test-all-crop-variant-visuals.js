@@ -52,12 +52,17 @@ class Mesh extends Group {
 }
 class InstancedMesh extends Mesh {
   constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = { needsUpdate: false }; }
-  setMatrixAt() {}
+  setMatrixAt(index, matrix) {
+    this.transforms ??= []; // Stores actual instance positions in the lightweight geometry regression test.
+    this.transforms[index] = { ...matrix };
+  }
 }
 class Object3D extends Group {
   constructor() { super(); this.matrix = {}; }
   rotateY() {}
-  updateMatrix() {}
+  updateMatrix() {
+    this.matrix = { x: this.position.x, y: this.position.y, z: this.position.z, scale: this.scale.x }; // Captures the fruit transform that the production builder sends to Three.js.
+  }
 }
 class TextureLoader {
   load(url, onLoad) {
@@ -105,6 +110,8 @@ const window = {
       leaves.userData.noOutline = true; // Preserve the foliage generator's correct PNG cutout policy.
       shrub.add(leaves);
       shrub.scale.setScalar(.96); // Tests that the crop renderer retains per-instance shrub size variation.
+      shrub.userData.canopyLocal = { radius: 1.05 }; // Cached foliage-generator canopy radius must guide the fruit positions.
+      leaves.geometry.boundingBox = { min: { y: .3 }, max: { y: 1.35 } }; // Simulates the original reused leaf geometry's vertical bounds.
       return shrub;
     },
     buildNeedlegrainMesh() { const root = new Group(); root.add(new Mesh(new Geometry(), new MeshBasicMaterial({ color: 0x60482f }))); root.add(new Mesh(new Geometry(), new MeshBasicMaterial({ color: 0x275b43 }))); return root; },
@@ -175,6 +182,14 @@ async function flush() { for (let i = 0; i < 4; i++) await Promise.resolve(); } 
         assert.equal(fruit.geometry.type, 'SphereGeometry', family + ': fruit is 3D, not floating berry sprite cards');
         assert.ok(fruit.geometry.boundingSphere.radius >= 0.9, family + ': cluster-wide frustum bounds prevent berry disappearance at camera edges');
         assert.equal(fruit.count, 15, family + ': one instanced draw batch per bush');
+        assert.ok(crop.userData.hobunjiBerryCanopyRadius >= .18, family + ': measured canopy extent exists');
+        for (const transform of fruit.transforms) {
+          assert.ok(Math.hypot(transform.x, transform.z) <= crop.userData.hobunjiBerryCanopyRadius + .07,
+            family + ': each berry remains within its procedural shrub canopy rather than floating beyond the leaves');
+          assert.ok(transform.y >= crop.userData.hobunjiBerryCanopyMinY - .05
+            && transform.y <= crop.userData.hobunjiBerryCanopyMaxY + .05,
+          family + ': each berry remains within the measured leaf-height interval');
+        }
         assert.equal(fruit.material.color.getHex(), expectedColor, family + ': every fruit uses the exact genotype RGB');
         assert.equal(fruit.userData.noOutline, true, family + ': berry spheres do not generate oversized outlines');
       }
