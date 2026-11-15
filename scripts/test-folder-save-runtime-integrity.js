@@ -269,7 +269,9 @@ async function main() {
         },
         async *entries() {
           for (const [child, handle] of dirs) yield [child, { kind: 'directory', ...handle }];
-          for (const child of files.keys()) yield [child, { kind: 'file' }];
+          for (const child of files.keys()) yield [child, {
+            kind: 'file', getFile: async () => ({ text: async () => files.get(child) }), // Real directory entries are readable FileSystemFileHandles.
+          }];
         },
         async removeEntry(child) { files.delete(child); },
       };
