@@ -249,7 +249,8 @@
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   let skeletonAlarmActiveByEntity = new WeakMap(); // Tracks each skeleton's current combat-alert transition without retaining despawned actors.
-  let pendingCoffinSpawnAlerts = new WeakSet(); // Delays suppression until the first true alert, even if emergence briefly reports idle.
+  const COFFIN_ALERT_GRACE_MS = 2800; // Only the near-immediate detection after emergence duplicates the already-played coffin shriek.
+  let pendingCoffinSpawnAlerts = new WeakMap(); // Each skeleton's opening-scream suppression expires if combat starts much later.
   let lastBreathPlaybackHandle = null; // Mobile diagnostics inspect this handle after asynchronous render failures can switch playback to native audio.
   let pitchBackendMissingSinceMs = null; // Bounds the startup wait for the asynchronously loaded pitch renderer before native compatibility fallback.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
@@ -750,7 +751,7 @@
 
   function suppressSkeletonCoffinSpawnAlert(entity) {
     if (!hasSkeletonVoice(entity)) return false;
-    pendingCoffinSpawnAlerts.add(entity); // The first active alert is consumed, even after intervening non-combat AI states.
+    pendingCoffinSpawnAlerts.set(entity, nowMs() + COFFIN_ALERT_GRACE_MS); // Brief idle states do not rearm an immediate duplicate.
     return true;
   }
 
@@ -760,7 +761,11 @@
       skeletonAlarmActiveByEntity.delete(entity); // Leaving combat rearms the next genuine detection alarm.
       return null;
     }
-    if (pendingCoffinSpawnAlerts.delete(entity)) { skeletonAlarmActiveByEntity.set(entity, true); return null; } // Opening supplied this exact first alert already.
+    const coffinDeadline = pendingCoffinSpawnAlerts.get(entity); // Consume the saved opening only for its short emergence window.
+    if (coffinDeadline !== undefined) {
+      pendingCoffinSpawnAlerts.delete(entity);
+      if (nowMs() <= coffinDeadline) { skeletonAlarmActiveByEntity.set(entity, true); return null; }
+    }
     if (skeletonAlarmActiveByEntity.has(entity)) return null; // Do not shriek every AI/presentation frame.
     skeletonAlarmActiveByEntity.set(entity, true);
     const played = playOneShot(entity, SKELETON_SHRIEK_URL, config.grunts?.volume ?? 0.86, 0, 'alert', { trigger: 'combat-entry' }, 'active');
@@ -1417,7 +1422,7 @@ function beginCharge(options = {}) {
     lastDotPainAtMsByEntity = new WeakMap();
     trackedBreathers.clear();
     skeletonAlarmActiveByEntity = new WeakMap(); // Starting a new world permits fresh detection alerts from surviving entity objects.
-    pendingCoffinSpawnAlerts = new WeakSet(); // World reset retires every pending coffin opening cue.
+    pendingCoffinSpawnAlerts = new WeakMap(); // World reset retires every pending coffin opening cue.
     for (const value of liveChargesByAbility.values()) Promise.resolve(value).then(token => cancelCharge(token));
     liveChargesByAbility.clear();
     for (const token of [...activeChargeTokens]) cancelCharge(token);
