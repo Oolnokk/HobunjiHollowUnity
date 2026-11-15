@@ -91,9 +91,9 @@ const crops = {
   ongyums: { growDays: 5 },
 };
 const grid = [[
-  { crop: 'blackMustard', type: 'tilled', water: 0, cropAge: 2, cropReady: false },
-  { crop: cultivarKey, type: 'tilled', water: 0, cropAge: 2, cropReady: false },
-  { crop: 'greenMustard', type: 'tilled', water: 0, cropAge: 2, cropReady: false },
+  { crop: 'blackMustard', type: 'tilled', water: 0, cropAge: 4, cropReady: false },
+  { crop: cultivarKey, type: 'tilled', water: 0, cropAge: 4, cropReady: false },
+  { crop: 'greenMustard', type: 'tilled', water: 0, cropAge: 4, cropReady: false },
 ]];
 const scene = { children: [], add(node) { this.children.push(node); }, remove(node) { this.children = this.children.filter(item => item !== node); } };
 const markOutline = node => node.traverse(child => { if (child.isMesh && !child.userData?.noOutline) child.layers.enable(1); }); // Models the game's silhouette-layer enrollment.
