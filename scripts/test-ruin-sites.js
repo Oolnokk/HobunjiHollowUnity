@@ -72,8 +72,9 @@ assert(index.indexOf('js/ruin-site-locales.js') < index.indexOf('js/stampable-lo
   && index.indexOf('js/stampable-locale-defs.js') < index.indexOf('js/tothal-zone-cache.js')
   && index.indexOf('js/tothal-zone-cache.js') < index.indexOf('js/ruin-sites.js'),
   'Tothal ruin dependencies preserve the original execution order');
-assert(index.indexOf('js/ruin-sites.js') < index.indexOf('js/dev-random-ruin-bootstrap.js')
-  && index.indexOf('js/dev-random-ruin-bootstrap.js') < index.indexOf('game.js?v='),
+const gameScriptAt = index.indexOf('<script src="game.js?v='); // Require the real gameplay script tag, not a preceding comment mentioning game.js.
+assert(gameScriptAt >= 0 && index.indexOf('src="js/ruin-sites.js?v=') < index.indexOf('src="js/dev-random-ruin-bootstrap.js?v=')
+  && index.indexOf('src="js/dev-random-ruin-bootstrap.js?v=') < gameScriptAt,
   'ruin sites and their dungeon runtime both load before game.js');
 for (const file of ['docs/js/ruin-sites.js', 'docs/js/stampable-locale-defs.js']) new vm.Script(read(file), { filename:file });
 
