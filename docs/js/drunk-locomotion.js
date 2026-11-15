@@ -27,6 +27,7 @@
 
   let forcedLoss = null;
   let activePlayerState = null;
+  const poseHandoffs = { foot: 0, body: 0 }; // Mobile diagnostics count when a newer animation supersedes a drunken quaternion.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -138,11 +139,24 @@
     };
   }
 
-  function removeTrackedFootTwist(foot, trackedQuaternion) {
+  function stillOwnsQuaternion(current, applied) {
+    if (!current?.isQuaternion || !applied?.isQuaternion) return false;
+    // q and -q encode the same orientation; compare either representation without allocating.
+    const direct = Math.max(Math.abs(current.x - applied.x), Math.abs(current.y - applied.y),
+      Math.abs(current.z - applied.z), Math.abs(current.w - applied.w));
+    const inverseSign = Math.max(Math.abs(current.x + applied.x), Math.abs(current.y + applied.y),
+      Math.abs(current.z + applied.z), Math.abs(current.w + applied.w));
+    return Math.min(direct, inverseSign) < 1e-6;
+  }
+
+  function removeTrackedFootTwist(foot, trackedQuaternion, lastApplied) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const hasDelta = Math.abs(trackedQuaternion.x) + Math.abs(trackedQuaternion.y) + Math.abs(trackedQuaternion.z) > 1e-10
       || Math.abs(trackedQuaternion.w - 1) > 1e-10;
-    if (hasDelta) foot.quaternion.multiply(trackedQuaternion.clone().invert());
+    if (hasDelta) {
+      if (stillOwnsQuaternion(foot.quaternion, lastApplied)) foot.quaternion.multiply(trackedQuaternion.clone().invert());
+      else poseHandoffs.foot++; // Ragdoll/IK/grab already wrote an absolute pose: never undo that owner's rotation.
+    }
     trackedQuaternion.identity();
   }
 
@@ -156,12 +170,13 @@
     return scratchEuler;
   }
 
-  function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion) {
+  function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion, lastApplied) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const safeYaw = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(yaw) || 0));
     const safeRoll = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(roll) || 0));
     trackedQuaternion.setFromEuler(reuseEuler(THREE, 0, safeYaw, safeRoll));
     foot.quaternion.multiply(trackedQuaternion);
+    lastApplied.copy(foot.quaternion); // Next update may remove this twist only if no other writer took the foot.
   }
 
   function publishBodyChannel(state) {
@@ -200,6 +215,8 @@
         right: new THREE.Quaternion(),
       },
       bodyTilt: new THREE.Quaternion(), // Removed before each update so NPC body sway never accumulates.
+      bodyTiltApplied: new THREE.Quaternion(), // The exact last body quaternion identifies a later animation's absolute takeover.
+      footApplied: { left: new THREE.Quaternion(), right: new THREE.Quaternion() }, // Last written orientations guard foot release.
       loss: 0,
       blend: 0,
       speed: 0,
@@ -207,8 +224,8 @@
     };
 
     function clearPreviousFootTwist() {
-      removeTrackedFootTwist(legPart(handle.group, 'left_foot'), state.footTwist.left);
-      removeTrackedFootTwist(legPart(handle.group, 'right_foot'), state.footTwist.right);
+      removeTrackedFootTwist(legPart(handle.group, 'left_foot'), state.footTwist.left, state.footApplied.left);
+      removeTrackedFootTwist(legPart(handle.group, 'right_foot'), state.footTwist.right, state.footApplied.right);
     }
 
     function clearPreviousBodyTilt() {
@@ -216,7 +233,11 @@
       if (!bodyRoot?.quaternion || !state.bodyTilt?.isQuaternion) return;
       const hasDelta = Math.abs(state.bodyTilt.x) + Math.abs(state.bodyTilt.y) + Math.abs(state.bodyTilt.z) > 1e-10
         || Math.abs(state.bodyTilt.w - 1) > 1e-10;
-      if (hasDelta) bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
+      if (hasDelta) {
+        if (stillOwnsQuaternion(bodyRoot.quaternion, state.bodyTiltApplied))
+          bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
+        else poseHandoffs.body++; // A new seated/grab/ragdoll root pose supersedes our old tilt.
+      }
       state.bodyTilt.identity();
     }
 
@@ -229,6 +250,7 @@
       if (!bodyRoot?.quaternion) return;
       state.bodyTilt.setFromEuler(reuseEuler(THREE, state.pitch, 0, state.roll));
       bodyRoot.quaternion.multiply(state.bodyTilt);
+      state.bodyTiltApplied.copy(bodyRoot.quaternion); // Only this exact rotation may have drunken tilt undone.
     }
 
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
@@ -299,11 +321,11 @@
       applyTrackedFootTwist(THREE, legPart(handle.group, 'left_foot'),
         toeStrength * DEG * (25 * Math.sin(p * 0.83 + 0.4) + 14 * Math.sin(p * 0.29 - 0.5)),
         toeStrength * DEG * (12 * Math.sin(p * 0.67 - 0.2)),
-        state.footTwist.left);
+        state.footTwist.left, state.footApplied.left);
       applyTrackedFootTwist(THREE, legPart(handle.group, 'right_foot'),
         toeStrength * DEG * (-27 * Math.sin(p * 0.79 + 1.1) + 13 * Math.sin(p * 0.33 + 0.8)),
         toeStrength * DEG * (-13 * Math.sin(p * 0.71 + 0.6)),
-        state.footTwist.right);
+        state.footTwist.right, state.footApplied.right);
 
       state.loss = rawLoss;
       state.blend = blend;
@@ -379,6 +401,7 @@
         bodyYawOwnedByFacing: true,
         forcedLoss,
         toothAmbientBottle: window.NpcDrinkInteraction?.getAmbientDebug?.().find?.(entry => entry.ownerId === TOOTH_AMBIENT_BOTTLE_OWNER) || null,
+        poseHandoffs: { ...poseHandoffs }, // Available in mobile diagnostics without a browser console.
       };
     },
     setForcedLoss(value) { forcedLoss = value == null ? null : clamp01(value); },
