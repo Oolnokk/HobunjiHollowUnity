@@ -664,6 +664,8 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(wingBoxes,[],'no instanced one-unit boxes remain in any wing');
   assert(wingFloors.length>=2&&wingFloors.every(mesh=>mesh.geometry.attributes.position.array.length>0&&mesh.geometry.attributes.uv.array.every(v=>v>=0&&v<=1)),'each wing floor is merged stretch-to-fit faces');
   assert(wingWalls.length>=1,'wing walls are merged faces');
+  assert(network.getState().wallRender.doubleSided,'mobile diagnostics report the actual two-sided stone material');
+  assert(network.getState().wallRender.meshes>=wingWalls.length,'mobile diagnostics count the constructed wall meshes once');
   assert(wingWalls.every(w=>w.material.side===THREE.DoubleSide),'wing walls render from both camera directions');
   assert(wingFloors.every(f=>f.material.side!==THREE.DoubleSide),'wing floors remain one-sided');
   const caps=[],partitions=[],corridorCaps=[];
