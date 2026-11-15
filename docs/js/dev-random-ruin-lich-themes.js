@@ -20,6 +20,7 @@
   const PLASM_COLOR = 0xffffff, PLASM_OPACITY = 1; // The authored oil PNG untinted: only the temporary kind is coloured, and only along its glowing outline.
   const PLASM_WORLD_UV_TILES = 3.2; // World tiles one repeat of the plasm PNG covers on explicit-tile patches (about the scale of a ground puddle).
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
+  const BOMB_PLASM_SINK_SECONDS = 1.4; // Only temporary timed bomb patches demand a quick escape; permanent plasm keeps its 2.8 s grace.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
   const OIL_TEXTURE = 'assets/textures/dark_oil.png.png'; // The authored plasm oil PNG: a rimmed puddle designed for the edge-preserving (nine-slice) mapping.
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
@@ -1204,7 +1205,7 @@
       const squared=(center.x-point.x)**2+(center.z-point.z)**2;
       if(squared<best){best=squared;patch=center;}
     }
-    world.sink=Math.min(1,world.sink+dt/PLASM_SINK_SECONDS);
+    world.sink=Math.min(1,world.sink+dt/(room.timed ? BOMB_PLASM_SINK_SECONDS : PLASM_SINK_SECONDS)); // Respect the contacted patch's own hazard speed.
     const pull=Math.min(distance(point,patch),PLASM_PULL_TILES_S*dt*(1+world.sink));
     if(pull>0){
       const dx=patch.x-point.x,dz=patch.z-point.z,d=Math.max(.001,Math.hypot(dx,dz));

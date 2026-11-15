@@ -9,6 +9,8 @@ const tube=json('docs/config/furniture-authored/witchBombCeilingTube.json');
 const audioConfig=read('docs/config/scratchbones-config.js'); // Verifies the production cue mapping and shipped recording.
 assert(fs.existsSync('docs/assets/audio/sfx/sfx_lowblast.mp3'),'Witch-bomb lowblast recording must ship with the game');
 assert(/"witchBombBlast":\s*\{[^}]*"url":\s*"assets\/audio\/sfx\/sfx_lowblast\.mp3"[^}]*"preload":\s*true/s.test(audioConfig),'dedicated Witch-bomb cue must map to the preloaded lowblast recording');
+assert(/"witchBombGroundHit":\s*\{[^}]*"url":\s*"assets\/audio\/sfx\/combat\/sfx_blunt_hit_large\.mp3"[^}]*"preload":\s*true/s.test(audioConfig),
+ 'the landing cue reuses the existing large blunt impact recording in the positional object mixer');
 const index=json('docs/config/furniture-authored/index.json');
 
 assert.equal(bomb.key,'hronalWitchBomb');
@@ -136,6 +138,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  scene.isScene=true;
  const burdens=new Map(),factories=new Map(),glowStates=[];
  let clock=1000,spawns=0,releases=0;
+ let testArea='map_witch_bomb_runtime',testGrid=null,supportAt=null; // Mutable terrain/area fixtures exercise actual void and elevated-support decisions.
  const playedSfx=[]; // Captures the exact cue emitted when the runtime blast occurs.
  const positionedSfx=[]; // Captures the actual world-space blast for dispenser, fuse and chain-reaction regression.
  const tube={isObject3D:true,id:'tube-fixture',parent:scene,
@@ -147,7 +150,8 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    InstancedMesh:RuntimeGroup,Object3D:RuntimeGroup,
    SphereGeometry:RuntimeDisposable,ConeGeometry:RuntimeDisposable,MeshBasicMaterial:RuntimeDisposable,
   },
-  GridTileAccessors:{getCurrentArea:()=> 'map_witch_bomb_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+  GridTileAccessors:{getCurrentArea:()=>testArea,getActiveScene:()=>scene,getActiveGrid:()=>testGrid},
+  DynamicSurfaces:{sampleSupport(...args){return supportAt?.(...args)||null;}}, // A shaft platform can exist above a bottomless base-grid tile.
   Shattercasks:{
    registerBurdenFactory(kind,factory){factories.set(kind,factory);return true;},
    async createHangingBurden(options){
@@ -164,7 +168,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
   },
   FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
   AudioSystem:{playObjectSfxKey(key){playedSfx.push(key);},playObjectSfxKeyAt(key,x,z,mapId,y,opts){
-    playedSfx.push(key);positionedSfx.push({x,z,mapId,y,reverse:!!opts?.reverse});
+    playedSfx.push(key);positionedSfx.push({x,z,mapId,y,reverse:!!opts?.reverse,pitch:opts?.pitch??1});
    }},
  };
  runtimeWindow.window=runtimeWindow;
@@ -201,7 +205,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
  assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
  assert.deepEqual(playedSfx,['witchBombBlast'],'each Witch-bomb explosion plays lowblast exactly once, never the Shattercask cue');
- assert.deepEqual(positionedSfx[0],{x:2,z:4,mapId:'map_witch_bomb_runtime',y:2.12,reverse:false},
+ assert.deepEqual(positionedSfx[0],{x:2,z:4,mapId:'map_witch_bomb_runtime',y:2.12,reverse:false,pitch:1},
    "a ceiling bomb's real height and impact position reach the shared spatial renderer");
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().blastSfxKey,'witchBombBlast','mobile debugging reports the explosion cue');
  assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
@@ -278,6 +282,48 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    'the outer explosion discovers a prop created by the inner explosion callback');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().legacySceneScans-scansBeforeMutation,2,
    'a scene-mutating callback invalidates the nested-chain cache and triggers a fresh scan');
+ const landed=await runtimeWindow.HronalWitchBombs.spawn({mapId:'map_witch_bomb_runtime',scene,x:5,y:.45,z:6,fuseSeconds:120});
+ assert.equal(landed.onImpact(landed,'ceiling-witch-bomb-ground-impact'),false,'an intact landing does not detonate the bomb');
+ assert.equal(playedSfx.at(-1),'witchBombGroundHit','ground contact uses the named large blunt-impact cue');
+ const groundEvent=positionedSfx.at(-1);
+ assert.equal(groundEvent.x,5);assert.equal(groundEvent.z,6);
+ assert.equal(groundEvent.y,0,'the origin is the floor beneath the bomb sphere');
+ assert.equal(groundEvent.mapId,'map_witch_bomb_runtime');
+ assert.ok(Math.abs(groundEvent.pitch-Math.pow(2,-9/12))<1e-12,'the landing sample is pitched down exactly nine semitones');
+ const groundSounds=playedSfx.length;
+ assert.equal(landed.onImpact(landed,'ceiling-witch-bomb-collision'),false,'non-ground collision does not detonate');
+ assert.equal(playedSfx.length,groundSounds,'a bomb colliding with another object does not play a false ground hit');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().groundHitPitchSemitones,-9,'mobile diagnostics identify the intended landing pitch');
+ let dropCallbacks=0; // Existing authored onDrop handlers must survive the positional impact wrapper.
+ const playerBomb=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:0,z:6,
+  onDrop:()=>dropCallbacks++,fuseSeconds:120});
+ playerBomb.onDrop(playerBomb);
+ assert.equal(dropCallbacks,1,'the player’s direct-drop audio preserves the prior onDrop callback');
+ assert.deepEqual(positionedSfx.at(-1),{x:5,z:6,mapId:testArea,y:0,reverse:false,pitch:Math.pow(2,-9/12)},
+  'Action 2 floor placement also plays the same lowered, spatial ground impact');
+ const hazardousGrid=Array.from({length:8},()=>Array.from({length:8},()=>({type:'void'}))); // Void tiles reject a false stone impact.
+ testGrid=hazardousGrid;
+ const water=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:.45,z:6,fuseSeconds:120});
+ hazardousGrid[6][5]={type:'water'};
+ const beforeWater=playedSfx.length;
+ assert.equal(water.onImpact(water,'released-ground-impact'),true,'water contact discards the bomb');
+ assert.equal(playedSfx.length,beforeWater,'water does not sound like a stone floor');
+ const directWater=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:0,z:6,fuseSeconds:120});
+ directWater.onDrop(directWater); // The player's direct floor placement must obey the same hazard guard as a falling Burden.
+ assert.equal(playedSfx.length,beforeWater,'Action 2 in water cannot manufacture a stone-impact sound');
+ hazardousGrid[6][5]={type:'void'};
+ testArea='map_i_dev_random_ruin';supportAt=()=>({y:4});
+ const elevated=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:4.45,z:6,fuseSeconds:120});
+ assert.equal(elevated.onImpact(elevated,'ceiling-witch-bomb-ground-impact'),false,
+  'a solid elevated ruin platform catches a falling bomb even above a void base-grid tile');
+ assert.deepEqual(positionedSfx.at(-1),{x:5,z:6,mapId:testArea,y:4,reverse:false,pitch:Math.pow(2,-9/12)},
+  'the 3D impact comes from the shaft platform height rather than from the pit below');
+ supportAt=null;
+ const fallingIntoVoid=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:4.45,z:6,fuseSeconds:120});
+ const beforeVoid=playedSfx.length;
+ assert.equal(fallingIntoVoid.onImpact(fallingIntoVoid,'ceiling-witch-bomb-ground-impact'),true,
+  'a genuinely unsupported ruin void disposes of the burden');
+ assert.equal(playedSfx.length,beforeVoid,'a bottomless pit makes no artificial stone thud');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 

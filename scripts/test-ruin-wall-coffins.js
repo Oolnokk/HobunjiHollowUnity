@@ -22,6 +22,9 @@ for (const [tier, n] of [['cave', 2], ['hole', 4], ['lich', 6]]) assert.equal(Co
 
 const spawned = [], hostile = new Set(); let live = 0;
 window.Combat = { deps: { TILE: 64, hostileObjects: hostile } };
+const openingSounds = [], suppressedAlerts = []; // Verify each waking coffin emits two spatial cues and suppresses the duplicate late shriek.
+window.AudioSystem = { playObjectSfxKeyAt(key,x,z,area,y,opts) { openingSounds.push({key,x,z,area,y,earshot:opts.earshotTiles}); } };
+window.CombatVocalizations = { suppressSkeletonCoffinSpawnAlert(entity) { suppressedAlerts.push(entity); } };
 window.MinionCombat = { makeEntity: async o => { const e = { health: 10, x: o.x, y: o.y, extra: o.extra, state: 'chase' }; spawned.push(e); live++; return e; } };
 const player = { x: -50, z: -50, y: 0 };
 const run = Coffins.mount({ THREE, sites, seed: 3, tier: 'lich', getPlayerY: () => player.y, getPlayerPosition: () => ({ x: player.x, z: player.z }), isActive: () => true });
@@ -32,11 +35,15 @@ const run = Coffins.mount({ THREE, sites, seed: 3, tier: 'lich', getPlayerY: () 
   const first = run.coffins[0]; player.x = first.site.x; player.z = first.site.z + 1.2; player.y = first.site.floorY;
   run.update(.05);
   assert.equal(first.state, 'falling');
+  assert.deepEqual(openingSounds.map(event=>event.key),['breakRock','ruinCoffinShriek'],'activation plays exactly one rock break and one skeleton scream immediately');
+  assert.deepEqual(openingSounds.map(({x,z,area,y})=>({x,z,area,y})),Array.from({length:2},()=>({x:first.site.x,z:first.site.z,area:'map_i_dev_random_ruin',y:first.site.floorY+.9})),'both cues carry the opening coffin’s actual story and world position');
   for (let i = 0; i < 40; i++) run.update(.05);
   await flush();
   assert.ok(Math.abs(Math.abs(first.lid.quaternion.angle) - Math.PI / 2) < 1e-6, 'the lid ends lying flat');
   assert.ok(first.lid.position.y < first.site.floorY + .2, 'and it has dropped to the floor');
   assert.equal(spawned.length, 1, 'one skeleton came out');
+  assert.equal(suppressedAlerts[0],spawned[0],'the emerging skeleton cannot emit a second late detection shriek');
+  assert.equal(openingSounds.length,2,'lid animation frames never replay opening cues');
   // Stand beside every other coffin: none may open while the first occupant lives.
   for (const c of run.coffins.slice(1)) { player.x = c.site.x; player.z = c.site.z + 1; player.y = c.site.floorY; for (let i = 0; i < 40; i++) run.update(.05); }
   await flush();
@@ -46,6 +53,8 @@ const run = Coffins.mount({ THREE, sites, seed: 3, tier: 'lich', getPlayerY: () 
   for (let i = 0; i < 40; i++) run.update(.05);
   await flush();
   assert.equal(spawned.length, 2, 'the next one opens once the last occupant is beaten');
+  assert.equal(openingSounds.length,4,'the second coffin emits exactly its own two activation cues');
+  assert.equal(suppressedAlerts.length,2,'each skeleton gets its own alert suppression');
   run.dispose();
   assert.equal(hostile.size, 0, 'dispose retires every coffin skeleton');
   console.log('ruin wall coffins: ok');

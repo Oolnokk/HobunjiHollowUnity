@@ -3791,6 +3791,8 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.8,
             "preload": true
           },
+          "ruinCoffinShriek": { "url": "assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg", "volume": 0.86, "preload": true }, // Spatial one-shot as the wall coffin starts opening.
+          "witchBombGroundHit": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_large.mp3", "volume": 0.96, "preload": true }, // Runtime supplies the exact -9-semitone pitch shift.
           "climbStep": {
             "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
             "placeholderUrls": [

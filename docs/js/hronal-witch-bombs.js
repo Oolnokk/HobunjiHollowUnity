@@ -17,6 +17,8 @@
   const DEFAULT_FUSE_SECONDS = 10;
   const BLAST_RADIUS = 4.4;
   const BLAST_SFX_KEY = 'witchBombBlast'; // Used once for every successful Witch-bomb detonation.
+  const GROUND_HIT_SFX_KEY = 'witchBombGroundHit'; // Landing thud for any tradition's physical bomb, separate from the fuse blast.
+  const GROUND_HIT_PITCH = Math.pow(2, -9 / 12); // Nine semitones below the recorded large blunt impact.
   const RUIN_MAP_ID = 'map_i_dev_random_ruin';
   const VARIANTS = Object.freeze({
     hronal: Object.freeze({ id:'hronal', kind:'hronalWitchBomb', furnitureKey:'hronalWitchBomb', displayName:'Hronal Witch-bomb', glow:'#ff7417',
@@ -97,6 +99,19 @@
     bomb.enemyCarrier=null;
     return true;
   }
+  function landingHazard(bomb,world) {
+    let hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
+    if (hazard==='void' && bomb.mapId===RUIN_MAP_ID && world &&
+        window.DynamicSurfaces?.sampleSupport?.(world.x,world.z,{minY:world.y-1.2,maxY:world.y+.15,pad:.02}))
+      hazard=''; // A shaft platform is solid even if the shared 2D ruin tile directly beneath it is void.
+    return hazard;
+  }
+  function playGroundHit(bomb,point,centerHeight=.45) {
+    if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.z) || landingHazard(bomb,point)) return;
+    const audio=window.AudioSystem; // Use the normal world-positioned mixer, including 3D bearing, floor elevation and cavern reverb.
+    if(audio?.playObjectSfxKeyAt) audio.playObjectSfxKeyAt(GROUND_HIT_SFX_KEY,point.x,point.z,bomb.mapId,point.y-centerHeight,{pitch:GROUND_HIT_PITCH,earshotTiles:14});
+    else audio?.playObjectSfxKey?.(GROUND_HIT_SFX_KEY,1,GROUND_HIT_PITCH);
+  }
   function impact(bomb,cause='impact') {
     if (!bomb || bomb.exploded) return false;
     if (String(cause).includes('witch-bomb-chain')) {
@@ -104,11 +119,11 @@
       return true;
     }
     const world=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
-    const hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
-    if (hazard) {
+    if (landingHazard(bomb,world)) {
       window.Shattercasks?.discardBurden?.(bomb);
       return true;
     }
+    if(String(cause).includes('ground-impact')) playGroundHit(bomb,world); // One physical landing sound; water, lava and unsupported voids make no stone thud.
     return false; // Solid ordinary surfaces catch the bomb intact; its spawn-time fuse keeps running.
   }
   function buildEffect(targetScene,x,y,z,variant=VARIANTS.hronal) {
@@ -344,6 +359,8 @@
     bomb.fuseSeconds=clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120);
     bomb.spawnedAtMs=now(); // Fuse starts when the physical sphere is first registered in the world.
     bomb.impactRadius=.22;
+    const previousDrop=bomb.onDrop; // The player's Action 2 places a Burden directly on the floor rather than sending it through the falling-impact callback.
+    bomb.onDrop=record=>{try{previousDrop?.(record);}finally{const position=record.group?.getWorldPosition?.(new THREE.Vector3())||record.group?.position;playGroundHit(record,position,0);}};
     return bomb; // createHangingBurden already installed the exact onLost callback; wrapping it again would release a tube twice.
   }
   function registerDispenser(mapId,id,root,puzzle={}) {
@@ -456,6 +473,7 @@
     bomb.group.position.y=(Number.isFinite(y)?y:0)+.45;
     bomb.carried=false;bomb.enemyCarrier=null;
     bomb.col=Math.floor(p.x);bomb.row=Math.floor(p.z);
+    playGroundHit(bomb,bomb.group.position); // Enemy-held bombs are placed straight onto the ground instead of passing through Burden flight.
     return true;
   }
   function registerBreakable(object,options={}) {
@@ -530,8 +548,8 @@
   }
   function debugSnapshot() {
     return {
-      latestChange:'Every Witch-bomb blast uses the shared positional object-SFX renderer and area reverb; Kanthic reverses the same source in that renderer.',
-      blastSfxKey:BLAST_SFX_KEY,
+      latestChange:'Witch-bomb ground contacts play a spatial large-blunt impact pitched down nine semitones; blasts keep their independent positional cue and Kanthic reverse.',
+      blastSfxKey:BLAST_SFX_KEY,groundHitSfxKey:GROUND_HIT_SFX_KEY,groundHitPitchSemitones:-9,
       dispensers:[...dispensers.values()].map(item=>({id:item.id,mapId:item.mapId,activeBombId:item.activeBombId,dispensing:item.dispensing,fuseSeconds:item.fuseSeconds})),
       variants:Object.keys(VARIANTS),ruinVariant:ruinVariantId(currentArea()),dissolving:dissolving.size,
       activeBombs:(window.Shattercasks.activeBurdenRecords?.(currentArea())||[]).filter(item=>KINDS.has(item.kind)).map(item=>({

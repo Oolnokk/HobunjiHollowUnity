@@ -13,7 +13,7 @@
     "js/ruin-v50-native-floors.js?v=20261115v50PlateauOwnership1",
     "js/ruin-shaft-connector.js?v=20261114roomEnclosure2",
     "js/ruin-v50-vestibule.js?v=20261108h61ad699",
-    "js/ruin-wall-coffins.js?v=20261108coffin1",
+    "js/ruin-wall-coffins.js?v=20261115coffinWake1",
     "js/ruin-multifloor-v50-style.js?v=20261114shaftTravel1",
     "js/ruin-checkpoint-travel.js?v=20261114shaftTravel1"
 ]; // Versioned modules evaluated before gameplay boot.
