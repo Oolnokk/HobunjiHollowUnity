@@ -52,6 +52,8 @@ for (const fixture of fixtures) {
   const decal = record.decals[0]; // The glyph's alpha PNG and emissive inverse color.
   assert.equal(decal.surfacePartId, part.id);
   assert.equal(decal.surfaceId, surface.id);
+  assert.equal(decal.width, .3, 'reduced motif width');
+  assert.equal(decal.height, .3, 'reduced motif height');
   assert.equal(decal.imageName, motif);
   assert.equal(decal.imageSource, '../../../docs/assets/patterns/' + motif);
   assert.ok(fs.existsSync(path.join(repoRoot, 'docs/assets/patterns', motif)), 'motif PNG actually exists: ' + motif);
