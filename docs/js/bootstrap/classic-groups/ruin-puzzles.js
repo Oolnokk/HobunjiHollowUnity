@@ -9,7 +9,7 @@
     "js/ruin-layer-challenges.js?v=20261115tierMelody1",
     "js/ruin-hidden-secrets.js?v=20261115skeeriEgg2",
     "js/ruin-room-system.js?v=20261115fullscreenTint1",
-    "js/ruin-layer-playable.js?v=20261115hiddenSecrets1",
+    "js/ruin-layer-playable.js?v=20261115twoSided1",
     "js/ruin-v50-native-mechanisms.js?v=20261115dormantCubeComplete1",
     "js/ruin-v50-native-floors.js?v=20261115dormantCubeComplete1",
     "js/ruin-shaft-connector.js?v=20261114roomEnclosure2",
