@@ -32626,6 +32626,16 @@
               await refreshPlayerAvatar();
               return true;
             },
+            // Equips the Looped (fishing-mace haft) grapple-flail modular weapon in the weapon slot and draws it.
+            equipLoopedGrappleFlail() {
+              const key = Object.keys(TOOL_ITEM_DEFS).find(k => k.startsWith('modular:fishing-mace:grapple-flail:'));
+              if (!key) return null;
+              try { gearInventory.tools[key] = true; } catch (_) { /* Ownership is cosmetic for this dev equip. */ }
+              equipmentSlots.weapon = key;
+              rebuildToolMeshes();
+              setActiveTool('weapon', { silent: true });
+              return key;
+            },
             // Character view with the camera swung round to the player's front, so the front portrait and the
             // weapon held against it are on screen (weapon-vs-front-plane layering checks).
             frontView(on) {

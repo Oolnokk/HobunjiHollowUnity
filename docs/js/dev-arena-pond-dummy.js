@@ -211,6 +211,12 @@
     return ok;
   }
 
+  function equipFlail() {
+    const key = deps.devTestLook?.equipLoopedGrappleFlail();
+    setStatus(key ? 'Equipped ' + key : 'Looped grapple-flail is not registered.');
+    return key;
+  }
+
   let frontViewOn = false;
   function toggleFrontView(force) {
     frontViewOn = force === undefined ? !frontViewOn : !!force;
@@ -235,6 +241,7 @@
       <div class="fed-label">Pond &amp; dummy NPC — stand by the water and drop a stationary NPC next to you to check draw order / x-ray</div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" id="devPondStandBtn">🏞️ Stand in front of pond</button>
+        <button type="button" class="fed-action-btn" id="devFlailBtn">🪝 Equip Looped grapple-flail</button>
         <button type="button" class="fed-action-btn" id="devFrontViewBtn">🪞 Front view (character view)</button>
         <button type="button" class="fed-action-btn" id="devArenaGrassBtn">🌱 Show arena grass</button>
         <button type="button" class="fed-action-btn" id="devPondBankBtn">🪵 Stand on the bank</button>
@@ -255,6 +262,7 @@
       if (spawnBtn) { spawnDummy(spawnBtn.dataset.dummy); return; }
       if (event.target.closest('#devPondStandBtn')) standAtPond();
       else if (event.target.closest('#devPondBankBtn')) standAtPond(0.3);
+      else if (event.target.closest('#devFlailBtn')) equipFlail();
       else if (event.target.closest('#devFrontViewBtn')) toggleFrontView();
       else if (event.target.closest('#devArenaGrassBtn')) setGrassHidden(!grassHidden);
       else if (event.target.closest('#devTestLookBtn')) applyTestLook();
@@ -272,7 +280,7 @@
 
   window.DevArenaPondDummy = {
     version: 1,
-    init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, spawnDummy, clearDummies,
+    init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, equipFlail, equipFlail, spawnDummy, clearDummies,
     snapshot: () => ({ pond: !!arenaScene()?.userData?.devArenaPond, waterfall: !!arenaScene()?.userData?.devArenaWaterfall, dummies: [...dummies.keys()] }),
   };
 })();
