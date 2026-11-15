@@ -157,7 +157,9 @@
     if (typeof document === 'undefined') return false;
     if (event?.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return true;
     if (document.getElementById('menuPanel')?.classList?.contains?.('open')) return true;
-    if (window.Fishing?.state?.active) return true; // Fishing and other overlays own their input semantics.
+    if (window.ControllerUI?.isActive?.() || window.FarmworkUI?.isPlanning?.()) return true; // Existing menu and farm-planning owners outrank riding buttons.
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly || window.__mapEditorGizmoActive) return true;
+    if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return true; // Fishing and music own their own primary inputs.
     return false;
   }
 
