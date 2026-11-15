@@ -57,7 +57,9 @@
       const parsed = JSON.parse(localStorage.getItem(HAT_PREVIEW_STORAGE_KEY) || '{}');
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
       const id = normalizeKind(kind);
-      return Object.prototype.hasOwnProperty.call(parsed, id) ? parsed[id] : null;
+      const base = normalizeKind(window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(id) || id); // Den-Mothers and sprite-equivalent variants inherit base-species hats.
+      if (Object.prototype.hasOwnProperty.call(parsed, id)) return parsed[id];
+      return Object.prototype.hasOwnProperty.call(parsed, base) ? parsed[base] : null;
     } catch (_) { return null; }
   }
 
