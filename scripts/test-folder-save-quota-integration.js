@@ -362,7 +362,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
     'harmless numbered backups do not block a deliberate folder save');
   const backupLoad = await externalSession.window.LocalSaveFolder.loadFromFolder();
   assert.equal(backupLoad.ok, true);
-  assert.deepEqual(externalSession.window.LocalSaveFolder.getStatus().ignoredFarmLayoutBackupFiles.sort(),
+  assert.deepEqual(Array.from(externalSession.window.LocalSaveFolder.getStatus().ignoredFarmLayoutBackupFiles).sort(),
     ['hollow (1).json', 'hollow(3).json'], 'mobile save diagnostics expose ignored Drive version files');
 
   const restoredLayout = JSON.parse(await (await layoutFile.getFile()).text()); // Preserve the current layout and transplant just the historical squeeze station records.
