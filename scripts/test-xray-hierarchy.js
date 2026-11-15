@@ -22,7 +22,7 @@ const X = win.XrayHierarchy;
 assert.ok(X && X.version === 1, 'module registers window.XrayHierarchy');
 
 // Defaults, validation, live change, listeners.
-assert.strictEqual(X.get('hand.frontPlaneMask'), 'behind');
+assert.strictEqual(X.get('hand.frontPlaneMask'), 'off', 'hands are not masked by owner front art by default');
 assert.strictEqual(X.get('actors.order'), 'all');
 assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
@@ -33,21 +33,21 @@ let heard = null;
 X.onChange((k, v, prev) => { heard = [k, v, prev]; });
 assert.strictEqual(X.set('hand.frontPlaneMask', 'bogus'), false, 'rejects values outside the rule options');
 assert.strictEqual(X.set('no.such.rule', 'on'), false, 'rejects unknown rules');
-assert.strictEqual(X.set('hand.frontPlaneMask', 'off'), true);
-assert.deepStrictEqual(heard, ['hand.frontPlaneMask', 'off', 'behind'], 'listeners hear live changes');
-assert.strictEqual(X.get('hand.frontPlaneMask'), 'off');
+assert.strictEqual(X.set('hand.frontPlaneMask', 'behind'), true);
+assert.deepStrictEqual(heard, ['hand.frontPlaneMask', 'behind', 'off'], 'listeners hear live changes');
+assert.strictEqual(X.get('hand.frontPlaneMask'), 'behind');
 
 // Diff / export / import round trip, persistence of changes only.
-assert.deepStrictEqual(X.diff(), { 'hand.frontPlaneMask': { from: 'behind', to: 'off' } });
+assert.deepStrictEqual(X.diff(), { 'hand.frontPlaneMask': { from: 'off', to: 'behind' } });
 const exported = JSON.parse(X.exportDiff());
 assert.deepStrictEqual(exported.xrayHierarchy.changes, X.diff());
 assert.strictEqual(exported.xrayHierarchy.effective['actors.order'], 'all', 'export lists the full effective hierarchy');
-assert.deepStrictEqual(JSON.parse(store['hobunji.xrayHierarchy.v1']), { 'hand.frontPlaneMask': 'off' }, 'only changed rules persist');
+assert.deepStrictEqual(JSON.parse(store['hobunji.xrayHierarchy.v1']), { 'hand.frontPlaneMask': 'behind' }, 'only changed rules persist');
 X.reset();
 assert.deepStrictEqual(X.diff(), {}, 'reset returns every rule to default');
 assert.strictEqual(store['hobunji.xrayHierarchy.v1'], undefined);
 assert.strictEqual(X.importDiff(JSON.stringify(exported)).applied > 0, true, 'an exported diff can be re-imported');
-assert.strictEqual(X.get('hand.frontPlaneMask'), 'off');
+assert.strictEqual(X.get('hand.frontPlaneMask'), 'behind');
 X.reset();
 
 // Manual rank editing, strict validation, clipboard persistence and reset.
@@ -88,6 +88,38 @@ assert.ok(view.actions.every(action => !action.path?.length), 'there is no misle
 assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 'Reset all to repo' && action.confirm), 'explicit confirmed reset to repository defaults exists');
 assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.options.length === 2), 'render passes are explicit choices');
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
+const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
+assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
+assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
+assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
+// Mock the 3D scene only for the debug overlay. It must not create persistent
+// depth/billboard registrations or leave a circle behind while gameplay is paused.
+class PreviewGroup {
+  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; }
+  add(child) { this.children.push(child); child.parent = this; }
+  traverse(visitor) { visitor(this); this.children.forEach(visitor); }
+}
+class PreviewMesh {
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = {}; this.userData = {}; }
+}
+class PreviewGeometry { dispose() {} }
+class PreviewMaterial { constructor(params) { Object.assign(this, params); } dispose() {} }
+win.THREE = { Group: PreviewGroup, Mesh: PreviewMesh, CircleGeometry: PreviewGeometry,
+  RingGeometry: PreviewGeometry, MeshBasicMaterial: PreviewMaterial, DoubleSide: 2 };
+const previewScene = { isScene: true, children: [],
+  add(mesh) { this.children.push(mesh); }, remove(mesh) { this.children = this.children.filter(item => item !== mesh); } };
+assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.25, z: -2.75, elevation: 1 }, 1.5), true);
+const previewCircle = previewScene.children[0];
+assert.deepStrictEqual(previewCircle.xyz, [3.25, 1.025, -2.75], 'ground circle previews the actual world X/Z and foot elevation');
+assert.strictEqual(previewCircle.children.length, 2, 'debug circle has fill and ring');
+assert.ok(previewCircle.children.every(mesh => mesh.material.depthWrite === false && mesh.userData.noOutline === true
+  && !mesh.userData.hobunjiDepthReplayInert), 'debug geometry neither writes depth nor enters retained background registries');
+assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 1.5), true);
+assert.strictEqual(previewScene.children[0], previewCircle, 'moving reuses the original debug geometry');
+assert.deepStrictEqual(previewCircle.xyz, [3.5, 2.025, -2.5]);
+assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: false }), { ok: true }, 'checkbox disables the visualizer');
+assert.strictEqual(previewScene.children.length, 0, 'unchecking removes the overlay immediately, even without another frame');
+assert.strictEqual(X.get('ground.showZone'), 'off');
 assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
@@ -176,7 +208,7 @@ const savedOriginal = JSON.parse(store['hobunji.xrayHierarchy.diagnostics.v1']);
 assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets retain the original rules, not the previous preset');
 assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
 assert.equal(savedOriginal.active, 'shoulder-world-depth', 'last applied experiment survives browser reload');
-X.set('hand.frontPlaneMask', 'off');
+X.set('hand.frontPlaneMask', 'behind');
 assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(modified manually)')),
   'editing one rule after applying a preset is reported, not silently treated as the preset');
 const modifiedReport = JSON.parse(panel.onAction('report', {}).text);
@@ -192,7 +224,7 @@ global.window = reloadedWin;
 new Function(cfgSource)();
 const Y = reloadedWin.XrayHierarchy;
 assert.equal(reloadedPanels.length, 1, 'reloaded X-ray panel is registered');
-assert.equal(Y.get('hand.frontPlaneMask'), 'off', 'user edits during the experiment still persist');
+assert.equal(Y.get('hand.frontPlaneMask'), 'behind', 'user edits during the experiment still persist');
 assert.ok(reloadedPanels[0].render().actions.some(action => action.id === 'restore-original'),
   'the original configuration is available after a page reload');
 assert.equal(Y.restoreBeforePresets(), true, 'restoring after reload succeeds');
@@ -204,6 +236,24 @@ assert.deepStrictEqual(Y.describeLayers().map(layer => layer.id), pretestOrder,
   'restore brings back the exact pre-experiment draw order');
 assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'restoring clears the backup record');
 assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup twice');
+// A user's saved diagnostic backup from before the new debug toggle/shoulder
+// preset existed must remain recoverable rather than silently being discarded.
+const oldRules = { ...pretestRules };
+delete oldRules['shoulderPet.presentation'];
+delete oldRules['ground.showZone'];
+store['hobunji.xrayHierarchy.diagnostics.v1'] = JSON.stringify({
+  version: 1, active: 'baseline',
+  original: { rules: oldRules, drawOrder: pretestOrder, stage: 'held', layer: 'actor.hands' },
+});
+const oldPanels = [];
+const oldWin = { DevCompanion: { registerPanel: spec => oldPanels.push(spec) }, __hobunjiGameStarted: true };
+global.window = oldWin;
+new Function(cfgSource)();
+assert.strictEqual(oldPanels.length, 1, 'legacy backup still shows the X-ray companion');
+assert.ok(oldPanels[0].render().actions.some(action => action.id === 'restore-original'), 'legacy backup keeps its restore action');
+assert.strictEqual(oldWin.XrayHierarchy.restoreBeforePresets(), true, 'legacy backup restores despite missing new debug-only rules');
+assert.strictEqual(oldWin.XrayHierarchy.get('shoulderPet.presentation'), 'authored');
+assert.strictEqual(oldWin.XrayHierarchy.get('ground.showZone'), 'off');
 global.window = win;
 panel.onAction('reset', {});
 assert.equal(panel.render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
