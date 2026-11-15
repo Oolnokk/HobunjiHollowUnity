@@ -106,6 +106,8 @@
       tierName:look.name,
       poolId:'dungeonChest_tier' + tier,
       boss:options.boss === true, // Boss-vault chests also roll a bound Harlyao relic weapon (js/harlyao-relics.js).
+      secret:options.secret===true, // Optional room caches use the low-tier lock and their own modest discovery rewards.
+      secretRevealed:options.secret!==true||options.initialRevealed===true, // Glow is extremely faint until the hiding mechanism is discovered.
       culture:options.culture==='hachutu'?'hachutu':'harlyao', // Only the dev Hachutu temple requests this culture.
       theme:options.theme || window.DevRandomRuin?.getState?.()?.theme || null, // Capture the owning ruin's theme so another generated ruin cannot change this chest's loot family.
       group, hinge, glow,
@@ -166,8 +168,19 @@
     if (!Object.keys(gained).some(key => window.ArtifactCollection?.ARTIFACTS?.[key] && gained[key] > 0)) {
       Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier,chest.culture) || (chest.culture==='hachutu'?{hachutuMoneyBones:1}:{harlyaoCopperCoin:1}));
     }
+    if(chest.secret && !Object.keys(gained).some(key=>key.startsWith('trinket_')&&Number(gained[key])>0)){
+      const definitions=window.TrinketSystem?.DEFINITIONS||{}; // Reuse the normal low-attunement trinket catalog, not new one-off enchantments.
+      const choices=Object.values(definitions).filter(item=>item && item.attunementCost<=2
+        &&(item.source==='harlyaoRuin'||item.source==='buriedTreasure'));
+      if(choices.length){const selected=choices[Math.floor(Math.random()*choices.length)];gained['trinket_'+selected.id]=1;}
+    }
     const trinketParts = window.TrinketSystem?.claimLoot?.(gained, chest.culture==='hachutu'?'hachutuRuin':'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
     const relicParts = !chest.boss ? [] : chest.culture==='hachutu' ? (window.HachutuRelics?.grantBossWeapon?.() || []) : (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []);
+    if(chest.secret&&Math.random()<(chest.tier===1?.06:.10)){
+      const relics=window.HarlyaoRelics; // The ordinary bound-enchanted weapon is saved by the same Garanki-ready inventory authority as boss loot.
+      const key=relics?.grantBoundRelic?.(relics.makeRelic());
+      if(key)relicParts.push('🗡️ Bound enchanted weapon');
+    }
     const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;
@@ -192,7 +205,8 @@
         chest.lidAngle = Math.max(LID_OPEN_ANGLE, chest.lidAngle - LID_SPEED * dt);
         chest.hinge.rotation.x = chest.lidAngle;
       }
-      chest.glow.material.opacity = chest.opened ? Math.max(0, chest.glow.material.opacity - dt) : .35 + .3 * pulse;
+      chest.glow.material.opacity = chest.opened ? Math.max(0, chest.glow.material.opacity - dt)
+        : chest.secret&&!chest.secretRevealed?.035+.045*pulse:.35+.3*pulse; // Stone corners keep a subdued clue, not a bright loot beacon.
     }
   });
 
@@ -203,6 +217,6 @@
     // Controls for chests still unopened; the owning puzzle module merges
     // these into its own interaction list.
     controlsFor:list => (list || []).filter(chest => chest && !chest.opened).map(chest => chest.control),
-    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
+    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
   });
 })();

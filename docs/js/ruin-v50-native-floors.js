@@ -587,7 +587,10 @@
             setGatePhysical(challenge,!open,true);gate.openPhysical=open;
           }
         }
-        if(active)record.challenges[record.solved]?.tick?.(dt);
+        const pendingChallenge=record.challenges[record.solved]; // The native source mechanism, not active-room presentation, is authoritative once an input has genuinely solved it.
+        if(active || pendingChallenge?.kind==='v50Authored'
+          &&record.nativeMechanisms?.isSolved?.(pendingChallenge.nativeMechanism?.id))
+          pendingChallenge?.tick?.(dt); // Finalize a completed exit even when the player stands just outside the chamber's ownership bounds.
         if(active)for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
     };

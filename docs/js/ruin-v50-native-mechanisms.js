@@ -335,7 +335,13 @@
     function updateDormant(dt){
       if(disposed)return;
       const step=Math.max(0,Math.min(.05,Number(dt)||0));
-      for(const state of acceptedInMotion)advanceMechanism(state,step,1); // No off-room puzzle inputs, moving daises or AI are simulated.
+      for(const state of states.values()){
+        const cube=state.object.userData?.linkedCubePuzzleRoot?.userData;
+        if(!state.accepted && cube?.activatorType==='linkedCubePillars' && cube.solved===true
+          && Number(cube.solveProgress)>=1-1e-6)
+          acceptSolution(state.id); // A genuinely aligned V50 cube stays solved if the player steps into a doorway before its final interpolation frame.
+      }
+      for(const state of acceptedInMotion)advanceMechanism(state,step,1); // Only already completed mechanisms may settle off-room; no dormant puzzle input, movers or AI.
       updateTransitDoors(step); // Passage doors still react to approach outside the active puzzle chamber.
     }
     function updateTransitDoors(dt){

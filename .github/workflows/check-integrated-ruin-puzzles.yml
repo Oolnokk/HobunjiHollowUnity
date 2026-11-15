@@ -49,6 +49,8 @@ jobs:
             docs/js/ruin-composer-playable.js \
             docs/js/cloud-forest-fog.js \
             docs/js/ruin-layer-playable.js \
+            docs/js/ruin-hidden-secrets.js \
+            docs/js/ruin-hidden-secrets-native.js \
             docs/js/ruin-multifloor-v50-style.js \
             docs/js/ruin-shaft-connector.js \
             docs/js/ruin-v50-native-floors.js \
@@ -78,3 +80,5 @@ jobs:
           node scripts/test-puzzle-cave-exterior.js
           node scripts/test-puzzle-cave-melody.js
           node scripts/test-ruin-melody-glyph-decal.js
+          node scripts/test-ruin-hidden-secrets.js
+          node scripts/test-ruin-hidden-secrets-native.js
