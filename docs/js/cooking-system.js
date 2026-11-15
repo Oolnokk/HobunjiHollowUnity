@@ -632,6 +632,15 @@
     };
   }
 
+  function repairPreservedInventory() {
+    const repaired = window.ItemProcessing?.repairPreservedDefs?.(deps?.inventory) || 0; // Older world saves can hold fish without serialized processed-item definitions.
+    if (repaired) {
+      deps.buildInventoryGrid?.(); // Rebuild the open Pack only after new definitions were registered.
+      deps.refreshItemScroll?.(); // Make the repaired items available on the held-item wheel immediately.
+    }
+    return repaired;
+  }
+
   function restore(saved = {}) {
     if (cookTimer !== null) clearTimeout(cookTimer); // A pending batch belongs to the character who started it.
     cookTimer = null;
@@ -652,6 +661,7 @@
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
     window.ItemProcessing?.restoreProcessedDefinitions?.(saved.processedDefinitions);
+    repairPreservedInventory(); // The world-member inventory was loaded before CookingSystem.restore.
     const now = currentGameHour(); // New saves restore exact game-hours; legacy five-minute timers are upgraded to the new 24-hour rule.
     activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => Number(effect.remainingHours ?? effect.remainingS) > 0).map(effect => {
       const remainingHours = Number.isFinite(Number(effect.remainingHours))
@@ -776,7 +786,7 @@
   }
 
   function render() {
-    window.ItemProcessing?.repairPreservedDefs?.(deps.inventory); // Held smoked/dried/jerky goods from older saves regain their cooking categories.
+    repairPreservedInventory(); // Retry after late catalog registration, including saves from older builds.
     if (!selectedRecipeId) selectedRecipeId = data().recipes[0]?.id || null;
     const favorite = favoriteRecipes.find(entry => entry.id === activeFavoriteId);
     const recipe = favorite && data().recipes.find(entry => entry.id === favorite.recipeId);
@@ -822,7 +832,7 @@
   }
 
   window.CookingSystem = {
-    init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
+    init, restore, serialize, repairPreservedInventory, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     registerExternalFoodProvider,
