@@ -50,8 +50,8 @@ vm.runInNewContext(read('docs/js/procedural-furniture.js'), { window: procedural
 const fixture = JSON.parse(read('docs/config/furniture-authored/glowGlyphOrb.json')); // Actual catalog object under test.
 const part = fixture.parts[0]; // The preset's transparent surface definition.
 const plane = proceduralWindow.ProceduralFurniture.buildPartMesh(part, 0xffffff);
-assert.equal(plane.geometry.width, .65);
-assert.equal(plane.geometry.height, .65);
+assert.equal(plane.geometry.width, .325);
+assert.equal(plane.geometry.height, .325);
 assert.equal(plane.material.opacity, 0, 'surface mesh is invisible instead of hiding its child decals');
 assert.equal(plane.material.depthWrite, false, 'transparent plane does not occlude its decals');
 assert.equal(plane.renderOrder, -1, 'camera hook runs before transparent decal render');
