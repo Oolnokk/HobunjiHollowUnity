@@ -596,58 +596,100 @@
     return true;
   }
 
-  // Generic renderer for DevCompanion.registerPanel() panels.
-  const panelCards = new Map(); // Keeps unchanged cards and focused dropdowns mounted while the clock panel updates.
+  // Generic Dev Companion panel controls. Actions may opt into nested collapsible paths
+  // without changing the flat group contract used by existing panels.
+  const panelCards = new Map(); // Stable cards preserve focused controls across state polls.
+  const expandedPanelPaths = new Map(); // Keeps collapsed/open branches across live panel refreshes.
+
+  function renderPanelAction(panel, action) {
+    if (action.checkbox) return el('label', { class: 'mini-check' },
+      el('input', { type: 'checkbox', checked: !!action.checked, disabled: !state.connected,
+        onchange: async event => {
+          const input = event.target;
+          const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, checked: input.checked } });
+          if (!ok) input.checked = !!action.checked;
+        } }), action.label);
+    if (action.input) return el('label', { class: 'group' }, action.label,
+      el('input', { type: action.input.type === 'color' ? 'color' : 'number',
+        value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
+        'aria-label': action.label, disabled: !state.connected,
+        style: action.input.type === 'color' ? 'width:64px;height:32px;cursor:pointer' : 'width:90px',
+        onchange: async event => {
+          const input = event.target;
+          const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: input.value } });
+          if (!ok) input.value = action.value;
+          else input.blur?.();
+        } }));
+    if (action.options) return el('label', { class: 'group' }, action.label,
+      el('select', { 'aria-label': action.label, disabled: !state.connected,
+        onchange: async event => {
+          const select = event.target;
+          const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: select.value } });
+          if (!ok || action.reset) select.value = action.value || '';
+          if (ok) select.blur?.();
+        } }, ...action.options.map(option => el('option', {
+        value: option.value, text: option.label, selected: String(option.value) === String(action.value || ''),
+      }))));
+    return button(action.label, async () => {
+      if (action.confirm && !confirm(action.confirm)) return;
+      const result = await run('panel-action', { panel: panel.id, action: action.id, args: action.args || {} }, { timeoutMs: LONG_COMMAND_TIMEOUT_MS });
+      if (result?.text) copyOrShow(result.title || panel.title, result.text);
+    }, { title: action.title || null, active: !!action.active });
+  }
+
+  function renderPanelGroups(panel) {
+    const root = { children: new Map(), entries: [] }; // Hierarchical action-group tree, rebuilt only when the panel changes.
+    const groups = new Map();
+    for (const action of panel.actions || []) {
+      const path = Array.isArray(action.path) ? action.path.filter(value => typeof value === 'string' && value.length && value.length < 90) : [];
+      const group = String(action.group || '');
+      const key = JSON.stringify([path, group]);
+      if (!groups.has(key)) groups.set(key, { path, group, actions: [] });
+      groups.get(key).actions.push(action);
+    }
+    for (const { path, group, actions } of groups.values()) {
+      let current = root;
+      for (const segment of path) {
+        if (!current.children.has(segment)) current.children.set(segment, { children: new Map(), entries: [] });
+        current = current.children.get(segment);
+      }
+      current.entries.push(el('div', { class: 'group' },
+        group ? el('span', { class: 'group-label', text: group }) : null,
+        ...actions.map(action => renderPanelAction(panel, action))));
+    }
+    function build(node, path = []) {
+      const entries = [...node.entries];
+      for (const [label, child] of node.children) {
+        const nextPath = [...path, label];
+        const key = panel.id + '|' + nextPath.join('/');
+        const initiallyOpen = nextPath[0] === 'Draw order';
+        entries.push(el('details', {
+          class: 'panel-branch',
+          open: expandedPanelPaths.has(key) ? expandedPanelPaths.get(key) : initiallyOpen,
+          ontoggle: event => { expandedPanelPaths.set(key, event.currentTarget.open); },
+        }, el('summary', { class: 'group-label', text: label }), ...build(child, nextPath)));
+      }
+      return entries;
+    }
+    return build(root);
+  }
+
   function renderPanels() {
     const host = $('panelHost');
     const panels = state.game.panels || [];
-    const nodes = panels.map(panel => { // Reconciles only changed cards so unrelated state polls cannot close an open dropdown.
-      const signature = JSON.stringify({ panel, connected: state.connected }); // Compared at the existing companion poll rate, never in the game frame loop.
-      const previous = panelCards.get(panel.id); // Retains controls while their card's state and connection are unchanged.
-      const focused = document.activeElement; // Only an in-progress edit (open dropdown/number field) pins a stale card; a clicked button must not.
+    const nodes = panels.map(panel => {
+      const signature = JSON.stringify({ panel, connected: state.connected });
+      const previous = panelCards.get(panel.id);
+      const focused = document.activeElement;
       const editing = state.connected && previous?.node.contains(focused) && focused?.matches?.('select, input, textarea');
       if (previous && (previous.signature === signature || editing)) return previous.node;
-      const groups = new Map();
-      for (const action of panel.actions || []) {
-        const group = action.group || '';
-        if (!groups.has(group)) groups.set(group, []);
-        groups.get(group).push(action);
-      }
-      const node = el('div', { class: 'card' }, // Cached below for state polling without rebuilding every selector.
-        el('div', { class: 'card-title' }, panel.title, el('span', { class: 'spacer' }), panel.summary ? el('span', { class: 'muted small-text', text: panel.summary }) : null),
-        panel.rows?.length ? el('dl', { class: 'kv small-text' }, ...panel.rows.flatMap(([label, value]) => [el('dt', { text: label }), el('dd', { text: value })])) : null,
-        ...[...groups.entries()].map(([group, actions]) => el('div', { class: 'group' },
-          group ? el('span', { class: 'group-label', text: group }) : null,
-          ...actions.map(action => action.checkbox ? el('label', { class: 'mini-check' },
-            el('input', { type: 'checkbox', checked: !!action.checked, disabled: !state.connected,
-              onchange: async event => {
-                const input = event.target; // Festival reward opt-in updates immediately, without treating a checkbox as a number field.
-                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, checked: input.checked } });
-                if (!ok) input.checked = !!action.checked;
-              } }), action.label) : action.input ? el('label', { class: 'group' }, action.label,
-            el('input', { type: action.input.type === 'color' ? 'color' : 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
-              'aria-label': action.label, disabled: !state.connected, style: action.input.type === 'color' ? 'width:64px;height:32px;cursor:pointer' : 'width:90px',
-              onchange: async event => {
-                const input = event.target; // Sends one completed edit rather than applying a setting on each keystroke.
-                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: input.value } });
-                if (!ok) input.value = action.value;
-                else input.blur?.();
-              } })) : action.options ? el('label', { class: 'group' }, action.label,
-            el('select', { 'aria-label': action.label, disabled: !state.connected,
-              onchange: async event => {
-                const select = event.target; // Reads the chosen value and restores grant pickers after execution.
-                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: select.value } });
-                if (!ok || action.reset) select.value = action.value || '';
-                if (ok) select.blur?.();
-              } }, ...action.options.map(option => el('option', {
-                value: option.value, text: option.label, selected: String(option.value) === String(action.value || ''),
-              })))) : button(action.label, async () => {
-            if (action.confirm && !confirm(action.confirm)) return;
-            const result = await run('panel-action', { panel: panel.id, action: action.id, args: action.args || {} }, { timeoutMs: LONG_COMMAND_TIMEOUT_MS });
-            if (result?.text) copyOrShow(result.title || panel.title, result.text); // Panels can return text (e.g. an exported diff) for the clipboard.
-          }, { title: action.title || null, active: !!action.active })))),
-        panel.note ? el('div', { class: 'muted small-text', text: panel.note }) : null,
-      );
+      const node = el('div', { class: 'card' },
+        el('div', { class: 'card-title' }, panel.title, el('span', { class: 'spacer' }),
+          panel.summary ? el('span', { class: 'muted small-text', text: panel.summary }) : null),
+        panel.rows?.length ? el('dl', { class: 'kv small-text' }, ...panel.rows.flatMap(([label, value]) =>
+          [el('dt', { text: label }), el('dd', { text: value })])) : null,
+        ...renderPanelGroups(panel),
+        panel.note ? el('div', { class: 'muted small-text', text: panel.note }) : null);
       previous?.node.replaceWith(node);
       panelCards.set(panel.id, { node, signature });
       return node;
