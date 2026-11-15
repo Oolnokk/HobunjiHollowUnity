@@ -459,6 +459,7 @@ assert.match(driverSource, /lastHolderWorldQuaternion\?\.\(\)/, 'player hand soc
     gameDeps: { playerMesh: parent, toolHolder: holder },
     inAttackEditor: () => false,
     visualGripBasisDelta: () => ({ quaternion: new Q() }),
+    handSyncPerf: { sharedSocketUses: 0 }, // The real resolver increments this counter when it reuses a grip basis.
   };
   const resolve = vm.runInNewContext(`${driverSource.slice(start, end)}\ntoolSocketWorld`, bindings, { filename: 'mirrored-baked-weapon-hand-socket.js' });
   const grip = resolve({ avatarRoot: { userData: {} }, rig: { parent } }, holder, null, { quaternion: new Q() });
