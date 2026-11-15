@@ -55,6 +55,11 @@
       order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
+    'shoulderPet.presentation': {
+      order: 10, label: 'Shoulder pet and player portrait compositing', default: 'authored',
+      options: ['authored', 'player-over', 'pet-over', 'world-depth'],
+      help: 'authored: preserve the pet\'s facing-dependent foreground/background pose without portrait depth writes. The other choices are reversible diagnostic presets, not separate game settings.',
+    },
   });
 
 
@@ -256,6 +261,27 @@
       changed: 'If only the character tint changes, the cause is portrait-water blending, not tool stencil.',
       unchanged: 'This changes portrait tint only, not held-tool water compositing.',
     },
+    {
+      id: 'shoulder-player-over', label: '10 · Shoulder pet: player over pet',
+      rules: { 'shoulderPet.presentation': 'player-over' },
+      hypothesis: 'The authored shoulder-pet pose might be putting the pet in front of the player unexpectedly.',
+      changed: 'The player should always draw over the pet; held gear must still stay behind its owner front portrait.',
+      unchanged: 'Check whether the pet and player are both in the main world color pass.',
+    },
+    {
+      id: 'shoulder-pet-over', label: '11 · Shoulder pet: pet over player',
+      rules: { 'shoulderPet.presentation': 'pet-over' },
+      hypothesis: 'The shoulder-pet foreground decision may interfere with front-portrait weapon occlusion.',
+      changed: 'Only the pet/player overlap should flip; the weapon owner stencil should not change.',
+      unchanged: 'An unchanged overlap suggests sorting or a different render stage overrides the pair.',
+    },
+    {
+      id: 'shoulder-world-depth', label: '12 · Shoulder pet: legacy depth writes',
+      rules: { 'shoulderPet.presentation': 'world-depth' },
+      hypothesis: 'The shoulder system temporarily disabling player portrait depth writes may expose a missing weapon mask.',
+      changed: 'If weapon x-ray disappears but pet/player overlap breaks, the owner stencil needs repair.',
+      unchanged: 'If x-ray persists, verify front-mask candidates and owner stencil assignments.',
+    },
   ]);
   const DIAGNOSTIC_BY_ID = new Map(DIAGNOSTIC_PRESETS.map(preset => [preset.id, preset])); // Validates picker/actions without string eval.
 
@@ -267,13 +293,14 @@
   function validConfiguration(snapshot) {
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
-      && keys.every(key => RULES[key].options.includes(snapshot.rules[key]))
+      && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
+        || (key === 'shoulderPet.presentation' && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
   function applyConfiguration(snapshot) {
     if (!validConfiguration(snapshot)) return false; // Fully validate before mutating any live rules.
-    for (const key of keys) set(key, snapshot.rules[key]);
+    for (const key of keys) set(key, snapshot.rules[key] ?? RULES[key].default);
     setDrawOrder(snapshot.drawOrder);
     selectedStage = snapshot.stage;
     selectedLayer = snapshot.layer;
@@ -301,7 +328,7 @@
   }
   function matchesConfiguration(snapshot) {
     return validConfiguration(snapshot)
-      && keys.every(key => state[key] === snapshot.rules[key])
+      && keys.every(key => state[key] === (snapshot.rules[key] ?? RULES[key].default))
       && drawOrder.every((id, index) => id === snapshot.drawOrder[index]);
   }
   function persistDiagnosticSession() {
@@ -361,7 +388,7 @@
       'baseOffscreenFiltered', 'registeredBackgroundDepthMeshes', 'airborneDepthRebuilds',
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
       'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
-      'lastHeldOrderNormalization']) {
+      'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -518,7 +545,11 @@
               ? live.lastHeldOrderNormalization.mesh + ': ' + live.lastHeldOrderNormalization.from + ' → ' + live.lastHeldOrderNormalization.to
               : 'None recorded'],
             ['Tool vs its own front art', frontPriority],
+            ['Shoulder pet compositor', live.shoulderPetCompositor?.active
+              ? live.shoulderPetCompositor.mode + ' · ' + (live.shoulderPetCompositor.playerDrawsOnTop ? 'player in front' : 'pet in front')
+              : 'No active shoulder pet'],
             ['Front mask stencil', maskStatus],
+            ['Front mask pass status', String(live.frontPortraitMaskReason ?? '-')],
             ['Visible front portraits', String(live.frontPortraitMasks ?? '-')],
             ['Hands masked by front art', String(live.handsBehindFrontPlane ?? '-')],
             ['Airborne depth rebuilds / backdrop exclusions',
