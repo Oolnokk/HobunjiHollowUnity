@@ -458,6 +458,7 @@
     const basis = new THREE.Matrix4().makeBasis(basisU, basisV, normal);
     mesh.quaternion.setFromRotationMatrix(basis);
     mesh.rotateZ(transform.rotationDeg * DEG);
+    if (partMesh.userData?.billboardSurface) mesh.frustumCulled = false; // Camera-facing transparent decals must not disappear when the parent geometry is edge-on.
     partMesh.add(mesh);
     return mesh;
   }
