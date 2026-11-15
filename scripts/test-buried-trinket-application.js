@@ -37,7 +37,7 @@ const effects = [
   ['brawlersRing', 'outgoingFootingDamage', 1.30, 2],
   ['guardiansBrooch', 'maxHealth', 1.20, 2],
   ['duelistsSignet', 'outgoingHealthDamage', 1.30, 3],
-  ['wardensAmulet', 'maxFooting', 1.45, 3],
+  ['wardensAmulet', 'maxFooting', 1.60, 3],
 ]; // Exact expected benefits/prices from the seven new ordinary buried-treasure curios.
 for (const [id, stat, expected, cost] of effects) {
   const before = saved.length; // Confirms character gear is saved on acquisition/equip/unequip.
