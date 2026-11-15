@@ -251,10 +251,15 @@
     }
     localStorage.removeItem(linkedWindowBackupKey()); // Prior saved window plus no live record and no wall placement is the intentional-removal signal.
   }
-  function captureFarmLayout(previousLayout = parseStoredJson(farmLayoutKey())) {
+  function captureFarmLayout(previousLayout = parseStoredJson(farmLayoutKey()), options = null) {
     const key = farmLayoutKey(); // The restore barrier is world-specific; switching worlds cannot inherit another world's failure.
     if (_restoringLayoutObjects) throw new Error('Farm layout capture blocked: world objects are still being restored.');
-    if (window.__hobunjiGameStarted !== true && previousLayout?.version === 3) {
+    const allowStarterGrant = options?.allowStartupStarterGrant === true
+      && !!(window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId
+      && _restoreProcessingState?.key === key
+      && _restoreProcessingState.complete === true
+      && _restoreProcessingState.pending.size === 0; // FarmProduction is allowed to commit its one-time starter grant only after this world's farm finished restoring.
+    if (window.__hobunjiGameStarted !== true && previousLayout?.version === 3 && !allowStarterGrant) {
       throw new Error('Farm layout capture blocked: the existing saved world is not fully hydrated yet.');
     }
     if (_restoreProcessingState?.key === key && _restoreProcessingState.pending.size) {
@@ -327,10 +332,10 @@
     return layout;
   }
 
-  function saveFarmLayout() {
+  function saveFarmLayout(options = null) {
     try {
       const previousLayout = parseStoredJson(farmLayoutKey()); // Shared capture preserves unknown decor before the optional browser backups are written.
-      const layout = captureFarmLayout(previousLayout); // The same serializer supplies direct folder saves without writing browser storage.
+      const layout = captureFarmLayout(previousLayout, options); // The same serializer supplies direct folder saves without writing browser storage.
       localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
       writeLinkedWindowBackup(layout, previousLayout);
       return true;
@@ -446,6 +451,7 @@
       key: farmLayoutKey(),
       pending: new Map(savedProcessing.map((record, index) => [index, record])),
       blocked: [],
+      complete: false, // Only a fully finished house/furniture/barn hydration may authorize a starter-building grant save.
     }; // Guard remains active after restoration if any saved processor cannot be instantiated.
     let complete = false; // Only a fully restored house can safely migrate formerly occupied wall tiles.
     try {
@@ -626,6 +632,7 @@
       // same two-phase split as furniture (data now, objects/meshes here).
       window.DewVats.rebuildMeshesFromGrid();
       complete = true;
+      _restoreProcessingState.complete = true; // A partial/throwing restore must never unlock the one-time startup grant path.
     } finally {
       _restoringLayoutObjects = false;
       if (complete) {
