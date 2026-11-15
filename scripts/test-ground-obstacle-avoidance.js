@@ -44,6 +44,37 @@ assert.equal(steering.debugSnapshot().foot.plans, 0, 'foot steering never calls 
 assert.equal(steering.steer('foot', 'field', 3.5 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60), null,
   'leaving the blocked surface stops the slide immediately');
 
+// The real engine resolves movement in discrete frames. At 30 FPS a frame
+// can attempt more than 0.055 tile and stop short of the initial probe. Walk
+// through the same rock at different frame rates, with native collision.
+// There must be neither long-range planning nor an indefinite foot stall.
+for (const fps of [144, 60, 30, 20, 15, 10]) {
+  steering.reset('foot');
+  let px = 5.61 * tile, py = 6.5 * tile; // Start before the contact zone, so the first blocked frame matters.
+  let slideFrames = 0; // Ensures each frame rate actually invoked the lateral assistance.
+  const dt = 1 / fps, speed = 238; // The normal player movement rate from the production acceleration fixture.
+  for (let frame = 0; frame < fps * 9; frame++) {
+    const suggested = steering.steer('foot', 'field', px, py, 1, 0, tile, occupied, dt);
+    const vx = suggested?.x ?? 1, vy = suggested?.y ?? 0;
+    if (suggested) slideFrames++;
+    const nextX = px + vx * speed * dt, nextY = py + vy * speed * dt; // Axis-separated native collision.
+    if (occupied(nextX, py)) px = nextX;
+    if (occupied(px, nextY)) py = nextY;
+    assert(occupied(px, py), 'low-FPS recovery must never move the player inside a solid tile');
+    if (px > 7.2 * tile) break;
+  }
+  assert(slideFrames > 0, fps + ' FPS collision eventually triggers local sideways foot assistance');
+  assert(px > 7.2 * tile, fps + ' FPS can leave the obstacle without a stuck movement loop');
+  assert.equal(steering.debugSnapshot().foot.plans, 0, 'walking never requests a path at any frame rate');
+  assert(steering.debugSnapshot().foot.contactTiles <= 0.48, 'local collision recovery never sees beyond half a tile');
+}
+
+steering.reset('foot');
+const blockRightLane = (x, y) => occupied(x, y) && y < 6.64 * tile; // Only the left-hand gap is available.
+const slideLeft = steering.steer('foot', 'field', footX, footY, 1, 0, tile, blockRightLane, 1 / 60);
+assert(slideLeft && slideLeft.y < 0, 'when the right-hand lane is blocked, walking only nudges left');
+
+
 // Facing a usable object takes precedence over movement assistance.
 const player = { x: footX, y: footY, angle: 0 }; // Same player pointer normally exposed by the game debug bridge.
 context.window.__climbDebug = { getPlayer: () => player };
