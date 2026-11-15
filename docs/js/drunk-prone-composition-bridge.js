@@ -381,7 +381,7 @@
       return {
         lastChange: 'Movement-only NPC forward gaze and render-time enemy neck counter-pitch preserve level sightlines',
         runLeanSpace: 'world-movement',
-        playerRunHeadingSource: playerRunTravel.source, // Existing mobile Debug/Pixel Probe diagnostics identify missing velocity on raised ruin floors.
+        playerRunHeadingSource: playerRunTravel.source, // Also exposed by the existing mobile Dev Companion provider.
         playerRunHeadingDeg: Number.isFinite(playerRunTravel.headingRad) ? playerRunTravel.headingRad / DEG : null,
         playerProne: !!player?.prone,
         footing: Number(player?.footing) || 0,
@@ -397,4 +397,16 @@
       };
     },
   });
+
+  window.DevCompanion?.registerStateProvider?.('playerRunLean', () => {
+    const player = window.Combat?.deps?.player; // Read on request so mobile diagnostics show the current traversal frame, not a startup snapshot.
+    return {
+      headingSource: playerRunTravel.source,
+      headingDegrees: Number.isFinite(playerRunTravel.headingRad) ? playerRunTravel.headingRad / DEG : null,
+      leanDegrees: (Number(composer.getPlayerLegHandle?.()?.getRunLean?.()) || 0) / DEG,
+      nativeVX: Number(player?.vx) || 0,
+      nativeVY: Number(player?.vy) || 0,
+      inProne: !!player?.prone,
+    };
+  }); // Existing Dev Companion state report works on mobile without browser devtools.
 })();
