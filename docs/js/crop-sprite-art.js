@@ -138,8 +138,10 @@
     if (!mesh?.isMesh || mesh.userData?.hobunjiCropSpriteKey || !mesh.material?.isMeshLambertMaterial || !params) return false;
     if (geometry.type !== 'BoxGeometry') return false;
     if (Math.abs(Number(params.width) - 1) > 0.0001 || Math.abs(Number(params.height) - 1) > 0.0001 || Math.abs(Number(params.depth) - 1) > 0.0001) return false;
-    const color = mesh.material.color?.getHex?.(); // Used to distinguish crop placeholders from unrelated unit cubes by the authored crop palette.
-    if (!WORLD_COLOR_TO_CROP.has(color) && !CROP_WORLD_ART[mesh.userData?.hobunjiCropBaseKey]) return false; // A cultivar's blended tint is not in the legacy fixed-color lookup.
+    const color = mesh.material.color?.getHex?.(); // Used only as a legacy fallback for the two formerly supported untagged PNG crops.
+    const baseKey = mesh.userData?.hobunjiCropBaseKey; // Modern farm and NPC crop builders tag their genuine species, including every regional genotype.
+    const legacyKey = WORLD_COLOR_TO_CROP.get(color); // Old garlink/ongyums cube meshes may predate the species tag.
+    if (baseKey ? !CROP_WORLD_ART[baseKey] : legacyKey !== 'garlink' && legacyKey !== 'ongyums') return false; // Never turn unrelated white/berry-colored scenery into crops.
     const sx = Number(mesh.scale?.x); // Used with sy/sz to reject ordinary world cubes that happen to share a crop color.
     const sy = Number(mesh.scale?.y); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
     const sz = Number(mesh.scale?.z); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
