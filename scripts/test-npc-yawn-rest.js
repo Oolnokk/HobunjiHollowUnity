@@ -203,6 +203,14 @@ async function main() {
   hour = 21; ms = 15400; frame({ timestamp: ms });
   assert.equal(runtime.debugSnapshot().lastYawn.reason, 'hourly fatigue', 'NPC yawns resume at the three-hour boundary, without a hidden extra hour');
   assert.equal(ceremonies, 1, 'Koma cannot refresh merely because midnight passed');
+  ms = 16700; frame({ timestamp: ms }); // A later fatigue yawn is mid-gesture before the bed claims the rig.
+  assert.ok(walker.neckJoint.rotation.x < 0, 'the NPC yawn owns a temporary neck bend');
+  walker._bedLieActive = true;
+  ms = 16800; frame({ timestamp: ms });
+  assert.equal(walker.neckJoint.rotation.x, 0, 'a bed takeover immediately releases yawn neck offset');
+  assert.equal(walker.alcoholPoseGroup.rotation.x, 0, 'a bed takeover immediately releases yawn chest offset');
+  assert.equal(runtime.movementMultiplier('test-npc'), 1, 'a bed takeover interrupts the yawn slow-walk state');
+  walker._bedLieActive = false;
   ms = 20500; frame({ timestamp: ms });
   hour = 37; ms = 21000; frame({ timestamp: ms });
   assert.equal(ceremonies, 2, 'first eligible yawn after 24 rolling in-game hours repeats Koma');
