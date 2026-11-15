@@ -84,6 +84,7 @@
   const DRAW_LAYER_IDS = new Set(DEFAULT_DRAW_ORDER); // Validates reorder/import operations before persistence.
   let drawOrder = DEFAULT_DRAW_ORDER.slice(); // Mutable live order read by the render-list sort when enabled.
   let selectedLayer = 'actor.hands'; // Currently edited drawing category in Dev Companion; tools share this when linked.
+  let selectedStage = 'held'; // Active render-stage picker; never changes the game's pass order.
   const DRAW_ORDER_KEY = '__drawOrder'; // Reserved key within the existing versioned override record.
 
   function validDrawOrder(order) {
@@ -98,12 +99,41 @@
     const index = drawOrder.indexOf(effectiveLayerId(id));
     return index < 0 ? drawOrder.length : index;
   }
-  function editableLayers() {
-    // Number only active controls: the independent weapon row is omitted until tools are unlinked.
-    return describeLayers().filter(layer => effectiveLayerId(layer.id) === layer.id)
+  function drawStage(id) {
+    // Held gear/hands/feet are redrawn in the dedicated overlay; other categories belong to the world draw.
+    return ['actor.hands', 'item.weapons', 'actor.feet'].includes(id) ? 'held' : 'world';
+  }
+  function editableLayers(stage = null) {
+    // Linked weapons have no independently effective priority; pass filtering prevents no-op cross-pass moves.
+    return describeLayers().filter(layer => effectiveLayerId(layer.id) === layer.id
+        && (!stage || drawStage(layer.id) === stage))
       .map((layer, index) => ({ ...layer, position: index + 1,
         label: layer.id === 'actor.hands' && state['weapon.followHandLayer'] === 'on'
           ? 'Hands + held tools (linked)' : layer.label }));
+  }
+  function moveLayerInStage(id, beforeId) {
+    const activeId = effectiveLayerId(id); // Keep world and overlay drawing orders from crossing a GPU pass boundary.
+    const stage = drawStage(activeId);
+    if (!editableLayers(stage).some(layer => layer.id === activeId)) return false;
+    if (beforeId !== '__end') {
+      if (!editableLayers(stage).some(layer => layer.id === effectiveLayerId(beforeId))) return false;
+      return moveLayer(activeId, beforeId);
+    }
+    const other = editableLayers(stage).filter(layer => layer.id !== activeId);
+    if (!other.length) return true;
+    const last = other[other.length - 1].id;
+    const anchor = drawOrder[drawOrder.indexOf(last) + 1] || '__end'; // Insert after the last same-stage layer.
+    return moveLayer(activeId, anchor);
+  }
+  function shiftLayerInStage(id, delta) {
+    if (delta !== 1 && delta !== -1) return false;
+    const activeId = effectiveLayerId(id); // A linked tool and its hand share the same stage position.
+    const layers = editableLayers(drawStage(activeId));
+    const index = layers.findIndex(layer => layer.id === activeId);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= layers.length) return false;
+    return moveLayerInStage(activeId, delta < 0 ? layers[target].id
+      : layers[target + 1]?.id || '__end');
   }
   function describeLayers(group = null) {
     return drawOrder.map((id, index) => {
@@ -248,8 +278,8 @@
       render: () => {
         const changes = Object.keys(diff()).length;
         const live = window.HeldObjectRenderOrder?.snapshot?.() || {};
-        const layers = editableLayers();
-        if (!layers.some(layer => layer.id === selectedLayer)) selectedLayer = effectiveLayerId(selectedLayer);
+        const layers = editableLayers(selectedStage);
+        if (!layers.some(layer => layer.id === selectedLayer)) selectedLayer = layers[0]?.id || 'actor.hands';
         const activeLayer = layers.find(layer => layer.id === selectedLayer) || layers[0];
         const linked = state['weapon.followHandLayer'] === 'on';
         const stencil = Number(live.stencilBits || 0);
@@ -257,9 +287,9 @@
         const masked = Number(live.frontPortraitMaskedGear || 0);
         const maskStatus = stencil < 8 ? 'Unavailable: ' + stencil + '-bit stencil target (needs 8)'
           : masked + ' / ' + intended + ' eligible gear parts masked';
-        const frontPriority = state['layers.manualOrder'] === 'on'
-          ? (layerRank(linked ? 'actor.hands' : 'item.weapons') < layerRank('actor.front') ? 'behind front art' : 'in front of front art')
-          : 'native ordering (front art masks eligible tools)';
+        const frontPriority = state['weapon.frontPlaneMask'] === 'on'
+          ? 'Mask enabled: holder front art covers gear'
+          : 'Mask disabled: gear may show through front art';
         return {
           summary: changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults',
           rows: [
@@ -272,7 +302,7 @@
             ['Airborne depth rebuilds / backdrop exclusions',
               String(live.airborneDepthRebuilds ?? '-') + ' / ' + String(live.backgroundDepthMeshesExcluded ?? '-')],
           ],
-          note: 'Priority order sorts items only WITHIN the same opaque/transparent color pass. It cannot move scenery, tools or portraits between GPU passes or override physical depth. Moving the linked hands+tools entry across Front portrait planes also changes the owner-specific stencil mask when an 8-bit stencil target is available. Groups below are controls, not separate layer hierarchies.',
+          note: 'Visual priority is only compared WITHIN the selected render stage and its opaque/transparent bucket. The world and held overlay are separate GPU draws, not interchangeable categories. Tool-vs-front-art masking is the direct control above (requires an 8-bit stencil buffer); moving equipment cannot override a stencil, water, physical depth, or the outline pass.',
           actions: [
             { id: 'set', args: { key: 'weapon.frontPlaneMask' }, label: 'Held tools behind owner front art',
               value: state['weapon.frontPlaneMask'], options: RULES['weapon.frontPlaneMask'].options.map(value => ({ value, label: value })),
@@ -301,7 +331,13 @@
             { id: 'set', args: { key: 'weapon.followHandLayer' }, label: 'Tools follow the hands',
               value: state['weapon.followHandLayer'], options: RULES['weapon.followHandLayer'].options.map(value => ({ value, label: value })),
               group: 'Same-pass draw priority', title: RULES['weapon.followHandLayer'].help },
-            { id: 'focus-layer', label: 'Part to move (all active categories)', value: activeLayer.id,
+            { id: 'focus-stage', label: 'Render stage', value: selectedStage,
+              options: [
+                { value: 'held', label: 'Held overlay — hands, tools and feet' },
+                { value: 'world', label: 'World color — opaque / transparent' },
+              ],
+              group: 'Same-pass draw priority' },
+            { id: 'focus-layer', label: 'Part to move in this stage', value: activeLayer.id,
               options: layers.map(layer => ({ value: layer.id, label: layer.position + '. ' + layer.label })),
               group: 'Same-pass draw priority' },
             { id: 'move-before', label: 'Place before…', value: activeLayer.id,
@@ -325,21 +361,28 @@
           if (ok && args.key === 'weapon.followHandLayer' && args.value === 'on') selectedLayer = effectiveLayerId(selectedLayer);
           return ok ? { ok: true } : { ok: false, error: 'Unknown rule or value.' };
         }
+        if (action === 'focus-stage') {
+          if (!['held', 'world'].includes(args.value)) return { ok: false, error: 'Unknown render stage.' };
+          selectedStage = args.value;
+          selectedLayer = editableLayers(selectedStage)[0]?.id || 'actor.hands';
+          return { ok: true };
+        }
         if (action === 'focus-layer') {
-          if (!editableLayers().some(layer => layer.id === args.value)) return { ok: false, error: 'Unknown or currently linked layer.' };
+          if (!editableLayers(selectedStage).some(layer => layer.id === args.value)) return { ok: false, error: 'Unknown or currently linked layer.' };
           selectedLayer = args.value;
           return { ok: true };
         }
         if (action === 'shift' || action === 'move-before') {
           const valid = action === 'shift'
-            ? shiftLayer(selectedLayer, args.delta)
-            : moveLayer(selectedLayer, args.value);
-          if (!valid) return { ok: false, error: 'Invalid move.' };
-          set('layers.manualOrder', 'on'); // Cross-front-portrait rank decisions need this switch, too.
+            ? shiftLayerInStage(selectedLayer, args.delta)
+            : moveLayerInStage(selectedLayer, args.value);
+          if (!valid) return { ok: false, error: 'Invalid move or cross-pass destination.' };
+          set('layers.manualOrder', 'on'); // Activate same-pass sorting when a position changes.
           return { ok: true };
         }
         if (action === 'reset') {
           reset();
+          selectedStage = 'held'; // Reopen the common equipment stage after a full reset.
           selectedLayer = 'actor.hands'; // Make the newly restored, linked position visible.
           return { ok: true };
         }
@@ -353,7 +396,7 @@
   window.XrayHierarchy = {
     version: VERSION, RULES, keys: () => keys.slice(),
     get, set, reset, diff, exportDiff, importDiff, describe, registerPanel,
-    DRAW_LAYERS, DEFAULT_DRAW_ORDER, describeLayers, editableLayers, effectiveLayerId, layerRank, setDrawOrder, moveLayer, shiftLayer, resetDrawOrder,
+    DRAW_LAYERS, DEFAULT_DRAW_ORDER, describeLayers, drawStage, editableLayers, effectiveLayerId, layerRank, setDrawOrder, moveLayer, shiftLayer, moveLayerInStage, shiftLayerInStage, resetDrawOrder,
     onChange(listener) { if (typeof listener === 'function') listeners.add(listener); return () => listeners.delete(listener); },
   };
   registerPanel();
