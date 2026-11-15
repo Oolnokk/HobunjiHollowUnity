@@ -465,6 +465,7 @@ function buildDecalMesh(record) {
   const basis = new THREE.Matrix4().makeBasis(frame.u, frame.v, frame.normal);
   mesh.quaternion.setFromRotationMatrix(basis);
   mesh.rotateZ(transform.rotationDeg * DEG);
+  if (partMesh.userData?.billboardSurface) mesh.frustumCulled = false; // Preserve the editor decal while orbiting its transparent parent.
   partMesh.add(mesh);
   decalMeshes.set(record.id, mesh);
 
