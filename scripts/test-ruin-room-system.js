@@ -120,6 +120,15 @@ assert.equal(fills,8,'subsequent lights reuse the same cached feathered boundari
 assert.equal(projections,8,'second light reuses the already-projected clip');
 assert.equal(session.snapshot().lightClip.feathered,true,'mobile diagnostics report the active feathered room clip');
 assert.equal(session.snapshot().lightClip.bands,3,'mobile diagnostics expose the number of cached feather bands');
+assert.equal(session.snapshot().lightClip.passBudget,72,'mobile metrics disclose the bounded high-quality feathering budget');
+session.prepareLightClip((x,y,z)=>({x:x*2,y:z+y}));
+let crowdedDraws=0;
+for(let i=0;i<80;i++)session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('crowded lighting should use the cached projection');},()=>{crowdedDraws++;});
+const crowdedStats=session.snapshot().lightClip;
+assert(crowdedStats.budgetDowngrades>0,'dozens of engraving sources fall back to one strict clip instead of multiplying canvas draws');
+assert(crowdedDraws<80*4,'crowded room light masks cost substantially less than continuous full feathering');
+assert(crowdedStats.canvasPasses===crowdedDraws,'mobile lighting diagnostics account for every actual canvas draw');
+assert.equal(ctx.globalAlpha,.8,'downgrading low-priority masks never changes the compositor opacity');
 session.prepareLightClip(()=>({x:4,y:4})); // Camera-edge degeneracy must not draw outside the valid room.
 const clipsBeforeFallback=clips;
 let fallbackDraws=0;
