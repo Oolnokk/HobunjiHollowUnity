@@ -101,6 +101,32 @@
     return target.set(Math.cos(yaw) * halfSin, 0, -Math.sin(yaw) * halfSin, Math.cos(pitch * 0.5));
   }
 
+  const playerRunTravel = { x: NaN, y: NaN, headingRad: null, source: 'uninitialized' }; // Remembers the preceding committed player position so raised ruin floors need not supply velocity.
+  function resolvePlayerRunHeading(player, dt, gaitSpeed) {
+    const x = Number(player?.x), y = Number(player?.y); // World X/Z are stored as player.x/y in gameplay pixel coordinates.
+    const hasPosition = player && Number.isFinite(x) && Number.isFinite(y);
+    const hasPrevious = Number.isFinite(playerRunTravel.x) && Number.isFinite(playerRunTravel.y);
+    const dx = hasPosition && hasPrevious ? x - playerRunTravel.x : 0; // Used below to resolve the true travel bearing independent of physics velocity.
+    const dy = hasPosition && hasPrevious ? y - playerRunTravel.y : 0; // Matches the gait sampler's committed player.y -> world Z convention.
+    playerRunTravel.x = hasPosition ? x : NaN;
+    playerRunTravel.y = hasPosition ? y : NaN;
+    const moving = Number.isFinite(gaitSpeed) && gaitSpeed > 0.02; // The canonical leg solver already rejects blocked movement and teleport distances.
+    if (moving && Number.isFinite(dt) && dt > 0 && Math.hypot(dx, dy) > 1e-4) {
+      playerRunTravel.headingRad = Math.atan2(dx, dy);
+      playerRunTravel.source = 'committed-travel';
+      return playerRunTravel.headingRad;
+    }
+    const vx = Number(player?.vx) || 0, vy = Number(player?.vy) || 0; // Fallback for non-positional motion providers and the first gait frame.
+    if (moving && Math.hypot(vx, vy) > 1e-4) {
+      playerRunTravel.headingRad = Math.atan2(vx, vy);
+      playerRunTravel.source = 'velocity-fallback';
+      return playerRunTravel.headingRad;
+    }
+    playerRunTravel.headingRad = null; // An unknown heading must never silently become a fixed +Z world tilt.
+    playerRunTravel.source = moving ? 'heading-unavailable' : 'idle-or-suppressed';
+    return null;
+  }
+
   function makeBanditSwayState(THREEArg, legsPivot) {
     const avatarRoot = legsPivot?.parent;
     if (!avatarRoot?.isObject3D || typeof THREEArg?.Group !== 'function') return null;
@@ -200,10 +226,11 @@
         const effectiveSuppressed = !!suppressed || !!player?.prone;
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
-        if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
+        const heading = resolvePlayerRunHeading(player, dt, speedWorldUnitsPerSecond); // Raised ruin supports can move the player while native vx/vy stay at zero.
+        if (pitch && Number.isFinite(heading) && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
           priority: 100, mode: 'additive', space: 'world',
           excludeExternalProviders: ['equippedTool', 'heldItem'], // Scene-level weapons/tools and player-nested bag items (including Kurraya) ignore movement lean.
-          quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Math.atan2(Number(player?.vx) || 0, Number(player?.vy) || 0)),
+          quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, heading),
         });
         else composer.clearChannel(RUN_CHANNEL);
         return result;
@@ -354,6 +381,8 @@
       return {
         lastChange: 'Movement-only NPC forward gaze and render-time enemy neck counter-pitch preserve level sightlines',
         runLeanSpace: 'world-movement',
+        playerRunHeadingSource: playerRunTravel.source, // Existing mobile Debug/Pixel Probe diagnostics identify missing velocity on raised ruin floors.
+        playerRunHeadingDeg: Number.isFinite(playerRunTravel.headingRad) ? playerRunTravel.headingRad / DEG : null,
         playerProne: !!player?.prone,
         footing: Number(player?.footing) || 0,
         maxFooting: Number(player?.maxFooting) || 0,
