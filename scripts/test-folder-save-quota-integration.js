@@ -355,8 +355,11 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   }
   assert.equal((await externalSession.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.farmLayouts.hollow.furniture.length, 0,
     'canonical farm wins over numbered Drive copies regardless of directory enumeration order');
-  assert.equal((await externalSession.window.LocalSaveFolder.syncNow({ automatic: true })).lastError, null,
-    'harmless numbered backups do not block ordinary autosave');
+  const prematureAutoSave = await externalSession.window.LocalSaveFolder.syncNow({ automatic: true }); // This isolated fixture has no hydrated live gameplay, so its normal checkpoint guard must still hold.
+  assert.equal(prematureAutoSave.lastAction, 'autosync-blocked-checkpoint-integrity',
+    'premature autosave stays blocked while gameplay hydrates, regardless of harmless numbered backups');
+  assert.equal((await externalSession.window.LocalSaveFolder.syncNow()).lastError, null,
+    'harmless numbered backups do not block a deliberate folder save');
   const backupLoad = await externalSession.window.LocalSaveFolder.loadFromFolder();
   assert.equal(backupLoad.ok, true);
   assert.deepEqual(externalSession.window.LocalSaveFolder.getStatus().ignoredFarmLayoutBackupFiles.sort(),
