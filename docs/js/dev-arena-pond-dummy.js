@@ -16,6 +16,7 @@
   const SPAWN_DISTANCE_TILES = 1.8; // Far enough that the dummy never overlaps the player's collision circle.
   const ARENA_MARGIN = 1.5; // Keep dummies inside the arena walls.
   const SPECIES = 'mao-ao';
+  const CAMERA_PITCH_DEG = -20; // Camera pitch offset: lower the camera so the waterfall rises behind the player's portrait.
   const CAMERA_OFFSET_H = 0.02; // Shoulder-surf horizontal offset in tiles; the default is 0.35.
 
   let deps = null;
@@ -164,7 +165,7 @@
   function standAtPond() {
     if (deps.getCurrentArea() !== ARENA_ID) { toast('Go to the Testing Arena first.', false); return false; }
     ensurePond();
-    deps.player.x = (POND.col + POND.cols / 2) * deps.TILE;
+    deps.player.x = (POND.col + Math.floor(POND.cols / 2) + 0.5) * deps.TILE; // Tile centre, so a dummy spawned dead ahead is exactly in line with the camera.
     deps.player.y = (POND.row + POND.rows + 1.5) * deps.TILE;
     deps.player.vx = 0; deps.player.vy = 0;
     deps._snapCameraTarget?.();
@@ -174,11 +175,11 @@
 
   // Female Kenkari (the smallest species) with the shoulder camera almost centred behind the
   // player. In-memory only: "Restore look" brings back the saved species and camera offset.
-  async function applyTestLook() {
+  async function applyTestLook(pitchDeg = CAMERA_PITCH_DEG) {
     if (!deps.devTestLook) return false;
     setStatus('Applying female Kenkari + centred camera…');
-    const ok = await deps.devTestLook.apply('kenkari', 'female', CAMERA_OFFSET_H);
-    setStatus(ok ? 'Player is now a female Kenkari; camera offset ≈ 0. Restore look before saving.' : 'Player appearance is not ready.');
+    const ok = await deps.devTestLook.apply('kenkari', 'female', CAMERA_OFFSET_H, pitchDeg);
+    setStatus(ok ? 'Player is now a female Kenkari; camera centred and tilted up. Restore look before saving.' : 'Player appearance is not ready.');
     return ok;
   }
 
@@ -203,7 +204,7 @@
       <div class="fed-label">Pond &amp; dummy NPC — stand by the water and drop a stationary NPC next to you to check draw order / x-ray</div>
       <div class="fed-actions">
         <button type="button" class="fed-action-btn" id="devPondStandBtn">🏞️ Stand in front of pond</button>
-        <button type="button" class="fed-action-btn" id="devTestLookBtn">🧝 Female Kenkari + centred camera</button>
+        <button type="button" class="fed-action-btn" id="devTestLookBtn">🧝 Female Kenkari + centred, tilted camera</button>
         <button type="button" class="fed-action-btn" id="devTestLookRestoreBtn">↩️ Restore look</button>
       </div>
       <div class="fed-actions">

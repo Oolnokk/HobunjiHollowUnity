@@ -32613,14 +32613,15 @@
         devTestLook: (() => {
           let saved = null;
           return {
-            async apply(speciesId, gender, offsetH) {
+            async apply(speciesId, gender, offsetH, pitchDeg = 0) {
               const profile = _playerData || window.__hobunjiPlayerProfile;
               if (!profile?.appearance) return false;
-              if (!saved) saved = { appearance: profile.appearance, h: [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat] };
+              if (!saved) saved = { appearance: profile.appearance, h: [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat], pitch: cameraAngleOffsetDeg };
               const appearance = { ...saved.appearance, speciesId, gender, cosmetics: {} }; // Other species' cosmetic ids do not apply; defaults resolve.
               profile.appearance = appearance;
               if (window.__hobunjiPlayerProfile && window.__hobunjiPlayerProfile !== profile) window.__hobunjiPlayerProfile.appearance = appearance;
               s_shoulderSurfOffsetH_default = s_shoulderSurfOffsetH_combat = s_shoulderSurfOffsetH_current = offsetH;
+              cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(pitchDeg); // Negative lowers the camera so the view runs level enough to put the waterfall behind the portrait.
               await refreshPlayerAvatar();
               return true;
             },
@@ -32631,6 +32632,7 @@
               if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = saved.appearance;
               [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat] = saved.h;
               s_shoulderSurfOffsetH_current = saved.h[0];
+              cameraAngleOffsetDeg = saved.pitch;
               saved = null;
               await refreshPlayerAvatar();
               return true;
