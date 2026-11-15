@@ -28,6 +28,30 @@
     return Math.floor((deps.calendar.day - 1) / 7);
   }
 
+  const TREASURE_TIERS = Object.freeze({
+    1: { label: 'Weathered', weight: 0.62, extraBars: 0, bonusGold: [0, 0], trinket: 0, scroll: 0, breeding: 0, enchanted: 0 },
+    2: { label: 'Reinforced', weight: 0.25, extraBars: 1, bonusGold: [20, 60], trinket: 0.12, scroll: 0.08, breeding: 0.20, enchanted: 0 },
+    3: { label: 'Ornate', weight: 0.10, extraBars: 2, bonusGold: [55, 110], trinket: 0.30, scroll: 0.20, breeding: 0.40, enchanted: 0.04 },
+    4: { label: 'Ancient', weight: 0.03, extraBars: 3, bonusGold: [110, 220], trinket: 0.50, scroll: 0.38, breeding: 0.60, enchanted: 0.10 },
+  }); // New buried chest rarity/loot progression; locks reuse ChestLockpicking's matching 1–4 tier presets.
+  const BURIED_TRINKETS = Object.freeze({
+    2: ['wanderersAnklet', 'herbalistsPendant'],
+    3: ['rangersBeads', 'brawlersRing', 'guardiansBrooch'],
+    4: ['duelistsSignet', 'wardensAmulet'],
+  }); // Each tier selects one appropriately priced single-effect trinket, rather than specialized dungeon relics.
+  function treasureTier(value) {
+    const tier = Math.floor(Number(value));
+    return Object.prototype.hasOwnProperty.call(TREASURE_TIERS, tier) ? tier : 1; // Old saves have no tier: retain original loot and tier-one lock.
+  }
+  function rollTreasureTier(random) {
+    let roll = Math.max(0, Math.min(0.999999999, Number(random()) || 0)); // Separate seed stream ensures existing scatter positions do not change.
+    for (const [tier, config] of Object.entries(TREASURE_TIERS)) {
+      roll -= config.weight;
+      if (roll < 0) return Number(tier);
+    }
+    return 4;
+  }
+
   // Weighted toward common low-tier bars with a rare shot at a
   // higher-tier one — Math.pow(rnd(),2.2) biases the roll toward 0
   // (weakest) before scaling across the hierarchy.
@@ -75,13 +99,44 @@
     return deps.rnd() < chance;
   }
 
+  // Roll higher-tier rewards only once at chest scatter and save them in the
+  // ordinary placement. Reloads, interrupted locks and failed catches cannot
+  // change the trinket or rare weapon that the player eventually receives.
+  function _addHigherTierTreasure(bundle, tier) {
+    if (tier === 1) return bundle;
+    const config = TREASURE_TIERS[tier]; // Guaranteed bonus scales with the same tier that controls the lock.
+    const [minGold, maxGold] = config.bonusGold; // Each additional gold roll uses an integer range per chest tier.
+    bundle.gold += minGold + Math.floor(deps.rnd() * (maxGold - minGold + 1));
+    for (let i = 0; i < config.extraBars; i++) {
+      const metal = _rollTreasureMetalKeys()[0]; // Uses the original Town Value gate; no bypass into advanced metals.
+      if (metal) bundle.metalKeys.push(metal);
+    }
+    if (deps.rnd() < config.trinket) {
+      const options = BURIED_TRINKETS[tier].filter(id => window.TrinketSystem?.DEFINITIONS?.[id]); // Respect the actual loaded trinket catalog.
+      const id = options[Math.floor(deps.rnd() * options.length)];
+      if (id) bundle.trinketKey = 'trinket_' + id;
+    }
+    if (deps.rnd() < config.scroll) {
+      const masteryPool = tier === 4 ? 'mastery_captain' : 'mastery_tent'; // Existing rank-2–3 and rank-3–4 mastery scroll tables.
+      const rolled = window.LootRolling?.rollMasteryPool?.(masteryPool, { random: deps.rnd });
+      bundle.masteryScrollKey = Object.keys(rolled || {}).find(key => key.startsWith('masteryScroll:')) || null;
+    }
+    if (deps.rnd() < config.breeding) {
+      const recipes = Object.values(window.AlchemySystem?.RECIPE_DEFS || {}).filter(recipe => recipe?.useMode === 'livestock'); // Any future authored breeding potion joins automatically.
+      const recipe = recipes[Math.floor(deps.rnd() * recipes.length)];
+      if (recipe) bundle.breedingPotionKey = window.AlchemySystem.ensureRecipeItemDef(recipe.id, Math.floor(deps.rnd() * 3));
+    }
+    if (deps.rnd() < config.enchanted) bundle.enchantedRelic = window.HarlyaoRelics?.makeRelic?.() || null; // Real bound Harlyao relic; encoded enchantments persist across saves.
+    return bundle;
+  }
+
   // A chest's full loot bundle: metal bars and dye items always, plus a
   // chance each of gold, a random alchemy potion, and a random dyed
   // clothing piece — the same clothing-piece/dye generators the General
   // Store's daily stock rolls from (see game.js's generateDailyClothingStock),
   // just freely randomized instead of seeded by day.
-  function _rollTreasureLootBundle() {
-    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, combatManualKey: null, clothing: null };
+  function _rollTreasureLootBundle(tier = 1) {
+    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, combatManualKey: null, clothing: null }; // Full chest contents persisted as the weekly placement's loot object.
     if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = _rollTreasureMetalKeys();
     if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = _rollTreasureDyeItemKeys();
     if (_rollTreasureChance('gold', 0.7)) {
@@ -113,7 +168,7 @@
         sprite: deps.clothingSpriteForCosmetic(piece.id),
       };
     }
-    return bundle;
+    return _addHigherTierTreasure(bundle, treasureTier(tier));
   }
 
   // Every chest guarantees at least one Mystery Dye item, averaging 1-3 —
@@ -163,8 +218,14 @@
     const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : []),...authoredDigSpots];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
-    const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.
-    return spots.map(({ col, row }) => ({ col, row, found: false, loot: _rollTreasureLootBundle(), ...(holeRng() < holeChance ? { ruinHole: true } : {}) }));
+    const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Ruin-hole placement stays on its independent world-seeded stream.
+    const tierRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-tier:' + weekIndex())); // Tier stream does not alter scatter locations or hole rarity.
+    return spots.map(({ col, row }) => {
+      const ruinHole = holeRng() < holeChance; // A buried ruin replaces the chest; don't roll (or serialize) loot that can never be claimed.
+      if (ruinHole) return { col, row, found: false, ruinHole: true };
+      const tier = rollTreasureTier(tierRng);
+      return { col, row, found: false, tier, loot: _rollTreasureLootBundle(tier) };
+    });
   }
 
   // Saves created before blocked-terrain exclusion can already contain a
@@ -214,12 +275,15 @@
   // Simple wood-and-band chest silhouette — same box+lid shape as
   // game.js's makeSellCrate/makeSupplyBox, now using the shared crate-side
   // surface art while preserving its existing wood/gold tint distinction.
-  function _buildTreasureChestMesh() {
+  function _buildTreasureChestMesh(tier = 1) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), _treasureChestMaterial(0x6b4a2b));
+    const woodColors = [0x6b4a2b, 0x63513e, 0x704a35, 0x51435b]; // Different wood tints distinguish uncovered tiers using the existing chest mesh.
+    const bandColors = [0xcaa233, 0xb4bfc2, 0xe5b94b, 0xa8dcfa]; // Copper, iron, gold and luminous blue hardware.
+    const resolved = treasureTier(tier);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), _treasureChestMaterial(woodColors[resolved - 1]));
     body.position.y = 0.21;
     body.castShadow = true;
-    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), _treasureChestMaterial(0xcaa233));
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), _treasureChestMaterial(bandColors[resolved - 1]));
     lid.position.y = 0.445;
     lid.castShadow = true;
     group.add(body, lid);
@@ -245,16 +309,18 @@
   // in before opening) hides the option again.
   function _makeTreasureChestObject(mapId, col, row, placement, mesh) {
     let completingPick = false; // Ephemeral success-only reentry flag; never saved on the persistent placement or restored to bypass a lock.
+    const tier = treasureTier(placement.tier); // Old saved chests stay weathered.
+    const chestLabel = TREASURE_TIERS[tier].label + ' Buried Chest'; // Shared action, object and lock overlay naming.
     const chestObject = { // The success callback re-enters the live decorated action so discovery rewards still fire.
       id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
       col, row, mesh,
-      label: '🗝️ Buried Chest',
+      label: '🗝️ ' + chestLabel,
       getButtons() {
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) {
           return [{ icon: '🗝️', label: "Buried — dig a trench here to reach it", action: 'obj_open_treasure_chest', style: 'secondary', allowed: false }];
         }
-        return [{ icon: '🗝️', label: 'Open the buried chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
+        return [{ icon: '🗝️', label: 'Open ' + chestLabel + ' (Tier ' + tier + ' lock)', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
       },
       onAction(action, lockAward = null) {
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
@@ -267,7 +333,7 @@
             && deps._zoneTreasureObjects.get(mapId)?.get(col + ',' + row) === chestObject
             && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH; // A replaced or weekly-rescattered chest cannot pay an obsolete victory.
           const started = window.ChestLockpicking?.open?.({
-            id: chestObject.id + ':week:' + weekIndex(), title: 'Buried Chest', tier: 1, valid,
+            id: chestObject.id + ':week:' + weekIndex(), title: chestLabel, tier, valid,
             onSuccess: lockAward => {
               let result; // The decorated action remains the only loot and rare-weapon reward authority.
               try {
@@ -289,7 +355,7 @@
           // WeaponDiscoveryRewards cannot roll a weapon before a successful pick.
           return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
         }
-        const { loot } = placement;
+        const loot = placement.loot || {}; // Old saves and hand-authored chest placements need not contain any optional new rewards.
         const parts = [];
         const extraCount = Math.min(4, Math.max(0, Math.floor(Number(lockAward?.bonusDrops) || 0))); // At most four extra single rewards from the same town-value-gated treasure picker.
         for (let extra = 0; extra < extraCount; extra++) {
@@ -304,7 +370,7 @@
             parts.push('✨ 12g');
           }
         }
-        for (const metalKey of loot.metalKeys) {
+        for (const metalKey of (loot.metalKeys || [])) {
           const key = deps.metalBarItemKey(metalKey);
           deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);
           parts.push((deps.ITEM_DEFS[key]?.icon || '🔶') + ' ' + deps.METAL_DEFS[metalKey].label + ' Bar');
@@ -335,6 +401,22 @@
           deps.getPackClothing().push({ ...loot.clothing });
           parts.push('👘 ' + loot.clothing.label);
         }
+        for (const key of [loot.breedingPotionKey, loot.masteryScrollKey]) {
+          if (!key) continue;
+          const before = Math.max(0, Number(deps.inventory[key]) || 0); // Prevent announcing capped-out stacks as acquired.
+          deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, before + 1);
+          const added = deps.inventory[key] - before;
+          if (key === loot.breedingPotionKey) window.AlchemySystem?.recordPotionAcquisition?.(key, added); // Found potion provenance matches ordinary chest rewards.
+          if (added) parts.push((deps.ITEM_DEFS[key]?.icon || '📜') + ' ' + (deps.ITEM_DEFS[key]?.label || (key === loot.breedingPotionKey ? 'Breeding Potion' : 'Mastery Scroll')));
+        }
+        if (loot.trinketKey) parts.push(...(window.TrinketSystem?.claimLoot?.({ [loot.trinketKey]: 1 }, 'buried-treasure') || [])); // New simple trinkets enter character gear and spend Attunement when equipped.
+        if (loot.enchantedRelic) {
+          const key = window.HarlyaoRelics?.encodeBoundKey?.(loot.enchantedRelic); // Encoded shape/enchantments survive save/reload and Garanki unbinding.
+          if (key && window.HarlyaoRelics?.ensureBoundItemDef?.(key) && !(deps.inventory[key] > 0)) {
+            deps.inventory[key] = 1; // Chest's own canonical save follows placement removal; no early relic-only save.
+            parts.push('🗡️ ' + (deps.ITEM_DEFS[key]?.label || 'Bound Enchanted Weapon'));
+          }
+        }
         placement.found = true;
         window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId });
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
@@ -346,7 +428,7 @@
         deps.refreshItemScroll();
         deps.buildInventoryGrid();
         deps.buildPackClothingSection();
-        return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
+        return { ok: true, message: 'Opened the ' + chestLabel + ': ' + parts.join(', ') };
       },
     };
     return chestObject;
@@ -427,7 +509,7 @@
     for (const placement of persisted.placements) {
       if (placement.found || placement.ruinHole) continue; // A ruin hole has no chest to show once dug.
       const { col, row } = placement;
-      const mesh = _buildTreasureChestMesh();
+      const mesh = _buildTreasureChestMesh(placement.tier);
       mesh.position.set(col + 0.5, _treasureChestBuriedY(mapId, col, row), row + 0.5);
       zi.scene.add(mesh);
       groups.push(mesh);
@@ -441,7 +523,12 @@
     // for tiles that are ALREADY a dug trench (mid-session state, e.g.
     // re-entering a zone after digging one up earlier).
     syncZoneInteractivity(mapId);
-    deps.debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${weekIndex()}`);
+    const tierCounts = persisted.placements.filter(p => !p.found && !p.ruinHole).reduce((counts, placement) => {
+      const tier = treasureTier(placement.tier);
+      counts[tier] = (counts[tier] || 0) + 1;
+      return counts;
+    }, {}); // Mobile debug log reveals tier counts without the browser console.
+    deps.debugLog?.(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${weekIndex()} (tiers ${JSON.stringify(tierCounts)})`);
   }
 
   // Nearest still-buried chest in a zone (its tile isn't a dug trench
@@ -577,6 +664,8 @@
   window.WildTreasure = {
     init,
     weekIndex,
+    TREASURE_TIERS,
+    rollTreasureTier,
     rollTreasureLootAsItems,
     rollTreasureMetalBarLoot,
     ensureZone,
