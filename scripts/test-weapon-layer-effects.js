@@ -119,7 +119,7 @@ const THREE={
   CanvasTexture: class{constructor(canvas){this.image=canvas;}},
   SpriteMaterial:class{constructor(options){Object.assign(this,options);this.color={set(v){this.value=v;}};}dispose(){}},
   Sprite:class extends Object3D{
-    constructor(material){super();this.material=material;this.layers={mask:1,set(index){this.mask=1<<index;}};}
+    constructor(material){super();this.material=material;this.layers={mask:1,set(index){this.mask=1<<index;},enable(index){this.mask|=1<<index;}};}
   },
   AdditiveBlending:2, NormalBlending:1
 };
@@ -220,5 +220,39 @@ assert.equal(staffFx.group.parent, null);
 assert.match(game, /hachutuTorchStaff: \{[^\n]*shapeKey: 'hachutuTorchStaff'/);
 assert.match(game, /masteryLevel: \(\) => toolMasteryLevel\(itemKey\)/);
 assert.match(hub, /baseFireMode/, 'tool editor exposes single-PNG effects');
+
+// Handheld torch: verify the real litOnly state, missing-marker fallback and both render passes.
+const handheld = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.torch; // Production Torch-Staff-derived fire, not a duplicate test recipe.
+const bareTip = pixels(4, 10, [[1, 8, [222, 212, 193, 255]], [2, 8, [222, 212, 193, 255]], [1, 9, [160, 140, 120, 255]]]);
+const litPlane = new Group(); litPlane.renderOrder = 1.5;
+litPlane.layers.mask = (1 << 0) | (1 << 4); // Source plane participates in both ordinary and held-object overlay draws.
+window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: 4 };
+let lit = false; // Simulated player's actual lit/stowed torch state.
+window.AdventuringTools = { isLit: () => lit };
+const litState = { THREE, plane: litPlane, itemKey: 'torch', masteryLevel: () => 0 };
+api.activateStatic(litState, handheld.base, [], [], bareTip, .002);
+assert.equal(litState.fireEmitters.length, 1, 'a fully off-white torch still creates an emitter at its opaque business end');
+const tipFx = litState.fireEmitters[0];
+assert.equal(tipFx.sourceFallback, true, 'diagnostics identify the missing-marker fallback');
+assert(tipFx.sources.every(index => Math.floor(index / bareTip.width) >= 8), 'torch flames originate at the authored -Y tip');
+assert.equal(tipFx.visualScale, 4, 'the held torch retains the Torch-Staff mastery-5 fire scale');
+api.stepFire(litState, .15);
+assert.equal(tipFx.particles.length, 0, 'unlit torch does not produce fire');
+lit = true;
+api.stepFire(litState, .15);
+assert(tipFx.particles.length > 0, 'lighting the held torch produces flames without recreating its weapon mesh');
+assert(tipFx.particles.every(p => (p.sprite.layers.mask & 1) && (p.sprite.layers.mask & (1 << 4))),
+  'flames render in both the normal world and the held-object overlay passes');
+lit = false;
+api.stepFire(litState, .02);
+assert.equal(tipFx.particles.length, 0, 'stowing immediately extinguishes existing flames');
+api.dispose(litState);
+const markedTip = pixels(4, 10, [[1, 9, rag], [2, 9, rag]]);
+const markedPlane = new Group(); markedPlane.renderOrder = 1.5;
+const markedState = { THREE, plane: markedPlane, itemKey: 'torch' };
+api.activateStatic(markedState, handheld.base, [], [], markedTip, .002);
+assert.equal(markedState.fireEmitters[0].sourceFallback, false, 'authored marker pixels remain authoritative when present');
+assert.deepEqual(Array.from(markedState.fireEmitters[0].sources), [37, 38], 'marker-based emission remains unchanged');
+api.dispose(markedState);
 
 console.log('weapon layer effects: PASS (metal recolor, visible composite mask, fuel marker, interleaved fire, head-only enchantments, no chain)');
