@@ -193,7 +193,7 @@
     deps = injectedDeps; // All runtime adapters remain injected by game.js.
     window.EffectBuffBar?.registerProvider('alchemy', () => {
       const now = performance.now() / 1000; // Convert expiries to HUD seconds.
-      return activeEffects.map(effect => ({ ...effect, sourceLabel: 'Alchemy', description: RECIPE_DEFS[effect.recipeId]?.desc || effect.desc || 'Temporary alchemy effect.', remainingS: effect.expiresAt - now }));
+      return activeEffects.map(effect => ({ ...effect, sourceLabel: 'Alchemy', timeBasis: 'real', description: RECIPE_DEFS[effect.recipeId]?.desc || effect.desc || 'Temporary alchemy effect.', remainingS: effect.expiresAt - now }));
     });
     registerReagentItemDefs();
   }
