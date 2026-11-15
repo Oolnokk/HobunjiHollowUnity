@@ -721,7 +721,7 @@
   }
 
   function handlePlayerReady(event) {
-    if (window.__hobunjiCutscenePreview) return;
+    if (window.__hobunjiCutscenePreview || window.__hobunjiPrecreatorArena) return;
     const profile = event?.detail || window.__hobunjiPlayerProfile; // Uses onboarding's authoritative owner role for the selected world.
     if (!profile?.characterId || !profile?.worldId || profile.isWorldOwner !== true) return;
     const progress = readProgress(profile); // Completion belongs to this world, including openings finished by the earlier version.

@@ -357,6 +357,8 @@
       </div>
       <div class="sl-footer">
         <span style="font-size:11px;color:var(--ob-muted,#9aa8ae);">Browser storage remains the live offline save.</span>
+        <a href="tools/preview-map/index.html" class="ob-tab" id="hobunjiEmptySavePreview"
+           style="display:inline-flex;align-items:center;text-decoration:none;min-height:44px;">🧪 Preview Map</a>
         <button type="button" class="ob-start-btn" id="hobunjiEmptySaveCreate">＋ Create New Farmer</button>
       </div>`;
 

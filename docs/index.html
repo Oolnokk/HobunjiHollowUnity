@@ -13,6 +13,9 @@
        the document parser is still loading the main module list. -->
   <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
   <script src="js/storage-quota-guard.js?v=20261022h4715074"></script>
+  <!-- Quota guard installs first; it does not access saved values. The preview now intercepts
+       Storage and IndexedDB before any actual game or save writer is loaded. -->
+  <script src="js/precreator-arena.js?v=20261115nativeArena2"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -196,7 +199,7 @@
   <script src="js/npc-drink-interaction.js?v=20261113playerKoma1"></script>
   <script src="js/yawn-breath-composer.js?v=20261114naturalBreath1"></script> <!-- Dedicated fallback breath reconstruction; no animal/combat voice behavior changes. -->
   <script src="js/player-yawn-stretch-presentation.js?v=20261114playerYawnStretch1"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
-  <script src="js/npc-yawn-rest.js?v=20261115hposelease11"></script> <!-- NPC fatigue, waking yawns, player stretch and daily Slagothim Koma. -->
+  <script src="js/npc-yawn-rest.js?v=20261115hposemerge01"></script> <!-- NPC fatigue, waking yawns, player stretch and daily Slagothim Koma. -->
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20261028packpreview2"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -313,7 +316,7 @@
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261115spherical1"></script>
+  <script src="onboarding.js?v=20261115nativeArena1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261108attackpower1"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -665,7 +668,7 @@
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
   <script src="js/dev-spawner.js?v=20261115h121bf94"></script>
-  <script src="js/dev-arena-pond-dummy.js?v=20261115pond3"></script>
+  <script src="js/dev-arena-pond-dummy.js?v=20261115nativeArena1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -2898,7 +2901,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="game.js?v=20261115spherical1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
+  <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>

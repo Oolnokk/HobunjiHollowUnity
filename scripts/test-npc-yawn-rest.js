@@ -9,6 +9,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 async function main() {
+  const expectedYawnBreathUrl = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Shared test source for configured, hardcoded, and player yawn fallback playback.
   let ms = 0; // Drives the five-second yawn without real timers.
   let hour = 12; // Drives the monotonic game-hour rest/recurrence clock.
   let frame = null; // Captured RuntimeFrameScheduler callback for explicit frame steps.
@@ -92,7 +93,7 @@ async function main() {
       getVoiceModulation: entity => entity.rec.appearance.gender === 'female'
         ? { pitchSemitones: 7, tempo: 0.8, gain: 1.25 }
         : { pitchSemitones: 1, tempo: 1, gain: 1 },
-      getConfig: () => ({ assets: { breath: { '1': 'assets/audio/sfx/combat/breath.m4a' } } }),
+      getConfig: () => ({ assets: { breath: { '1': 'assets/audio/sfx/combat/breath.m4a', '5': expectedYawnBreathUrl } } }),
       getVoicePriority: () => 3,
     },
     AudioSystem: {
@@ -220,7 +221,12 @@ async function main() {
   assert.equal(noYawnClip.tempo, 1, 'fallback breathing must not run the old robotic quarter-speed WSOLA');
   assert.equal(noYawnClip.cadence, 0.8, 'species-relative tempo becomes grain cadence without stretching the actual breath');
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
-  assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/breath.m4a');
+  assert.equal(noYawnClip.url, expectedYawnBreathUrl, 'missing dedicated yawns use configured intensity-5 breathing');
+  const configuredGetVoice = window.CombatVocalizations.getConfig; // Restored after verifying the built-in source without a loaded combat config.
+  window.CombatVocalizations.getConfig = () => ({ assets: { breath: {} } });
+  const unconfiguredYawnClip = await runtime._test.voiceFor('porakaneki', 'male'); // A fresh identity bypasses the voice-plan cache for the missing-config case.
+  assert.equal(unconfiguredYawnClip.url, expectedYawnBreathUrl, 'no configured source still falls back to intensity 5');
+  window.CombatVocalizations.getConfig = configuredGetVoice;
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
 
   const retryNpc = {
@@ -343,14 +349,14 @@ async function main() {
   hour += 2; ms += 600; frame({ timestamp: ms }); // Start an audible un-rested fallback yawn before its five-second cleanup.
   assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
   for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
-  const playerBreath = audioCalls.find(call => call.url === 'assets/audio/sfx/combat/breath.m4a'
+  const playerBreath = audioCalls.find(call => call.url === expectedYawnBreathUrl
     && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
     && call.opts.tempo === 1 && call.opts.pitchSemitones === 7); // Captures the last reconstructed player voice without assuming how many NPCs yawned.
   assert.ok(playerBreath, 'missing yawn recordings use a five-second composition with species pitch/cadence');
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
   assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
-  const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url.includes('breath.m4a'));
+  const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url === expectedYawnBreathUrl);
   playerEvents[playerEvents.length - 1]?.opts.onStarted?.();
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'playing', 'the actual audio start event confirms an audible player yawn');
   assert.equal(playerBreath.opts.sourceActor, null, 'player voice originates at the listener, not a movable NPC sound source');
