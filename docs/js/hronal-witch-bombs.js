@@ -99,8 +99,15 @@
     bomb.enemyCarrier=null;
     return true;
   }
+  function landingHazard(bomb,world) {
+    let hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
+    if (hazard==='void' && bomb.mapId===RUIN_MAP_ID && world &&
+        window.DynamicSurfaces?.sampleSupport?.(world.x,world.z,{minY:world.y-1.2,maxY:world.y+.15,pad:.02}))
+      hazard=''; // A shaft platform is solid even if the shared 2D ruin tile directly beneath it is void.
+    return hazard;
+  }
   function playGroundHit(bomb,point,centerHeight=.45) {
-    if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return;
+    if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.z) || landingHazard(bomb,point)) return;
     const audio=window.AudioSystem; // Use the normal world-positioned mixer, including 3D bearing, floor elevation and cavern reverb.
     if(audio?.playObjectSfxKeyAt) audio.playObjectSfxKeyAt(GROUND_HIT_SFX_KEY,point.x,point.z,bomb.mapId,point.y-centerHeight,{pitch:GROUND_HIT_PITCH,earshotTiles:14});
     else audio?.playObjectSfxKey?.(GROUND_HIT_SFX_KEY,1,GROUND_HIT_PITCH);
@@ -112,11 +119,7 @@
       return true;
     }
     const world=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
-    let hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
-    if (hazard==='void' && bomb.mapId===RUIN_MAP_ID && world &&
-        window.DynamicSurfaces?.sampleSupport?.(world.x,world.z,{minY:world.y-1.2,maxY:world.y+.15,pad:.02}))
-      hazard=''; // The 2D ruin tile may be void under a real elevated shaft platform; keep its solid landing.
-    if (hazard) {
+    if (landingHazard(bomb,world)) {
       window.Shattercasks?.discardBurden?.(bomb);
       return true;
     }
