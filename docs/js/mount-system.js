@@ -162,7 +162,7 @@
       if (mountRideState !== 'mounted' || event.repeat || event.defaultPrevented) return;
       if (event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
       const bindings = window.InputBindings?.getCurrentBindings?.()?.desktop || {};
-      const action = event.code === bindings.dodge ? 'dodge' : event.code === bindings.jump ? 'jump' : null;
+      const action = event.code === (bindings.dodge || 'KeyX') ? 'dodge' : event.code === (bindings.jump || 'Space') ? 'jump' : null; // Match game's legacy X/Space controls when Jump is absent from user-remappable bindings.
       if (!action) return;
       event.preventDefault?.();
       event.stopImmediatePropagation?.();
@@ -195,7 +195,7 @@
       if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false) return;
       const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
       if (bindings.dodge && frame.pressed?.has?.(bindings.dodge)) pressMountedAction('dodge');
-      if (bindings.jump && frame.pressed?.has?.(bindings.jump)) pressMountedAction('jump');
+      if ((bindings.jump || bindings.interact || 'Button0') && frame.pressed?.has?.(bindings.jump || bindings.interact || 'Button0')) pressMountedAction('jump'); // Default A/Interact is the controller's Jump/Climb input.
     }, 5);
   }
 
