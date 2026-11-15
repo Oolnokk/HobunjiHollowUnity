@@ -481,18 +481,27 @@
     return true;
   }
 
-  function isIgnitionSourceAlongSegment(start, end, maxT = 1, radius = .18) {
-    if (!root || currentArea() !== MAP_ID || !start || !end) return false;
-    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
-    // The same exact floor-aware reach and 3D hitboxes as the original torch puzzle.
+  function touchesIgnitionSource(matches) {
+    if (!root || currentArea() !== MAP_ID) return false;
     const litSources = [
       ...torchSources,
       ...ignitionTargets.filter(target => target.lit).map(target => target.object),
       ...(window.DevRandomRuinDungeonFire?.litSourceObjects?.() || []),
       ...(window.RuinCheckpointTravel?.litSourceObjects?.() || []),
-    ]; // All ruin fire-hazard sources use the same physical proximity, height and segment tests.
-    return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE
-      && segmentBoxInterval(start, finish, boxFor(object), radius));
+    ];
+    return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE && matches(object));
+  }
+
+  function isIgnitionSourceAlongSegment(start, end, maxT = 1, radius = .18) {
+    if (!start || !end) return false;
+    const finish = start.clone().lerp(end, clamp(finite(maxT, 1), 0, 1));
+    return touchesIgnitionSource(object => segmentBoxInterval(start, finish, boxFor(object), radius));
+  }
+
+  function contactTorchMelee(matches) {
+    if (!root || currentArea() !== MAP_ID) return false;
+    const target = ignitionTargets.find(target => !target.lit && worldDistanceTo(target.object) <= CONTROL_RANGE && matches(target.object));
+    return target ? igniteIgnitionTarget(target) : false;
   }
 
   function contactAdventuringTorchSegment(start, end, maxT = 1, radius = .12, requireReach = false) {
@@ -596,7 +605,7 @@
         && window.AdventuringTools?.isHoldingTorch?.()===true && window.AdventuringTools?.isLit?.()===true
         && igniteIgnitionTarget(target); // CI uses the same target transition as physical swing/throw collision.
     },
-    isIgnitionSourceAlongSegment, contactAdventuringTorchSegment, // Ruin-owned source detection and actual V50 puzzle fire transfer.
+    touchesIgnitionSource, contactTorchMelee, isIgnitionSourceAlongSegment, contactAdventuringTorchSegment, // Ruin-owned source detection and actual V50 puzzle fire transfer.
     distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
     isCarryingTorch:() => false, // Compatibility for older mobile diagnostics and tests; the permanent torch is AdventuringTools.
     dropTorch:() => false,

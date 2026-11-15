@@ -1,6 +1,7 @@
 {
   "schema": "hobunji_furniture_authored_runtime.v1",
   "key": "hearth",
+  "fireHazard": true,
   "sourceSchema": "hobunji_furniture_surface_author.v58",
   "footprint": {
     "w": 2,

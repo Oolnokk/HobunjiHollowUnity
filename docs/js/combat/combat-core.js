@@ -399,10 +399,10 @@
     if (opts.debug === false && !meleeColliderScratch) meleeColliderScratch = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
     const collider = meleeColliderVolume(attacker, opts, solution, opts.debug === false ? meleeColliderScratch : null);
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
-    const targetHitbox = combatActorHitbox(target);
+    const targetBox = opts.targetBox || combatActorHitbox(target)?.box; // Furniture uses the same exact test as a portrait.
     const rangePx = Math.max(0, Number(opts.rangePx) || 0);
     const halfConeRad = collider.halfConeRad;
-    if (!targetHitbox?.box) {
+    if (!targetBox) {
       // Preserve the old 2D sector behavior for an actor whose portrait has
       // not mounted yet; never turn a missing render object into an automatic hit.
       const dx = (Number(target?.x) || 0) - (Number(attacker?.x) || 0);
@@ -427,7 +427,7 @@
       return hit;
     }
 
-    const hitbox = targetHitbox.box;
+    const hitbox = targetBox;
     const min = hitbox.min, max = hitbox.max;
     const dxToBox = Math.max(0, min.x - collider.origin.x, collider.origin.x - max.x); // Closest horizontal separation along each axis.
     const dzToBox = Math.max(0, min.z - collider.origin.z, collider.origin.z - max.z);
@@ -450,12 +450,12 @@
     }
     meleeProbeRay.origin.copy(collider.origin);
     meleeProbeRay.direction.copy(collider.direction);
-    const directPoint = meleeProbeRay.intersectBox(targetHitbox.box, meleeRayPoint);
+    const directPoint = meleeProbeRay.intersectBox(hitbox, meleeRayPoint);
     if (directPoint) {
       bestDistanceWorld = directPoint.distanceTo(collider.origin);
       bestAngleRad = 0;
       bestVerticalOffsetWorld = 0;
-      hit = bestDistanceWorld <= collider.rangeWorld;
+      hit = bestDistanceWorld <= collider.rangeWorld && (!opts.acceptPoint || opts.acceptPoint(collider.origin, directPoint));
       if (hit && opts.debug === false) return true;
     }
     const centerX = (min.x + max.x) * 0.5;
@@ -493,7 +493,8 @@
           bestVerticalOffsetWorld = verticalOffset;
         }
       }
-      if (radialFraction <= 1 && yawDelta <= halfConeRad && verticalOffset <= collider.halfHeightWorld) {
+      if (radialFraction <= 1 && yawDelta <= halfConeRad && verticalOffset <= collider.halfHeightWorld
+          && (!opts.acceptPoint || opts.acceptPoint(collider.origin, point))) {
         hit = true;
         break;
       }

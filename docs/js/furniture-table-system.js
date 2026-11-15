@@ -60,7 +60,10 @@
         if (data && root.parent && entries.get(id) === entry) window.AuthoredFurniture.setItemPlacements(root, data, record.surfaceItems);
       });
     }
-    if (root?.userData) root.userData.furnitureRelationship = { id, area, tableId: record.tableId || null };
+    if (root?.userData) {
+      if (record.fireHazard === true || def.fireHazard === true) root.userData.fireHazard = true;
+      root.userData.furnitureRelationship = { id, area, tableId: record.tableId || null };
+    }
     return entry;
   }
   function unregisterPlacement(area, idOrRoot) {

@@ -871,6 +871,7 @@
       new THREE.ConeGeometry(isBonfire ? 0.38 : 0.18, isBonfire ? 0.9 : 0.48, 6),
       new THREE.MeshBasicMaterial({ color: 0xff8a22 }),
     );
+    group.userData.fireHazard = true; // The fallback still represents a lit wilderness fire.
     flame.position.y = isBonfire ? 0.45 : 0.25;
     group.add(flame);
     return group;

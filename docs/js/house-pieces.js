@@ -3,7 +3,7 @@
 
   // Parser-time entrypoint for the modular-house feature. The stable house
   // architecture core stays separate from optional terrain/elevation glue,
-  // while index.html keeps a single long-lived js/house-pieces.js include.
+  // while the farm-buildings manifest owns this bootstrap's cache versions.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
   const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261113terrainpass2') : '20261113terrainpass2'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
@@ -49,7 +49,7 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261110banubuNightAudit3'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261115h724e082'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
@@ -77,7 +77,7 @@
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],
-    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261112hc8db9a2'],
+    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261115hf8cf420'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],

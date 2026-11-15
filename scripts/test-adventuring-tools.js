@@ -9,86 +9,115 @@ const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 class Vector3 {
-  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-  lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
-  normalize() { const length = Math.sqrt(this.lengthSq()); this.x /= length; this.y /= length; this.z /= length; return this; }
-  clone() { return new Vector3(this.x, this.y, this.z); }
-  addScaledVector(vec, scale) { this.x += vec.x * scale; this.y += vec.y * scale; this.z += vec.z * scale; return this; }
+  copy(other) { return Object.assign(this, other); }
+}
+class Box3 {
+  setFromObject(object) { this.object = object; return this; }
+  isEmpty() { return false; }
 }
 
-let activeTool = 'adventuring', heldMode = 'tool', fireHazard = false, ruinHazard = false, area = 'farm'; // Distinguishes farm tile hazards from physical ruin sources.
+let activeTool = 'adventuring', heldMode = 'tool', area = 'farm';
 let fireContacts = 0, tentContacts = 0, ruinContacts = 0, throws = 0, persisted = [];
+let covered = false;
+const player = { x: 0, y: 0 };
+const scene = { children: [] };
+const campProps = { children: [], parent: scene };
+const campfire = { name: 'bandit campfire', userData: { fireHazard: true }, parent: campProps, inCone: true };
+campProps.children.push(campfire);
+const brazier = { name: 'ruin brazier', parent: scene, inCone: true };
+const nearEnemy = { health: 8, areaId: 'farm', inCone: true };
+const sideEnemy = { health: 8, areaId: 'farm', inCone: true };
+const farEnemy = { health: 8, areaId: 'farm', inCone: false };
+const hits = [];
+const forehandStep = { anim: 'sweep', dirSign: 1, windupS: .345, strikeS: .07, holdS: .43,
+  rangeMul: 1, halfConeDeg: 26, damageMul: 1, knockbackMul: .45 };
 const world = {
-  DungeonFire: { contactProjectile(projectile, start, end) {
-    assert.equal(projectile.team, 'player'); assert.equal(projectile.dungeonFire, true);
-    assert.ok(end.x > start.x); fireContacts++;
-  } },
-  BanditCamps: { igniteAimedTentWithTorch() { tentContacts++; } },
+  Combat: {
+    deps: {
+      player, TILE: 64, hostileObjects: [nearEnemy, sideEnemy, farEnemy],
+      weaponAbility: () => ({ rangePx: 128, damage: 6, knockbackPxS: 360 }),
+      damageCreature: target => { hits.push(target); },
+    },
+    comboData: { swingCombo: [forehandStep], RANGE_SCALE: .6 },
+    comboStepPose: () => world.AttackPoseTemplates.poseFor('hatchet_swing'),
+    isStaggered: () => false,
+    meleeHit(attacker, target, options) {
+      assert.equal(attacker, player);
+      const object = target || options.targetBox.object;
+      return object.inCone && (!options.acceptPoint || options.acceptPoint({}, {}));
+    },
+  },
+  NearbyVolumeCollision: { segmentHit: () => covered ? { t: .25, object: {} } : null },
+  DungeonFire: { contactMelee() { fireContacts++; } },
+  BanditCamps: { igniteTorchMelee() { if (area === 'farm') tentContacts++; } },
   DevRandomRuinHitPuzzles: {
-    isIgnitionSourceAlongSegment(start,end) { assert.ok(end.x > start.x); return ruinHazard; },
-    contactAdventuringTorchSegment(start,end) { assert.ok(end.x > start.x); ruinContacts++; return true; },
+    touchesIgnitionSource(matches) { return area === 'ruin' && matches(brazier); },
+    contactTorchMelee() { if (area === 'ruin') ruinContacts++; },
   },
   RangedWeapons: { throwAdventuringTorch() { throws++; return { itemKey:'torch' }; } },
   CharacterMetaSave: { update(callback) { const ch = {}; callback(ch); persisted = ch.adventuringToolUnlocks; } },
 };
-vm.runInNewContext(read('docs/js/adventuring-tools.js'), { window: world });
+const context = vm.createContext({ window: world });
+for (const script of ['docs/js/combat/attack-pose-templates.js', 'docs/js/combat/weapon-shape-stats.js', 'docs/js/adventuring-tools.js']) {
+  vm.runInContext(read(script), context);
+}
 const torch = world.AdventuringTools;
 const deps = {
-  THREE: { Vector3 },
+  THREE: { Vector3, Box3 },
   getActiveTool: () => activeTool, getHeldMode: () => heldMode,
   getEquippedTool: () => 'torch', getUnlocked: () => [], getCurrentArea: () => area,
-  getAimRay: () => ({ direction: { x:1, y:0, z:0 } }),
-  getToolHolder: () => ({ getWorldPosition: out => out }),
-  isAimedFireHazard: () => fireHazard,
+  getActiveScene: () => scene, getMeleeAimDirection: () => ({ x: 1, y: 0, z: 0 }),
   refreshActionBar() {}, selectTorch() { activeTool = 'adventuring'; },
 };
 torch.init(deps);
-vm.runInNewContext(read('docs/js/combat/attack-pose-templates.js'), { window: world }); // Run the actual shared attack template helper used by both gameplay and editor.
-world.WeaponToolStances = { poses: { torchHold: { x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 } } }; // Fixture for the runtime's authored torch carry, not its longsword-derived hand grip.
 const forehand = world.AttackPoseTemplates.poseFor('hatchet_swing');
-const torchVisual = torch.forehandSwingVisual();
-assert(torchVisual, 'equipped torch provides its own forehand animation');
-assert.equal(torchVisual.options.toolSlot, 'adventuring');
-assert.equal(torchVisual.options.anim, 'sweep');
-assert.equal(torchVisual.options.dirSign, 1);
-assert.equal(torchVisual.durationS, 0.415);
-assert.equal(torchVisual.options.windupFrac, 0.345 / 0.415);
-assert.equal(torchVisual.options.strikeFrac, 1);
-assert.equal(torchVisual.options.holdS, 0.43);
-assert.equal(torchVisual.options.pose.neutral.x, 0.13, 'torch starts from its authored carry');
-assert.equal(torchVisual.options.pose.neutral.y, 0.16);
-assert.equal(torchVisual.options.pose.neutral.z, 0.03);
-assert.equal(torchVisual.options.pose.windup.bodyYaw, forehand.windup.bodyYaw, 'same forehand winding body turn');
-assert.equal(torchVisual.options.pose.strike.bodyYaw, forehand.strike.bodyYaw, 'same forehand follow-through');
-assert.equal(torchVisual.options.pose.strike.x, 0.13, 'forehand is translated without snapping to hatchet origin');
-assert.equal(torchVisual.options.pose.strike.z, 0.03);
-assert.equal(torchVisual.options.pose.neutral.worldUpright, undefined, 'world-up correction must not be an attack pose setting');
-assert.equal(torchVisual.options.lungeMul, undefined, 'torch does not inherit the combat lunge');
+const visual = torch.forehandSwingVisual();
+assert.equal(visual.options.toolSlot, 'adventuring');
+assert.equal(visual.options.anim, 'sweep');
+assert.equal(visual.durationS, (.345 + .07) / 1.05, 'torch uses longsword forehand speed');
+assert.equal(visual.options.strikeFrac, 1);
+assert.deepEqual(visual.options.pose, forehand, 'the shared stance hook receives the same pose as weapon Forehand');
+assert.equal(visual.options.lungeMul, undefined, 'torch does not inherit the combat lunge');
+assert.equal(visual.options.coneRangePx, 128 * .6 * 1.2);
+const cone = { rangePx: visual.options.coneRangePx, halfConeRad: visual.options.coneHalfConeRad,
+  angle: visual.options.coneAngle, pitch: visual.options.conePitch };
 assert.deepEqual(Array.from(torch.entries(), entry => entry.id), ['torch']);
 assert.equal(torch.isLit(), false);
 assert.equal(torch.canThrow(), false);
-assert.equal(torch.swingAtAim(1,1).ok, true);
+assert.equal(torch.swingAtAim(cone).ok, true);
 assert.equal(torch.isLit(), false);
-fireHazard = true;
-assert.equal(torch.swingAtAim(1,1).ok, true);
-assert.equal(torch.isLit(), true);
+assert.deepEqual(hits, [nearEnemy, sideEnemy], 'a single impact can hit multiple hostiles within the melee cone');
+scene.children.push(campProps);
+campfire.inCone = false;
+torch.swingAtAim(cone);
+assert.equal(torch.isLit(), false, 'a fire hazard outside melee reach cannot light the torch');
+campfire.inCone = true;
+covered = true;
+torch.swingAtAim(cone);
+assert.equal(torch.isLit(), false, 'cover blocks contact with a fire hazard');
+covered = false;
+campProps.visible = false;
+torch.swingAtAim(cone);
+assert.equal(torch.isLit(), false, 'hidden camps are not ignition sources');
+campProps.visible = true;
+assert.equal(torch.swingAtAim(cone).ok, true);
+assert.equal(torch.isLit(), true, 'a tagged wilderness fire lights the torch even with no interaction object');
 assert.equal(fireContacts, 1);
 assert.equal(tentContacts, 1);
-assert.equal(ruinContacts, 1);
 assert.equal(torch.canThrow(), true);
 assert.equal(torch.throwLit().ok, true);
 assert.equal(throws, 1);
 assert.equal(torch.isLit(), false);
 assert.equal(torch.throwLit().ok, false);
-assert.equal(throws, 1);
-area = 'map_i_dev_random_ruin';
-fireHazard = true; ruinHazard = false;
-assert.equal(torch.swingAtAim(1,1).ok, true);
-assert.equal(torch.isLit(), false, '2D furniture tile lookups never bypass ruin floor/contact checks');
-fireHazard = false; ruinHazard = true;
-assert.equal(torch.swingAtAim(1,1).ok, true);
-assert.equal(torch.isLit(), true, 'V50 fire-hazard source lights the permanent torch without a pickup');
-assert.equal(ruinContacts, 2, 'lit swing contacts real V50 torch puzzle targets');
+area = 'ruin';
+scene.children.length = 0;
+brazier.inCone = false;
+torch.swingAtAim(cone);
+assert.equal(torch.isLit(), false, 'ruin source must intersect the melee volume');
+brazier.inCone = true;
+torch.swingAtAim(cone);
+assert.equal(torch.isLit(), true);
+assert.equal(ruinContacts, 1, 'lit melee contact reaches the ruin puzzle owner');
 torch.stow();
 assert.equal(torch.isLit(), false);
 assert.equal(torch.register({ id:'lantern',label:'Lantern',onSelect() {} }), true);
@@ -103,6 +132,25 @@ heldMode = 'item';
 assert.equal(torch.canThrow(), false);
 
 const game = read('docs/game.js');
+const damageStart = game.indexOf('      function damageCreature('); // Execute the real ingress checks before constructing the unrelated damage dependencies.
+const damageGateEnd = game.indexOf('        const damageSource =', damageStart);
+assert(damageStart >= 0 && damageGateEnd > damageStart);
+const damageGate = vm.createContext({
+  window: { RangedWeapons: { meleeReachCheck: (attacker, target) => ({
+    reachable: target.verticalGap <= 0.4, verticalGap: target.verticalGap, allowance: 0.4,
+  }) } },
+  performance: { now: () => 100 }, player, TILE: 64, heldMode: 'tool',
+  activeTool: 'adventuring', lastMeleeHeightBlock: null,
+});
+vm.runInContext(game.slice(damageStart, damageGateEnd) + 'return true; } return true; }', damageGate);
+const torchHit = { abilityId: 'torch_swing' };
+assert.equal(damageGate.damageCreature({ verticalGap: 0.8 }, 6, 0, 0, 0, torchHit), false,
+  'torch contact honors the same final vertical reach gate as a melee weapon');
+assert.equal(damageGate.lastMeleeHeightBlock.verticalGap, 0.8);
+assert.equal(damageGate.damageCreature({ verticalGap: 0.4 }, 6, 0, 0, 0, torchHit), true,
+  'a height gap at the weapon reach tolerance still allows a torch hit');
+assert.equal(damageGate.damageCreature({ verticalGap: 0.8 }, 6, 0, 0, 0, { ranged: true }), true,
+  'the held torch cannot impose melee reach on a projectile hit');
 const torchActionStart = game.indexOf("const torchVisual = activeTool === 'adventuring'"); // The central action dispatch must start the forehand before queuing the physical contact.
 const torchActionQueued = game.indexOf('pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };', torchActionStart);
 assert(torchActionStart >= 0 && torchActionQueued > torchActionStart, 'torch action queues contact after selecting its visual');
@@ -122,7 +170,7 @@ const index = read('docs/index.html');
 const grip = read('docs/js/hand-tool-grips.js');
 const neutral = JSON.parse(read('docs/config/combat/weapon-idle-stances.json'));
 assert.match(game, /adventuring: \['torch_swing', 'torch_throw'\]/);
-assert.match(game, /if \(tool === 'adventuring'\) return action === 'torch_swing'/);
+assert.match(game, /window\.AdventuringTools\?\.swingAtAim\(combatSwingCone\)/);
 assert.match(game, /equipmentSlots\.adventuring = 'torch'/);
 assert.match(game, /adventuringToolActionButtons\(\)/);
 assert.match(arc, /\['adventuringGateway',\.\.\.deps\.WHEEL_SLOTS/);
@@ -133,9 +181,23 @@ assert.match(ranged, /dungeonFire:true/);
 assert.match(ranged, /DevRandomRuinHitPuzzles\?\.contactAdventuringTorchSegment/);
 assert.match(bandits, /igniteTorchSegment\(/);
 assert.match(bandits, /igniteAimedTentWithTorch\(/);
-assert.match(assets, /torch: \{[\s\S]*?litOnly:true/);
+assert.match(assets, /torch: \{[\s\S]*?litOnly: true/);
 assert.match(effects, /fx\.config\.litOnly/);
-assert.match(grip, /data\.tools\.torch = clone\(ensureTool\('harlyaolongsword'\)\)/);
+const recipeWindow = {};
+vm.runInNewContext(assets, { window: recipeWindow });
+const recipes = recipeWindow.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons;
+assert.equal(recipes.torch.base.targetHex, recipes.hachutuTorchStaff.base.targetHex);
+const torchFire = recipes.torch.base.vfx;
+const staffFire = recipes.hachutuTorchStaff.base.vfx;
+assert.equal(torchFire.fixedMasteryRank, 5);
+assert.equal(torchFire.masteryClusters, 1);
+assert.equal(torchFire.rate, staffFire.rate / staffFire.masteryClusters);
+for (const key of ['size', 'life', 'speed', 'worldRise', 'visualScale', 'masteryFocus', 'blendMode', 'opacity']) {
+  assert.equal(torchFire[key], staffFire[key], `torch shares staff tip's ${key}`);
+}
+assert.match(read('docs/js/weapon-sprite-assemblies.js'), /if \(modularShaft && modularShaft\.fireAssembly === def\?\.shapeKey/,
+  'a rigid torch without a shape or modular shaft must reach base-sprite recolor and fire setup');
+assert.match(grip, /key === 'torch' \|\| key === 'harlyaolongsword'/);
 assert.equal(neutral.stances.torchHold.worldUpright, true);
 assert.match(stances, /ToolWorldUpright\?\.apply/);
 assert.match(editor, /id="worldUpright"/);

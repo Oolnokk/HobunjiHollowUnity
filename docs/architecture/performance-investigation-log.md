@@ -1,5 +1,123 @@
 # Performance investigation log
 
+## 15 Nov 2026: the farm draws every tile separately, with its own cloned texture
+
+Player readings on the farm (CPU-bound, GPU 10-17%): 10.6-14.5 FPS, game loop 45-52 ms, plus 20-42 ms "unattributed"
+outside game JS. Draw census on the farm (headless, outlines on): **1,103 real draws per frame** (town 573, western
+slope 183): about 500 per-tile ground slabs, about 270 shadow-map draws (`MeshDepthMaterial`; the farm sun is the only
+shadow-casting light), and multi-mesh furniture (a compost bin is 56 meshes). 1,014 of the farm's objects are
+top-level per-tile meshes. With outlines off the base replays were larger (540 vs 61 draws): the near-only depth copy
+needs the offscreen target that only exists with outlines on, so turning outlines off does not help on the farm.
+
+Three fixes:
+
+- **Terrain jigsaw cloned a material and a texture per farm tile.** `TerrainJigsawUV.bakeMesh` treats every
+  material-ID-layer mesh as terrain and gave each its own `mat.clone()` + `map.clone()`: 443 distinct materials and
+  ~220 extra GPU textures of the same grass image on the farm. The clone is determined by its source material and the
+  wall flag, so farm tiles (now tagged `userData.hobunjiFarmTile` by `vegetation-crop-rendering.js`) share one clone
+  per (source, wall) while the source's `version` and `map` are unchanged. Other callers keep independent clones
+  (wilderness chunk cleanup disposes the materials it owns; `test-chunk-jigsaw-texture-sharing.js` pins that).
+  Farm GPU textures 353 -> 135; `TerrainJigsawUV.snapshot().sharedJigsawMaterialReuses` counts reuses.
+- **`js/farm-tile-render-batches.js`:** for the world render only, farm tiles game.js marked as terrain are hidden
+  and drawn as merged world-space meshes per 8x8-tile cell and identical render state (material, layers, shadow
+  flags, render order, edge-ID colour, ground tags). Tiles stay the authority for edits and raycasts; a batch is
+  rebuilt only when a member mesh, its geometry/attribute versions or world position change. game.js records the
+  edge-ID colour (`userData.hobunjiTerrainEdgeIdColor`) so the batch can carry the same seam hook. Batches are tagged
+  `terrainRenderChunk` so the held-object ground x-ray classifies them as terrain and the jigsaw/chunker skip them.
+  Farm: 970 tiles in 53 batches; **draws per frame 1,357 -> 881** (base pass 1,103 -> 645). Batched vs unbatched
+  synchronous frames differ by 652 px, the same as two identical unbatched frames (646) or batched frames (631): only
+  the turning windmill blades differ. `FarmTileRenderBatches.setEnabled(false)` is the A/B switch; `snapshot()` has
+  per-reason rejection counts.
+- **`js/shadow-map-refresh-throttle.js`:** the farm sun and shadow camera never move, so the shadow map is refreshed
+  every 250 ms or when the active scene or its direct child count changes, instead of every frame. Most farm ground
+  is unlit `MeshBasicMaterial` and never shows these shadows. `ShadowMapRefreshThrottle.setEnabled(false)` restores
+  per-frame updates. (Not visible in headless counts, where every frame is longer than 250 ms.)
+
+Also from the same readings: `inventory-ui.js` re-ran its full `decorate()` (77-87 ms on the player's desktop) for
+every inventory DOM change, including item pickups while the menu is closed; it now defers until the inventory pane is
+on screen. `local-save-folder-core.js` re-read the whole browser save every second to detect changes; it now polls
+every 5 s (syncs were already debounced 4 s and held to one per 20 s).
+
+## 14 Nov 2026 (device data): CPU-bound on draw submission; most draws were hand/foot replays for NPCs
+
+**First real-device reading** (player's desktop, Opera GX, outdoors, Performance Profiler overlay): GPU 8-14%
+busy while frames took 44-76 ms, so the game is **CPU-bound**, not fill-bound. Outlines off: 21 FPS, game loop
+34 ms, render passes 25 ms. Outlines on: 11 FPS, game loop 50 ms, render passes 39 ms (base 14.4, held-overlay
+replays 11.4, shell outline 9.9) plus 24 ms "unattributed" (time outside game JS: the browser/GPU process working
+through draw calls). The lever is draw calls per frame.
+
+Draw census by pass in the headless harness (one frame each, `HeldObjectRenderOrder.replayingDepth` separating
+replay draws):
+
+| | Real base | Base replays | Real shell | Shell replays | Total |
+| --- | --- | --- | --- | --- | --- |
+| Town, before | 575 | 646 | 77 | 785 | 2,107 |
+| Town, player-only participants | 607 | 217 | 110 | 150 | 1,108 |
+
+Replays were 60-75% of all draws. Most of that was **NPC rigs**: every visible NPC's hands and feet joined the
+ground x-ray (town: 4 elevation groups, 42 participating meshes; western slope: 2 groups, 13), each group
+re-submitting nearby scenery and the union widening the scissor. The x-ray only matters where the floor can swallow a
+part, and it only ever exempts the holder's own tile and its 8 neighbours (`XRAY_TILE_RADIUS = 1`). The participant
+rule in `held-object-render-order.js` (agreed with the player) is now:
+
+- weapons and other held items: every character;
+- hands: the player and short species (`SHORT_XRAY_SPECIES`, default `['porakaneki']`);
+- feet: the player and short species, only within 6 units of the camera;
+- parts with no resolvable owner keep the old fail-safe x-ray.
+
+Everything else draws with ordinary depth and is hidden from the replays' overlay passes so it is not drawn twice.
+Same session, same frames, new rule vs old: town 1,411 -> 1,022 draws per frame, western slope 528 -> 301. Town
+screenshots showed no visible difference. `HeldObjectRenderOrder.setReplayParticipants('all')` restores the old set;
+`setShortXraySpecies([...])` and `setFeetXrayDistance(units)` tune the rule; `snapshot()` reports them and
+`nonParticipantReplaySkips`. Tradeoff: a tall NPC's hands and feet, and any distant feet, can be clipped by uneven
+ground the way the rest of the body already is. `scripts/test-held-replay-participants.js` runs the real ownership
+code on a fake rig hierarchy.
+
+**Floor punch (15 Nov 2026, base replay only).** Because only that 3x3-tile patch is ever x-rayed, an x-ray group in
+the base held replay no longer clears depth and redraws every occluder in its scissor when `ScissorDepthSnapshot` can
+copy the original back. It keeps the existing depth, stencil-marks (bit 0x80) pixels where the holder's nearby floor
+is frontmost by drawing only ground that touches the patch through each ground material's own program with the x-ray
+filter inverted (`enabled = 2`, depth LEQUAL, no depth/colour writes), resets those pixels to far depth with one quad
+(clearing the mark), then redraws only non-ground objects in the patch column that reach below the floor (with the
+camera above it, anything behind a frontmost floor pixel lies under the floor plane). Later groups restore the saved
+depth first. Synchronous frames rendered into a depth-stencil target like the game's: **0 pixels differ** in town and
+the western slope, the farm within its own frame-to-frame noise. Real frames: base-replay draws town 227 -> 204,
+western slope 66 -> 58, i.e. about 2% of the whole frame. The gain is small because the near-only cull and the
+participant rule had already made the rebuild local; much of what remains is the holders' own skinned rig parts,
+whose bounds are unknown and are kept conservatively.
+
+**Not applied to the shell outline replay:** by then the saved depth also contains the PNG-silhouette occluder pass,
+which the old clear-and-redraw removed around the holder. Keeping it hid hand/foot outlines (caught by comparing
+paused real frames; a foot lost its black shell). The shell replay keeps the clear-and-redraw.
+`HeldObjectRenderOrder.setFloorPunchEnabled(false)` is the A/B switch; `snapshot().floorPunch` has counts.
+`scripts/test-held-floor-punch.js` runs the real helpers; `test-held-near-replay-depth-snapshot.js` covers the
+compositor integration (no clear, patch cull per group, depth reset before a second group, fallbacks).
+
+Also: replay-inert detection now covers sprites with alpha cutoffs (sun/moon; only meshes get depth forced for
+cutouts) and Points (campfire/bonfire particles), and, only when the replay restores depth by copy, objects whose
+material pins depth to the far plane (cloud masks via `skyLayerDepthNdc`, Western Slope backdrops via
+`backgroundMaxDepthNdc`). Replay path counters showed 682 of 686 wilderness replays scissored and culled, so the
+full-screen fallback was left as it was.
+
+## 14 Nov 2026 (later): outdoor JS, not just graphics; failed NPC path searches retried forever
+
+After the sky/grass/replay pass the report was still ~17 FPS outdoors. Per-area CPU profiles (headless, same world):
+the game loop's JavaScript was **45 ms/frame in the western slope vs 23 ms in a building interior** (scene objects:
+4,033 vs 544; town 3,043). About half of that gap is render-side JS (25 vs 14 ms: more objects per traversal, more
+replay work); the largest single non-render item in that window was NPC pathfinding, ~11 ms/frame, absent indoors.
+
+Logging every grid-path start over 150 s in the wilderness found two walkers retrying impossible searches:
+
+- `kaboku_kunji`, simulated in **town while the player was in the wilderness**, failed a path to the carpenter's exit
+  (22,11) 48 times, **~33 ms per failed search** (a failed swept A* explores its whole bounded box).
+- The Nohuknuk stood idle failing a search to a target 150 tiles away (180,104) 136 times, ~5 ms each.
+
+`npc-pathfinding.js` cached a failure for 750 ms keyed on target + start tile, so a walker that is standing still
+repeated the full failed search every 0.75 s forever. Now each further failure with the same key doubles the wait
+(750 ms -> 1.5 s -> ... capped at 12 s); moving to another tile, a new target or any success resets it.
+`debugSnapshot().pathFailureBackoffs` counts lengthened waits. `scripts/test-npc-collision-aware-pathing.js` steps a
+fake clock: the old code re-ran the search 53 times in 40 s of standing still, the new code 8 or fewer.
+
 ## 14 Nov 2026: costs only outdoor maps pay (sky, grass, replays, cave entrances)
 
 Report: never above ~16 FPS outdoors, fine inside caves and buildings. So the target was work that (1) only

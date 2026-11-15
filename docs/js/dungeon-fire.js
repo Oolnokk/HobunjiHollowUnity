@@ -268,22 +268,31 @@
     hits.sort((a,b)=>a.t-b.t); // A target that rejects ignition (e.g. an already-empty cleanser) must not shield the next valid mechanism along the same flame sweep.
     for (const hit of hits) {
       const target=hit.target;
-      if (TARGETS.get(String(target.id))!==target || target.active===false || target.isActive?.()===false) continue;
-      const point = HIT_START.clone().lerp(HIT_END, hit.t);
-      try {
-        const accepted = target.onBurn?.({
-          target, projectile, point,
-          fireKind:'world-flame',
-        });
-        if (accepted === false) continue;
-        target.active = false;
-        target.lastBurnedAt = performance.now();
-        lastEvent = 'burned target: ' + target.id;
-        return true;
-      } catch (error) {
-        console.warn('[Dungeon Fire] target ignition failed', error);
-        lastEvent = 'target ignition failed: ' + target.id;
-      }
+      if (burnTarget(target, projectile, HIT_START.clone().lerp(HIT_END, hit.t))) return true;
+    }
+    return false;
+  }
+
+  function burnTarget(target, projectile, point) {
+    if (TARGETS.get(String(target.id)) !== target || target.active === false || target.isActive?.() === false) return false;
+    try {
+      if (target.onBurn?.({ target, projectile, point, fireKind: 'world-flame' }) === false) return false;
+      target.active = false;
+      target.lastBurnedAt = performance.now();
+      lastEvent = 'burned target: ' + target.id;
+      return true;
+    } catch (error) {
+      console.warn('[Dungeon Fire] target ignition failed', error);
+      lastEvent = 'target ignition failed: ' + target.id;
+      return false;
+    }
+  }
+
+  function contactMelee(matches) {
+    for (const target of TARGETS.values()) {
+      if (target.active === false || target.isActive?.() === false) continue;
+      const point = matches(target.object);
+      if (point && burnTarget(target, { team: 'player', dungeonFire: true }, point)) return true;
     }
     return false;
   }
@@ -331,7 +340,7 @@
     updateHeldVisual,
     updateProjectile,
     disposeProjectile,
-    contactProjectile,
+    contactProjectile, contactMelee,
     registerTarget,
     unregisterTarget,
     clear,

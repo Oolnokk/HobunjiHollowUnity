@@ -16,10 +16,11 @@
   }
 
   const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'candleCluster', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
+  const FIRE_HAZARD_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'hearth']); // These fixtures remain ignition sources across procedural and authored builds.
   const AMBIENT_UNATTACHED_TTL_MS = 5000; // Used to discard preview groups that were built but never added to a scene.
   const FIRE_FURNITURE_DEFS = Object.freeze({ // Used to register real placeable decorative furniture definitions before game init.
     campfireFurniture: Object.freeze({
-      name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', color: 0x6d3e20,
+      name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', fireHazard: true, color: 0x6d3e20,
       desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
     }),
     candleCluster: Object.freeze({
@@ -31,7 +32,7 @@
       desc: 'A bundled 1×1 arrangement of sixteen candles, tallest in the center, made from the candle-table candle.',
     }),
     bonfireFurniture: Object.freeze({
-      name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire', color: 0x6d3e20,
+      name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire', fireHazard: true, color: 0x6d3e20,
       desc: 'A two-by-two bonfire derived exactly from the campfire preset at double scale.',
     }),
   });
@@ -316,6 +317,7 @@
     const normalizedKey = String(key || '').trim(); // Used to decide whether this furniture needs always-on authored VFX.
     const group = originalFurnitureBuilder.call(this, normalizedKey, baseColor); // Used to preserve FurnitureVesselRuntime's normal authored/fallback upgrade path.
     if (!AMBIENT_FIRE_KEYS.has(normalizedKey) || !group) return group;
+    if (FIRE_HAZARD_KEYS.has(normalizedKey)) group.userData.fireHazard = true;
     const readyData = authored.peek?.(normalizedKey); // Used to attach immediately when the authored data was already cached.
     if (readyData) attachAmbientEmitters(group, readyData, normalizedKey);
     else Promise.resolve(authored.load(normalizedKey)).then(data => {

@@ -51,6 +51,7 @@
     group.userData.surfaceAncestry = [...ancestors, data.key]; // Passed to nested authored furniture builds, including asynchronous loads.
     group.name = `authored_furniture_${data.key || 'unknown'}`;
     group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
+    if (data.fireHazard === true) group.userData.fireHazard = true; // Keep authored contact behavior on the live furniture root.
     group.userData.authoredFurnitureData = data; // Recognized-surface definitions drive live payload attachment anchors.
     if (data.puzzle) window.FurniturePuzzleProperties?.applyToObject3D?.(group, data.puzzle, data.key); // Authored activators/mechanisms carry the same metadata into gameplay that the editors wire per instance.
     const meshById = new Map();

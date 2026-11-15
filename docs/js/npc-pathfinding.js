@@ -17,6 +17,13 @@
   const lastBlockLogAt = new WeakMap(); // Rate-limits mobile-visible collision diagnostics per walker.
   const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, pathFailuresSkipped: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
   const PATH_FAILURE_RETRY_MS = 750; // How long a walker waits before repeating a grid search that just failed from the same tile.
+  // A walker standing still with an unreachable target (an occupied exit, a
+  // destination across a cliff) used to repeat the same failed search every
+  // 750 ms forever. A failed search explores its whole bounded box: up to
+  // ~33 ms for a town NPC, every 0.75 s, even while the player is elsewhere.
+  // Each further failure from the same tile to the same target doubles the
+  // wait, up to this cap; moving, a new target or a success resets it.
+  const PATH_FAILURE_RETRY_MAX_MS = 12000;
   const FURNITURE_SAMPLE_OFFSETS = Object.freeze([[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]); // Reused by every per-frame footprint probe instead of allocating nine offsets per check.
 
   function init(injectedDeps) { deps = injectedDeps; }
@@ -608,11 +615,14 @@
         const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, waypointTarget, foot ? false : targetOccupiesFurniture(target));
         if (foot) this._npcCliffGoal = { c: target.c, r: target.r }; // Used by moveToward even when the next grid waypoint is on the lower tier.
         if (!path?.length && !foot) {
+          this._npcPathFailStreak = this._npcPathFailKey === failKey ? (this._npcPathFailStreak || 0) + 1 : 0;
           this._npcPathFailKey = failKey;
-          this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;
+          this._npcPathFailUntil = now + Math.min(PATH_FAILURE_RETRY_MAX_MS, PATH_FAILURE_RETRY_MS * 2 ** Math.min(this._npcPathFailStreak, 8));
+          debugStats.pathFailureBackoffs = (debugStats.pathFailureBackoffs || 0) + (this._npcPathFailStreak ? 1 : 0);
           return false;
         }
         this._npcPathFailKey = null;
+        this._npcPathFailStreak = 0;
         this._gridPath = path?.length ? path : [waypointTarget]; // One final entry check if already standing at the climb foot.
         this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
         debugStats.pathReplans++;
