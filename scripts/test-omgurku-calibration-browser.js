@@ -119,9 +119,9 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
       const root=window.HobunjiOmgurkuCalibration.context().model,c=root.userData.omgurkuComposite;
       const p=window.HobunjiOmgurkuWeaponPreview.snapshot().sample;
       const expected=new window.THREE.Vector3(c.upper.userData.handAttachX*p.mirrorBlend+p.x,c.upper.userData.handAttachY+p.y,p.z);
-      window.HobunjiSpeciesPoseScale.transformPosePoint(expected,{cx:0,cz:0,floorY:0,baseY:c.upper.userData.handAttachY,
+      window.HobunjiSpeciesPoseScale.transformPosePoint(expected,{cx:0,cy:Number(c.upper.userData.poseCentroidY ?? c.upper.userData.portraitModelHeight / 2),cz:0,floorY:0,baseY:c.upper.userData.handAttachY,
         speciesId:'engh-sho',gender:'male',rigScaleY:1,modelHeight:c.upper.userData.portraitModelHeight,
-        armLength:c.upper.userData.armLength,poseOrbitScale:c.upper.userData.poseOrbitScale});
+        armLength:c.upper.userData.armLength,poseOrbitScale:c.upper.userData.poseOrbitAxes ?? c.upper.userData.poseOrbitScale});
       return {offset:c.riderFrame.position.y,height:c.upper.userData.portraitModelHeight,
         error:expected.distanceTo(root.userData.proceduralHandToolHolder.position),
         hands:root.userData.proceduralHandRig.parent===c.riderFrame};

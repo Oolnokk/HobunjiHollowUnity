@@ -144,11 +144,24 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
       const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
       const holder=omg._banditToolHolder?.position;
       const floorY=ref.group.position.y-omg.halfHeight;
+      const poseY=Number(omg._banditMountedPoseY); // Actual last authored Y, including an elevated Heavy Neutral or active windup; a weapon is not required to sit at its unanimated hand anchor.
+      const sinkWorld=Number(omg._banditMountedSinkWorld)||0; // Real weapon body sink is applied after the orbit and before mounting.
+      const poseScale=window.HobunjiSpeciesPoseScale; // Reconstruct the mounted pose with the same species, body-height and orbit settings, without using the final tool position.
+      const height=poseScale.heightMetrics(ref.speciesId,ref.gender,ref.poseModelHeight||ref.modelHeight,ref.poseRigScaleY||1);
+      const axes=poseScale.axesForPose(ref.poseOrbitAxes??ref.poseOrbitScale,ref.armLength);
+      const handY=Number(ref.handAttachY)||0;
+      const centroidY=Number(ref.poseCentroidY??ref.modelHeight/2);
+      const riderScale=Number(ref.riderMount.upper.scale.x)||1;
+      const shiftY=window.HobunjiCharacterSpine?.orbitOffsetWorld?.(ref.spine,ref.rigScale?.x,height.rigScaleY)?.y||0;
+      const mappedCentroidY=handY*height.rigScaleY+(centroidY-handY)*height.heightRatio;
+      const mappedPoseY=mappedCentroidY+(handY+poseY-centroidY)*height.heightRatio*axes.y+shiftY-sinkWorld;
+      const expectedAboveFloor=rider.y-floorY+riderScale*mappedPoseY; // The mount re-expresses a floor-relative pose from the actual saddle, scaling its height only once.
       return {omg:!!omg,pora:!!pora,species:omg.rosterRecord?.appearance?.speciesId,compound:!!ref.riderMount,
         enemyClass:omg.enemyClass,backChildren:ref.backPlane.children.length,
         holderToRider:holder?Math.hypot(holder.x-rider.x,holder.z-rider.z):null,
         holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
-        riderHandY:rider.y-floorY+(ref.riderMount.upper.scale.x||1)*(Number(ref.handAttachY)||0),groundHandY:Number(ref.handAttachY)||0,
+        riderHandY:rider.y-floorY+riderScale*handY,groundHandY:handY,
+        expectedAboveFloor,poseY,sinkWorld,orbitY:axes.y,heightRatio:height.heightRatio,riderScale, // Mobile/CI diagnostics expose WHY the raised weapon is correctly mounted.
         live:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
     };});
     // Retry if a world reset removes the fighters while the smoke is running.
@@ -181,7 +194,9 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         assert.equal(spawned.enemyClass,'omgurku-hunter');
         assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
         assert(spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
-        assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
+        assert(Number.isFinite(spawned.poseY)&&Number.isFinite(spawned.expectedAboveFloor),'mounted rider pose and expected height must be finite');
+        assert(Math.abs(spawned.holderAboveFloor-spawned.expectedAboveFloor)<0.02,
+          `mounted weapon must follow the authored 3D orbit (expected ${spawned.expectedAboveFloor}, actual ${spawned.holderAboveFloor}, neutral hand ${spawned.riderHandY}, poseY ${spawned.poseY}, orbitY ${spawned.orbitY}, height ratio ${spawned.heightRatio}, scale ${spawned.riderScale})`);
         let outcome;
         try{
           const result=await page.waitForFunction(()=>{

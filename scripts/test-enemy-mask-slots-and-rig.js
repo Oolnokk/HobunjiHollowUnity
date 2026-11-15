@@ -176,6 +176,7 @@ for (const speciesId of [
     context.identity = { speciesId, gender };
     context.playerMesh = { position: { x: 2, y: floorY, z: 4 } };
     context.playerToolBaseY = handY;
+    context.playerPoseCentroidY = modelHeight / 2; // Exercises the exact player body-centroid pivot when comparing enemy orbits.
     context.playerArmLength = 0.558;
     context.playerAvatarModelHeight = modelHeight;
     context.playerPoseOrbitScale = pose.resolveAxes(speciesId, gender);

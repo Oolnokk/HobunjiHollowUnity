@@ -2789,6 +2789,10 @@
     c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
     if (handDriverRoot) window.HobunjiDualWieldWeaponVisuals?.setCarriedSample(sampled, c._banditHandRecordKey ||= { avatarRoot: handDriverRoot }); // The invisible idle offhand tool peels the pose this holder carries right now.
     const sinkWorld = applyBanditBodySink(c, sampled, timelineLive); // Authored per-pose body sink (percent of height): sinks the body and folds the knees; the weapon below follows.
+    if (c.avatarRef?.riderMount) {
+      c._banditMountedPoseY = sampled.y; // Used by mounted-rider browser parity checks and mobile diagnostics to distinguish authored lift from a detached weapon.
+      c._banditMountedSinkWorld = sinkWorld; // Used alongside _banditMountedPoseY to reconstruct the finished world-space hand height.
+    }
     // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
     // the player's hand anchor.
     const handBaseX = base.x * sampled.mirrorBlend;
@@ -2852,7 +2856,7 @@
     const height = scaler?.heightMetrics?.(speciesId, gender, poseModelHeight, rigScaleY) || null; // Keep raw PNG height and the full character-rig multiplier separate, as the player does.
     if (scaler?.transformPosePoint) {
       scaler.transformPosePoint(holder.position, {
-        cx: group.position.x, cz: group.position.z, floorY, baseY,
+        cx: group.position.x, cy: floorY + Number(avatarRef?.poseCentroidY ?? group.userData?.poseCentroidY ?? poseModelHeight / 2), cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: poseYawRad,
         orbitOffset: window.HobunjiCharacterSpine?.orbitOffsetWorld(avatarRef.spine, avatarRef.rigScale?.x, rigScaleY) || null, // Hunched enemies swing about their curled shoulders: down, forward and sideways.

@@ -6,11 +6,11 @@
 // measurement and is used only as a backwards-compatible fallback for
 // old/missing config.
 //
-// An entry is either one number (X and Z scaled alike, Y untouched: the original
-// contract) or { x, y, z } so a species can set each axis independently:
+// An entry is either one number (the same X/Y/Z multiplier: spherical scaling)
+// or { x, y, z } for deliberately non-spherical, independently authored axes:
 //   x  lateral (side-to-side) distance of the weapon from the body centre
 //   z  forward/back distance
-//   y  EXTRA vertical multiplier layered on the rigger-derived body-height
+//   y  multiplier around the body centroid after rigger-derived body-height
 //      mapping (1 = exactly the rigger's height mapping)
 // A missing axis in an object is 1. X/Z are the pose's own axes, i.e. they turn
 // with the character's facing (pass `yawRad` when the point is in world space).
@@ -29,6 +29,8 @@
       rakakoan: Object.freeze({ male: 0.5, female: 0.4 }),
       mashtzarr: Object.freeze({ male: 0.8, female: 0.65 }),
       tletingan: Object.freeze({ male: 0.5, female: 0.47 }),
+      nuhongan: Object.freeze({ male: 0.5, female: 0.47 }), // Same startup orbit as the authored JSON, even before its asynchronous load.
+      longoran: Object.freeze({ male: 0.5, female: 0.47 }), // Avoid transient fallback to anatomy during avatar construction.
     }),
   });
   const ALIASES = Object.freeze({ ghoul: 'mao-ao' });
@@ -50,7 +52,7 @@
   // Accepts a number or { x, y, z }; returns the axes, or null when the value is not usable.
   function axesFromValue(value) {
     const uniform = validScale(value);
-    if (uniform != null) return { x: uniform, y: 1, z: uniform };
+    if (uniform != null) return { x: uniform, y: uniform, z: uniform };
     if (!value || typeof value !== 'object') return null;
     const x = validScale(value.x), y = validScale(value.y), z = validScale(value.z);
     if (x == null && y == null && z == null) return null;
@@ -93,9 +95,9 @@
   // Per-axis orbit for a poseOrbitScale value (number or { x, y, z }); null falls back to arm length.
   function axesForPose(poseOrbitScale, armLength) {
     const arm = scaleForArmLength(armLength);
-    return axesFromValue(poseOrbitScale) ?? { x: arm, y: 1, z: arm };
+    return axesFromValue(poseOrbitScale) ?? { x: arm, y: arm, z: arm };
   }
-  // Horizontal (X) orbit as one number: the original single-scale contract. Use axesForPose for Y/Z.
+  // Scalar compatibility view: a number now affects all three axes; an explicit object exposes X here.
   function scaleForPose(poseOrbitScale, armLength) {
     return axesForPose(poseOrbitScale, armLength).x;
   }
@@ -145,10 +147,9 @@
     return () => listeners.delete(listener);
   }
 
-  // Horizontal weapon distance and vertical body proportion are deliberately
-  // different ownership domains:
-  //   X/Z: the explicitly authored species+gender poseOrbitScale.
-  //   Y:   the character rigger's actual body-height stack.
+  // A numeric species orbit scale then scales the resulting X/Y/Z vector
+  // about the visual centroid isotropically, AFTER the rigger maps portrait
+  // height onto the character. Explicit axis scales can instead form an ellipsoid.
   //
   // PNGPlaneAvatar has already baked portraitScale + portraitVerticalPlacement
   // into modelHeight / handAttachY. HobunjiCharacterRigScale then scales the
@@ -213,10 +214,9 @@
     return [a * c + b * n, -a * n + b * c];
   }
 
-  // Compatibility surface retained for older callers. Y must never be derived from a plain-number poseOrbitScale:
-  // the orbit's own Y multiplier is 1 unless a species authors it, and Y is otherwise owned by the rigger-height mapping below.
-  // An authored Y multiplier pivots on the centroid here but on the hand anchor (baseY) in transformPosePoint, which is the
-  // authority: every shipped consumer calls it first and only falls back to this when it is missing.
+  // Compatibility surface retained for older callers. The uniform orbit
+  // multiplier uses this same X/Y/Z centroid; transformPosePoint additionally
+  // adjusts the vertical frame for actual portrait and body proportions.
   function scalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale, yawRad = 0) {
     if (!point) return point;
     const axes = axesForPose(poseOrbitScale, armLength);
@@ -264,10 +264,10 @@
   // floor-relative hand/tool anchor produced by PNGPlaneAvatar. That anchor
   // already includes portrait scale, vertical placement, and real opaque-art
   // grounding. The rigger's whole-body Y scale is applied around floorY, then
-  // authored pose displacement from that hand anchor is scaled by the ratio of
-  // actual full character height to the canonical Mao'ao-male authoring height
-  // (times the orbit's own Y multiplier, 1 unless authored). options.yawRad: see
-  // scaleHorizontal.
+  // authored pose displacement from that hand anchor is mapped by the ratio
+  // of the character's real height to the canonical Mao'ao-male height. The
+  // orbit then scales X/Y/Z about one body centroid (cx/cy/cz); missing cy
+  // defaults to baseY only for older callers. options.yawRad: see scaleHorizontal.
   function transformPosePoint(point, options = {}) {
     if (!point) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
@@ -276,12 +276,14 @@
     const floorY = Number(options.floorY) || 0;
     const baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
+    const cy = Number.isFinite(options.cy) ? options.cy : baseY; // Raw vertical body-centroid pivot, shared with the horizontal orbit.
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, options.yawRad);
     const shift = orbitShift(options, orbitShiftScratch); // A hunched spine (HobunjiCharacterSpine) moves the whole orbit centre, not just the hand.
-    const nextY = scaledBaseY + shift.y + (y - baseY) * metrics.heightRatio * axes.y;
+    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio; // Use the same rigger-adjusted body pivot for Y.
+    const nextY = scaledCentroidY + shift.y + (y - cy) * metrics.heightRatio * axes.y;
     if (typeof point.set === 'function') point.set(cx + dx + shift.x, nextY, cz + dz + shift.z);
     else { point.x = cx + dx + shift.x; point.y = nextY; point.z = cz + dz + shift.z; }
     return point;
@@ -295,13 +297,15 @@
     const floorY = Number(options.floorY) || 0;
     const baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
+    const cy = Number.isFinite(options.cy) ? options.cy : baseY; // Raw vertical body-centroid pivot, shared with the horizontal orbit.
     const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     if (!(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0) || !(metrics.heightRatio > 0)) return point;
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const shift = orbitShift(options, orbitShiftScratch); // The exact inverse of transformPosePoint's orbit shift.
     const [dx, dz] = scaleHorizontal(x - cx - shift.x, z - cz - shift.z, 1 / axes.x, 1 / axes.z, options.yawRad);
-    const nextY = baseY + (y - scaledBaseY - shift.y) / (metrics.heightRatio * axes.y);
+    const scaledCentroidY = scaledBaseY + (cy - baseY) * metrics.heightRatio; // Exact inverse of the spherical vertical orbit.
+    const nextY = cy + (y - scaledCentroidY - shift.y) / (metrics.heightRatio * axes.y);
     if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
     else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;

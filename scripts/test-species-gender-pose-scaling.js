@@ -23,6 +23,8 @@ assert.strictEqual(api.resolveScale('mashtzarr', 'male', 9), 0.8, 'Mashtzarr mal
 assert.strictEqual(api.resolveScale('mashtzarr', 'female', 9), 0.65, 'Mashtzarr female authored orbit must be exactly 0.65');
 assert.strictEqual(api.resolveScale('tletingan', 'male', 0.1), 0.5, 'Tletingan male authored orbit must be exactly 0.5');
 assert.strictEqual(api.resolveScale('tletingan', 'female', 0.1), 0.47, 'Tletingan female authored orbit must be exactly 0.47');
+assert.strictEqual(api.resolveScale('nuhongan', 'male', 9), 0.5, 'Nuhongan default orbit must not temporarily inherit anatomical arm length before async config loads');
+assert.strictEqual(api.resolveScale('longoran', 'female', 9), 0.47, 'Longoran default orbit must not temporarily inherit anatomical arm length before async config loads');
 assert(Math.abs(api.scaleForPose(null, 0.612) - (0.612 / 0.558)) < 1e-12, 'missing explicit orbit may use arm length only as a legacy fallback');
 
 api.setScale('kenkari', 'female', 0.72);
@@ -38,14 +40,16 @@ assert.deepStrictEqual(mao, raw, 'explicit scale-1 point must use the exact fast
 for (const orbitScale of [0.65, 1.25]) {
   const point = { ...raw };
   api.scalePointAroundCentroid(point, centroid.x, centroid.y, centroid.z, 999, orbitScale);
-  for (const axis of ['x', 'z']) {
+  for (const axis of ['x', 'y', 'z']) {
     const expected = centroid[axis] + (raw[axis] - centroid[axis]) * orbitScale;
     assert(Math.abs(point[axis] - expected) < 1e-12, `${axis} displacement must scale by explicit horizontal orbit scale`);
   }
-  assert.strictEqual(point.y, raw.y, 'poseOrbitScale must never change Y');
+  assert(Math.abs(Math.hypot(point.x - centroid.x, point.y - centroid.y, point.z - centroid.z) -
+    Math.hypot(raw.x - centroid.x, raw.y - centroid.y, raw.z - centroid.z) * orbitScale) < 1e-12,
+    'numeric orbit must preserve a spherical radius');
   api.unscalePointAroundCentroid(point, centroid.x, centroid.y, centroid.z, 0.001, orbitScale);
   for (const axis of ['x', 'y', 'z']) {
-    assert(Math.abs(point[axis] - raw[axis]) < 1e-12, `horizontal orbit inverse round-trip failed on ${axis}`);
+    assert(Math.abs(point[axis] - raw[axis]) < 1e-12, `spherical orbit inverse round-trip failed on ${axis}`);
   }
 }
 
@@ -69,16 +73,17 @@ assert(Math.abs(height.heightRatio - (0.576 / 0.891)) < 1e-12, 'vertical pose sc
 const splitRaw = { x: 0.5, y: 0.6, z: -0.25 };
 const splitPoint = { ...splitRaw };
 api.transformPosePoint(splitPoint, {
-  cx: 0, cz: 0, floorY: 0, baseY: 0.4,
+  cx: 0, cy: 0.45, cz: 0, floorY: 0, baseY: 0.4,
   speciesId: 'engh-sho', gender: 'male',
   modelHeight: 0.72, rigScaleY: 0.8,
   armLength: 999, poseOrbitScale: 0.5,
 });
 assert(Math.abs(splitPoint.x - 0.25) < 1e-12, 'X must use authored horizontal orbit scale');
 assert(Math.abs(splitPoint.z + 0.125) < 1e-12, 'Z must use authored horizontal orbit scale');
-assert(Math.abs(splitPoint.y - (0.32 + 0.2 * (0.576 / 0.891))) < 1e-12, 'Y must use rigger-scaled hand anchor plus rendered-height-scaled authored Y displacement');
+assert(Math.abs(splitPoint.y - (0.32 + (0.05 + 0.15 * 0.5) * (0.576 / 0.891))) < 1e-12,
+  'Y must follow height mapping then scalar orbit about the body centroid');
 api.untransformPosePoint(splitPoint, {
-  cx: 0, cz: 0, floorY: 0, baseY: 0.4,
+  cx: 0, cy: 0.45, cz: 0, floorY: 0, baseY: 0.4,
   speciesId: 'engh-sho', gender: 'male',
   modelHeight: 0.72, rigScaleY: 0.8,
   armLength: 999, poseOrbitScale: 0.5,
@@ -111,6 +116,7 @@ const heldActions = fs.readFileSync('docs/js/held-action-animations.js', 'utf8')
 const idleConfig = fs.readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8');
 
 assert.match(png, /root\.userData\.poseOrbitScale = poseOrbitScale/, 'avatar must cache explicit orbit scale separately from arm length');
+assert(png.includes('?? { x: fallbackOrbit, y: fallbackOrbit, z: fallbackOrbit }'), 'avatar emergency fallback must also use a 3D spherical orbit');
 assert.match(png, /orbitScaler\?\.resolveAxes\?\.\(speciesId, gender, legacyArmLength\)/, 'avatar construction must resolve species+gender orbit from authored config');
 assert.match(game, /let playerPoseOrbitScale = 1/, 'player must cache explicit pose orbit scale');
 assert.match(game, /scaleForPose\?\.\(playerPoseOrbitScale, playerArmLength\)/, 'player final pose scale must prefer explicit orbit over anatomy');
@@ -145,7 +151,7 @@ assert.match(helperSource, /let loadGeneration = 0/, 'pose-orbit config loader m
 assert.match(helperSource, /loaded && generation === loadGeneration/, 'only the newest repo\/LocalDB request may replace live orbit config');
 assert.match(helperSource, /get ready\(\) \{ return readyPromise; \}/, '.ready must always expose the newest selected-source load rather than the parser-time fetch');
 assert.doesNotMatch(helperSource, /Math\.hypot|lengthSq|setLength/, 'shared pose scaler must remain direct per-axis mapping, not a reach clamp');
-assert.match(helperSource, /Y must never be derived from a plain-number poseOrbitScale/, 'shared helper must document the XZ-orbit/Y-height ownership split');
+assert.match(helperSource, /A numeric species orbit scale then scales the resulting X\/Y\/Z/, 'shared helper must document isotropic 3D scaling after body-height mapping');
 assert.match(helperSource, /head scale\/Y offset, age hunch, hand[\s\S]*foot scale/i, 'vertical weapon scaling must explicitly exclude head-only and attachment-only scale controls');
 assert.doesNotMatch(heldActions, /HobunjiSpeciesPoseScale/, 'timing/rotation action data must remain independent of translation scaling');
 assert.doesNotMatch(idleConfig, /armLength|poseOrbitScale|poseCentroid|SpeciesPoseScale/i, 'authored idle pose data must not contain species scaling');

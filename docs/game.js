@@ -25207,7 +25207,7 @@
             if (!_gripAnchorCache.has(gripKey)) _gripAnchorCache.set(gripKey,
               window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('kurraya', 'melee', identity) || null);
             window.KurrayaInstrument.applyPlayerHeldPose(heldItemHolder, pose, playerToolBaseX, playerToolBaseY, {
-              cx: 0, cz: 0, floorY: 0, baseY: playerToolBaseY,
+              cx: 0, cy: playerPoseCentroidY, cz: 0, floorY: 0, baseY: playerToolBaseY,
               speciesId: identity.speciesId, gender: identity.gender,
               modelHeight: playerAvatarModelHeight, armLength: playerArmLength,
               poseOrbitScale: playerPoseOrbitScale,
@@ -25337,7 +25337,7 @@
         const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null;
         if (_speciesPoseScaling?.transformPosePoint) {
           _speciesPoseScaling.transformPosePoint(point, {
-            cx, cz, floorY, baseY,
+            cx, cy: floorY + playerPoseCentroidY, cz, floorY, baseY,
             speciesId: identity.speciesId,
             gender: identity.gender,
             modelHeight: playerAvatarModelHeight,
@@ -25435,10 +25435,10 @@
           authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
           finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
           rangedReticleOrbit: { applied: _toolPoseCentroidDebug.reticleOrbitApplied, yawDeg: _toolPoseCentroidDebug.reticleOrbitYawDeg, pitchDeg: _toolPoseCentroidDebug.reticleOrbitPitchDeg, targetWorld: _toolPoseCentroidDebug.reticleTargetWorld ? { ..._toolPoseCentroidDebug.reticleTargetWorld } : null },
-          mappingMode: _toolPoseCentroidDebug.reticleOrbitApplied ? 'species-scale-then-shared-reticle-orbit' : 'horizontal-orbit-plus-rigger-height',
+          mappingMode: _toolPoseCentroidDebug.reticleOrbitApplied ? 'species-scale-then-shared-reticle-orbit' : 'spherical-orbit-after-rigger-height',
           rule: _toolPoseCentroidDebug.reticleOrbitApplied
             ? "Scale the authored weapon point for species/gender first, then rotate the finished centroid-relative orbit directly toward the shared 3D reticle point."
-            : "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
+            : "Rigger-map authored Y and the body centroid first; then scale the X/Y/Z vector from that centroid using species orbit axes",
         }),
       });
 

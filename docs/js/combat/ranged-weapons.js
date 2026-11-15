@@ -2185,7 +2185,7 @@
     const height = scaler?.heightMetrics?.(speciesId, gender, poseModelHeight, rigScaleY) || null; // Same raw-height plus rig-height stack as the player.
     if (scaler?.transformPosePoint) {
       scaler.transformPosePoint(holder.position, {
-        cx: group.position.x, cz: group.position.z, floorY, baseY,
+        cx: group.position.x, cy: floorY + Number(c.avatarRef?.poseCentroidY ?? group.userData?.poseCentroidY ?? poseModelHeight / 2), cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: vθ,
         orbitOffset: window.HobunjiCharacterSpine?.orbitOffsetWorld(c.avatarRef?.spine, c.avatarRef?.rigScale?.x, rigScaleY) || null, // Same curled orbit centre as the melee swing.
