@@ -10,16 +10,21 @@ supported hook) -> Mastery 5; `awardMotesOfProwess(200)`; `TechniqueScrolls.unlo
 refuses a quick attack that is not unlocked, `setSlot` returns false) then `Combat.loadout.setSlot('tap2', 'mercySpike')`;
 `CombatProgression.choose(...)` for levels 1-5 of both the weapon's combo and Mercy Spike (first option each).
 
-Verified from `CombatAttackEvents` `hit` events (not from dummy health: the dummy regenerates, so health deltas went
-negative and are useless as a hit counter): left-click combo **10/10 attacks hit**, 3.6 damage, afflictions applied per
-hit `bruisedHealth 1.69, windedStamina 0.63, shatteredStamina 0.55`; right-click Mercy Spike **7/10 hit**, **37.8
-damage, `quickConditionalBonus` and `quickBonusEffectProc` true**, afflictions `bruisedHealth 3.38, windedStamina 1.26,
-shatteredStamina 1.1` (the misses are Mercy Spike's narrow 14-degree cone, not mastery).
+From `CombatAttackEvents` `hit` events (not from dummy health: the dummy regenerates, so health deltas went negative
+and are useless as a hit counter): left-click combo **10/10 attacks hit**, 3.6 damage, hit payload carried
+`afflictionBonuses` `bruisedHealth 1.69, windedStamina 0.63, shatteredStamina 0.55`; right-click Mercy Spike **7/10
+hit**, **37.8 damage, `quickConditionalBonus` and `quickBonusEffectProc` true**, payload `bruisedHealth 3.38,
+windedStamina 1.26, shatteredStamina 1.1` (the misses are Mercy Spike's narrow 14-degree cone, not mastery).
+**Not verified:** that those amounts actually landed on the dummy. The hit payload is what the attack hands to
+`ResourceSystem.applyDamage`, which calls `addAffliction` per entry; my attempts to read the dummy's afflictions back
+looked at the wrong ids (bleeding/wounded/infected/poisoned while this weapon's picks grant bruise/wind/shatter) and
+the dummy's own affliction state was not otherwise inspected, so "affliction cost at the hit" is only measured up to
+the payload, not the target-side `addAffliction`/`setAffliction`/`enforceCaps` work.
 
 Frame time, medians over the hit cycles: combo neutral 193 -> windup 192 -> recover 193 -> post-hit 184 ms (post/pre
 **0.95**); Mercy Spike 188 -> 172 -> 179 -> 181 ms (**0.96**; whiff cycles 0.92). With the unpicked baseline in the same
-session post/pre was 1.00-1.20 and noise is +-0.1, so **mastery afflictions, the bonus-proc path and the
-Mercy Spike windup add nothing measurable at the moment of the hit**.
+session post/pre was 1.00-1.20 and noise is +-0.1, so **the mastery payload, the bonus-proc path and the Mercy Spike
+windup add nothing measurable at the moment of the hit** (target-side affliction application unverified, see above).
 
 Two traps and one finding from the setup:
 - A first attempt measured a "mastery" run that had no mastery (level stayed 0, every pick returned false): check
