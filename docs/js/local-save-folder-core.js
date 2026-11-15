@@ -125,6 +125,7 @@
   let _lastObservedFingerprint = null; // Array of browser-cache strings compared without assembling an enormous joined string.
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
+  let _lastKnownFarmLayoutFingerprint = null; // Tracks last loaded/written layout files, guarding external restorations from autosync.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
@@ -637,7 +638,14 @@
       ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
       : '');
     _lastKnownFolderMeta = folder.exists && !canonicalCorruption ? folder.meta : null;
+    if (_lastKnownFarmLayoutFingerprint === null && !folder.corruptFarmLayoutFiles.length) {
+      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(folder.farmLayouts); // Establish once; diagnostics must not silently bless a later external replacement.
+    }
     return folder;
+  }
+
+  function farmLayoutFingerprint(layouts) {
+    return JSON.stringify(Object.keys(layouts || {}).sort().map(id => [id, layouts[id]])); // Stable across directory iteration order and JSON formatting.
   }
 
   function folderFarmLayoutsDiffer(folderMeta, browserLayouts, folderLayouts) {
@@ -699,11 +707,25 @@
           return getStatus();
         }
       }
+      if (!force && _lastKnownFarmLayoutFingerprint !== null) {
+        const disk = await readFolderFarmLayouts(); // A Drive version restore can change the disk file without touching browser localStorage.
+        const diskFingerprint = farmLayoutFingerprint(disk.layouts);
+        if (disk.corruptFiles.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
+          _lastDataLossRisk = disk.corruptFiles.length
+            ? 'farm-layout files on disk are unreadable'
+            : 'farm-layout files changed outside this game session';
+          _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Use Load from Folder to recover the new layout before saving.';
+          _lastAction = automatic ? 'autosync-blocked-external-layout' : 'save-blocked-external-layout';
+          notify();
+          return getStatus();
+        }
+      }
       _lastDataLossRisk = null;
 
       await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
       await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
       _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
+      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts); // A successful write becomes the next external-edit baseline.
       _folderSupportsFarmLayouts = true;
 
       // Custom pattern PNGs are stored outside character/world JSON. Mirror every
@@ -840,6 +862,7 @@
 
       _folderSupportsFarmLayouts = folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
       _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
+      if (!folder.corruptFarmLayoutFiles.length) _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(folder.farmLayouts); // An explicit folder load accepts the restored disk version.
       _lastSyncedAt = folder.savedAt || Date.now();
       _lastError = folder.corruptFarmLayoutFiles.length
         ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}. Save Now only if this browser has the correct farm.`
@@ -927,6 +950,7 @@
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
+      _lastKnownFarmLayoutFingerprint = null; // The new folder needs its own independent layout baseline.
       _recoveryHandleFresh = true;
       stopAutoSync();
       await inspectConnectedFolder();
@@ -957,6 +981,7 @@
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
+      _lastKnownFarmLayoutFingerprint = null; // Switching folders must not compare against a different directory.
       _recoveryHandleFresh = true;
       stopAutoSync();
       _lastAction = 'recovery-folder-reselected';
@@ -1016,6 +1041,7 @@
     _folderSupportsFarmLayouts = false;
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
+    _lastKnownFarmLayoutFingerprint = null;
     _lastDataLossRisk = null;
     _lastPatternMirror = null;
     _recoveryHandleFresh = false;
