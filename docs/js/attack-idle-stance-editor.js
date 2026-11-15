@@ -432,16 +432,23 @@
       if (selectedKey === 'torchHold') {
         syncFieldsFromPose();
         if (editingNeutral) writeNeutralPose(currentPose());
-      } else if (document.getElementById('actionSelect')?.value === 'torch_idle') {
-        writeNeutralPose(workingConfig.stances.torchHold); // Preview the still torch without altering a selected swing pose.
       }
+      if (!editingNeutral || selectedKey === 'torchHold')
+        window.HobunjiAttackEditorToolContext?.previewTorchIdlePose?.(workingConfig.stances.torchHold); // All idle phases update together; the swing action is never touched.
       setStatus(`Torch idle height = ${value.toFixed(2)}. Save a Local Override or export the JSON to keep it.`);
     });
     torchQuick.querySelector('#torchIdleEditPoseBtn').addEventListener('click', () => {
+      const actionSelect = document.getElementById('actionSelect'); // The visible still-action must own these edits, not a previously selected melee attack.
+      if (actionSelect && Array.from(actionSelect.options).some(option => option.value === 'torch_idle')
+          && actionSelect.value !== 'torch_idle') {
+        actionSelect.value = 'torch_idle';
+        actionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
       select.value = 'torchHold';
       select.dispatchEvent(new Event('change', { bubbles: true })); // Reuse the full neutral gizmo and undo-aware stance editor.
       if (!editingNeutral) $('idleEditNeutralBtn').click();
       else writeNeutralPose(currentPose());
+      window.HobunjiAttackEditorToolContext?.previewTorchIdlePose?.(currentPose()); // Restore locally edited height after loading the still-action template.
       card.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); // Direct navigation for touch/mobile users.
     });
     torchSpritePicker?.addEventListener('change', syncTorchQuickHeight);
