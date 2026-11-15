@@ -72,6 +72,7 @@ let renderObserver = null; // Inspects temporary enemy transforms inside the rea
 let baseRenderCount = 0;
 let poseSampleClockMs = 1000; // Controlled render clock for stale and fresh animation frame tests.
 let lastDrunkSampleAtMs = 1000; // Last solver sample; drawing must not renew this timestamp.
+let debugSnapshotCalls = 0; // A render must not allocate or request the expensive human-readable debug payload.
 let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
 
@@ -154,7 +155,7 @@ const context = {
       currentPlayerPoseSample() {
         return { pitch: 12 * Math.PI / 180, roll: -18 * Math.PI / 180, lastUpdatedAtMs: lastDrunkSampleAtMs }; // Real runtime returns its shared state without allocating.
       },
-      getDebug() { throw new Error('The renderer must not call the expensive diagnostics snapshot'); },
+      getDebug() { debugSnapshotCalls++; return { pitchDeg: 12, rollDeg: -18 }; }, // Human-requested diagnostics remain available outside the render hot path.
     },
   },
 };
@@ -378,7 +379,9 @@ vm.runInContext(source, context, { filename: modulePath });
   const renderer = new WebGLRenderer();
   composerSet = null;
   composerCleared = null;
+  const debugCallsBeforeRender = debugSnapshotCalls; // Used below to prove hot-path reads never request a full diagnostic object.
   assert.strictEqual(renderer.render(), 'rendered');
+  assert.strictEqual(debugSnapshotCalls, debugCallsBeforeRender, 'render hooks must use the allocation-free live gait sample');
   assert.strictEqual(baseRenderCount, 1);
   assert.strictEqual(composerSet?.name, 'drunk');
   assert.strictEqual(composerSet?.contribution?.mode, 'additive');
