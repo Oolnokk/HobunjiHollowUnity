@@ -340,6 +340,7 @@ async function runLinkedWindowReloadRegression() {
     threeContainer:{addEventListener(){}}, showToast(){}, isFarmOwner:()=>true, debugLog(){},
   };
   farmRoundTripContext.FarmEditor.init(deps);
+  farmRoundTripContext.__hobunjiGameStarted = true; // The regression exercises gameplay saves after world hydration, not a pre-login partial farm snapshot.
 
   const linkTest = farmRoundTripContext.HouseWindowLinkage.__test;
   assert.equal(linkTest.EXTERIOR_HEIGHT_SCALE, 0.5, 'farm exterior window and brick opening are half the authored height');
