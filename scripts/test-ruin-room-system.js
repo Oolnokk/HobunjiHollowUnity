@@ -1,4 +1,4 @@
-// Runtime assertions for room-owned geometry, light containment and Zelda-style enemy resets.
+// Runtime assertions for room-owned geometry, unclipped full-screen lighting and Zelda-style enemy resets.
 const assert=require('node:assert/strict');
 const Rooms=require('../docs/js/ruin-room-system.js');
 const ruin='map_i_dev_random_ruin'; // All fixture actors belong to this single continuous interior map.
@@ -97,56 +97,37 @@ assert.equal(enemy.avatarRef.group.visible,true);
 assert.equal(walker.area,ruin);
 assert.equal(walker.root.visible,true,'civilian NPC walker wakes with its room');
 assert.equal(session.ambient().darknessOffset,-.035);
-let fills=0,clips=0,draws=0;
-const clipRules=[],lightAlphas=[],ctxStack=[]; // Verify feather bands are isolated without changing the caller's composite state.
-const ctx={
-  globalAlpha:.8,
-  save(){ctxStack.push(this.globalAlpha);},
-  restore(){this.globalAlpha=ctxStack.pop();},
-  beginPath(){},moveTo(){},lineTo(){},closePath(){},
-  clip(rule){clipRules.push(rule);clips++;}
-};
-assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{
-  fills++;lightAlphas.push(ctx.globalAlpha);
+let fills=0,projections=0,clips=0;
+const ctx={globalAlpha:.8,clip(){clips++;throw new Error('The room mask must not paint any projected polygon');}};
+const project=()=>{projections++;throw new Error('A full-screen tint needs no camera projection');};
+session.prepareLightClip(project); // Retained compatibility entry must do no work.
+assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},project,()=>{
+  fills++;assert.equal(ctx.globalAlpha,.8,'room lights must preserve the caller alpha');
 }),true);
-assert.equal(clips,4,'the test silhouette has one solid interior and three disjoint feather bands');
-assert.deepEqual(clipRules,['nonzero','evenodd','evenodd','evenodd'],'feather bands must exclude every already-painted inner contour');
-assert.equal(lightAlphas[0],.8,'the room interior preserves full light strength');
-for(let i=1;i<lightAlphas.length;i++){
-  assert(lightAlphas[i]<lightAlphas[i-1],'light strength must fall monotonically toward the wall');
-  assert(lightAlphas[i]>0,'all feather bands stay faintly illuminated until the room boundary');
-}
-assert(lightAlphas.at(-1)<.08,'the outermost band has under 10% of incoming opacity, avoiding a sharp black border');
-assert.equal(ctx.globalAlpha,.8,'drawing the clip restores incoming overlay alpha');
-assert.equal(fills,4);
-let projections=0;
-session.prepareLightClip((x,y,z)=>{projections++;return {x:x*2,y:z+y};});
-assert.equal(projections,8,'active-room clip is projected once per unified lighting pass');
-session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('cached light clip must not reproject per light');},()=>{fills++;});
-assert.equal(fills,8,'subsequent lights reuse the same cached feathered boundaries');
-assert.equal(projections,8,'second light reuses the already-projected clip');
-assert.equal(session.snapshot().lightClip.feathered,true,'mobile diagnostics report the active feathered room clip');
-assert.equal(session.snapshot().lightClip.bands,3,'mobile diagnostics expose the number of cached feather bands');
-assert.equal(session.snapshot().lightClip.passBudget,72,'mobile metrics disclose the bounded high-quality feathering budget');
-session.prepareLightClip((x,y,z)=>({x:x*2,y:z+y}));
-let crowdedDraws=0;
-for(let i=0;i<80;i++)session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('crowded lighting should use the cached projection');},()=>{crowdedDraws++;});
-const crowdedStats=session.snapshot().lightClip;
-assert(crowdedStats.budgetDowngrades>0,'dozens of engraving sources fall back to one strict clip instead of multiplying canvas draws');
-assert(crowdedDraws<80*4,'crowded room light masks cost substantially less than continuous full feathering');
-assert(crowdedStats.canvasPasses===crowdedDraws,'mobile lighting diagnostics account for every actual canvas draw');
-assert.equal(ctx.globalAlpha,.8,'downgrading low-priority masks never changes the compositor opacity');
-session.prepareLightClip(()=>({x:4,y:4})); // Camera-edge degeneracy must not draw outside the valid room.
-const clipsBeforeFallback=clips;
-let fallbackDraws=0;
-assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('fallback projection must stay cached');},()=>{fallbackDraws++;}),false);
-assert.equal(fallbackDraws,0,'a collapsed camera projection never opens an unbounded light hole');
-assert.equal(clips,clipsBeforeFallback,'collapsed projections do not install invalid clip paths');
-assert.equal(session.snapshot().lightClip.feathered,false,'mobile diagnostics report the safe unfeathered fallback');
-assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{draws++;}),false);
-assert.equal(draws,0,'neighboring room light never paints over this room');
-assert.equal(ctxStack.length,0,'the feathered compositor never leaks a Canvas save stack frame');
-assert.equal(ctx.globalAlpha,.8,'neighbor filtering cannot leave modified light strength');
+assert.equal(fills,1,'one room light is one unclipped paint, not a series of feather bands');
+assert.equal(projections,0,'no bounding box is projected into screen space');
+assert.equal(clips,0,'there are no rectangular canvas clips or feather bands');
+for(let i=0;i<80;i++)assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},project,()=>{fills++;}),true);
+assert.equal(fills,81,'many room glows still use one draw each, without additional canvas passes');
+assert.equal(session.withLightClip(ctx,{x:14,y:1,z:14},project,()=>{fills++;}),false,
+  'a source in a different room cannot contribute to the current room');
+assert.equal(fills,81,'rejected lights do not draw');
+assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},project,null),false,
+  'invalid drawing callbacks must be ignored');
+const lightDebug=session.snapshot().lightClip;
+assert.equal(lightDebug.mode,'full-screen-tint');
+assert.equal(lightDebug.feathered,false);
+assert.equal(lightDebug.canvasPasses,0);
+assert.equal(lightDebug.bands,0);
+assert.equal(projections,0);
+assert.equal(clips,0);
+assert.equal(ctx.globalAlpha,.8,'source filtering must not mutate shared Canvas state');
+const fogSource=require('node:fs').readFileSync(require('node:path').join(__dirname,'../docs/js/cloud-forest-fog.js'),'utf8');
+assert.match(fogSource,/RUIN_SCREEN_TINT_ALPHA\s*=\s*0\.07/,'the new full-screen tradition overlay is intentionally subtle');
+assert.match(fogSource,/ctx\.fillRect\(0,0,rect\.width,rect\.height\)/,'the tint fills the entire viewport');
+assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,ruinTradition\)/,'ordinary enclosed ruins render the full-screen tint');
+assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,activeRuinTradition\(\)\)/,'fog-backed ruins use that same tint');
+assert.doesNotMatch(fogSource,/prepareLightClip\?\./,'lighting redraw cannot revive old room polygon precomputation');
 player.x=24;session.tick(.31);
 assert.equal(session.activeRoomId,null,'hallways are seamless transition space, not an extra sealed room');
 assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin,'leaving the room immediately breaks pursuit');
