@@ -93,10 +93,10 @@ assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r
 assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
 assert.ok(X.moveLayerInStage('item.weapons', 'actor.feet') === true, 'linked weapons can move within the held stage');
 X.reset();
-assert.ok(view.rows.some(r => /Hands behind front plane/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
+assert.ok(view.rows.some(r => /Hands masked by front art/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
 assert.deepStrictEqual(panel.onAction('set', { key: 'pants.sortWithActor', value: 'off' }), { ok: true });
 assert.strictEqual(X.get('pants.sortWithActor'), 'off');
-assert.match(panel.render().summary, /1 change/);
+assert.match(panel.render().summary, /1 override/);
 const exportResult = panel.onAction('export', {});
 assert.ok(exportResult.text.includes('pants.sortWithActor') && exportResult.title);
 panel.onAction('reset', {});
