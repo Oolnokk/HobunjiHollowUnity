@@ -233,7 +233,7 @@ assert.ok(/frontPortraitGearCandidates: lastFrontPortraitGearCandidates/.test(re
   'renderer reports whether stencil masking actually covered tools rather than merely reading the UI rank');
 assert.ok(/heldOrderNormalizations,/.test(render) && /lastHeldOrderNormalization: lastHeldOrderNormalization/.test(render),
   'renderer reports when it overwrites the authored held renderOrder');
-assert.ok(/Held renderOrder overrides/.test(xray) && /lastHeldOrderNormalization/.test(xray),
+assert.ok(/Held renderOrder overrides/.test(cfgSource) && /lastHeldOrderNormalization/.test(cfgSource),
   'mobile X-ray Companion explains the automatic renderer overrides');
 
 // Execute the renderer classification and live render-list sorting (without a GL context).
