@@ -2,7 +2,6 @@
   'use strict';
   // Romance runtime: load after spouse kiss and relationship dependencies, before the NPC command wheel.
   const scriptUrls = [
-    'js/spouse-social-life.js?v=20261115spouseSocialLife1',
     'js/romance-system.js?v=20261115spouseSocialLife1'
   ]; // Independently versioned child; subsequent feature patches never modify index.html.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
