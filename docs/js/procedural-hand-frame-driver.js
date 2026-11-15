@@ -402,9 +402,9 @@
     // hierarchy, or their hands literally inherit the player's world position.
     let quaternion;
     if (bakedWorldMatrix) {
-      quaternion = new Quaternion();
-      position = new Vector3();
-      bakedWorldMatrix.decompose(position, quaternion, new Vector3());
+      quaternion = global.WeaponToolStances?.lastHolderWorldQuaternion?.() || null; // Sampled with the actual render stance, but without decomposing mirrored matrix scale.
+      position = new Vector3().setFromMatrixPosition(bakedWorldMatrix);
+      if (!quaternion) bakedWorldMatrix.decompose(position, quaternion = new Quaternion(), new Vector3()); // Older standalone fixtures still support the previous world-matrix contract.
     } else {
       toolHolder.updateWorldMatrix?.(true, true);
       quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
