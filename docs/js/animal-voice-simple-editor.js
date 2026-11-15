@@ -5,6 +5,7 @@
     ['chatter', 'Passive chatter'],
     ['warning', 'Warning / discovery'],
     ['growl', 'Threat growl'],
+    ['exertion', 'Mount exertion · single sound'],
   ]);
   const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 }); // Legacy fallback kept for old exported configs; new edits are per species.
   const DEFAULT_SIZE_PITCH_MULTIPLIERS = Object.freeze({ small: 1, medium: 1, large: 1 }); // Neutral per-species fallback used by the editor and previews.
@@ -12,6 +13,7 @@
     chatter: Object.freeze({ intervalMs: 180, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }]) }),
     warning: Object.freeze({ intervalMs: 420, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }]) }),
     growl: Object.freeze({ intervalMs: 0, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }]) }),
+    exertion: Object.freeze({ intervalMs: 0, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }]) }), // Used by one-shot mount breaths, never an aggression sequence.
   });
   const UTTERANCE_INDEX_URL = '../../assets/audio/sfx/utterances/index.json';
   const UTTERANCE_BASE_URL = '../../assets/audio/sfx/utterances/';
@@ -260,10 +262,10 @@
     </div>`).join('');
     return `<div class="card soundCard simpleCallCard">
       <div class="sectionHead"><h3>${esc(label)}</h3><button class="subtle" data-preview-call="${kind}">▶ Preview response</button></div>
-      <div class="muted">Choose any indexed recordings this response may use. Missing authoring preserves the old species sound pair; an explicit empty selection makes the response silent.</div>
+      <div class="muted">${kind === 'exertion' ? 'One random recording is played when a ridden mount breathes under exertion; this pool starts as a copy of its growl/aggression pool but is edited independently.' : 'Choose any indexed recordings this response may use. Missing authoring preserves the old species sound pair; an explicit empty selection makes the response silent.'}</div>
       <div class="simpleVoiceBulk"><button class="subtle" data-call-all="${kind}">All library sounds</button><button class="subtle" data-call-none="${kind}">None</button><span class="pill">${allowed.size}/${entries.length} allowed</span></div>
       <div class="simpleVoiceAssignments">${assignments}</div>
-      <div class="row" style="margin:10px 0"><label class="field" style="max-width:190px">Gap between utterances (ms)<input type="number" min="0" step="10" data-call-gap="${kind}" value="${esc(call.intervalMs)}"></label><button class="subtle" data-add-utterance="${kind}">Add utterance</button></div>
+      <div class="row" style="margin:10px 0"><label class="field" style="max-width:190px">Gap between utterances (ms)<input type="number" min="0" step="10" data-call-gap="${kind}" value="${esc(call.intervalMs)}"></label>${kind === 'exertion' ? '' : `<button class="subtle" data-add-utterance="${kind}">Add utterance</button>`}</div>
       <div>${utterances || '<div class="muted">No utterances: this response is silent.</div>'}</div>
     </div>`;
   }
