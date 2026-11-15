@@ -29,11 +29,11 @@ function slice(source, from, to) {
   const context = vm.createContext({});
   vm.runInContext(`${registryClass}
     const heldRegistry = new SceneRegistry(), groundRegistry = new SceneRegistry(), topFaceGroundRegistry = new SceneRegistry(), waterRegistry = new SceneRegistry(),
-      tintCoverRegistry = new SceneRegistry(), protectedCoverRegistry = new SceneRegistry(), waterOccludedRegistry = new SceneRegistry(), pngDepthRegistry = new SceneRegistry(), frontPortraitRegistry = new SceneRegistry(), waterPortraitRegistry = new SceneRegistry();
+      tintCoverRegistry = new SceneRegistry(), protectedCoverRegistry = new SceneRegistry(), waterOccludedRegistry = new SceneRegistry(), pngDepthRegistry = new SceneRegistry(), frontPortraitRegistry = new SceneRegistry(), waterPortraitRegistry = new SceneRegistry(), backgroundDepthRegistry = new SceneRegistry();
     const lastSceneScan = new WeakMap();
     const pendingClassification = new Set(); // The deferred add queue also holds scene members until the next flush.
     ${forgetFn}
-    this.api = { forgetScene, pendingClassification, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry } };`, context);
+    this.api = { forgetScene, pendingClassification, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry } };`, context);
   const { forgetScene, pendingClassification, registries } = context.api;
   const scene = children => ({ children, traverse(fn) { children.forEach(fn); } });
   const meshesA = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], meshesB = [{ id: 'b1' }, { id: 'b2' }];

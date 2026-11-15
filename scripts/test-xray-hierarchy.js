@@ -24,6 +24,10 @@ assert.ok(X && X.version === 1, 'module registers window.XrayHierarchy');
 // Defaults, validation, live change, listeners.
 assert.strictEqual(X.get('hand.frontPlaneMask'), 'behind');
 assert.strictEqual(X.get('actors.order'), 'all');
+assert.strictEqual(X.get('layers.manualOrder'), 'off');
+assert.strictEqual(X.get('background.gearDepth'), 'ignore');
+assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');
+assert.strictEqual(X.get('weapon.followHandLayer'), 'on', 'weapons inherit their gripping hand priority by default');
 let heard = null;
 X.onChange((k, v, prev) => { heard = [k, v, prev]; });
 assert.strictEqual(X.set('hand.frontPlaneMask', 'bogus'), false, 'rejects values outside the rule options');
@@ -45,13 +49,29 @@ assert.strictEqual(X.importDiff(JSON.stringify(exported)).applied > 0, true, 'an
 assert.strictEqual(X.get('hand.frontPlaneMask'), 'off');
 X.reset();
 
-// Dev Companion panel: hierarchy rows, one dropdown per rule, export returns text for the clipboard.
+// Manual rank editing, strict validation, clipboard persistence and reset.
+const shippedOrder = X.DEFAULT_DRAW_ORDER.slice();
+assert.strictEqual(X.describeLayers().length, 18, 'all visual categories (including material types, hands, feet and weapons) are exposed');
+assert.strictEqual(X.setDrawOrder(['actor.hands']), false, 'cannot remove layers');
+assert.strictEqual(X.setDrawOrder([...shippedOrder.slice(1), shippedOrder[1]]), false, 'cannot duplicate layers');
+assert.strictEqual(X.moveLayer('actor.hands', '__end'), true, 'can move between category groups');
+assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
+assert.ok(Array.isArray(JSON.parse(store['hobunji.xrayHierarchy.v1']).__drawOrder), 'manual order survives reload storage');
+const orderExport = X.exportDiff();
+X.reset();
+assert.deepStrictEqual(X.describeLayers().map(layer => layer.id), shippedOrder, 'reset restores all layer ranks');
+assert.strictEqual(X.importDiff(orderExport).ok, true, 'layer ranks round-trip through exported config');
+assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
+X.reset();
+
+// Dev Companion panel: hierarchy rows, dropdowns, nested action paths and export text.
 assert.strictEqual(panels.length, 1);
 const panel = panels[0];
 assert.strictEqual(panel.when(), true);
 const view = panel.render();
 const dropdowns = view.actions.filter(a => a.options);
-assert.strictEqual(dropdowns.length, X.keys().length, 'every rule has a dropdown');
+assert.ok(dropdowns.length >= X.keys().length, 'all rules and the layer pickers have dropdowns');
+assert.ok(view.actions.some(action => action.id === 'move-before' && action.path.length === 2), 'manual reorder picker is inside a nested branch');
 assert.ok(view.rows.some(r => /Hands behind front plane/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
 assert.deepStrictEqual(panel.onAction('set', { key: 'pants.sortWithActor', value: 'off' }), { ok: true });
 assert.strictEqual(X.get('pants.sortWithActor'), 'off');
@@ -60,6 +80,9 @@ const exportResult = panel.onAction('export', {});
 assert.ok(exportResult.text.includes('pants.sortWithActor') && exportResult.title);
 panel.onAction('reset', {});
 assert.strictEqual(X.get('pants.sortWithActor'), 'on');
+assert.deepStrictEqual(panel.onAction('shift', { delta: 1 }), { ok: true }, 'nudge changes the live hierarchy');
+assert.strictEqual(X.get('layers.manualOrder'), 'on', 'moving a layer automatically enables the color sorter');
+panel.onAction('reset', {});
 
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
 const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
@@ -72,6 +95,102 @@ assert.strictEqual(Object.keys(fallback).length, X.keys().length, 'fallback list
 for (const key of X.keys()) assert.ok(render.includes(`'${key}'`), `renderer reads rule ${key}`);
 assert.ok(/updateFrontPlaneHands\(held, scene, camera\)/.test(render), 'hand rule runs each base world frame');
 assert.ok(/handsBehindFrontPlane: lastHandsBehindFrontPlane/.test(render), 'snapshot exposes the hand counter');
+assert.ok(/withPortraitDrawOrder\(renderer, overlayDrawOrder, \(\) => rawRender\.call\(renderer, scene, camera\)\)/.test(render),
+  'actual gear/hand/foot overlay color draws inherit actor depth and manual layer sorting');
+assert.ok(/const supplementDepth = !group\.regions\.length && canLockColorMask && !rebuildAirborne/.test(render),
+  'airborne ordinary gear cannot reuse a sky-masked base depth buffer');
+assert.ok(/backgroundHidden = backgroundMeshes\.length && !supplementDepth \? hideObjects\(backgroundMeshes\)/.test(render),
+  'only the selective depth rebuild excludes backdrops, not the original scene or final depth restore');
+assert.ok(/isPresentationBackdrop\(object\).*backgroundDepthRegistry\.add\(object\)/.test(render),
+  'sky and horizon meshes are registered without a new scene traversal per gear draw');
+assert.ok(/backgroundDepthMeshesExcluded/.test(render) && /airborneDepthRebuilds/.test(render),
+  'mobile Dev Companion diagnostics expose both airborne fixes');
+
+// Execute the renderer classification and live render-list sorting (without a GL context).
+const backdropStart = render.indexOf('  function isPresentationBackdrop(');
+const backdropEnd = render.indexOf('\n  // Central x-ray rules', backdropStart);
+const isBackdrop = new Function(render.slice(backdropStart, backdropEnd) + '; return isPresentationBackdrop;')();
+assert.strictEqual(isBackdrop({ isMesh: true, name: 'hobunji_cloud_depth_mask_0', material: { userData: { skyLayerDepthNdc: 0.999 } } }), true,
+  'far-plane cloud mask is recognized as a visual backdrop');
+assert.strictEqual(isBackdrop({ isMesh: true, userData: { backgroundScenery: true } }), true,
+  'authored background scenery is not a physical foreground occluder');
+assert.strictEqual(isBackdrop({ isMesh: true, userData: {}, material: { userData: {} } }), false,
+  'ordinary solid walls stay real occluders');
+const layerStart = render.indexOf('  function visualLayerFor(');
+const layerEnd = render.indexOf('\n  function nearbyPortraitOrder(', layerStart);
+const visualSort = new Function('window', 'xrayRule', 'isPresentationBackdrop', 'surfaceKindForObject', 'comparePortraitDraws', 'heldPriorityLayer',
+  render.slice(layerStart, layerEnd) + '; return { visualLayerFor, withVisualSort };')(
+  win, key => X.get(key), isBackdrop, () => 'solid', (a, b, ranks, extras) =>
+    (ranks.get(b.object)?.depth ?? extras?.get(b.object)?.depth ?? b.z)
+      - (ranks.get(a.object)?.depth ?? extras?.get(a.object)?.depth ?? a.z),
+  () => X.get('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands');
+const drawn = (data, name) => ({ object: { userData: data, name: name || '' }, material: { id: 3 }, groupOrder: 0, renderOrder: 0, z: 0, id: 1 });
+const handItem = drawn({ hobunjiProceduralHand: true });
+const weaponItem = drawn({ hobunjiHeldObjectPlane: true });
+const footItem = drawn({ hobunjiProceduralFoot: true });
+assert.strictEqual(visualSort.visualLayerFor(handItem), 'actor.hands');
+assert.strictEqual(visualSort.visualLayerFor(weaponItem), 'actor.hands', 'held weapon takes its gripping hand layer by default');
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(visualSort.visualLayerFor(weaponItem), 'item.weapons', 'explicit unlink permits independent weapon rank');
+assert.strictEqual(visualSort.visualLayerFor(footItem), 'actor.feet');
+const rendererMock = { setTransparentSort(fn) { this.transparent = fn; }, setOpaqueSort(fn) { this.opaque = fn; } };
+X.set('layers.manualOrder', 'on');
+X.moveLayer('actor.hands', '__end');
+visualSort.withVisualSort(rendererMock, null, () => {
+  assert.ok(rendererMock.transparent(weaponItem, handItem) < 0, 'gear drawn before moved hand layer');
+  assert.ok(rendererMock.opaque(weaponItem, handItem) < 0, 'manual sort also handles opaque parts');
+});
+assert.strictEqual(rendererMock.transparent, null, 'transparent renderer state restored after a sort');
+assert.strictEqual(rendererMock.opaque, null, 'opaque renderer state restored after a sort');
+const farOwner = { id: 100 }, nearOwner = { id: 101 };
+const actorOrder = { ranks: new Map([
+  [weaponItem.object, { owner: farOwner, depth: 0.8 }],
+  [handItem.object, { owner: nearOwner, depth: 0.2 }],
+]), extras: new Map() };
+X.moveLayer('item.weapons', '__end'); // Edit would otherwise draw the farther weapon last.
+visualSort.withVisualSort(rendererMock, actorOrder, () => {
+  assert.ok(rendererMock.transparent(weaponItem, handItem) < 0,
+    'near NPC portrait still covers far NPC weapon despite the weapon manual priority');
+});
+assert.strictEqual(rendererMock.transparent, null, 'actor-aware visual sort transaction restores renderer state');
+const overlayRankStart = render.indexOf('  function rankedHeldOverlayOrder(');
+const overlayRankEnd = render.indexOf('\n  function assignPortraitStencilOwners(', overlayRankStart);
+assert.ok(overlayRankStart >= 0 && overlayRankEnd > overlayRankStart, 'held overlay owner-rank adapter is present');
+const rankedHeld = new Function('xrayRule', 'portraitStencilOwner',
+  render.slice(overlayRankStart, overlayRankEnd) + '; return rankedHeldOverlayOrder;')(
+  key => X.get(key), mesh => mesh.owner);
+const farEquipment = { owner: farOwner }, nearEquipment = { owner: nearOwner };
+const baseActorSort = { ranks: actorOrder.ranks, extras: new Map() };
+const heldSort = rankedHeld(baseActorSort, [farEquipment, nearEquipment], {});
+assert.strictEqual(heldSort.extras.get(farEquipment).owner, farOwner,
+  'the far actor weapon inherits its own portrait depth rank');
+assert.strictEqual(heldSort.extras.get(nearEquipment).owner, nearOwner,
+  'the near actor hands inherit the near portrait depth rank');
+assert.strictEqual(rankedHeld(null, [farEquipment], {}), null, 'single actor worlds keep the original simple sort');
+visualSort.withVisualSort(rendererMock, heldSort, () => {
+  const farDraw = { ...weaponItem, object: farEquipment }, nearDraw = { ...handItem, object: nearEquipment };
+  assert.ok(rendererMock.transparent(farDraw, nearDraw) < 0,
+    'in the isolated held overlay the nearer actor still covers the farther actor');
+});
+X.reset();
+
+// The stencil owner rule must use manually chosen front-plane priorities, not
+// rely on WebGL draw-pass order (hands and their tools are in the held pass).
+const maskBegin = render.indexOf('  function manualBehindFront(');
+const maskEnd = render.indexOf('\n  // Hands:', maskBegin);
+const maskScope = new Function('window', 'xrayRule', 'maskedHands',
+  render.slice(maskBegin, maskEnd) + '; return { manualBehindFront, heldPriorityLayer, isPortraitMaskedGear };')(
+    win, key => X.get(key), new Set([handItem.object]));
+X.set('layers.manualOrder', 'on');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'weapon remains behind front portrait while the hand is behind');
+X.moveLayer('actor.hands', '__end');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'moving the hand in front also brings its held weapon forward through the portrait mask');
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'unlinked weapon retains its independent front-art mask');
+X.reset();
 
 // Execute the production "hand behind its front plane" math with a tiny matrix stand-in.
 const start = render.indexOf('const HAND_BEHIND_PLANE_EPS');

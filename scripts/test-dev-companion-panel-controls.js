@@ -38,7 +38,7 @@ class Element {
   const host = new Element('host'); // Represents the existing companion panel container.
   const sent = []; // Captures commands sent to the game using the normal panel-action transport.
   const context = vm.createContext({
-    panelCards: new Map(), document: { activeElement: null },
+    panelCards: new Map(), expandedPanelPaths: new Map(), document: { activeElement: null },
     state: { connected: true, game: { panels: [] } },
     $: () => host,
     el: (tag, attrs, ...children) => new Element(tag, attrs, children),
@@ -46,7 +46,7 @@ class Element {
     run: async (name, args) => { sent.push({ name, args }); return { ok: true }; },
   }); // Supplies only the renderer's DOM/transport dependencies.
   const source = fs.readFileSync('docs/tools/dev-companion/dev-companion.js', 'utf8'); // The real renderer being shipped.
-  vm.runInContext(source.slice(source.indexOf('  function renderPanels()'), source.indexOf('  function renderHistory()')), context);
+  vm.runInContext(source.slice(source.indexOf('  function renderPanelAction('), source.indexOf('  function renderHistory()')), context);
   const clock = { id: 'clock', title: 'Clock', summary: '12:00' }; // Changes independently of the grant controls.
   const grants = { id: 'grants', title: 'Grants', actions: [{ id: 'grant', label: 'Trinket', args: { source: 'dev' }, reset: true, options: [{ value: '', label: 'Choose…' }, { value: 'icon', label: 'Icon' }] }] }; // Models the actual grant schema.
   context.state.game.panels = [clock, grants];

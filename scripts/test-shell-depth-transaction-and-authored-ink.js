@@ -110,6 +110,7 @@ function fixture(failAt=0) {
   }; // Only production dependencies that execute when replay scissoring is disabled.
   const run=new Function('deps','getCounters',[
     'const {nearReplaySupport,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,MASK_ALL,SHELL_MASK}=deps;',
+    'const xrayRule=()=>"original"; // Preserve the original shell test scope; horizon exclusions have their own coverage.',
     'let internalReplay=false,fullscreenReplayCount=0,shellSceneTraversalsAvoided=0,nonGroundDepthReplayCount=0,shellXrayPassCount=0,shellXrayMeshDrawCount=0;',
     shell,
     'return {invoke:replayShellOutlineXray,counters:()=>({internalReplay,nonGroundDepthReplayCount,shellXrayPassCount,shellXrayMeshDrawCount})};'
