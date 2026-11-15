@@ -92,7 +92,7 @@ async function main() {
       getVoiceModulation: entity => entity.rec.appearance.gender === 'female'
         ? { pitchSemitones: 7, tempo: 0.8, gain: 1.25 }
         : { pitchSemitones: 1, tempo: 1, gain: 1 },
-      getConfig: () => ({ assets: { breath: { '1': 'assets/audio/sfx/combat/breath.m4a' } } }),
+      getConfig: () => ({ assets: { breath: { '1': 'assets/audio/sfx/combat/breath.m4a', '5': 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a' } } }),
       getVoicePriority: () => 3,
     },
     AudioSystem: {
@@ -212,7 +212,12 @@ async function main() {
   assert.equal(noYawnClip.tempo, 1, 'fallback breathing must not run the old robotic quarter-speed WSOLA');
   assert.equal(noYawnClip.cadence, 0.8, 'species-relative tempo becomes grain cadence without stretching the actual breath');
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
-  assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/breath.m4a');
+  assert.equal(noYawnClip.url, 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a', 'missing dedicated yawns use configured intensity-5 breathing');
+  const configuredGetVoice = window.CombatVocalizations.getConfig; // Restored after verifying the built-in source without a loaded combat config.
+  window.CombatVocalizations.getConfig = () => ({ assets: { breath: {} } });
+  const unconfiguredYawnClip = await runtime._test.voiceFor('porakaneki', 'male'); // A fresh identity bypasses the voice-plan cache for the missing-config case.
+  assert.equal(unconfiguredYawnClip.url, 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a', 'no configured source still falls back to intensity 5');
+  window.CombatVocalizations.getConfig = configuredGetVoice;
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
 
   const retryNpc = {
