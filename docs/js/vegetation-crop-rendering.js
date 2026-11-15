@@ -485,8 +485,8 @@
   }
 
   // ── Crop mesh system ──────────────────────────────────────────
-  // Needlegrain/heftroot have procedural geometry; mustard uses PNG leaf cards.
-  // Remaining crops keep their legacy colored placeholders.
+  // Needlegrain/heftroot, mushtard and berry bushes own genuine foliage.
+  // Only garlink and ongyums retain placeholders for the authored PNG bridge.
   const CROP_COLORS = {
     needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
     heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
@@ -641,7 +641,8 @@
     return group;
   }
 
-  const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']);
+  const BERRY_CROPS = new Set(['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']); // Shared family check for real shrub geometry and fruit maturity.
+  const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot', 'blackMustard', 'greenMustard', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']);
 
   function _cropFamily(cropKey, data, variety = null) {
     // Restored/older cultivar definitions can exist without baseCrop; their encoded ID still identifies the species.
@@ -656,7 +657,63 @@
     return 3;
   }
 
-  function _buildFoliageMesh(crop, growth, col, row) {
+  let berryFruitGeometry = null; // One small low-poly sphere shared by every bush's instanced fruit batches.
+  const berryFruitMaterials = new Map(); // One native/variant pigment material per exact inherited RGB, shared without cross-tinting.
+  function _buildBerryBush(family, growth, col, row, ready, varietyColor) {
+    const foliage = window.FoliageGenerator; // Reuses the existing cached eight-shape small-bush generator, never another procedural tree builder.
+    const shrub = foliage?.buildShrubMesh?.(col, row);
+    if (!shrub) return null;
+
+    const group = new THREE.Group(); // Root is anchored at soil level by the shared farm/NPC crop renderer.
+    const nativeScale = Number(shrub.scale?.x); // Keeps the generator's per-tile variation while fitting a cultivated bush to one plot.
+    shrub.scale.setScalar((Number.isFinite(nativeScale) && nativeScale > 0 ? nativeScale : 1) * 0.43);
+    group.add(shrub); // Retain the generator's woody branches and alpha-tested leaves unchanged.
+
+    const stage = _growthBucket(growth); // Early plants are small leafy shrubs; berries develop only on older branches.
+    const bunchCount = ready ? 10 : stage >= 3 ? 5 : stage === 2 ? 2 : 0; // Mature/harvestable bushes visibly carry many more berries.
+    const fruitColor = varietyColor == null ? CROP_COLORS[family].ripe : varietyColor; // CropVarieties' exact RGB drives both native and crossbred fruit.
+    group.userData.hobunjiBerryBush = true; // Mobile scene inspector and regression tests identify the real foliage type.
+    group.userData.hobunjiBerryFruitHex = fruitColor; // Reports inherited fruit color without needing WebGL readback.
+    group.userData.hobunjiBerryFruitCount = bunchCount * 3; // The batch contains three berries per branch-tip cluster.
+    if (!bunchCount) return group;
+
+    if (!berryFruitGeometry) berryFruitGeometry = new THREE.SphereGeometry(0.07, 6, 5); // Rounded fruit with inexpensive geometry and natural lighting.
+    let material = berryFruitMaterials.get(fruitColor);
+    if (!material) {
+      material = new THREE.MeshLambertMaterial({ color: fruitColor }); // Exact fruit pigment; surrounding foliage stays green.
+      berryFruitMaterials.set(fruitColor, material);
+    }
+    const berries = new THREE.InstancedMesh(berryFruitGeometry, material, bunchCount * 3); // One draw call for every berry on the bush.
+    berries.userData.hobunjiBerryFruit = true; // Distinguishes fruit from trunk and transparent leaves in debug/render tests.
+    berries.userData.noOutline = true; // Small spheres do not need heavy black shell outlines over their highlights.
+    berries.castShadow = false;
+    berries.receiveShadow = false;
+
+    const random = _mbRng(Math.imul(col + 1, 92837111) ^ Math.imul(row + 1, 689287499) ^ 0xb3771e5); // Stable canopy clusters across saves and growth-stage rebuilds.
+    const transform = new THREE.Object3D(); // Reused to assemble each instance matrix without one mesh per fruit.
+    let fruitIndex = 0; // Sequential instance index through the current bush's packed berry batch.
+    for (let bunch = 0; bunch < bunchCount; bunch++) {
+      const azimuth = (bunch + 0.2 + random() * 0.55) * Math.PI * 2 / bunchCount; // Spread fruit around the bush, not in a flat frontal row.
+      const radius = 0.34 + random() * 0.16; // Place clusters near leafy branch ends rather than the central trunk.
+      const centerX = Math.cos(azimuth) * radius;
+      const centerZ = Math.sin(azimuth) * radius;
+      const centerY = 0.33 + random() * 0.25; // Vary canopy elevation to produce a genuine rounded fruiting bush.
+      for (let berry = 0; berry < 3; berry++) {
+        const offset = berry * Math.PI * 2 / 3 + random() * 0.24;
+        const spread = 0.043 + random() * 0.018;
+        transform.position.set(centerX + Math.cos(offset) * spread, centerY + (berry - 1) * 0.035,
+          centerZ + Math.sin(offset) * spread);
+        transform.scale.setScalar(0.72 + random() * 0.37); // Subtle natural fruit-size variance using the same shared sphere.
+        transform.updateMatrix();
+        berries.setMatrixAt(fruitIndex++, transform.matrix);
+      }
+    }
+    berries.instanceMatrix.needsUpdate = true;
+    group.add(berries); // Fruit moves/scales with the bush and cannot detach as a separate billboard.
+    return group;
+  }
+
+  function _buildFoliageMesh(crop, growth, col, row, ready = false, varietyColor = null) {
     const FG = window.FoliageGenerator;
     if (!FG) return null;
     if (crop === 'needlegrain') {
@@ -666,6 +723,7 @@
       return plant;
     }
     if (crop === 'blackMustard' || crop === 'greenMustard') return _buildMustardMesh(crop, growth, col, row);
+    if (BERRY_CROPS.has(crop)) return _buildBerryBush(crop, growth, col, row, ready, varietyColor); // Native and regional crops share actual leafy bush silhouettes.
     if (crop === 'heftroot') {
       // Three plants in a triangle cluster, each with a unique seed offset
       const wrapper = new THREE.Group();
@@ -774,14 +832,14 @@
         }
         if (wantsFoliage) {
           // ── Procedural foliage mesh ──────────────────────────────
-          const bucket = _growthBucket(growth);
+          const bucket = _growthBucket(growth) + (BERRY_CROPS.has(family) && tile.cropReady ? 4 : 0); // Readiness can change fruit density without changing growth stage.
           if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
             // Growth crossed a threshold — rebuild.
             deps.scene.remove(cropMeshes[i]);
             cropMeshes[i] = null;
           }
           if (!cropMeshes[i]) {
-            const group = _buildFoliageMesh(family, growth, col, row);
+            const group = _buildFoliageMesh(family, growth, col, row, tile.cropReady, pigment);
             if (group) {
               group.userData.hobunjiCropRootKey = family; // Prevent a tile switched to another crop from reusing the wrong foliage.
               group.userData.hobunjiCropId = tile.crop; // Detects genetic color switches within the same family.
@@ -802,9 +860,10 @@
           const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
           mesh.scale.setScalar(scale);
 
-          const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
+          const isRootedBush = BERRY_CROPS.has(family); // Cultivated shrubs should not levitate, spin, or bob when their fruit becomes ready.
+          const bobY = tile.cropReady && !isRootedBush ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
           mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
-          if (tile.cropReady && family !== 'blackMustard' && family !== 'greenMustard') mesh.rotation.y = _now / 2200 + col; // Mushtard rosettes stay planted; other ready foliage keeps its existing spin.
+          if (tile.cropReady && !isRootedBush && family !== 'blackMustard' && family !== 'greenMustard') mesh.rotation.y = _now / 2200 + col; // Rooted leaf rosettes/bushes stay planted.
 
         } else {
           // ── Simple colored cube (all other crops) ────────────────
@@ -1069,7 +1128,7 @@
     const variety = window.CropVarieties?.ensure?.(crop); // Saved NPC crops use the same genotype/color as the farm.
     const family = _cropFamily(crop, null, variety); // NPC plots must also preserve native leaf art for imported mushtard keys.
     if (FOLIAGE_CROPS.has(family)) {
-      const group = _buildFoliageMesh(family, g, col, row);
+      const group = _buildFoliageMesh(family, g, col, row, ready, variety?.color ?? null);
       if (!group) return null;
       group.userData.hobunjiCropRootKey = family; // Identifies the actual crop family in town and wilderness farm plots.
       group.userData.hobunjiFoliageMesh = true; // Keeps the same foliage identity contract as player farm crops.
@@ -1113,6 +1172,7 @@
     vegFoliageMeshes,
     vegFoliageActive: _vegFoliageActive,
     get cropMeshes() { return cropMeshes; },
+    getBerryBushDebug: () => ({ families: [...BERRY_CROPS], sharedFruitMaterials: berryFruitMaterials.size, maxBerriesPerBush: 30, shapeSource: 'FoliageGenerator.buildShrubMesh' }), // Mobile-friendly bush geometry and batch diagnostics.
     getMustardDebug: () => ({ texture: MUSHTARD_LEAF_ART.outer, textures: { ...MUSHTARD_LEAF_ART }, textureStates: Object.fromEntries([...mushtardTextures].map(([shape, record]) => [shape, record.state])), cultivarTextureStates: Object.fromEntries(cultivarTextureState), nativeMaterialCount: mushtardMaterials.size, matureLeaves: 15, maxDrawCallsPerPlant: 2 }), // Lightweight mushtard PNG and card diagnostics for mobile.
     getGrassBillboardMat: () => grassBillboardMat,
     setGrassDistanceLod,
