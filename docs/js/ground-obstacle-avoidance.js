@@ -32,8 +32,10 @@
     st.path = null;
     st.index = 0;
     st.footSide = 0;
-    st.lastX = st.lastY = NaN; // Reset position history so teleport or input-release cannot masquerade as a step.
-    st.dirX = st.dirY = 0;
+    if (mode === 'foot') {
+      st.lastX = st.lastY = NaN; // Forget stale walking position after teleport or input release.
+      st.dirX = st.dirY = 0; // Mounted turn history keeps its established reset behavior.
+    }
     st.footStepTiles = 0;
     st.footStallS = 0;
     st.contactTiles = 0;
