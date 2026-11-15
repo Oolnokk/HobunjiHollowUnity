@@ -814,8 +814,14 @@
     return folder;
   }
 
-  function farmLayoutFingerprint(layouts) {
-    return JSON.stringify(Object.keys(layouts || {}).sort().map(id => [id, layouts[id]])); // Stable across directory iteration order and JSON formatting.
+  function farmLayoutFingerprint(layouts, fileState = null) {
+    // Keep only compact, ordered fingerprints, not a second full-size JSON
+    // mirror of every farm in memory between saves.
+    return JSON.stringify(Object.keys(layouts || {}).sort().map(id => {
+      const entry = fileState?.get(fileKey(FARM_LAYOUTS_DIR, farmLayoutFilename(id)));
+      const committedDigest = typeof entry === 'string' ? entry : entry?.digest; // Successful writer can reuse its already-calculated file digest.
+      return [id, committedDigest || contentFingerprint(JSON.stringify({ worldId: id, layout: layouts[id] }))];
+    }));
   }
 
   function folderFarmLayoutsDiffer(folderMeta, browserLayouts, folderLayouts) {
@@ -925,7 +931,7 @@
       await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname', delta, nextFiles, work);
       await writeEntities(WORLDS_DIR, meta.worlds || [], 'label', delta, nextFiles, work);
       _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts, delta, nextFiles, work);
-      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts); // A successful write becomes the next external-edit baseline.
+      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts, nextFiles); // A successful write becomes the next external-edit baseline.
       _folderSupportsFarmLayouts = true;
 
       // Custom pattern PNGs are stored outside character/world JSON. Mirror every
