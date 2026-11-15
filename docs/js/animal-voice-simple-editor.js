@@ -146,7 +146,7 @@
       ...base,
       ...common,
       ...own,
-      utterances: (utterances || []).map(value => ({
+      utterances: (kind === 'exertion' ? (utterances?.length ? utterances.slice(0, 1) : base.utterances) : (utterances || [])).map(value => ({
         tempo: clamp(finite(value?.tempo, 1), 0.35, 2),
         pitchSemitones: clamp(finite(value?.pitchSemitones, 0), -12, 12),
       })),
