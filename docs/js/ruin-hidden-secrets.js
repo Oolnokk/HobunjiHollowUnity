@@ -200,6 +200,8 @@
       if(!nest.parent){nest.name='secret-skeeri-nest-'+rec.id;nest.position.set(bx,floor+2.19,bz);
         nest.scale.setScalar(.67);nest.userData.devRuinFootprintIgnore=true;group.add(nest);}
       rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest,anim:[],elapsed:0}; // Dormant hatchling motion updates only in the active room.
+      const cameraForBrood=()=>root.DevRandomRuinInteractions?.activeCamera?.()
+        ||root.Combat?.deps?.getActiveCamera?.()||null; // Existing live camera, also used by native Skeeri/Tzatzul visuals.
       for(let i=0;i<spec.babies;i++){
         const identity=String(seed)+':'+room.id+':baby:'+i;
         const palette=root.SkeeriRuins?.paletteFor?.(spec.theme,identity);
@@ -210,12 +212,14 @@
           rig.root.position.set(bx+(i-(spec.babies-1)/2)*.52,floor+2.32,bz);
           rig.root.rotation.y=(hash(identity+':yaw')%5-2)*.2;
           group.add(rig.root);art.push(rig);rec.nest.loaded++;
-          rec.nest.anim.push({root:rig.root,baseY:rig.root.position.y,baseYaw:rig.root.rotation.y,
-            phase:(hash(identity+':phase')%628)/100}); // Tiny independent breathing/ruffling, not adult combat flight.
+          rec.nest.anim.push({rig,root:rig.root,baseY:rig.root.position.y,baseYaw:rig.root.rotation.y,
+            phase:(hash(identity+':phase')%628)/100}); // Keep the authored hatchling pose, coloured fur and glowing eyes in sync.
+          const camera=cameraForBrood();
+          if(camera?.getWorldPosition)rig.update?.(camera,'hatchling',rec.nest.elapsed); // FlyingAnimalRig otherwise shows the default adult flying sprites.
         }).catch(error=>root.__farmLog?.('[ruin-secrets] Baby Skeeri rig: '+error.message,'warn'));
       }
       registerControl({kind:'ruinSkeeriNest',object:nest,promptRoot:nest,floorY:floor,
-        range:2,priority:16,claimAction1:true,touchIcon:'🐣',
+        range:2,priority:16,touchIcon:'🐣', // Inspect uses normal Interact; a nearby nest must not override torch/combat Action 1.
         available:()=>!rec.disposed&&nearFloor(getPlayerY,floor),
         label:()=>spec.babies+' Planebent Skeeri Hatchling'+(spec.babies===1?'':'s'),
         onPress:()=>{rec.discovered=true;options.showToast?.(
@@ -226,9 +230,11 @@
       const t=Math.min(.05,Math.max(0,Number(dt)||0));
       if(rec.nest?.anim.length){
         rec.nest.elapsed+=t;
+        const camera=cameraForBrood(); // One camera lookup per active-room tick, not one per hatchling.
         for(const baby of rec.nest.anim){
           baby.root.position.y=baby.baseY+.016*Math.sin(rec.nest.elapsed*2.4+baby.phase);
           baby.root.rotation.y=baby.baseYaw+.09*Math.sin(rec.nest.elapsed*1.1+baby.phase);
+          if(camera?.getWorldPosition)baby.rig.update?.(camera,'hatchling',rec.nest.elapsed); // Reuses folded-wing rig presentation and character-facing logic.
         }
       }
       if(rec.gate&&rec.unlocked&&rec.gateProgress<1){
