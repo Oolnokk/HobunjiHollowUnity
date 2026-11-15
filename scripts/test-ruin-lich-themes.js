@@ -485,6 +485,23 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   t.composer.clear();
 }
 
+
+{
+  let recoveries=0; // Tracks the timed bomb puddle's fatal checkpoint recovery.
+  const t=setup('kanthic',-20.5,-20.5,{respawnAtCheckpoint(reason){
+    assert.equal(reason,'kanthic-plasm');recoveries++;return true;
+  }});
+  const puddle=t.api.createPlasmPuddle(-20.5,-20.5,{radius:1.1,ttl:5}); // Far from the fixed patch, so only the temporary hazard is contacted.
+  assert.ok(puddle&&puddle.contains(-20.5,-20.5),'the bomb creates a real timed patch at the player');
+  t.tick(5,.25); // 1.25 s: the player must still be able to escape.
+  assert.equal(recoveries,0,'temporary Kanthic plasm allows a short but real reaction window');
+  assert.ok(t.api.snapshot().sinking>.85,'temporary plasm sinks much faster than the permanent surface');
+  t.tick(1,.25);
+  assert.equal(recoveries,1,'temporary Kanthic plasm finishes its sink within 1.5 seconds');
+  puddle.dispose();
+  t.composer.clear();
+}
+
 {
   const t=setup('kanthic');
   let seed;
