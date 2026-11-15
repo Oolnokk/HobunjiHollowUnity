@@ -18,7 +18,7 @@ assert.equal(writes.length, 1, 'spouse-social manifest emits its child script on
 assert.match(writes[0], /js\/spouse-social-life\.js\?v=[A-Za-z0-9_-]+/, 'shipped advice module has a versioned URL');
 
 const clock = { hour: 10, day: 8, weekday: 'Hronu' }; // Drives prayer/festival/hour-window cases deterministically.
-const active = { kissHours: 0, food: true, rested: true, prayer: false, festival: null, harvest: 0, job: null }; // Drives live signal and farmwork stubs.
+const active = { kissHours: 0, food: true, rested: true, prayer: false, festival: null, festivalHours: false, harvest: 0, job: null }; // Drives live signal and farmwork stubs.
 const graph = [ // Real social-relationship edges, including a partner of a direct family member.
   { type: 'family', members: ['aliri_ginju', 'gorobi_ginju'] },
   { type: 'family', members: ['aliri_ginju', 'gikali_ginju'] },
@@ -45,7 +45,7 @@ const w = {
   CookingSystem: { foodBuffEntries: () => active.food ? [{ sourceLabel: 'Food' }] : [] },
   TemplePrayerRestBlessings: { isWellRested: () => active.rested, activePrayer: () => active.prayer ? { id: 'naoine' } : null },
   FestivalCalendar: { current: () => active.festival },
-  FestivalSystem: { festivalHours: () => false, activityProps: () => [{ area: 'town', col: 20, row: 20 }] },
+  FestivalSystem: { festivalHours: () => active.festivalHours, activityProps: () => [{ area: 'town', col: 20, row: 20 }] },
   FarmEditor: { unassignedReadyHarvestCount: () => active.harvest },
   NpcFarmPlots: { targetFor: () => active.job },
   NpcScheduling: {
@@ -64,12 +64,13 @@ const context = vm.createContext({ window: w, console, setInterval() {}, clearIn
 vm.runInContext(sourceFile('docs/js/spouse-social-life.js'), context, { filename: 'spouse-social-life.js' });
 vm.runInContext(sourceFile('docs/js/romance-system.js'), context, { filename: 'romance-system.js' });
 const social = w.SpouseSocialLife, romance = w.RomanceSystem; // Actual shipped feature objects, not mocked implementations.
+romance.init({ getInteriorFurniture: () => [{ key: 'doubleBed', area: 'interior', col: 4, row: 5 }] }); // A real bed exposes the overnight sleep-vs-Communion conflict.
 const state = romance._test.getState(); // Controls the real serializable marriage state without a cutscene.
 const married = id => { state.spouse = { npcId: id, marriedRawDay: 1 }; state.outing = null; };
 const setCommon = () => {
   clock.hour = 10; clock.day = 8; clock.weekday = 'Hronu';
   active.kissHours = 0; active.food = true; active.rested = true;
-  active.prayer = false; active.festival = null; active.harvest = 0; active.job = null;
+  active.prayer = false; active.festival = null; active.festivalHours = false; active.harvest = 0; active.job = null;
   state.kissBuff = null;
 };
 assert(contexts.has('spouse-social-life') && actions.has('spouse-social-life'), 'dialogue and action providers are registered');
@@ -100,12 +101,27 @@ active.prayer = true;
 assert.equal(social.outingAvailable('prayer'), false, 'an already-active weekly prayer is not suggested');
 clock.hour = 1;
 assert.equal(social.selectAdvice('aliri_ginju').kind, 'communion', 'communion invitation is night-only on Anan');
+assert.equal(romance._test.scheduleOverride({ id: 'aliri_ginju' }).activity, 'sleeping', 'spouse has a real bed without an outing');
+const communionTarget = social.destinationFor('communion'); // The actual nighttime station is used by the tested schedule override.
+assert.equal(romance.startSpouseOuting('communion', communionTarget), true);
+assert.equal(romance._test.scheduleOverride({ id: 'aliri_ginju' }).activity, 'attending Spirit Communion with you',
+  'an accepted midnight invitation takes precedence over ordinary sleep');
+romance.endSpouseOuting();
+clock.hour = 2.99;
+assert.equal(social.outingAvailable('communion'), true, 'communion remains available before its authored 03:00 close');
+clock.hour = 3;
+assert.equal(social.outingAvailable('communion'), false, 'communion closes when the temple switches away from the night layout');
 clock.hour = 9; clock.weekday = 'Hronu';
 assert.equal(social.outingAvailable('communion'), false, 'ordinary days do not offer communion');
 
 setCommon(); married('nashka_khibu'); clock.hour = 17;
 active.festival = { id: 'gorkunash', name: 'Gorkunash' };
+assert.equal(social.outingAvailable('festival'), false, 'festival invitation respects the actual gathering schedule');
+active.festivalHours = true;
 assert.equal(social.selectAdvice('nashka_khibu').kind, 'festival', 'spouse sees the live festival');
+clock.hour = 0.5;
+assert.equal(social.outingAvailable('festival'), true, 'late-night festival remains eligible until the real close');
+clock.hour = 17;
 const festivalTree = contexts.get('spouse-social-life').treeFor({ id: 'nashka_khibu' }, { defaultTree: { id: 'tree_nashka_khibu_fallback' } });
 assert.equal(festivalTree.nodes[0].type, 'choice', 'outing invitation offers a real decision');
 assert.equal(festivalTree.nodes[0].choices[1].label, 'Maybe later.', 'declining does not automatically follow');
@@ -138,6 +154,25 @@ married('aliri_ginju');
 assert.equal(social.relationshipFor('gorobi_ginju'), 'Father-in-law');
 assert.equal(social.relationshipFor('gikali_ginju'), 'Mother-in-law');
 assert.equal(social.relationshipFor('dzahiri_khibu'), null, 'previous spouse family does not leak into new marriage');
+// Exercise the actual family farmwork planner, not a stub: an existing claim must be released for an outing.
+vm.runInContext(sourceFile('docs/js/npc-farm-plots.js'), context, { filename: 'npc-farm-plots.js' });
+const farm = w.NpcFarmPlots; // The real planner's availability checks cover in-flight work claims.
+farm.init({ farmTileInfo: () => ({ canTill: true, tilled: false, ready: false }), getCurrentArea: () => 'farm' });
+farm.registerFarmPlots([{ id: 'family-field', kind: 'till', tiles: [[2, 2]], workers: ['tooth_hatayap'], hours: [8, 17] }]);
+setCommon(); married('tooth_hatayap'); clock.hour = 11;
+assert.equal(farm.targetFor({ id: 'tooth_hatayap' }, { familyOnly: true })?.activity, 'tilling the soil', 'family worker has a real farm claim');
+clock.weekday = 'Anan';
+assert.equal(romance.startSpouseOuting('prayer', social.destinationFor('prayer')), true, 'a consenting spouse may interrupt fieldwork');
+assert.equal(farm.targetFor({ id: 'tooth_hatayap' }, { familyOnly: true }), null, 'active outing releases the farm claim');
+romance.endSpouseOuting();
+assert.equal(farm.targetFor({ id: 'tooth_hatayap' }, { familyOnly: true })?.activity, 'tilling the soil', 'fieldwork resumes after outing');
+w.RomanceFamily = { spouseHoldingEgg: () => true, isAssignedToVat: () => false };
+assert.equal(farm.targetFor({ id: 'tooth_hatayap' }, { familyOnly: true }), null, 'egg care suspends active farm claims');
+assert.equal(romance.startSpouseOuting('prayer', social.destinationFor('prayer')), false, 'egg care prevents a false outing acceptance');
+w.RomanceFamily = { spouseHoldingEgg: () => false, isAssignedToVat: () => true };
+assert.equal(romance.startSpouseOuting('prayer', social.destinationFor('prayer')), false, 'assigned vat work prevents a false outing acceptance');
+delete w.RomanceFamily;
+
 romance.restore({ spouse: { npcId: 'aliri_ginju' }, outing: { npcId: 'nashka_khibu', endHour: 3000, target: { area: 'town' } } });
 assert.equal(romance.activeSpouseOuting(), null, 'incompatible saved outings are rejected during restore');
 
