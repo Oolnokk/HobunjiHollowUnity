@@ -24,6 +24,28 @@
     // Slower manual work has diminishing per-step returns, but chained steps multiply (no artificial overall cap).
     return 1 + Math.log2(1 + baseProcessHours(methodId)) / 2;
   }
+  // Cooking is terminal, including saved oil or margarine produced from a cooked dish before this guard existed.
+  function hasCookedOrigin(inputKey, input = deps?.ITEM_DEFS?.[inputKey]) {
+    if (!input) return false;
+    const tags = Array.isArray(input.tags) ? input.tags : []; // Older saved cooked items may have only their tag, rather than isCookedFood.
+    if (input.isCookedFood || tags.some(tag => String(tag).toLowerCase() === 'cooked food')) return true;
+    const ancestors = [inputKey, input.cookingProcessSourceKey, ...(Array.isArray(input.ingredientKeys) ? input.ingredientKeys : [])]; // Used to recover cooked ancestry even when older saves lost the explicit source field.
+    return ancestors.some(key => typeof key === 'string' && (/^food_/i.test(key) || deps?.ITEM_DEFS?.[key]?.isCookedFood));
+  }
+
+  // Every manual and automated station uses this shared eligibility gate.
+  function canProcess(methodId, inputKey, input = deps?.ITEM_DEFS?.[inputKey]) {
+    if (!input || !methodId || hasCookedOrigin(inputKey, input)) return false;
+    const tags = Array.isArray(input.tags) ? input.tags : []; // Used to recognize legacy processed fats without saved provenance.
+    const steps = Array.isArray(input.cookingProcessSteps) ? input.cookingProcessSteps : []; // Persisted history blocks repeating any previous method, not just the most recent one.
+    if (steps.some(step => step?.method === methodId) || input.cookingProcessLastMethod === methodId) return false;
+    if (methodId === 'squeezing' && (
+      input.cookingCategories?.includes('oil') || tags.some(tag => ['oil', 'lard', 'rendered fat'].includes(String(tag).toLowerCase())) ||
+      (input.cat === 'processed' && /(?:Oil|Lard)$/i.test(inputKey))
+    )) return false; // Old fish oils retain a Fish tag, but rendered fat is never fresh fish to squeeze again.
+    return true;
+  }
+
   function gameHour() {
     return window.CalendarSystem?.getAbsoluteGameHour?.() ?? NaN;
   }
@@ -32,7 +54,8 @@
     return `${Number(n.toFixed(1))} in-game h`;
   }
   function enrichOutputs(methodId, inputKey, outputs) {
-    if (!Array.isArray(outputs)) return outputs;
+    if (!canProcess(methodId, inputKey) || !Array.isArray(outputs) || !outputs.length ||
+        outputs.some(output => output?.key === inputKey)) return null; // No repeats, cooked inputs, or zero-change recipes can create new buff steps.
     const input = deps?.ITEM_DEFS?.[inputKey]; // Used to propagate the original ingredient's buffs through each production step.
     const tier = window.HobunjiCookingData?.processingTiers?.[input?.cookingProcessingTier];
     const inherited = Number.isFinite(Number(input?.cookingProcessMultiplier)) && input?.cookingProcessMultiplier != null
@@ -218,7 +241,7 @@
   // Uumkao'ii dew — that jointly produces two outputs from one input.
   function getProcessingOutput(methodId, inputKey) {
     const input = deps.ITEM_DEFS[inputKey];
-    if (!input) return null;
+    if (!canProcess(methodId, inputKey, input)) return null;
     if (methodId === 'squeezing' && isBerryKey(inputKey)) {
       const base = berryBaseName(inputKey);
       return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: processedValue('juice', input.sellPrice), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey], ...cookingFromSource(input, ['sweetLiquid'], 'quick', 'cooking') };
@@ -302,7 +325,7 @@
   // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
   function getProcessingOutputs(methodId, inputKey) {
     const input = deps.ITEM_DEFS[inputKey];
-    if (!input) return null;
+    if (!canProcess(methodId, inputKey, input)) return null;
     const cultivar = window.CropVarieties?.ensure?.(inputKey); // Only harvested variety keys resolve; seeds remain ineligible.
     if (cultivar) {
       const baseOutput = getProcessingOutput(methodId, cultivar.family); // Existing species recipes stay the one authoritative recipe list.
@@ -433,6 +456,12 @@
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
       if (current) output = { ...output, ...current, ingredientKeys: output.ingredientKeys, giftIngredientKeys: output.giftIngredientKeys };
     }
+    const tags = (output?.tags || []).map(tag => String(tag).toLowerCase()); // Used to migrate fish oils saved when Fish tags also granted the raw-fish cooking category.
+    const isFishOil = (tags.includes('fish') || output?.cookingCategories?.includes('fish')) &&
+      (tags.includes('oil') || output?.cookingCategories?.includes('oil') || (output?.cat === 'processed' && /Oil$/i.test(output?.key || '')));
+    if (isFishOil) {
+      output = { ...output, cookingCategories: [...new Set([...(output.cookingCategories || []).filter(category => category !== 'fish'), 'oil'])] };
+    } // Keep legacy fats useful as oil without turning them back into fish after a save/load cycle.
     const presentationMetadata = {
       ...(output.icon ? { icon: output.icon } : {}),
       ...(output.label ? { label: output.label } : {}),
@@ -451,6 +480,8 @@
       ...(output.foodEffects ? { foodEffects: { ...output.foodEffects } } : {}), // Preserve both inherited buffs in the registered processed item.
       ...(Number.isFinite(Number(output.cookingProcessMultiplier)) ? { cookingProcessMultiplier: Number(output.cookingProcessMultiplier) } : {}),
       ...(Array.isArray(output.cookingProcessSteps) ? { cookingProcessSteps: output.cookingProcessSteps.map(step => ({ ...step })) } : {}),
+      ...(typeof output.cookingProcessSourceKey === 'string' ? { cookingProcessSourceKey: output.cookingProcessSourceKey } : {}),
+      ...(typeof output.cookingProcessLastMethod === 'string' ? { cookingProcessLastMethod: output.cookingProcessLastMethod } : {}),
     }; // Used to make dynamically generated fats valid hearth ingredients immediately.
     if (isTrackedProcessedOutput(output)) {
       processedDefinitions.set(output.key, { key: output.key, ...presentationMetadata, ...cookingMetadata,
@@ -496,6 +527,7 @@
     processedValue,
     getProcessingOutput,
     getProcessingOutputs,
+    canProcess, hasCookedOrigin,
     isWheelEligible,
     ensureProcessedItemDef,
     serializeProcessedDefinitions,

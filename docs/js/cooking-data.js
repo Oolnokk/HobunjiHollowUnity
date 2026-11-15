@@ -1853,7 +1853,7 @@
     {
       "id": "sweetGoopyMustardSauce",
       "name": "Sweet Goopy Mushtard Sauce",
-      "description": "A sticky local sauce. Sweet paste + mayonnaise + pungent paste.",
+      "description": "A sticky local sauce. Sweet paste, mayonnaise or cooking oil, and pungent paste.",
       "baseOutputName": "Sweet Goopy Mushtard Sauce",
       "slots": [
         {
@@ -1866,9 +1866,10 @@
         },
         {
           "id": "mayo",
-          "label": "Mayonnaise",
+          "label": "Mayonnaise / Cooking Oil",
           "accepts": [
-            "mayonnaise"
+            "mayonnaise",
+            "oil"
           ],
           "required": true
         },
@@ -1990,14 +1991,15 @@
     {
       "id": "spicyNoodles",
       "name": "Spicy Noodles",
-      "description": "Noodles with heat. Quality leans on spice and noodle base.",
+      "description": "Spicy noodles cooked from flour or uncooked noodle base, with vegetables and spice.",
       "baseOutputName": "Spicy Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodles",
+          "label": "Noodle Base / Flour",
           "accepts": [
-            "noodleBase"
+            "noodleBase",
+            "flour"
           ],
           "required": true
         },
@@ -2026,14 +2028,15 @@
     {
       "id": "cheesyNoodles",
       "name": "Cheesy Noodles",
-      "description": "Comfort food made from noodles and cheese.",
+      "description": "Comfort food made from flour or uncooked noodle base with cheese.",
       "baseOutputName": "Cheesy Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodles",
+          "label": "Noodle Base / Flour",
           "accepts": [
-            "noodleBase"
+            "noodleBase",
+            "flour"
           ],
           "required": true
         },
@@ -2296,14 +2299,15 @@
     {
       "id": "fishNoodles",
       "name": "Fish Noodles",
-      "description": "1 noodles, 1 fish/mollusk, 1 broth base. A seafood noodle soup template.",
+      "description": "Flour or uncooked noodles, fish or mollusk, and broth make a seafood noodle soup.",
       "baseOutputName": "Fish Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodles",
+          "label": "Noodle Base / Flour",
           "accepts": [
-            "noodleBase"
+            "noodleBase",
+            "flour"
           ],
           "required": true
         },
@@ -2334,14 +2338,15 @@
     {
       "id": "meatNoodles",
       "name": "Meat Noodles",
-      "description": "1 noodles, 1 meat, 1 spice/pungent paste. Named as <spice> <meat> and <noodles>.",
+      "description": "Flour or uncooked noodles cooked with meat and spice or pungent paste.",
       "baseOutputName": "Meat Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodles",
+          "label": "Noodle Base / Flour",
           "accepts": [
-            "noodleBase"
+            "noodleBase",
+            "flour"
           ],
           "required": true
         },

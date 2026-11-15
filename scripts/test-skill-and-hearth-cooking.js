@@ -75,6 +75,17 @@ for (const recipeId of expandedRecipeIds) {
   assert(recipe.slots.length > 0 && recipe.slots.every(slot => slot.accepts.length > 0), `${recipeId} remains category-constrained`);
   assert(cookingData.identityNameRules[recipeId], `${recipeId} has an ingredient-led naming rule`);
 }
+// Every recipe that previously relied on another hearth output must also allow an uncooked ingredient.
+for (const recipeId of ['spicyNoodles', 'cheesyNoodles', 'fishNoodles', 'meatNoodles']) {
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Ensures terminal noodle dishes are still craftable from milled flour.
+  assert(recipe.slots.find(slot => slot.id === 'noodles')?.accepts.includes('flour'), recipeId + ' can be cooked without reusing a cooked noodle dish');
+}
+for (const recipeId of ['eggToast', 'cheeseToast', 'savorySandwich', 'sweetBreadPudding', 'hearthFlatbread']) {
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Keeps toast/bread recipes reachable with uncooked flour.
+  assert(recipe.slots.find(slot => slot.id === 'bread')?.accepts.includes('flour'), recipeId + ' can be cooked without recooking hearth bread');
+}
+assert(cookingData.recipes.find(recipe => recipe.id === 'sweetGoopyMustardSauce')?.slots.find(slot => slot.id === 'mayo')?.accepts.includes('oil'),
+  'mustard sauce can use uncooked cooking oil instead of requiring hearth mayonnaise');
 const expandedCategories = new Set(cookingData.recipes.flatMap(recipe => recipe.slots.flatMap(slot => slot.accepts))); // Used to verify the new meals actually broaden ingredient-family usage.
 for (const category of ['bread', 'sauce', 'herb', 'mollusk']) assert(expandedCategories.has(category), `${category} participates in the expanded meal roster`);
 assert.match(processing.diagnosticsText(), /Expanded meals: 16/, 'food-processing diagnostics report the expanded meal count');
@@ -171,5 +182,86 @@ assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vat
 assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid housed worker is already assigned');
 assert.match(farmPanelSource, /entry\.barnId && window\.DewVats\.vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
 assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
+
+// A separate live-module sandbox checks the actual processor and hearth boundaries,
+// not just data definitions or string presence in game.js.
+const terminalContext = {
+  console,
+  document: { readyState: 'complete', getElementById: () => ({}) },
+  window: {},
+}; // Hosts the standalone processors and CookingSystem without needing the Three.js world.
+for (const path of [
+  'docs/js/cooking-data.js', 'docs/js/item-processing.js',
+  'docs/js/cooking-system.js', 'docs/js/food-processing.js',
+]) vm.runInNewContext(fs.readFileSync(path, 'utf8'), terminalContext);
+const itemProcessor = terminalContext.window.ItemProcessing; // Runs the exact station recipe adapter installed by food-processing.js.
+const liveDefs = {
+  rawRiverFish: { label: 'River Fish', cat: 'food', tags: ['Fish'], sellPrice: 12, cookingCategories: ['fish'], cookingPrimaryEffect: 'fishing' },
+  oldFishOil: { label: 'Old Fish Oil', cat: 'processed', tags: ['Processed', 'Fish', 'Oil'], cookingCategories: ['fish', 'oil'] },
+  oldRiverFishOil: { label: 'Old River Fish Oil', cat: 'processed', tags: ['Processed', 'Fish'], cookingCategories: ['fish'] },
+}; // Includes legacy processed fats saved without cookingProcessSteps.
+const terminalInventory = { rawRiverFish: 2, oldFishOil: 1, oldRiverFishOil: 1 }; // Supplies uncooked and legacy items to the cooking picker.
+itemProcessor.init({ ITEM_DEFS: liveDefs, cropData: {}, PROCESSING_METHODS: ['squeezing', 'smoking', 'churning', 'composting'], getInventoryItems: () => [] });
+const smokedRiverFish = itemProcessor.getProcessingOutputs('smoking', 'rawRiverFish')[0];
+itemProcessor.ensureProcessedItemDef(smokedRiverFish);
+assert.equal(smokedRiverFish.cookingProcessSteps[0].method, 'smoking');
+assert.equal(itemProcessor.getProcessingOutputs('smoking', smokedRiverFish.key), null, 'smoked fish cannot be smoked again');
+const pressedRiverFish = itemProcessor.getProcessingOutputs('squeezing', smokedRiverFish.key)[0];
+itemProcessor.ensureProcessedItemDef(pressedRiverFish);
+assert.equal(pressedRiverFish.cookingProcessSteps.length, 2, 'different preprocessing methods still legitimately chain');
+assert.equal(itemProcessor.getProcessingOutputs('squeezing', pressedRiverFish.key), null, 'smoked fish oil cannot be squeezed twice');
+assert.equal(itemProcessor.getProcessingOutput('squeezing', pressedRiverFish.key), null, 'single-output entry point shares the stop rule');
+assert.equal(terminalContext.window.HobunjiFoodProcessing.getProcessingOutputs('squeezing', pressedRiverFish.key, liveDefs[pressedRiverFish.key]), null, 'direct vat calls cannot bypass the stop rule');
+assert.equal(itemProcessor.getProcessingOutputs('squeezing', 'oldFishOil'), null, 'legacy fish oil with Oil tag cannot enter the vat');
+assert.equal(itemProcessor.getProcessingOutputs('squeezing', 'oldRiverFishOil'), null, 'legacy fish oil recognized from key suffix cannot enter the vat');
+const churnedRiverFish = itemProcessor.getProcessingOutputs('churning', pressedRiverFish.key)[0];
+itemProcessor.ensureProcessedItemDef(churnedRiverFish);
+assert.equal(churnedRiverFish.key, 'margarine', 'processed fish oil may go to a different station once');
+assert.equal(itemProcessor.getProcessingOutputs('churning', churnedRiverFish.key), null, 'the same processing method cannot be repeated after churning');
+const savedProcessed = JSON.parse(JSON.stringify(itemProcessor.serializeProcessedDefinitions()));
+const obsoleteFishOil = {
+  key: 'legacyFishOil', label: 'Legacy Fish Oil', icon: '🫗', cat: 'processed',
+  tags: ['Processed', 'Fish', 'Oil'], cookingCategories: ['fish', 'oil'],
+  cookingProcessMultiplier: 1.5, cookingProcessSteps: [{ method: 'squeezing', multiplier: 1.5 }],
+}; // Simulates a historical persisted definition that reintroduced Fish after initial catalog registration.
+itemProcessor.restoreProcessedDefinitions([...savedProcessed, obsoleteFishOil]);
+assert.equal(itemProcessor.getProcessingOutputs('squeezing', pressedRiverFish.key), null, 'reloaded processed definitions retain stage history');
+assert(!liveDefs.legacyFishOil.cookingCategories.includes('fish'), 'restoring saved fish oil must not resurrect its obsolete fish recipe category');
+assert(liveDefs.legacyFishOil.cookingCategories.includes('oil'), 'legacy rendered fish oil remains a usable cooking fat');
+
+const cookingTerminal = terminalContext.window.CookingSystem; // Exercises generated hearth food with normal ingredient categories.
+cookingTerminal.init({
+  ITEM_DEFS: liveDefs, inventory: terminalInventory, inventoryItems: [],
+});
+cookingTerminal.registerCookedDefinition('fishPie', {
+  label: 'River Fish Pie', tags: ['Cooked Food', 'Fish'], recipeId: 'fishStew', cookingCategories: ['fish'],
+  foodEffects: { fishing: 50 }, cookingDefaultStars: 5,
+});
+terminalInventory.fishPie = 2;
+const legacyPieOil = 'food_threeFishPie_olderOil'; // Pre-fix squeezed output retains a cooked meal's key even after its isCookedFood flag is lost.
+itemProcessor.ensureProcessedItemDef({
+  key: legacyPieOil, icon: '🫗', label: 'Old Fish Pie Oil', cat: 'processed',
+  tags: ['Processed', 'Fish', 'Oil'], cookingCategories: ['oil'],
+  cookingProcessMultiplier: 1.5, cookingProcessSteps: [{ method: 'squeezing', multiplier: 1.5 }],
+  ingredientKeys: ['fishPie'],
+});
+terminalInventory[legacyPieOil] = 1;
+assert.equal(itemProcessor.getProcessingOutputs('churning', legacyPieOil), null, 'an old fish-pie oil cannot reenter another processor');
+assert.equal(terminalContext.window.HobunjiFoodProcessing.getProcessingOutputs('churning', legacyPieOil, liveDefs[legacyPieOil]), null,
+  'direct churn recipe calls also refuse cooked-food descendants');
+assert(!cookingTerminal.listIngredientDefinitions('oil').some(entry => entry.key === legacyPieOil),
+  'oil made from a cooked pie cannot carry its boosted foodEffects into another hearth meal');
+assert(!liveDefs.oldFishOil.cookingCategories.includes('fish'), 'old fish oil loses its incorrectly inherited raw-fish recipe category');
+assert(!liveDefs.oldRiverFishOil.cookingCategories.includes('fish'), 'old fish-oil keys also migrate without an Oil tag');
+assert(!liveDefs[pressedRiverFish.key].cookingCategories.includes('fish'), 'new pressed oils cannot occupy a recipe fish slot');
+for (const method of ['squeezing', 'smoking', 'churning', 'composting']) {
+  assert.equal(itemProcessor.getProcessingOutputs(method, 'fishPie'), null, 'hearth food cannot be processed by ' + method);
+}
+assert.equal(terminalContext.window.HobunjiFoodProcessing.getProcessingOutputs('squeezing', 'fishPie', liveDefs.fishPie), null, 'the direct squeezing recipe refuses cooked fish pies');
+assert(!cookingTerminal.listIngredientDefinitions('fish').some(entry => entry.key === 'fishPie'), 'completed meals never appear in ingredient lists');
+const fishOnlyRecipe = { id: 'terminal-test', slots: [{ id: 'fish', required: true, accepts: ['fish'] }] }; // A recipe slot that would otherwise accept the pie's inherited fish category.
+assert.equal(cookingTerminal.bestAvailableSelection(fishOnlyRecipe).fish.key, 'rawRiverFish', 'cooked fish cannot feed its own cooking buff into another meal');
+terminalInventory.rawRiverFish = 0;
+assert.equal(cookingTerminal.bestAvailableSelection(fishOnlyRecipe).fish, undefined, 'only finished dishes in stock leaves a recipe unfillable');
 
 console.log('skill and hearth cooking tests passed');
