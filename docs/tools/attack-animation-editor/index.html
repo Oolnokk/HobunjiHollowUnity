@@ -2042,12 +2042,17 @@ function templateForAction(action) {
   if (action.heldAnimationKey) {
     const held = window.HeldActionAnimations?.[action.heldAnimationKey];
     if (!held) return null;
-    return cloneAnimationTemplate({
+    const template = cloneAnimationTemplate({
       ...held,
       sequence: held.sequence || 'attack',
       toolKey: action.toolKey,
       still: held.still === true,
     });
+    if (action.id === 'torch_idle') {
+      const liveNeutral = window.AttackIdleStanceEditor?.getConfig?.()?.stances?.torchHold; // The authored Local Override owns this rest pose, not the immutable built-in template.
+      if (liveNeutral) template.neutral = { ...template.neutral, ...liveNeutral }; // Keep distinct torch Windup/Strike keyframes untouched.
+    }
+    return template;
   }
   const preset = TOOL_PRESETS.find(entry => entry.id === action.templateId);
   return preset ? cloneAnimationTemplate(preset) : null;
