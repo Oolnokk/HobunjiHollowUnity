@@ -8,6 +8,7 @@
   const rigWorkspace = document.querySelector('.app'); // Existing neck/shoulder workspace, switched by top-level tabs.
   const brushApi = window.ModularWeaponBridgeFill; // Shared, tested modular weapon smudge/plow/revert implementation.
   const hatApi = window.AnimalNpcHeadwear; // Runtime attachment normalization, for authoring/runtime parity.
+  const HAT_PREVIEW_STORAGE_KEY = 'hobunji_animal_hat_fits_v1'; // Separate preview key, never shadows the animal's neck rig.
   if (!rigWorkspace || !brushApi?.smudgeStep || !hatApi?.normalizeAttachment) return;
 
   const style = document.createElement('style'); // Responsive hat editor styles without touching the existing controls.
@@ -61,10 +62,10 @@
     '<label>Strength <span id="hatStrengthText">100%</span><input id="hatStrength" type="range" min="1" max="100" value="100"></label>',
     '<div class="row"><button id="hatUndo" disabled>↶ Undo</button><button id="hatRedo" disabled>↷ Redo</button><button id="hatResetPixels">Reset art</button></div>',
     '<div class="hint">Smudge and Plow use the modular weapon editor’s pixel-moving algorithms, adapted for opaque fabric, feathers and dark outlines. Restore paints back original pixels. Each drag is one undo step.</div></div>',
-    '<div><h2>Save and export</h2><div class="row"><button id="hatPreviewSave" class="primary">Save in-game fit preview</button><button id="hatExportPng" class="primary">Export edited PNG</button></div>',
+    '<div><h2>Save and export</h2><div class="row"><button id="hatPreviewSave" class="primary">Save in-game fit preview</button><button id="hatPreviewClear">Clear hat preview</button><button id="hatExportPng" class="primary">Export edited PNG</button></div>',
     '<div class="row"><button id="hatExportAll">Export all changed layers</button><button id="hatCopyAttachment">Copy attachment JSON</button></div>',
     '<div class="row"><button id="hatExportRecord">Download animal record</button></div>',
-    '<div class="hint">Fit values are included in animal JSON and the browser preview rig. Pixel edits become game art only after replacing the corresponding source PNGs; they are deliberately not embedded in JSON or browser storage.</div></div>',
+    '<div class="hint">Hat fits use their own browser preview storage so they cannot override neck weights. Authored fits export to animal JSON. Pixel edits become game art only after replacing the source PNGs.</div></div>',
     '</section>',
     '<section class="panel hat-stage">',
     '<div class="row"><strong>Animal with hat</strong><span id="hatPlacementBadge" class="badge">No animal</span></div>',
@@ -600,26 +601,43 @@
     try { const record = buildRecord(); downloadJson(record, (record.id || 'animal') + '-hat-rig.json'); }
     catch (error) { status(error.message, false); }
   };
+  function readHatPreviews() {
+    try {
+      const data = JSON.parse(localStorage.getItem(HAT_PREVIEW_STORAGE_KEY) || '{}');
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (_) { return {}; }
+  }
+  function writeHatPreviews(previews) { localStorage.setItem(HAT_PREVIEW_STORAGE_KEY, JSON.stringify(previews)); }
   el('hatPreviewSave').onclick = () => {
     try {
-      const id = el('animalId').value.trim(); // Browser preview is keyed by the animal's stable species ID.
-      if (!id) throw new Error('Animal ID is required to save the in-game hat preview.');
-      const rigs = readPreviewRigs(); // Existing shared runtime storage; never wipe the current head rig for a hat-only edit.
-      const previous = rigs[id] && typeof rigs[id] === 'object' && !Array.isArray(rigs[id]) ? rigs[id] : {};
-      const neckRig = normalizedRig(); // Optional: hat-only authoring does not require neck influence.
-      const next = { ...previous, ...(neckRig || {}) };
-      if (view.authored) next.hatAttachment = attachmentFromControls();
-      else delete next.hatAttachment; // Resetting fit also clears any previously saved hat-only override.
-      if (Object.keys(next).length) rigs[id] = next;
-      else delete rigs[id];
-      writePreviewRigs(rigs);
-      const verified = readPreviewRigs(); // No success message until browser storage survives a round trip.
-      if (JSON.stringify(verified[id] || null) !== JSON.stringify(rigs[id] || null))
+      const id = el('animalId').value.trim().toLowerCase().replace(/_/g, '-'); // Canonical species key shared with headwear runtime.
+      if (!id) throw new Error('Animal ID is required to save an in-game hat preview.');
+      if (!view.authored) fillAttachment(null); // Derive from the latest neck paint when no explicit fit exists.
+      const previews = readHatPreviews(); // Writes to hats ONLY. No head-rig preview record is changed.
+      previews[id] = attachmentFromControls();
+      writeHatPreviews(previews);
+      if (JSON.stringify(readHatPreviews()[id]) !== JSON.stringify(previews[id]))
         throw new Error('Hat preview did not round-trip through browser storage.');
       status('Saved ' + (view.authored ? 'authored' : 'head-derived') + ' hat fit preview for ' + id +
-        (neckRig ? ' with current neck rig.' : ' (hat-only, existing neck rig preserved).') +
-        ' Reload/respawn the animal. Edited PNG pixels still require exported asset files.');
+        '. Neck-rig preview was not modified. Reload/respawn the animal. Edited PNG pixels still require exported assets.');
     } catch (error) { status(error.message || String(error), false); }
+  };
+  el('hatPreviewClear').onclick = () => {
+    try {
+      const id = el('animalId').value.trim().toLowerCase().replace(/_/g, '-');
+      if (!id) throw new Error('Animal ID is required to clear the hat preview.');
+      const previews = readHatPreviews(); // Clears only this hat without touching any neck-rig data.
+      delete previews[id];
+      writeHatPreviews(previews);
+      if (Object.prototype.hasOwnProperty.call(readHatPreviews(), id))
+        throw new Error('Hat preview did not clear from browser storage.');
+      status('Cleared hat preview for ' + id + '. Runtime uses its committed animal hat fit.');
+    } catch (error) { status(error.message || String(error), false); }
+  };
+  const clearAllRigsOriginal = el('clearAllPreviewRigs').onclick; // Existing clear-all must include both independent preview stores.
+  el('clearAllPreviewRigs').onclick = () => {
+    clearAllRigsOriginal?.();
+    try { writeHatPreviews({}); } catch (error) { status('Unable to clear hat previews: ' + error.message, false); }
   };
   el('animalId').addEventListener('input', syncSpecies);
   el('animalLabel').addEventListener('input', syncSpecies);
