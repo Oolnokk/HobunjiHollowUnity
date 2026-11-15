@@ -529,6 +529,32 @@ in the browser and restores the currently shipped defaults. Changing priorities
 does not override the scene's physical depth, water tint, front mask or shell
 outline. Moving a layer activates `layers.manualOrder`.
 
+### Diagnostic hypothesis presets
+
+The X-ray Dev Companion also exposes a single **Possible explanation to test** selector
+and **Apply selected experiment**. Experiments are **temporary A/B tests**, not proposed
+production fixes. Each experiment discards the previous experiment's edits and derives a
+complete, validated setting set **from this repo's defaults**; no settings leak between
+experiments. The selectable scenarios are: repository baseline; owner-front stencil off;
+force all hands under their front art; legacy sky/background occlusion; jump-depth rebuild
+off; older near-only actor sorting; pants outside actor sorting; tool before hands in the
+held overlay; tool after hands; and portrait-water tint off. The latter affects portrait
+tint, **not** the weapon water compositor. Tool ordering cannot override the owner stencil.
+The panel spells out the hypothesis, what a visible change would suggest, and what lack
+of change would suggest; neither result proves a cause without comparing the **same
+scene and pose** against the baseline.
+
+On the **first** application, a complete copy of the user's prior rules, draw order, and
+editor selection is stored in `hobunji.xrayHierarchy.diagnostics.v1` in the browser.
+Subsequent experiments reuse that **original** backup, including across page reloads.
+**Restore my pre-test settings** applies that backup and deletes it. **Reset all to repo**
+also deletes the backup, deliberately discarding the old custom configuration. A user
+who edits settings while a preset is active sees **modified manually**, rather than a
+false claim that the selected experiment is still exact. **Copy mobile diagnostic report**
+contains the active hypothesis and comparison guidance, all rule values and drawing
+ranks, and the actual available stencil/airborne/overlay counters. This is useful on
+mobile without the browser console. These presets do not alter player/world saves.
+
 **Jumping regression:** a player airborne in `PlayerJump.debug` has
 physically raised gear. The compositor's ordinary-depth shortcut previously
 reused scene depth, including artificial far-plane sky/cloud-mask depth and
