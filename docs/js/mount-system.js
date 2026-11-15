@@ -16,6 +16,7 @@
     deps = injectedDeps;
     installSharedCreatureGait();
     ensureMountWheatHud();
+    installMountedActionInput();
   }
 
   // 'none': no mount out. 'rushingIn': a just-summoned mount is dashing in
@@ -58,6 +59,9 @@
   let mountWheatHud = null; // Retained DOM view; only updated when charge/state changes.
   let lastHudSignature = ''; // Avoids per-frame DOM mutation and MutationObserver loops.
   let mountActionsClaimed = false; // Mirrors the action router's mounted dodge/jump overrides.
+  let mountInputInstalled = false; // Prevents duplicate key/pointer/controller listeners across repeated game initialization.
+  const lastMountedActionMs = { dodge: -10000, jump: -10000 }; // Deduplicates a physical press dispatched by both the shared action router and device adapters.
+  let lastPointerAction = null; // Suppresses the synthetic click following a handled mobile pointerdown.
   const ridingDebug = { boosts: 0, autoRockJumps: 0, manualJumps: 0, lastWhistle: null, lastBreath: null }; // Mobile-readable mount behavior diagnostics.
 
   const mountRenderSync = { active: false, beforeXzDriftTiles: 0, afterXzDriftTiles: 0, verticalCorrectionTiles: 0 }; // Used by Pixel Probe to expose rider/carrier render drift on mobile.
@@ -139,6 +143,62 @@
     }
   }
 
+  function pressMountedAction(actionId) {
+    if (mountRideState !== 'mounted') return false;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - (lastMountedActionMs[actionId] ?? -10000) < 140) return true;
+    lastMountedActionMs[actionId] = now;
+    return actionId === 'dodge' ? accelerateMount() : actionId === 'jump' ? jumpMount() : false;
+  }
+
+  // The action router owns gameplay claims; these device-edge listeners cover
+  // legacy Dodge/Jump input paths that execute before generic world claims.
+  // Controller support reads ControllerInput's existing shared frame, never
+  // polls a gamepad or starts another frame loop.
+  function installMountedActionInput() {
+    if (mountInputInstalled || typeof window?.addEventListener !== 'function') return;
+    mountInputInstalled = true;
+    window.addEventListener('keydown', event => {
+      if (mountRideState !== 'mounted' || event.repeat || event.defaultPrevented) return;
+      if (event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
+      const bindings = window.InputBindings?.getCurrentBindings?.()?.desktop || {};
+      const action = event.code === bindings.dodge ? 'dodge' : event.code === bindings.jump ? 'jump' : null;
+      if (!action) return;
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+      pressMountedAction(action);
+    }, true);
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('pointerdown', event => {
+        if (mountRideState !== 'mounted') return;
+        const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
+        if (!target) return;
+        const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
+        lastPointerAction = { action, at: typeof performance !== 'undefined' ? performance.now() : Date.now() };
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        pressMountedAction(action);
+      }, true);
+      document.addEventListener('click', event => {
+        if (mountRideState !== 'mounted') return;
+        const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
+        if (!target) return;
+        const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        if (lastPointerAction?.action === action && now - lastPointerAction.at < 800) return;
+        pressMountedAction(action);
+      }, true);
+    }
+    window.ControllerInput?.subscribe?.('mount-riding-actions', frame => {
+      if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false) return;
+      const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
+      if (bindings.dodge && frame.pressed?.has?.(bindings.dodge)) pressMountedAction('dodge');
+      if (bindings.jump && frame.pressed?.has?.(bindings.jump)) pressMountedAction('jump');
+    }, 5);
+  }
+
   // Claims use the same device-neutral gameplay action router as nearby interactions.
   function syncMountedActionClaims() {
     const active = mountRideState === 'mounted';
@@ -147,8 +207,8 @@
     if (!claims?.setClaims || !claims?.clearClaims) return;
     mountActionsClaimed = active;
     if (active) claims.setClaims('mount-riding', [
-      { actionId: 'dodge', label: 'Accelerate mount', priority: 990, onPress: accelerateMount },
-      { actionId: 'jump', label: 'Jump mount', priority: 990, onPress: jumpMount },
+      { actionId: 'dodge', label: 'Accelerate mount', priority: 990, onPress: () => pressMountedAction('dodge') },
+      { actionId: 'jump', label: 'Jump mount', priority: 990, onPress: () => pressMountedAction('jump') },
     ]);
     else claims.clearClaims('mount-riding');
   }
@@ -898,8 +958,8 @@
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
       window.GroundObstacleAvoidance?.reset('mounted');
     } else {
-      mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      if (mountCurrentSpeedPxS > desiredSpeed) mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
+      if (mountCurrentSpeedPxS < desiredSpeed) mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
+      else mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
       const rockPlan = m._mountHop ? null : planMountHop(m, currentArea);
       const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
       const steerX = inputStrength > 0.01 ? ix : Math.cos(mountAngle);
