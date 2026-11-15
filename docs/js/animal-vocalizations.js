@@ -298,7 +298,8 @@
 
   function buildSequence(c, kind, opts, profile) {
     const cfg = profile[kind];
-    const utterances = normalizeUtterances(cfg.utterances, PROFILE_DEFAULTS[kind].utterances);
+    const authoredUtterances = normalizeUtterances(cfg.utterances, PROFILE_DEFAULTS[kind].utterances);
+    const utterances = kind === 'exertion' ? (authoredUtterances.length ? authoredUtterances.slice(0, 1) : PROFILE_DEFAULTS.exertion.utterances) : authoredUtterances; // Exertion is always exactly one randomly selected recording, even from imported configs.
     const intervalS = Math.max(0, finite(opts.intervalMs, cfg.intervalMs) / 1000);
     const sizePitch = sizePitchOffsetSemitones(c, profile);
     return utterances.map((utterance, index) => ({
