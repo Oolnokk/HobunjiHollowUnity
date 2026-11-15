@@ -603,7 +603,7 @@
   }
 
   async function handleSettingsLoad(button) {
-    if (!confirm('Load the primary folder into this running game? If the save differs, the game will restart once so every runtime system uses the restored data.')) return;
+    if (!confirm('Load the primary folder into this running game? The game will restart to rebuild the farm and furniture even if the browser cache already matches the folder.')) return;
     setBusy(button, true, 'Loading…');
     try {
       const result = await localSave.loadFromFolder();
@@ -612,7 +612,8 @@
         return;
       }
       lastUiAction = 'settings-load-folder';
-      if (result.changed) {
+      const runtimeNeedsRebuild = window.__hobunjiGameStarted === true; // Browser/folder JSON equality does not prove that the live farm was actually reconstructed.
+      if (result.changed || runtimeNeedsRebuild) {
         markFolderAlreadyApplied('folder-loaded-in-settings');
         window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('settings-folder-load'); // The departing runtime still contains the old inventory.
         location.reload();
