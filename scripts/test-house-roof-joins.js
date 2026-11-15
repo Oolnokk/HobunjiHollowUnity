@@ -12,7 +12,7 @@ const read = relative => fs.readFileSync(path.join(__dirname, '..', relative), '
 const core = read('docs/js/house-pieces-core.js');
 const generator = read('docs/js/HousePieceGen.js');
 const loader = read('docs/js/house-pieces.js');
-const indexHtml = read('docs/index.html');
+const indexHtml = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Validates the actual script order, including the independent house-runtime cache version.
 
 // Execute the actual pure roof/adjacency helpers from the production module,
 // rather than maintaining a second copy of their joining rules in this test.
