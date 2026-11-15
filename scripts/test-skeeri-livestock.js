@@ -140,4 +140,51 @@ const html=read('docs/index.html');
 assert(html.indexOf('js/skeeri-livestock-registration.js')>html.indexOf('js/pingdort-registration.js'));
 assert(html.indexOf('js/skeeri-livestock-registration.js')<html.indexOf('js/creature-genetics.js'),
   'Skeeri palette and egg item mapping must be ready before genetics/game snapshots');
+
+const farmWindow = {
+  SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
+  CreatureGenetics:genetic,
+}; // Exact production FarmAnimals implementation with only UI/graphics dependencies omitted.
+vm.runInNewContext(read('docs/js/farm-animals.js'),{
+  window:farmWindow,performance:{now:()=>1000},console,
+});
+const realFarm=farmWindow.FarmAnimals;
+const farms=[],personalStable=[]; // World-shared vs individual animal ownership is asserted separately.
+const farmBag={fertileSkeeriEgg:2,skeeriEgg:1}; // Ordinary food eggs must remain inedible as livestock.
+const roleSelections=[];
+realFarm.init({
+  LIVESTOCK_ITEM_KINDS:W.SCRATCHBONES_CONFIG.game.livestock.itemKinds,
+  LIVESTOCK_RESOURCE_DEFS:W.SCRATCHBONES_CONFIG.game.livestock.resources,
+  inventory:farmBag,hasFarmPermission:()=>true,clampInventoryStack() {},
+  loadWorldLivestock:()=>farms,saveWorldLivestock() {},
+  getStable:()=>personalStable,saveStable() {},
+  companionAiTypeForKind:()=> 'companion',
+  _autoAssignStableRole:entry=>roleSelections.push(genetic.stableEntryRole(entry)),
+});
+const bloodline=stats.genotypes[0].genotype; // Actual collected egg genotype from the production nest grant above.
+const farmResult=realFarm.addFromItem('fertileSkeeriEgg',{carriedGenotype:bloodline});
+assert(farmResult.ok,'a fertile Skeeri egg must be raisable through the real FarmAnimals API');
+assert.equal(farms.length,1);
+assert.equal(farms[0].kind,'skeeri');
+assert.equal(farms[0].barnId,null,'new livestock waits in stasis until housed');
+assert.deepEqual(JSON.parse(JSON.stringify(farms[0].genotype)),JSON.parse(JSON.stringify(bloodline)));
+assert.equal(farmBag.fertileSkeeriEgg,1);
+realFarm.tickResources();
+assert.equal(farms[0].daysUntilResource,2,'unhoused Skeeri must not lay eggs or advance cooldowns');
+farms[0].barnId='test_barn'; // Simulates existing farm menu barn assignment, not a second housing implementation.
+realFarm.tickResources();
+assert.equal(farms[0].daysUntilResource,1);
+realFarm.tickResources();
+assert.equal(farms[0].resourceReady,true,'housed Skeeri lay after the shared two-day cooldown');
+const stableResult=realFarm.addToStable('fertileSkeeriEgg',{carriedGenotype:bloodline});
+assert(stableResult.ok,'fertile Skeeri eggs must also enter a personal Stable');
+assert.equal(personalStable.length,1);
+assert.equal(personalStable[0].kind,'skeeri');
+assert.deepEqual(JSON.parse(JSON.stringify(personalStable[0].genotype)),JSON.parse(JSON.stringify(bloodline)));
+assert.equal(roleSelections[0],'shoulderPet','wild small Skeeri start in the shoulder pet role');
+assert.equal(farmBag.fertileSkeeriEgg,0);
+assert.equal(realFarm.addFromItem('skeeriEgg').ok,false,'ordinary farm eggs may never hatch');
+assert.equal(realFarm.addToStable('skeeriEgg').ok,false,'ordinary farm eggs may never enter the Stable');
+assert.equal(farmBag.skeeriEgg,1);
+
 console.log('Skeeri inventory, nest persistence, genetics, Nursery/Stable and flying rig contracts: OK');
