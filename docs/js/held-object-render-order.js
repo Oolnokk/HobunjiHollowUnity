@@ -2915,6 +2915,35 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (gearDepthStates) restoreMaterialStates(gearDepthStates);
         }
       }
+      // No scissor-depth snapshot on WebGL1 or a lost render target: the airborne
+      // ordinary group cleared the base buffer to eliminate sky/cloud silhouettes.
+      // Restore the actual scene depth before water tint and later postprocessing,
+      // then re-add held pixels with the same owner-specific portrait stencil.
+      if (rebuildAirborne && !depthRestored && !nearToken) {
+        const originalDepthSources = suppressDraws(overlayMeshes); // The original scene depth is world-only.
+        const restoreStates = prepareNonGroundDepthMaterials(scene); // Alpha-tested characters and protected covers write depth.
+        const waterHidden = tintOverlay ? hideObjects(nearbyTintCovers) : null; // Translucent water was not a base depth writer.
+        if (canLockColorMask) { colorBuffer.setMask(false); colorBuffer.setLocked(true); }
+        try {
+          camera.layers.mask = originalCameraMask;
+          renderer.clearDepth();
+          rawRender.call(renderer, scene, camera);
+        } finally {
+          if (canLockColorMask) { colorBuffer.setLocked(false); colorBuffer.setMask(true); }
+          if (waterHidden) restoreVisibility(waterHidden);
+          restoreMaterialStates(restoreStates);
+          restoreDraws(originalDepthSources);
+        }
+        const raisedGearStates = prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true);
+        for (const material of raisedGearStates.keys()) material.colorWrite = false; // Depth only; original gear color is already present.
+        try {
+          camera.layers.mask = HELD_OVERLAY_MASK;
+          rawRender.call(renderer, scene, camera);
+        } finally {
+          restoreMaterialStates(raisedGearStates);
+        }
+        depthRestored = true; // Skip the redundant floor-only restoration after a complete world rebuild.
+      }
       const needsGroundRestore = !depthRestored && (groups.some(group => group.regions.length) || !canLockColorMask); // An ordinary supplement never removes existing floor depth.
       const groundMaterialStates = needsGroundRestore ? prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground) : new Map();
       try {
