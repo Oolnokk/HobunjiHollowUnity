@@ -19570,8 +19570,19 @@
             ? (targetDot < 0.35 ? TURN_ACCEL * icePhysics.turningFactor : ACCEL * icePhysics.accelerationFactor) * footingSpeedMul
             : (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
-          player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
-          player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
+          if (groundSteer) {
+            // With assisted bearings, clamp the acceleration VECTOR: the
+            // ordinary per-axis clamp can turn a tiny nudge into a 45-degree
+            // diagonal when accelerating from rest.
+            const changeX = targetVx - player.vx, changeY = targetVy - player.vy; // Velocity error used only for the steering frame's bounded acceleration.
+            const changeLen = Math.hypot(changeX, changeY);
+            const fraction = changeLen > step && changeLen > 0 ? step / changeLen : 1; // Avoids unexpectedly strong sideways acceleration.
+            player.vx += changeX * fraction;
+            player.vy += changeY * fraction;
+          } else {
+            player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
+            player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
+          }
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
