@@ -7,14 +7,15 @@
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
   const captivePoses = new WeakMap(); // Original rotation and size of the actual aligned actor root, not a potentially different portrait child.
-  const releasedPoseChecks = new Map(); // Two native ticks to stop a late talon renderer leaving prey permanently sideways.
+  const releasedPoseChecks = new Map(); // Short ownership-checked guard against a late talon write; never reassert over a new native pose.
   let deps = null; // WildlifeSpawn's live hostile collection and optional camera dependency.
   let scanT = 0; // Timer for bounded active-area scans rather than per-frame global searches.
   let area = null; // Last map id, used to immediately clear attachments across scene transitions.
   let seconds = 0; // Shared wing flap clock; prevents one Date.now call per bird.
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
     lastBird: null, lastPose: null, captiveRestores: 0, captiveRestoreMisses: 0,
-    lastCaptiveRestore: null, tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
+    lastCaptiveRestore: null, captiveHandoffs: 0, staleCarryCorrections: 0,
+    tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   function stableIndex(actor) {
@@ -47,12 +48,20 @@
     }
     return prey?.avatarRef?.group === group; // NPC and creature visual promotion must not restore detached old portraits.
   }
+  function sameOrientation(current, expected) {
+    if (!current || !expected) return false;
+    if (typeof current.dot === 'function') {
+      const dot = Math.abs(current.dot(expected)); // Quaternions q and -q represent the same orientation.
+      return Number.isFinite(dot) && dot >= 1 - 1e-8;
+    }
+    return current.equals?.(expected) === true; // Preview/test quaternions may expose equality without a dot product.
+  }
   function rememberCaptive(prey, group = currentCaptiveGroup(prey)) {
     if (!prey || !group?.quaternion?.clone) return false;
     if (captivePoses.get(prey)?.group === group) return true;
     releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
     captivePoses.set(prey, { group, quaternion: group.quaternion.clone(),
-      scale: group.scale?.clone?.() || null }); // Restore the actual live avatar's original size and orientation.
+      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null }); // Track the latest pose actually written by talons, not just the original.
     return true;
   }
   function restoreCaptive(prey) {
@@ -67,11 +76,18 @@
       debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': visual root replaced';
       return false;
     }
-    pose.group.quaternion.copy(pose.quaternion); // Clear the talon orientation from the playerMesh base BEFORE ordinary walking/combat animation resumes.
-    if (pose.scale) pose.group.scale?.copy?.(pose.scale); // Matrix decomposition must not leave an altered scale behind.
-    releasedPoseChecks.set(prey, { ...pose, remaining: 2 }); // Clear the old pose after the release frame and next native render.
+    const owned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
+    if (owned) {
+      pose.group.quaternion.copy(pose.quaternion); // Hand off the exact pre-capture pose only while the talons still own it.
+      if (pose.scale) pose.group.scale?.copy?.(pose.scale);
+      releasedPoseChecks.set(prey, { ...pose, remaining: 2 }); // Correct only a verified late reapplication of the old talon quaternion.
+    } else {
+      releasedPoseChecks.delete(prey);
+      debug.captiveHandoffs++;
+    }
     debug.captiveRestores++;
-    debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': restored root baseline';
+    debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature')
+      + (owned ? ': restored root baseline' : ': newer pose retained');
     return true;
   }
   function release(actor, reason = 'removed') {
@@ -195,6 +211,7 @@
     for (const actor of [...tracked.keys()]) release(actor, 'reinitialized');
     area = null;
     scanT = 0;
+    releasedPoseChecks.clear(); // A new scene/roster must never retain pending release writers from the old one.
   }
   function tick(dt, activeArea = deps?.getCurrentArea?.()) {
     if (!deps?.hostileObjects || !activeArea) return 0;
@@ -203,10 +220,18 @@
       if (prey.tzatzulCapturedBy || !stillOwnsCaptiveGroup(prey, reset.group) || !(prey.health > 0)) {
         releasedPoseChecks.delete(prey); continue;
       }
-      reset.group.quaternion?.copy?.(reset.quaternion);
-      if (reset.scale) reset.group.scale?.copy?.(reset.scale);
+      const current = reset.group.quaternion;
+      if (sameOrientation(current, reset.lastAlignedQuaternion)) {
+        current.copy(reset.quaternion); // An exact late talon pose is stale, not an independent combat/locomotion writer.
+        if (reset.scale) reset.group.scale?.copy?.(reset.scale);
+        debug.staleCarryCorrections++;
+      } else if (!sameOrientation(current, reset.quaternion)) {
+        releasedPoseChecks.delete(prey); // A distinct native pose has taken over: do not override it on this or later ticks.
+        debug.captiveHandoffs++;
+        continue;
+      }
       if (--reset.remaining <= 0) releasedPoseChecks.delete(prey);
-    } // Ordinary movement regains control after two frames; no persistent pose lock.
+    } // The guard is bounded and conditional, not a two-frame absolute pose lock.
     seconds += step;
     if (area !== activeArea) {
       for (const actor of [...tracked.keys()]) release(actor, 'area transition');
@@ -291,6 +316,8 @@
     payload.matrix.multiplyMatrices(payload.inverse, payload.object.matrixWorld);
     rememberCaptive(prey, group); // A visual streamed in after capture must still save the upright baseline before tilting.
     payload.matrix.decompose(group.position, group.quaternion, group.scale);
+    const captivePose = captivePoses.get(prey); // Used by restoreCaptive to identify the exact orientation this talon pass last wrote.
+    if (captivePose?.group === group) captivePose.lastAlignedQuaternion = group.quaternion.clone();
     group.scale.copy(payload.scale);
     group.updateWorldMatrix(false, true);
     return true;
