@@ -372,7 +372,7 @@ assert.match(pixelProbe, /stopImmediatePropagation\?\.\(\)/,
   'Pixel Probe consumes its sampling pointer before gameplay handlers can attack');
 assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0\)/,
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
-assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
+assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
 assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && \(held.length \|\| feet.length\)\)\)/,
   'feet or held weapons with water/slush trigger the overlay even without grass/path ground');
@@ -382,7 +382,7 @@ assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.unifor
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
   'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
-assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
+assert.match(heldRender, /function isProtectedCover\(object[^)]*\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
   'held depth classification delegates protected-cover decisions to the shared composer');
 assert.match(heldRender, /surfaceClassificationHints\.baseGround = data\.hachutuGroundRoot === true/,
   'Hachutu floor-root meshes are passed into the shared ground-surface classifier');
@@ -665,7 +665,7 @@ assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs on
 assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
 assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
   'the selective depth shader still binds the clone-specific elevation after running the prior hook');
-assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-tile-xray-v4',
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-tile-xray-v5',
   'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
