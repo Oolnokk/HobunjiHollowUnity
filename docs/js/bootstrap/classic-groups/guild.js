@@ -2,7 +2,7 @@
   'use strict';
   // guild: classic scripts in their original parser execution order. Add modules here, not in index.html.
   const scriptUrls = [
-    "js/lich-heart-system.js?v=20261114heartRewards1", // Register character-owned relics after KeyItemSystem and before the named ruin quest.
+    "js/lich-heart-system.js?v=20261114heartAudit3", // Register character-owned relics after KeyItemSystem and before the named ruin quest.
     "js/delvers-guild-story.js?v=20261112keyPack2",
     "js/town-magic-checkpoint.js?v=20261103magicCustody6",
     "js/delvers-vault-signal.js?v=20261031storyVault1"
