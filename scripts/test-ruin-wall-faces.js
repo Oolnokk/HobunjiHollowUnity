@@ -144,4 +144,16 @@ const triNormals = data => {
   assert.equal(sideless.length, 1); assert.equal(sideless[0].side, undefined, 'a wall with no side stays two-faced');
 }
 
+{
+  const original={side:0,map:{id:'carved_smooth'},clone(){return {side:this.side,map:this.map};}};
+  const wall=W.visibleWallMaterial({DoubleSide:2},original);
+  assert.notEqual(wall,original,'ruin walls use an independent material, not the floor/roof material');
+  assert.equal(wall.side,2,'the original single-sided wall can be viewed from either camera direction');
+  assert.equal(wall.map,original.map,'backface visibility preserves the existing stone PNG');
+  assert.equal(wall.needsUpdate,true,'the renderer recompiles the wall-facing mode');
+  assert.equal(original.side,0,'floor and ceiling winding remains unchanged');
+  const plain={side:0};
+  assert.equal(W.visibleWallMaterial({DoubleSide:2},plain),plain,'materials without cloning support retain their original reference');
+}
+
 console.log('ruin wall faces regression passed');
