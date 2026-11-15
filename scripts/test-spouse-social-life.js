@@ -74,8 +74,10 @@ assert.match(social.selectAdvice('tooth_hatayap').line, /dumb-dumb.*kiss/i, 'Too
 state.kissBuff = { npcId: 'tooth_hatayap', expiresAtHour: 2000 };
 assert.match(social.selectAdvice('tooth_hatayap').line, /hold me extra close/i, 'Tooth responds to Well Rested');
 active.rested = false; active.food = false;
-assert(social.selectAdvice('tooth_hatayap').available.includes('food'), 'absent food buff becomes eligible');
-assert(social.selectAdvice('tooth_hatayap').available.includes('tired'), 'absent Well Rested becomes eligible');
+social.selectAdvice('tooth_hatayap');
+assert(social.diagnostics().available.includes('food'), 'absent food buff becomes eligible');
+social.selectAdvice('tooth_hatayap');
+assert(social.diagnostics().available.includes('tired'), 'absent Well Rested becomes eligible');
 active.harvest = 3;
 assert.match(social.selectAdvice('tooth_hatayap').line, /3 ripe crops/i, 'ripe and unassigned harvest enters the actual line');
 
