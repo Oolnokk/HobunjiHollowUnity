@@ -379,7 +379,7 @@
   function poseFrame(entry, now) {
     const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / (YAWN_DURATION_S * 1000)));
     if (progress >= 1) { finish(entry); return; }
-    if (entry.walker._bedLieActive) return;
+    if (entry.walker._bedLieActive) { finish(entry, 'bed-pose-owned'); return; } // A newly acquired bed pose must not retain a frozen additive neck/chest bend.
     const envelope = Math.sin(Math.PI * progress) ** 2;
     const neck = entry.walker.neckJoint;
     const state = entry.state;
