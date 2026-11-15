@@ -106,9 +106,15 @@ async function main() {
   assert.equal(ruins.saveActiveRuinProgress({version:1,seed,travel:{activeCheckpoint:'wing-east'},openedChests:['chest-1']}),true);
   assert.equal(ruins.markActiveRuinBossDefeated(seed),true);
   ruins.onRuinLeft();
+  assert.equal(ruins.debugEnterVisit({kind:'entrance',id:first,zoneId:h.zone,returnAt:{x:10,z:12}}),true);
+  await Promise.resolve();
+  assert.equal(h.generated[1].opts.specialBoss,true,'re-entering the original named tomb must keep its guardian');
+  assert.equal(h.generated[1].opts.tier,'lich','same-cycle re-entry cannot downgrade the named tomb to a generic ruin');
+  assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
+  ruins.onRuinLeft();
   assert.equal(ruins.debugEnterVisit({kind:'entrance',id:second,zoneId:h.zone,returnAt:{x:12,z:12}}),true);
   await Promise.resolve();
-  assert.equal(h.generated[1].opts.specialBoss,false,'do not create a second Nanahi tomb in one cycle');
+  assert.equal(h.generated[2].opts.specialBoss,false,'do not create a second Nanahi tomb in one cycle');
   ruins.onRuinLeft();
 
   h.shift();
@@ -129,8 +135,8 @@ async function main() {
   assert.equal(ruins.debugEnterVisit({kind:'authored',theme:'tothal',id:first,zoneId:h.zone,
     returnAt:{x:buried[0].col+.5,z:buried[0].row+1.5}}),true);
   await Promise.resolve();
-  assert.equal(h.generated[2].seed,seed,'same interior seed after a shift');
-  assert.equal(h.generated[2].opts.specialBoss,true,'same named lich, not a new guardian assignment');
+  assert.equal(h.generated[3].seed,seed,'same interior seed after a shift');
+  assert.equal(h.generated[3].opts.specialBoss,true,'same named lich, not a new guardian assignment');
   assert.equal(ruins.activeRuinProgress().travel.activeCheckpoint,'wing-east');
   assert.equal(ruins.isActiveRuinChestOpened('chest-1',seed),true);
   assert.equal(ruins.isActiveRuinBossDefeated(seed),true);
