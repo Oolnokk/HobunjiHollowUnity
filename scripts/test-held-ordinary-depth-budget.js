@@ -6,16 +6,17 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false } = {}) {
   const opaque = { isMesh: true, visible: true, children: [] }; // Base world depth has already drawn this terrain/cover.
   const cutout = { isMesh: true, visible: true, children: [] }; // Portrait PNG needs forced alpha-tested depth.
   const cover = { isMesh: true, visible: true, children: [] }; // Water/grass must preserve occlusion of held parts.
-  const weapon = { isMesh: true, visible: true, children: [] }; // Ordinary held source.
-  const hand = { isMesh: true, visible: true, children: [] }; // Bounded x-ray participant.
+  const weapon = { isMesh: true, visible: true, children: [], layers: { mask: 3 } }; // Ordinary held source.
+  const hand = { isMesh: true, visible: true, children: [], layers: { mask: 3 } }; // Bounded x-ray participant.
+  if (nested) weapon.children.push(hand); // Renderable offhand haft is also a parent of its flail head.
   const parent = { isMesh: true, visible: true, children: [cutout] }; // A mesh ancestor of a required cutout cannot be hidden.
   const hooked = { isMesh: true, visible: true, children: [], onBeforeRender() {} }; // Unknown draw-time behavior is retained.
   const scene = { background: 'sky', autoUpdate: true,
-    traverseVisible(fn) { for (const node of [opaque, cover, weapon, hand, parent, hooked]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
+    traverseVisible(fn) { for (const node of [opaque, cover, weapon, ...(!nested ? [hand] : []), parent, hooked]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
   };
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
@@ -39,13 +40,17 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
     waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4,
     rawRender: function(_scene, _camera) {
-      const nodes = []; _scene.traverseVisible(node => nodes.push(node));
+      const nodes = []; _scene.traverseVisible(node => { if ((node.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(node); });
       draws.push({ mask: _camera.layers.mask, nodes });
       if (fail) throw new Error('render failure');
     },
   };
   for (const name of ['lastBaseElevationGroups', 'lastHeldFullscreenReason', 'fullscreenReplayCount', 'lastReplayScissorCoverage', 'nonGroundDepthReplayCount', 'selectiveOverlayCount', 'groundDepthRestoreCount']) scope[name] = 0;
+  const layerStart = source.indexOf('  function suppressDraws(');
+  const layerEnd = source.indexOf('  function getSurfaceOcclusionDepthOnly(', layerStart);
+  scope.MASK_ALL = 0xffffffff;
   vm.createContext(scope);
+  vm.runInContext(source.slice(layerStart, layerEnd), scope);
   vm.runInContext(source.slice(begin, end), scope);
   const before = { ...renderer }; // Verify all ordinary renderer flags restore after success or exceptions.
   const participants = [...(ordinary ? [weapon] : []), ...(bounded ? [hand] : [])]; // Only active sources are hidden by this render.
@@ -53,10 +58,11 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   if (fail) assert.throws(run, /render failure/); else run();
   assert.equal(opaque.visible, true); assert.equal(cutout.visible, true); assert.equal(cover.visible, true);
   assert.equal(weapon.visible, true); assert.equal(hand.visible, true);
+  assert.equal(weapon.layers.mask, 3); assert.equal(hand.layers.mask, 3);
   assert.equal(camera.layers.mask, 1); assert.equal(scene.background, 'sky'); assert.equal(scene.autoUpdate, true);
   assert.equal(renderer.autoClear, before.autoClear); assert.equal(renderer.shadowMap.autoUpdate, true);
   assert.equal(scope.internalReplay, false);
-  return { draws, clears, opaque, cutout, cover, parent, hooked, scope };
+  return { draws, clears, opaque, cutout, cover, parent, hooked, scope, weapon, hand };
 }
 const normal = fixture(); // Common above-floor case: supplement + source draw, without a terrain redraw/restore.
 assert.equal(normal.clears, 0);
@@ -73,6 +79,9 @@ const submerged = fixture({ tint: true }); // Unchanged base ground depth must p
 assert.deepEqual(submerged.draws.map(draw => draw.mask), [1, 2, 8, 8]);
 assert.equal(submerged.clears, 0);
 const floodedXray = fixture({ bounded: true, tint: true }); // Actual floor exceptions still restore opaque ground before water tint.
-assert.deepEqual(floodedXray.draws.map(draw => draw.mask), [1, 2, 1, 2, 4, 8, 8]);
+assert.deepEqual(floodedXray.draws.map(draw => draw.mask), [1, 2, 1, 2, 2, 4, 8, 8]);
+const flail = fixture({ bounded: true, nested: true });
+assert(!flail.draws[3].nodes.includes(flail.weapon), 'the haft is suppressed in the head’s replay group');
+assert(flail.draws[3].nodes.includes(flail.hand), 'suppressing the haft must never prune its head from the scene graph');
 fixture({ fail: true });
 console.log('ordinary held replay: 2 passes instead of 3; no opaque terrain depth redraw; mixed/fallback/exception checks passed');

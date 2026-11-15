@@ -54,7 +54,7 @@ assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treat
 
 // Confirm the shipping tile-batching algorithm actually consolidates screen-
 // separated trusted rigs, rather than merely accepting a marker in isolation.
-const groupingCode=section('  function rectsOverlap(', '  function installGroundElevationShader(');
+const groupingCode=section('  function rectsOverlap(', '  const gearWaterBounds = ');
 const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCullable','objectProto',[
   'const XRAY_TILE_RADIUS=1,XRAY_TILE_EDGE_EPSILON=.0001,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
   'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0;',

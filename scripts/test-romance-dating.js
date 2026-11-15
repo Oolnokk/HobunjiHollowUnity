@@ -282,7 +282,7 @@ target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.equal(target.area, 'interior');
 assert.equal(target.activity, 'sleeping', 'the spouse sleeps in the farmhouse bed');
 assert.equal(target.pose, 'lie', 'the real spouse schedule requests the lie-down presentation');
-assert.equal(target.bedCenter, true, 'spouse sleep is anchored to the bed center, not the adjacent navigation tile');
+assert.deepEqual([target.bedCol, target.bedRow], [4, 4], 'spouse sleep retains the bed origin independently of its navigation tile');
 assert.equal(target.furnitureId, 'bed1', 'spouse sleep resolves the exact placed bed instance');
 W.NpcScheduling.registerNpcStations([{ id: 'chair_1', area: 'interior', c: 2, r: 2, pose: 'sit', furnitureKey: 'chairSimple', roles: ['sit'] }], 'interior');
 const daytime = new Set();

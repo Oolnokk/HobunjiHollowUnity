@@ -78,6 +78,7 @@
   function emptySurfaceData(tileCount = 0) {
     return {
       positions: [],
+      tileMaxY: new Map(), // Rendered tops for local quads. Flat flood rectangles share one baseline top.
       uvs: [],
       depths: [],
       coverages: [],
@@ -104,15 +105,18 @@
       [cell.col + 1, cell.row + 1],
     ];
     const vertexIndex = data.positions.length / 3; // Used by the two triangles appended after the four vertices.
+    let maxY = -Infinity; // Highest rendered corner of this wet tile.
     for (const [x, z] of corners) {
       const touching = touchingCells(touchingByKey, x, z); // Used to keep gentle water heads continuous across shared corners.
       const y = cornerHeightFor(cell, touching, joinThreshold) + yOffset; // Used as the rendered surface height for this corner.
+      maxY = Math.max(maxY, y);
       data.positions.push(x, y, z);
       data.uvs.push(x / textureTileSize, z / textureTileSize);
       data.depths.push(cell.depth);
       data.coverages.push(cell.coverage);
       data.flows.push(cell.flowX, cell.flowZ);
     }
+    data.tileMaxY.set(cellKey(cell.col, cell.row), maxY);
     data.indices.push(
       vertexIndex, vertexIndex + 2, vertexIndex + 3,
       vertexIndex, vertexIndex + 3, vertexIndex + 1,
@@ -241,15 +245,18 @@
       [cell.col + 1, cell.row + 1],
     ];
     const vertexIndex = data.positions.length / 3; // Used by this exception tile's two triangles.
+    let maxY = -Infinity; // Highest rendered corner of this wet tile.
     for (const [x, z] of corners) {
       const touching = touchingGridCells(grid, cols, rows, x, z); // Used to preserve old shared-corner slopes without string-key lookups.
       const y = cornerHeightFor(cell, touching, joinThreshold) + yOffset; // Used as the rendered exception-corner height.
+      maxY = Math.max(maxY, y);
       data.positions.push(x, y, z);
       data.uvs.push(x / textureTileSize, z / textureTileSize);
       data.depths.push(cell.depth);
       data.coverages.push(cell.coverage);
       data.flows.push(cell.flowX, cell.flowZ);
     }
+    data.tileMaxY.set(cellKey(cell.col, cell.row), maxY);
     data.indices.push(
       vertexIndex, vertexIndex + 2, vertexIndex + 3,
       vertexIndex, vertexIndex + 3, vertexIndex + 1,
@@ -527,6 +534,9 @@
         waterTileFootprint.bounds[3] = Math.max(waterTileFootprint.bounds[3], row + 1);
       }
     }
+    waterTileFootprint.tileMaxY = data.tileMaxY;
+    const yOffset = Number.isFinite(options.yOffset) ? options.yOffset : 0.015; // Same vertical offset used by flat baseline vertices.
+    if (data.baselineVisible) waterTileFootprint.baselineMaxY = data.baselineSurfaceY + yOffset;
     mesh.userData.hobunjiWaterTileFootprint = waterTileFootprint;
     stats[statKey] = {
       tiles: data.tileCount,

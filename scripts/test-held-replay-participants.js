@@ -58,6 +58,6 @@ assert.equal(othersAll.length, 0);
 // The split runs inside collectVisible, so the replay entry points need no new names.
 assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOthers\);/);
 assert.match(source, /const feet = collectVisible\(waterOccludedRegistry, scene, replayOthers\);/);
-assert.match(source, /const othersHidden = replayOthers\.length \? hideObjects\(replayOthers\) : null;/, 'non-participants are hidden from the replays that draw the held-overlay layer');
+assert.match(source, /const othersHidden = replayOthers\.length \? suppressDraws\(replayOthers, HELD_OVERLAY_MASK\) : null;/, 'non-participants are hidden from the replays that draw the held-overlay layer');
 assert.match(source, /const shortXraySpecies = new Set\(\['porakaneki'\]\);/, 'Porakaneki are on the short-species list by default');
 console.log('ok - weapons x-ray for everyone; hands for the player and short species; feet for those, near the camera only');

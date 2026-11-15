@@ -61,7 +61,7 @@ assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\
 const heldDepthReplay = heldRender.slice(
   heldRender.indexOf('  function replaySelectiveHeldOverlay('),
   heldRender.indexOf('  function isShellOutlinePass(')); // The actual grouped depth replay, not unrelated shell/scene code.
-const hiddenParticipantsAt = heldDepthReplay.indexOf('overlayHidden = hideObjects('); // Visible depth candidates must be sampled after held participants are hidden.
+const hiddenParticipantsAt = heldDepthReplay.indexOf('suppressedOverlay = suppressDraws('); // Visible depth candidates must be sampled after held participants are hidden.
 const pngCutoutsAt = heldDepthReplay.indexOf('collectVisible(pngDepthRegistry, scene)'); // One scan for PNG silhouette occluders per overlay replay.
 const protectedCoversAt = heldDepthReplay.indexOf('collectVisible(protectedCoverRegistry, scene)'); // One scan for water, snow, slush and vegetation covers.
 const groupReplayAt = heldDepthReplay.indexOf('for (const group of groups)'); // All elevation groups reuse the two candidate lists.
@@ -185,26 +185,13 @@ class TestBufferAttribute {
 class TestMesh {
   constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; }
 }
-const meshDataForWaterTest = {
-  positions: [0, 0, 0, 1, 0, 0, 0, 0, 1], uvs: [0, 0, 1, 0, 0, 1],
-  depths: [1, 1, 1], coverages: [1, 1, 1], flows: [0, 0, 0, 0, 0, 0],
-  indices: [0, 1, 2], tileCount: 1, representation: 'test-water',
-};
-const meshWaterStats = {};
-const meshBuilderStart = mergedWater.indexOf('  function createMesh('); // Extracts the exact production mesh factory.
-const meshBuilderEnd = mergedWater.indexOf('  function clearStats(', meshBuilderStart);
-assert.ok(meshBuilderStart >= 0 && meshBuilderEnd > meshBuilderStart,
-  'extract the merged-water mesh factory');
-const makeWaterMesh = new Function(
-  'buildMapWidePlaneSurfaceData', 'buildInvertedSurfaceData', 'buildSurfaceData',
-  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
-  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\nreturn createMesh;'
-)(() => meshDataForWaterTest, () => meshDataForWaterTest, () => meshDataForWaterTest,
-  meshWaterStats, new Map(), 4, 0.12, 0.012, 0.035);
+const waterRendererContext = { window: {} }; // Run the complete production geometry and mesh factories with Three stubs.
+vm.runInNewContext(mergedWater, waterRendererContext);
+const { createMesh: makeWaterMesh, stats: meshWaterStats } = waterRendererContext.window.MergedWaterRenderer;
 const testedWaterMesh = makeWaterMesh({
   BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
   BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
-}, testedWaterMaterial, [], { mapWidePlane: true, statKey: 'scope-regression' });
+}, testedWaterMaterial, [], { mapWidePlane: true, cols: 1, rows: 1, baseline: { surfaceY: 0.2, depth: 1 }, statKey: 'scope-regression' });
 assert.ok(testedWaterMesh, 'town water mesh creation completes without a scope ReferenceError');
 assert.equal(meshWaterStats['scope-regression'].depthAlphaThreshold,
   surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD,
@@ -222,13 +209,13 @@ const sparseWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, wa
   { statKey: 'sparse-water-proximity' });
 assert.equal(sparseWaterMesh.userData.hobunjiWaterTileFootprint.tiles.size, 2,
   'merged water caches the actual occupied tiles instead of filling its bounding rectangle');
-assert.deepEqual(sparseWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [4, 4, 36, 36],
+assert.deepEqual(Array.from(sparseWaterMesh.userData.hobunjiWaterTileFootprint.bounds), [4, 4, 36, 36],
   'the merged water footprint also has cheap conservative world-tile bounds');
 const floodWaterMesh = makeWaterMesh(waterFixtureThree, testedWaterMaterial, [],
-  { statKey: 'flood-water-proximity', mapWidePlane: true, cols: 40, rows: 40 });
+  { statKey: 'flood-water-proximity', mapWidePlane: true, cols: 40, rows: 40, baseline: { surfaceY: 0.2, depth: 1 } });
 assert.equal(floodWaterMesh.userData.hobunjiWaterTileFootprint.tiles, null,
   'full-map flood uses bounds rather than allocating one entry for every wet tile');
-assert.deepEqual(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds, [0, 0, 40, 40]);
+assert.deepEqual(Array.from(floodWaterMesh.userData.hobunjiWaterTileFootprint.bounds), [0, 0, 40, 40]);
 assert.equal(testedWaterMaterial.uniforms.uHobunjiWaterReplayClipScopeCount.value, 0,
   'ordinary water shading is never clipped');
 assert.match(testedWaterMaterial.vertexShader, /vWaterWorldXZ = \(modelMatrix \* vec4\(position, 1\.0\)\)\.xz/,
@@ -307,9 +294,9 @@ const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
 const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
 assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
   'owner-aware wet/dry grouping is part of the production renderer');
-const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor',
+const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isPortraitMaskedGear',
   heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
-)(8, tintCoverNearActor);
+)(8, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
 const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
 const wetHeld = { material: sharedMaterial };
 const dryHeld = { material: sharedMaterial };
@@ -340,6 +327,62 @@ const ordinaryMixed = splitTintGroups([
 ], tintScopes, [sparseWaterMesh]);
 assert.deepEqual(ordinaryMixed.map(group => group.tintStencilRef), [1, 0],
   'ordinary-depth equipment also separates wet/dry tint ownership');
+const gearBoundsStart = heldRender.indexOf('  const gearWaterBounds = ');
+const gearBoundsEnd = heldRender.indexOf('  function submergedPortraits(', gearBoundsStart);
+class WaterTestBox {
+  copy(box) { this.min = { ...box.min }; this.max = { ...box.max }; return this; }
+  applyMatrix4(matrix) {
+    for (const key of ['min', 'max']) for (const axis of ['x', 'y', 'z']) this[key][axis] += matrix[axis] || 0;
+    return this;
+  }
+}
+const waterVolume = new Function('THREE', 'waterTintWorldBounds', 'isPortraitMaskedGear',
+  heldRender.slice(gearBoundsStart, gearBoundsEnd) + '\nreturn { meshOverlapsWaterVolume, gearOverlapsWaterVolume };'
+)({ Box3: WaterTestBox }, new WaterTestBox(), mesh => mesh.isGear === true);
+const atWorld = (x, y, z) => ({ x, y, z, elements: [] });
+const bounds = (min, max) => ({ boundingBox: { min, max } });
+const bank = {
+  userData: { hobunjiWaterTileFootprint: { bounds: [0, 0, 3, 2], tiles: new Set(['0,0', '2,1']) } },
+  matrixWorld: atWorld(0, 0, 0),
+  geometry: bounds({ x: 0, y: .4, z: 0 }, { x: 3, y: .4, z: 2 })
+};
+const flailHead = {
+  isGear: true,
+  geometry: bounds({ x: -.1, y: -.1, z: -.1 }, { x: .1, y: .1, z: .1 }),
+  matrixWorld: atWorld(1.5, .25, .5)
+};
+assert(!waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'nearby water in the same merged river leaves a flail in a dry tile clear');
+flailHead.matrixWorld = atWorld(.5, .25, .5);
+assert(waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'the moving offhand head receives tint when it reaches a wet tile below the surface');
+flailHead.matrixWorld = atWorld(.5, .7, .5);
+assert(!waterVolume.gearOverlapsWaterVolume(flailHead, bank), 'a raised weapon over a wet tile remains clear');
+assert(!waterVolume.meshOverlapsWaterVolume({ ...flailHead, isGear: false }, bank, false), 'the same world-surface check protects dry portraits');
+
+const steppedWaterCells = [ // One draw contains a shallow tile, a nearby high tile, and a dry gap.
+  { col: 0, row: 0, surfaceY: 0.2 },
+  { col: 2, row: 0, surfaceY: 0.8 },
+];
+for (const options of [{}, {
+  inverted: true, cols: 3, rows: 1, baseline: { surfaceY: 0.2, depth: 1 },
+}]) {
+  const steppedWater = makeWaterMesh(waterFixtureThree, testedWaterMaterial, steppedWaterCells, options);
+  steppedWater.geometry.boundingBox = bounds({ x: 0, y: .215, z: 0 }, { x: 3, y: .815, z: 1 }).boundingBox;
+  steppedWater.matrixWorld = { ...atWorld(0, 0, 0), elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] };
+  for (const isGear of [true, false]) {
+    const part = { ...flailHead, isGear, matrixWorld: atWorld(.5, .5, .5) };
+    assert(!waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'a raised section of the same mesh cannot tint the flail or portrait above the low tile');
+    part.matrixWorld = atWorld(2.5, .5, .5);
+    assert(waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the same flail or portrait is submerged below the actually raised tile');
+    part.matrixWorld = atWorld(.5, .25, .5);
+    assert(waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the low tile still tints an actually submerged portrait or flail');
+    part.matrixWorld = atWorld(1.5, .1, .5);
+    assert(!waterVolume.meshOverlapsWaterVolume(part, steppedWater, false),
+      'the gap remains dry even when an inverted baseline is active');
+  }
+}
 const stencilStart = heldRender.indexOf('  function prepareSubmergedOverlayStencilMaterials(');
 const stencilEnd = heldRender.indexOf('  function prepareOverlayCoverTintMaterials(', stencilStart);
 const stampStencil = new Function('THREE', 'saveMaterialState', 'forEachMaterial',
@@ -374,7 +417,7 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && \(held.length \|\| feet.length\)\)\)/,
+assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !tintCovers.length\)/,
   'feet or held weapons with water/slush trigger the overlay even without grass/path ground');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
@@ -444,7 +487,7 @@ assert.match(borderTerrain, /fall\.userData\.waterSurfaceRole='scenery'/,
 // Classify actual mocked scene objects through the shipped helper functions
 // rather than relying solely on string-level regex assertions.
 const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
-const classifierEnd = heldRender.indexOf('  function isLegacyHeldPlane('); // End marker immediately after the relevant classifiers.
+const classifierEnd = heldRender.indexOf('  function isFrontPortraitMesh('); // End marker immediately after the relevant classifiers.
 assert.ok(classifierStart >= 0 && classifierEnd > classifierStart, 'extract the same classifier helpers used by the shipped renderer');
 const classifyGround = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
   heldRender.slice(classifierStart, classifierEnd) + '\nreturn groundKind;')(3, surfaceComposer,
@@ -496,7 +539,7 @@ assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot =
   'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
 assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 'unknown actor fails closed');
 
-const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', elevationHelperEnd);
+const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
   '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_TILE_EDGE_EPSILON = 0.0001, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
   let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
@@ -779,15 +822,15 @@ assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)[\s\S]{0,800}mes
   'actual procedural foot mesh is enrolled in the same held/ground selective overlay layer');
 assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
   'held gear and feet both participate in the selective overlay and screen scissor');
-assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
+assert.match(heldRender, /const heldDraws = suppressDraws\(\[\.\.\.held, \.\.\.feet\]\)/,
   'feet are absent from the original color pass so they cannot pop over transparent water');
-assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? nearbyTintCovers : \[\]\)\]\)/,
+assert.match(heldRender, /suppressedOverlay = suppressDraws\(overlayMeshes\);\s*coversHidden = tintOverlay \? hideObjects\(nearbyTintCovers\) : null;/,
   'the elevation rebuild excludes held meshes and near translucent covers while distant water remains hidden across every replay');
 assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
   'the ground shader receives the owning actor surface height for each replay group');
-assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1\s*&& hasOverlappingHeldCover\(renderer, camera, overlayMeshes, nearbyTintCovers\)/,
+assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1\s*&& hasOverlappingHeldCover\(renderer, camera, scissorMeshes, nearbyTintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
-assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
 // Shell outlines inherit the same selective ground-x-ray policy as their
