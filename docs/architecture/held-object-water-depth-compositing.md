@@ -499,7 +499,10 @@ World / Materials / Characters / Equipment, then choose a layer and move it
 before another layer (or nudge one slot at a time). Its list includes
 terrain/path/floor, the sky and visual-only backdrops, opaque/cutout/transparent
 materials, front/back body planes, hands, feet, pants, headwear and held
-weapons/tools. Edits are stored only in the existing browser-scoped
+weapons/tools. Held weapons/tools follow the hand layer by default,
+including the owner-front-art stencil priority. Set
+`weapon.followHandLayer=off` under **Exceptions → Equipment** to give weapons
+their own independent rank. Edits are stored only in the existing browser-scoped
 `hobunji.xrayHierarchy.v1` override record and round-trip through **Export
 all changes**. Moving a layer activates `layers.manualOrder`; **Reset all**
 restores the shipped visual hierarchy and the established mask rules.
@@ -524,7 +527,10 @@ Actual terrain, nearby floors, walls, snow, foliage, water and NPC bodies
 remain occluders. Elevation-replay groups and hand/foot shell depth draws
 also exclude these visual-only backdrop meshes. Their ordinary color draw,
 final depth restoration and postprocess paths still see the original sky and
-distant scenery. The default `background.gearDepth=ignore` and
+distant scenery. On GPUs without scissor-depth snapshots, this requires
+a complete colorless world-depth rebuild followed by a held-object depth redraw,
+rather than leaving a cleared sky buffer for later water/postprocess passes.
+The default `background.gearDepth=ignore` and
 `airborne.rebuildDepth=on` options can be toggled independently in
 **Exceptions → Airborne** to A/B-test the issue.
 
