@@ -32,6 +32,8 @@
     st.path = null;
     st.index = 0;
     st.footSide = 0;
+    st.lastX = st.lastY = NaN; // Reset position history so teleport or input-release cannot masquerade as a step.
+    st.dirX = st.dirY = 0;
     st.footStepTiles = 0;
     st.footStallS = 0;
     st.blocked = false;
@@ -245,7 +247,7 @@
         status: st.status, area: st.area, blocked: st.blocked,
         waypoint: st.path?.[st.index] || null, plans: st.plans, probes: st.probes,
         side: mode === 'foot' ? st.footSide : null,
-        contactTiles: mode === 'foot' ? Math.min(0.22, Math.max(profile.contactTiles, st.footStepTiles * 1.05, st.footStallS >= 0.07 ? 0.18 : 0)) : null,
+        contactTiles: mode === 'foot' ? Math.min(0.22, Math.max(PROFILES.foot.contactTiles, st.footStepTiles * 1.05, st.footStallS >= 0.07 ? 0.18 : 0)) : null,
       };
     }
     return out;
