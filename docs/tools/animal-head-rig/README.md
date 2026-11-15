@@ -12,6 +12,39 @@ This tool authors the weighted animal head rig used by the runtime PNG-plane cre
 
 Head Influence is the source of truth for the neck rig. Missing head compression/stretch overrides inherit it exactly. Head Stretchability also limits yaw turns in either direction.
 
+## Hats tab
+
+The second, top-level **Hats** tab is a separate workbench: the existing neck/shoulder
+paint, pose, undo history, and two canvases remain intact when switching tabs.
+
+1. Load/select an animal through either tab. Hat placement is stored on the **animal
+   record** as `hatAttachment`; the current `headRig` is also given that placement
+   for the existing **Save rig for game preview** workflow. Unedited species keep the
+   runtime's default head-influence-derived hat fit.
+2. Use **Load hat catalog** to inspect current repo cosmetics, choose an existing hat,
+   or supply a PNG path/import a local PNG. Cosmetics with multiple front/back art
+   layers remain individually selectable and exportable. The upper hat canvas previews
+   the hat against the current animal and accepts pointer/touch anchor dragging.
+3. Adjust anchor X/Y, relative width, vertical scale, rotation, horizontal skew, pivot
+   within the cropped art, and mirroring. These settings are reversible geometric
+   transforms, not destructive pixel edits. `heightScale` (default 1) and `skewXDeg`
+   (default 0) are optional backward-compatible `hatAttachment` properties used by
+   the named-animal headwear renderer.
+4. Paint the lower hat canvas using **Smudge**, **Plow**, or **Restore**. The Smudge and
+   Plow algorithms come from `modular-weapon-bridge-fill.js`, but the hat workbench
+   classifies *all opaque hat pixels* as movable instead of filtering only metal
+   colors. This preserves black outlines, fabrics and multicolored materials as pixels
+   move. Restore selectively brings back the source PNG. Each pointer drag is one
+   undo step, with independent history per layer.
+5. Export the selected PNG or all modified layers and place them at the cosmetic's
+   existing sprite paths. **Raster edits do not go into animal JSON or browser local
+   storage**, so saving a game-preview rig previews the species placement but will not
+   magically replace a source asset PNG. Downloading the animal JSON separately saves
+   placement and geometry only. The authoring page does not overwrite repo assets.
+
+The lower image canvas rejects pictures larger than 2048 px on either axis or
+2 megapixels total to bound browser memory use, especially on mobile.
+
 ## Compression vs stretch
 
 For the current animal pitch convention, a downward head bend stretches the sprite side below the pivot and compresses the side above it; an upward bend reverses those sides. The editor and runtime share that classification.
