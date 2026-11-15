@@ -13,11 +13,13 @@ assert.equal(committedTorch.z, 0.198510001727785);
 assert.equal(committedTorch.pitch, -90);
 assert.equal(committedTorch.scale, 0.68);
 assert.equal(committedTorch.elbows.right.y, -0.06015679313571905);
-const gripSource = read('docs/js/hand-tool-grips.js'); // The torch shares the Harlyao grip entry, not a separate drifting configuration.
-assert.match(gripSource, /key === 'torch' \\|\\| key === 'harlyaolongsword'/);
-const gripMatch = gripSource.match(/harlyaolongsword: (\\{[\\s\\S]*?\\n      \\}),\\n    \\},\\n  \\};/);
-assert(gripMatch, 'Harlyao grip has committed default geometry');
-const sharedGrip = vm.runInNewContext('(' + gripMatch[1] + ')');
+const gripSource = read('docs/js/hand-tool-grips.js'); // Torch and Harlyao longsword share one deliberately authored grip entry.
+assert(gripSource.includes("if (key === 'torch' || key === 'harlyaolongsword'"), 'torch resolves to Harlyao grip');
+const gripStart = gripSource.indexOf('harlyaolongsword: {');
+const gripEnd = gripSource.indexOf('\n    },\n  };', gripStart);
+assert(gripStart >= 0 && gripEnd > gripStart, 'Harlyao grip has a committed default object');
+const gripLiteral = gripSource.slice(gripStart + 'harlyaolongsword: '.length, gripEnd).trim().replace(/,$/, '');
+const sharedGrip = vm.runInNewContext('(' + gripLiteral + ')');
 assert.deepEqual(JSON.parse(JSON.stringify(sharedGrip.primaryGrip.position)), { x: -0.08, y: 0, z: -0.05 });
 assert.deepEqual(JSON.parse(JSON.stringify(sharedGrip.primaryGrip.rotationDeg)), { pitch: 0, yaw: -90, roll: 0 });
 assert.equal(sharedGrip.toolScale, 1);
