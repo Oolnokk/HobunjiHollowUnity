@@ -158,6 +158,7 @@
   function completeActiveRuinProgress(visit) {
     const store=progressStore(),authored=authoredRecordForVisit(visit,store); // All completion state goes into one canonical world-save write.
     if(visit.specialBoss&&!authored)return false; // Never drop a named tomb's checkpoint if its unique assignment cannot be found.
+    if(authored&&!visit.specialBoss)return false; // A generic ruin exit cannot mark an unfinished named boss tomb completed.
     if(authored){authored.completed=true;delete authored.progress;}
     delete store.sites[visit.id]; // Ordinary, cycle-scoped ruins still release their checkpoint on completion.
     const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
@@ -768,7 +769,8 @@
     const priorOwner=state().bossSites?.[theme];
     const specialBoss=visit.kind==='authored'
       ? !!record&&!record.completed&&record.siteId===visit.id
-      : !record&&(!priorOwner||priorOwner===visit.id); // One named tomb per tradition/world, never one per Tothal cycle.
+      : record ? !record.completed&&record.siteId===visit.id
+        : !priorOwner||priorOwner===visit.id; // Original named entrance stays authored on re-entry; every other site stays generic.
     if(visit.kind==='authored'&&!specialBoss)return false;
     const siteSeed=specialBoss&&record ? record.seed : regularSeed; // Original lich rooms, rewards and checkpoints keep the original seed.
     const provisional=specialBoss&&!record;
