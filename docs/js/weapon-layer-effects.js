@@ -138,10 +138,10 @@
     return targets;
   }
 
-  function recolorMarker(image, sourceHex, targetHex) {
+  function recolorMarker(image, sourceHex, targetHex, referenceValue = 255) {
     const source = rgba(image);
     if (!source) return null;
-    const key = String(sourceHex || '#7F00FF') + '|' + String(targetHex || RAG_HEX);
+    const key = String(sourceHex || '#7F00FF') + '|' + String(targetHex || RAG_HEX) + '|' + referenceValue;
     let cache = ragCanvases.get(image);
     if (cache?.has(key)) return cache.get(key);
     if (!cache) { cache = new Map(); ragCanvases.set(image, cache); }
@@ -155,7 +155,7 @@
       if (source.data[p + 3] < 4) continue;
       const [r, g, b] = [source.data[p], source.data[p + 1], source.data[p + 2]];
       if (!pixelMaskMatches(r, g, b, sourceHex || '#7F00FF', 'marker')) continue;
-      const shade = Math.max(0.24, Math.min(1.08, Math.max(r, g, b) / 255));
+      const shade = Math.max(0.24, Math.min(1.08, Math.max(r, g, b) / referenceValue));
       output.data[p] = Math.round(rgb[0] * shade);
       output.data[p + 1] = Math.round(rgb[1] * shade);
       output.data[p + 2] = Math.round(rgb[2] * shade);
@@ -169,7 +169,7 @@
     if (!state.materialLayers) state.materialLayers = []; // Layer metadata drives per-weapon color refresh and montage masks.
     state.materialLayers.push({ mesh, config: layer, image });
     if (layer.material === 'marker') {
-      const canvas = recolorMarker(image, layer.sourceHex, layer.targetHex);
+      const canvas = recolorMarker(image, layer.sourceHex, layer.targetHex, layer.markerReferenceValue);
       if (canvas && mesh.material?.map) {
         mesh.material.map.image = canvas;
         mesh.material.map.needsUpdate = true;
@@ -217,8 +217,13 @@
 
   function fireClusters(pixels, width, count) {
     // Source-PNG pixels determine stable, per-end ignition sites; never cluster recolored images.
-    if (count !== 2 || pixels.length < 2) return null;
+    if (![1, 2].includes(count) || pixels.length < 2) return null;
     const coords = pixels.map(index => ({ index, x: index % width, y: Math.floor(index / width) }));
+    if (count === 1) return [{
+      pixels,
+      x: coords.reduce((sum, point) => sum + point.x, 0) / coords.length,
+      y: coords.reduce((sum, point) => sum + point.y, 0) / coords.length,
+    }];
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Single pass avoids massive spread-argument lists on large source PNGs.
     for (const point of coords) {
       minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
@@ -242,7 +247,7 @@
 
   function fireRank(state, spec) {
     if (!spec.masteryClusters) return 5; // Classic torch-flail fire is not mastery-dependent.
-    const level = Number(state.masteryLevel?.());
+    const level = Number(spec.fixedMasteryRank ?? state.masteryLevel?.());
     return Number.isFinite(level) ? Math.max(0, Math.min(5, level)) : 0;
   }
 
@@ -286,6 +291,7 @@
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
         worldRise: spec.worldRise === true, // Opt in: torch-staff and brazier particles travel along world-up even as their weapons rotate.
         worldTarget: spec.worldRise === true ? new THREE.Vector3() : null, // Shared scratch vector avoids per-frame GC for world-space positions.
+        inverseWorld: spec.worldRise === true ? new THREE.Matrix4() : null, // Reprojects motes through the rendered, stance-corrected matrix.
         worldScale: spec.worldRise === true ? new THREE.Vector3() : null, // Capture parent/visual scale at emission, without changing world-up direction.
         texture: createFireTexture(THREE),
       });
@@ -345,7 +351,8 @@
           fx.worldTarget.copy(particle.spawnWorld);
           fx.worldTarget.x += Math.sin(particle.age * 13 + particle.phase) * particle.worldDrift * t;
           fx.worldTarget.y += particle.worldSpeed * particle.age; // World +Y is up, regardless of the head/staff pitch.
-          particle.sprite.position.copy(particle.sprite.parent.worldToLocal(fx.worldTarget));
+          const matrix = particle.sprite.parent.matrixWorld;
+          particle.sprite.position.copy(fx.worldTarget).applyMatrix4(fx.inverseWorld.copy(matrix).invert());
         } else {
           particle.sprite.position.x = particle.x + Math.sin(particle.age * 13 + particle.phase) * fx.unit * 6 * t;
           particle.sprite.position.y = particle.y + particle.speed * particle.age;
@@ -401,8 +408,9 @@
         const speed = (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()); // Local rise rate reused for world-up emission.
         let spawnWorld = null, worldSpeed = 0, worldDrift = 0; // Per-particle ignition origin and parent-scale-adjusted world velocity.
         if (fx.worldRise) {
-          spawnWorld = sprite.getWorldPosition(new THREE.Vector3()); // Capture actual tip position, after holder and flail motion.
-          sprite.parent.getWorldScale(fx.worldScale); // Head scale 2.5 or tip scale 4 changes distance, never world-up direction.
+          const matrix = sprite.parent.matrixWorld;
+          spawnWorld = sprite.position.clone().applyMatrix4(matrix); // Sample the visible tip, including the temporary upright/sweep adjustment.
+          fx.worldScale.setFromMatrixScale(matrix);
           worldSpeed = speed * Math.abs(fx.worldScale.y);
           worldDrift = fx.unit * 6 * Math.abs(fx.worldScale.x);
         }

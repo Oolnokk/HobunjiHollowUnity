@@ -415,7 +415,7 @@ console.log('shared animation timeline voice and queue timing: ok');
 const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.
 const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT:1.3,toolSwingDur:1.3,combatSwingWindupFrac:0.2/1.3,combatSwingStrikeFrac:0.3/1.3,combatSwingHoldS:0.7,combatSwingHeld:false}; // Animation clock at Neutral.
 vm.createContext(timelineContext);
-vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline()'),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
+vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline('),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.65)<1e-9,'input gate ends halfway through the 0.7s hold');
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.3)<1e-9);

@@ -269,7 +269,7 @@
         staticMeshes.push(mesh);
         effects?.registerLayer(state, mesh, layer, texture.image); // Ordinary layered weapons support both recolor and author-defined material roles.
       }
-      if (modularShaft?.fireAssembly === def?.shapeKey && config.base?.vfx?.type === 'fire') {
+      if (modularShaft && modularShaft.fireAssembly === def?.shapeKey && config.base?.vfx?.type === 'fire') {
         // A modular weapon's visible plane contains a composed metal head AND its shaft.
         // Never paint that composite with the shaft's marker recolor or erase the attached heads.
         const raw = await textureFor(THREE, modularShaft.sprite);
@@ -729,7 +729,11 @@
     if (state.chain && state.chain.parent !== root) { root.add(state.chain); state.repairedParts++; } // Self-heal an external cleanup/reparent operation on next equipped frame.
     if (state.headRoot && state.headRoot.parent !== root) { root.add(state.headRoot); state.repairedParts++; } // Preserve all authored head layers and their current textures.
     if (!state.chain || !state.headRoot) {
-      if (root.visible !== false) effects?.stepFire(state, effectsDt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
+      if (root.visible !== false && state.fireEmitters?.length) {
+        if (state.fireEmitters.some(fx => fx.worldRise)) refreshWorldMatrix(plane); // Keep torch flames on the baked tip rather than the holder's transient raw rotation.
+        for (const fx of state.fireEmitters) fx.group.updateMatrixWorld(true);
+        effects?.stepFire(state, effectsDt);
+      } // Ordinary multi-layer tools can have interleaved VFX without a chain.
       return;
     }
     // Use the final holder+plane world pose, including the game's transient
@@ -921,7 +925,10 @@
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     placeFlexiblePartWorld(state.headRoot, inverseRootWorld, headCenterWorld, headQ,
       q.partWorldScale.setScalar(attachmentScale * headScale), q.partWorldMatrix); // A single world-size head, independent of body-axis stretch and rope reach.
-    if (root.visible !== false && !state.dualWieldHidden) effects?.stepFire(state, effectsDt); // Never emit a third set of particles from the hidden original head.
+    if (root.visible !== false && !state.dualWieldHidden) {
+      if (state.fireEmitters?.some(fx => fx.worldRise)) state.headRoot.updateMatrixWorld(true); // Refresh the newly posed head from the already baked root matrix.
+      effects?.stepFire(state, effectsDt);
+    } // Never emit a third set of particles from the hidden original head.
   }
 
   function tick(deltaS, freezePhysics = false) {
@@ -965,7 +972,7 @@
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
-      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
+      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
