@@ -71,6 +71,7 @@
     function unlock(){
       if(rec.unlocked||rec.disposed)return false;
       rec.unlocked=true;
+      if(rec.chest)rec.chest.secretRevealed=true;
       if(rec.kind==='suspended'&&rec.cover)rec.cover.visible=false; // Ice/net parts visibly give way before the real chest settles.
       root.RuinInteractionAudio?.mechanism?.(rec.gate||rec.cover||rec.group,{size:2});
       options.onStateChange?.();
