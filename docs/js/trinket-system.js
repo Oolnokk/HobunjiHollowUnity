@@ -59,6 +59,88 @@
       effects: { companion: { damage: 1.30, affliction: 1.40 } },
     },
 
+    // ── Wilderness buried-chest curios — one simple effect per trinket ──────
+    // Their cost scales with breadth/strength; more powerful finds need more Attunement.
+    wanderersAnklet: {
+      id: 'wanderersAnklet', displayName: "Wanderer's Anklet", icon: '🦶', attunementCost: 1,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Stamina regenerates 25% faster.',
+      effects: { stats: { staminaRegen: 1.25 } },
+    },
+    herbalistsPendant: {
+      id: 'herbalistsPendant', displayName: "Herbalist's Pendant", icon: '🌿', attunementCost: 1,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Health regenerates 40% faster.',
+      effects: { stats: { healthRegen: 1.40 } },
+    },
+    rangersBeads: {
+      id: 'rangersBeads', displayName: "Ranger's Beads", icon: '📿', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Ranged weapon damage +30%.',
+      effects: { stats: { rangedDamage: 1.30 } },
+    },
+    brawlersRing: {
+      id: 'brawlersRing', displayName: "Brawler's Ring", icon: '💍', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Weapon hits deal 30% more Footing damage.',
+      effects: { stats: { outgoingFootingDamage: 1.30 } },
+    },
+    guardiansBrooch: {
+      id: 'guardiansBrooch', displayName: "Guardian's Brooch", icon: '🛡️', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Maximum Health +20%.',
+      effects: { stats: { maxHealth: 1.20 } },
+    },
+    duelistsSignet: {
+      id: 'duelistsSignet', displayName: "Duelist's Signet", icon: '💠', attunementCost: 3,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Weapon hits deal 30% more Health damage.',
+      effects: { stats: { outgoingHealthDamage: 1.30 } },
+    },
+    wardensAmulet: {
+      id: 'wardensAmulet', displayName: "Warden's Amulet", icon: '🔰', attunementCost: 3,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Maximum Footing +60%.',
+      effects: { stats: { maxFooting: 1.60 } },
+    },
+
+    fightersBelt: {
+      id: 'fightersBelt', displayName: "Fighter's Belt", icon: '🥋', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Weapon attacks use 15% less Stamina.',
+      effects: { stats: { attackStaminaCost: 0.85 } },
+    },
+    swiftbladeRing: {
+      id: 'swiftbladeRing', displayName: "Swiftblade Ring", icon: '💍', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Weapon attacks are 12% faster.',
+      effects: { stats: { attackSpeed: 1.12 } },
+    },
+    defendersBrooch: {
+      id: 'defendersBrooch', displayName: "Defender's Brooch", icon: '🛡️', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Take 12% less Health damage.',
+      effects: { stats: { incomingHealthDamage: 0.88 } },
+    },
+    steadfastBeads: {
+      id: 'steadfastBeads', displayName: 'Steadfast Beads', icon: '📿', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Take 20% less affliction buildup.',
+      effects: { stats: { incomingAffliction: 0.80 } },
+    },
+    runnersCord: {
+      id: 'runnersCord', displayName: "Runner's Cord", icon: '🪢', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Maximum Stamina +20%.',
+      effects: { stats: { maxStamina: 1.20 } },
+    },
+    masonsRing: {
+      id: 'masonsRing', displayName: "Mason's Ring", icon: '💍', attunementCost: 2,
+      source: 'buriedTreasure', category: 'combat',
+      description: 'Footing regenerates 35% faster.',
+      effects: { stats: { footingRegen: 1.35 } },
+    },
+
     // ── Harlyao ruins (dungeon chests) — Combat perk vocabulary ───────
     // Functional names; ids are stable so display names can change freely.
     // ── Specialized combat trinkets; all modifiers are composed by the existing providers. ──
