@@ -418,6 +418,7 @@
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({ front: 2, back: 4, pet: 6, playerOverPet: 8 }); // Shared player/pet color-pass ordering, replacing independent gameplay overrides.
   let shoulderPetPresentation = null; // Latest gameplay-owned pet, body meshes and facing; re-applied before the compositor draws.
   let previouslyPresentedPet = null; // Detachment/replacement cleanup for the prior pet's depth and sprite order.
+  const petForegroundStencilParts = new Set(); // Temporary pet front, back and split card membership in its player's weapon mask.
   let lastShoulderPetDecision = { active: false, mode: 'authored' }; // Mobile diagnostic snapshot of the exact applied policy.
   let lastFrontPortraitMaskReason = 'not-rendered'; // Explains 0/0 when no owner stencil was attempted.
 
@@ -427,6 +428,35 @@
       entry.depthWrite = depthWrite;
       entry.needsUpdate = true;
     });
+  }
+
+  function syncPetForegroundStencil(pet, enabled) {
+    // Only a pet in front of its player should cover that player's late held overlay.
+    const desired = new Set(); // Small, bounded set of foreground sprite cards; cached membership avoids repeated registry registration.
+    if (enabled && pet?.avatarRef) {
+      const avatar = pet.avatarRef;
+      for (const mesh of [avatar.frontPlane, avatar.backPlane, ...(avatar.group?.children || [])]) {
+        if (!mesh?.isMesh || (mesh !== avatar.frontPlane && mesh !== avatar.backPlane
+            && mesh.userData?.hobunjiShoulderSplitOverlay !== true)) continue;
+        desired.add(mesh);
+      }
+    }
+    for (const mesh of petForegroundStencilParts) {
+      if (desired.has(mesh)) continue;
+      if (mesh.userData) delete mesh.userData.hobunjiShoulderPetStencilForeground;
+      if (!isFrontPortraitMesh(mesh)) {
+        frontPortraitRegistry.delete(mesh); // Back and split cards must not leak into unrelated private mask passes.
+        mesh.layers?.disable?.(FRONT_PORTRAIT_MASK_LAYER);
+      }
+      petForegroundStencilParts.delete(mesh);
+    }
+    for (const mesh of desired) {
+      mesh.userData = mesh.userData || {};
+      mesh.userData.hobunjiShoulderPetStencilForeground = true;
+      if (!hasLayer(mesh, FRONT_PORTRAIT_MASK_LAYER)) mesh.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
+      if (!frontPortraitRegistry.has(mesh)) frontPortraitRegistry.add(mesh);
+      petForegroundStencilParts.add(mesh);
+    }
   }
 
   function restoreShoulderPet(pet) {
@@ -454,6 +484,7 @@
     const pet = state.pet;
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
+      if (petForegroundStencilParts.size) syncPetForegroundStencil(null, false);
       // Restore on detach, but avoid overriding normal NPC/companion depth arbitration every subsequent frame.
       if (previouslyPresentedPet) {
         setShoulderPartDepthWrite(state.frontMaterial, true);
@@ -488,6 +519,7 @@
       if (!frontPortraitRegistry.has(state.frontMesh)) frontPortraitRegistry.add(state.frontMesh);
     }
     window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar);
+    syncPetForegroundStencil(pet, !playerDrawsOnTop); // An intentionally foreground pet masks the owner's weapon independently of depthWrite.
     lastShoulderPetDecision = { active: true, mode, playerDrawsOnTop, playerDepthWrite: writesDepth,
       petDepthWrite: writesDepth, inwardFrontPose: inward, viewerSeesPlayerFront: state.viewerSeesFront };
     if (avatar?.group) {
@@ -613,6 +645,13 @@
     // Scene-sibling NPC/hostile holders cannot be resolved by ancestry alone.
     // Their creation-time owner tag connects them to the genuine portrait root.
     for (let node = mesh; node && node !== scene; node = node.parent) {
+      // A shoulder pet drawn in FRONT is part of its carrier's composite silhouette:
+      // its visible pixels must block that carrier's held tools in the later overlay.
+      const shoulder = node.userData?.hobunjiShoulderPetLayering;
+      if (shoulder?.active && shoulder.playerDrawsOnTop === false) {
+        const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+        if (player) return player;
+      }
       if (node.userData?.hobunjiHeldPortraitOwner) return node.userData.hobunjiHeldPortraitOwner;
     }
     // Resolve both portrait and equipment to the SAME actor, not whichever
@@ -1357,21 +1396,23 @@
         saveMaterialState(states, material);
         material.colorWrite = false;
         material.depthWrite = false; // Test against completed world depth; never overwrite walls, furniture, or the ground.
-        material.stencilWrite = material === front;
-      }
-      front.depthTest = true;
-      front.depthFunc = THREE.LessEqualDepth; // The front's silhouette must respect nearer world surfaces, even if an unrelated pose changed its normal depth function.
-      front.stencilWriteMask = FRONT_PORTRAIT_STENCIL_MASK;
-      front.stencilFunc = THREE.AlwaysStencilFunc;
-      front.stencilRef = ownerId << 2;
-      front.stencilFuncMask = FRONT_PORTRAIT_STENCIL_MASK;
-      front.stencilFail = THREE.KeepStencilOp;
-      front.stencilZFail = THREE.KeepStencilOp;
-      front.stencilZPass = THREE.ReplaceStencilOp;
-      if (front.map && Number(front.alphaTest) > 0) {
-        const cutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // The shared PNG cutout threshold, even before layer-4 registration catches up.
-        front.alphaTest = Math.max(Number(front.alphaTest), cutoff);
-      } // The solid portrait pixels, not the transparent rectangle, block weapons.
+        const petForeground = portrait.userData?.hobunjiShoulderPetStencilForeground === true;
+        material.stencilWrite = material === front || petForeground; // A foreground pet uses whichever front/back side is visible.
+        if (!material.stencilWrite) continue;
+        material.depthTest = true;
+        material.depthFunc = THREE.LessEqualDepth; // Silhouette respects nearer world depth regardless of authored pet pose.
+        material.stencilWriteMask = FRONT_PORTRAIT_STENCIL_MASK;
+        material.stencilFunc = THREE.AlwaysStencilFunc;
+        material.stencilRef = ownerId << 2;
+        material.stencilFuncMask = FRONT_PORTRAIT_STENCIL_MASK;
+        material.stencilFail = THREE.KeepStencilOp;
+        material.stencilZFail = THREE.KeepStencilOp;
+        material.stencilZPass = THREE.ReplaceStencilOp;
+        if (material.map && Number(material.alphaTest) > 0) {
+          const cutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35;
+          material.alphaTest = Math.max(Number(material.alphaTest), cutoff);
+        }
+      } // Only solid pixels of the selected front portrait or foreground pet stamp owner bits.
     }
     return states;
   }
