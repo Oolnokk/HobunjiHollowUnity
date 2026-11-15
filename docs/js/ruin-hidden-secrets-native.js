@@ -26,17 +26,31 @@
       if(!support||!Number.isFinite(Number(support.y))){refused.push(String(room.id)+': no floor support');continue;}
       const roomSpec={id:'v50-'+room.id,kind:'challenge-room',challenge:'pressurePlate',
         x:bounds.minX,z:bounds.minZ,w,d,y:Number(support.y)};
-      if(!secrets.planForRoom(roomSpec,seed,theme))continue;
+      const planned=secrets.planForRoom(roomSpec,seed,theme); // Plan once; extra validation must never re-roll the selected type.
+      if(!planned)continue;
       // Source rooms may have steps; corners are only suitable if their real standing heights match.
       const corners=[[1.55,1.55],[w-1.55,1.55],[1.55,d-1.55],[w-1.55,d-1.55]];
-      if(!corners.every(([ox,oz])=>{
-        const sample=kit.sampleSupport(bounds.minX+ox,bounds.minZ+oz);
-        return sample&&Math.abs(Number(sample.y)-roomSpec.y)<.08;
-      })){refused.push(String(room.id)+': corner has a step');continue;}
+      const left=(planned.corner&1)===0,top=(planned.corner&2)===0;
+      const edgeX=left?bounds.minX:bounds.maxX,edgeZ=top?bounds.minZ:bounds.maxZ;
+      const sx=left?1:-1,sz=top?1:-1;
+      const optionalSites=[[1.55,1.55],[2.6,2.55]]; // The chest, blocking pillar/closet, and the hidden trigger must share a reachable floor.
+      if(planned.kind==='closet')optionalSites.push([3.3,1.95],[4.6,3.4]);
+      if(planned.babies)optionalSites.push([w-1.2,d-1.2]); // Opposite shelf may never cover an existing fixture.
+      const sampleSites=[
+        ...corners.map(([ox,oz])=>[bounds.minX+ox,bounds.minZ+oz]),
+        ...optionalSites.map(([ox,oz])=>[edgeX+sx*ox,edgeZ+sz*oz])
+      ];
+      const obstructed=sampleSites.some(([px,pz])=>{
+        const sample=kit.sampleSupport(px,pz);
+        if(!sample||Math.abs(Number(sample.y)-roomSpec.y)>.08)return true;
+        return window.DevRandomRuinTileOccupancy?.solidAt?.(px,pz,.24,roomSpec.y)===true;
+      });
+      if(obstructed){refused.push(String(room.id)+': corner or hidden switch blocked');continue;}
       const owner=secrets.create({room:roomSpec,seed,theme,ruinTier:context.tier,
         THREE:kit.THREE,parent:kit.group(),mapId:context.mapId||'map_i_dev_random_ruin',
         getPlayerPosition:()=>{const p=kit.playerWorld();return p&&{x:p.x,z:p.z};},
-        getPlayerY:()=>kit.playerWorld()?.y,
+        getPlayerY:()=>{const physical=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Physical supported feet, not presentation/bob offsets.
+          return Number.isFinite(physical)?physical:kit.playerWorld()?.y;},
         addControl:c=>controls.push(c),
         removeControl:c=>{const index=controls.indexOf(c);if(index>=0)controls.splice(index,1);},
         showToast:kit.deps?.showToast,
@@ -47,8 +61,10 @@
   function update(kit,_now,dt){
     const p=kit.playerWorld();
     if(!p)return;
+    const floor=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Every stacked room checks the actor's real occupied story.
+    const actualY=Number.isFinite(floor)?floor:p.y;
     for(const owner of placements)
-      if(Math.abs(Number(p.y)-owner.y)<1.25&&Math.hypot(p.x-owner.x,p.z-owner.z)<20)
+      if(Math.abs(Number(actualY)-owner.y)<1.25&&Math.hypot(p.x-owner.x,p.z-owner.z)<20)
         owner.tick?.(dt); // Room-local optional input and fire checks never scan faraway inactive rooms.
   }
   function snapshot(){
