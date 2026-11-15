@@ -14,13 +14,13 @@
     garlink: Object.freeze({ spriteIcon: 'garlink_bunch.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB }),
     ongyums: Object.freeze({ spriteIcon: 'ongyum.png', worldMode: 'billboard', ingredientColor: 0x627F20 }),
   });
-  const CROP_WORLD_ART = Object.freeze({ // Used to upgrade native and inherited berry crops as well as the existing garlink/ongyums PNG clusters.
+  const CROP_WORLD_ART = Object.freeze({ // Garlink/ongyums keep PNG clusters; berry crop world art is now owned by VegetationCropRendering's real shrub meshes.
     ...CROP_ART,
-    redberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'billboard', worldTint: 0xff4f62 }),
-    blueberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'billboard', worldTint: 0x5f80ff }),
-    yellowberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'billboard', worldTint: 0xffe86a }),
-    whiteberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'billboard', worldTint: 0xffffff }),
-    blackberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'billboard', worldTint: 0x17121f }),
+    redberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xff4f62 }),
+    blueberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0x5f80ff }),
+    yellowberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xffe86a }),
+    whiteberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0xffffff }),
+    blackberries: Object.freeze({ spriteIcon: 'berries.png', worldMode: 'procedural', worldTint: 0x17121f }),
   });
   const WORLD_COLOR_TO_CROP = new Map([ // Used to identify generic crop cubes and tag every crop root for soil anchoring; only garlink/ongyums are converted to PNGs.
     [0xd8d0b0, 'garlink'], [0xf2ead0, 'garlink'], [0x8bbf6a, 'garlink'],
