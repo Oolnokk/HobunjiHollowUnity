@@ -40,7 +40,7 @@
     },
     'layers.manualOrder': {
       order: 6, label: 'Use manually reordered draw layers', default: 'off', options: ['on', 'off'],
-      help: 'Override normal ordering INSIDE opaque/transparent color passes. Depth testing and the protected stencil/water replay sequence remain intact.',
+      help: 'Order items only within the same render stage and opacity bucket. Front-art stencil, physical depth, water and outlines are separate.',
     },
     'background.gearDepth': {
       order: 7, label: 'Sky and distant backdrops block gear', default: 'ignore', options: ['ignore', 'original'],
@@ -52,7 +52,7 @@
     },
     'weapon.followHandLayer': {
       order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
-      help: 'on: weapons and tools inherit their owner-hand draw priority and front-art occlusion when manual ordering is active. off: weapons use the separately editable weapon layer.',
+      help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
   });
 
