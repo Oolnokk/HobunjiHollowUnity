@@ -51,7 +51,7 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
       label: 'Torch', sprite: 'assets/toolsprites/torch.png',
       base: {
         ...hachutuTorchFuel, markerReferenceValue: 179, // The torch's painted purple midtone maps to the staff's off-white.
-        vfx: { ...hachutuTorchFire, litOnly: true, masteryClusters: 1, fixedMasteryRank: 5 },
+        vfx: { ...hachutuTorchFire, litOnly: true, masteryClusters: 1, fixedMasteryRank: 5, fallbackTip: 'bottom' }, // PNG -Y is the business end; use it if its source-color marker is absent.
       },
       layers: [],
     },

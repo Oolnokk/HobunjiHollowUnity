@@ -77,13 +77,36 @@
       "roll": -96
     },
     "torchHold": {
-      "x": 0.13,
-      "y": 0.16,
-      "z": 0.03,
-      "pitch": 10.31,
+      "x": -0.03,
+      "y": 0.08,
+      "z": 0.17,
+      "pitch": 10,
       "yaw": 0,
       "bodyYaw": 0,
       "roll": 0,
+      "scale": 0.64,
+      "headRelative": false,
+      "bodySink": 0,
+      "flailLengthScale": 1,
+      "shoulderAim": {
+        "grip": true,
+        "palmNormal": true
+      },
+      "secondaryGrip": {
+        "enabled": false,
+        "percent": 50,
+        "primaryPercent": 50
+      },
+      "dualWield": {
+        "enabled": false
+      },
+      "elbows": {
+        "right": {
+          "x": -0.04,
+          "y": -0.19,
+          "z": 0
+        }
+      },
       "worldUpright": true
     }
   }

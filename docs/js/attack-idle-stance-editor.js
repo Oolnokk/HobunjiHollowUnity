@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261114torch1747a';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261115torchIdleExport1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const STANCE_ORDER = ['tool', 'hoeTool', 'torchHold', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
@@ -32,7 +32,7 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-      torchHold: Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Same as committed torch idle pose.
+      torchHold: Object.freeze({x: -0.03,y: 0.08,z: 0.17,pitch: 10,yaw: 0,bodyYaw: 0,roll: 0,scale: 0.64,headRelative: false,bodySink: 0,flailLengthScale: 1,shoulderAim: {grip: true,palmNormal: true},secondaryGrip: {enabled: false,percent: 50,primaryPercent: 50},dualWield: {enabled: false},elbows: {right: {x: -0.04,y: -0.19,z: 0}},worldUpright: true}), // Same as committed torch idle pose.
       topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -43,6 +43,7 @@
   });
 
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
+  const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }))); // Both shipped torch defaults are obsolete; customized stances remain untouched.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -57,6 +58,14 @@
     }
     if (typeof source.worldUpright === 'boolean' || typeof fallback.worldUpright === 'boolean')
       out.worldUpright = typeof source.worldUpright === 'boolean' ? source.worldUpright : fallback.worldUpright; // Preserve authored world-space rotation in saved JSON.
+    for (const key of ['scale', 'bodySink']) {
+      if (source[key] != null || fallback[key] != null) out[key] = key === 'scale' ? Math.max(0.1, numberOr(source[key], fallback[key] ?? 1)) : numberOr(source[key], fallback[key] ?? 0); // Preserve authored Neutral size/sink through Local Override and export.
+    }
+    if (source.headRelative != null || fallback.headRelative != null) out.headRelative = source.headRelative === true;
+    for (const key of ['shoulderAim', 'secondaryGrip', 'dualWield', 'elbows']) {
+      const value = source[key] ?? fallback[key]; // Existing attack-pose metadata is not represented by the seven stance sliders.
+      if (value && typeof value === 'object') out[key] = clone(value);
+    }
     return out;
   }
 
@@ -69,7 +78,10 @@
     const wasPreviousDefault = incomingLight && FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
       Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
     );
-    if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
+    if (wasPreviousDefault) out.stances.lightWeapon.y = 0;
+    const oldTorch = raw?.stances?.torchHold; // Preserve custom heights, but migrate an untouched old browser override.
+    if (oldTorch && PREVIOUS_TORCH_HOLD_STANCES.some(old => ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll'].every(key =>
+      Math.abs(numberOr(oldTorch[key]) - old[key]) < 1e-9))) out.stances.torchHold = clone(fallback.stances.torchHold); // The new complete Neutral replaces only an untouched old default.
     const incomingTopHeavy = raw?.stances?.topHeavyTool; // An older browser's unedited Top-heavy saved pose should inherit the new Pick-Shovel copy.
     if (incomingTopHeavy && FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
       Math.abs(numberOr(incomingTopHeavy[field.key]) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field.key]) < 1e-9)) {
@@ -145,6 +157,27 @@
     const select = $('idleStanceSelect');
     const fieldsHost = $('idleStanceFields');
     const status = $('idleStanceStatus');
+    const torchSpritePicker = document.getElementById('toolSpriteSelect'); // Shared sprite selection determines quick torch idle control visibility.
+    const torchQuick = document.createElement('div'); // Same stance data as the full editor; no independent torch offset is stored.
+    torchQuick.id = 'torchIdleQuickControls';
+    torchQuick.className = 'field';
+    torchQuick.innerHTML = `
+      <label for="torchIdleYDirect">Torch idle height (Y)</label>
+      <div class="fieldRow">
+        <input id="torchIdleYDirect" type="range" min="-1" max="1" step="0.01" value="0">
+        <span id="torchIdleYDirectVal" class="val">0.00</span>
+        <button id="torchIdleEditPoseBtn" type="button" class="secondary">Edit full idle pose</button>
+      </div>
+      <div class="help">Uses the shared torch idle stance. Save as Local Override below to use it in the game, or download the stance JSON.</div>`;
+    torchSpritePicker?.parentElement?.insertAdjacentElement('afterend', torchQuick);
+    const torchQuickInput = torchQuick.querySelector('#torchIdleYDirect'); // Height slider writes workingConfig.stances.torchHold.y.
+    const torchQuickValue = torchQuick.querySelector('#torchIdleYDirectVal'); // Mirrors the exported value without rounding it in storage.
+    function syncTorchQuickHeight() {
+      const y = numberOr(workingConfig.stances.torchHold.y);
+      torchQuickInput.value = y;
+      torchQuickValue.textContent = y.toFixed(2);
+      torchQuick.hidden = torchSpritePicker?.value !== 'torch';
+    }
     select.innerHTML = STANCE_ORDER.map(key => `<option value="${key}">${STANCE_LABELS[key]}</option>`).join('');
     select.value = selectedKey;
 
@@ -217,6 +250,7 @@
         input.disabled = selectedKey === 'dualWieldOffhand' && field.key === 'bodyYaw';
         $(`idle_${field.key}_val`).textContent = field.angle ? `${value.toFixed(0)}°` : value.toFixed(2);
       }
+      syncTorchQuickHeight();
     }
 
     function focusNeutralEditorPose() {
@@ -398,6 +432,35 @@
         if (selectedKey === 'dualWieldMain' || selectedKey === 'dualWieldOffhand') window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       });
     }
+
+    torchQuickInput.addEventListener('input', () => {
+      const value = Math.round(Math.max(-1, Math.min(1, numberOr(torchQuickInput.value))) * 100) / 100;
+      workingConfig.stances.torchHold.y = value; // Changes the exact persisted/existing stance field.
+      syncTorchQuickHeight();
+      if (selectedKey === 'torchHold') {
+        syncFieldsFromPose();
+        if (editingNeutral) writeNeutralPose(currentPose());
+      }
+      if (!editingNeutral || selectedKey === 'torchHold')
+        window.HobunjiAttackEditorToolContext?.previewTorchIdlePose?.(workingConfig.stances.torchHold); // All idle phases update together; the swing action is never touched.
+      setStatus(`Torch idle height = ${value.toFixed(2)}. Save a Local Override or export the JSON to keep it.`);
+    });
+    torchQuick.querySelector('#torchIdleEditPoseBtn').addEventListener('click', () => {
+      const actionSelect = document.getElementById('actionSelect'); // The visible still-action must own these edits, not a previously selected melee attack.
+      if (actionSelect && Array.from(actionSelect.options).some(option => option.value === 'torch_idle')
+          && actionSelect.value !== 'torch_idle') {
+        actionSelect.value = 'torch_idle';
+        actionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      select.value = 'torchHold';
+      select.dispatchEvent(new Event('change', { bubbles: true })); // Reuse the full neutral gizmo and undo-aware stance editor.
+      if (!editingNeutral) $('idleEditNeutralBtn').click();
+      else writeNeutralPose(currentPose());
+      window.HobunjiAttackEditorToolContext?.previewTorchIdlePose?.(currentPose()); // Restore locally edited height after loading the still-action template.
+      card.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); // Direct navigation for touch/mobile users.
+    });
+    torchSpritePicker?.addEventListener('change', syncTorchQuickHeight);
+    document.getElementById('actionSelect')?.addEventListener('change', () => setTimeout(syncTorchQuickHeight, 0));
 
     uprightCheckbox.addEventListener('change', () => {
       currentPose().worldUpright = uprightCheckbox.checked; // Same JSON field the runtime uses to orient the torch vertically.

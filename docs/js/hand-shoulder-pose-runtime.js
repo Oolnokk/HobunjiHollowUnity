@@ -220,7 +220,14 @@
     return applyLeftIdleRule(side, action.itemKey, weightsAt(progress, timing, authored, sequence));
   }
 
-  function gameWeights(side) {
+  function restingTorchPose(avatarRoot, snapshot) {
+    if (snapshot?.activeSlot !== 'adventuring' || snapshot.itemKey !== 'torch' || snapshot.combatNeutralInjected) return null;
+    const player = global.Combat?.deps?.playerMesh || global.PlayerBodyTransformComposer?.getPlayerMesh?.(); // Keeps the player's torch elbow off unrelated NPC rigs.
+    if (avatarRoot && (!player || avatarRoot.parent !== player)) return null;
+    return snapshot.idlePose || global.HeldActionAnimations?.torchIdle?.poses?.neutral || null; // The editable loaded stance wins; the shared action is an offline fallback.
+  }
+
+  function gameWeights(side, avatarRoot = null) {
     const ranged = rangedWeights(side);
     if (ranged) return ranged;
 
@@ -228,7 +235,8 @@
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) {
       capturedMelee = null;
-      return { ...IDLE };
+      const torch = restingTorchPose(avatarRoot, snapshot); // Apply the exported idle shoulder target even when combat is not playing.
+      return torch ? applyLeftIdleRule(side, 'torch', normalize(torch.shoulderAim, IDLE)) : { ...IDLE };
     }
 
     const toolKey = snapshot?.itemKey || snapshot?.shape || '';
@@ -295,7 +303,7 @@
     const instrument = playingInstrumentFor(avatarRoot);
     if (instrument) return applyLeftIdleRule(side, instrument.key,
       weightsAt(instrument.progress, instrument.action, instrument.action.poses, instrument.action.sequence)); // No weapon/throw stance override while playing.
-    const weights = gameWeights(side);
+    const weights = gameWeights(side, avatarRoot);
     if (!rangedWindupStrikeActive()) return weights;
     return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
@@ -328,7 +336,7 @@
 
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
-    if (!active) return null;
+    if (!active) return elbowPointFromPose(restingTorchPose(avatarRoot, snapshot), side); // Live idle elbow is distinct from torch attack endpoints.
     const rawPose = capturedMelee?.opts?.pose;
     if (hasAuthoredPoseAim(rawPose)) {
       const timing = {

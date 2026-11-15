@@ -79,6 +79,24 @@ const server = http.createServer((req, res) => {
         weapon.fire?.some(fire => Math.abs(fire.size - 0.04) < 1e-8)), null, { timeout: 30000 });
     await page.locator('#soloLayer').check();
     await page.locator('#resetView').click();
+    await page.locator('#soloLayer').uncheck(); // Restore full artwork before testing an unrelated single-PNG torch.
+
+    await page.evaluate(() => { window.AdventuringTools = { isLit: () => true }; }); // Standalone editor reproduces the real lit-state gate.
+    await page.locator('#weapon').selectOption('torch');
+    await page.waitForFunction(() => {
+      const state = window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot();
+      return state?.physics?.some(weapon => weapon.itemKey === 'torch' && weapon.attached && weapon.loaded
+        && weapon.fire?.some(emitter => emitter.particles > 0));
+    }, null, { timeout: 30000 }); // Decode the *real* uploaded PNG through the real gameplay WebGL emitter.
+    const litTorch = (await debug()).physics.find(weapon => weapon.itemKey === 'torch' && weapon.attached);
+    assert(litTorch.fire[0].sourcePixels > 0, 'actual torch PNG yields nonempty ignition source pixels');
+    assert.equal(litTorch.fire[0].masteryRank, 5, 'handheld torch uses Torch-Staff rank-five fire');
+    assert.equal(litTorch.fire[0].worldRise, true, 'handheld torch particles rise in world space');
+    await page.evaluate(() => { window.AdventuringTools = { isLit: () => false }; });
+    await page.waitForFunction(() => window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot()
+      ?.physics?.some(weapon => weapon.itemKey === 'torch' && weapon.attached
+        && weapon.fire?.length && weapon.fire.every(emitter => emitter.particles === 0)),
+      null, { timeout: 10000 }); // Extinguishing clears the same live, image-backed emitter immediately.
     await page.locator('#weapon').selectOption('grappleFlail');
     await page.waitForFunction(() => {
       const snapshot = window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot();

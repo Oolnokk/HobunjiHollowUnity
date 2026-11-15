@@ -82,6 +82,24 @@
     return hits;
   }
 
+  function fallbackTipPixels(image, end) {
+    const source = rgba(image); // Examine the original PNG only when an authored torch fuel-color marker is absent.
+    if (!source || (end !== 'bottom' && end !== 'top')) return [];
+    const matches = []; // Original image pixel indices near the opaque business end, consumed by the regular fire emitter.
+    const first = end === 'bottom' ? source.height - 1 : 0;
+    const direction = end === 'bottom' ? -1 : 1;
+    let opaqueRows = 0; // Bound the fallback to four occupied rows so a torch's handle never starts burning.
+    for (let y = first; y >= 0 && y < source.height; y += direction) {
+      const prior = matches.length;
+      for (let x = 0; x < source.width; x++) {
+        const index = y * source.width + x;
+        if (source.data[index * 4 + 3] >= OPAQUE) matches.push(index);
+      }
+      if (matches.length > prior && ++opaqueRows === 4) break;
+    }
+    return matches;
+  }
+
   function offsetOf(layer) {
     return { x: Number(layer?.offsetPx?.x) || 0, y: Number(layer?.offsetPx?.y) || 0 };
   }
@@ -260,8 +278,9 @@
       if (!spec || spec.type !== 'fire') return;
       const pix = rgba(layer.image);
       if (!pix) return;
-      const sources = sourcePixels(layer.image, spec.sourceHex || layer.config.sourceHex || '#7F00FF', 'marker');
-      if (!sources.length) return;
+      const markedSources = sourcePixels(layer.image, spec.sourceHex || layer.config.sourceHex || '#7F00FF', 'marker');
+      const sources = markedSources.length ? markedSources : fallbackTipPixels(layer.image, spec.fallbackTip);
+      if (!sources.length) return; // Ordinary flails/staffs still require their exact authored marker colors.
       const THREE = state.THREE;
       const group = new THREE.Group(); // Local to rotating head or rigid weapon; maintains ordered depth with source artwork.
       group.name = 'weapon_interleaved_fire_' + layer.config.id;
@@ -286,7 +305,8 @@
       const above = layers[index + 1]?.mesh;
       const renderOrder = layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2;
       emitters.push({
-        config: spec, sourceLayer: layer.config, image: pix, sources,
+        config: spec, sourceLayer: layer.config, sourceMesh: layer.mesh, image: pix, sources,
+        sourceFallback: !markedSources.length, // Mobile diagnostics distinguish a rescued torch emitter from its marker-driven staff counterpart.
         clusters, anchors, visualScale, // Geometric per-tip parent scaling matches the flail-head transform.
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
         worldRise: spec.worldRise === true, // Opt in: torch-staff and brazier particles travel along world-up even as their weapons rotate.
@@ -397,9 +417,10 @@
         }
         sprite.material.color.set(color);
         sprite.renderOrder = fx.renderOrder; // Interleaved between fuel and later metal silhouettes (front).
-        const overlayLayer = global.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Shared x-ray held-object replay draws fire with the assembled metal, never through world geometry.
-        if (Number.isInteger(overlayLayer) && ((fx.group.parent?.children?.[0]?.layers?.mask >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer);
-        else sprite.layers.set(0);
+        const overlayLayer = global.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Fire follows its actual fuel mesh through held-object/X-ray passes.
+        sprite.layers.set(0); // Keep world rendering even when the fuel is also visible in the held overlay.
+        if (Number.isInteger(overlayLayer) && overlayLayer >= 0 && overlayLayer < 31
+          && ((Number(fx.sourceMesh?.layers?.mask ?? 0) >>> overlayLayer) & 1)) sprite.layers.enable(overlayLayer);
         const localX = anchor ? px - anchor.x : px;
         const localY = anchor ? py - anchor.y : py;
         sprite.position.set(localX, localY, FIRE_DEPTH_OFFSET / fx.visualScale);

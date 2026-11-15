@@ -32,7 +32,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261111flailPose1';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261115torchIdleExport1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   // The pose schema, the legacy rest poses and the stance-baking policy (power,
   // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
@@ -55,7 +55,7 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-    torchHold: Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Upright artwork, regardless of player yaw.
+    torchHold: Object.freeze({x: -0.03,y: 0.08,z: 0.17,pitch: 10,yaw: 0,bodyYaw: 0,roll: 0,scale: 0.64,headRelative: false,bodySink: 0,flailLengthScale: 1,shoulderAim: {grip: true,palmNormal: true},secondaryGrip: {enabled: false,percent: 50,primaryPercent: 50},dualWield: {enabled: false},elbows: {right: {x: -0.04,y: -0.19,z: 0}},worldUpright: true}), // Upright artwork, regardless of player yaw.
     topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -64,6 +64,7 @@
     dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
+  const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }))); // The two previously shipped defaults; customized poses keep precedence.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 
   // Keep these objects stable so external debug/editor references do not go stale
@@ -94,14 +95,24 @@
       const incoming = raw.stances[key]; // Only explicit local overrides should replace a committed stance.
       if (sourceLabel === 'local-override' && (!incoming || typeof incoming !== 'object')) continue;
       const baseline = sourceLabel === 'local-override' ? idleStances[key] : DEFAULT_IDLE_STANCES[key]; // Missing local channels inherit the actual loaded stance.
-      const normalized = normalizePose(incoming, baseline);
+      const legacyTorch = key === 'torchHold' && sourceLabel === 'local-override' && PREVIOUS_TORCH_HOLD_STANCES.some(old =>
+        POSE_KEYS.every(field => Math.abs((Number(incoming?.[field]) || 0) - old[field]) < 1e-9)); // Only untouched old browser defaults adopt the new authored pose.
+      const authored = legacyTorch ? DEFAULT_IDLE_STANCES.torchHold : incoming;
+      const normalized = normalizePose(authored, baseline);
       if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
       if (key === 'topHeavyTool' && sourceLabel === 'local-override' && POSE_KEYS.every(field =>
         Math.abs((Number(incoming?.[field]) || 0) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field]) < 1e-9)) {
         Object.assign(normalized, DEFAULT_IDLE_STANCES.topHeavyTool); // An untouched saved default should receive the working Pick-Shovel copy; user edits remain untouched.
       }
       Object.assign(idleStances[key], normalized);
-      idleStances[key].worldUpright = typeof incoming?.worldUpright === 'boolean' ? incoming.worldUpright : !!baseline?.worldUpright; // Preserve authored world-space rotation metadata lost by numeric pose normalization.
+      idleStances[key].worldUpright = typeof authored?.worldUpright === 'boolean' ? authored.worldUpright : !!baseline?.worldUpright; // Preserve authored world-space rotation metadata lost by numeric pose normalization.
+      if (key === 'torchHold') {
+        const scale = Number(authored?.scale ?? baseline?.scale ?? 1); // Used by the holder matrix hook to match the exported 0.64 neutral size.
+        idleStances[key].scale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+        idleStances[key].shoulderAim = { ...(authored?.shoulderAim || baseline?.shoulderAim || {}) }; // Live procedural hand weights for the resting torch.
+        const elbows = authored?.elbows || baseline?.elbows; // The exported right-elbow hint remains active in Neutral.
+        idleStances[key].elbows = elbows ? { ...elbows, ...(elbows.right ? { right: { ...elbows.right } } : {}) } : {};
+      }
     }
     stanceConfigSource = sourceLabel;
     return true;
@@ -548,6 +559,7 @@
       const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust;
       let savedPosition = null;
       let savedQuaternion = null;
+      let savedScale = null; // Restored after each matrix bake so idle scaling never accumulates across frames.
       let savedPlaneRotationZ = null;
       const toolPlane = mesh?.userData?.toolPlane || null;
 
@@ -556,6 +568,12 @@
         savedQuaternion = this.quaternion.clone();
         try {
           const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (torchIdle && Number.isFinite(targetPose.scale) && targetPose.scale > 0) {
+            savedScale = this.scale.clone();
+            this.scale.multiplyScalar(targetPose.scale); // Scale the neutral torch without changing subsequent swing/throw frames.
+            const grip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('torch', 'melee'); // Same grip-anchored scale pivot as the Attack Editor.
+            SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
+          }
           if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
@@ -595,6 +613,7 @@
         if (savedPosition && savedQuaternion) {
           this.position.copy(savedPosition);
           this.quaternion.copy(savedQuaternion);
+          if (savedScale) this.scale.copy(savedScale);
           this.updateMatrix?.();
         }
       }
@@ -623,7 +642,8 @@
     runtimeState.combatStrikeFrac = visual?.sf ?? null;
     runtimeState.combatHoldFrac = visual?.hf ?? null;
     runtimeState.combatPoseScale = visual?.poseScale ?? 1; // Used by hand/shoulder consumers to mirror partial held releases.
-    const idlePose = activeSlot === 'weapon' ? targetPoseFor(activeSlot, itemKey, def) : null; // Chooses the live Light/Heavy/Dual neutral without duplicating stance policy.
+    const idlePose = (activeSlot === 'weapon' || (activeSlot === 'adventuring' && itemKey === 'torch')) ? targetPoseFor(activeSlot, itemKey, def) : null; // Live weapon or torch neutral, never the torch swing pose.
+    runtimeState.idlePose = !visual && activeSlot === 'adventuring' && itemKey === 'torch' ? idlePose : null; // Procedural right elbow and palm targeting read this without another snapshot allocation.
     runtimeState.flailLengthScale = visual?.flailPose
       ? SAP.flailLengthScaleAt(visual.flailPose, visual.progress, visual.wf, visual.sf, visual.hf, visual.flailSequence, visual.poseScale)
       : SAP.validFlailLength(idlePose?.flailLengthScale); // The flail renderer reads this only for the player's currently equipped cached handle.
@@ -663,6 +683,7 @@
       combatHoldFrac: visual?.hf ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
       flailLengthScale: getRuntimeState().flailLengthScale, // Existing debugSnapshot stays in parity with the allocation-free runtime view.
+      idlePose: getRuntimeState().idlePose, // Keep diagnostics in exact parity with the borrowed runtime view, including no-torch null.
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
       combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
