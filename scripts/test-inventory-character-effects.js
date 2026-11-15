@@ -164,6 +164,9 @@ assert.ok(source.includes('gear-active-buff-icon'), 'active effects show the ori
 assert.ok(source.includes('entry.description || entry.desc'), 'active effects show descriptions in the menu, not just hover titles');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'temple-prayer-rest', remainingS: 86400 }), '1d game');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'alchemy', remainingS: 90 }), '1m 30s real');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'rangedImpact', timeBasis: 'real', remainingS: 2.2 }), '3s real', 'ranged impacts use real milliseconds and cannot be labeled as game time');
+assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', timeBasis: 'day', remainingS: 336 }), '336d game', 'ancestor offerings carry days, not seconds');
+assert.equal(api.__test.formatBuffDuration({ timeBasis: 'conditional', remainingLabel: 'While nearby', remainingS: 1 }), 'While nearby');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'harlyao-terror', remainingS: 1 }), 'While nearby');
 assert.equal(api.__test.formatBuffDuration({ sourceId: 'festivals', key: 'ancestor-blessing', remainingS: 7 }), '7d game');
 
