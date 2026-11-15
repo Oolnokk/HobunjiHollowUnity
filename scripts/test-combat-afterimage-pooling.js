@@ -180,9 +180,9 @@ combat.update(0.01);
 assert.equal(stats().pooled, 0, 'idle pool releases transient resources after four seconds');
 assert(counts.geometryDisposals >= 2 && counts.textureDisposals >= 4, 'expired pooled GPU resources are actually disposed');
 
-// Stress a single actor past the global 24-record limit without advancing
-// simulated fade time: oldest snapshots should be reused before allocating
-// the 25th mesh, rather than only recycled after new allocations.
+// Stress a single actor past its per-actor limit (3 live ghosts; the global cap
+// is 24) without advancing simulated fade time: oldest snapshots should be reused
+// before allocating another mesh, rather than only recycled after new allocations.
 enemy.state = 'idle';
 enemy._banditLunging = false;
 player.lunging = true;
@@ -190,14 +190,14 @@ for (let sample = 0; sample < 24; sample += 1) {
   player.x += 64; nowMs += 60;
   combat.update(0);
 }
-assert.equal(stats().active, 24, 'the in-flight afterimage record cap is respected');
+assert.equal(stats().active, 3, 'one actor keeps at most three in-flight afterimage records');
 const warmCreated = stats().entriesCreated; // Compares allocations after saturation with 3 additional snapshots.
 const warmReused = stats().entriesReused; // Checks that evicted live records become immediately available for reuse.
 for (let sample = 0; sample < 3; sample += 1) {
   player.x += 64; nowMs += 60;
   combat.update(0);
 }
-assert.equal(stats().active, 24, 'oldest records are removed as new ones enter at the cap');
+assert.equal(stats().active, 3, 'oldest records are removed as new ones enter at the cap');
 assert.equal(stats().entriesCreated, warmCreated, 'pool-at-cap avoids new geometry/material/texture allocations');
 assert.equal(stats().entriesReused, warmReused + 3, 'the three evicted live records are reused immediately');
 console.log('Player/NPC dodge-lunge afterimage pooling regression tests passed.');

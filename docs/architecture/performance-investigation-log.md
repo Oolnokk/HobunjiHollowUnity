@@ -36,10 +36,19 @@ Where the extra time is, from per-function accumulators wrapped around ~620 modu
   per-bone matrices and scalar math produced bit-compatible output (checked against three r128) but ran at **1.0x**:
   V8 already optimises stock `boneTransform`, the cost is the 12k-vertex walk, not the matrix products. Not shipped.
 
-Leads, not applied (each changes how the lunge blur looks, so they are a design call): lower the snapshot rate or
-cap live snapshots at ~3; bake the ghosts from a decimated index (4,032 triangles per portrait plane is the
-skinning-friendly mesh, a ghost at 0.34 opacity does not need it); skip the snapshot when the previous frame was
-already over budget.
+**Applied afterwards (same day):** two changes in `combat-blink-dodge.js`, both cosmetic-density only.
+(1) *Decimated ghosts:* the portrait plane is a non-indexed grid (`buildSkinnedPlaneGeometry`, 28x36 cells, 6 vertices
+per cell, front then back face). A ghost now merges 2x2 cells into one quad from the block's four corner vertices
+(same UVs, same posed positions at the corners): 4,032 -> 1,008 triangles and 12,096 -> 3,024 `boneTransform` calls per
+snapshot. Geometry that is not that grid (no `userData.segmentsX/Y`, indexed, other group counts) keeps the old full
+clone. `AFTERIMAGE_DECIMATE_CELLS = 1` restores full density. (2) *Per-actor cap:* `AFTERIMAGE_MAX_PER_ROOT = 3` live
+ghosts per actor (the global cap of 24 stays); with the 0.28 s fade the two oldest of five were nearly invisible.
+Checked on the real game (same headless harness, 8 attacks): peak live ghosts 3 with 3,024 ghost triangles in total
+(was 5 ghosts / ~20,160), `boneTransform` 3,024 per tick (was 12,096). **Headless frame time did not visibly move**
+(neutral 180 ms, windup 215, recover 199, post-hit 224, against 182 / 226 / 208 / 232 before, inside the +-15% run
+noise), so on software GL the post-hit +20% is mostly something else; the gain here is the removed JS/GC/triangle work,
+which matters on a CPU-bound device, not a measured FPS change. Tests: `scripts/test-afterimage-decimated-ghost.js` (needs three r128; mutation-checked), and the pooling/blink tests
+now pin the per-actor cap. Still open: skipping a snapshot when the previous frame was already over budget.
 
 Measurement traps from this run: `console.profile`/`profileEnd` inside the loop (~750 ms each, appears as a function
 named after the caller); `lastDurationMs`/EMA scheduler timers read mid-frame are the *previous* frame's smoothed

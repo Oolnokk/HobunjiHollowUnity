@@ -155,6 +155,7 @@ assert.equal(debug.afterimages.supported, false, 'Blink afterimages degrade safe
 assert.equal(debug.afterimages.active, 0, 'unsupported afterimage rendering never leaves phantom live records');
 assert.equal(debug.tuning.afterimageHopSamples, 3, 'Blink diagnostics expose the bounded hop-burst sample count');
 assert.equal(debug.tuning.afterimageMaxActive, 24, 'shared player/enemy trails expose the hard cap that prevents unbounded transient portrait meshes');
+assert.equal(debug.tuning.afterimageMaxPerRoot, 3, 'one actor never keeps more than three live ghosts, so a lunge trail stays a few meshes');
 assert.match(source, /source\.boneTransform\(i, vertex\)/, 'skinned portrait afterimages bake the live deformed vertices instead of sharing the moving player skeleton');
 assert.match(source, /material\.depthWrite = false/, 'afterimages do not punch new depth holes through the live portrait/world stack');
 assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afterimages strip skinning attributes after freezing the pose');

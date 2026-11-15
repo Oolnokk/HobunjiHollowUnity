@@ -23,7 +23,7 @@
     "js/combat/combat-combo.js?v=20261107combo1501a",
     "js/combat/combat-quickattacks.js?v=20261110quickreach2",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",
-    "js/combat/combat-blink-dodge.js?v=20261112afterimagepool1",
+    "js/combat/combat-blink-dodge.js?v=20261115hc8b1508",
     "js/combat/combat-charged-breaker.js?v=20261106charge879",
     "js/combat/combat-flurry.js?v=20261106trinkets20",
     "js/combat/combat-loadout-ui.js?v=20261110tzkFortune1",
