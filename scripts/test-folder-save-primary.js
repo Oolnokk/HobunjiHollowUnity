@@ -435,6 +435,49 @@ function verifySavedProcessingRestoresAfterStaleProduction() {
 
 verifySavedProcessingRestoresAfterStaleProduction();
 
+async function verifyCanonicalFarmDiskDiagnostics() {
+  const worldId = 'world_p6bt8ho6'; // Real-world-style world ID selects exactly one canonical layout in the portable folder.
+  const key = 'hobunji_farm_layout_v3:' + worldId; // Existing browser mirror key used by the farm editor and folder snapshot.
+  const browserLayout = { version: 3, furniture: [{ key: 'squeezer', col: 25, row: 3 }] }; // Stale browser JSON holds only one processor.
+  const diskLayout = { version: 3, furniture: Array.from({ length: 7 }, (_, col) => ({ key: 'squeezer', col, row: 3 })) }; // Restored canonical file contains the full set.
+  const alerts = []; // Mobile-visible Save Diagnostics output is captured without a browser console.
+  let writes = 0; // Any write during inspection is an unsafe mutation of a user's recovered folder.
+  let currentDiskLayout = diskLayout; // Switches from a complete canonical file to only numbered backups in the second assertion.
+  const status = { state: 'ready', ignoredFarmLayoutBackupFiles: [worldId + '(9).json'] }; // The existing reader recognizes version copies but never imports them.
+  const window = {
+    FarmEditor: {
+      farmLayoutKey: () => key,
+      inspectFarmRestore: () => ({ worldId, expected: { processing: 1 }, live: { processing: 0 } }),
+    },
+    LocalSaveFolder: {
+      getStatus: () => status,
+      async readPrimarySnapshot() {
+        return { savedAt: 100, snapshot: { farmLayouts: currentDiskLayout ? { [worldId]: currentDiskLayout } : {} } };
+      },
+      async syncNow() { writes++; throw new Error('Disk inspection may not save.'); },
+    },
+  }; // Only real API methods used by the shipped diagnostics are implemented.
+  const ctx = {
+    window, localStorage: { getItem: selected => selected === key ? JSON.stringify(browserLayout) : null },
+    document: { body: null, visibilityState: 'visible', addEventListener() {}, getElementById() { return null; } },
+    location: { href: 'https://example.invalid/game' },
+    MutationObserver: class { observe() {} }, requestAnimationFrame() {},
+    alert: value => alerts.push(value), console,
+  }; // The real mobile diagnostic IIFE executes unchanged in an isolated browser-like context.
+  vm.runInNewContext(debugUi, ctx, { filename: 'folder-save-debug-ui.js' });
+  const inspector = window.__hobunjiFolderSaveDiagnostics.inspectCanonicalFarmOnDisk;
+  const full = await inspector(worldId);
+  assert(full.canonicalPresent && full.counts.processing === 7, 'mobile diagnostics reads the complete canonical folder layout, not its numbered backups');
+  assert(full.matchesBrowserMirror === false, 'mobile diagnostics reveals folder/browser mismatch even when the runtime uses a stale cache');
+  assert(full.ignoredNumberedCopies.includes(worldId + '(9).json'), 'mobile diagnostics lists ignored numbered backups explicitly');
+  await window.__hobunjiFolderSaveDiagnostics.show();
+  assert(alerts[0].includes('"diskFarm"') && alerts[0].includes('"processing": 7'), 'Save Diagnostics alert includes actual canonical disk counts for mobile screenshots');
+  currentDiskLayout = null;
+  const absent = await inspector(worldId);
+  assert(absent.canonicalPresent === false && absent.counts === null, 'missing canonical farm is not misrepresented as a valid empty layout');
+  assert(writes === 0, 'folder inspection never overwrites the recovered layout or browser mirror');
+}
+
 Promise.resolve()
   .then(() => verifySettingsLoadRebuild(true, false))
   .then(() => verifySettingsLoadRebuild(true, true))
@@ -445,6 +488,7 @@ Promise.resolve()
   .then(() => verifySettingsLoadRebuild(true, false, false))
   .then(() => verifySettingsLoadRebuild(true, false, false, 'reconnect'))
   .then(() => verifySettingsLoadRebuild(true, false, true, 'change', 'empty-folder-connected-awaiting-first-save'))
+  .then(verifyCanonicalFarmDiskDiagnostics)
   .then(() => {
     assert(debugUi.includes('FarmEditor?.inspectFarmRestore'), 'mobile Save Diagnostics exposes actual spawned farm furniture/building counts');
     console.log('\nFolder-save primary regression checks passed.');
