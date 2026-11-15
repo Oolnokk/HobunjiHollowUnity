@@ -511,6 +511,7 @@
     mesh.userData.billboardSurface = true; // Decal renderer identifies a camera-facing transparent parent.
     mesh.castShadow = false; mesh.receiveShadow = false;
     mesh.frustumCulled = false; // A transparent surface can carry a visible child even while edge-on.
+    mesh.renderOrder = -1; // Run the billboard orientation hook before its sorted transparent decal children.
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
       camera.getWorldQuaternion(billboardCameraQuaternion);
       if (mesh.parent) mesh.parent.getWorldQuaternion(billboardParentQuaternion);
