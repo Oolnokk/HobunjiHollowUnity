@@ -892,9 +892,9 @@
           // Only a true no-op may use file timestamps. Any save that writes
           // bytes must compare the complete canonical farm content, including
           // same-size edits with preserved timestamps from external restores.
-          const disk = await readFolderFarmLayouts(
-            new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)),
-            { canonicalOnly: true });
+          const guardWorldIds = new Set([...(meta.worlds || []), ...(_lastKnownFolderMeta?.worlds || [])]
+            .map(world => world?.id).filter(Boolean)); // Deleted worlds remain in the baseline until this write intentionally removes them.
+          const disk = await readFolderFarmLayouts(guardWorldIds, { canonicalOnly: true });
           const diskFingerprint = farmLayoutFingerprint(disk.layouts);
           if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
             _lastDataLossRisk = disk.corruptFiles.length
