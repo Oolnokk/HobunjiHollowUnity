@@ -98,6 +98,17 @@
       eyes: validHex(genotype?.skeeriEyes) ? genotype.skeeriEyes : (palette.eyes || '#ff8027'),
     }; // Existing flying rig supports separately tinted fur, markings and glowing eyes.
   }
+  function inheritAppearance(child,parentA,parentB) {
+    if (!child || typeof child !== 'object') return child;
+    const sources = [parentA,parentB].filter(parent=>parent && (
+      validTheme(parent.skeeriTradition) || validHex(parent.skeeriPattern) || validHex(parent.skeeriEyes)));
+    if (!sources.length) return child;
+    const donor = sources[Math.floor(Math.random()*sources.length)]; // Inherits one parent's complete visual tradition, never a random unrelated clan.
+    if (validTheme(donor.skeeriTradition)) child.skeeriTradition = donor.skeeriTradition;
+    if (validHex(donor.skeeriPattern)) child.skeeriPattern = donor.skeeriPattern;
+    if (validHex(donor.skeeriEyes)) child.skeeriEyes = donor.skeeriEyes;
+    return child;
+  }
   function collectNestEgg({seed,roomId,count,theme,identity} = {}) {
     const remaining = remainingEggs({seed,roomId,count});
     if (!remaining) return {ok:false,remaining:0,message:'No fertile Skeeri eggs remain in this nest.'};
@@ -133,7 +144,7 @@
   configureLivestock(); // Must run before game.js snapshots itemKinds, just like PingdortRegistration.
   window.SkeeriLivestockRegistration = Object.freeze({
     KIND,FERTILE_EGG,FARM_EGG,SPRITES,configureLivestock,register,init,
-    remainingEggs,collectNestEgg,paletteForGenotype,
+    remainingEggs,collectNestEgg,paletteForGenotype,inheritAppearance,
     debugSnapshot:()=>({...debug,activeNests:memory.size}),
   });
 })();
