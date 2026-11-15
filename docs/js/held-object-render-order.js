@@ -594,7 +594,15 @@
       || (a.material?.id || 0) - (b.material?.id || 0) || a.z - b.z || a.id - b.id;
     if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => rank(a) - rank(b) || legacyOpaque(a, b));
     renderer.setTransparentSort(manual
-      ? (a, b) => rank(a) - rank(b) || legacyTransparent(a, b)
+      ? (a, b) => {
+          // Prioritize actor-to-actor depth before editable intra-actor layers.
+          // Otherwise a distant NPC hand ranked above a front portrait paints
+          // over the nearby player's body even with ordinary depth protected.
+          const actorA = portraitOrder?.ranks?.get(a.object) || portraitOrder?.extras?.get(a.object);
+          const actorB = portraitOrder?.ranks?.get(b.object) || portraitOrder?.extras?.get(b.object);
+          if (actorA && actorB && actorA.owner !== actorB.owner) return legacyTransparent(a, b);
+          return rank(a) - rank(b) || legacyTransparent(a, b);
+        }
       : legacyTransparent);
     try { return draw(); }
     finally {
@@ -2159,8 +2167,14 @@
     return false;
   }
 
+  function isWaterBoundGear(mesh) {
+    const flags = mesh?.userData; // Physical gear identity never depends on whether the front portrait masks it.
+    return !!(flags?.hobunjiHeldObjectPlane === true || flags?.hobunjiWeaponAssemblyPart === true)
+      && flags?.hobunjiProceduralHand !== true && flags?.hobunjiProceduralFoot !== true;
+  }
+
   function gearOverlapsWaterVolume(mesh, cover) {
-    return !isPortraitMaskedGear(mesh) || meshOverlapsWaterVolume(mesh, cover); // Hands/feet retain their existing submersion policy.
+    return !isWaterBoundGear(mesh) || meshOverlapsWaterVolume(mesh, cover); // Hands/feet preserve their original submersion policy.
   }
 
   // A character portrait is a flat card wider than the actor, so its bounds overlap wet tiles whenever the
@@ -2212,7 +2226,7 @@
         }
         const covers = coversByScope.get(scope);
         if (covers.some(cover => gearOverlapsWaterVolume(mesh, cover))) wetMeshes.add(mesh);
-        else if (covers.length && isPortraitMaskedGear(mesh)) lastDryGearWaterSkips++;
+        else if (covers.length && isWaterBoundGear(mesh)) lastDryGearWaterSkips++;
       }
     }
     const split = [];
