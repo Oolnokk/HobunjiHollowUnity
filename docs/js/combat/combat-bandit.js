@@ -3068,6 +3068,11 @@
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
     if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
     const banditFlaskToolHolder = rank === 'flasker' ? makeBanditFlaskToolHolder(targetScene) : null; // Separate inventory-flask visual uses the same authored grip as the Attack Editor.
+    for (const holder of [banditToolHolder, banditRangedToolHolder, banditFlaskToolHolder]) {
+      if (!holder) continue;
+      holder.userData ||= {};
+      holder.userData.hobunjiHeldPortraitOwner = avatarRef.group; // Scene-sibling hostile weapons match this character's front PNG mask, never another actor's.
+    }
     const handDriverRoot = avatarRef.handRigAvatarRoot; // Original PNGPlaneAvatar root retained solely as the shared procedural-hand driver's identity/ownership record.
     if (handDriverRoot?.userData) {
       handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;

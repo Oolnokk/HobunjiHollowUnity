@@ -485,7 +485,8 @@
       applyGripScale(visual, loadout.toolKey, state.walker); // Primary grip is hand-owned now; watchman weapon keeps the authored holder transform and inherits base + calculated-height scale.
       const holder = new three.Group();
       holder.name = `${state.walker.rec.id}_${loadout.toolKey}_holder`;
-      holder.userData = { toolPlane: built.plane, npcWatchmanWeapon: true, toolKey: loadout.toolKey, npcGripVisualV4: visual };
+      holder.userData = { toolPlane: built.plane, npcWatchmanWeapon: true, toolKey: loadout.toolKey, npcGripVisualV4: visual,
+        hobunjiHeldPortraitOwner: state.walker.root }; // Watchman holder is a scene sibling, not a child of the walker whose front portrait masks it.
       holder.add(visual);
       parent.add(holder);
       if (built.plane) built.plane.name = `${state.walker.rec.id}_${loadout.toolKey}_plane`;
@@ -575,6 +576,10 @@
       releaseClaims(walker);
       state.mode = null; state.key = null; state.handsAttached = false;
       return;
+    }
+    if (walker.stationToolMesh.userData?.hobunjiHeldPortraitOwner !== walker.root) {
+      walker.stationToolMesh.userData ||= {};
+      walker.stationToolMesh.userData.hobunjiHeldPortraitOwner = walker.root; // Station tools also live outside the portrait hierarchy on some maps.
     }
     stationVisual(walker.stationToolMesh, key, walker);
     const activity = target?.toolActivity && window.ToolActivityStages?.ACTIVITIES?.[target.toolActivity] ? target.toolActivity : null;
