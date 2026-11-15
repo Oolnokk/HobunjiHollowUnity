@@ -577,7 +577,7 @@
   // the mount lands exactly where the player's own feet would have.
   function startClimbLeap(climb) {
     const m = mountRideEntity;
-    if (mountRideState !== 'mounted' || !m || climb?.type !== 'wall') return false;
+    if (mountRideState !== 'mounted' || !m || m._mountHop || climb?.type !== 'wall') return false; // Never overlap a normal rock hop with a scripted cliff crossing.
     const currentArea = deps.getCurrentArea();
     const grid = deps.getActiveGrid();
     const startCol = deps.clamp(Math.floor(m.x / deps.TILE), 0, deps.getActiveCols() - 1);
@@ -818,6 +818,7 @@
     m.areaRows = deps.getActiveRows();
     m.areaId = deps.getCurrentArea();
     m.x = deps.player.x; m.y = deps.player.y;
+    m._mountHop = null; m._banditLungeHopCurrent = 0; // Area transitions cancel any in-flight wilderness hop before reseating the rider.
     m.vx = 0; m.vy = 0;
     window.AudioSystem?.resetCreatureGait?.(m);
     mountFootstepDebug.surfaceKey = null;
@@ -846,13 +847,14 @@
   function planMountHop(m, area, allowOpenGround = false) {
     if (!deps._isZoneArea?.(area)) return null; // Auto-rock hopping is wilderness only, never through indoor rock walls.
     const grid = deps.getActiveGrid();
+    if (!Array.isArray(grid) || !grid.length) return null;
     const T = deps.TILE, dx = Math.cos(mountAngle), dy = Math.sin(mountAngle);
     const baseTile = grid[Math.floor(m.y / T)]?.[Math.floor(m.x / T)];
     const startY = deps.tileSurfaceYInArea?.(baseTile, area);
     if (!Number.isFinite(startY) || !grid) return null;
     let firstRock = -1, lastRock = -1;
     let lastCell = ''; // Skip redundant same-tile probes along a diagonal and avoid additional pathfinding.
-    for (let d = 0.45; d <= 3.2; d += 0.24) {
+    for (let d = 0.45; d <= 4.65; d += 0.24) {
       const x = m.x + dx * d * T, y = m.y + dy * d * T;
       const col = Math.floor(x / T), row = Math.floor(y / T);
       const cell = col + ',' + row;
@@ -862,7 +864,7 @@
       if (rock) {
         if (firstRock < 0) firstRock = d;
         lastRock = d;
-        if (lastRock - firstRock > 2.25) return null; // Long rock fields cannot be hopped.
+        if (lastRock - firstRock > 3.15) return null; // Patch-sized, but not unbounded, rock fields can be hopped.
       } else {
         if (!deps.canPlayerOccupy(x, y)) return null; // Non-rock blockers are never jump-through surfaces.
         if (lastRock > 0 && d >= lastRock + 0.48) {
@@ -884,8 +886,8 @@
     if (m._mountHop) return false;
     m._mountHop = {
       x: m.x, y: m.y, endX: plan.endX, endY: plan.endY,
-      elapsed: 0, duration: Math.max(0.47, Math.min(0.82, plan.distanceTiles / 4.4)),
-      height: plan.overRock ? 0.86 : 0.61,
+      elapsed: 0, duration: Math.max(0.47, Math.min(1.05, plan.distanceTiles / 4.4)),
+      height: plan.overRock ? Math.max(0.86, Math.min(1.07, plan.distanceTiles * 0.27)) : 0.61,
     }; // One flight record owns the entire horizontal crossing and visual hop arc.
     mountBreathClockS = 0;
     if (automatic) ridingDebug.autoRockJumps++; else ridingDebug.manualJumps++;
