@@ -33,6 +33,7 @@ const player = {
 };
 
 let npcProviderCalls = 0;
+let poseClockMs = 1000; // Monotonic test clock for the player's last genuine leg solver update.
 const ProceduralLegAnimation = {
   attach() {
     return {
@@ -45,6 +46,7 @@ const ProceduralLegAnimation = {
 
 const context = {
   console,
+  performance: { now: () => poseClockMs }, // Supplies the same timestamp source read by the runtime compositor.
   window: {
     ProceduralLegAnimation,
     Combat: { deps: { player } },
@@ -67,6 +69,17 @@ assert.ok(Math.abs(context.window.HobunjiDrunkWalk.getDebug().loss - 0.4) < 1e-1
 // Non-combat NPCs retain their independent sobriety/alcohol provider. Their
 // gait input is not derived from the player's or a combat Footing resource.
 const THREE = { Quaternion, Euler };
+const playerLegs = ProceduralLegAnimation.attach(THREE, {}, { name: 'player' });
+assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, null, 'attaching a rig is not a movement sample');
+playerLegs.update(0.016, 2.5, false, false);
+assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1000, 'actual gait update stamps the pose');
+poseClockMs = 1500;
+assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1000, 'render-only inspection cannot refresh the pose');
+playerLegs.update(0.016, 2.5, false, false);
+assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1500, 'a new gait step renews the sample');
+playerLegs.dispose();
+assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, null, 'disposed rigs cannot supply stale pose samples');
+
 const npcBodyRoot = { quaternion: new Quaternion() };
 const npcLegs = ProceduralLegAnimation.attach(THREE, {}, {
   name: 'Furunji Funji',
