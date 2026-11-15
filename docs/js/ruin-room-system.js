@@ -194,7 +194,7 @@
     return hull; // The active room's camera silhouette is identical for all lights in one overlay redraw.
   }
   const LIGHT_CLIP_FEATHER_PX=24; // The shared darkness overlay feathers the inside of each room silhouette; no light crosses a sealed wall.
-  const LIGHT_CLIP_PASS_BUDGET=72; // Maximum room-feather canvas paints per overlay redraw; preserves FPS when 80 glowing engravings are visible.
+  const LIGHT_CLIP_PASS_BUDGET=72; // Budget for high-quality feather paints per overlay redraw; later engravings use the single-pass sealed fallback.
   function hullArea(points){
     let area=0;
     for(let i=0;i<points.length;i++){
