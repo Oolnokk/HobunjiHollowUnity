@@ -70,6 +70,8 @@ assert.ok(Math.abs(context.window.HobunjiDrunkWalk.getDebug().loss - 0.4) < 1e-1
 // gait input is not derived from the player's or a combat Footing resource.
 const THREE = { Quaternion, Euler };
 const playerLegs = ProceduralLegAnimation.attach(THREE, {}, { name: 'player' });
+const livePlayerPose = context.window.HobunjiDrunkWalk.currentPlayerPoseSample(); // Stable, allocation-free reference reused across render passes.
+assert.ok(livePlayerPose && livePlayerPose.lastUpdatedAtMs === null, 'live pose starts without a solver timestamp');
 assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, null, 'attaching a rig is not a movement sample');
 playerLegs.update(0.016, 2.5, false, false);
 assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1000, 'actual gait update stamps the pose');
@@ -77,6 +79,7 @@ poseClockMs = 1500;
 assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1000, 'render-only inspection cannot refresh the pose');
 playerLegs.update(0.016, 2.5, false, false);
 assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, 1500, 'a new gait step renews the sample');
+assert.strictEqual(context.window.HobunjiDrunkWalk.currentPlayerPoseSample(), livePlayerPose, 'render consumers reuse the exact live state without allocating');
 playerLegs.dispose();
 assert.strictEqual(context.window.HobunjiDrunkWalk.getDebug().lastUpdatedAtMs, null, 'disposed rigs cannot supply stale pose samples');
 
