@@ -106,7 +106,11 @@
       // never run first or it can faithfully copy an older localStorage image.
       window.CharacterMetaSave?.flush?.();
       if (typeof saveMemberWorldData === 'function') saveMemberWorldData();
-      if (typeof saveFarmLayout === 'function') saveFarmLayout();
+      if (typeof saveFarmLayout === 'function' && saveFarmLayout() === false) {
+        // FarmEditor returns false when its restore guard rejects an unsafe snapshot.
+        // Never report a successful quit/explicit folder sync based on the member save alone.
+        throw new Error('Farm layout was not saved: the current farm is not fully restored. The previous saved layout was preserved; see Save Diagnostics.');
+      }
       if ((window.HobunjiStorageQuota?.getWriteFailureCount?.() || 0) > failuresBefore) {
         throw new Error('Browser storage is full and the live save could not be captured. The Primary Save Folder must be connected and armed to save without a browser copy.');
       }

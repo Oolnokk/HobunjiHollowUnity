@@ -40,6 +40,7 @@
   // the moment this init() object literal is built and throw.
   let deps = null;
   let _restoringLayoutObjects = false; // Held across the full room/furniture/barn restoration transaction, never across worlds.
+  let _restoreProcessingState = null; // Tracks saved processors not yet spawned; blocks writing a partial farm back over the authoritative layout.
   function init(injectedDeps) {
     deps = injectedDeps;
     _bindListeners();
@@ -250,7 +251,20 @@
     }
     localStorage.removeItem(linkedWindowBackupKey()); // Prior saved window plus no live record and no wall placement is the intentional-removal signal.
   }
-  function captureFarmLayout(previousLayout = parseStoredJson(farmLayoutKey())) {
+  function captureFarmLayout(previousLayout = parseStoredJson(farmLayoutKey()), options = null) {
+    const key = farmLayoutKey(); // The restore barrier is world-specific; switching worlds cannot inherit another world's failure.
+    if (_restoringLayoutObjects) throw new Error('Farm layout capture blocked: world objects are still being restored.');
+    const allowStarterGrant = options?.allowStartupStarterGrant === true
+      && !!(window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId
+      && _restoreProcessingState?.key === key
+      && _restoreProcessingState.complete === true
+      && _restoreProcessingState.pending.size === 0; // FarmProduction is allowed to commit its one-time starter grant only after this world's farm finished restoring.
+    if (window.__hobunjiGameStarted !== true && previousLayout?.version === 3 && !allowStarterGrant) {
+      throw new Error('Farm layout capture blocked: the existing saved world is not fully hydrated yet.');
+    }
+    if (_restoreProcessingState?.key === key && _restoreProcessingState.pending.size) {
+      throw new Error('Farm layout capture blocked: ' + _restoreProcessingState.pending.size + ' saved processing stations failed to restore.');
+    }
     const grid = deps.getGrid();
     const shippingBoxObject = deps.getShippingBoxObject();
     const supplyBoxObject = deps.getSupplyBoxObject();
@@ -318,10 +332,10 @@
     return layout;
   }
 
-  function saveFarmLayout() {
+  function saveFarmLayout(options = null) {
     try {
       const previousLayout = parseStoredJson(farmLayoutKey()); // Shared capture preserves unknown decor before the optional browser backups are written.
-      const layout = captureFarmLayout(previousLayout); // The same serializer supplies direct folder saves without writing browser storage.
+      const layout = captureFarmLayout(previousLayout, options); // The same serializer supplies direct folder saves without writing browser storage.
       localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
       writeLinkedWindowBackup(layout, previousLayout);
       return true;
@@ -413,13 +427,32 @@
     }
   }
 
+  function clearOrphanedHouseReservation(col, row, housePieces) {
+    const tileKey = col + ',' + row; // Only saved processor tiles are inspected, never a full farm-wide cleanup pass.
+    const occupant = deps.worldObjects.get(tileKey); // A bootstrap house may leave an unowned footprint or doorway reservation during a world switch.
+    if (!occupant || !['house_piece', 'house_entrance', 'house_entrance_approach'].includes(occupant.type)) return false;
+    const stillOwned = housePieces.some(piece => piece._worldObj === occupant
+      || (piece.features || []).some(feature => feature._doorObj === occupant || feature._approachObj === occupant));
+    if (stillOwned) return false; // Never erase any tile belonging to a genuinely restored house or its live entrance.
+    deps.worldObjects.delete(tileKey);
+    return true;
+  }
+
   function applyFarmLayoutObjects(layout) {
     if (!layout || layout.version !== 3) {
+      _restoreProcessingState = null; // A genuinely empty/new world has no prior processing-station obligation.
       window.FarmhouseRoomPlanner?.restore?.(null); // Fresh worlds must not inherit the previous world's custom partitions.
       deps.rebuildInteriorGeometry?.(); // initWorldObjects may have rendered the prior world's walls during a scene switch.
       return;
     }
     _restoringLayoutObjects = true;
+    const savedProcessing = Array.isArray(layout.furniture) ? layout.furniture : []; // Original saved records are the authoritative expectation for this hydration.
+    _restoreProcessingState = {
+      key: farmLayoutKey(),
+      pending: new Map(savedProcessing.map((record, index) => [index, record])),
+      blocked: [],
+      complete: false, // Only a fully finished house/furniture/barn hydration may authorize a starter-building grant save.
+    }; // Guard remains active after restoration if any saved processor cannot be instantiated.
     let complete = false; // Only a fully restored house can safely migrate formerly occupied wall tiles.
     try {
       // Repair extension-owned furniture definitions before saved decor is
@@ -498,17 +531,28 @@
         window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
         housePieces = deps.getHousePieces(); // Legacy relocation also replaces the whole registry.
       }
-      (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
-        // Guarded per-entry: one malformed saved processing station must not
-        // throw and abort the rest of this restore (decor, house pieces,
-        // barns, dew-pile meshes all run after this loop in the same call).
+      savedProcessing.forEach((saved, index) => {
+        // A failed saved placement must remain in the pending set, not disappear into the next autosave.
+        const { key, col, row, job, rotYDeg } = saved || {}; // One malformed record must not abort later furniture/barn restoration.
         try {
+          clearOrphanedHouseReservation(col, row, housePieces); // Remove only reservations no longer owned by any restored house piece.
           if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
             const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
-            if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
+            if (obj) {
+              deps.worldObjects.set(col + ',' + row, obj);
+              deps.processingFurnitureObjects.add(obj);
+              _restoreProcessingState.pending.delete(index);
+            }
           }
         } catch (err) {
           console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
+        }
+        if (_restoreProcessingState.pending.has(index)) {
+          const blocker = deps.worldObjects.get(col + ',' + row); // Identify genuine occupancy versus an unknown definition or terrain restriction.
+          const reason = !deps.PROCESSING_FURNITURE_DEFS[key] ? 'unknown-definition'
+            : blocker ? (blocker.type || blocker.id || 'world-object') : 'tile-or-placement-rule';
+          _restoreProcessingState.blocked.push({ key, col, row, reason });
+          deps.debugLog?.('Saved processor not restored: ' + key + '@' + col + ',' + row + ' (' + reason + '). Farm saves are protected.', 'error');
         }
       });
       (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, tableAttachment, npcStationId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles, rugLayer }) => {
@@ -588,12 +632,14 @@
       // same two-phase split as furniture (data now, objects/meshes here).
       window.DewVats.rebuildMeshesFromGrid();
       complete = true;
+      _restoreProcessingState.complete = true; // A partial/throwing restore must never unlock the one-time startup grant path.
     } finally {
       _restoringLayoutObjects = false;
       if (complete) {
         const recovered = deps.reconcileInteriorFurniture?.() || []; // One migration pass after every saved room and furnishing exists.
-        if (recovered.some(entry => entry.action === 'moved' || entry.action === 'stored')) {
-          saveFarmLayout(); // Persist the corrected furniture together with all restored barns and house features.
+        if (recovered.some(entry => entry.action === 'moved' || entry.action === 'stored')
+            && window.__hobunjiGameStarted === true && !_restoreProcessingState?.pending.size) {
+          saveFarmLayout(); // Never serialize a startup-only or partially restored farm as a corrected layout.
         }
       }
     }
@@ -784,6 +830,11 @@
       source: 'selected-world-browser-mirror',
       worldId, key, storedLayoutVersion: saved?.version ?? null,
       expected, live, missing, misplaced,
+      restoreProtection: {
+        startupSaveBlocked: window.__hobunjiGameStarted !== true && !!layout,
+        missingProcessors: _restoreProcessingState?.key === key ? _restoreProcessingState.pending.size : 0,
+        blockers: _restoreProcessingState?.key === key ? _restoreProcessingState.blocked.slice(0, 8) : [],
+      }, // Read-only mobile trace of skipped saved placements and the bootstrap save barrier.
     };
   }
 

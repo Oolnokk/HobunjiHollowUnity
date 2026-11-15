@@ -32,7 +32,7 @@ assert.match(farmEditorSource,
   /layout\.furniture\.push\(\{ key: obj\.furnitureKey, col: obj\.col, row: obj\.row, rotYDeg: obj\.rotYDeg \|\| 0/,
   'processor rotation is serialized into farm saves');
 assert.match(farmEditorSource,
-  /\(layout\.furniture \|\| \[\]\)\.forEach\(\(\{ key, col, row, job, rotYDeg \}\)[\s\S]{0,700}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
+  /savedProcessing\.forEach\(\(saved, index\) => \{[\s\S]{0,380}const \{ key, col, row, job, rotYDeg \} = saved \|\| \{\};[\s\S]{0,480}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
   'processor rotation is restored from farm saves');
 
 const stools = inn.furniture.filter(item => item.itemKey === 'stoolFurniture'); // All eight downstairs inn seats surround the two tables.

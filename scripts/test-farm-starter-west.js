@@ -10,6 +10,7 @@ function runPreset(specialization) {
   const objects = new Map(); // Shared occupancy map used by barns and production buildings.
   const barns = []; // Captures the Ranch starter barn so its final position can be asserted.
   let incubator = null; // Captures the attached Ranch incubator for the same west-of-entrance assertion.
+  let starterSaveOptions = null; // Verifies specialty starters use the narrowly scoped post-hydration save exception.
   const context = {
     console,
     setInterval: () => 1,
@@ -75,7 +76,7 @@ function runPreset(specialization) {
     calendar: { day: 1, time01: 0 }, inventory: {}, ITEM_DEFS: {}, cropData: {}, COLS: 60, ROWS: 50,
     TileType: { TRENCH: 'trench' }, MAX_WATER: 3, scene: { add() {}, remove() {} }, worldObjects: objects,
     hasFarmPermission: () => true, getGrid: () => [], surfaceY: () => 0, loadStorage: () => ({}), saveStorage() {}, consumeInput: () => 3,
-    saveFarmLayout: () => true, saveMemberWorldData() {}, showToast() {}, debugLog() {},
+    saveFarmLayout(options) { starterSaveOptions = options; return true; }, saveMemberWorldData() {}, showToast() {}, debugLog() {},
   });
   context.FarmProduction.load([]);
 
@@ -86,6 +87,7 @@ function runPreset(specialization) {
   for (const barn of barns) assert(barn.col + barn.w <= WEST_OF_ENTRANCE_COL, `${specialization}: starter barn remained east of the entrance`);
   if (incubator) assert(incubator.col + incubator.w <= WEST_OF_ENTRANCE_COL, `${specialization}: starter incubator crossed the entrance-side boundary`);
   assert.equal(world.farmStarterBuildings.length, 0, `${specialization}: a starter grant remained pending on clear ground`);
+  assert.equal(starterSaveOptions?.allowStartupStarterGrant, true, `${specialization}: saved starter buildings must use the guarded post-hydration path`);
 }
 
 for (const specialization of ['grower', 'rancher', 'preserver']) runPreset(specialization);

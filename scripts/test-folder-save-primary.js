@@ -458,12 +458,15 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     { id: 'house_starter_annex', pieceKey: 'starter', col: 29, row: 0, w: 3, h: 3, stage: 'built' },
   ]; // Saved house is one tile west and two tiles north of the temporary defaults.
   const occupy = house => {
-    house._footprintObject = { id: house.id }; // Stable registry ownership lets clearAll remove only its own old footprint.
+    house._footprintObject = { id: house.id, type: 'house_piece' }; // Actual HousePieces objects identify a house reservation, including during startup.
+    house._worldObj = house._footprintObject; // Restored live identity differentiates valid house occupancy from old bootstrap leftovers.
     for (let row = house.row; row < house.row + house.h; row++) {
       for (let col = house.col; col < house.col + house.w; col++) objectMap.set(col + ',' + row, house._footprintObject);
     }
   };
   houses.forEach(occupy);
+  const orphanedStarterFootprint = { type: 'house_piece', id: 'house_starter' }; // Simulates a stale house reservation left behind by a bootstrap/world switch.
+  objectMap.set('26,3', orphanedStarterFootprint); // The stale entry is not owned by the live starter and must not erase this saved squeezer.
   strictAssert.equal(savedFurniture.filter(item => objectMap.has(item.col + ',' + item.row)).length, 6,
     'regression fixture recreates the six saved processing tiles blocked by the default house');
   const layout = {
@@ -487,17 +490,22 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
         houses = []; // Actual HousePieces.clearAll invokes setHousePieces([]), rather than mutating its old array.
       },
       spawnEntry: occupy,
-      loadFixtureInventory() {},
+      loadFixtureInventory() {}, getFixtureInventory() { return []; },
     },
     DewVats: { rebuildMeshesFromGrid() {} },
     FarmhouseRoomPlanner: { restore() {} },
     FarmProduction: { serialize: () => [] },
   }; // Minimal authentic house footprints: spawning registers tiles, clearing releases them.
+  let persistedFarmLayout = JSON.stringify(layout); // Canonical browser mirror remains bit-for-bit intact across blocked startup/partial saves.
+  let farmLayoutWrites = 0; // Test verifies that saveFarmLayout never reaches storage while saved stations are missing.
   const ctx = {
-    window, console,
-    localStorage: { getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? JSON.stringify(layout) : null; } },
+    window, console: { error() {}, warn() {}, log() {} },
+    localStorage: {
+      getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? persistedFarmLayout : null; },
+      setItem(key, value) { if (key === 'hobunji_farm_layout_v3:world_p6bt8ho6') { persistedFarmLayout = value; farmLayoutWrites++; } },
+    },
     document: { getElementById() { return null; }, querySelector() { return null; } },
-  }; // Test reads the on-disk layout mirror without DevTools or a graphical scene.
+  }; // Test uses a writable local-storage mirror to prove a failed save cannot corrupt the original JSON.
   vm.runInNewContext(editorSource, ctx, { filename: 'farm-editor.js' });
   window.FarmEditor.init({
     threeContainer: { addEventListener() {} },
@@ -506,6 +514,8 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     DECORATIVE_FURNITURE_DEFS: {},
     getShippingBoxObject: () => null, getSupplyBoxObject: () => null,
     getHousePieces: () => houses, getFarmBuildings: () => [],
+    getWorldRoutes: () => [], getWorldNpcPaths: () => [], getWorldTransitions: () => [], // Starter-grant capture must serialize a fully hydrated farm, including travel metadata.
+    COLS: 0, ROWS: 0, // The processor fixture has no grid edits; skip tile serialization while still validating saved objects.
     getBarnTiers: () => ({}),
     getHousePieceCatalog: () => ({ starter: { w: 4, h: 3 } }),
     getCurrentArea: () => 'farm', getGrid: () => [],
@@ -518,8 +528,16 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     reconcileInteriorFurniture: () => [],
     debugLog() {},
   });
+  window.__hobunjiGameStarted = false; // Reproduces the period when a saved farm exists but the full world has not hydrated yet.
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /not fully hydrated/, 'startup cannot overwrite the correct farm with default house/furniture state');
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(undefined, { allowStartupStarterGrant: true }), /not fully hydrated/,
+    'the starter grant cannot bypass protection before saved furniture and buildings have been restored');
+  strictAssert.equal(window.FarmEditor.saveFarmLayout(), false, 'startup save returns an explicit failure');
+  strictAssert.equal(farmLayoutWrites, 0, 'the existing farm file is not rewritten during bootstrap');
+  window.__hobunjiGameStarted = true;
   window.FarmEditor.applyFarmLayoutObjects(layout);
   strictAssert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
+  strictAssert.equal(objectMap.get('26,3')?.furnitureKey, 'squeezer', 'saved squeezer replaces an unowned starter-house ghost');
   strictAssert.equal(houses.length, 2, 'the restored house still includes the complete saved main room and annex');
   assert(houses.every(entry => entry._footprintObject), 'house registry contains spawned saved entries, not stale objects from before clearAll');
   strictAssert.deepEqual(houses.map(house => [house.col, house.row]), [[25, 0], [29, 0]], 'saved house coordinates win over bootstrap defaults');
@@ -527,6 +545,24 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   strictAssert.equal(diagnostics.expected.processing, 7);
   strictAssert.equal(diagnostics.live.processing, 7);
   strictAssert.equal(diagnostics.missing.processing.length, 0, 'all seven processors occupy their exact saved tiles');
+  strictAssert.equal(diagnostics.restoreProtection.missingProcessors, 0, 'successful restore removes the incomplete-save barrier');
+  window.__hobunjiGameStarted = false; // FarmProduction can grant starter buildings after layout restoration but before the avatar is fully spawned.
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /not fully hydrated/, 'ordinary pre-login farm captures stay blocked');
+  const safeStarterCapture = window.FarmEditor.captureFarmLayout(undefined, { allowStartupStarterGrant: true }); // Explicit limited exception for FarmProduction.ensureStarters.
+  strictAssert.equal(safeStarterCapture.furniture.length, 7, 'trusted starter grant retains every saved processor after complete hydration');
+  strictAssert.equal(farmLayoutWrites, 0, 'the starter-grant test captures without replacing the original disk/browser layout');
+  window.__hobunjiGameStarted = true;
+
+  // Never mistake a legitimate SAVED house footprint for a bootstrap ghost. The unresolved station must block future saves.
+  window.FarmEditor.applyFarmLayoutObjects({ ...layout, housePieces: [], furniture: [{ key: 'squeezer', col: 25, row: 0 }] });
+  const blocked = window.FarmEditor.inspectFarmRestore();
+  strictAssert.equal(blocked.restoreProtection.missingProcessors, 1, 'genuine saved-house occupancy remains protected');
+  strictAssert.equal(blocked.restoreProtection.blockers[0].reason, 'house_piece', 'mobile diagnostics identifies the exact live blocking object');
+  strictAssert.equal(objectMap.get('25,0')?.type, 'house_piece', 'real saved house footprint is never deleted by recovery');
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /saved processing stations/, 'a partial restore cannot destroy the authoritative farm layout');
+  strictAssert.equal(window.FarmEditor.saveFarmLayout(), false, 'incomplete restore refuses an ordinary save as well as folder capture');
+  strictAssert.equal(farmLayoutWrites, 0, 'rejected incomplete restore never replaces the full seven-processor JSON');
+  strictAssert.equal(JSON.parse(persistedFarmLayout).furniture.length, 7, 'the original saved seven processors survive both rejected writes');
 }
 
 verifyMovedHouseUnblocksAllSavedProcessors();

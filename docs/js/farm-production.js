@@ -133,7 +133,7 @@
       const entry = { id: 'starter_' + key, key, ...location, rot: 0, queue: [], ready: [], nextAt: null, water: 0 }; // Supplied completed structure, with an empty rainwater tank.
       buildings.push(entry); window.FarmBuildings.clearFootprint(entry.col, entry.row, definition.w, definition.h); spawn(entry);
     }
-    if (!deps.saveFarmLayout()) { lastError = 'Starter building save failed.'; return; }
+    if (!deps.saveFarmLayout({ allowStartupStarterGrant: true })) { lastError = 'Starter building save failed.'; return; } // This post-hydration, one-time grant can persist before the player is spawned; ordinary premature saves remain blocked.
     world.farmStarterBuildings = pending;
     try { localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); } catch (error) { lastError = String(error); }
   }
