@@ -441,10 +441,13 @@
       if (!actors.has(owner)) {
         owner.updateWorldMatrix(true, false);
         const world = owner.matrixWorld.elements;
+        // Every visible actor is ordered by its own camera depth, near or far, so the player never ends up
+        // in front of a distant NPC's garment just because that NPC was outside the crossing radius.
+        // Only actors close enough to cross planes with the player take part in the depth-write deferral.
         const close = Math.hypot(world[12] - playerWorld[12], world[13] - playerWorld[13], world[14] - playerWorld[14]) <= PORTRAIT_SORT_DISTANCE;
-        const depth = close ? portraitSortPoint.set(world[12], world[13], world[14])
-          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z : NaN;
-        actors.set(owner, Number.isFinite(depth) ? { owner, depth } : null);
+        const depth = portraitSortPoint.set(world[12], world[13], world[14])
+          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z;
+        actors.set(owner, Number.isFinite(depth) ? { owner, depth, close } : null);
       }
       const rank = actors.get(owner);
       if (rank) ranks.set(portrait, rank);
@@ -455,17 +458,30 @@
     for (const rank of actors.values()) {
       if (!rank) continue;
       count++;
+      if (!rank.close) continue; // The nearest-portrait protection is only about actors near the player.
       if (!nearest || rank.depth < nearest.depth
           || (rank.depth === nearest.depth && rank.owner.id > nearest.owner.id)) nearest = rank;
     }
-    return count > 1 ? { ranks, nearest, count } : null;
+    if (count < 2) return null;
+    // Worn pants are separate meshes drawn at renderOrder 28, i.e. after every portrait. Left to depth alone they
+    // show through any actor whose portrait skipped its depth write (see withPortraitDrawOrder) and through
+    // closer actors generally, so they sort with the actor that wears them instead.
+    const extras = new Map();
+    for (const handle of window.PantsGarmentRenderer?.liveHandles?.() || []) {
+      const mesh = handle?.mesh;
+      if (!mesh?.parent) continue;
+      const rank = actors.get(portraitStencilOwner(mesh, scene));
+      if (rank) extras.set(mesh, rank);
+    }
+    return { ranks, extras, nearest, count };
   }
 
-  function comparePortraitDraws(a, b, ranks) {
-    const actorA = ranks.get(a.object), actorB = ranks.get(b.object);
+  function comparePortraitDraws(a, b, ranks, extras = null) {
+    const actorA = ranks.get(a.object) || extras?.get(a.object), actorB = ranks.get(b.object) || extras?.get(b.object);
     // Three r128 compares group, render order, projected Z, then object ID.
     // A ranked portrait substitutes the actor's depth and keeps the original
-    // front/back/shoulder layer order within that one actor.
+    // front/back/shoulder layer order within that one actor. Garments ranked
+    // with their wearer draw right after that wearer's portrait (renderOrder).
     return (actorA ? 0 : a.groupOrder) - (actorB ? 0 : b.groupOrder)
       || (actorA ? PORTRAIT_SORT_ORDER : a.renderOrder) - (actorB ? PORTRAIT_SORT_ORDER : b.renderOrder)
       || (actorB?.depth ?? b.z) - (actorA?.depth ?? a.z)
@@ -476,10 +492,10 @@
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
     if (!order || !renderer.setTransparentSort) return draw();
-    const changed = new Set(); // Only the farther portraits defer depth writes during the ordinary color draw.
+    const changed = new Set(); // Only the farther portraits near the player defer depth writes during the ordinary color draw.
     if (protectNearPortrait) {
       for (const [mesh, rank] of order.ranks) {
-        if (rank === order.nearest) continue;
+        if (rank === order.nearest || rank.close === false) continue;
         forEachMaterial(mesh.material, material => {
           if (!material.depthWrite) return;
           material.depthWrite = false;
@@ -487,7 +503,7 @@
         });
       }
     }
-    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks));
+    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks, order.extras));
     try {
       return draw();
     } finally {

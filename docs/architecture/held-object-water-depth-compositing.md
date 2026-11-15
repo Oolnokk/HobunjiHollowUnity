@@ -227,6 +227,16 @@ while another dry NPC is on screen. Source-level regressions cover sparse merged
 water, broad floods, scenery bounds, and mixed wet/dry shared-material groups;
 a real GPU screenshot is still required to validate final pixels.
 
+## Actor draw order: portraits and worn pants sort together
+
+`nearbyPortraitOrder()` orders every visible player/NPC portrait by its actor's camera depth (far to near) and
+`withPortraitDrawOrder()` installs that as the renderer's transparent sort. Worn pants are separate meshes at
+`renderOrder` 28, so they are ranked with the actor that wears them (`extras`) and draw right after that actor's
+portrait. Leaving them out meant they drew after *every* portrait and relied on depth alone, which fails for any
+portrait whose depth write is deferred (a close, non-nearest actor) - far NPCs' pants then show through the player.
+Only actors within `PORTRAIT_SORT_DISTANCE` of the player take part in the depth-write deferral. Other worn parts
+that draw after portraits (hats, overlays) need the same treatment if they show the same symptom.
+
 ## Portrait water tint: the actor's own tile must be wet
 
 Front/rear portrait cards are wider than the actor, so their bounds overlap wet tiles whenever a character
