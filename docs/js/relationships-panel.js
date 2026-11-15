@@ -592,14 +592,14 @@
       .sort((a, b) => Number(b.relation === 'Spouse') - Number(a.relation === 'Spouse') || b.favor - a.favor)
       .forEach(({ npcId, rec, profile, tier, favor, next, relation }) => {
         ensureChathead(npcId, profile);
-        const name = rec?.name || npcId;
+        const name = rec?.name || window.RomanceSystem?.helpers?.npcName?.(npcId) || npcId.replace(/_/g, ' '); // Absent traveling spouses and in-laws still have readable entries.
         const favorDisplay = Math.round(favor * 10) / 10;
         const progressNote = next != null ? `${Math.round((next - favor) * 10) / 10} favor to Tier ${tier + 1}` : 'max tier';
         // Same renderer the dialogue box's heart readout uses (see
         // dialogue-content.js's renderRelationshipHearts) — the Friendship
         // Tier label and this heart row are two views of the identical
         // favor number/scale, not separate trackers.
-        const heartsHtml = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
+        const heartsHtml = rec ? window.DialogueContent?.renderRelationshipHearts?.(rec) || '' : ''; // An absent visitor may not have an active NPC walker.
         const rapport = Math.max(0, Math.min(100, Number(window.NpcRapport?.get?.(npcId) || 0))); // Used to render the NPC's temporary daily social affinity without altering permanent friendship sorting.
         const rapportPct = Number.isFinite(rapport) ? rapport : 0; // Used as the clamped width/value for the 0–100 rapport bar.
         const row = document.createElement('div');
