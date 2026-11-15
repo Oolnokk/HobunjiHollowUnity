@@ -550,11 +550,30 @@
     return true;
   }
 
+  // Does the imminent blocked tile offer a real reachable upper surface?
+  // Reuses the existing jump collision/landing authority, so trees, walls,
+  // furniture and rock tops aren't reclassified by the steering helper.
+  function hasJumpableSupportAhead(x, y, dx, dy, reachTiles = 0.42) {
+    if (!deps?.player || !(deps.TILE > 0)) return false;
+    const length = Math.hypot(dx, dy); // Only the caller's normalized intentional direction is sampled.
+    if (!(length > 0.001)) return false;
+    const startX = x / deps.TILE, startZ = y / deps.TILE; // Input uses movement pixels; support queries use tile/world coordinates.
+    const groundedY = groundAt(startX, startZ);
+    const feetY = Number.isFinite(deps.player.physicalFeetY) ? deps.player.physicalFeetY : groundedY; // Matches actual launch footing even on raised decking.
+    if (!Number.isFinite(feetY)) return false;
+    const reach = clamp(number(reachTiles, 0.42), 0.1, 0.5); // Stops at the adjacent obstacle, never looks beyond it.
+    const forwardX = startX + dx / length * reach, forwardZ = startZ + dy / length * reach;
+    const support = highestSupport(forwardX, forwardZ, feetY + EASY_JUMP_RISE); // Semantic cover heights, with exact native support restrictions.
+    return !!support && support.y > feetY + CONFIG.maxStepUp + CONFIG.landingTolerance
+      && support.y <= feetY + EASY_JUMP_RISE;
+  }
+
   window.PlayerJump = Object.freeze({
     init(injected) { deps = injected; },
     start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl,
     enterRoofSupport, // Only the explicit interior exit action may put a grounded actor on a high rooftop.
     canOccupyAir: (x, z, feetY) => blockingReason(x, z, feetY) === null,
+    hasJumpableSupportAhead, // Ground steering yields to objects the existing jump solver can actually land on.
     syncExternalFlight: flight => {
       const player = deps?.player;
       if (!player || player._freeJump !== flight || !flight?.external) return false;
