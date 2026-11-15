@@ -67,6 +67,27 @@ assert(sawTurn, 'the mount makes an actual lateral detour');
 assert(reachedPastRock, 'a held eastward input can carry the mount around the obstruction');
 assert(steering.debugSnapshot().mounted.plans < 80, 'planning is throttled, not called per frame');
 
+// Dense three-by-three brush is traversable around its edges but cannot be
+// cut through diagonally. This covers the common wilderness thicket case.
+steering.reset('mounted');
+blocked.clear();
+for (let row = 5; row <= 7; row++) {
+  for (let col = 5; col <= 7; col++) blocked.add(col + ',' + row);
+}
+let brushX = 3.5 * tile, brushY = 6.5 * tile; // Ground-position trace across the thicket test.
+let passedBrush = false; // Must progress through reachable open terrain rather than repeatedly nudging into the plants.
+for (let frame = 0; frame < 450; frame++) {
+  const suggested = steering.steer('mounted', 'thicket', brushX, brushY, 1, 0, tile, occupied, 1 / 60);
+  const vx = suggested?.x ?? 1, vy = suggested?.y ?? 0;
+  const step = 130 / 60;
+  if (occupied(brushX + vx * step, brushY)) brushX += vx * step;
+  if (occupied(brushX, brushY + vy * step)) brushY += vy * step;
+  assert(occupied(brushX, brushY), 'mounted path stays out of dense thicket footprints');
+  if (brushX > 10 * tile) { passedBrush = true; break; }
+}
+assert(passedBrush, 'mounted local pathing navigates around a broad vegetation cluster');
+blocked.clear();
+
 // No path through a continuous solid fence. The steering helper must fall
 // back to unchanged collision instead of inventing an illegal position.
 steering.reset('mounted');
