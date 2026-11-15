@@ -95,6 +95,7 @@ const collectedThemes = new Set(); // Distinct character-owned rewards drive rem
 const sceneGroups = []; // Tracks spawned authored furniture and parent cleanup in the fake scene.
 let disposedHalos = 0; // Confirms per-instance GPU halo materials are released on collection and teardown.
 let disposedDecals = 0; // Confirms per-instance decal mesh and material resources are released without touching shared textures.
+let disposedBillboards = 0; // Confirms the authored transparent billboard geometry and material do not leak across reloads.
 const testRoot = { // Real THREE.Group's add/remove ownership contract used by the sanctum.
   children: [],
   add(child) { child.parent = this; this.children.push(child); },
@@ -114,6 +115,11 @@ const sceneWindow = {
         traverse(callback){callback(this);},
       }; // Full authored furniture construction is separately covered by test-lich-heart-furniture.js.
       group.userData.ruinFurnitureKey = key;
+      group.userData.meshById = new Map([['heartBillboard',{
+        userData:{authoredPart:{kind:'transparentBillboardSurface'}},
+        geometry:{dispose(){disposedBillboards++;}},
+        material:{dispose(){disposedBillboards++;}},
+      }]]); // The three furniture JSONs each have one uniquely allocated transparent part.
       group.userData.staticGlowEmitterVisuals = [{dispose(){disposedHalos++;}}];
       group.userData.authoredDecalMeshes = [{geometry:{dispose(){disposedDecals++;}},material:{dispose(){disposedDecals++;}}}];
       sceneGroups.push(group);
@@ -170,6 +176,7 @@ assert.equal(control.onPress(),true,'successful interaction claims the heart');
 assert.equal(testRoot.children.length,0,'claimed heart is removed from the world');
 assert.equal(disposedHalos,1,'claim releases its authored glow halo without touching shared textures');
 assert.equal(disposedDecals,2,'claim releases its per-instance decal material and geometry');
+assert.equal(disposedBillboards,2,'claim releases its transparent billboard geometry and material');
 assert.equal(composer.controls({}).some(item=>item.kind==='lichHeart'),false,'collected heart interaction disappears');
 assert.equal(control.onPress(),false,'stale input cannot duplicate a collected reward');
 composer.update({deps:{}},102,0.016);
@@ -187,6 +194,7 @@ composer.update({deps:{}},105,0.016);
 assert.equal(sanctumState.heart?.furnitureKey,'sightlessLichHeart','Imlao receives the distinct authored reward');
 composer.clear();
 assert.equal(disposedHalos,3,'all three named heart effects are cleaned up on exit');
+assert.equal(disposedBillboards,6,'all three authored transparent surfaces are disposed on collection or ruin exit');
 sanctumState = loadSanctum('tothal',false);
 composer.update({deps:{}},106,0.016);
 assert.equal(sanctumState.heart,undefined,'ordinary liches must not spawn authored hearts');
