@@ -13,7 +13,10 @@ const trinketIdsByTier = { 2: ['wanderersAnklet', 'herbalistsPendant'], 3: ['ran
 
 for (const [tierText, ids] of Object.entries(trinketIdsByTier)) {
   const tier = Number(tierText); // Ensures rewards scale from 1, through 2, to 3 Attunement points.
+  const poolLine = source.match(new RegExp('^\\s*' + tier + ': \\[([^\\]]+)\\],?$', 'm')); // Validates actual wild-chest selection, not just unused gear definitions.
+  assert(poolLine, 'buried chest tier ' + tier + ' must have a trinket selection pool');
   for (const id of ids) {
+    assert(poolLine[1].includes("'" + id + "'"), id + ' must actually be rollable from a tier ' + tier + ' chest');
     const match = trinketSource.match(new RegExp('\\b' + id + ': \\{([\\s\\S]*?)\\n    \\},'));
     assert(match, id + ' must be authored in the real TrinketSystem catalog');
     assert.match(match[1], new RegExp('attunementCost: ' + (tier - 1) + '\\b'), id + ' should be priced for its chest tier');
