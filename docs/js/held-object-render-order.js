@@ -418,12 +418,8 @@
   let airborneDepthRebuilds = 0; // Counts raised-gear frames that rebuilt ordinary depth without horizon masks.
   let backgroundDepthMeshesExcluded = 0; // Counts background depth submissions suppressed from gear/shell depth replays.
 
-  // A manual rank can cross the front-portrait/held-overlay pass boundary only
-  // by changing the owner's stencil relationship, never by reordering depth passes.
-  function manualBehindFront(layer) {
-    if (xrayRule('layers.manualOrder') !== 'on' || !window.XrayHierarchy?.layerRank) return null;
-    return window.XrayHierarchy.layerRank(layer) < window.XrayHierarchy.layerRank('actor.front');
-  }
+  // The later held-overlay pass cannot be ordered in front of/behind an earlier
+  // portrait using color-list ranks. Its owner-specific stencil is a DIRECT rule.
   function heldPriorityLayer() {
     return xrayRule('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands';
   }
@@ -431,8 +427,7 @@
     const data = object?.userData;
     if (data?.hobunjiHeldObjectPlane !== true || data.hobunjiProceduralFoot === true) return false;
     if (data.hobunjiProceduralHand === true) return maskedHands.has(object) && xrayRule('hand.frontPlaneMask') !== 'off';
-    if (xrayRule('weapon.frontPlaneMask') === 'off') return false;
-    return manualBehindFront(heldPriorityLayer()) !== false; // The hand's layer carries its held tool unless explicitly unlinked.
+    return xrayRule('weapon.frontPlaneMask') !== 'off'; // Held color order never overrides the owner's front-art stencil.
   }
 
   // Hands: a hand with a part behind its holder's front portrait plane (camera on the front side) must not
@@ -483,12 +478,11 @@
     // Per-hand state rather than clear-and-rebuild: the world is rendered more than once per frame and a pass
     // that collects no hands must not un-mask the ones an earlier pass decided about.
     const rule = xrayRule('hand.frontPlaneMask');
-    const manualFront = manualBehindFront('actor.hands'); // An explicitly frontmost hand cannot be stencil-masked as behind.
     let frontByOwner = null; // Owner -> front portrait, built once per call and only if a hand needs it.
     for (const mesh of held) {
       if (mesh.userData?.hobunjiProceduralHand !== true) continue;
-      let masked = manualFront === false ? false : rule === 'always';
-      if (manualFront !== false && rule === 'behind') {
+      let masked = rule === 'always';
+      if (rule === 'behind') {
         if (!frontByOwner) {
           frontByOwner = new Map();
           for (const portrait of collectVisible(frontPortraitRegistry, scene)) {
@@ -551,8 +545,8 @@
   const PORTRAIT_SORT_DISTANCE = 2; // Tile radius for close player/NPC silhouettes that can cross each other.
   const PORTRAIT_SORT_ORDER = 2; // Common actor-body order; ordinary transparent items keep the existing Three.js sort keys.
 
-  // User-editable draw order is purely a color-pass sort. Do not change material.depthTest,
-  // WebGL camera layer numbers or the protected stencil/depth replay sequence.
+  // User-editable draw order is purely a color-pass sort; front art is governed by its stencil switch.
+  // Do not change material.depthTest, WebGL camera layer numbers or the protected depth replay sequence.
   function visualLayerFor(item) {
     const object = item?.object;
     const data = object?.userData || {};
