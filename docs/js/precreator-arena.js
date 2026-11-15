@@ -444,7 +444,8 @@
         lockCamera();
         isolateInput();
         turn(0);
-        show('Real Testing Arena ready. Character, clothes and equipment all use game rigs.');
+        show('Real Testing Arena ready. Equipping a real starter outfit…');
+        randomClothes(); // Dress the initial guest in the same native deforming pants as subsequent rerolls.
         debugUpdate();
         requestAnimationFrame(frame);
       } else if (checks > 700) {
