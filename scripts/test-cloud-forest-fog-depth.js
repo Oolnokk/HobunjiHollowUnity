@@ -9,7 +9,8 @@ const root = path.resolve(__dirname, '..'); // Repository root used for every so
 const housePieces = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8'); // Confirms the retired overlay stays out and the avatar depth helper loads.
 const cloudFog = fs.readFileSync(path.join(root, 'docs/js/cloud-forest-fog.js'), 'utf8'); // Confirms native mist remains an ordinary depth-tested transparent draw.
 const avatarDepth = fs.readFileSync(path.join(root, 'docs/js/cloud-forest-avatar-depth-occluder.js'), 'utf8'); // Guards the colorless player/pet depth copies that precede the mist.
-const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Confirms shoulder-pet layering really does disable visible player/pet depth writes at runtime.
+const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Attachment state is supplied by gameplay.
+const heldCompositor = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Shared renderer controls shoulder-pet depth and layering.
 
 assert.doesNotMatch(
   housePieces,
@@ -37,16 +38,16 @@ assert.match(
   'native mist cylinders retain render orders 890-892',
 );
 
-assert.match(
-  game,
-  /if \(!active \|\| !pet\) \{\s*_setLayerDepthWrite\(_playerAvatarFrontMaterial, true\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, true\);[\s\S]{0,700}_setLayerDepthWrite\(_playerAvatarFrontMaterial, false\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, false\);/,
-  'shoulder-pet mode intentionally disables the visible player portrait depth writes',
-);
-assert.match(
-  game,
-  /for \(const m of \[pet\.avatarRef\?\.frontPlane\?\.material, pet\.avatarRef\?\.backPlane\?\.material\]\)\s*\{?\s*_setLayerDepthWrite\(m, false\);/,
-  'shoulder-pet mode intentionally disables the attached pet portrait depth writes too',
-);
+assert.match(game, /HeldObjectRenderOrder\?\.setShoulderPetLayering\?\.\(/,
+  'gameplay forwards the live shoulder pet to the shared compositor');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.frontMaterial, writesDepth\);/,
+  'shared compositor disables player front-portrait depth writes in authored shoulder mode');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.backMaterial, writesDepth\);/,
+  'shared compositor handles both player portrait faces');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(mesh\.material, writesDepth\);/,
+  'the active pet portrait receives the same explicit depth-write decision');
+assert.match(heldCompositor, /const writesDepth = mode === 'world-depth'/,
+  'normal authored pose disables intersecting depth while legacy depth is a diagnostic preset');
 
 assert.match(avatarDepth, /const DEPTH_RENDER_ORDER = 889/,
   'attached-avatar depth helpers must render immediately before mist 890-892');
