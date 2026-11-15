@@ -166,6 +166,7 @@ assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all expe
 assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
 X.set('hand.frontPlaneMask', 'off');
 X.set('actors.order', 'near');
+X.set('ground.showZone', 'on'); // Leave the visual debugging circle visible throughout render experiments.
 X.moveLayer('actor.hands', '__end');
 const pretestRules = Object.fromEntries(X.keys().map(key => [key, X.get(key)])); // Simulates the user's custom pre-diagnosis configuration.
 const pretestOrder = X.describeLayers().map(layer => layer.id); // Capture the exact non-default custom rank arrangement.
@@ -181,8 +182,8 @@ for (const experiment of X.DIAGNOSTIC_PRESETS) {
   assert.ok(pending.rows.find(row => row[0] === 'Selected next experiment')?.[1].includes(experiment.label),
     'pending selection clearly names the next experiment');
   assert.deepStrictEqual(panel.onAction('apply-preset', {}), { ok: true }, 'diagnostic preset applies from shipped defaults');
-  for (const key of X.keys()) assert.equal(X.get(key), experiment.rules[key] ?? X.RULES[key].default,
-    experiment.id + ' sets a reproducible ' + key + ' rather than preserving a previous experiment');
+  for (const key of X.keys()) assert.equal(X.get(key), key === 'ground.showZone' ? pretestRules[key] : experiment.rules[key] ?? X.RULES[key].default,
+    experiment.id + ' resets rendering choices while preserving the optional visible debugging circle');
   assert.equal(X.get('layers.manualOrder'), experiment.rules['layers.manualOrder'] ?? 'off',
     'the experiment does not inherit another color sort switch');
   if (experiment.id === 'tool-before-hand') {
@@ -193,7 +194,7 @@ for (const experiment of X.DIAGNOSTIC_PRESETS) {
     assert.ok(X.layerRank('item.weapons') > X.layerRank('actor.hands'), 'tool-over-hand preset reverses that rank');
   }
   assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(applied)')),
-    'active experiment status distinguishes applied from manually edited');
+    'active experiment status ignores the independent visualization toggle and distinguishes actual render edits');
   assert.equal(panel.render().rows.find(row => row[0] === 'Testing')?.[1], experiment.hypothesis,
     'testing guidance refers to the actually applied setup, not the dropdown selection');
   const report = JSON.parse(panel.onAction('report', {}).text);
