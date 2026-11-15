@@ -577,6 +577,10 @@
       state.mode = null; state.key = null; state.handsAttached = false;
       return;
     }
+    if (walker.stationToolMesh.userData?.hobunjiHeldPortraitOwner !== walker.root) {
+      walker.stationToolMesh.userData ||= {};
+      walker.stationToolMesh.userData.hobunjiHeldPortraitOwner = walker.root; // Station tools also live outside the portrait hierarchy on some maps.
+    }
     stationVisual(walker.stationToolMesh, key, walker);
     const activity = target?.toolActivity && window.ToolActivityStages?.ACTIVITIES?.[target.toolActivity] ? target.toolActivity : null;
     if (activity) {
