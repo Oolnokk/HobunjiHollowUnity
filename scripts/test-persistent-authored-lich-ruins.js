@@ -226,12 +226,21 @@ async function main() {
   assert.equal(recovery.markActiveRuinChestOpened('any-chest',77),false,'chest persistence rejects duplicate loot from completed tombs');
   assert.equal(recovery.saveActiveRuinProgress({version:1,seed:77,bossDefeated:false}),true,'recovery plays without overwriting completed progress');
   assert.equal(recovery.activeRuinProgress().bossDefeated,true,'failed puzzle progress cannot resurrect the lich');
+  cleared.shift();
+  const oldHeartExit=recovery.relocatedReturnAnchor(); // A Tothal Shift cannot strand a returning character inside the previously completed tomb.
+  assert.equal(oldHeartExit.area,cleared.zone);
+  assert(Number.isFinite(oldHeartExit.x)&&Number.isFinite(oldHeartExit.y));
+  assert.equal(cleared.saved().authored.tothal.completed,true,'relocating a relic-only return preserves world completion');
   assert.equal(recovery.completeActiveRuin(),true,'leaving without claiming cannot retire the last chance for a heart');
   assert.equal(cleared.saved().authored.tothal.completed,true,'the original world completion marker remains intact');
   assert.equal(recovery.authoredBuriedSites(cleared.zone).length,1,'an unclaimed relic remains accessible after a return to the surface');
   assert.equal(recovery.debugEnterVisit(visit),true,'the player can revisit the cleared sanctum to collect the missing heart');
   await Promise.resolve();
   cleared.claimHeart('tothal');
+  cleared.shift(); // The shift can also occur immediately after picking up the heart but before using the ordinary return ladder.
+  const claimedHeartExit=recovery.relocatedReturnAnchor();
+  assert.equal(claimedHeartExit.area,cleared.zone,'a newly claimed relic must not invalidate the current shift-exit route');
+  assert(Number.isFinite(claimedHeartExit.x)&&Number.isFinite(claimedHeartExit.y));
   assert.equal(recovery.completeActiveRuin(),true,'claiming a missing heart allows normal exit without rewriting the completed tomb');
   assert.equal(recovery.authoredBuriedSites(cleared.zone).length,0,'a character who owns the heart no longer sees the retired tomb');
   cleared.releaseHeart('tothal'); // A second character in the same world has not collected the personal reward.
