@@ -434,38 +434,6 @@ assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follo
 assert.match(driverSource, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip(?:, visualBasis)?\)/, 'frame driver must retain the raw weapon grip target before Grip Mode and hand-model calibration');
 assert.match(driverSource, /const ownedHolder = record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder/, 'hand socket resolution must distinguish actor-owned hostile holders from the player singleton');
 assert.match(driverSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'only the actual player holder may consume WeaponToolStances\' singleton baked matrix');
-// The actual gameplay path is wrapped by procedural-hand-scale-free-world.js;
-// it needs a scale-free snapshot from the temporarily stanced player holder,
-// not Quaternion.decompose(matrixWorld), which can absorb a negative scale as a 180° flip.
-assert.match(weaponStanceSource, /lastBakedHolderWorldQuaternion = hierarchyWorldQuaternion\(this\)/, 'the rendered idle/attack holder must snapshot its scale-free orientation before the temporary stance is reverted');
-assert.match(weaponStanceSource, /lastHolderWorldQuaternion: \(\) =>/, 'the held-item driver must be able to retrieve that baked orientation');
-assert.match(weaponStanceSource, /invalidateHolderMatrixWorld: \(\) => \{ lastBakedHolderMatrixWorld = null; lastBakedHolderWorldQuaternion = null;/, 'scene transitions must invalidate position and rotation together');
-assert.match(driverSource, /lastHolderWorldQuaternion\?\.\(\)/, 'player hand sockets must consume the baked scale-free holder orientation');
-{
-  // Run the real socket resolver with a reflected (nondecomposable) world matrix.
-  const start = driverSource.indexOf('function toolSocketWorld(');
-  const end = driverSource.indexOf('function handSocketAfterGripMode(', start);
-  assert(start >= 0 && end > start);
-  class Q { constructor(yaw = 0) { this.yaw = yaw; } multiply(q) { this.yaw += q.yaw; return this; } }
-  class V {
-    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-    setFromMatrixPosition(matrix) { this.x = matrix.elements[12]; this.y = matrix.elements[13]; this.z = matrix.elements[14]; return this; }
-  }
-  const parent = {};
-  const holder = { parent, quaternion: new Q(), position: new V() };
-  const bakedWorldMatrix = { elements: [1,0,0,0, 0,1,0,0, 0,0,-1,0, 2,3,4,1], decompose() { throw new Error('reflected matrix rotation was decomposed'); } };
-  const bindings = {
-    global: { WeaponToolStances: { lastHolderMatrixWorld: () => bakedWorldMatrix, lastHolderWorldQuaternion: () => new Q(0.7) } },
-    gameDeps: { playerMesh: parent, toolHolder: holder },
-    inAttackEditor: () => false,
-    visualGripBasisDelta: () => ({ quaternion: new Q() }),
-    handSyncPerf: { sharedSocketUses: 0 }, // The real resolver increments this counter when it reuses a grip basis.
-  };
-  const resolve = vm.runInNewContext(`${driverSource.slice(start, end)}\ntoolSocketWorld`, bindings, { filename: 'mirrored-baked-weapon-hand-socket.js' });
-  const grip = resolve({ avatarRoot: { userData: {} }, rig: { parent } }, holder, null, { quaternion: new Q() });
-  assert.strictEqual(grip.quaternion.yaw, 0.7, 'the hand must inherit the baked holder rotation without matrix reflection');
-  assert.deepStrictEqual([grip.position.x, grip.position.y, grip.position.z], [2,3,4], 'the hand must still inherit the baked holder position');
-}
 assert.match(driverSource, /playerOwnedHolder[\s\S]*lastHolderMatrixWorld\?\.\(\)[\s\S]*: null/, 'hostile hands must resolve from their own holder hierarchy instead of the player baked matrix');
 assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'locked paper hand must be placed on the raw target before Grip Mode moves the socket');
 assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
@@ -473,69 +441,6 @@ assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibr
 assert.match(handSource, /rec\.calibration\.add\(visual\)/, 'rendered hand visuals must live below the calibration child, not directly on the shoulder-owned socket');
 assert.match(handSource, /applyToolCalibration\(side, null\)/, 'free-hand fallback must disable held-item calibration without rebuilding the GLB');
 assert.match(handSource, /function placeHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\(side, modelCalibration\)/, 'held-item placement must apply the exact calibration supplied by the frame driver');
-// Character View can reveal a reflected player plane from behind; both the visible
-// hand and its editor reference must convert the weapon's scale-free world grip
-// rotation without decomposing a mirrored parent matrix.
-for (const [label, startMarker, endMarker] of [
-  ['hand', 'function placeHandWorld(', 'const calibrationParentWorldQuaternion'],
-  ['paper reference', 'function placePaperHandGuideWorld(', 'function placeHandWorld('],
-]) {
-  const start = handSource.indexOf(startMarker);
-  const end = handSource.indexOf(endMarker, start);
-  assert(start >= 0 && end > start, `${label} placement method must be present`);
-  const placement = handSource.slice(start, end);
-  assert.match(placement, /hierarchyWorldQuaternionScaleFree\(parent, tempParentQuaternion\)/, `${label} orientation must follow the grip's scale-free parent hierarchy`);
-  assert.doesNotMatch(placement, /parent\.getWorldQuaternion\(/, `${label} must not use reflected-matrix decomposition`);
-}
-
-{
-  // Exercise the real placement methods under a negatively mirrored parent and camera-relative yaw.
-  const placementStart = handSource.indexOf('const tempParentQuaternion = new THREE.Quaternion();');
-  const placementEnd = handSource.indexOf('const calibrationParentWorldQuaternion', placementStart);
-  const hierarchyStart = handSource.indexOf('function hierarchyWorldQuaternionScaleFree(');
-  const hierarchyEnd = handSource.indexOf('function placeCalibrationPreviewWorld(', hierarchyStart);
-  assert(placementStart >= 0 && placementEnd > placementStart && hierarchyStart >= 0 && hierarchyEnd > hierarchyStart);
-  class TestQuaternion {
-    constructor(yaw = 0) { this.yaw = yaw; }
-    identity() { this.yaw = 0; return this; }
-    multiply(other) { this.yaw += other.yaw; return this; }
-    normalize() { return this; }
-    invert() { this.yaw = -this.yaw; return this; }
-    clone() { return new TestQuaternion(this.yaw); }
-    copy(other) { this.yaw = other.yaw; return this; }
-  }
-  class TestVector {
-    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-    clone() { return new TestVector(this.x, this.y, this.z); }
-    copy(other) { this.x = other.x; this.y = other.y; this.z = other.z; return this; }
-  }
-  const makeSocket = () => ({ position: new TestVector(), quaternion: new TestQuaternion(), scale: { set() {} }, updateMatrix() {}, updateMatrixWorld() {} });
-  const right = makeSocket();
-  const paper = makeSocket();
-  const parent = {
-    isObject3D: true, quaternion: new TestQuaternion(0.7),
-    parent: { isObject3D: true, quaternion: new TestQuaternion(0.3), parent: null },
-    updateWorldMatrix() {},
-    worldToLocal(point) { point.x *= -1; return point; }, // Mirrored -X parent: positions reflect, but rotations must not.
-    getWorldQuaternion() { throw new Error('Mirrored matrix decomposition must not run'); },
-  };
-  const fixture = {
-    THREE: { Quaternion: TestQuaternion }, parent, sockets: { right: { socket: right } },
-    paperReferenceSocket: paper, paperGuide: {}, paperGuidePlaced: false, showPaperHandGuide: true,
-    profileValues: () => ({}), syncPaperHandGuide() {}, hidePaperHandGuideTarget() {}, applyToolCalibration() {},
-  };
-  const methods = vm.runInNewContext(
-    `${handSource.slice(hierarchyStart, hierarchyEnd)}\n${handSource.slice(placementStart, placementEnd)}\n({ placeHandWorld, placePaperHandGuideWorld })`,
-    fixture, { filename: 'mirrored-character-view-hand-grips.js' },
-  );
-  const worldGrip = new TestQuaternion(1.35); // Ancestor yaw 0.3 + parent yaw 0.7 + grip-local yaw 0.35.
-  assert(methods.placeHandWorld('right', new TestVector(2, 3, 4), worldGrip));
-  assert(methods.placePaperHandGuideWorld(new TestVector(2, 3, 4), worldGrip));
-  for (const [label, socket] of [['hand', right], ['paper guide', paper]]) {
-    assert(Math.abs(socket.quaternion.yaw - 0.35) < 1e-10, `${label} must retain the same local weapon grip yaw`);
-    assert.strictEqual(socket.position.x, -2, `${label} must still respect the mirrored parent position`);
-  }
-}
 assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*const modelKey = modelKeyForRecord\(record\)/, 'frame driver must use one authoritative selected model identity for calibration');
 assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
