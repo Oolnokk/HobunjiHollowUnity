@@ -349,6 +349,7 @@
     const saved = originalBeforePresets;
     if (!applyConfiguration(saved)) return false;
     discardDiagnosticSession();
+    selectedPresetId = 'baseline'; // Returning to the original state clears the pending experiment selection.
     return true;
   }
   function diagnosticReport() {
@@ -496,14 +497,19 @@
           summary: (activePreset ? 'experiment · ' : '') +
             (changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults'),
           rows: [
-            ['Experiment', activePreset
+            ['Active experiment', activePreset
               ? activePreset.label + (presetUnmodified ? ' (applied)' : ' (modified manually)')
-              : 'None — original settings are in use'],
+              : 'None — current settings are not a preset'],
+            ['Selected next experiment', selectedPreset
+              ? selectedPreset.label + (selectedPresetId === activePresetId ? ' (active)' : ' (not yet applied)')
+              : 'None'],
             ['Original settings', !originalBeforePresets ? 'No active experiment'
               : diagnosticStored ? 'Saved in browser; survives reload' : 'In memory only; storage blocked, restore before reload'],
-            ['Testing', selectedPreset?.hypothesis || '-'],
-            ['If appearance changes', selectedPreset?.changed || '-'],
-            ['If nothing changes', selectedPreset?.unchanged || '-'],
+            ['Testing', activePreset?.hypothesis || 'Apply a preset to begin an A/B test.'],
+            ['If appearance changes', activePreset?.changed || 'Apply a preset first.'],
+            ['If nothing changes', activePreset?.unchanged || 'Apply a preset first.'],
+            ...(selectedPresetId !== activePresetId && selectedPreset
+              ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Tool vs its own front art', frontPriority],
@@ -616,6 +622,7 @@
           reset();
           selectedStage = 'held'; // Reopen the common equipment stage after a full reset.
           selectedLayer = 'actor.hands'; // Make the newly restored, linked position visible.
+          selectedPresetId = 'baseline'; // A reset cannot leave a stale experiment highlighted as if it had run.
           return { ok: true };
         }
         if (action === 'export') return { ok: true, title: 'X-ray compositing overrides', text: exportDiff() };
