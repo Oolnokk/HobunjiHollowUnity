@@ -36,7 +36,7 @@
   }); // New buried chest rarity/loot progression; locks reuse ChestLockpicking's matching 1–4 tier presets.
   const BURIED_TRINKETS = Object.freeze({
     2: ['wanderersAnklet', 'herbalistsPendant'],
-    3: ['rangersBeads', 'brawlersRing', 'guardiansBrooch'],
+    3: ['rangersBeads', 'brawlersRing', 'guardiansBrooch', 'fightersBelt', 'swiftbladeRing', 'defendersBrooch', 'steadfastBeads', 'runnersCord', 'masonsRing'],
     4: ['duelistsSignet', 'wardensAmulet'],
   }); // Each tier selects one appropriately priced single-effect trinket, rather than specialized dungeon relics.
   function treasureTier(value) {
