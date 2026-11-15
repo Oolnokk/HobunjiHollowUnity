@@ -409,15 +409,15 @@
   }
 
   function formatBuffDuration(entry) {
-    if (entry?.sourceId === 'harlyao-terror') return 'While nearby';
-    if (entry?.sourceId === 'festivals' && entry.key === 'ancestor-blessing')
+    if (entry?.timeBasis === 'conditional' || entry?.sourceId === 'harlyao-terror') return entry.remainingLabel || 'While nearby';
+    if (entry?.timeBasis === 'day' || (entry?.sourceId === 'festivals' && entry.key === 'ancestor-blessing'))
       return Math.ceil(Math.max(0, Number(entry.remainingS) || 0)) + 'd game'; // This provider publishes calendar days, not seconds.
     const seconds = Math.ceil(Math.max(0, Number(entry?.remainingS) || 0)); // Other HUD providers supply seconds, either in-game or wall-clock.
     const value = seconds >= 86400 ? Math.floor(seconds / 86400) + 'd' + (seconds % 86400 >= 3600 ? ' ' + Math.floor(seconds % 86400 / 3600) + 'h' : '')
       : seconds >= 3600 ? Math.floor(seconds / 3600) + 'h' + (seconds % 3600 >= 60 ? ' ' + Math.floor(seconds % 3600 / 60) + 'm' : '')
       : seconds >= 60 ? Math.floor(seconds / 60) + 'm' + (seconds % 60 ? ' ' + seconds % 60 + 's' : '')
       : seconds + 's';
-    return value + (entry?.sourceId === 'alchemy' ? ' real' : ' game');
+    return value + (entry?.timeBasis === 'real' || entry?.sourceId === 'alchemy' || entry?.sourceId === 'rangedImpact' ? ' real' : ' game');
   }
 
   function activeBuffEntries() {
