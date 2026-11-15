@@ -24,8 +24,10 @@ async function main() {
       await page.route(url, route => route.fulfill({
         contentType: 'application/javascript', body: fs.readFileSync(require.resolve(file)),
       }));
-    await page.addInitScript(() => {
-      // Detect any guest leak into native browser Storage across navigation.
+    // Seed actual origin Storage BEFORE loading the guest. Do not use addInitScript:
+    // that would re-seed the sentinel on the final page and hide save corruption.
+    await page.goto(BASE + '/config/species/index.json', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.evaluate(() => {
       localStorage.setItem('hobunjiSaveMeta', 'PREVIEW_TEST_REAL_SAVE_SENTINEL');
       localStorage.setItem('hobunjiPlayerProfile', 'PREVIEW_TEST_REAL_PROFILE_SENTINEL');
     });
