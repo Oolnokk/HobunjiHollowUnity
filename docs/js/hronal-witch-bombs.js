@@ -99,10 +99,10 @@
     bomb.enemyCarrier=null;
     return true;
   }
-  function playGroundHit(bomb,point) {
+  function playGroundHit(bomb,point,centerHeight=.45) {
     if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return;
     const audio=window.AudioSystem; // Use the normal world-positioned mixer, including 3D bearing, floor elevation and cavern reverb.
-    if(audio?.playObjectSfxKeyAt) audio.playObjectSfxKeyAt(GROUND_HIT_SFX_KEY,point.x,point.z,bomb.mapId,point.y-.45,{pitch:GROUND_HIT_PITCH,earshotTiles:14});
+    if(audio?.playObjectSfxKeyAt) audio.playObjectSfxKeyAt(GROUND_HIT_SFX_KEY,point.x,point.z,bomb.mapId,point.y-centerHeight,{pitch:GROUND_HIT_PITCH,earshotTiles:14});
     else audio?.playObjectSfxKey?.(GROUND_HIT_SFX_KEY,1,GROUND_HIT_PITCH);
   }
   function impact(bomb,cause='impact') {
@@ -112,12 +112,15 @@
       return true;
     }
     const world=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
-    if(String(cause).includes('ground-impact')) playGroundHit(bomb,world); // A landing is a single physical Burden impact, not a per-frame resting check.
-    const hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
+    let hazard=world?tileHazard(tileAt(bomb.mapId,world.x,world.z)):'void';
+    if (hazard==='void' && bomb.mapId===RUIN_MAP_ID && world &&
+        window.DynamicSurfaces?.sampleSupport?.(world.x,world.z,{minY:world.y-1.2,maxY:world.y+.15,pad:.02}))
+      hazard=''; // The 2D ruin tile may be void under a real elevated shaft platform; keep its solid landing.
     if (hazard) {
       window.Shattercasks?.discardBurden?.(bomb);
       return true;
     }
+    if(String(cause).includes('ground-impact')) playGroundHit(bomb,world); // One physical landing sound; water, lava and unsupported voids make no stone thud.
     return false; // Solid ordinary surfaces catch the bomb intact; its spawn-time fuse keeps running.
   }
   function buildEffect(targetScene,x,y,z,variant=VARIANTS.hronal) {
@@ -353,6 +356,8 @@
     bomb.fuseSeconds=clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120);
     bomb.spawnedAtMs=now(); // Fuse starts when the physical sphere is first registered in the world.
     bomb.impactRadius=.22;
+    const previousDrop=bomb.onDrop; // The player's Action 2 places a Burden directly on the floor rather than sending it through the falling-impact callback.
+    bomb.onDrop=record=>{try{previousDrop?.(record);}finally{const position=record.group?.getWorldPosition?.(new THREE.Vector3())||record.group?.position;playGroundHit(record,position,0);}};
     return bomb; // createHangingBurden already installed the exact onLost callback; wrapping it again would release a tube twice.
   }
   function registerDispenser(mapId,id,root,puzzle={}) {
