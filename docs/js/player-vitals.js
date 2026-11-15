@@ -590,6 +590,19 @@
           .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))[0];
         const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
         ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
+        // The right-anchored lost-capacity region is its own element, not a segment: label it with the reducing
+        // affliction too, and give it the same outline-over-text layering.
+        const capName = shortAfflictionName(reducer?.[1]?.name || reducer?.[0], spec.key);
+        if (!nodes.cap._vbName) {
+          nodes.cap._vbName = document.createElement('span');
+          nodes.cap._vbName.className = 'vb-name';
+          nodes.cap.appendChild(nodes.cap._vbName);
+        }
+        if (nodes.cap._vbNameText !== capName) { nodes.cap._vbNameText = capName; nodes.cap._vbName.textContent = capName; } // The dominant reducer can change while the cap stays on screen.
+        if (nodes.cap._vbShape && !nodes.cap._vbOutline) {
+          nodes.cap._vbOutline = buildOutlineOverlay(nodes.cap._vbShape);
+          nodes.cap.appendChild(nodes.cap._vbOutline);
+        }
       }
       if (!nodes.cap.hidden) {
         const capLeft = (effectiveMax / denominator * 100).toFixed(1) + '%';

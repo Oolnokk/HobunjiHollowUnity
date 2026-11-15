@@ -186,6 +186,16 @@ assert.equal(congealedCap.children[0].id, 'svg', 'cap draws with a real SVG');
 const congealedShape = congealedCap.children[0].children[1].getAttribute('d');
 assert(congealedShape.includes(' C ') && congealedShape.includes(' L '), 'cap is a smooth spline with a flat central section');
 assert.equal(congealedCap.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
+// The right-anchored lost-capacity cap is labelled too, with the same outline layered over its text.
+const capLabel = congealedCap.children.find(child => child.className === 'vb-name');
+assert.ok(capLabel, 'the lost-capacity cap carries a name label');
+assert.equal(capLabel.textContent, 'Congealed', 'the cap prints the reducing affliction without the resource word');
+const capOutline = congealedCap.children.find(child => child.id === 'svg' && child.classList.contains('vb-outline-svg'));
+assert.ok(capOutline, 'the cap gets an outline overlay');
+assert.ok(congealedCap.children.indexOf(capOutline) > congealedCap.children.indexOf(capLabel), 'the cap outline is after its label so it paints over the text');
+refresh();
+assert.equal(congealedCap.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the cap label');
+assert.equal(congealedCap.children.filter(child => child.classList.contains('vb-outline-svg')).length, 1, 'refresh does not duplicate the cap outline');
 player.afflictions.congealedHealth = 0;
 player.health = 100;
 

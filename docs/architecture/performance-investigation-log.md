@@ -26,6 +26,10 @@ between its two outline strokes, so its name was mostly hidden; the pinch is now
 viewBox units per side (a throat of ~5/6, still visibly concave, label fully readable; 13.33 restores the old shape). Plain bordered segments needed nothing: their
 label already sits inside the border's padding box.
 
+The right-anchored lost-capacity region (`.vb-cap`, drawn by `refreshVitalsHud`, not by `drawAfflictionSegments`) is
+labelled too, with the highest-priority capacity-reducing affliction's short name ("Wounded" on Health, "Winded" on
+Stamina) and the same outline-over-text overlay; its text updates if the dominant reducer changes while it is shown.
+
 Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,
 toggles flip the classes and persist; burning with the defaults **190-191 ms vs 284-298 ms with animations on** (control
 174-205), wounded health 177-220 vs 234-262 (control level again). Screenshots show the names in the segments.
