@@ -505,14 +505,16 @@
     return ensureUvs(geometry);
   }
 
-  const billboardCameraQuaternion = new THREE.Quaternion(); // Camera attitude scratch shared across all rendered billboard surfaces.
-  const billboardParentQuaternion = new THREE.Quaternion(); // World-to-parent rotation scratch reused without allocating per frame.
+  let billboardCameraQuaternion = null; // Allocated on first billboard draw, not while non-rendering test harnesses load this module.
+  let billboardParentQuaternion = null; // Shared camera-space scratch thereafter; no per-frame quaternion allocations.
   function configureBillboardSurface(mesh, part) {
     mesh.userData.billboardSurface = true; // Decal renderer identifies a camera-facing transparent parent.
     mesh.castShadow = false; mesh.receiveShadow = false;
     mesh.frustumCulled = false; // A transparent surface can carry a visible child even while edge-on.
     mesh.renderOrder = -1; // Run the billboard orientation hook before its sorted transparent decal children.
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
+      billboardCameraQuaternion ||= new THREE.Quaternion();
+      billboardParentQuaternion ||= new THREE.Quaternion();
       camera.getWorldQuaternion(billboardCameraQuaternion);
       if (mesh.parent) mesh.parent.getWorldQuaternion(billboardParentQuaternion);
       else billboardParentQuaternion.identity();
