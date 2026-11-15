@@ -203,6 +203,7 @@ try{
     DevRandomRuin:Dev,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
     showToast:message=>toasts.push(message),tileScale:2,
   });
+  globalThis.RuinRoomSystem=oldRooms; // This headless fixture has no live room scheduler; only the mounting and support callbacks use the real room module.
   assert.equal(native.getState().floors,2);
   assert(native.getState().perFloor.every(f=>f.reservationVerified));
   assert.equal(native.records[0].challenges[0].floorY,plan.floors[1].y+.42,'native puzzle height comes from V50 surface metadata');
