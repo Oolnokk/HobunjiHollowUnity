@@ -417,8 +417,15 @@
   function touchChannel(name) {
     const channel = channels.get(String(name));
     if (!channel) return false;
-    if (channel.leaseMs) channel.expiresAtMs = performance.now() + channel.leaseMs;
-    return true; // Unchanged idle stances renew ownership without rebuilding their stored pose.
+    const nowMs = performance.now(); // An expired owner must republish its actual current pose, not silently revive stale values.
+    if (channel.expiresAtMs != null && nowMs >= channel.expiresAtMs) {
+      channels.delete(String(name));
+      leaseRecovery.expired++;
+      leaseRecovery.lastExpired = String(name);
+      return false;
+    }
+    if (channel.leaseMs) channel.expiresAtMs = nowMs + channel.leaseMs;
+    return true; // An unchanged live stance renews ownership without rebuilding its stored pose.
   }
 
   function expireStaleChannels(nowMs = performance.now()) {
