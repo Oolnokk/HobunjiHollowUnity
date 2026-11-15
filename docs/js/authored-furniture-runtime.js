@@ -98,7 +98,10 @@
         };
       }
     }
-    group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
+    group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // Puzzle state controls moving effect rates.
+    group.userData.staticGlowEmitterVisuals = group.userData.authoredParticleEmitters
+      .filter(record => record.type === 'glowingSphere')
+      .map(record => createEmitterVisual(group, record)); // Ordinary furniture displays glows even outside a puzzle, without a new frame loop.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
     // Gameplay shares the named, detected authoring surfaces (IDs + face memberships).
@@ -476,6 +479,51 @@
     }
   }
 
+  let stationaryGlowTexture = null; // One shared GPU mask serves every furniture glow.
+  function stationaryGlowMap() {
+    if (stationaryGlowTexture) return stationaryGlowTexture;
+    const canvas = document.createElement('canvas'); // Generated once, never during frame updates.
+    canvas.width = canvas.height = 64;
+    const context = canvas.getContext('2d'); // A smooth white alpha falloff tinted by each emitter.
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(.23, 'rgba(255,255,255,.92)');
+    gradient.addColorStop(.55, 'rgba(255,255,255,.43)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 64, 64);
+    stationaryGlowTexture = new THREE.CanvasTexture(canvas);
+    return stationaryGlowTexture;
+  }
+
+  function createStationaryGlow(group, emitter) {
+    const parent = group.userData?.meshById?.get?.(emitter.attachedPartId) || group; // Attached glow follows its authored part.
+    const anchor = new THREE.Group(); // Emitter-local origin never spawns moving particles.
+    anchor.position.set(Number(emitter.position?.x) || 0, Number(emitter.position?.y) || 0, Number(emitter.position?.z) || 0);
+    anchor.name = 'authored_furniture_glow_' + (emitter.id || 'unnamed');
+    anchor.userData.authoredEmitterId = emitter.id || null;
+    const options = { map: stationaryGlowMap(), transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending };
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ ...options, color: emitter.colorB || '#4a9fff', opacity: .55 })); // Soft outer radial falloff.
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({ ...options, color: emitter.colorA || '#ffffff', opacity: .96 })); // Bright inner sphere.
+    halo.raycast = () => {}; core.raycast = () => {}; // Decorations never capture object or gameplay picks.
+    anchor.add(halo, core);parent.add(anchor);
+    function update(_dt, active = true, override = null) {
+      const live = override || emitter; // Optional timeline values reuse the same materials and sprites.
+      const diameter = Math.max(.01, Number(live.size ?? emitter.size) || .65);
+      anchor.visible = !!active && live.enabled !== false;
+      halo.scale.set(diameter, diameter, 1);
+      core.scale.set(diameter * .37, diameter * .37, 1);
+      halo.material.color.set(live.colorB || emitter.colorB || '#4a9fff');
+      core.material.color.set(live.colorA || emitter.colorA || '#ffffff');
+    }
+    update(0, true);
+    function dispose() {
+      anchor.parent?.remove(anchor);
+      halo.material.dispose();core.material.dispose();
+    }
+    return { points: halo, update, dispose };
+  }
+
   // ── Particle emitter playback ───────────────────────────────────────
   // Lightweight sprite-burst version of the authoring tool's emitter
   // preview — a single THREE.Points draw call per emitter, parented to its
@@ -485,6 +533,7 @@
   // beyond a rotated emission cone) — enough for "something is happening
   // here" station feedback, not a full VFX authoring surface.
   function createEmitterVisual(group, emitter, maxParticles) {
+    if (emitter?.type === 'glowingSphere') return createStationaryGlow(group, emitter);
     const meshById = group.userData.meshById;
     const parent = (emitter.attachedPartId && meshById && meshById.get(emitter.attachedPartId)) || group;
     const cap = maxParticles || 40;

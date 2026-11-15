@@ -60,9 +60,22 @@ assert(game.includes('return window.CalendarSystem.tothalCycle(calendar.day);'),
 assert(read('docs/js/stampable-locale-defs.js').includes("'ruin_entrance'"), 'ruin entrances are stamped');
 assert(read('docs/js/wild-treasure.js').includes('window.RuinSites.openHole(mapId, placement.col, placement.row)'), 'rare treasure opens a ruin hole');
 assert(read('docs/js/dev-random-ruin-sanctum.js').includes('window.RuinSites?.completeActiveRuin?.()'), 'exit ladder completes the site');
-const index = read('docs/index.html');
-assert(index.indexOf('js/ruin-sites.js') > 0 && index.indexOf('js/ruin-sites.js') < index.indexOf('game.js?v='), 'ruin sites load before game.js');
-assert(index.indexOf('js/ruin-site-locales.js') < index.indexOf('js/ruin-sites.js'));
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Expand feature manifests to test the actual parser order.
+const indexSource = read('docs/index.html'); // The shared page must not own version tokens for these feature modules.
+for (const name of ['wild-treasure', 'ruin-site-locales', 'ruin-sites', 'dev-random-ruin-bootstrap']) {
+  assert(!indexSource.includes(`src="js/${name}.js?v=`), name + ' cache bust is owned by its feature manifest');
+  assert.equal((index.match(new RegExp(`src="js/${name}\\.js\\?v=`, 'g')) || []).length, 1, name + ' is loaded exactly once');
+}
+assert(index.indexOf('js/wild-treasure.js') < index.indexOf('js/ruin-site-locales.js'),
+  'treasure loads before the named ruin entrypoint');
+assert(index.indexOf('js/ruin-site-locales.js') < index.indexOf('js/stampable-locale-defs.js')
+  && index.indexOf('js/stampable-locale-defs.js') < index.indexOf('js/tothal-zone-cache.js')
+  && index.indexOf('js/tothal-zone-cache.js') < index.indexOf('js/ruin-sites.js'),
+  'Tothal ruin dependencies preserve the original execution order');
+const gameScriptAt = index.indexOf('<script src="game.js?v='); // Require the real gameplay script tag, not a preceding comment mentioning game.js.
+assert(gameScriptAt >= 0 && index.indexOf('src="js/ruin-sites.js?v=') < index.indexOf('src="js/dev-random-ruin-bootstrap.js?v=')
+  && index.indexOf('src="js/dev-random-ruin-bootstrap.js?v=') < gameScriptAt,
+  'ruin sites and their dungeon runtime both load before game.js');
 for (const file of ['docs/js/ruin-sites.js', 'docs/js/stampable-locale-defs.js']) new vm.Script(read(file), { filename:file });
 
 // Monthly cycle: raw day 1 is cycle 1, day 29 starts cycle 2.

@@ -34,12 +34,12 @@
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261102h20daaea"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261114roomAudit2"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261114persistentLichReview1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20261107hf7aabd8"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261106he3ce4c7"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261109rarityMainRuin1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261114lockBonus1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261108h810cd97"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
   document.write('<script src="js/ruin-melody-glyph-decal.js?v=20261104scratchbone3"></scr' + 'ipt>'); // Procedural, non-interactive floor inscription for each generated melody.

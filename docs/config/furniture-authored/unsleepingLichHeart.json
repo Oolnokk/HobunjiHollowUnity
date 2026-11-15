@@ -1,0 +1,142 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "unsleepingLichHeart",
+  "id": "unsleepingLichHeart",
+  "name": "Unsleeping Lich-heart",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Nanahi the Unsleeping heart. Stationary radial glow matches the Enemy Loadout Workshop robe dye; the camera-facing motif decal matches Body Color C, its inverse-robe glyph ink. Motif harlyao_glyph_servitude. No physical light or collision.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": false,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "unsleepingLichHeartBillboard",
+      "kind": "transparentBillboardSurface",
+      "name": "Unsleeping Lich-heart Billboard",
+      "transform": {
+        "x": 0,
+        "y": 0.8,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.325,
+        "sy": 0.325,
+        "sz": 0.001
+      },
+      "color": "#ffffff",
+      "surfaceOpacity": 0
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "unsleepingLichHeartBillboard:surface:0",
+      "partId": "unsleepingLichHeartBillboard",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.105625,
+      "localCentroid": [
+        0,
+        0,
+        0
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.1625,
+        "maxU": 0.1625,
+        "minV": -0.1625,
+        "maxV": 0.1625
+      },
+      "label": "Unsleeping Lich-heart Motif",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "unsleepingLichHeartMotif",
+      "name": "Unsleeping Lich-heart Motif",
+      "surfaceId": "unsleepingLichHeartBillboard:surface:0",
+      "surfacePartId": "unsleepingLichHeartBillboard",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        0,
+        1
+      ],
+      "imageSource": "../../../docs/assets/patterns/motif_harlyao_glyph_servitude.png",
+      "imageName": "motif_harlyao_glyph_servitude.png",
+      "offsetU": 0,
+      "offsetV": 0,
+      "width": 0.8,
+      "height": 0.8,
+      "rotationDeg": 0,
+      "normalOffset": 0.002,
+      "opacity": 1,
+      "visible": true,
+      "glyphInk": {
+        "enabled": true,
+        "color": "#ffff1a",
+        "glowStrength": 0.75,
+        "glowRadius": 0.07
+      }
+    }
+  ],
+  "particleEmitters": [
+    {
+      "id": "unsleepingLichHeartGlow",
+      "name": "Unsleeping Lich-heart Radial Glow",
+      "type": "glowingSphere",
+      "enabled": true,
+      "attachedPartId": "unsleepingLichHeartBillboard",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 0,
+      "lifetime": 1,
+      "size": 1.1,
+      "speed": 0,
+      "spread": 0,
+      "radius": 0,
+      "gravity": 0,
+      "colorA": "#b3b3ff",
+      "colorB": "#b3b3ff"
+    }
+  ],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "seatAnchors": [],
+  "itemPlacements": []
+}

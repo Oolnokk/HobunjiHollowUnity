@@ -51,11 +51,12 @@ const THREE = {
   Mesh: class { constructor(geometry, material) { this.geometry = geometry; this.material = material; } },
 };
 const pending = [];
+const intervalTicks = []; // Simulates the live NPC poll without rendering its hand sentinel.
 const windowObject = {
   THREE,
   SocialRhythmClock: { dancerBeatAt: () => 0.5 }, // Left punch at full extension.
   NpcActivityPlanner: { init() {} },
-  setInterval: () => 0,
+  setInterval: fn => { intervalTicks.push(fn); return 0; },
   setTimeout: fn => pending.push(fn),
 };
 const context = { window: windowObject, performance: { now: () => 0 }, console, document: {} };
@@ -97,4 +98,27 @@ sentinel.onBeforeRender();
 assert.equal(left.position.y, 42, 'cancel never undoes a new hand position owner');
 assert.ok(Math.abs(left.quaternion.x - 0.4) < 1e-9, 'cancel never undoes a new forearm owner');
 
-console.log('NPC dance hand repeat-pass and ownership release: ok');
+// A hidden NPC may stop dancing while its renderer never invokes onBeforeRender again.
+left.position.y = restingY;
+right.position.y = restingY;
+left.quaternion.copy(new Quaternion());
+right.quaternion.copy(new Quaternion());
+walker.state = 'idle';
+walker.currentScheduleTarget = { socialDance: { stimulusId: 'offscreen', style: 'loose-sway', armStyle: 'overhead-punch' } };
+sentinel.onBeforeRender();
+assert.ok(left.position.y > restingY + reach, 'offscreen cancellation starts with a real authored dance pose');
+walker.currentScheduleTarget = {};
+intervalTicks.forEach(fn => fn()); // No sentinel draw after the cancellation.
+assert.ok(Math.abs(left.position.y - restingY) < 1e-9, 'poll releases a dance hand even when the NPC is not rendered');
+assert.ok(Math.abs(right.position.y - restingY) < 1e-9, 'poll releases both hand sockets');
+
+walker.currentScheduleTarget = { socialDance: { stimulusId: 'departed', style: 'loose-sway', armStyle: 'overhead-punch' },
+  c: 100, r: 100 }; // Idle NPC can finish a dance even if it will soon walk away.
+sentinel.onBeforeRender();
+assert.ok(left.position.y > restingY + reach);
+walker.state = 'walking'; // The active social schedule remains but the dancer left its interaction location.
+intervalTicks.forEach(fn => fn());
+assert.ok(Math.abs(left.position.y - restingY) < 1e-9, 'departing the social spot also releases its hand offset');
+walker.state = 'idle';
+
+console.log('NPC dance hand repeat-pass, offscreen cancellation and ownership release: ok');

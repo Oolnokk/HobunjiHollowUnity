@@ -319,13 +319,86 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   ], 'manual/restore snapshots cannot bypass the shared folder write lock');
 
   const beforeBadCapture = (await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot; // A serialization failure must not replace a good folder save with stale browser state.
+  const originalCookingSerialize = first.window.CookingSystem.serialize; // Restored after the intentional failure so later autosync tests can capture live state.
   first.window.CookingSystem.serialize = () => { throw new Error('cooking capture failed'); };
   const badCapture = await first.window.HobunjiSaveCheckpoints.saveManual();
   assert.equal(badCapture.ok, false);
   assert.match(badCapture.error, /cooking capture failed/);
   assert.equal(JSON.stringify((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot), JSON.stringify(beforeBadCapture));
+  first.window.CookingSystem.serialize = originalCookingSerialize;
 
   disk.failWrites = true;
   assert.match((await second.window.LocalSaveFolder.syncNow()).lastError, /Disk write failed/, 'staging cannot hide a real folder write failure');
+  // Separate sandbox: the preceding disk-failure test deliberately leaves an
+  // unreadable character file, which the production loader correctly refuses.
+  const externalDisk = { failWrites: false }; // Clean disk for Google Drive version replacement.
+  const externalFolder = directory('Externally Restored Farm', externalDisk);
+  const externalBrowser = new Map([
+    ['hobunjiSaveMeta', JSON.stringify(initial)],
+    ['hobunji_farm_layout_v3:hollow', JSON.stringify(reloaded.farmLayouts.hollow)],
+  ]); // Baseline browser layout is intentionally missing any squeezers.
+  const externalSession = await boot(externalFolder, externalBrowser);
+  assert.equal((await externalSession.window.LocalSaveFolder.syncNow()).lastError, null);
+  const layoutDir = await externalFolder.getDirectoryHandle('farm-layouts');
+  const layoutFile = await layoutDir.getFileHandle('hollow.json');
+  // Drive's downloaded versions can coexist beside the canonical file. They
+  // must never win just because entries() returns them after hollow.json.
+  for (const [name, stationCount] of [['hollow (1).json', 1], ['hollow(3).json', 3]]) {
+    const backupHandle = await layoutDir.getFileHandle(name, { create: true }); // Simulates the user's numbered Google Drive versions.
+    const archive = JSON.parse(await (await layoutFile.getFile()).text());
+    archive.layout.furniture = Array.from({ length: stationCount }, (_, index) => ({
+      key: 'squeezer', col: 25 + index, row: 3, rotYDeg: 0,
+    }));
+    const backupWriter = await backupHandle.createWritable();
+    await backupWriter.write(JSON.stringify(archive));
+    await backupWriter.close();
+  }
+  assert.equal((await externalSession.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.farmLayouts.hollow.furniture.length, 0,
+    'canonical farm wins over numbered Drive copies regardless of directory enumeration order');
+  const prematureAutoSave = await externalSession.window.LocalSaveFolder.syncNow({ automatic: true }); // This isolated fixture has no hydrated live gameplay, so its normal checkpoint guard must still hold.
+  assert.equal(prematureAutoSave.lastAction, 'autosync-blocked-checkpoint-integrity',
+    'premature autosave stays blocked while gameplay hydrates, regardless of harmless numbered backups');
+  assert.equal((await externalSession.window.LocalSaveFolder.syncNow()).lastError, null,
+    'harmless numbered backups do not block a deliberate folder save');
+  const backupLoad = await externalSession.window.LocalSaveFolder.loadFromFolder();
+  assert.equal(backupLoad.ok, true);
+  assert.deepEqual(Array.from(externalSession.window.LocalSaveFolder.getStatus().ignoredFarmLayoutBackupFiles).sort(),
+    ['hollow (1).json', 'hollow(3).json'], 'mobile save diagnostics expose ignored Drive version files');
+
+  const restoredLayout = JSON.parse(await (await layoutFile.getFile()).text()); // Preserve the current layout and transplant just the historical squeeze station records.
+  restoredLayout.layout.furniture = [
+    { key: 'squeezer', col: 25, row: 3, rotYDeg: 0 },
+    { key: 'squeezer', col: 26, row: 3, rotYDeg: 0 },
+  ];
+  const edit = await layoutFile.createWritable();
+  await edit.write(JSON.stringify(restoredLayout));
+  await edit.close();
+  const blockedExternalEdit = await externalSession.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' });
+  assert.equal(blockedExternalEdit.lastAction, 'autosync-blocked-external-layout', 'autosync must not erase a farm restored outside the game');
+  assert.match(blockedExternalEdit.lastError, /changed outside this game session/);
+  assert.equal((JSON.parse(await (await layoutFile.getFile()).text())).layout.furniture.length, 2,
+    'external farm restore survives the attempted autosync unchanged');
+  const explicitLoad = await externalSession.window.LocalSaveFolder.loadFromFolder();
+  assert.equal(explicitLoad.ok, true, 'Load from Folder imports the external farm restoration: ' + JSON.stringify(explicitLoad));
+  assert.equal(externalSession.window.HobunjiSaveSnapshot.capture().farmLayouts.hollow.furniture.length, 2,
+    'the restored processor positions reach browser storage after explicit load');
+  assert.equal((await externalSession.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.farmLayouts.hollow.furniture.length, 2,
+    'both numbered backups remain ignored after external canonical restore');
+
+  await layoutDir.removeEntry('hollow.json'); // Canonical layout missing; only the two Drive copies remain.
+  const missingCanonical = await externalSession.window.LocalSaveFolder.loadFromFolder();
+  assert.equal(missingCanonical.ok, false, 'Drive backups alone must not silently reset the farm');
+  assert.equal(missingCanonical.action, 'load-blocked-missing-canonical-layout');
+  assert.match(missingCanonical.message, /restore one copy as hollow.json/);
+
+  // The manifest retains the expected canonical layout count even if someone
+  // removes every backup too: never turn an incomplete folder into a blank farm.
+  await layoutDir.removeEntry('hollow (1).json');
+  await layoutDir.removeEntry('hollow(3).json');
+  const deletedCanonical = await externalSession.window.LocalSaveFolder.loadFromFolder();
+  assert.equal(deletedCanonical.ok, false, 'missing layout with no backups is also refused');
+  assert.equal(deletedCanonical.action, 'load-blocked-missing-canonical-layout');
+  assert.match(deletedCanonical.message, /manifest.json: expected 1 canonical farm layout/);
+
   console.log('folder quota integration: actual gameplay/farm serializers, linked-window quota failure, zero-write capture, manual/campfire/travel/autosync/quit, browser mirror errors, reloads, and real capture/disk errors verified');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -12,18 +12,31 @@ const read = filename => fs.readFileSync(path.resolve(__dirname, '..', 'docs/js'
 function makeElement() {
   return {
     style: { setProperty() {} }, children: [], dataset: {}, innerHTML: '', textContent: '',
-    disabled: false, attributes: new Map(),
+    disabled: false, attributes: new Map(), listeners: new Map(), // Lets regression tests activate the mobile retry button.
     setAttribute(key, value) { this.attributes.set(key, String(value)); },
     getAttribute(key) { return this.attributes.get(key); },
     append(child) { this.children.push(child); },
     replaceChildren() { this.children.length = 0; },
-    addEventListener() {}, focus() {}, blur() {},
+    addEventListener(name, callback) { this.listeners.set(name, callback); }, focus() {}, blur() {},
     closest(selector) { return selector === '#chestLockOverlay' ? this : null; },
     querySelector() { return null; },
   };
 }
 
 (async () => {
+  // The shipping wilderness-treasure manifest owns both scripts in their former order.
+  const groupManifest = fs.readFileSync(path.resolve(__dirname, '..', 'docs/js/bootstrap/classic-groups/wilderness-treasure.js'), 'utf8');
+  const manifestWrites = []; // Captures the parser-blocking child tags emitted by the actual manifest.
+  vm.runInNewContext(groupManifest, {
+    document: { readyState:'loading', write(html) { manifestWrites.push(html); } },
+  });
+  const actualUrls = [...manifestWrites.join('').matchAll(/src="([^"]+)"/g)].map(match => match[1].split('?')[0]);
+  assert.deepEqual(actualUrls, ['js/chest-lockpicking.js', 'js/wild-treasure.js'], 'the lock loads before its buried-treasure consumer');
+  const liveHtml = fs.readFileSync(path.resolve(__dirname, '..', 'docs/index.html'), 'utf8');
+  assert(liveHtml.includes('data-classic-group="wilderness-treasure"'), 'the page uses the shared parser-time group loader');
+  assert(!liveHtml.includes('src="js/chest-lockpicking.js?v='), 'feature script versions stay out of the shared index');
+  assert(liveHtml.indexOf('data-classic-group="wilderness-treasure"') < liveHtml.indexOf('<script src="game.js'), 'the lock group precedes gameplay');
+
   const doc = {
     body: { append() {} }, head: { append() {} }, activeElement: null, pointerLockElement: null,
     createElement: () => makeElement(),
@@ -31,7 +44,7 @@ function makeElement() {
   const section = makeElement(), svg = makeElement(), target = makeElement();
   const byId = new Map(['.cl-dial', '#chestLockDial', '#chestLockTitle', '#chestLockProgress',
     '#chestLockFeedback', '#chestLockDebug', '.cl-x', '#chestLockCopy',
-    '#chestLockButtons', '#chestLockDiagnostics'].map(key => [key, makeElement()]));
+    '#chestLockButtons', '#chestLockDiagnostics', '#chestLockRetry'].map(key => [key, makeElement()]));
   byId.set('.cl-dial', svg); svg.querySelector = selector => selector === '#chestLockDial' ? target : null;
   section.querySelector = selector => byId.get(selector) || null;
   doc.createElement = tag => tag === 'section' ? section : makeElement();
@@ -65,7 +78,9 @@ function makeElement() {
   vm.runInNewContext(read('chest-lockpicking.js'), vm.createContext(context), { filename: 'chest-lockpicking.js' });
   const api = window.ChestLockpicking;
   const flushMicrotasks = () => { while (microtasks.length) microtasks.shift()(); };
+  const flushSavePromises = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); }; // Drain chained VM-realm folder promises before reading session state.
   let now = 1000;
+  context.performance = { now: () => now }; // Timestamp source shared with production keyboard, gamepad and RAF timing.
   const nextFrameTick = () => {
     const [id, fn] = queuedFrames.entries().next().value || [];
     assert(fn, 'the active lock must request the next animation frame');
@@ -121,6 +136,256 @@ function makeElement() {
   assert.equal(lock.acquired, 3);
   assert.equal(lock.released, 3);
 
+
+  // Real character saves persist every secured set and the FIRST failure in
+  // each set. Cancelling/reloading must never reset the clean-streak penalty.
+  const storedMeta = { characters:[{ id:'char_a' },{ id:'char_b' }], worlds:[{ id:'world_a' }] };
+  let saveWrites = 0; // Counts immediate character save commits, not slow recovery-checkpoint writes.
+  context.localStorage = {
+    getItem(key) { return key === 'hobunjiSaveMeta' ? JSON.stringify(storedMeta) : null; },
+    setItem(key, value) {
+      assert.equal(key, 'hobunjiSaveMeta');
+      Object.assign(storedMeta, JSON.parse(value));
+    },
+  };
+  window.__hobunjiPlayerProfile = { characterId:'char_a', worldId:'world_a' };
+  window.CharacterMetaSave = { META_KEY:'hobunjiSaveMeta', update(fn) {
+    fn(storedMeta.characters.find(character => character.id === window.__hobunjiPlayerProfile.characterId));
+    saveWrites++;
+    return true;
+  } };
+  const recordFor = id => storedMeta.characters[0].chestLockProgress?.world_a?.[id];
+  const awards = []; // Captures best clean streak and exact bonus count supplied to the existing chest reward callback.
+
+  assert.equal(api.open({ id:'flawless', tier:1, valid:()=>true, onSuccess(award) { awards.push(award); } }), true);
+  press('Button4'); press('Button5');
+  assert.equal(recordFor('flawless').stage, 1, 'a secured stage is saved before the next stage');
+  for (let i=0;i<14;i++) nextFrameTick();
+  press('Button4'); press('Button5');
+  assert.equal(awards[0].bestStreak, 4);
+  assert.equal(awards[0].bonusDrops, 1, 'four flawless low-tier ring catches guarantee one additional drop');
+  flushMicrotasks();
+
+  assert.equal(api.open({ id:'persistent', tier:1, valid:()=>true, onSuccess(award) { awards.push(award); } }), true);
+  press('Button4'); press('Button5');
+  assert.equal(recordFor('persistent').stage, 1);
+  for (let i=0;i<14;i++) nextFrameTick();
+  for (let i=0;i<6;i++) nextFrameTick(); // Rotate outside the catch window.
+  const beforeFailureWrites = saveWrites;
+  press('Button4'); // First miss on set two.
+  assert.equal(api.snapshot().stage, 1, 'a failed catch never rolls back a secured stage');
+  assert.equal(api.snapshot().bestStreak, 2);
+  assert.equal(api.snapshot().streak, 0);
+  assert.equal(recordFor('persistent').stage, 1);
+  assert.equal(recordFor('persistent').failedStage, 1, 'first failure is committed immediately');
+  assert.equal(saveWrites, beforeFailureWrites+1);
+  for (let i=0;i<6;i++) nextFrameTick();
+  press('Button4'); // Second miss on the same stage does not trigger another full metadata write.
+  assert.equal(saveWrites, beforeFailureWrites+1);
+  assert.equal(api.snapshot().stage, 1);
+  press('Button1');
+  assert.equal(recordFor('persistent').stage, 1, 'cancel keeps all completed stages');
+  flushMicrotasks();
+
+  window.__hobunjiPlayerProfile = { characterId:'char_b', worldId:'world_a' };
+  assert.equal(api.open({ id:'persistent', tier:1, onSuccess() {} }), true);
+  assert.equal(api.snapshot().stage, 0, 'another character never inherits this lock progress');
+  press('Button1'); flushMicrotasks();
+
+  window.__hobunjiPlayerProfile = { characterId:'char_a', worldId:'world_a' };
+  assert.equal(api.open({ id:'persistent', tier:1, onSuccess(award) { awards.push(award); } }), true);
+  assert.equal(api.snapshot().stage, 1, 'cancel/reentry resumes at the last secured set');
+  assert.equal(api.snapshot().streak, 0, 'failure penalty survives cancellation and simulated reload');
+  press('Button4'); press('Button5');
+  assert.equal(awards[1].bestStreak, 2);
+  assert.equal(awards[1].bonusDrops, 0, 'retries do not fabricate a clean streak');
+  flushMicrotasks();
+
+  assert.equal(api.open({ id:'difficult-flawless', tier:4, onSuccess(award) { awards.push(award); } }), true);
+  const catchFour = () => {
+    for (const button of ['Button4','Button5','LeftTrigger','RightTrigger']) press(button);
+  };
+  catchFour();
+  for (let i=0;i<14;i++) nextFrameTick();
+  catchFour();
+  for (let i=0;i<14;i++) nextFrameTick();
+  catchFour();
+  assert.equal(awards[2].bestStreak, 12);
+  assert.equal(awards[2].bonusDrops, 4, 'twelve flawless hard catches grant more drops than four easy catches');
+  flushMicrotasks();
+
+  assert.equal(api.open({ id:'abandon', tier:1, onSuccess() {} }), true);
+  press('Button4');
+  press('Button1'); // Leaving a partially caught set counts as a failed attempt.
+  assert.equal(recordFor('abandon').misses, 1);
+  assert.equal(recordFor('abandon').failedStage, 0);
+  flushMicrotasks();
+
+  assert.equal(api.open({ id:'stutter', tier:4, onSuccess() {} }), true);
+  nextFrameTick();
+  const beforeStutter = api.snapshot().rings.map(ring => ring.angle);
+  const [stutterId, stutterFn] = queuedFrames.entries().next().value;
+  queuedFrames.delete(stutterId);
+  now += 1400; stutterFn(now); // A frozen browser frame must not run hidden ring motion.
+  assert.equal(JSON.stringify(api.snapshot().rings.map(ring => ring.angle)), JSON.stringify(beforeStutter));
+  assert.equal(api.snapshot().stutters, 1);
+  assert.equal(api.snapshot().lastStallMs, 1400);
+  press('Button1'); flushMicrotasks();
+
+  // A browser frame stalled before controller dispatch should judge against
+  // the last visible marker, with a small window for the delayed input.
+  assert.equal(api.open({ id:'stutter-input', tier:4, onSuccess() {} }), true);
+  nextFrameTick(); nextFrameTick(); // Outer ring passes the strict notch window by a few degrees.
+  assert(api.snapshot().rings[0].angle > 190, 'outer ring moved beyond its narrow tier-four catch window');
+  now += 1000; // The gamepad event fires while its normal RAF has been starved.
+  press('Button4');
+  assert.equal(api.snapshot().rings[0].frozen, true, 'stutter grace accepts a catch at the last visible marker');
+  assert.equal(api.snapshot().misses, 0, 'the delayed controller input does not count as a failure');
+  press('Button1'); flushMicrotasks();
+
+  // Primary-folder users require an actual disk sync on the FIRST failure,
+  // with rings paused while an asynchronous permission or disk write is pending.
+  let folderResolve = null; // Test gate for the canonical folder's async write.
+  let folderFlushes = 0; // Count commits; regular character metadata writes alone are not an armed folder autosave.
+  window.HobunjiRuntimeSave = {
+    captureSnapshot() {
+      return {ok:true,snapshot:{meta:JSON.parse(JSON.stringify(storedMeta)),farmLayouts:{}}};
+    }, // The real runtime snapshot carries the latest lock penalty when a concurrent autosave is still writing.
+  };
+  window.LocalSaveFolder = {
+    getStatus() { return {state:'ready',autoSyncArmed:true,lastSyncedAt:100}; },
+    syncNow(options) {
+      folderFlushes++;
+      assert.equal(options.automatic, true);
+      assert(options.snapshot?.meta?.characters?.[0]?.chestLockProgress, 'folder commit pins a freshly captured character save');
+      return new Promise(resolve => { folderResolve = resolve; });
+    },
+  };
+  assert.equal(api.open({ id:'folder-pending', tier:1, onSuccess() {} }), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<20;i++) nextFrameTick();
+  press('Button4'); // First failure on the second set triggers primary-folder sync.
+  assert.equal(api.snapshot().phase, 'saving', 'lock timing freezes during folder persistence');
+  assert.equal(api.close('cancelled'), false, 'cancel cannot race the first-failure folder write');
+  const missesBeforeSync = api.snapshot().misses;
+  press('Button4');
+  assert.equal(api.snapshot().misses, missesBeforeSync, 'controller presses cannot slip during async autosave');
+  await Promise.resolve();
+  assert.equal(folderFlushes, 1);
+  folderResolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:101,lastError:null});
+  await flushSavePromises();
+  assert.equal(api.snapshot().phase, 'playing', 'lock resumes when its failure reached disk');
+  assert.equal(recordFor('folder-pending').folderUnsynced, false, 'successful folder commit clears the browser pending marker');
+  press('Button1'); flushMicrotasks();
+
+  assert.equal(api.open({ id:'folder-rejected', tier:1, onSuccess() {} }), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<20;i++) nextFrameTick();
+  press('Button4');
+  await Promise.resolve();
+  folderResolve({state:'ready',lastAction:'autosync-blocked-data-loss',lastSyncedAt:101,lastError:'Permission denied'});
+  await flushSavePromises();
+  assert.equal(api.snapshot().phase, 'save-error', 'rejected disk writes cannot silently allow further catches');
+  assert.equal(recordFor('folder-rejected').folderUnsynced, true, 'a denied folder write stays flagged in the saved character');
+  assert.equal(byId.get('#chestLockRetry').style.display,'block','mobile UI exposes a retry button');
+  press('Button1'); flushMicrotasks();
+  assert.equal(api.open({ id:'folder-rejected', tier:1, onSuccess() {} }), true);
+  assert.equal(api.snapshot().phase, 'save-error', 'reopening cannot bypass the unsaved-folder penalty');
+  window.LocalSaveFolder.syncNow = options => {
+    assert.equal(options.snapshot.meta.characters[0].chestLockProgress.world_a['folder-rejected'].folderUnsynced, true,
+      'retry snapshot carries the denied failure until a real folder commit');
+    return Promise.resolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:102,lastError:null});
+  };
+  byId.get('#chestLockRetry').listeners.get('click')();
+  await flushSavePromises();
+  assert.equal(api.snapshot().phase, 'playing', 'touch retry resumes after a successful canonical folder write');
+  assert.equal(recordFor('folder-rejected').folderUnsynced, false, 'touch retry acknowledges the committed primary save');
+  press('Button1'); flushMicrotasks();
+
+  // Primary-folder saves must keep working when browser storage is full.
+  // CharacterMetaSave.schedule is also used by the real direct-snapshot writer.
+  const writableMetaUpdate = window.CharacterMetaSave.update;
+  const pendingCharacterPatch = {}; // Pending character fields captured by the real runtime save without localStorage writes.
+  window.CharacterMetaSave.update = () => false;
+  window.CharacterMetaSave.schedule = patch => Object.assign(pendingCharacterPatch, patch);
+  window.HobunjiRuntimeSave.captureSnapshot = () => {
+    const meta = JSON.parse(JSON.stringify(storedMeta));
+    Object.assign(meta.characters[0], pendingCharacterPatch);
+    return {ok:true,snapshot:{meta,farmLayouts:{}}};
+  };
+  let directFolderWrites = 0; // A separate pinned sync is required for each completed set while the browser cache cannot accept writes.
+  window.LocalSaveFolder.syncNow = options => {
+    directFolderWrites++;
+    assert.equal(options.snapshot.meta.characters[0].chestLockProgress.world_a['folder-only'].folderUnsynced, true,
+      'a folder-only progress capture must include the pending secured set');
+    return Promise.resolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:120+directFolderWrites,lastError:null});
+  };
+  let directFolderWins = 0;
+  assert.equal(api.open({id:'folder-only',tier:1,onSuccess() {directFolderWins++;}}), true);
+  press('Button4'); press('Button5');
+  assert.equal(api.snapshot().phase, 'saving', 'browser-full stage completion waits for the primary folder');
+  await flushSavePromises();
+  assert.equal(api.snapshot().phase, 'transition');
+  assert.equal(api.snapshot().stage, 1);
+  for (let i=0;i<14;i++) nextFrameTick();
+  press('Button4'); press('Button5');
+  assert.equal(api.snapshot().phase, 'saving', 'final set also waits for an actual folder commit');
+  await flushSavePromises();
+  assert.equal(directFolderWrites, 2);
+  assert.equal(directFolderWins, 1, 'folder-only progression opens the chest exactly once');
+  assert.equal(api.isActive(), false);
+  flushMicrotasks();
+  window.CharacterMetaSave.update = writableMetaUpdate;
+  delete window.CharacterMetaSave.schedule;
+  delete window.LocalSaveFolder;
+  delete window.HobunjiRuntimeSave;
+
+  const originalUpdate = window.CharacterMetaSave.update;
+  window.CharacterMetaSave.update = () => false; // Full storage must never grant an unsaved streak bonus.
+  let invalidReward = 0;
+  assert.equal(api.open({ id:'unwritable', tier:1, onSuccess() { invalidReward++; } }), true);
+  press('Button4'); press('Button5');
+  assert.equal(api.snapshot().phase, 'save-error', 'a secured but unsaved set remains visible for retry');
+  assert.equal(api.snapshot().pendingStageSave, true);
+  assert.equal(api.snapshot().stage, 1, 'the completed set is not discarded due to failed storage');
+  assert.equal(invalidReward, 0, 'unsaved completion cannot grant treasure');
+  press('Button1');
+  assert.equal(api.snapshot().lastOutcome.outcome, 'cancelled');
+  flushMicrotasks();
+  window.CharacterMetaSave.update = originalUpdate;
+
+  let failNextStageWrite = true; // One-off storage failure should recover using the in-game retry button.
+  window.CharacterMetaSave.update = fn => {
+    if (failNextStageWrite) { failNextStageWrite = false; return false; }
+    return originalUpdate(fn);
+  };
+  let recoveredWins = 0;
+  assert.equal(api.open({ id:'retry-stage-write', tier:1, onSuccess() { recoveredWins++; } }), true);
+  press('Button4'); press('Button5');
+  assert.equal(api.snapshot().pendingStageSave, true);
+  byId.get('#chestLockRetry').listeners.get('click')();
+  assert.equal(api.snapshot().phase, 'transition', 'retry resumes at the next stage, not at the beginning');
+  assert.equal(recordFor('retry-stage-write').stage, 1);
+  for (let i=0;i<14;i++) nextFrameTick();
+  press('Button4'); press('Button5');
+  assert.equal(recoveredWins, 1, 'a recovered stage-save completes and pays exactly once');
+  flushMicrotasks();
+  window.CharacterMetaSave.update = originalUpdate;
+
+  let finalStageWins = 0;
+  assert.equal(api.open({ id:'retry-final-write', tier:1, onSuccess() { finalStageWins++; } }), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<14;i++) nextFrameTick();
+  window.CharacterMetaSave.update = () => false;
+  press('Button4'); press('Button5');
+  assert.equal(api.snapshot().pendingStageSave, true, 'last secured set waits for persistence before reward');
+  assert.equal(finalStageWins, 0);
+  window.CharacterMetaSave.update = originalUpdate;
+  byId.get('#chestLockRetry').listeners.get('click')();
+  assert.equal(finalStageWins, 1, 'saving the final set through retry pays exactly once');
+  assert.equal(api.isActive(), false);
+  flushMicrotasks();
+
   // Buried chest exercises the actual world action and existing async reward
   // callback, rather than testing the UI without granting real inventory.
   const area = 'zone_test';
@@ -148,7 +413,7 @@ function makeElement() {
     _zoneTreasureObjects: new Map([[area, objectMap]]),
     _zoneTreasureMeshGroups: new Map([[area, [chestMesh]]]),
     _zoneScenes: new Map([[area, { grid, scene: { remove() {} } }]]),
-    TileType, getCurrentArea: () => area,
+    TileType, getCurrentArea: () => area, rnd: () => 0, VERDIGRIS_METAL_KEYS: ['tin'],
     metalBarItemKey: name => name + 'Bar', METAL_DEFS: { tin: { label: 'Tin' } },
     ITEM_DEFS: {}, inventory,
     refreshItemScroll() {}, buildInventoryGrid() {}, buildPackClothingSection() {},
@@ -167,15 +432,15 @@ function makeElement() {
   assert.equal(started[0].valid(), true);
   assert.equal(flushed.length, 0);
   assert.equal(inventory.gold, undefined);
-  started[0].onSuccess();
+  started[0].onSuccess({ bonusDrops: 1 }); // The real decorated chest action must preserve earned bonus metadata.
   assert.equal(placement.found, true);
   assert.equal(inventory.gold, 5);
-  assert.equal(inventory.tinBar, 1);
+  assert.equal(inventory.tinBar, 2, 'earned bonus adds one more real town-gated metal bar');
   assert.equal(flushed.length, 1, 'asynchronous chest loot commits the canonical live game save');
   assert.equal(flushed[0].reason, 'buried-chest-lockpicked');
   assert.equal(placement.lockpickUnlocked, true, 'legacy save metadata is ignored and never used for new bypass authorization');
   assert.equal(activity.length, 1);
   assert.equal(chest.onAction('obj_open_treasure_chest').ok, false, 'stale world object cannot grant the same treasure twice');
 
-  console.log('PASS chest-lockpicking integration: 2/4 rings, cancel and stale-target protection, controller frame release, buried treasure + immediate save.');
+  console.log('PASS chest-lockpicking integration: permanent stages, saved failure penalty, scored bonus loot, stalled frames, cancel, invalid targets and buried treasure.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

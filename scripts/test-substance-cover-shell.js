@@ -8,9 +8,8 @@ const vm = require('node:vm');
 
 const repoRoot = path.resolve(__dirname, '..');
 const sourcePath = path.join(repoRoot, 'docs/js/substance-cover-shell.js');
-const indexPath = path.join(repoRoot, 'docs/index.html');
 const source = fs.readFileSync(sourcePath, 'utf8');
-const index = fs.readFileSync(indexPath, 'utf8');
+const index = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Check the effective parser script order, including feature-owned manifests.
 
 class Vector3 {
   constructor(x = 1, y = 1, z = 1) { this.set(x, y, z); }

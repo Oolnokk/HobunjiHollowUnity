@@ -159,7 +159,8 @@
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads or waterways.
     const storyVaultSite = window.RuinSites?.storyVaultSite?.(mapId); // Keep weekly diggable treasure off the world-persistent Harlyao vault's one hidden tile.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : [])];
+    const authoredDigSpots=window.RuinSites?.authoredDigSpots?.(mapId)||[]; // Keep weekly treasure off named tomb excavation sites.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : []),...authoredDigSpots];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.
@@ -179,7 +180,8 @@
     const blockedSet = new Set(blocked); // Used to retain all unaffected placements without relying on coordinate equality.
     const kept = persisted.placements.filter(placement => !blockedSet.has(placement)); // Used as the repaired placement list and as occupied positions during replacement search.
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to prevent replacement candidates from landing on any road or waterway tile.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...kept]; // Used to keep repairs off plants, berries, blocked terrain, and surviving treasure.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...kept,
+      ...(window.RuinSites?.authoredDigSpots?.(mapId)||[])]; // Keep repair placements away from named Lich burrows.
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure-access-repair:' + weekIndex())); // Used to make save repair deterministic for this zone/week.
     const replacements = deps.findZoneFlatEmptyTiles(mapId, blocked.length, rng, avoid); // Used one-for-one to relocate as many blocked chests as the zone can legally fit.
     let repaired = 0; // Used for repair diagnostics and to distinguish relocated chests from dropped inaccessible ones.
@@ -254,7 +256,7 @@
         }
         return [{ icon: '🗝️', label: 'Open the buried chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
       },
-      onAction(action) {
+      onAction(action, lockAward = null) {
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
@@ -265,12 +267,12 @@
             && deps._zoneTreasureObjects.get(mapId)?.get(col + ',' + row) === chestObject
             && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH; // A replaced or weekly-rescattered chest cannot pay an obsolete victory.
           const started = window.ChestLockpicking?.open?.({
-            id: chestObject.id, title: 'Buried Chest', tier: 1, valid,
-            onSuccess: () => {
+            id: chestObject.id + ':week:' + weekIndex(), title: 'Buried Chest', tier: 1, valid,
+            onSuccess: lockAward => {
               let result; // The decorated action remains the only loot and rare-weapon reward authority.
               try {
                 completingPick = true; // Only this synchronous success reentry skips the minigame.
-                result = chestObject.onAction('obj_open_treasure_chest'); // Runs WeaponDiscoveryRewards after the normal treasure loot.
+                result = chestObject.onAction('obj_open_treasure_chest', lockAward); // Runs WeaponDiscoveryRewards after the normal treasure loot.
               } finally { completingPick = false; }
               if (result?.message) deps.showToast?.(result.message, result.ok === true);
               if (result?.ok) {
@@ -289,6 +291,19 @@
         }
         const { loot } = placement;
         const parts = [];
+        const extraCount = Math.min(4, Math.max(0, Math.floor(Number(lockAward?.bonusDrops) || 0))); // At most four extra single rewards from the same town-value-gated treasure picker.
+        for (let extra = 0; extra < extraCount; extra++) {
+          const metal = _rollTreasureMetalKeys()[0]; // Uses the existing buried-chest tier gate; does not reroll complete treasure bundles.
+          const itemKey = metal && deps.metalBarItemKey(metal);
+          if (itemKey) {
+            const before = Math.max(0, Number(deps.inventory[itemKey]) || 0);
+            deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, before + 1);
+            if (deps.inventory[itemKey] > before) parts.push('✨ ' + (deps.ITEM_DEFS[itemKey]?.label || deps.METAL_DEFS[metal]?.label + ' Bar'));
+          } else {
+            deps.inventory.gold = (deps.inventory.gold || 0) + 12; // Fallback if no metals are enabled in a custom loot/shop configuration.
+            parts.push('✨ 12g');
+          }
+        }
         for (const metalKey of loot.metalKeys) {
           const key = deps.metalBarItemKey(metalKey);
           deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);
@@ -432,11 +447,18 @@
   // Nearest still-buried chest in a zone (its tile isn't a dug trench
   // yet), in the same pixel-space coordinates as creature x/y — used by
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
+  const authoredHintCache={area:null,expires:0,spots:[]}; // Prevent a world-metadata clone on every companion frame; terrain checks still filter freshly dug tiles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
     const persisted = deps._zoneTreasurePersist.get(mapId);
-    if (!persisted) return null;
+    const now=Date.now();
+    if(authoredHintCache.area!==mapId||now>=authoredHintCache.expires){
+      authoredHintCache.area=mapId;
+      authoredHintCache.expires=now+750;
+      authoredHintCache.spots=window.RuinSites?.authoredDigSpots?.(mapId)||[];
+    }
+    const authored=authoredHintCache.spots; // Companions can point to the named tomb's excavation tile without repeated saves reads.
     let best = null, bestDist = Infinity;
-    for (const placement of persisted.placements || []) {
+    for (const placement of [...(persisted?.placements||[]),...authored]) {
       if (placement.found) continue;
       const tile = deps._zoneScenes.get(mapId)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no longer "buried"
@@ -498,9 +520,10 @@
     if (_treasureSparkleTimer > 0) return;
     _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
     const persisted = deps._zoneTreasurePersist.get(currentArea);
-    if (!persisted) return;
+    const authored=window.RuinSites?.authoredDigSpots?.(currentArea)||[]; // Named tombs reuse buried-treasure sparkle hints until excavated.
+    if(!persisted&&!authored.length)return;
     const rangePx = deps.TILE * TREASURE_SPARKLE_RANGE_PX_MUL;
-    for (const placement of persisted.placements || []) {
+    for (const placement of [...(persisted?.placements||[]),...authored]) {
       if (placement.found) continue;
       const tile = deps._zoneScenes.get(currentArea)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no hint needed

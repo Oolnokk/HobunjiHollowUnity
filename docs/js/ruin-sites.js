@@ -66,20 +66,57 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store.all)); } catch (_) {}
   }
   function progressStore() {
-    const saved=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Canonical world metadata travels with every folder/recovery save.
+    const saved=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Canonical world metadata travels with folder/recovery saves.
+    const authored=saved?.version===1&&saved.authored&&typeof saved.authored==='object' ? saved.authored : {}; // Three named tombs outlive Tothal cycles.
     return saved?.version===1&&saved.cycle===cycle()&&saved.sites&&typeof saved.sites==='object'
-      ?saved:{version:1,cycle:cycle(),sites:{}}; // Tothal rollover invalidates every vanished ruin's progress.
+      ?{...saved,authored}:{version:1,cycle:cycle(),sites:{},authored}; // Only ordinary procedural ruins expire on a shift.
+  }
+  function migrateLegacyAuthoredSites() {
+    const original=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Migrates active pre-update boss assignments without dropping their checkpoint data.
+    let prior=null;
+    try{prior=JSON.parse(localStorage.getItem(STORE_KEY)||'{}')?.[worldId()]||null;}catch(_){}
+    if(!prior?.bossSites)return false;
+    const store=progressStore();
+    let changed=false;
+    for(const [theme,siteId] of Object.entries(prior.bossSites)){
+      if(!['hronal','tothal','kanthic'].includes(theme)||!siteId||store.authored[theme])continue;
+      const zoneFromHole=prior.holes?.[siteId]?.zoneId; // Existing ordinary buried holes already know their zone.
+      const zoneFromSites=[...sitesByZone].find(([,sites])=>sites.some(site=>site.id===siteId))?.[0];
+      const zoneIndex=String(siteId).match(/_c\d+_(\d+)_\d+(?:_|$)/)?.[1]; // Legacy cliff copies encode a stable zone ordinal.
+      const zoneFromIndex=zoneIndex ? window.WildernessMapGenerator?.zoneMapIds?.()[Number(zoneIndex)-1] : null;
+      const zoneId=zoneFromHole||zoneFromSites||zoneFromIndex;
+      if(!zoneId)continue; // Defer migration until enough of the old world is available; never guess another zone.
+      const snapshot=original?.version===1 ? original.sites?.[siteId] : null;
+      const oldCycle=Number(prior.cycle)||cycle();
+      const completed=prior.entrances?.[siteId]?.spent===true||prior.holes?.[siteId]?.state==='cleared';
+      store.authored[theme]={siteId,zoneId,seed:Number(snapshot?.seed) || (RL.hashString(`${worldId()}|${oldCycle}|${siteId}`)>>>0),
+        cycle:oldCycle,buried:false,dug:false,completed,...(!completed&&snapshot?{progress:snapshot}:{})};
+      if(original?.sites?.[siteId])delete store.sites[siteId]; // A named tomb now owns this snapshot instead of the expiring regular site pool.
+      changed=true;
+    }
+    if(changed&&!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+      debug.progressSaveError='Legacy named tomb migration could not be saved';return false;
+    }
+    return changed;
+  }
+  function authoredRecordForVisit(visit,store=progressStore()) {
+    const record=store.authored?.[visit?.theme]; // Named guardians use their original identity/seed even after a new buried entrance appears.
+    return record?.siteId===visit?.id&&!record.completed ? record : null;
   }
   function activeRuinProgress() {
     if(!activeVisit||activeVisit.kind==='story-vault')return null;
-    return progressStore().sites[activeVisit.id]||null;
+    const store=progressStore();
+    return authoredRecordForVisit(activeVisit,store)?.progress || store.sites[activeVisit.id] || null;
   }
   function saveActiveRuinProgress(snapshot) {
     if(!activeVisit||activeVisit.kind==='story-vault'||!snapshot||snapshot.version!==1)return false;
     const store=progressStore(); // Do not store scene meshes, mechanisms or player coordinates in world metadata.
-    const previous=store.sites[activeVisit.id];
-    store.sites[activeVisit.id]=previous?.version===1&&Number(previous.seed)===Number(snapshot.seed)
+    const authored=authoredRecordForVisit(activeVisit,store);
+    const previous=authored?.progress || store.sites[activeVisit.id];
+    const next=previous?.version===1&&Number(previous.seed)===Number(snapshot.seed)
       ?{...previous,...snapshot}:snapshot; // Preserve opened chests when a puzzle/waystone writes its next snapshot.
+    if(authored) authored.progress=next;
+    else store.sites[activeVisit.id]=next;
     const ok=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
     if(!ok)debug.progressSaveError='World metadata could not be updated';
     return ok;
@@ -91,11 +128,13 @@
   }
   function markActiveRuinChestOpened(id,seed){
     if(!activeVisit||activeVisit.kind==='story-vault'||!id||!Number.isFinite(seed))return false;
-    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const store=progressStore(),authored=authoredRecordForVisit(activeVisit,store);
+    const previous=authored?.progress || store.sites[activeVisit.id];
     const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
     const opened=new Set(Array.isArray(snapshot.openedChests)?snapshot.openedChests:[]); // Stable chest IDs, not reward contents, stop re-looting after re-entry.
     opened.add(String(id));
-    store.sites[activeVisit.id]={...snapshot,openedChests:[...opened]};
+    if(authored) authored.progress={...snapshot,openedChests:[...opened]};
+    else store.sites[activeVisit.id]={...snapshot,openedChests:[...opened]};
     const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
     if(!saved)debug.progressSaveError='Opened chest state could not be saved';
     return saved;
@@ -107,17 +146,24 @@
   }
   function markActiveRuinBossDefeated(seed){
     if(!activeVisit||activeVisit.kind==='story-vault'||!Number.isFinite(Number(seed)))return false;
-    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const store=progressStore(),authored=authoredRecordForVisit(activeVisit,store);
+    const previous=authored?.progress || store.sites[activeVisit.id];
     const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
-    store.sites[activeVisit.id]={...snapshot,bossDefeated:true};
+    if(authored) authored.progress={...snapshot,bossDefeated:true};
+    else store.sites[activeVisit.id]={...snapshot,bossDefeated:true};
     const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
     if(!saved)debug.progressSaveError='Defeated boss state could not be saved';
     return saved;
   }
-  function forgetActiveRuinProgress() {
-    if(!activeVisit)return false;
-    const store=progressStore();delete store.sites[activeVisit.id];
-    return window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+  function completeActiveRuinProgress(visit) {
+    const store=progressStore(),authored=authoredRecordForVisit(visit,store); // All completion state goes into one canonical world-save write.
+    if(visit.specialBoss&&!authored)return false; // Never drop a named tomb's checkpoint if its unique assignment cannot be found.
+    if(authored&&!visit.specialBoss)return false; // A generic ruin exit cannot mark an unfinished named boss tomb completed.
+    if(authored){authored.completed=true;delete authored.progress;}
+    delete store.sites[visit.id]; // Ordinary, cycle-scoped ruins still release their checkpoint on completion.
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Ruin completion could not be saved';
+    return saved;
   }
   function normalizeEntrance(saved = {}) {
     return { open:false, spent:false, ...saved, struck:Array.isArray(saved.struck) ? saved.struck : [] };
@@ -143,6 +189,8 @@
       col:Number(o.col ?? o.x ?? o.gridX), row:Number(o.row ?? o.y ?? o.gridZ),
     })).filter(p => Number.isFinite(p.col) && Number.isFinite(p.row)); // Avoid landmarks/den mouths, not every bush and forage resource across a dense wilderness.
     const previous = saved?.zoneId === zoneId ? saved : null; // A revealed hole remains revealed if the terrain moves on a Shift.
+    const namedBurrows=Object.values(progressStore().authored).filter(record=>record?.zoneId===zoneId&&record?.cycle===cycle()
+      &&!record.completed&&record.buried); // Read metadata once rather than parsing it on every candidate tile.
     let picks = deps?.findZoneFlatEmptyTiles?.(zoneId, 48, rng, avoid) || [];
     const viableFrom = candidates => candidates.filter(({col,row}) => {
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 8 || row < 8 || col >= zi.cols - 8 || row >= zi.rows - 8) return false;
@@ -151,6 +199,7 @@
       if (avoid.some(point => Math.hypot(point.col - col, point.row - row) < 6)) return false;
       if ((deps?._zoneTreasurePersist?.get?.(zoneId)?.placements || []).some(p => p.col === col && p.row === row)) return false;
       if (Object.values(state().holes || {}).some(hole => hole.zoneId === zoneId && hole.state === 'open' && hole.col === col && hole.row === row)) return false;
+      if(namedBurrows.some(record=>record.col===col&&record.row===row))return false; // Story and named Lich burrows must never share a buried entrance tile.
       return true;
     });
     let viable = viableFrom(picks);
@@ -190,6 +239,96 @@
   }
 
   function seedFor(id) { return RL.hashString(`${worldId()}|${cycle()}|${id}`) >>> 0; }
+  function authoredName(theme) {
+    return window.HarlyaoLiches?.DATA?.[theme]?.tomb || ({hronal:"Azgarlu's Tomb",tothal:"Nanahi's Tomb",kanthic:"Imlao's Tomb"})[theme] || 'Named Lich Tomb';
+  }
+  function layoutBurrowCandidates(layout,rng) {
+    if(!Array.isArray(layout?.tiles)||!layout.tiles.length)return []; // The shift publishes this compact data before any zone's THREE scene is built.
+    const used=new Set(); // Occupied footprints from the same generated layout keep hidden shafts outside authored buildings and camp objects.
+    const mark=(x,y,w=1,h=1)=>{
+      if(!Number.isFinite(Number(x))||!Number.isFinite(Number(y)))return;
+      for(let row=Math.floor(y);row<Number(y)+Math.max(1,Number(h)||1);row++)
+        for(let col=Math.floor(x);col<Number(x)+Math.max(1,Number(w)||1);col++)used.add(`${col},${row}`);
+    };
+    for(const b of layout.buildings||[])mark(b.gridX??b.x,b.gridZ??b.y,b.footprintW??b.w,b.footprintD??b.h);
+    for(const d of layout.dens||[])mark(d.x,d.y,d.w,d.h);
+    for(const p of [...(layout.decor||[]),...(layout.furniture||[])])mark(p.col,p.row,p.w,p.h);
+    for(const p of layout.wildernessFoliageFurniture||[])mark(p.col,p.row,p.footprintW,p.footprintD);
+    for(const locale of layout.localeInstances||[])for(const obj of locale.objects||[])mark(obj.x,obj.y,obj.w,obj.h);
+    const candidates=[]; // Shuffled once at relocation, not at every Map-tab render or active companion frame.
+    for(const tile of layout.tiles){
+      const col=Number(tile.c),row=Number(tile.r);
+      if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=layout.cols-4||row>=layout.rows-4)continue;
+      if(tile.incline||tile.water||tile.skipFloor||tile.mapBoundary||used.has(`${col},${row}`))continue;
+      if(tile.type!==deps.TileType.GRASS&&tile.type!==deps.TileType.WEEDS)continue; // Only ordinary, shovel-diggable ground.
+      candidates.push({col,row});
+    }
+    for(let i=candidates.length-1;i>0;i--){
+      const j=Math.floor(rng()*(i+1));[candidates[i],candidates[j]]=[candidates[j],candidates[i]];
+    }
+    return candidates.slice(0,160);
+  }
+  function authoredBuriedSites(zoneId) {
+    const store=progressStore(),zi=deps?._zoneScenes?.get?.(zoneId);
+    const layout=deps?._zoneLayouts?.get?.(zoneId);
+    let changed=false;
+    for(const [theme,record] of Object.entries(store.authored)) {
+      if(!record||record.completed||record.zoneId!==zoneId||record.cycle===cycle()||(!zi?.grid&&!layout?.tiles?.length))continue;
+      const avoided=[...(layout?.dens||[]),...(layout?.buildings||[]),...(layout?.localeInstances||[]),
+        ...(deps?._zoneTreasurePersist?.get?.(zoneId)?.placements||[]),
+        ...Object.values(state().holes||{}),
+        ...Object.values(store.authored).filter(other=>other?.cycle===cycle()&&!other.completed&&other.zoneId===zoneId),
+        ...[window.DelversGuild?.vaultSite?.()].filter(other=>other?.cycle===cycle()&&other.zoneId===zoneId)];
+      const avoid=avoided.map(o=>({col:Number(o.col??o.x??o.gridX),row:Number(o.row??o.y??o.gridZ)}))
+        .filter(o=>Number.isFinite(o.col)&&Number.isFinite(o.row));
+      if(Number.isInteger(record.col)&&Number.isInteger(record.row))avoid.push({col:record.col,row:record.row}); // Relocation never repeats the previous entrance.
+      const rng=rngFor(`authored-burrow|${theme}`); // Location seed changes with Tothal, dungeon seed stays fixed.
+      const layoutCandidates=layout?.tiles?.length?layoutBurrowCandidates(layout,rng):null; // Prefer current Tothal terrain: an active zone may still hold its OLD scene until it is refreshed.
+      const rawTileByPos=layoutCandidates?new Map(layout.tiles.map(tile=>[`${tile.c},${tile.r}`,tile])):null;
+      let selected=null;
+      for(const count of [48,160]) {
+        const picks=layoutCandidates?layoutCandidates.slice(0,count):deps?.findZoneFlatEmptyTiles?.(zoneId,count,rng,avoid)||[];
+        selected=picks.find(({col,row})=>{
+          const cols=zi?.cols??layout?.cols,rows=zi?.rows??layout?.rows;
+          if(!Number.isInteger(col)||!Number.isInteger(row)||col<4||row<4||col>=cols-4||row>=rows-4)return false;
+          const tile=rawTileByPos?.get(`${col},${row}`)||zi?.grid?.[row]?.[col]; // Scene data may lag one shift behind the published map layout.
+          if(!tile||tile.water||tile.incline||tile.skipFloor||tile.mapBoundary||tile.type===deps.TileType?.TRENCH
+            ||tile.type===deps.TileType?.RAMP||tile.type===deps.TileType?.ROCK||tile.type===deps.TileType?.SHRUB
+            ||tile.type===deps.TileType?.PATH||tile.type===deps.TileType?.RIVER
+            ||tile.type===deps.TileType?.STREAM||tile.type===deps.TileType?.WATERFALL)return false;
+          return !avoid.some(point=>Math.hypot(point.col-col,point.row-row)<5);
+        });
+        if(selected)break;
+      }
+      if(!selected){debug.authoredRelocationError=`No diggable site for ${theme} in ${zoneId}`;continue;}
+      Object.assign(record,{col:selected.col,row:selected.row,cycle:cycle(),buried:true,dug:false}); // Only the surface entrance moves.
+      changed=true;
+    }
+    if(changed&&!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+      debug.authoredRelocationError='Named tomb relocation could not be saved';
+      return []; // Never show a relocated marker that the canonical world save failed to retain.
+    }
+    return Object.entries(store.authored).filter(([,record])=>record&&!record.completed&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
+      .map(([theme,record])=>({...record,theme}));
+  }
+  function authoredDigSpots(zoneId) {
+    return authoredBuriedSites(String(zoneId)).filter(record=>!record.dug)
+      .map(record=>({col:record.col,row:record.row,theme:record.theme})); // Shared treasure hints and scatter exclusion.
+  }
+  function authoredDigCheck(zoneId) {
+    const zi=deps?._zoneScenes?.get?.(zoneId);
+    if(!zi?.grid)return false;
+    const ready=authoredBuriedSites(zoneId).filter(record=>!record.dug&&zi.grid[record.row]?.[record.col]?.type===deps.TileType?.TRENCH);
+    if(!ready.length)return false;
+    const store=progressStore();
+    for(const record of ready)if(store.authored[record.theme]?.cycle===cycle())store.authored[record.theme].dug=true;
+    if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){debug.authoredDigError='Could not save excavated tomb';return false;}
+    deps?.showToast?.(`You uncover the burrow ladder to ${authoredName(ready[0].theme)}!`,true);
+    const scene=zi.scene;
+    if(scene)buildZoneMeshes(scene,zi.grid,zoneId);
+    syncMapMarkers();
+    return true;
+  }
   function rngFor(id) {
     let s = seedFor(id) || 1;
     return () => { s = (Math.imul(s ^ (s >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return (s >>> 8) / 16777216; };
@@ -224,6 +363,7 @@
       });
     }
     sitesByZone.set(String(zoneId), sites);
+    migrateLegacyAuthoredSites(); // Legacy named sites may only become identifiable when their zone registers.
     debug.registered = [...sitesByZone.values()].reduce((sum, list) => sum + list.length, 0);
     return sites;
   }
@@ -296,12 +436,24 @@
     rendered.delete(zoneId);
     const sites = sitesByZone.get(zoneId) || [];
     const holes = Object.entries(state().holes || {}).filter(([, hole]) => hole.zoneId === zoneId);
+    const authored = authoredBuriedSites(zoneId); // Missing entrance tiles are reselected on the new Tothal terrain.
+    if(authored.some(record=>!record.dug&&zGrid?.[record.row]?.[record.col]?.type===deps.TileType?.TRENCH)) {
+      if(authoredDigCheck(zoneId))return; // Digging converts the tracked spot into a usable burrow.
+    }
+    for(const record of authored.filter(record=>record.dug)) {
+      const tile=zGrid?.[record.row]?.[record.col];
+      if(tile&&tile.type!==deps.TileType?.TRENCH){ // Saved excavations are kept open on reload, just like the Guild vault.
+        tile.type=deps.TileType.TRENCH;tile.depth=1;
+        deps.recordWildernessChunkTileDelta?.(zoneId,record.col,record.row);
+        setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId,record.col,record.row),0); // Restore the visible open shaft after reloading a dug tomb.
+      }
+    }
     const storySite = storyVaultSite(zoneId);
     if (storySite && !storySite.revealed && zGrid?.[storySite.row]?.[storySite.col]?.type === deps.TileType?.TRENCH) {
       storyVaultDigCheck(zoneId); // A previously dug tile should also reveal the story shaft after reload.
       return;
     }
-    if (!zScene || (!sites.length && !holes.length && !storySite?.revealed)) return;
+    if (!zScene || (!sites.length && !holes.length && !storySite?.revealed && !authored.some(record=>record.dug))) return;
     ensurePieces().then(() => {
       const registeredScene=deps?._zoneScenes?.get?.(zoneId)?.scene; // A newly built zone may not yet be registered when its first scene callback is scheduled.
       if (buildSerials.get(zoneId) !== serial || (registeredScene && registeredScene !== zScene)) return; // Never attach stale burrow meshes after a scene replacement.
@@ -313,6 +465,10 @@
       for (const [id, hole] of holes) {
         const built = buildHole(id, hole, group, zGrid, runtime);
         if (built) runtime.holes.push(built);
+      }
+      for(const record of authored.filter(record=>record.dug)){
+        const built=buildHole(record.siteId,{...record,zoneId,authoredTheme:record.theme,state:'open'},group,zGrid,runtime);
+        if(built)runtime.holes.push(built); // The original tomb seed survives the move.
       }
       if (storySite?.revealed) {
         const built = buildHole(STORY_VAULT_ID, { ...storySite, story:true, state:'open' }, group, zGrid, runtime);
@@ -472,6 +628,7 @@
 
   function buildHole(id, hole, parent, zGrid, runtime) {
     const isStoryVault = hole.story === true; // Reuse the existing authored burrow hole, interaction footprint and ladder prompt.
+    const isAuthored = !!hole.authoredTheme; // Shifted named tombs use the ordinary ladder model, not an extra entrance type.
     if (hole.state === 'cleared') { fillHole(id, hole); return null; }
     const piece = build('ruinBurrowHole');
     if (!piece) return null;
@@ -480,14 +637,16 @@
     place(piece, parent, hole.col + .5, y, hole.row + .5, 0);
     const object = {
       id:`ruinhole_${hole.zoneId}_${hole.col}_${hole.row}`, type:'ruin_hole', col:hole.col, row:hole.row, mesh:piece,
-      label:isStoryVault ? '🕳️ Harlyao Vault Burrow' : '🕳️ Ruin Burrow',
+      label:isStoryVault ? '🕳️ Harlyao Vault Burrow' : isAuthored ? `🕳️ ${authoredName(hole.authoredTheme)}` : '🕳️ Ruin Burrow',
       getButtons() {
         const allowed = isStoryVault ? !!window.DelversGuild?.hasTalisman?.() : !!window.DelversGuild?.hasStone?.();
         return [{ icon:'🪜', label:allowed ? (isStoryVault ? 'Descend into the hidden vault' : 'Climb down into the ruin') : (isStoryVault ? 'Requires the Harlyao Key Talisman' : "Requires a Delver's Stone"), action:'obj_ruin_hole', style:'primary', allowed }];
       },
       onAction(action) {
         if (action !== 'obj_ruin_hole') return { ok:false, message:'Unknown action.' };
-        const visit = { kind:isStoryVault ? 'story-vault' : 'hole', id, zoneId:hole.zoneId, name:isStoryVault ? 'Forgotten Harlyao Vault' : 'Ruin Burrow', returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } };
+        const visit = { kind:isStoryVault ? 'story-vault' : isAuthored ? 'authored' : 'hole', id, zoneId:hole.zoneId,
+          theme:hole.authoredTheme,name:isStoryVault ? 'Forgotten Harlyao Vault' : isAuthored ? authoredName(hole.authoredTheme) : 'Ruin Burrow',
+          returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } };
         if (!enterSite(visit)) return { ok:false, message:isStoryVault ? 'The Harlyao Key Talisman is required.' : "A Delver's Stone is required." };
         return { ok:true, message:'You climb down the shaft.' };
       },
@@ -563,6 +722,12 @@
       if (!byZone.has(hole.zoneId)) byZone.set(hole.zoneId, []);
       byZone.get(hole.zoneId).push({ localeId:`ruin_hole_${hole.zoneId}_${hole.col}_${hole.row}`, name:'Ruin Burrow', category:'ruin_hole', x:hole.col - .5, y:hole.row - .5, alwaysVisible:true, objects:[], connectors:[], [MARKER_FLAG]:true, ruinHoleId:id });
     }
+    for(const zoneId of layouts.keys())for(const record of authoredBuriedSites(zoneId)){
+      if(!byZone.has(zoneId))byZone.set(zoneId,[]);
+      byZone.get(zoneId).push({localeId:`authored_tomb_${record.theme}`,name:`${authoredName(record.theme)} — ${record.dug?'Burrow Ladder':'Buried Entrance'}`,
+        category:'ruin_hole',x:record.col,y:record.row,alwaysVisible:true,objects:[],connectors:[],
+        [MARKER_FLAG]:true}); // The player's map always follows the one unfinished tomb's new dig tile.
+    }
     const story = storyVaultSite(STORY_VAULT_ZONE);
     if (story?.revealed) {
       if (!byZone.has(STORY_VAULT_ZONE)) byZone.set(STORY_VAULT_ZONE, []);
@@ -579,6 +744,7 @@
 
   // ── Entering / leaving ────────────────────────────────────────────────────
   function enterSite(visit) {
+    if(activeVisit) return false; // A second interaction while generation is in flight must not steal the first ruin's checkpoint/save owner.
     if (visit.kind === 'story-vault') {
       if (!window.DelversGuild?.hasTalisman?.()) return false;
       const R = window.DevRandomRuin;
@@ -596,25 +762,46 @@
     }
     const R = window.DevRandomRuin;
     if (!R?.generate) { deps?.showToast?.('The ruin is not ready yet — try again in a moment.', false); return false; }
-    const siteSeed=seedFor(visit.id); // Stable world/cycle/site identity; never rerolled by ruin solvability retries.
     const types=['tothal','hronal','kanthic']; // Matches existing HarlyaoLichCombat tradition IDs.
-    const theme=types[siteSeed%types.length]; // Deterministic ruin tradition controls glyphs, hazards, lich and quest key.
-    const priorOwner=state().bossSites?.[theme]; // Exactly one named guardian grave per tradition within this Tothal Shift.
-    const specialBoss=!priorOwner || priorOwner===visit.id; // The first entered site of each tradition becomes its unique key-stone tomb.
+    const regularSeed=seedFor(visit.id);
+    const theme=visit.kind==='authored' ? visit.theme : types[regularSeed%types.length];
+    const store=progressStore(),record=store.authored?.[theme];
+    const priorOwner=state().bossSites?.[theme];
+    const specialBoss=visit.kind==='authored'
+      ? !!record&&!record.completed&&record.siteId===visit.id
+      : record ? !record.completed&&record.siteId===visit.id
+        : !priorOwner||priorOwner===visit.id; // Original named entrance stays authored on re-entry; every other site stays generic.
+    if(visit.kind==='authored'&&!specialBoss)return false;
+    const siteSeed=specialBoss&&record ? record.seed : regularSeed; // Original lich rooms, rewards and checkpoints keep the original seed.
+    const provisional=specialBoss&&!record;
+    if(provisional){
+      store.authored[theme]={siteId:visit.id,seed:siteSeed,zoneId:visit.zoneId,cycle:cycle(),buried:false,dug:false,completed:false};
+      if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+        debug.progressSaveError='Named tomb reservation could not be saved';return false;
+      }
+    }
     activeVisit = { ...visit, theme, specialBoss };
     debug.lastEnter = { ...visit, theme, specialBoss, at:Date.now() };
     const returnAnchor = { area:visit.zoneId, x:visit.returnAt.x * deps.TILE, y:visit.returnAt.z * deps.TILE };
     const tier = specialBoss ? 'lich' : visit.kind === 'cave' ? 'cave' : 'hole'; // Rarity sets size (RuinLayerPlan.TIERS): named lich tombs largest; cliff-entrance ruins and dug-hole ruins share the middle tier; CaveSiteSystem supplies the smallest tier when entering from inside a cave.
-    Promise.resolve(R.generate(siteSeed, { site:true, theme, specialBoss, tier, label:visit.kind === 'hole' ? 'Buried Ruin' : 'Ancient Ruin', returnAnchor }))
+    const rollback=()=>{
+      if(provisional){
+        const current=progressStore();
+        if(current.authored[theme]?.siteId===visit.id){delete current.authored[theme];window.WorldMetaStore?.saveRuinProgress?.(worldId(),current);}
+      }
+      activeVisit=null;
+    };
+    Promise.resolve(R.generate(siteSeed, { site:true, theme, specialBoss, tier,
+      label:specialBoss ? authoredName(theme) : visit.kind==='hole' ? 'Buried Ruin' : 'Ancient Ruin',returnAnchor }))
       .then(ok => {
-        if (!ok) { activeVisit=null; return; }
-        if (specialBoss) {
-          const next=state(); // Commit an assignment only after a playable ruin was generated.
+        if(!ok){rollback();return;}
+        if(specialBoss){
+          const next=state();
           next.bossSites ||= {};
-          if (!next.bossSites[theme]) {next.bossSites[theme]=visit.id;saveState(next);}
+          if(!next.bossSites[theme]){next.bossSites[theme]=visit.id;saveState(next);}
         }
       })
-      .catch(() => { activeVisit = null; });
+      .catch(rollback);
     return true;
   }
 
@@ -634,27 +821,69 @@
 
   // Sanctum exit ladder. Returns true when this module handled the exit.
   function completeActiveRuin() {
-    const visit = activeVisit;
-    const R = window.DevRandomRuin;
-    if (!visit || !R?.exitTo) return false;
-    if (visit.kind === 'entrance') updateEntrance(visit.id, { spent:true, open:true });
-    else {
-      const entry = state();
-      if (entry.holes[visit.id]) { entry.holes[visit.id].state = 'cleared'; saveState(entry); }
-      syncMapMarkers();
+    const visit=activeVisit,R=window.DevRandomRuin;
+    if(!visit||!R?.exitTo)return false;
+    const exit=randomExit(visit.zoneId); // A failed exit lookup must not consume a checkpoint or complete a named tomb.
+    if(!exit)return false;
+    if(!completeActiveRuinProgress(visit))return false; // Never allow re-entry to mint loot again after a failed save.
+    if(visit.kind==='entrance')updateEntrance(visit.id,{spent:true,open:true});
+    else if(visit.kind==='hole'){
+      const entry=state();
+      if(entry.holes[visit.id]){entry.holes[visit.id].state='cleared';saveState(entry);}
     }
-    forgetActiveRuinProgress(); // The cleared site ceases to exist: discard its checkpoint and solved stages.
-    const exit = randomExit(visit.zoneId);
-    debug.lastExit = { visit, exit, at:Date.now() };
-    activeVisit = null;
-    if (!exit) return false;
+    if(visit.specialBoss&&visit.kind==='authored'){
+      const record=progressStore().authored?.[visit.theme];
+      if(record?.siteId===visit.id&&record.dug){
+        const tile=deps?._zoneScenes?.get?.(record.zoneId)?.grid?.[record.row]?.[record.col];
+        if(tile?.type===deps.TileType?.TRENCH){
+          tile.type=deps.TileType.GRASS;tile.depth=0;
+          deps.recordWildernessChunkTileDelta?.(record.zoneId,record.col,record.row);
+          setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,record.col,record.row),0);
+        }
+      } // The completed tomb's excavated entrance seals; the unique guardian never respawns.
+    }
+    syncMapMarkers();
+    debug.lastExit={visit,exit,at:Date.now()};
+    activeVisit=null;
     window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
-    R.exitTo(() => Promise.resolve(deps.enterZone(exit.zoneId, exit.col ?? undefined, exit.row ?? undefined)).then(() => {
-      const zi = deps._zoneScenes?.get?.(visit.zoneId);
-      if (zi) buildZoneMeshes(zi.scene, zi.grid, visit.zoneId); // Spent door becomes rubble / hole fills in right away.
+    R.exitTo(()=>Promise.resolve(deps.enterZone(exit.zoneId,exit.col??undefined,exit.row??undefined)).then(()=>{
+      const zi=deps._zoneScenes?.get?.(visit.zoneId);
+      if(zi)buildZoneMeshes(zi.scene,zi.grid,visit.zoneId); // Completed hole or cliff doorway disappears.
     }));
-    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.', true);
+    deps?.showToast?.('You climb out into daylight somewhere unfamiliar.',true);
     return true;
+  }
+
+  // Called by the ordinary entrance exit when Tothal shifts the landscape while the player is underground.
+  function relocatedReturnAnchor() {
+    const visit=activeVisit;
+    if(!visit?.specialBoss)return null;
+    let record=progressStore().authored?.[visit.theme];
+    if(!record||record.completed||record.siteId!==visit.id)return null;
+    if(record.cycle!==cycle()&&!deps?._zoneScenes?.get?.(record.zoneId)?.grid){
+      deps?.buildZoneScene?.(record.zoneId); // Relocation needs actual current-cycle diggable terrain, not guessed map pixels.
+    }
+    const site=authoredBuriedSites(record.zoneId).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
+    if(!site)return null;
+    if(!site.dug){
+      const store=progressStore();
+      record=store.authored[visit.theme];
+      if(!record||record.siteId!==visit.id||record.cycle!==cycle())return null;
+      record.dug=true; // Emerging through the moved shaft exposes the same ladder from below.
+      if(!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+        debug.progressSaveError='Relocated ruin exit could not be saved';return null;
+      }
+    }
+    const zi=deps?._zoneScenes?.get?.(record.zoneId);
+    const tile=zi?.grid?.[site.row]?.[site.col];
+    if(tile&&tile.type!==deps.TileType?.TRENCH){
+      tile.type=deps.TileType.TRENCH;tile.depth=1;
+      deps.recordWildernessChunkTileDelta?.(record.zoneId,site.col,site.row);
+      setTimeout(()=>window.ZoneRegrowth?.refreshZoneGroundVisuals?.(record.zoneId,site.col,site.row),0);
+    }
+    syncMapMarkers();
+    if(zi?.scene)buildZoneMeshes(zi.scene,zi.grid,record.zoneId);
+    return {area:record.zoneId,x:(site.col+.5)*deps.TILE,y:(site.row+1.5)*deps.TILE};
   }
 
   // The ruin's ordinary entrance exit just steps back outside.
@@ -756,12 +985,14 @@
 
   function init(injected) {
     deps = injected;
+    migrateLegacyAuthoredSites(); // Upgrade already-entered Lich ruins before the next Tothal Shift drops ordinary progress.
     const wild = window.WildTreasure; // Shares the exact post-dig refresh seam already used to uncover ordinary treasure shafts.
     if (wild?.syncZoneInteractivity && !wild.__storyVaultDigWrapped) {
       const previous = wild.syncZoneInteractivity;
       wild.syncZoneInteractivity = function (...args) {
         const result = previous.apply(this, args);
         storyVaultDigCheck(String(args[0] || ''));
+        authoredDigCheck(String(args[0] || ''));
         return result;
       };
       wild.__storyVaultDigWrapped = true;
@@ -781,6 +1012,7 @@
 
   function sourceCensus(zoneId = null) {
     const saved = state();
+    const authoredOwners=progressStore().authored; // One world-metadata read, rather than cloning the whole world per registered site.
     const themes = ['tothal','hronal','kanthic'];
     const byTheme = {tothal:0,hronal:0,kanthic:0};
     const unspentByTheme = {tothal:0,hronal:0,kanthic:0}; // Separate access to remaining entrances from their original world-generation frequencies.
@@ -790,7 +1022,7 @@
       if (zoneId != null && String(zoneId) !== area) continue;
       for (const site of roster) {
         const theme = themes[seedFor(site.id) % themes.length];
-        const owner = saved.bossSites?.[theme] || null;
+        const owner = authoredOwners?.[theme]?.siteId || saved.bossSites?.[theme] || null;
         const tier = owner == null ? 'undetermined' : owner === site.id ? 'lich' : 'hole';
         byTheme[theme]++;
         byTier[tier]++;
@@ -815,8 +1047,9 @@
   }
 
   window.RuinSites = Object.freeze({
-    init, registerWorkspace, sourceCensus, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
+    init, registerWorkspace, sourceCensus, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft, relocatedReturnAnchor,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
+    authoredBuriedSites,authoredDigSpots,authoredDigCheck,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
     activeRuinProgress,saveActiveRuinProgress,isActiveRuinChestOpened,markActiveRuinChestOpened,
     isActiveRuinBossDefeated,markActiveRuinBossDefeated, // World-scoped boss outcome survives re-entry until the site expires.
@@ -826,6 +1059,7 @@
       zones:Object.fromEntries([...sitesByZone].map(([zoneId, sites]) => [zoneId, sites.map(site => ({ id:site.id, facing:site.facing, door:site.door, state:entranceState(site.id) }))])),
       rendered:Object.fromEntries([...rendered].map(([zoneId, runtime]) => [zoneId, { sites:runtime.sites.map(record => ({ id:record.site.id, doorPoint:record.layout.doorPoint, approach:record.layout.approach, y:record.y, pillars:record.pillars.map(p => ({ id:p.slot.id, x:p.slot.x, z:p.slot.z, struck:p.struck })), spent:!!record.rubble })), holes:runtime.holes.map(h => h.id), blockers:runtime.blockers.length, cells:runtime.cells.size }])),
       holes:state().holes, bossSites:state().bossSites||{},
+      authored:progressStore().authored, // In-game debug snapshot shows original seeds, completion and current buried coordinates.
       progress:activeRuinProgress()?{seed:activeRuinProgress().seed,checkpoint:activeRuinProgress().travel?.activeCheckpoint}:null, // Mobile-readable evidence of the three unique key-guardian graves.
       storyVault: { phase:window.DelversGuild?.vaultPhase?.(), site:window.DelversGuild?.vaultSite?.(), error:debug.storyVaultError || null },
       mapMarkers:[...(deps?._zoneLayouts?.values?.() || [])].reduce((sum, layout) => sum + (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).length, 0),
@@ -835,6 +1069,7 @@
       for (const record of runtime?.sites || []) for (const pillar of record.pillars) strike(record, pillar);
       return !!runtime;
     },
+    debugEnterVisit(visit) { return enterSite(visit); }, // Mobile/test diagnostic for a specific site without locating its mesh.
     debugEnter(siteId) {
       for (const runtime of rendered.values()) {
         const record = runtime.sites.find(entry => !siteId || entry.site.id === siteId);
