@@ -46,6 +46,12 @@
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const TZATZUL_NEST_LIGHTING = Object.freeze({ r: 18, g: 22, b: 31, a: 0.68 }); // Abduction arenas keep cave-colored mist but retain roughly a third of the unlit image for boss/hatchling readability.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
+  const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
+  const RUIN_SCREEN_TINT = Object.freeze({
+    hronal: Object.freeze([145, 73, 48]),
+    tothal: Object.freeze([78, 112, 168]),
+    kanthic: Object.freeze([96, 83, 140]),
+  }); // Subtle colored ambience over the complete viewport, not over projected room-shaped polygons.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
   let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
@@ -827,7 +833,18 @@
   }
   function withRuinRoomLightClip(ctx,source,draw){
     if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'||!window.RuinRoomSystem?.withLightClip)return draw();
-    return window.RuinRoomSystem.withLightClip(ctx,source,(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),draw);
+    return window.RuinRoomSystem.withLightClip(ctx,source,null,draw); // Existing source-room filter, but no camera-projected rectangular paint mask.
+  }
+  function paintRuinScreenTint(ctx,rect,theme){
+    const rgb=RUIN_SCREEN_TINT[theme]; // Each tradition uses the same single full-viewport overlay instead of a room silhouette.
+    if(!rgb||!rect||!(rect.width>0&&rect.height>0))return;
+    ctx.save();
+    try{
+      ctx.globalAlpha=1;
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle='rgba('+rgb.join(',')+','+RUIN_SCREEN_TINT_ALPHA+')';
+      ctx.fillRect(0,0,rect.width,rect.height);
+    }finally{ctx.restore();}
   }
   const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
@@ -1111,8 +1128,6 @@
     lastUnifiedLightingScene = activeScene;
 
     const ctx = lightingDeps.lctx;
-    if(currentArea==='map_i_dev_random_ruin')
-      window.RuinRoomSystem?.prepareLightClip?.((x,y,z)=>lightingDeps.worldToOverlay(x,y,z)); // One camera projection per room per redraw, shared by every light.
     ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
@@ -1147,6 +1162,7 @@
       if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
       if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
       if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
+      if (ruinTradition) paintRuinScreenTint(ctx,rect,ruinTradition); // Low-opacity full-screen ambience, with no rectangular room boundary.
       if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
@@ -1171,6 +1187,7 @@
     if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
     if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
     if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
+    if (currentArea === 'map_i_dev_random_ruin') paintRuinScreenTint(ctx,rect,activeRuinTradition()); // Fog-backed ruins receive the same low-opacity full-screen tint.
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;

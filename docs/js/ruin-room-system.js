@@ -172,120 +172,6 @@
     return best;
   }
 
-  function projectHull(room,project){
-    const points=[];
-    for(const y of [room.y-.15,room.y+WALL_HEIGHT+.1])
-      for(const x of [room.x,room.x+room.w])
-        for(const z of [room.z,room.z+room.d]){
-          const v=project(x,y,z);
-          if(Number.isFinite(v?.x)&&Number.isFinite(v?.y))points.push(v);
-        }
-    if(points.length<3)return [];
-    points.sort((a,b)=>a.x-b.x||a.y-b.y);
-    const cross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-    const hull=[];
-    for(const p of points){
-      while(hull.length>=2&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
-      hull.push(p);
-    }
-    const lower=hull.length;
-    for(let i=points.length-2;i>=0;i--){
-      const p=points[i];
-      while(hull.length>lower&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
-      hull.push(p);
-    }
-    hull.pop();
-    return hull; // The active room's camera silhouette is identical for all lights in one overlay redraw.
-  }
-  const LIGHT_CLIP_FEATHER_PX=24; // The shared darkness overlay feathers the inside of each room silhouette; no light crosses a sealed wall.
-  const LIGHT_CLIP_PASS_BUDGET=72; // Budget for high-quality feather paints per overlay redraw; later engravings use the single-pass sealed fallback.
-  function hullArea(points){
-    let area=0;
-    for(let i=0;i<points.length;i++){
-      const a=points[i],b=points[(i+1)%points.length];
-      area+=a.x*b.y-b.x*a.y;
-    }
-    return area/2;
-  }
-  function insetHull(points,distance){
-    if(points.length<3||!(distance>0))return null;
-    const area=hullArea(points),sign=Math.sign(area);
-    if(!sign||!Number.isFinite(area))return null;
-    const result=[];
-    for(let i=0;i<points.length;i++){
-      const prev=points[(i+points.length-1)%points.length],p=points[i],next=points[(i+1)%points.length];
-      const ax=p.x-prev.x,ay=p.y-prev.y,bx=next.x-p.x,by=next.y-p.y;
-      const alen=Math.hypot(ax,ay),blen=Math.hypot(bx,by);
-      if(alen<.001||blen<.001)return null;
-      const anx=-sign*ay/alen,any=sign*ax/alen,bnx=-sign*by/blen,bny=sign*bx/blen;
-      const denominator=1+anx*bnx+any*bny;
-      if(denominator<.08)return null; // A near-zero interior angle would send the inset far beyond the room.
-      const offset=distance/denominator;
-      const point={x:p.x+(anx+bnx)*offset,y:p.y+(any+bny)*offset};
-      if(!Number.isFinite(point.x)||!Number.isFinite(point.y))return null;
-      result.push(point);
-    }
-    const innerArea=hullArea(result);
-    if(Math.sign(innerArea)!==sign||Math.abs(innerArea)>=Math.abs(area))return null;
-    for(const point of result)for(let i=0;i<points.length;i++){
-      const a=points[i],b=points[(i+1)%points.length];
-      if(sign*((b.x-a.x)*(point.y-a.y)-(b.y-a.y)*(point.x-a.x))<-.01)return null;
-    }
-    return result; // Convex inset stays inside the real room projection, including all stacked-story silhouettes.
-  }
-  function roomLightClip(room,project){
-    const outer=projectHull(room,project);
-    if(outer.length<3)return {outer,inner:null,bands:null};
-    const xs=outer.map(p=>p.x),ys=outer.map(p=>p.y);
-    const width=Math.max(...xs)-Math.min(...xs),height=Math.max(...ys)-Math.min(...ys);
-    let feather=Math.min(LIGHT_CLIP_FEATHER_PX,(Math.min(width,height)-2)/4); // Room size limits the fade so thin silhouettes retain their center light.
-    for(let attempt=0;attempt<4&&feather>.25;attempt++,feather/=2){
-      const count=Math.max(3,Math.min(6,Math.ceil(feather/3))); // At most six concentric bands per source; project and inset only once per overlay redraw.
-      const contours=[outer]; // Shared by all lights while the current room and camera projection are unchanged.
-      for(let i=1;i<=count;i++){
-        const inset=insetHull(outer,feather*i/count);
-        if(!inset)break;
-        contours.push(inset);
-      }
-      if(contours.length!==count+1)continue; // Narrow/acute camera projections retry with a smaller, still strictly contained feather.
-      const bands=[]; // Nonoverlapping light strips, ordered from the room interior toward the strictly sealed outer boundary.
-      for(let i=count-1;i>=0;i--){
-        const t=(i+.5)/count;
-        bands.push({outer:contours[i],inner:contours[i+1],alpha:t*t*(3-2*t)}); // Smoothstep samples approach zero at the real wall boundary.
-      }
-      return {outer,inner:contours[count],bands};
-    }
-    return {outer,inner:null,bands:null}; // Degenerate silhouettes use the original hard clip rather than leak light.
-  }
-  function traceHull(ctx,hull){
-    ctx.moveTo(hull[0].x,hull[0].y);
-    for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
-    ctx.closePath();
-  }
-  function drawLightBand(ctx,outer,inner,alpha,draw){
-    ctx.save();
-    try{
-      ctx.globalAlpha*=alpha;
-      ctx.beginPath();traceHull(ctx,outer);
-      if(inner)traceHull(ctx,inner);
-      ctx.clip(inner?'evenodd':'nonzero');
-      draw();
-    }finally{ctx.restore();}
-  }
-  function drawClippedRoomLight(ctx,clip,draw,feather=true){
-    if(clip.outer.length<3)return; // No safe projected room: do not reveal light outside its sealed boundaries.
-    ctx.save();
-    try{
-      if(!feather||!clip.inner||!clip.bands?.length){ // The low-cost or degenerate fallback still enforces the outer room boundary.
-        ctx.beginPath();traceHull(ctx,clip.outer);ctx.clip();draw();return;
-      }
-      // A solid core and smoothstep-sampled disjoint bands replace the visible three-step cutout.
-      // The outside band's opacity approaches zero without ever drawing beyond the room perimeter.
-      drawLightBand(ctx,clip.inner,null,1,draw);
-      for(const band of clip.bands)drawLightBand(ctx,band.outer,band.inner,band.alpha,draw);
-    }finally{ctx.restore();}
-  }
-
   function visual(record,show){
     if(show){
       for(const [node,original] of record.hidden||[])node.visible=original;
@@ -313,8 +199,7 @@
     if(live)live.dispose(); // No room-owned hostiles or compositor masks leak across a ruin reroll.
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
-    let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false,lightHull=null; // One cached projected room silhouette per unified lighting pass.
-    let lightClipPasses=0,lightClipDowngrades=0; // Overlay-owned budget counters reset by prepareLightClip, not every light or render frame.
+    let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false; // Room ownership is reused by lighting and encounter suspension without projecting room boxes.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -391,25 +276,14 @@
       isRoomActive(id){return !!active&&active.id===id;},
       ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
       roomAt:lookup,
-      prepareLightClip(project){
-        lightHull=active&&typeof project==='function'?roomLightClip(active,project):null;
-        lightClipPasses=0;lightClipDowngrades=0;
-      }, // Called once by the shared lighting overlay, not once per flame/rune/torch.
+      prepareLightClip(){}, // Compatibility hook: full-screen room tint needs no per-light camera projections.
       lightAllowed(light){
         const source=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
-        return active?source?.id===active.id:!source; // Closed rooms and the shaft cannot light each other.
+        return active?source?.id===active.id:!source; // Sources in other rooms stay dormant; no visible rectangular light cutoffs.
       },
-      withLightClip(ctx,light,project,draw){
-        if(!session.lightAllowed(light))return false;
-        const room=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
-        if(!room||!ctx?.save||!ctx?.clip||typeof project!=='function'){draw();return true;}
-        const clip=lightHull||roomLightClip(room,project);
-        if(clip.outer.length<3)return false; // A collapsed camera projection must never reveal the neighboring room.
-        const required=clip.bands?.length?clip.bands.length+1:1;
-        const feather=required>1&&lightClipPasses+required<=LIGHT_CLIP_PASS_BUDGET;
-        if(required>1&&!feather)lightClipDowngrades++; // Tiny late-drawn engraving glows retain strict clipping, not expensive repeated feathering.
-        lightClipPasses+=feather?required:1;
-        drawClippedRoomLight(ctx,clip,draw,feather);
+      withLightClip(_ctx,light,_project,draw){
+        if(!session.lightAllowed(light)||typeof draw!=='function')return false;
+        draw(); // Compatibility name only: ordinary radial light pools remain unclipped by the old room bounding box.
         return true;
       },
       tick(dt){
@@ -417,7 +291,7 @@
         const p=getPlayerPosition?.(),y=Number(getPlayerY?.());
         const next=p?lookup(p.x,p.z,y):null;
         if(next?.id!==active?.id){
-          active=next;transitions++;lightHull=null;lightClipPasses=0;lightClipDowngrades=0;
+          active=next;transitions++;
           scanHostiles();scanWalkers();clock=0; // Room transitions also freeze off-room civilian NPC walkers immediately.
           onRoomChange?.(active?.id||null);
           root.CloudForestFog?.refreshLightingOverlay?.();
@@ -439,8 +313,7 @@
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
-        lightClip:{featherPx:LIGHT_CLIP_FEATHER_PX,feathered:!!lightHull?.inner,bands:lightHull?.bands?.length||0,
-          canvasPasses:lightClipPasses,passBudget:LIGHT_CLIP_PASS_BUDGET,budgetDowngrades:lightClipDowngrades}};},
+        lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0}};},
     };
     live=session;
     return session;
