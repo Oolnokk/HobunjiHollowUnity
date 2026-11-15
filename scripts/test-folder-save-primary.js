@@ -407,6 +407,7 @@ function verifySavedProcessingRestoresAfterStaleProduction() {
     processingFurnitureObjects: processingObjects,
     interiorFurnitureObjects: [],
     rebuildInteriorGeometry() {},
+    transformFurnitureWithHousePiece() {},
     reconcileInteriorFurniture() { return []; },
     debugLog() {},
   }); // Only the actual restore dependencies used by the minimal layout are mocked.
