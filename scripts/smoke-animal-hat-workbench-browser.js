@@ -83,8 +83,10 @@ async function spritePng(page, animal) {
     assert.equal(previews.head, undefined, 'hat-only fit must not enter the head-rig storage');
 
     // Real pointer gesture, Undo/Redo, and PNG download.
+    await page.locator('#hatArtCanvas').scrollIntoViewIfNeeded(); // A mobile single-column stage sits below the controls.
     const art = await page.locator('#hatArtCanvas').boundingBox();
     assert(art && art.width > 100 && art.width <= 412, 'canvas must fit a mobile viewport');
+    assert(art.y >= 0 && art.y + art.height <= 850, 'drag coordinates must be inside the mobile viewport');
     await page.evaluate(() => {
       window.__hatPointerTrace = []; // Capture real event routing for CI/mobile diagnostics.
       const canvas = document.getElementById('hatArtCanvas');
