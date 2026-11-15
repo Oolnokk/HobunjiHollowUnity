@@ -280,13 +280,15 @@
     }
     return candidates.slice(0,160);
   }
-  function authoredBuriedSites(zoneId) {
+  function authoredBuriedSites(zoneId, includeActiveRelic = false) { // An active relic-recovery visit also needs its relocated exit after the player picks up the heart.
     const store=progressStore(),zi=deps?._zoneScenes?.get?.(zoneId);
     const layout=deps?._zoneLayouts?.get?.(zoneId);
     let changed=false;
+    const accessible=(theme,record)=>!record.completed||needsNamedHeart(theme)
+      ||(includeActiveRelic&&activeVisit?.relicReturn===true&&activeVisit.theme===theme&&activeVisit.id===record.siteId); // A just-claimed heart cannot invalidate a mid-shift escape from inside its tomb.
     for(const [theme,record] of Object.entries(store.authored)) {
-      if(!record||record.zoneId!==zoneId||(record.completed&&!needsNamedHeart(theme))
-        ||(record.cycle===cycle()&&(record.buried||!record.completed))||(!zi?.grid&&!layout?.tiles?.length))continue; // Completed tombs only reappear for a missing character relic; old non-buried entrances become a new dig spot even in the same cycle.
+      if(!record||record.zoneId!==zoneId||!accessible(theme,record)
+        ||(record.cycle===cycle()&&(record.buried||!record.completed))||(!zi?.grid&&!layout?.tiles?.length))continue; // Completed tombs only reappear for missing character relics; old entrances become a new dig spot.
       const avoided=[...(layout?.dens||[]),...(layout?.buildings||[]),...(layout?.localeInstances||[]),
         ...(deps?._zoneTreasurePersist?.get?.(zoneId)?.placements||[]),
         ...Object.values(state().holes||{}),
@@ -321,7 +323,7 @@
       debug.authoredRelocationError='Named tomb relocation could not be saved';
       return []; // Never show a relocated marker that the canonical world save failed to retain.
     }
-    return Object.entries(store.authored).filter(([theme,record])=>record&&(!record.completed||needsNamedHeart(theme))&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
+    return Object.entries(store.authored).filter(([theme,record])=>record&&accessible(theme,record)&&record.zoneId===zoneId&&record.cycle===cycle()&&record.buried)
       .map(([theme,record])=>({...record,theme}));
   }
   function authoredDigSpots(zoneId) {
@@ -874,11 +876,11 @@
     const visit=activeVisit;
     if(!visit?.specialBoss)return null;
     let record=progressStore().authored?.[visit.theme];
-    if(!record||record.completed||record.siteId!==visit.id)return null;
+    if(!record||(record.completed&&!visit.relicReturn)||record.siteId!==visit.id)return null;
     if(record.cycle!==cycle()&&!deps?._zoneScenes?.get?.(record.zoneId)?.grid){
       deps?.buildZoneScene?.(record.zoneId); // Relocation needs actual current-cycle diggable terrain, not guessed map pixels.
     }
-    const site=authoredBuriedSites(record.zoneId).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
+    const site=authoredBuriedSites(record.zoneId,visit.relicReturn===true).find(other=>other.theme===visit.theme&&other.siteId===visit.id);
     if(!site)return null;
     if(!site.dug){
       const store=progressStore();
