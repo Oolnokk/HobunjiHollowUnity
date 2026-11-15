@@ -458,6 +458,24 @@
 
   // A fast metadata pass is sufficient only for known, untouched farm files.
   // Unexpected/edited files fall back to the full JSON integrity check.
+  async function canonicalFilesUnmodified() {
+    if (!_committedFileState) return false;
+    // A no-op save is safe only if every canonical disk file remains present
+    // and unchanged. On browsers without file timestamps we take the normal
+    // guarded write path rather than trusting a stale in-memory fingerprint.
+    try {
+      for (const [key, previous] of _committedFileState) {
+        if (!previous.stamp) return false;
+        const separator = key.indexOf('/');
+        if (separator < 0) return false;
+        const directory = await _handle.getDirectoryHandle(key.slice(0, separator));
+        const handle = await directory.getFileHandle(key.slice(separator + 1));
+        if (!sameDiskStamp(previous.stamp, diskStamp(await handle.getFile()))) return false;
+      }
+      return true;
+    } catch { return false; }
+  }
+
   async function farmLayoutFilesUnmodified() {
     if (!_committedFileState) return false;
     const expected = new Map([..._committedFileState].filter(([key]) => key.startsWith(FARM_LAYOUTS_DIR + '/')));
@@ -831,7 +849,8 @@
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
-      if (automatic && !force && recoveryKind === 'auto' && delta && !delta.changed && !_lastError) {
+      if (automatic && !force && recoveryKind === 'auto' && delta && !delta.changed && !_lastError
+        && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
         _lastSaveWork = { written: 0, unchanged: delta.digests.size };
         _unchangedAutosavesSkipped++;
         _lastAction = 'autosync-skipped-unchanged';
