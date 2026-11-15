@@ -85,4 +85,16 @@ assert.ok(saved.processedDefinitions.every(def =>
 for (const key of Object.keys(inventory)) {
   assert.ok(ITEM_DEFS[key].cookingCategories.includes('fish'), key + ' can be cooked');
 }
+// A character/world switch clears processedDefinitions but ITEM_DEFS is shared.
+// Those stale definitions must not suppress rebuilding the newly loaded world's
+// saved fish so they survive its next save too.
+window.CookingSystem.restore({ qualityBuckets, processedDefinitions: [], cookedDefinitions: {} });
+const secondSave = window.CookingSystem.serialize();
+assert.equal(secondSave.processedDefinitions.filter(def => def.key.endsWith('Smoked')).length, 8,
+  'reloading another legacy world re-registers provenance despite shared definitions');
+assert.deepEqual(JSON.parse(JSON.stringify(secondSave.qualityBuckets)), qualityBuckets,
+  'switching worlds leaves fish quality buckets untouched');
+assert.deepEqual(inventory, startingInventory, 'switching worlds never changes fish counts');
+assert.equal(window.CookingSystem.repairPreservedInventory(), 0, 'second restore remains idempotent');
+
 console.log('smoked-fish save restoration ok');
