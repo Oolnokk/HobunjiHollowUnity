@@ -19550,7 +19550,7 @@
         // Physical steering is independent of intended input, aim, and facing.
         // Auto-walk already has its own path; ice, crawl and scripted motion
         // keep their existing movement rules.
-        const groundSteer = !playerAutoWalk && !icePhysics && !crawlMotion
+        const groundSteer = window.GroundObstacleAvoidance && !playerAutoWalk && !icePhysics && !crawlMotion
           ? window.GroundObstacleAvoidance?.steer('foot', currentArea, player.x, player.y,
               inputStrength > 0.001 ? ix : 0, inputStrength > 0.001 ? iy : 0, TILE, canPlayerOccupy, dt)
           : null;
