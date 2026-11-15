@@ -154,6 +154,28 @@ assert.equal(native.invokeDoorAction('dev_ruin_world_1'), false, 'torch interact
 assert.equal(native.invokeDoorAction('dev_ruin_world_2'), true);
 assert.equal(opens, 1);
 
+const floatingPopup = sourceBetween(ruin, '  function syncWorldPopup(rows) {', '  function refreshRows('); // The actual world popup must advertise Interact when Torch Swing owns Action 1.
+let heldTorchForPopup = true, lastPopup = null; // Toggles the door glyph without changing its saved/owned action.
+const floatingContext = vm.createContext({
+  window: {
+    AdventuringTools: { isHoldingTorch: () => heldTorchForPopup },
+    WorldPopupText: { syncInteractionPrompts(value) { lastPopup = value; } },
+  },
+  actionButtonsFromRows: rows => rows.map(row => ({ action: row.action, inputAction: 'action1', worldInteraction: true })),
+  PROXIMITY_DOOR_KINDS: new Set(['transitdoor', 'v50nativetransitdoor']),
+  promptAnchor: { parent: true }, lastAnchor: null, ruinRoot: () => null,
+  currentDevice: () => 'keyboard', bindingLabel: id => id, inputColor: id => id,
+  inRuin: () => true, activeScene: () => ({}),
+}); // Reuses the same mapped popup helper as the live V50 provider.
+const syncDoorPopup = vm.runInContext(floatingPopup + '\nsyncWorldPopup', floatingContext);
+syncDoorPopup(nativeRows);
+assert.equal(lastPopup.promptInputs[0].actionId, 'interact', 'torch-held ruin door advertises Interact, not its now-suppressed Action 1');
+assert.equal(lastPopup.promptInputs[1].actionId, 'action1', 'unrelated world-control binding is unchanged');
+assert.equal(lastPopup.promptInputs[2].actionId, 'interact');
+heldTorchForPopup = false;
+syncDoorPopup(nativeRows);
+assert.equal(lastPopup.promptInputs[0].actionId, 'action1', 'ordinary door action binding is retained without torch');
+
 const doorDispatch = sourceBetween(game, "        if (activeAction === 'obj_door_toggle') {", "        if (activeTool === 'shovel') {"); // Immediate door actions must bypass the shared torch swing clock.
 let worldSaves = 0, notifications = 0, refreshes = 0;
 const dispatchContext = vm.createContext({
