@@ -626,7 +626,7 @@ function refreshPreviewDebug() {
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
     (() => {
       const orbit = window.HobunjiSpeciesPoseScale?.shoulderOrbitGeometry?.({
-        cx: 0, cz: 0, floorY: 0, baseY: editorUnscaledToolBaseY(),
+        cx: 0, cz: 0, floorY: 0,
         speciesId: currentSpeciesId, gender: currentGender,
         modelHeight: currentAvatarModelHeight, armLength: currentArmLength,
       }); // Display the real shoulder-derived envelope, not the obsolete body-centroid authoring multiplier.
