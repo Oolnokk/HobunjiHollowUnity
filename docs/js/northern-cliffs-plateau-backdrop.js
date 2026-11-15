@@ -7,7 +7,9 @@
   const GROUP_NAME = 'NorthernCliffsDistantPlateau'; // Stable scene identity for duplicate checks and mobile diagnostics.
   const BORDER_WIDTH = 18; // Matches the wilderness scenery skirt built by border-terrain.js.
   const BORDER_CLEARANCE = 6; // Places the entire plateau footprint beyond that skirt, not just beyond playable tiles.
-  const HEIGHT_RATIO = 0.7; // The mesa top is seventy percent of the highest Western Slope mountain world-space Y.
+  const BACKDROP_FOG_DISTANCE_SCALE = 0.22; // Compresses beyond-border eye distance for this far-clip-skipping backdrop, keeping the scene's existing fog visible instead of fully opaque.
+  const FOG_NEAR_DISTANCE = BORDER_WIDTH + BORDER_CLEARANCE; // Matches ordinary cliff fog through the near border before easing the giant rock's far-distance fog.
+  const HEIGHT_RATIO = 1.05; // Fifty percent taller than the old 0.70 ratio, measured against the same Western Slope mountain peak.
   const PLATEAU_ROCK_SEED_OFFSET = 509; // Selects one stable loose-rock mound distinct from the eight Western Slope mountain rocks.
   const TOP_FLATTEN_START = 0.70; // The rounded upper thirty percent of the scattered-rock source becomes a level plateau crown.
   const ROCK_SHOULDER_RATIO = 0.84; // Keeps the lower faceted boulder shoulders visible below the deliberately level cap.
@@ -160,6 +162,27 @@
     }
   }
 
+  function enableSceneFogOnBackdrop(material) {
+    material.fog = true; // Reuses the scene's own fog color and density, just as ordinary distant cliff materials do.
+    const depthCompile = material.onBeforeCompile; // Preserves the Western Slope depth-compression shader installed before this fog adapter.
+    material.onBeforeCompile = (shader, renderer) => {
+      depthCompile?.call(material, shader, renderer);
+      // The giant plateau extends hundreds of units past the camera's far plane.
+      // Full world-space fog would erase it; compress only that extra distance,
+      // leaving nearby border fog unchanged and distant portions progressively mistier.
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <fog_vertex>',
+        '#include <fog_vertex>\n#ifdef USE_FOG\n' +
+          'vFogDepth = min(vFogDepth, ' + FOG_NEAR_DISTANCE.toFixed(1) +
+          ') + max(0.0, vFogDepth - ' + FOG_NEAR_DISTANCE.toFixed(1) +
+          ') * ' + BACKDROP_FOG_DISTANCE_SCALE + ';\n' +
+          '#endif'
+      );
+    };
+    const priorCacheKey = material.customProgramCacheKey?.bind(material); // Ensures the new fogged shader has its own compiled program instead of reusing the unfogged skyline shader.
+    material.customProgramCacheKey = () => (priorCacheKey?.() || '') + '-northern-plateau-scene-fog-v2';
+  }
+
   function makeBackdropMaterials(materials, T) {
     const slots = Array.isArray(materials) ? materials : [materials]; // Keeps the ridge isolator's top/side grouping intact.
     const clones = new Map(); // Reuses one backdrop-owned clone where the top and cliff slots reference the same canonical farm material.
@@ -173,8 +196,8 @@
         clone.side = T.DoubleSide;
         clone.depthTest = true;
         clone.depthWrite = true;
-        clone.fog = false;
         window.WesternSlopeMountainBackdrops?.keepInFrontOfSky?.(clone); // The same background depth treatment applies to both material slots.
+        enableSceneFogOnBackdrop(clone); // Apply game-world cliff fog without obscuring a landmark located past the camera far clip.
       }
     } catch (error) {
       disposeBackdropMaterials([...clones.values()]); // A partial failed clone must never leak resources or dispose the source surface.
@@ -266,6 +289,8 @@
         northernMapZMin: 0, outsideSceneryClearance: BORDER_CLEARANCE,
         topWorldY: layout.topY, referencePeakWorldY: layout.mountain.highestY,
         heightRatio: HEIGHT_RATIO, referenceMountainChainWidth: layout.mountain.width,
+        fogEnabled: Array.isArray(mesh.material) ? mesh.material.every(material => material.fog) : !!mesh.material.fog,
+        fogNearDistance: FOG_NEAR_DISTANCE, fogDistanceScale: BACKDROP_FOG_DISTANCE_SCALE, // Exposes the far-landmark fog tuning in the existing mobile debug readout.
         triangleCount: (mesh.geometry.index?.count || mesh.geometry.getAttribute('position').count) / 3,
         sourceShape: 'TerrainGeometry.buildRockTileGeo:stoneGeo', flatCapVertices: rock.capVertices,
         flatCapTriangles: rock.capTriangles, // Mobile diagnostics verify a real continuous tabletop rather than a single high peak.
