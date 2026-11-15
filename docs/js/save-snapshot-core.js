@@ -100,8 +100,7 @@
       .map(world => String(world?.id || ''))
       .filter(Boolean));
 
-    const metaJson = JSON.stringify(snapshot.meta); // Reused for change detection so unchanged large browser mirrors are not rewritten.
-    if (localStorage.getItem(SAVE_META_KEY) !== metaJson) localStorage.setItem(SAVE_META_KEY, metaJson);
+    localStorage.setItem(SAVE_META_KEY, JSON.stringify(snapshot.meta));
 
     // Cloud snapshots are full snapshots, so remove obsolete farm-layout entries
     // before restoring the layouts belonging to the imported worlds.
@@ -114,9 +113,7 @@
 
     for (const [worldId, layout] of Object.entries(snapshot.farmLayouts || {})) {
       if (!validWorldIds.has(String(worldId))) continue;
-      const key = farmLayoutKey(worldId); // Browser layout mirror for this world; avoid synchronous storage writes when unchanged.
-      const raw = JSON.stringify(layout);
-      if (localStorage.getItem(key) !== raw) localStorage.setItem(key, raw);
+      localStorage.setItem(farmLayoutKey(worldId), JSON.stringify(layout));
     }
 
     return summary(snapshot);
