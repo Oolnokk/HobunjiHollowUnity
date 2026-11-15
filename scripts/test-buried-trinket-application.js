@@ -98,4 +98,77 @@ assert.equal(hit.amount, 10, 'Ranger Beads does not buff melee');
 trinkets.unequip(uid);
 assert(hits.length >= 4, 'all pathways reached the live damage wrapper');
 
-console.log('PASS buried trinkets: thirteen real stat effects, Attunement, gear saves, wearer-only scope, ranged/Health/Footing combat hooks.');
+// A second harness loads the real ResourceSystem instead of the lightweight
+// gear-only stub. This catches modifiers that exist in definitions but are
+// never consumed by the corresponding combat/resource gameplay path.
+const live = {
+  console, Date, Math, performance: { now: () => 10000 },
+  CustomEvent: class CustomEvent { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+  SCRATCHBONES_CONFIG: { game: { combat: { resourceSystem: { pukeChancePerSec: 0 } } } },
+  addEventListener() {}, dispatchEvent() {},
+}; // Actual resource and combat runtime, with only browser event/audio seams stubbed.
+live.window = live;
+vm.createContext(live);
+vm.runInContext(source('docs/js/combat/resource-system.js'), live, { filename: 'resource-system.js' });
+const liveR = live.ResourceSystem; // Production Health/Stamina/Footing/affliction calculations.
+const livePlayer = { health: 100, maxHealth: 100, stamina: 100, maxStamina: 100, footing: 100, maxFooting: 100, x: 0, y: 0 }; // New fixture isolates live effects from stub assertions.
+liveR.initEntity(livePlayer);
+const liveGear = { trinkets: [], equippedTrinkets: [] }; // Live Attunement and character ownership backing this resource test.
+live.Combat = {
+  deps: { player: livePlayer, getGearInventory: () => liveGear, saveGearInventory() {} },
+  init(deps) { this.deps = deps; },
+};
+vm.runInContext(source('docs/js/trinket-system.js'), live, { filename: 'trinket-system.js live' });
+vm.runInContext(source('docs/js/combat/double-edged-combat-trinkets.js'), live, { filename: 'double-edged-combat-trinkets.js live' });
+const liveTrinkets = live.TrinketSystem; // Real bonus registration, ownership and equipped-effect lifecycles.
+const liveWear = id => {
+  const uid = liveTrinkets.grant(id, 'buried-treasure'); // Exercises real grant instead of injecting an unowned effect.
+  assert(uid && liveTrinkets.equip(uid).ok, id + ' must equip through Attunement');
+  return uid;
+};
+const liveUnwear = uid => assert.equal(liveTrinkets.unequip(uid), true);
+const approx = (actual, expected, message) => assert(Math.abs(actual - expected) < 1e-7, message + ': ' + actual + ' vs ' + expected); // Avoid rounding noise on percentage modifiers.
+
+let liveUid = liveWear('fightersBelt');
+livePlayer.stamina = 100;
+liveR.spendStamina(livePlayer, 20, 'Forehand Swing', { actionKind: 'combatCombo' });
+approx(livePlayer.stamina, 83, 'Fighter Belt discounts real weapon action Stamina');
+livePlayer.stamina = 100;
+liveR.spendStamina(livePlayer, 20, 'Farmwork', { actionKind: 'farmWork' });
+approx(livePlayer.stamina, 80, 'Fighter Belt leaves unrelated crafting/farm Stamina costs alone');
+liveUnwear(liveUid);
+
+liveUid = liveWear('swiftbladeRing');
+approx(live.DoubleEdgedCombatTrinkets.attackSpeed(), 1.12, 'Swiftblade Ring changes live melee/ranged attack timing');
+liveUnwear(liveUid);
+approx(live.DoubleEdgedCombatTrinkets.attackSpeed(), 1, 'Swiftblade Ring unequip restores normal attack timing');
+
+liveUid = liveWear('defendersBrooch');
+livePlayer.health = 100;
+liveR.applyDamage(livePlayer, 20);
+approx(livePlayer.health, 82.4, 'Defender Brooch reduces incoming Health damage by twelve percent');
+liveUnwear(liveUid);
+
+liveUid = liveWear('steadfastBeads');
+const afflictionBefore = liveR.getAffliction(livePlayer, 'bruisedHealth'); // Baseline used to isolate only newly added affliction buildup.
+liveR.addAffliction(livePlayer, 'bruisedHealth', 10);
+approx(liveR.getAffliction(livePlayer, 'bruisedHealth') - afflictionBefore, 8, 'Steadfast Beads reduce incoming affliction buildup');
+liveUnwear(liveUid);
+
+liveUid = liveWear('runnersCord');
+approx(liveR.getEffectiveMax(livePlayer, 'stamina'), 120, 'Runner Cord raises real maximum Stamina');
+liveUnwear(liveUid);
+approx(liveR.getEffectiveMax(livePlayer, 'stamina'), 100, 'Runner Cord unequip restores the original maximum');
+
+liveUid = liveWear('masonsRing');
+livePlayer.footing = 20;
+liveR.tick(livePlayer, 1, { footingRegenPerSec: 10, staminaRegenPerSec: 0, healthRegenPerSec: 0 });
+const improvedFooting = livePlayer.footing; // Real one-second Footing regeneration with Mason Ring equipped.
+liveUnwear(liveUid);
+livePlayer.footing = 20;
+liveR.tick(livePlayer, 1, { footingRegenPerSec: 10, staminaRegenPerSec: 0, healthRegenPerSec: 0 });
+const normalFooting = livePlayer.footing; // Repeats the identical regeneration with the trinket removed.
+assert(improvedFooting > normalFooting, 'Mason Ring improves real Footing recovery rather than a display-only stat');
+approx((improvedFooting - 20) / (normalFooting - 20), 1.35, 'Mason Ring applies exactly +35% footing recovery');
+
+console.log('PASS buried trinkets: thirteen real stat effects and six live resource/combat paths, Attunement, gear saves, wearer-only scope, ranged/Health/Footing combat hooks.');
