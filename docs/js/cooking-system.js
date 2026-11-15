@@ -292,14 +292,16 @@
     return true;
   }
 
-  function isUncookedIngredient(definition) {
-    return !!definition && !definition.isCookedFood &&
-      !definition.tags?.some(tag => String(tag).toLowerCase() === 'cooked food'); // Meals are always final, even when older saves still list recipe ingredient categories.
+  function isUncookedIngredient(definition, key = '') {
+    if (!definition || definition.isCookedFood || definition.tags?.some(tag => String(tag).toLowerCase() === 'cooked food')) return false;
+    if (window.ItemProcessing?.hasCookedOrigin?.(key, definition)) return false;
+    const ancestors = [key, definition.cookingProcessSourceKey, ...(Array.isArray(definition.ingredientKeys) ? definition.ingredientKeys : [])]; // Older oil snapshots may retain only ingredientKeys, so never reuse a cooked dish's boosted effects.
+    return !ancestors.some(source => typeof source === 'string' && /^food_/i.test(source));
   }
 
   function ingredientCandidates(slot) {
     return Object.entries(deps.ITEM_DEFS).filter(([key, definition]) =>
-      (deps.inventory[key] || 0) > 0 && isUncookedIngredient(definition) &&
+      (deps.inventory[key] || 0) > 0 && isUncookedIngredient(definition, key) &&
       definition.cookingCategories?.some(category => slot.accepts.includes(category))
     ).sort(([, a], [, b]) => String(a.label).localeCompare(String(b.label))); // Used to populate each category-constrained slot picker.
   }
@@ -326,9 +328,9 @@
   }
 
   function listIngredientDefinitions(category = null) {
-    return Object.entries(deps?.ITEM_DEFS || {}).filter(([, definition]) => {
+    return Object.entries(deps?.ITEM_DEFS || {}).filter(([key, definition]) => {
       const categories = definition?.cookingCategories || []; // Used to filter the full registered ingredient catalog by an optional cooking category.
-      return isUncookedIngredient(definition) && categories.length && (!category || categories.includes(category));
+      return isUncookedIngredient(definition, key) && categories.length && (!category || categories.includes(category));
     }).map(([key, definition]) => ({ key, definition }));
   }
 
@@ -421,7 +423,7 @@
     if (!recipe || !recipe.slots.every(slot => {
       const selected = slots[slot.id]; // Validate saved/favorited slot choices at the actual cook boundary, not only in the picker.
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
-      return (!slot.required || !!selected) && (!selected || (isUncookedIngredient(definition) &&
+      return (!slot.required || !!selected) && (!selected || (isUncookedIngredient(definition, selected.key) &&
         definition.cookingCategories?.some(category => slot.accepts.includes(category))));
     })) return false;
     const required = {}; // Used to prevent one inventory unit from filling multiple recipe slots.
@@ -445,7 +447,7 @@
       if (slot.contributesEffects === false) return; // Structural ingredients such as Nine Leaf Tea's milk can be required without adding an unrelated food buff.
       const selected = slots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
-      if (!isUncookedIngredient(definition)) return; // Stale UI selections must never preview inherited cooked-meal bonuses.
+      if (!isUncookedIngredient(definition, selected?.key)) return; // Stale UI selections must never preview inherited cooked-meal bonuses.
       const ingredientEffects = ingredientEffectTotals(definition, selected?.stars); // Used to ensure the meal preview consumes the exact same per-ingredient buff math shown beside the ingredient.
       Object.entries(ingredientEffects).forEach(([effect, amount]) => {
         totals[effect] = (totals[effect] || 0) + amount;

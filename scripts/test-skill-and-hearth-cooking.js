@@ -238,6 +238,19 @@ cookingTerminal.registerCookedDefinition('fishPie', {
   foodEffects: { fishing: 50 }, cookingDefaultStars: 5,
 });
 terminalInventory.fishPie = 2;
+const legacyPieOil = 'food_threeFishPie_olderOil'; // Pre-fix squeezed output retains a cooked meal's key even after its isCookedFood flag is lost.
+itemProcessor.ensureProcessedItemDef({
+  key: legacyPieOil, icon: '🫗', label: 'Old Fish Pie Oil', cat: 'processed',
+  tags: ['Processed', 'Fish', 'Oil'], cookingCategories: ['oil'],
+  cookingProcessMultiplier: 1.5, cookingProcessSteps: [{ method: 'squeezing', multiplier: 1.5 }],
+  ingredientKeys: ['fishPie'],
+});
+terminalInventory[legacyPieOil] = 1;
+assert.equal(itemProcessor.getProcessingOutputs('churning', legacyPieOil), null, 'an old fish-pie oil cannot reenter another processor');
+assert.equal(terminalContext.window.HobunjiFoodProcessing.getProcessingOutputs('churning', legacyPieOil, liveDefs[legacyPieOil]), null,
+  'direct churn recipe calls also refuse cooked-food descendants');
+assert(!cookingTerminal.listIngredientDefinitions('oil').some(entry => entry.key === legacyPieOil),
+  'oil made from a cooked pie cannot carry its boosted foodEffects into another hearth meal');
 assert(!liveDefs.oldFishOil.cookingCategories.includes('fish'), 'old fish oil loses its incorrectly inherited raw-fish recipe category');
 assert(!liveDefs.oldRiverFishOil.cookingCategories.includes('fish'), 'old fish-oil keys also migrate without an Oil tag');
 assert(!liveDefs[pressedRiverFish.key].cookingCategories.includes('fish'), 'new pressed oils cannot occupy a recipe fish slot');

@@ -441,6 +441,8 @@
 
   function getProcessingOutputs(methodId, inputKey, input) {
     if (!inputKey || !input || input.isCookedFood || hasTag(input, 'cooked food')) return null;
+    const ancestors = [inputKey, input.cookingProcessSourceKey, ...(Array.isArray(input.ingredientKeys) ? input.ingredientKeys : [])]; // Protect direct callers against pre-fix oils from cooked pies.
+    if (ancestors.some(key => typeof key === 'string' && (/^food_/i.test(key) || processingDeps?.ITEM_DEFS?.[key]?.isCookedFood))) return null;
     const steps = Array.isArray(input.cookingProcessSteps) ? input.cookingProcessSteps : []; // Guards direct callers even when ItemProcessing's host adapter is absent.
     if (steps.some(step => step?.method === methodId) || input.cookingProcessLastMethod === methodId) return null;
     if (methodId === 'squeezing' && isCookingOil(inputKey, input)) return null; // Legacy Fish-tagged oils must not be rendered again.

@@ -24,11 +24,19 @@
     // Slower manual work has diminishing per-step returns, but chained steps multiply (no artificial overall cap).
     return 1 + Math.log2(1 + baseProcessHours(methodId)) / 2;
   }
-  // A cooked meal is a terminal good; every manual and automated station uses this same gate.
+  // Cooking is terminal, including saved oil or margarine produced from a cooked dish before this guard existed.
+  function hasCookedOrigin(inputKey, input = deps?.ITEM_DEFS?.[inputKey]) {
+    if (!input) return false;
+    const tags = Array.isArray(input.tags) ? input.tags : []; // Older saved cooked items may have only their tag, rather than isCookedFood.
+    if (input.isCookedFood || tags.some(tag => String(tag).toLowerCase() === 'cooked food')) return true;
+    const ancestors = [inputKey, input.cookingProcessSourceKey, ...(Array.isArray(input.ingredientKeys) ? input.ingredientKeys : [])]; // Used to recover cooked ancestry even when older saves lost the explicit source field.
+    return ancestors.some(key => typeof key === 'string' && (/^food_/i.test(key) || deps?.ITEM_DEFS?.[key]?.isCookedFood));
+  }
+
+  // Every manual and automated station uses this shared eligibility gate.
   function canProcess(methodId, inputKey, input = deps?.ITEM_DEFS?.[inputKey]) {
-    if (!input || !methodId || input.isCookedFood) return false;
-    const tags = Array.isArray(input.tags) ? input.tags : []; // Used to recognize legacy cooked meals and processed fats without saved provenance.
-    if (tags.some(tag => String(tag).toLowerCase() === 'cooked food')) return false;
+    if (!input || !methodId || hasCookedOrigin(inputKey, input)) return false;
+    const tags = Array.isArray(input.tags) ? input.tags : []; // Used to recognize legacy processed fats without saved provenance.
     const steps = Array.isArray(input.cookingProcessSteps) ? input.cookingProcessSteps : []; // Persisted history blocks repeating any previous method, not just the most recent one.
     if (steps.some(step => step?.method === methodId) || input.cookingProcessLastMethod === methodId) return false;
     if (methodId === 'squeezing' && (
@@ -519,7 +527,7 @@
     processedValue,
     getProcessingOutput,
     getProcessingOutputs,
-    canProcess,
+    canProcess, hasCookedOrigin,
     isWheelEligible,
     ensureProcessedItemDef,
     serializeProcessedDefinitions,
