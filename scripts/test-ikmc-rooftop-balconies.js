@@ -140,6 +140,8 @@ assert.match(game,/roofHatch|roofAccess|roofY/);
 assert.match(movement,/enterRoofSupport/, 'roof access must adopt supported footing only after a confirmed interior exit');
 assert.match(support,/isBalconyAt|roofHatchAt/);
 assert.match(editor,/toolBalconyHatch|balconyAccessFurniture|balconyHeightMode/);
+assert.match(editor,/state\.piece\.balconies\.push\(\{[^\n]*railHeight:\.46\}/,
+  'House Piece Editor must author future balcony fences at the same jumpable height');
 assert.match(game,/sourcePiece\?\.balconies/, 'town generation must tolerate unloaded building pieces');
 assert.match(game,/transition\?\.roofAccess === true/, 'roof interactions preserve their descend labels');
 assert.match(support,/extensionType === 'balcony'\) return NaN/, 'missing roof geometry cannot become an invisible support');
