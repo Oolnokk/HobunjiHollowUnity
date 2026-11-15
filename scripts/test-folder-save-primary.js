@@ -294,7 +294,7 @@ assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics i
 
 // A canonical file can be identical to the browser cache while the already-running farm
 // still contains default objects. Explicit Load Folder must rehydrate that runtime.
-async function verifySettingsLoadRebuild(started, changed, ok = true) {
+async function verifySettingsLoadRebuild(started, changed, ok = true, mode = 'load', action = 'folder-already-current') {
   const callbacks = new Map(); // Registered button listeners are invoked like Settings clicks.
   const storage = new Map(); // One-shot folder-load handoff is asserted without real browser storage.
   const events = []; // Ordered reload and exit-guard actions prove stale state is never saved over the folder.
@@ -307,13 +307,16 @@ async function verifySettingsLoadRebuild(started, changed, ok = true) {
     previousElementSibling: null, parentElement: null,
     querySelector() { return null; },
   }; // Minimal Settings row allows the real primary UI to attach its existing handler.
-  const status = { state: 'ready', supported: true, folderName: 'farm-backup', autoSyncArmed: false }; // A valid connected folder already imported into browser JSON.
+  const status = { state: 'ready', supported: true, folderName: 'farm-backup', autoSyncArmed: true, lastError: '' }; // A valid connected folder already imported into browser JSON.
   const localSave = {
     isSupported: () => true,
     getStatus: () => status,
     onChange() {},
     syncNow: async () => status,
-    loadFromFolder: async () => ({ ok, changed, message: ok ? 'Browser save already matches folder.' : 'Import failed.' }),
+    loadFromFolder: async () => ({ ok, changed, action, message: ok ? 'Browser save already matches folder.' : 'Import failed.' }),
+    chooseFolder: async () => status,
+    changeFolder: async () => status,
+    reconnect: async () => status,
   }; // No writes are permitted: this is a folder-to-browser reload, not Save to Folder.
   const window = {
     LocalSaveFolder: localSave,
@@ -323,13 +326,14 @@ async function verifySettingsLoadRebuild(started, changed, ok = true) {
       suppressExitFlush(reason) { events.push('guard:' + reason); },
     },
   }; // Real runtime start flag is the missing condition in the previous implementation.
+  const buttonId = mode === 'load' ? 'localSaveFolderLoadBtn' : mode === 'choose' ? 'localSaveFolderChooseBtn' : mode === 'change' ? 'localSaveFolderChangeBtn' : 'localSaveFolderReconnectBtn'; // All Settings source-switch actions use the same restore/reload helper.
   const document = {
     body: null,
     addEventListener() {},
     querySelector() { return null; },
     getElementById(id) {
       if (id === 'localSaveFolderRow') return row;
-      if (id === 'localSaveFolderLoadBtn') return button;
+      if (id === buttonId) return button;
       return null;
     },
   }; // DOM only includes the elements accessed by the Settings Load handler.
@@ -353,15 +357,16 @@ async function verifySettingsLoadRebuild(started, changed, ok = true) {
   window.FolderSavePrimary.refreshUi(); // Installs the actual Load Folder click path.
   assert(callbacks.has('click'), 'Settings Load Folder handler installs in the test runtime');
   await callbacks.get('click')({ currentTarget: button });
-  const mustReload = ok && (started || changed);
+  const mustReload = ok && (started || changed) && action !== 'empty-folder-connected-awaiting-first-save' && action !== 'initialized-empty-folder';
   assert(events.includes('reload') === mustReload, `folder import started=${started}, changed=${changed}, ok=${ok}: rebuilds live runtime iff necessary`);
-  assert(events.includes('guard:settings-folder-load') === mustReload, 'reload protects the restored browser cache from exit-time stale-world writes');
+  const expectedGuard = 'guard:settings-folder-' + mode; // Every folder action suppresses old-runtime exit writes before navigating.
+  assert(events.includes(expectedGuard) === mustReload, 'reload protects the restored browser cache from exit-time stale-world writes');
   if (mustReload) assert(storage.get('hobunjiFolderPrimarySkipOnce') === 'folder-loaded-in-settings', 'intentional reload carries its one-shot folder-import handoff');
 }
 
 function verifySavedProcessingRestoresAfterStaleProduction() {
   const farmEditorSource = read('docs/js/farm-editor.js'); // Test the real extracted loader, not an imitation of its restoration sequence.
-  const objectMap = new Map([['4,5', { type: 'farm_production', id: 'legacy' }]]); // Early/legacy specialty footprint wrongly occupies the saved squeezer tile.
+  const objectMap = new Map([['4,5', { type: 'farm_production', id: 'legacy' }]]); // A previous-world specialty footprint that the barn-reset boundary already owns.
   const processingObjects = new Set(); // Runtime processor registry should contain the restored squeeze station after loading.
   const houses = [{ id: 'house_starter', pieceKey: 'starter', stage: 'built' }]; // Live starter house skips unrelated migration paths.
   const layout = {
@@ -411,12 +416,21 @@ function verifySavedProcessingRestoresAfterStaleProduction() {
     reconcileInteriorFurniture() { return []; },
     debugLog() {},
   }); // Only the actual restore dependencies used by the minimal layout are mocked.
+  const farmBuildingsSource = read('docs/js/farm-buildings.js'); // Real world reset authority already clears specialty footprints on world switches.
+  assert(farmBuildingsSource.includes('window.FarmProduction?.clear?.()'), 'existing FarmBuildings.clearAll owns specialty footprint teardown');
+  farmWindow.FarmProduction.clear(); // Models game.js calling FarmBuildings.clearAll before the world-specific layout restore.
   farmWindow.FarmEditor.applyFarmLayoutObjects(layout);
-  assert(clearCalls === 1, 'restore releases stale pre-player specialty footprints before checking squeezer occupancy');
+  assert(clearCalls === 1, 'farm layout restoration does not redundantly clear already-reset specialty buildings');
   assert(processingObjects.size === 1, 'saved squeezer restores even when old specialty production previously blocked its tile');
   const debug = farmWindow.FarmEditor.inspectFarmRestore();
   assert(debug.expected.processing === 1 && debug.live.processing === 1, 'mobile diagnostics counts agree after successful processor restore');
   assert(debug.missing.processing.length === 0, 'mobile diagnostics reports no missing processor after hydration');
+  houses[0].col = 10; houses[0].row = 11; // Live starter remains at the default, despite a save placing it elsewhere.
+  layout.housePieces = [{ id: 'house_starter', pieceKey: 'starter', col: 20, row: 15 }]; // Saved house ID exists but its actual location differs.
+  layout.tiles = [{ c: 6, r: 7, type: 'tilled' }]; // Saved terrain override has not been applied to the live grid.
+  const mismatch = farmWindow.FarmEditor.inspectFarmRestore(); // Read-only mobile diagnostics must reveal both errors, not just equal counts.
+  assert(mismatch.misplaced.houses.length === 1, 'saved house at the wrong live coordinates is identified as misplaced');
+  assert(mismatch.expected.tiles === 1 && mismatch.live.tiles === 0 && mismatch.missing.tiles.length === 1, 'missing terrain overrides are also visible in Save Diagnostics');
 }
 
 verifySavedProcessingRestoresAfterStaleProduction();
@@ -424,8 +438,13 @@ verifySavedProcessingRestoresAfterStaleProduction();
 Promise.resolve()
   .then(() => verifySettingsLoadRebuild(true, false))
   .then(() => verifySettingsLoadRebuild(true, true))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'change'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'reconnect'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'choose'))
   .then(() => verifySettingsLoadRebuild(false, false))
   .then(() => verifySettingsLoadRebuild(true, false, false))
+  .then(() => verifySettingsLoadRebuild(true, false, false, 'reconnect'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'change', 'empty-folder-connected-awaiting-first-save'))
   .then(() => {
     assert(debugUi.includes('FarmEditor?.inspectFarmRestore'), 'mobile Save Diagnostics exposes actual spawned farm furniture/building counts');
     console.log('\nFolder-save primary regression checks passed.');
