@@ -102,18 +102,24 @@ const ctx={
 assert.equal(session.withLightClip(ctx,{x:34,y:1,z:14},(x,y,z)=>({x:x*2,y:z+y}),()=>{
   fills++;lightAlphas.push(ctx.globalAlpha);
 }),true);
-assert.equal(clips,3,'valid room hull has one solid interior and two disjoint feather bands');
-assert.deepEqual(clipRules,['nonzero','evenodd','evenodd'],'outer feather rings must exclude the already-painted inner area');
-assert.deepEqual(lightAlphas,[.8,.8*.65,.8*.22],'lights fade inward without leaking outside the room silhouette');
+assert.equal(clips,4,'the test silhouette has one solid interior and three disjoint feather bands');
+assert.deepEqual(clipRules,['nonzero','evenodd','evenodd','evenodd'],'feather bands must exclude every already-painted inner contour');
+assert.equal(lightAlphas[0],.8,'the room interior preserves full light strength');
+for(let i=1;i<lightAlphas.length;i++){
+  assert(lightAlphas[i]<lightAlphas[i-1],'light strength must fall monotonically toward the wall');
+  assert(lightAlphas[i]>0,'all feather bands stay faintly illuminated until the room boundary');
+}
+assert(lightAlphas.at(-1)<.08,'the outermost band has under 10% of incoming opacity, avoiding a sharp black border');
 assert.equal(ctx.globalAlpha,.8,'drawing the clip restores incoming overlay alpha');
-assert.equal(fills,3);
+assert.equal(fills,4);
 let projections=0;
 session.prepareLightClip((x,y,z)=>{projections++;return {x:x*2,y:z+y};});
 assert.equal(projections,8,'active-room clip is projected once per unified lighting pass');
 session.withLightClip(ctx,{x:34,y:1,z:14},()=>{throw Error('cached light clip must not reproject per light');},()=>{fills++;});
-assert.equal(fills,6,'subsequent lights reuse the same cached feathered boundaries');
+assert.equal(fills,8,'subsequent lights reuse the same cached feathered boundaries');
 assert.equal(projections,8,'second light reuses the already-projected clip');
 assert.equal(session.snapshot().lightClip.feathered,true,'mobile diagnostics report the active feathered room clip');
+assert.equal(session.snapshot().lightClip.bands,3,'mobile diagnostics expose the number of cached feather bands');
 session.prepareLightClip(()=>({x:4,y:4})); // Camera-edge degeneracy must not draw outside the valid room.
 const clipsBeforeFallback=clips;
 let fallbackDraws=0;
