@@ -40,6 +40,7 @@ const w = {
   CharacterNicknames: { forRelationship: () => 'Nimy' },
   CalendarSystem: {
     getHour: () => clock.hour, currentWeekdayName: () => clock.weekday,
+    getAbsoluteGameHour: () => clock.day * 24 + clock.hour + (clock.hour < 6 ? 24 : 0), // Mirror the live 06:00-based monotonic day across civil midnight.
     timeDebugSnapshot: () => ({ rawDay: clock.day })
   },
   CookingSystem: { foodBuffEntries: () => active.food ? [{ sourceLabel: 'Food' }] : [] },
@@ -119,6 +120,16 @@ assert.equal(romance._test.scheduleOverride({ id: 'aliri_ginju' })?.activity, 's
 romance.endSpouseOuting();
 clock.hour = 9; clock.weekday = 'Hronu';
 assert.equal(social.outingAvailable('communion'), false, 'ordinary days do not offer communion');
+
+setCommon(); married('aliri_ginju'); clock.hour = 23; clock.weekday = 'Anan';
+assert.equal(romance.startSpouseOuting('prayer', social.destinationFor('prayer')), true, 'late-night temple invitation can begin before civil midnight');
+clock.hour = 0.5; clock.weekday = 'Hronu';
+assert.equal(romance.activeSpouseOuting()?.kind, 'prayer', 'four-hour outing persists across the midnight clock wrap');
+clock.hour = 2.99;
+assert.equal(romance.activeSpouseOuting()?.kind, 'prayer', 'four-hour outing has not yet expired');
+clock.hour = 3.01;
+assert.equal(romance.activeSpouseOuting(), null, 'four-hour outing expires four real game hours after 23:00');
+romance.endSpouseOuting();
 
 setCommon(); married('nashka_khibu'); clock.hour = 17;
 active.festival = { id: 'gorkunash', name: 'Gorkunash' };
