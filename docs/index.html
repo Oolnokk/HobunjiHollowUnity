@@ -102,13 +102,12 @@
   <script src="js/adventuring-tools.js?v=20261115hfc1de39"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
-       game.js. Must load before game.js, which calls
+       game.js. The feature manifest owns its ordered scripts and cache versions.
+       Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261102tablechild1"></script>
-  <script src="js/farm-plot-editor.js?v=20261109family1"></script> <!-- Shared family plot records and workers. -->
-  <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm"></script> <!-- Ordered farm editor, plot and farmwork UI modules; their cache versions live in farm.js. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="world-surface"></script> <!-- Terrain geometry, grass/crop rendering and active-area accessors extracted from game.js -->
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites

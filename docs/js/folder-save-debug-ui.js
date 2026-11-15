@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: folder saves capture the live inventory and farm directly before writing disk; a failed browser backup cannot block Manual Save, campfire saves, autosync, Settings Save, or Quit. Explicit saves queue in order and share the cross-tab write lock; browser mirror/bookkeeping failures are secondary warnings. Existing protections: wilderness treasure meshes are excluded from save JSON; unreadable character/world files block folder import; missing-house guards also protect direct capture'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Load Folder rebuilds an active farm even when the folder JSON already matches the browser cache. Save Diagnostics compares stored and spawned furniture/building counts, including missing objects. Existing protections: wilderness treasure meshes are excluded from save JSON; unreadable character/world files block folder import; missing-house guards also protect direct capture'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -23,6 +23,7 @@
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
       provenance: safeSnapshot(() => window.__hobunjiFolderSaveProvenanceDebug?.snapshot?.()),
       runtimeFlush: safeSnapshot(() => window.__hobunjiRuntimeSaveDebug?.snapshot?.()),
+      farmRestore: safeSnapshot(() => window.FarmEditor?.inspectFarmRestore?.()), // Read-only per-world counts show JSON imported versus meshes actually spawned.
       browserQuota: safeSnapshot(() => window.HobunjiStorageQuota?.debugSnapshot?.()),
       quitGuard: safeSnapshot(() => window.__hobunjiFolderSaveQuitDebug?.snapshot?.()),
       creatorHandoff: creatorPatch?.status ? { ...creatorPatch.status } : null,
@@ -34,8 +35,47 @@
     };
   }
 
-  function showDiagnostics() {
-    const snapshot = diagnosticsSnapshot(); // Current mobile-readable snapshot rendered as selectable-ish alert text for easy screenshots/transcription.
+  async function inspectCanonicalFarmOnDisk(worldId) {
+    const folder = window.LocalSaveFolder; // Existing read-only folder snapshot authority; no filesystem writes or import side effects.
+    const status = folder?.getStatus?.() || {}; // Connected folder diagnostics can be viewed before selecting a player.
+    if (!worldId || status.state !== 'ready' || typeof folder?.readPrimarySnapshot !== 'function') {
+      return { available: false, reason: !worldId ? 'Select a world first.' : 'Primary Save Folder is not ready.' };
+    }
+    try {
+      const disk = await folder.readPrimarySnapshot(); // Fresh read of canonical farm-layout filenames (ignores numbered backup copies).
+      const layout = disk?.snapshot?.farmLayouts?.[worldId] || null; // The selected world's disk layout, not the possibly stale browser mirror.
+      const counts = layout ? {
+        tiles: Array.isArray(layout.tiles) ? layout.tiles.length : 0,
+        processing: Array.isArray(layout.furniture) ? layout.furniture.length : 0,
+        decor: Array.isArray(layout.decor) ? layout.decor.filter(entry => entry && !entry.derivedLinkedWindow).length : 0,
+        barns: Array.isArray(layout.buildings) ? layout.buildings.length : 0,
+        houses: Array.isArray(layout.housePieces) ? layout.housePieces.length : 0,
+        production: Array.isArray(layout.productionBuildings) ? layout.productionBuildings.length : 0,
+      } : null; // Read-only category counts let mobile users identify whether their restored squeezers exist on disk.
+      const savedBrowser = (() => {
+        try {
+          const key = window.FarmEditor?.farmLayoutKey?.(); // Existing per-world browser key, matched to the loaded profile.
+          return key ? JSON.parse(localStorage.getItem(key) || 'null') : null;
+        } catch (_) { return null; }
+      })(); // Browser mirror may be missing or quota-staged; never modify it during diagnosis.
+      return {
+        available: true,
+        worldId,
+        canonicalPresent: !!layout,
+        version: layout?.version ?? null,
+        counts,
+        matchesBrowserMirror: !!layout && !!savedBrowser && JSON.stringify(layout) === JSON.stringify(savedBrowser),
+        ignoredNumberedCopies: status.ignoredFarmLayoutBackupFiles || [], // Existing loader tracks numbered backups but refuses to treat them as canonical files.
+        savedAt: disk?.savedAt || null,
+      };
+    } catch (error) {
+      return { available: false, worldId, error: String(error?.message || error) };
+    }
+  }
+
+  async function showDiagnostics() {
+    const snapshot = diagnosticsSnapshot(); // Current runtime/browser comparison remains useful even if folder permission has expired.
+    snapshot.diskFarm = await inspectCanonicalFarmOnDisk(snapshot.farmRestore?.worldId); // Independent canonical disk read resolves browser-cache-versus-folder disagreements.
     alert('SAVE DIAGNOSTICS\n\n' + JSON.stringify(snapshot, null, 2));
   }
 
@@ -94,6 +134,7 @@
   window.__hobunjiFolderSaveDiagnostics = {
     snapshot: diagnosticsSnapshot,
     show: showDiagnostics,
+    inspectCanonicalFarmOnDisk, // Read-only canonical disk scan for mobile debugging; never replaces the browser or runtime save.
     changeSummary: CHANGE_SUMMARY,
   };
 })();

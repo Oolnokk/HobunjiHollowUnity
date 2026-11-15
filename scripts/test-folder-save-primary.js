@@ -292,4 +292,205 @@ assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without 
 assert(debugUi.includes('wilderness treasure meshes are excluded from save JSON') && debugUi.includes('unreadable character/world files block folder import'), 'Settings includes the current audited save-corruption protection summary');
 assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
-console.log('\nFolder-save primary regression checks passed.');
+// A canonical file can be identical to the browser cache while the already-running farm
+// still contains default objects. Explicit Load Folder must rehydrate that runtime.
+async function verifySettingsLoadRebuild(started, changed, ok = true, mode = 'load', action = 'folder-already-current') {
+  const callbacks = new Map(); // Registered button listeners are invoked like Settings clicks.
+  const storage = new Map(); // One-shot folder-load handoff is asserted without real browser storage.
+  const events = []; // Ordered reload and exit-guard actions prove stale state is never saved over the folder.
+  const button = {
+    dataset: {}, style: {}, textContent: 'Load Folder', disabled: false,
+    addEventListener(type, fn) { callbacks.set(type, fn); },
+  }; // Only the real Settings Load button is needed for this isolated regression.
+  const row = {
+    classList: { contains() { return false; }, add() {} },
+    previousElementSibling: null, parentElement: null,
+    querySelector() { return null; },
+  }; // Minimal Settings row allows the real primary UI to attach its existing handler.
+  const status = { state: 'ready', supported: true, folderName: 'farm-backup', autoSyncArmed: true, lastError: '' }; // A valid connected folder already imported into browser JSON.
+  const localSave = {
+    isSupported: () => true,
+    getStatus: () => status,
+    onChange() {},
+    syncNow: async () => status,
+    loadFromFolder: async () => ({ ok, changed, action, message: ok ? 'Browser save already matches folder.' : 'Import failed.' }),
+    chooseFolder: async () => status,
+    changeFolder: async () => status,
+    reconnect: async () => status,
+  }; // No writes are permitted: this is a folder-to-browser reload, not Save to Folder.
+  const window = {
+    LocalSaveFolder: localSave,
+    __hobunjiGameStarted: started,
+    addEventListener() {},
+    HobunjiSessionPersistenceStartupGuard: {
+      suppressExitFlush(reason) { events.push('guard:' + reason); },
+    },
+  }; // Real runtime start flag is the missing condition in the previous implementation.
+  const buttonId = mode === 'load' ? 'localSaveFolderLoadBtn' : mode === 'choose' ? 'localSaveFolderChooseBtn' : mode === 'change' ? 'localSaveFolderChangeBtn' : 'localSaveFolderReconnectBtn'; // All Settings source-switch actions use the same restore/reload helper.
+  const document = {
+    body: null,
+    addEventListener() {},
+    querySelector() { return null; },
+    getElementById(id) {
+      if (id === 'localSaveFolderRow') return row;
+      if (id === buttonId) return button;
+      return null;
+    },
+  }; // DOM only includes the elements accessed by the Settings Load handler.
+  const context = {
+    window, document,
+    sessionStorage: {
+      setItem(key, value) { storage.set(key, String(value)); },
+      getItem(key) { return storage.get(key) || null; },
+      removeItem(key) { storage.delete(key); },
+    },
+    localStorage: { getItem() { return null; } },
+    navigator: {},
+    MutationObserver: class { observe() {} },
+    requestAnimationFrame(fn) { fn(); },
+    confirm: () => true,
+    alert: message => events.push('alert:' + message),
+    location: { reload() { events.push('reload'); } },
+    console,
+  }; // Executes the actual production module without a browser/console dependency.
+  vm.runInNewContext(primary, context, { filename: 'folder-save-primary.js' });
+  window.FolderSavePrimary.refreshUi(); // Installs the actual Load Folder click path.
+  assert(callbacks.has('click'), 'Settings Load Folder handler installs in the test runtime');
+  await callbacks.get('click')({ currentTarget: button });
+  const mustReload = ok && (started || changed) && action !== 'empty-folder-connected-awaiting-first-save' && action !== 'initialized-empty-folder';
+  assert(events.includes('reload') === mustReload, `folder import started=${started}, changed=${changed}, ok=${ok}: rebuilds live runtime iff necessary`);
+  const expectedGuard = 'guard:settings-folder-' + mode; // Every folder action suppresses old-runtime exit writes before navigating.
+  assert(events.includes(expectedGuard) === mustReload, 'reload protects the restored browser cache from exit-time stale-world writes');
+  if (mustReload) assert(storage.get('hobunjiFolderPrimarySkipOnce') === 'folder-loaded-in-settings', 'intentional reload carries its one-shot folder-import handoff');
+}
+
+function verifySavedProcessingRestoresAfterStaleProduction() {
+  const farmEditorSource = read('docs/js/farm-editor.js'); // Test the real extracted loader, not an imitation of its restoration sequence.
+  const objectMap = new Map([['4,5', { type: 'farm_production', id: 'legacy' }]]); // A previous-world specialty footprint that the barn-reset boundary already owns.
+  const processingObjects = new Set(); // Runtime processor registry should contain the restored squeeze station after loading.
+  const houses = [{ id: 'house_starter', pieceKey: 'starter', stage: 'built' }]; // Live starter house skips unrelated migration paths.
+  const layout = {
+    version: 3, tiles: [], objects: {},
+    furniture: [{ key: 'squeezer', col: 4, row: 5 }], decor: [],
+    housePieces: [], buildings: [],
+  }; // Minimal per-world layout reproducing the obstructed processor restore.
+  let clearCalls = 0; // Proves stale production footprints were actually cleared, not just ignored by the occupancy test.
+  const browserStore = { getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? JSON.stringify(layout) : null; } }; // Canonical browser mirror for inspection after hydration.
+  const farmWindow = {
+    __hobunjiPlayerProfile: { worldId: 'world_p6bt8ho6' },
+    __hobunjiGameStarted: true,
+    addEventListener() {},
+    FarmProduction: {
+      clear() { clearCalls++; objectMap.delete('4,5'); },
+      serialize() { return []; },
+    },
+    HousePieces: { loadFixtureInventory() {} },
+    DewVats: { rebuildMeshesFromGrid() {} },
+    FarmhouseRoomPlanner: { restore() {} },
+  }; // Existing modular authorities injected into the production FarmEditor.
+  const ctx = {
+    window: farmWindow, localStorage: browserStore, console,
+    document: { getElementById() { return null; }, querySelector() { return null; } },
+  }; // The extracted farm editor only binds listeners at init; no graphics or browser access is required.
+  vm.runInNewContext(farmEditorSource, ctx, { filename: 'farm-editor.js' });
+  farmWindow.FarmEditor.init({
+    threeContainer: { addEventListener() {} },
+    getPlayerData: () => farmWindow.__hobunjiPlayerProfile,
+    PROCESSING_FURNITURE_DEFS: { squeezer: {} },
+    DECORATIVE_FURNITURE_DEFS: {},
+    getShippingBoxObject() { return null; },
+    getSupplyBoxObject() { return null; },
+    getHousePieces: () => houses,
+    getFarmBuildings: () => [],
+    getBarnTiers: () => ({}),
+    getHousePieceCatalog: () => ({}),
+    getCurrentArea: () => 'farm',
+    getGrid: () => [],
+    canPlaceFurnitureAt(col, row) { return !objectMap.has(col + ',' + row); },
+    makeProcessingFurniture(col, row, key) { return { col, row, furnitureKey: key }; },
+    worldObjects: objectMap,
+    processingFurnitureObjects: processingObjects,
+    interiorFurnitureObjects: [],
+    rebuildInteriorGeometry() {},
+    transformFurnitureWithHousePiece() {},
+    reconcileInteriorFurniture() { return []; },
+    debugLog() {},
+  }); // Only the actual restore dependencies used by the minimal layout are mocked.
+  const farmBuildingsSource = read('docs/js/farm-buildings.js'); // Real world reset authority already clears specialty footprints on world switches.
+  assert(farmBuildingsSource.includes('window.FarmProduction?.clear?.()'), 'existing FarmBuildings.clearAll owns specialty footprint teardown');
+  farmWindow.FarmProduction.clear(); // Models game.js calling FarmBuildings.clearAll before the world-specific layout restore.
+  farmWindow.FarmEditor.applyFarmLayoutObjects(layout);
+  assert(clearCalls === 1, 'farm layout restoration does not redundantly clear already-reset specialty buildings');
+  assert(processingObjects.size === 1, 'saved squeezer restores even when old specialty production previously blocked its tile');
+  const debug = farmWindow.FarmEditor.inspectFarmRestore();
+  assert(debug.expected.processing === 1 && debug.live.processing === 1, 'mobile diagnostics counts agree after successful processor restore');
+  assert(debug.missing.processing.length === 0, 'mobile diagnostics reports no missing processor after hydration');
+  houses[0].col = 10; houses[0].row = 11; // Live starter remains at the default, despite a save placing it elsewhere.
+  layout.housePieces = [{ id: 'house_starter', pieceKey: 'starter', col: 20, row: 15 }]; // Saved house ID exists but its actual location differs.
+  layout.tiles = [{ c: 6, r: 7, type: 'tilled' }]; // Saved terrain override has not been applied to the live grid.
+  const mismatch = farmWindow.FarmEditor.inspectFarmRestore(); // Read-only mobile diagnostics must reveal both errors, not just equal counts.
+  assert(mismatch.misplaced.houses.length === 1, 'saved house at the wrong live coordinates is identified as misplaced');
+  assert(mismatch.expected.tiles === 1 && mismatch.live.tiles === 0 && mismatch.missing.tiles.length === 1, 'missing terrain overrides are also visible in Save Diagnostics');
+}
+
+verifySavedProcessingRestoresAfterStaleProduction();
+
+async function verifyCanonicalFarmDiskDiagnostics() {
+  const worldId = 'world_p6bt8ho6'; // Real-world-style world ID selects exactly one canonical layout in the portable folder.
+  const key = 'hobunji_farm_layout_v3:' + worldId; // Existing browser mirror key used by the farm editor and folder snapshot.
+  const browserLayout = { version: 3, furniture: [{ key: 'squeezer', col: 25, row: 3 }] }; // Stale browser JSON holds only one processor.
+  const diskLayout = { version: 3, furniture: Array.from({ length: 7 }, (_, col) => ({ key: 'squeezer', col, row: 3 })) }; // Restored canonical file contains the full set.
+  const alerts = []; // Mobile-visible Save Diagnostics output is captured without a browser console.
+  let writes = 0; // Any write during inspection is an unsafe mutation of a user's recovered folder.
+  let currentDiskLayout = diskLayout; // Switches from a complete canonical file to only numbered backups in the second assertion.
+  const status = { state: 'ready', ignoredFarmLayoutBackupFiles: [worldId + '(9).json'] }; // The existing reader recognizes version copies but never imports them.
+  const window = {
+    FarmEditor: {
+      farmLayoutKey: () => key,
+      inspectFarmRestore: () => ({ worldId, expected: { processing: 1 }, live: { processing: 0 } }),
+    },
+    LocalSaveFolder: {
+      getStatus: () => status,
+      async readPrimarySnapshot() {
+        return { savedAt: 100, snapshot: { farmLayouts: currentDiskLayout ? { [worldId]: currentDiskLayout } : {} } };
+      },
+      async syncNow() { writes++; throw new Error('Disk inspection may not save.'); },
+    },
+  }; // Only real API methods used by the shipped diagnostics are implemented.
+  const ctx = {
+    window, localStorage: { getItem: selected => selected === key ? JSON.stringify(browserLayout) : null },
+    document: { body: null, visibilityState: 'visible', addEventListener() {}, getElementById() { return null; } },
+    location: { href: 'https://example.invalid/game' },
+    MutationObserver: class { observe() {} }, requestAnimationFrame() {},
+    alert: value => alerts.push(value), console,
+  }; // The real mobile diagnostic IIFE executes unchanged in an isolated browser-like context.
+  vm.runInNewContext(debugUi, ctx, { filename: 'folder-save-debug-ui.js' });
+  const inspector = window.__hobunjiFolderSaveDiagnostics.inspectCanonicalFarmOnDisk;
+  const full = await inspector(worldId);
+  assert(full.canonicalPresent && full.counts.processing === 7, 'mobile diagnostics reads the complete canonical folder layout, not its numbered backups');
+  assert(full.matchesBrowserMirror === false, 'mobile diagnostics reveals folder/browser mismatch even when the runtime uses a stale cache');
+  assert(full.ignoredNumberedCopies.includes(worldId + '(9).json'), 'mobile diagnostics lists ignored numbered backups explicitly');
+  await window.__hobunjiFolderSaveDiagnostics.show();
+  assert(alerts[0].includes('"diskFarm"') && alerts[0].includes('"processing": 7'), 'Save Diagnostics alert includes actual canonical disk counts for mobile screenshots');
+  currentDiskLayout = null;
+  const absent = await inspector(worldId);
+  assert(absent.canonicalPresent === false && absent.counts === null, 'missing canonical farm is not misrepresented as a valid empty layout');
+  assert(writes === 0, 'folder inspection never overwrites the recovered layout or browser mirror');
+}
+
+Promise.resolve()
+  .then(() => verifySettingsLoadRebuild(true, false))
+  .then(() => verifySettingsLoadRebuild(true, true))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'change'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'reconnect'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'choose'))
+  .then(() => verifySettingsLoadRebuild(false, false))
+  .then(() => verifySettingsLoadRebuild(true, false, false))
+  .then(() => verifySettingsLoadRebuild(true, false, false, 'reconnect'))
+  .then(() => verifySettingsLoadRebuild(true, false, true, 'change', 'empty-folder-connected-awaiting-first-save'))
+  .then(verifyCanonicalFarmDiskDiagnostics)
+  .then(() => {
+    assert(debugUi.includes('FarmEditor?.inspectFarmRestore'), 'mobile Save Diagnostics exposes actual spawned farm furniture/building counts');
+    console.log('\nFolder-save primary regression checks passed.');
+  })
+  .catch(error => { console.error(error); process.exitCode = 1; });

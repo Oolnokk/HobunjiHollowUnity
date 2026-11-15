@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, '..'); // Actual shipped scripts are the te
 const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Original parser positions.
 const loader = fs.readFileSync(path.join(root, 'docs/js/bootstrap/classic-script-group-loader.js'), 'utf8');
 const baseline = { // Relative order anchors from the first migration, not an exhaustive registry.
+  farm: ['farm-editor', 'farm-plot-editor', 'farmwork-ui'], // The farm bootstrap owns these modules in their original parser order.
   qol: ['toast-notifications', 'location-arrival', 'qol-hotkeys', 'inventory-search'],
   guild: ['delvers-guild-story', 'town-magic-checkpoint', 'delvers-vault-signal'],
   render: ['npc-view-frustum-cull', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks', 'scissor-depth-snapshot', 'actor-render-occlusion'],
@@ -53,6 +54,13 @@ const urls = [...expanded.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m =
 for (const anchor of Object.values(baseline).flat()) {
   assert.equal(urls.filter(url => url.startsWith('js/' + anchor + '.js?v=')).length, 1, anchor + ' loads exactly once');
 }
+assert(!/<script src="js\/(?:farm-editor|farm-plot-editor|farmwork-ui)\.js\?v=/.test(html), 'farm module versions must be owned by their feature manifest');
+const farmEditorPos = expanded.indexOf('src="js/farm-editor.js?v='); // Farm editor must register before the plot and controls.
+const farmPlotPos = expanded.indexOf('src="js/farm-plot-editor.js?v='); // The shared plot data owner follows the editor.
+const farmworkPos = expanded.indexOf('src="js/farmwork-ui.js?v='); // Normal Farmwork UI follows its plot dependency.
+const worldSurfacePos = expanded.indexOf('src="js/terrain-geometry.js?v='); // The immediate next group is the terrain bootstrap.
+const gameplayPos = expanded.indexOf('src="game.js?v='); // Game boot depends on the loaded farm services.
+assert(farmEditorPos >= 0 && farmEditorPos < farmPlotPos && farmPlotPos < farmworkPos && farmworkPos < worldSurfacePos && worldSurfacePos < gameplayPos, 'farm group preserves original parser order before terrain and game.js');
 assert(expanded.indexOf('js/toast-notifications.js') < expanded.indexOf('js/delvers-guild-story.js'));
 assert(expanded.indexOf('js/delvers-vault-signal.js') < expanded.indexOf('js/bed-lie-pose.js'));
 assert(expanded.indexOf('js/actor-render-occlusion.js') < expanded.indexOf('src="game.js?v='));
