@@ -359,6 +359,67 @@ async function verifySettingsLoadRebuild(started, changed, ok = true) {
   if (mustReload) assert(storage.get('hobunjiFolderPrimarySkipOnce') === 'folder-loaded-in-settings', 'intentional reload carries its one-shot folder-import handoff');
 }
 
+function verifySavedProcessingRestoresAfterStaleProduction() {
+  const farmEditorSource = read('docs/js/farm-editor.js'); // Test the real extracted loader, not an imitation of its restoration sequence.
+  const objectMap = new Map([['4,5', { type: 'farm_production', id: 'legacy' }]]); // Early/legacy specialty footprint wrongly occupies the saved squeezer tile.
+  const processingObjects = new Set(); // Runtime processor registry should contain the restored squeeze station after loading.
+  const houses = [{ id: 'house_starter', pieceKey: 'starter', stage: 'built' }]; // Live starter house skips unrelated migration paths.
+  const layout = {
+    version: 3, tiles: [], objects: {},
+    furniture: [{ key: 'squeezer', col: 4, row: 5 }], decor: [],
+    housePieces: [], buildings: [],
+  }; // Minimal per-world layout reproducing the obstructed processor restore.
+  let clearCalls = 0; // Proves stale production footprints were actually cleared, not just ignored by the occupancy test.
+  const browserStore = { getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? JSON.stringify(layout) : null; } }; // Canonical browser mirror for inspection after hydration.
+  const farmWindow = {
+    __hobunjiPlayerProfile: { worldId: 'world_p6bt8ho6' },
+    __hobunjiGameStarted: true,
+    addEventListener() {},
+    FarmProduction: {
+      clear() { clearCalls++; objectMap.delete('4,5'); },
+      serialize() { return []; },
+    },
+    HousePieces: { loadFixtureInventory() {} },
+    DewVats: { rebuildMeshesFromGrid() {} },
+    FarmhouseRoomPlanner: { restore() {} },
+  }; // Existing modular authorities injected into the production FarmEditor.
+  const ctx = {
+    window: farmWindow, localStorage: browserStore, console,
+    document: { getElementById() { return null; }, querySelector() { return null; } },
+  }; // The extracted farm editor only binds listeners at init; no graphics or browser access is required.
+  vm.runInNewContext(farmEditorSource, ctx, { filename: 'farm-editor.js' });
+  farmWindow.FarmEditor.init({
+    threeContainer: { addEventListener() {} },
+    getPlayerData: () => farmWindow.__hobunjiPlayerProfile,
+    PROCESSING_FURNITURE_DEFS: { squeezer: {} },
+    DECORATIVE_FURNITURE_DEFS: {},
+    getShippingBoxObject() { return null; },
+    getSupplyBoxObject() { return null; },
+    getHousePieces: () => houses,
+    getFarmBuildings: () => [],
+    getBarnTiers: () => ({}),
+    getHousePieceCatalog: () => ({}),
+    getCurrentArea: () => 'farm',
+    getGrid: () => [],
+    canPlaceFurnitureAt(col, row) { return !objectMap.has(col + ',' + row); },
+    makeProcessingFurniture(col, row, key) { return { col, row, furnitureKey: key }; },
+    worldObjects: objectMap,
+    processingFurnitureObjects: processingObjects,
+    interiorFurnitureObjects: [],
+    rebuildInteriorGeometry() {},
+    reconcileInteriorFurniture() { return []; },
+    debugLog() {},
+  }); // Only the actual restore dependencies used by the minimal layout are mocked.
+  farmWindow.FarmEditor.applyFarmLayoutObjects(layout);
+  assert(clearCalls === 1, 'restore releases stale pre-player specialty footprints before checking squeezer occupancy');
+  assert(processingObjects.size === 1, 'saved squeezer restores even when old specialty production previously blocked its tile');
+  const debug = farmWindow.FarmEditor.inspectFarmRestore();
+  assert(debug.expected.processing === 1 && debug.live.processing === 1, 'mobile diagnostics counts agree after successful processor restore');
+  assert(debug.missing.processing.length === 0, 'mobile diagnostics reports no missing processor after hydration');
+}
+
+verifySavedProcessingRestoresAfterStaleProduction();
+
 Promise.resolve()
   .then(() => verifySettingsLoadRebuild(true, false))
   .then(() => verifySettingsLoadRebuild(true, true))
