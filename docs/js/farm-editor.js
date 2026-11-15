@@ -419,6 +419,10 @@
       deps.rebuildInteriorGeometry?.(); // initWorldObjects may have rendered the prior world's walls during a scene switch.
       return;
     }
+    // An earlier pre-player layout may have populated specialty production footprints.
+    // Release those old worldObjects before checking saved squeezer/barrel placement;
+    // game.js calls FarmProduction.load for this world's records immediately afterward.
+    window.FarmProduction?.clear?.();
     _restoringLayoutObjects = true;
     let complete = false; // Only a fully restored house can safely migrate formerly occupied wall tiles.
     try {
