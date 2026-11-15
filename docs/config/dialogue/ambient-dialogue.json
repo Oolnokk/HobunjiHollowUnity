@@ -608,6 +608,21 @@
         "small": 1.15,
         "medium": 1,
         "large": 0.87
+      },
+      "exertion": {
+        "intervalMs": 0,
+        "volume": 0.7,
+        "earshotTiles": 12,
+        "tailMs": 700,
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "allowedClips": [
+          "sfx_spookyghost-ribbit.ogg"
+        ]
       }
     },
     "gar-wolf": {
@@ -807,6 +822,22 @@
         "small": 1.33,
         "medium": 1.15,
         "large": 1
+      },
+      "exertion": {
+        "intervalMs": 0,
+        "volume": 0.7,
+        "earshotTiles": 12,
+        "tailMs": 700,
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "allowedClips": [
+          "sfx_grunt-rattle.ogg",
+          "sfx_chirp-rattle.ogg"
+        ]
       }
     },
     "puktuk": {
