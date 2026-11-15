@@ -286,7 +286,10 @@ async function check(){
   assert(ended,'companion finishes its hit-and-run attack');
   assert(rocks>0&&drops>start,'companion fetched and dropped a physical Boulder burden');
   assert.equal(w.PingdortFlocks.debugSnapshot().bouldersDropped,1);
-  assert.match(read('docs/js/creature-genetics.js'),/entry\?\.kind==='pingdort'&&sizeClass==='large'\?'companion'/);
+  for (const kind of ['pingdort','skeeri']) {
+    assert.equal(geneticsHost.CreatureGenetics.stableEntryRole({kind,genotype:{sizeClass:'large'}}),
+      'companion',`${kind} Large variants must remain companions, never mounts`);
+  } // Assert real Stable behavior instead of an obsolete source-text spelling.
   console.log('Skeeri/Pingdort encounters, inherited flight colors and Nelk light-coat genetics PASS');
 }
 check().catch(error=>{console.error(error);process.exitCode=1;});
