@@ -902,6 +902,16 @@
             .map(world => world?.id).filter(Boolean)); // Deleted worlds remain in the baseline until this write intentionally removes them.
           const disk = await readFolderFarmLayouts(guardWorldIds, { canonicalOnly: true });
           const diskFingerprint = farmLayoutFingerprint(disk.layouts);
+          const incomingWorldIds = new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)); // Worlds expected to survive this save.
+          const missingIncomingLayouts = Object.keys(disk.layouts).filter(id =>
+            incomingWorldIds.has(id) && !Object.prototype.hasOwnProperty.call(farmLayouts, id)); // Reject missing browser mirrors instead of advancing the manifest without the existing farm.
+          if (missingIncomingLayouts.length) {
+            _lastDataLossRisk = 'browser snapshot is missing the existing disk farm layout for ' + missingIncomingLayouts.join(', ');
+            _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Load from Folder or restore the missing layout before saving.';
+            _lastAction = automatic ? 'autosync-blocked-missing-layout' : 'save-blocked-missing-layout';
+            notify();
+            return getStatus();
+          }
           if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
             _lastDataLossRisk = disk.corruptFiles.length
               ? 'farm-layout files on disk are unreadable'
