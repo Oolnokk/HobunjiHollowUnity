@@ -448,12 +448,16 @@
       }
     }
     const raw = JSON.stringify(payload); // Only the single file currently being committed occupies a JSON string.
+    const actualDigest = contentFingerprint(raw); // The catalog must describe bytes committed, never an earlier mutable snapshot.
+    if (digest !== undefined && actualDigest !== digest) {
+      throw new Error('Save snapshot changed during the folder write. Retry with a stable snapshot.');
+    }
     const writable = await fileHandle.createWritable();
     await writable.write(raw);
     await writable.close();
     let stamp = null;
     try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
-    next.set(key, { digest: digest || contentFingerprint(raw), stamp });
+    next.set(key, { digest: actualDigest, stamp });
     work.written++;
   }
 
