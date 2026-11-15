@@ -14,10 +14,15 @@ const drenkirraOriginal = {
   enabled: true, pivot: { x: .4375, y: .5123456790123457 },
   weightMap: { sentinel: 'drenkirra-head' },
 };
+const nazgrakuOriginal = {
+  enabled: true, pivot: { x: .421875, y: .42592592592592593 },
+  weightMap: { sentinel: 'nazgraku-head' },
+}; // The canonical Nazgraku head map must survive shoulder-only updates.
 const renderer = {
   ANIMAL_HEAD_RIGS: {
     'dabinggi-hound': JSON.parse(JSON.stringify(dabinggiOriginal)),
     drenkirra: JSON.parse(JSON.stringify(drenkirraOriginal)),
+    nazgraku: JSON.parse(JSON.stringify(nazgrakuOriginal)),
   },
   HEAD_RIG_VARIANT_ALIASES: {},
 };
@@ -39,9 +44,9 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-15-uploads3-independent-shoulders');
+assert.equal(api.version, '2026-11-15-uploads4-eight-independent-shoulders');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra']; // Six independently editable shoulder registrations.
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'uumkaoii', 'nazgraku']; // Eight independently editable shoulder registrations.
 const puktuk = api.get('puktuk');
 const expectedShoulder = puktuk.shoulderRest;
 assert.deepEqual(plain(puktuk.pivot), { x: .484375, y: .5 }, 'uploaded shoulder must not overwrite Puktuk head paint');
@@ -73,16 +78,20 @@ assert.deepEqual(plain(api.get('dabinggi-hound').weightMap), dabinggiOriginal.we
 assert.deepEqual(plain(api.get('drenkirra').pivot), drenkirraOriginal.pivot, 'Drenkirra head pivot preserved');
 assert.deepEqual(plain(api.get('drenkirra').weightMap), drenkirraOriginal.weightMap, 'Drenkirra head paint preserved');
 assert.equal(api.get('nelk').weightMap.width, 128, 'Nelk retains its detailed painted head');
+assert.deepEqual(plain(api.get('nazgraku').pivot), nazgrakuOriginal.pivot, 'Nazgraku head pivot preserved');
+assert.deepEqual(plain(api.get('nazgraku').weightMap), nazgrakuOriginal.weightMap, 'Nazgraku head paint preserved');
+assert.deepEqual(plain(api.get('uumkaoii').pivot), { x: .3921486852536997, y: .4735364861361454 }, 'Uumkao\'ii head pivot preserved');
+assert.equal(api.get('uumkaoii').weightMap.width, 128, 'Uumkao\'ii keeps its painted head map');
 assert.equal(api.get('moot').weightMap.width, 2, 'Moot gets a body-only rig until neck paint is authored');
 assert.equal(api.get('gar-wolf').shoulderRest.weightMap, undefined, 'new Puktuk shoulder does not inherit old Gar-wolf shoulder paint');
 
 assert.equal(api.get('grehlr').shoulderRest.frameShiftX, .54, 'Grehlr unchanged');
 assert.equal(api.get('voorg-ass').shoulderRest.frameShiftX, .48, 'Voorg-ass unchanged');
-assert.equal(api.get('uumkaoii').shoulderRest.useSpline, false, 'Uumkao\'ii unchanged');
-assert.equal(api.get('uumkaoii').shoulderRest.frameShiftX, .54, 'Uumkao\'ii frame shift unchanged');
+assert.equal(api.get('uumkaoii').shoulderRest.useSpline, true, 'Uumkao\'ii now uses the uploaded shoulder pose');
+assert.deepEqual(plain(api.get('uumkaoii').shoulderRest), plain(expectedShoulder), 'Uumkao\'ii shoulder is a complete independent copy');
 
 const originalX = expectedShoulder.beforePoints[0].x;
 api.get('gar-wolf').shoulderRest.beforePoints[0].x = -.5;
 assert.equal(expectedShoulder.beforePoints[0].x, originalX, 'editing Gar-wolf cannot move Puktuk');
 assert.notEqual(api.get('dabinggi-hound').shoulderRest.beforePoints[0].x, -.5, 'editing Gar-wolf cannot move Dabinggi');
-console.log('animal-head-rig-authored: six independent copies, head-paint preservation, and species exclusions passed');
+console.log('animal-head-rig-authored: eight independent copies, retained head paint, and unchanged Voorg-Ass/Grehlr passed');
