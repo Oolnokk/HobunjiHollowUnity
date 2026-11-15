@@ -14,7 +14,10 @@ const selectiveEnd = compositor.indexOf('function isShellOutlinePass(', selectiv
 const selectiveReplay = compositor.slice(selectiveStart, selectiveEnd);
 assert.match(selectiveReplay, /for \(const group of groups\)[\s\S]*?const overlayStates = tintOverlay\s*\? prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef, portraitGearIds\)/, 'held tools retain the shared water-tint path with per-owner portrait masking');
 assert.match(selectiveReplay, /portraitMask\?\.portraits\.length && stampFrontPortraitStencil\(renderer, scene, camera, portraitMask\.portraits, portraitMask\.ownerIds, portraitOrder\)/, 'front art masks held weapons without restoring the retired owner-backplane pass');
-assert.match(compositor, /if \(!ground\.length && !topFaceGround\.length && !tintCovers\.length\) return renderBase/, 'interiors without replay requirements take the ordinary render path');
+assert.match(compositor, /const needsOwnerMask = lastBaseStencilBits >= 8 && held\.some\(isPortraitMaskedGear\)/,
+  'the owner front art masks held tools even in interiors without ground or water');
+assert.match(compositor, /!ground\.length && !topFaceGround\.length && !tintCovers\.length && !needsOwnerMask/,
+  'interiors with neither ground/tint nor owner-front stencil needs keep the ordinary render path');
 assert.doesNotMatch(editor, /HeadRelativeWeaponOcclusion|headOcclusion|weapon\.visible = false/, 'the attack editor cannot mask or temporarily hide head-anchored tools');
 const animationStart = editor.indexOf('function animate()'); // Inspect the actual editor preview loop rather than assuming no weapon animation call can appear between controls and render.
 const animationBody = editor.slice(animationStart, editor.indexOf('\nanimate();', animationStart));

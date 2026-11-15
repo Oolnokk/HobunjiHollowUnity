@@ -13,10 +13,15 @@ assert.match(game, /mesh\.position\.z \+= facingBack \? -0\.0015 : 0\.0015;/,
   'regression fixture confirms game creates the xray with the historical physical Z nudge');
 assert.match(game, /assembly\.add\(mesh\)/, 'xray overlay is added after the avatar build');
 assert.match(game, /const PLAYER_FRONT_PLANE_RENDER_ORDER = 2[\s\S]{0,240}const PLAYER_BACK_PLANE_RENDER_ORDER = 4[\s\S]{0,180}const SHOULDER_PET_PLANE_RENDER_ORDER = 6/, 'shoulder pets render above both portrait faces and their hat overlays');
-assert.match(game, /if \(!active \|\| !pet\) \{\s*_setLayerDepthWrite\(_playerAvatarFrontMaterial, true\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, true\);[\s\S]{0,700}_setLayerDepthWrite\(_playerAvatarFrontMaterial, false\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, false\);/, 'an attached shoulder pet disables depth writes on both front and back portrait materials and detaching restores them');
+const render = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
+assert.match(game, /HeldObjectRenderOrder\?\.setShoulderPetLayering\?\.\(/,
+  'game delegates shoulder-pet compositing to the shared renderer');
+assert.match(render, /setShoulderPartDepthWrite\(state\.frontMaterial, writesDepth\)/,
+  'shared compositor owns depth writing for the player portrait');
 assert.match(game, /const SHOULDER_PET_XRAY_ENABLED = false;/, 'shoulder-pet hat xray is retired; the authored front/behind pose owns occlusion (#821)');
 assert.match(game, /enabled = SHOULDER_PET_XRAY_ENABLED && !!enabled;/, 'setPlayerHatXray cannot re-enable the retired xray path');
-assert.match(game, /if \(mesh\) mesh\.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER/, 'released shoulder pets restore their own planes to the normal portrait stack');
+assert.match(render, /function restoreShoulderPet\(pet\)/,
+  'shared compositor restores detached pet sprite depth and order');
 
 assert.match(source, /player_avatar_\(front\|back\)_hat_xray_plane/, 'parity module recognizes both runtime xray meshes');
 assert.match(source, /mesh\.position\.z = source\.position\.z;/,

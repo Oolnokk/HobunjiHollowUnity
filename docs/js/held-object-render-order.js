@@ -412,8 +412,94 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'behind', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'behind', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'shoulderPet.presentation': 'authored' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
+
+  const SHOULDER_PET_RENDER_ORDERS = Object.freeze({ front: 2, back: 4, pet: 6, playerOverPet: 8 }); // Shared player/pet color-pass ordering, replacing independent gameplay overrides.
+  let shoulderPetPresentation = null; // Latest gameplay-owned pet, body meshes and facing; re-applied before the compositor draws.
+  let previouslyPresentedPet = null; // Detachment/replacement cleanup for the prior pet's depth and sprite order.
+  let lastShoulderPetDecision = { active: false, mode: 'authored' }; // Mobile diagnostic snapshot of the exact applied policy.
+  let lastFrontPortraitMaskReason = 'not-rendered'; // Explains 0/0 when no owner stencil was attempted.
+
+  function setShoulderPartDepthWrite(material, depthWrite) {
+    forEachMaterial(material, entry => {
+      if (entry.depthWrite === depthWrite) return;
+      entry.depthWrite = depthWrite;
+      entry.needsUpdate = true;
+    });
+  }
+
+  function restoreShoulderPet(pet) {
+    if (!pet) return;
+    const avatar = pet.avatarRef;
+    if (avatar?.group?.userData) delete avatar.group.userData.hobunjiShoulderPetLayering;
+    for (const mesh of [avatar?.frontPlane, avatar?.backPlane]) {
+      if (!mesh) continue;
+      setShoulderPartDepthWrite(mesh.material, true);
+      mesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.front;
+    }
+    window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar);
+  }
+
+  function setShoulderPetLayering(pet, frontMesh, backMesh, frontMaterial, backMaterial, viewerSeesFront) {
+    // Called by the gameplay attachment bridge; ONLY this compositor owns presentation/depth writes.
+    shoulderPetPresentation = { pet: pet || null, frontMesh, backMesh, frontMaterial, backMaterial,
+      viewerSeesFront: viewerSeesFront === true };
+    syncShoulderPetLayering();
+  }
+
+  function syncShoulderPetLayering() {
+    const state = shoulderPetPresentation;
+    if (!state) return;
+    const pet = state.pet;
+    if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
+    if (!pet) {
+      // Restore on detach, but avoid overriding normal NPC/companion depth arbitration every subsequent frame.
+      if (previouslyPresentedPet) {
+        setShoulderPartDepthWrite(state.frontMaterial, true);
+        setShoulderPartDepthWrite(state.backMaterial, true);
+        if (state.frontMesh) state.frontMesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.front;
+        if (state.backMesh && state.backMesh !== state.frontMesh) state.backMesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.back;
+      }
+      previouslyPresentedPet = null;
+      lastShoulderPetDecision = { active: false, mode: xrayRule('shoulderPet.presentation') };
+      return;
+    }
+    previouslyPresentedPet = pet;
+    const mode = xrayRule('shoulderPet.presentation');
+    const inward = pet.__hobunjiShoulderFacingInward === true;
+    const authoredPlayerOver = state.viewerSeesFront ? !inward : inward;
+    const playerDrawsOnTop = mode === 'player-over' ? true : mode === 'pet-over' ? false : authoredPlayerOver;
+    const writesDepth = mode === 'world-depth'; // Diagnostic only; normal pose stacking never cuts the paired sprites into one another.
+    setShoulderPartDepthWrite(state.frontMaterial, writesDepth);
+    setShoulderPartDepthWrite(state.backMaterial, writesDepth);
+    const playerOrder = playerDrawsOnTop ? SHOULDER_PET_RENDER_ORDERS.playerOverPet : SHOULDER_PET_RENDER_ORDERS.back;
+    if (state.frontMesh) state.frontMesh.renderOrder = playerOrder;
+    if (state.backMesh && state.backMesh !== state.frontMesh) state.backMesh.renderOrder = playerOrder;
+    const avatar = pet.avatarRef;
+    for (const mesh of [avatar?.frontPlane, avatar?.backPlane]) {
+      if (!mesh) continue;
+      setShoulderPartDepthWrite(mesh.material, writesDepth);
+      mesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.pet;
+    }
+    // The player front silhouette must still be eligible for the owner stencil, even when the pet disables regular depth writes.
+    if (state.frontMesh?.isMesh && isFrontPortraitMesh(state.frontMesh)) {
+      if (!hasLayer(state.frontMesh, FRONT_PORTRAIT_MASK_LAYER)) state.frontMesh.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
+      if (!frontPortraitRegistry.has(state.frontMesh)) frontPortraitRegistry.add(state.frontMesh);
+    }
+    window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar);
+    lastShoulderPetDecision = { active: true, mode, playerDrawsOnTop, playerDepthWrite: writesDepth,
+      petDepthWrite: writesDepth, inwardFrontPose: inward, viewerSeesPlayerFront: state.viewerSeesFront };
+    if (avatar?.group) {
+      avatar.group.userData = avatar.group.userData || {};
+      avatar.group.userData.hobunjiShoulderPetLayering = {
+        ...lastShoulderPetDecision, xrayEnabled: false,
+        depthMode: writesDepth ? 'legacy-world-depth' : 'whole-sprite-no-depth-write',
+        petRenderOrder: SHOULDER_PET_RENDER_ORDERS.pet, playerRenderOrder: playerOrder,
+        recentChange: 'Player and shoulder-pet sprite ordering is owned by HeldObjectRenderOrder; owner-front weapon stencil remains independent of pet depth writes.',
+      };
+    }
+  }
 
   const maskedHands = new Set(); // Procedural hands the front-plane rule masks in the current world frame.
   let lastHandsBehindFrontPlane = 0; // Diagnostics: hands hidden under their holder's front art this frame.
@@ -2734,6 +2820,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       lastFrontPortraitMaskCount = 0;
       lastFrontPortraitGearCandidates = 0;
       lastFrontPortraitMaskedGear = 0;
+      lastFrontPortraitMaskReason = 'no-visible-participants';
       lastBaseElevationGroups = 0;
       lastHeldFullscreenReason = 'no-visible-participants';
       return;
@@ -2842,12 +2929,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         : null;
       lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
       lastFrontPortraitMaskedGear = 0;
+      lastFrontPortraitMaskReason = !lastFrontPortraitGearCandidates ? 'no-eligible-gear'
+        : lastBaseStencilBits < 8 ? 'stencil-unavailable'
+          : !portraitMask?.portraits.length ? 'no-owner-front-portrait' : 'mask-prepared';
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
       if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
         portraitGearIds = portraitMask.gearIds;
         lastFrontPortraitMaskedGear = portraitGearIds.size; // A rank change is effective only if an owner stencil was stamped.
+        lastFrontPortraitMaskReason = portraitGearIds.size === lastFrontPortraitGearCandidates ? 'stamped' : 'partially-stamped';
       }
 
       for (const group of groups) {
@@ -3288,6 +3379,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
     replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
 
+    if (isBaseWorldPass(scene, camera)) syncShoulderPetLayering(); // Reassert paired-sprite policy after other actor depth writers and before this renderer's portrait/stencil passes.
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
@@ -3348,6 +3440,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
     lastFrontPortraitGearCandidates = 0;
     lastFrontPortraitMaskedGear = 0;
+    lastFrontPortraitMaskReason = 'no-overlay';
     const replayOthers = []; // Non-participant hands/feet/held items: drawn in the base pass, hidden from the replays.
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const ground = collectVisible(groundRegistry, scene);
@@ -3365,7 +3458,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     lastWaterPortraits = 0;
     lastDryGearWaterSkips = 0;
     if (!held.length && !feet.length && !canTintPortraits) return renderBase();
-    if (!ground.length && !topFaceGround.length && !tintCovers.length) return renderBase();
+    // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
+    // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
+    const needsOwnerMask = lastBaseStencilBits >= 8 && held.some(isPortraitMaskedGear)
+      && collectVisible(frontPortraitRegistry, scene).length > 0;
+    if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
+      lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+      return renderBase();
+    }
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -3476,6 +3576,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitMasks: lastFrontPortraitMaskCount,
       frontPortraitGearCandidates: lastFrontPortraitGearCandidates,
       frontPortraitMaskedGear: lastFrontPortraitMaskedGear,
+      frontPortraitMaskReason: lastFrontPortraitMaskReason,
+      shoulderPetCompositor: { ...lastShoulderPetDecision },
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
@@ -3541,6 +3643,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     markHeldPlane,
     markWaterOccludedMesh,
     markGroundMesh,
+    SHOULDER_PET_RENDER_ORDERS,
+    setShoulderPetLayering,
     scanScene,
     snapshot,
     debugLogSnapshot,

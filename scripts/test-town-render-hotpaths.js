@@ -420,8 +420,10 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !tintCovers.length\)/,
-  'feet or held weapons with water/slush trigger the overlay even without grass/path ground');
+assert.match(heldRender, /!ground\.length && !topFaceGround\.length && !tintCovers\.length && !needsOwnerMask/,
+  'held/foot x-ray, water tint and an owner-front portrait mask each trigger the required selective overlay');
+assert.match(heldRender, /const needsOwnerMask = lastBaseStencilBits >= 8 && held\.some\(isPortraitMaskedGear\)/,
+  'the no-ground case still masks weapons behind their holder front portrait');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,

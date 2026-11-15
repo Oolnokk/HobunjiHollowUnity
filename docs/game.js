@@ -8764,11 +8764,6 @@
       let _shoulderPetLayerDecision = null; // Used by Pixel Probe diagnostics to report the exact logical-facing layer decision applied this frame.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
-      function _setLayerDepthWrite(material, depthWrite) {
-        if (!material || material.depthWrite === depthWrite) return;
-        material.depthWrite = depthWrite;
-        material.needsUpdate = true;
-      }
       function _cameraSeesPlayerFrontFace() {
         if (!playerMesh || !camera) {
           _shoulderPetLayerFrontVisible = true;
@@ -8808,63 +8803,18 @@
         };
         return _shoulderPetLayerFrontVisible;
       }
-      function _restorePlayerBodyRenderOrder() {
-        if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
-        if (_playerAvatarBackMesh && _playerAvatarBackMesh !== _playerAvatarFrontMesh) {
-          _playerAvatarBackMesh.renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
-        }
-      }
-      function _setPlayerBodyRenderOrder(renderOrder) {
-        if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = renderOrder;
-        if (_playerAvatarBackMesh && _playerAvatarBackMesh !== _playerAvatarFrontMesh) {
-          _playerAvatarBackMesh.renderOrder = renderOrder;
-        }
-      }
       function updatePetLayering(active, pet) {
+        // Gameplay only chooses the active pet and supplies the current facing; all depth/order
+        // decisions and the weapon front-mask contract belong to HeldObjectRenderOrder.
         const nextPet = active ? pet : null;
-        if (_petLayeringPet && _petLayeringPet !== nextPet) {
-          if (_petLayeringPet.avatarRef?.group?.userData) delete _petLayeringPet.avatarRef.group.userData.hobunjiShoulderPetLayering;
-          for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, true);
-          for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
-          window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(_petLayeringPet.avatarRef); // Restore split overlays to the detached pet's ordinary depth state immediately.
-        }
-
-        _petLayeringActive = active;
+        _petLayeringActive = !!nextPet;
         _petLayeringPet = nextPet;
         setPlayerHatXray(false);
-
-        if (!active || !pet) {
-          _setLayerDepthWrite(_playerAvatarFrontMaterial, true);
-          _setLayerDepthWrite(_playerAvatarBackMaterial, true);
-          _restorePlayerBodyRenderOrder();
-          return;
-        }
-
-        const inwardFrontPose = pet.__hobunjiShoulderFacingInward === true; // 180° local-Y state from _shoulderPetSurfaceTransform.
-        const viewerSeesPlayerFront = _cameraSeesPlayerFrontFace(); // The same local shoulder side projects to the opposite screen-depth side when the player is viewed from behind.
-        const playerDrawsOnTop = viewerSeesPlayerFront ? !inwardFrontPose : inwardFrontPose; // Front view keeps the proven mapping; back view reverses it exactly.
-        _setLayerDepthWrite(_playerAvatarFrontMaterial, false);
-        _setLayerDepthWrite(_playerAvatarBackMaterial, false);
-        _setPlayerBodyRenderOrder(
-          playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
+        window.HeldObjectRenderOrder?.setShoulderPetLayering?.(
+          nextPet, _playerAvatarFrontMesh, _playerAvatarBackMesh,
+          _playerAvatarFrontMaterial, _playerAvatarBackMaterial,
+          nextPet ? _cameraSeesPlayerFrontFace() : false,
         );
-
-        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, false);
-        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
-        window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(pet.avatarRef); // Propagate the no-depth-write state to coplanar split/masked overlays before render-list draw.
-
-        if (pet.avatarRef?.group?.userData) {
-          pet.avatarRef.group.userData.hobunjiShoulderPetLayering = {
-            xrayEnabled: false,
-            depthMode: 'whole-sprite-no-depth-write',
-            inwardFrontPose,
-            viewerSeesPlayerFront,
-            playerDrawsOnTop,
-            petRenderOrder: SHOULDER_PET_PLANE_RENDER_ORDER,
-            playerRenderOrder: playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
-            recentChange: 'Shoulder pet and player keep depth testing against the world but do not depth-write into each other; pose chooses the local side and front/back camera view reverses its screen-depth order.',
-          };
-        }
       }
 
       function updateCompanions(dt) {

@@ -92,6 +92,42 @@ actor. Farther portrait planes temporarily defer depth writes so they cannot
 cut across the closer actor. Opaque world geometry still depth-tests against
 each portrait. The weapon stencil uses the same actor ordering.
 
+## Shoulder pets share the owner-front compositor
+
+`docs/game.js` only identifies the live shoulder pet and samples the player's
+logical front/back facing. `HeldObjectRenderOrder.setShoulderPetLayering()`
+owns the actual material `depthWrite` and `renderOrder` decisions for both
+player portrait faces and both pet faces. The policy is reasserted immediately
+before every real base-world render, after other actor depth arbitration.
+Replacing or detaching a pet restores the old pet's material/order and the
+player's ordinary front/rear portrait order.
+
+The shipped `shoulderPet.presentation = authored` mode preserves the existing
+front/back camera inversion and inward/outward authored pose. The X-ray
+Dev Companion **Diagnostic presets** dropdown offers three reversible probes:
+**Shoulder pet: player over pet**, **pet over player**, and **legacy depth
+writes**. These are variants of ONE central compositor rule, not additional
+standalone settings. The latter is a diagnosis only: turning ordinary depth
+writing back on can cause the two overlapping sprites to clip into each other.
+Restoring the pre-test configuration restores the original shoulder policy.
+
+Crucially, the pet's no-depth-write mode must not disable the **player
+front-art owner stencil**. The player front mesh is registered for the stencil
+even when its ordinary color material does not write depth, and the selective
+held overlay runs the stencil even when the current map has no classified
+ground, floors or water. The mask still matches only the weapon's actual owner
+and does not hide it behind unrelated animals. A failing/missing stencil
+requires a targeted compositor fix, never simply elevating the weapon's
+draw order.
+
+The mobile X-ray panel and Pixel Probe report the active pet mode,
+`frontPortraitGearCandidates`, `frontPortraitMaskedGear` and
+`frontPortraitMaskReason` so a `0/0` result can be distinguished from
+a real failed owner assignment. Regression guards:
+`scripts/test-shoulder-pet-layering.js`,
+`scripts/test-xray-hierarchy.js`, and
+`scripts/test-hat-xray-facing.js`.
+
 ## Elevation-aware ground x-ray
 
 Ground is no longer removed wholesale from the held/foot depth rebuild.
