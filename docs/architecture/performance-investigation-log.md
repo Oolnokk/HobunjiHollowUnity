@@ -1,5 +1,56 @@
 # Performance investigation log
 
+## 15 Nov 2026 (follow-up): afflictions, knockback, hit/knock-down/low-Footing animation, lunge ring trail (headless)
+
+Headless arena, player as the subject, per-tick frame wall time via a `Combat.update` hook, control = 14-24 neutral
+ticks in the same session (drifts +-10 ms): neutral 187-194 ms. Software WebGL and software-composited DOM, so
+absolute numbers are inflated; the ranking and the attributions are what carry over.
+
+**Cheap or free (inside noise, +-10%):**
+- *Knockback.* `damagePlayer` with no / default (260) / heavy (900) knockback: 195 / 200 / 198 ms vs 187 control. The
+  hit-reaction code is `ImpactRagdollPlayback.update` at ~0.1 ms per tick.
+- *Getting knocked over.* A real knock-down through `damagePlayer(..., {footingDamageMultiplier: 30})` (the
+  `applyHitStagger` -> `enterPronePose` path; `spendFooting` alone only drains Footing and never goes prone):
+  prone for all 69 recorded ticks in 4 of 4 cycles, **193 ms prone vs 194 neutral**, ragdoll JS 0.08 ms per tick.
+- *Walking with lowered Footing* (holding W; `drunk-locomotion.js` sway/gait): 160 ms full Footing, 164 at 25%,
+  173 at 5% (+8% at the extreme, near noise); standing at 25%: 179 vs 187.
+- *`ResourceSystem.tick` with many afflictions:* 11-18 us per entity whether it has 0 or all 18 afflictions
+  (24 defined, 18 non-immutable/non-enhanced), `applyDamage` 12.5 -> 21 us with 18 active. 30 NPCs would be well
+  under 1 ms. The `hobunji-resource-change` event itself costs 13 us per dispatch.
+- *Lunge ground-ring trail* (`spawnLungeTrailStamp`, game.js): 6-8 stamps per lunge. One stamp is a `Group` + a new
+  24-segment `RingGeometry` + a new additive `MeshBasicMaterial` + `bindGroundProjection` hooks: **32 us to build, 2 us
+  to dispose** (12 us build if the geometry were shared). About 0.25 ms per lunge. Frames with the trail (afflictions
+  picked) vs the same lunge with none (no trail by design): post/pre 1.08 vs 1.19, i.e. no measurable cost. Renderer
+  geometry count stays flat (disposed after 0.55 s). Not worth sharing the geometry.
+
+**The one real cost: afflictions that drain Health each tick, through the vitals HUD.** All 18 afflictions at once:
+**294 ms vs 187 (+57%)**. One at a time vs a 186 ms control: burningHealth +135, woundedHealth +102, kindlingHealth +89,
+entrancedHealth +81, poisonedHealth +61, bleedingHealth +57; every other affliction is under +25 (bruised, congealed,
+drunken, corroded, rent, wounded Stamina ... are free). What it is not: JS (tracked functions < 0.6 ms per tick, CPU
+profile of wounded vs control equal and ~90% native `(program)`), renderer work (draws 16-22 and triangles ~17k, render
+time 8-12 ms in every case), world popups (`WorldPopupText.showChange` suppressed: no change), the
+`hobunji-resource-change` listeners, SVG SMIL (pausing it: no change). What it is: the **vitals bar** (`#vitalsBar`,
+only 390x12 px). Hiding it removes the cost (wounded 303 -> 208, burning 302 -> 233); **disabling only its CSS
+animations** (`animation: none` on `#vitalsBar *`, `*::before`, `*::after`) takes wounded from +78 ms to +9 ms and
+burning from +153 to +47 over control, while disabling its transitions changes nothing. The animated pieces are in
+`style.css` (~lines 305-410): `.vb-effect-drip::before/::after` droplets (`vb-fluid-drop`, translating up to 10.5 dvh,
+z-index 40), `.vb-effect-fire::after` (`vb-flame-flutter`, repeating gradient with `inset: -.38dvh`),
+`.vb-effect-ember`, `.vb-effect-entranced` waves, `.vb-effect-mirror` sweep. 5-7 animations run at once while afflicted,
+against 1 in control. `player-vitals.js` itself compares before writing; its per-tick style writes (health fill width,
+segment left/width) are not the cost. Remaining burning cost with the bar hidden (+69 ms in that run) is something
+else (world Burning VFX / ground fire), not chased.
+
+**Caveat that matters:** this is software-composited Chromium; compositor-only animations (transform/opacity) are
+cheap on a GPU browser, so this is a pointer, not a proof. Before changing CSS, read a real-device `PerfProfiler`
+snapshot (and the browser's rendering/paint-flashing tools) with a burning/bleeding player. Cheap options if it holds:
+pause the vitals-bar effect animations when the effect is not on screen/paused, animate one shared layer instead of
+per-segment pseudo-elements, or give `#vitalsBar` `contain: layout paint style` so the animated layers are isolated.
+
+Harness traps from this run: `page.evaluate` closures do not carry local variables (pass them as arguments);
+`Combat.update` timing counts every frame (including the headless 200 ms ones), so compare within a run; `hold`-style
+refills (health reset every tick) make DoT afflictions look like they damage every tick, which is what a real DoT does
+anyway but inflates `hobunji-resource-change` traffic compared with a single hit.
+
 ## 15 Nov 2026 (follow-up): strike frames with weapon mastery effects and Mercy Spike equipped (headless; no cost found)
 
 Same arena dummy harness (passive bandit grunt, 15% health so Mercy Spike's below-30% bonus applies, dummy 0.75 tile
