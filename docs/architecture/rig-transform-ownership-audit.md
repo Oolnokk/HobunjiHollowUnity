@@ -91,8 +91,10 @@ animation, and authored IK retain their existing independent owners.
 
 ## Recommended next migration/testing pass
 
-Prioritize NPC dance late-hand cancellation, Tzatzul talon release and grip
-handoff, and repeated prone/standing interrupted by a new capture.
+Continue auditing remaining overlap beyond the corrected dance-hand and
+Tzatzul talon handoffs: repeated prone/standing interrupted by capture,
+parent-pivot changes during impact/ragdoll playback, and authored procedural
+IK after rapid action cancellation.
 Then run deliberate alternating sequences: walking → sitting → drunk →
 yawning → dance → bird capture → knockdown → crawling → re-spawn, checking
 position/quaternion/scale at identical baseline points in the existing
