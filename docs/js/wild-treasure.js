@@ -59,6 +59,7 @@
   function _rollTreasureMetalKeys() {
     const count = 1 + Math.floor(deps.rnd() * 3); // 1-3 bars
     const eligibleMetalKeys = window.TownMine?.filterMetalKeysForTownValue?.(deps.VERDIGRIS_METAL_KEYS, window.TownMine.getTownValue()) || deps.VERDIGRIS_METAL_KEYS; // Used to gate chest metals by Town Value levels 0-9.
+    if (!Array.isArray(eligibleMetalKeys) || !eligibleMetalKeys.length) return []; // An empty edited metal catalog cannot create undefined item rewards.
     const keys = [];
     for (let i = 0; i < count; i++) {
       const idx = Math.min(eligibleMetalKeys.length - 1, Math.floor(Math.pow(deps.rnd(), 2.2) * eligibleMetalKeys.length));
@@ -108,9 +109,11 @@
     const config = TREASURE_TIERS[tier]; // Guaranteed bonus scales with the same tier that controls the lock.
     const [minGold, maxGold] = config.bonusGold; // Each additional gold roll uses an integer range per chest tier.
     bundle.gold += minGold + Math.floor(deps.rnd() * (maxGold - minGold + 1));
-    for (let i = 0; i < config.extraBars; i++) {
-      const metal = _rollTreasureMetalKeys()[0]; // Uses the original Town Value gate; no bypass into advanced metals.
-      if (metal) bundle.metalKeys.push(metal);
+    if (bundle.metalKeys.length) { // Respect Loot & Shop Editor's metalBars chance/conditions; tier bonuses cannot override a disabled metal roll.
+      for (let i = 0; i < config.extraBars; i++) {
+        const metal = _rollTreasureMetalKeys()[0]; // Uses the original Town Value gate; no bypass into advanced metals.
+        if (metal) bundle.metalKeys.push(metal);
+      }
     }
     if (deps.rnd() < config.trinket) {
       const options = BURIED_TRINKETS[tier].filter(id => window.TrinketSystem?.DEFINITIONS?.[id]); // Respect the actual loaded trinket catalog.
