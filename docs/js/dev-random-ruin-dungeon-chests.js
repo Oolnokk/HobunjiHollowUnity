@@ -131,15 +131,15 @@
   function pickLock(chest) {
     if (!chest || chest.opened) return false;
     const started = window.ChestLockpicking?.open?.({
-      id: chest.id, title: chest.tierName + ' Dungeon Chest', tier: chest.tier,
+      id: chest.id + ':ruin:' + String(chest.ruinSeed ?? 'local'), title: chest.tierName + ' Dungeon Chest', tier: chest.tier,
       valid: () => !chest.opened && inScene(chest.group), // Avoid granting loot after a generated chest is removed.
-      onSuccess: () => open(chest), // Reuse the existing reward, sound, animation and activity event path.
+      onSuccess: award => open(chest, award), // Reuse existing reward authority and pass through the earned clean-streak bonus.
     });
     if (!started && !window.ChestLockpicking?.isActive?.()) deps?.showToast?.('Lockpicking unavailable.', false);
     return !!started;
   }
 
-  function open(chest) {
+  function open(chest, lockAward = null) {
     if (!chest || chest.opened) return false;
     if(chest.ruinSeed!=null&&window.RuinSites?.isInSite?.()
       &&window.RuinSites?.markActiveRuinChestOpened?.(chest.id,Number(chest.ruinSeed))===false){
@@ -151,6 +151,17 @@
     if (chest.glow?.material) chest.glow.material.opacity = 1.25; // Light bursts out of the opening lid, then fades through the existing per-frame decay.
     window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
     const gained = chest.culture==='hachutu' ? (window.ArtifactCollection?.rollArtifacts?.(chest.tier,'hachutu') || {hachutuMoneyBones:1}) : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme }) || {});
+    const extraCount = Math.min(4, Math.max(0, Math.floor(Number(lockAward?.bonusDrops) || 0))); // At most four individually rolled bonus drops, never four complete boss rewards.
+    for (let bonusIndex = 0; bonusIndex < extraCount; bonusIndex++) {
+      const bonusPool = chest.culture === 'hachutu'
+        ? (window.ArtifactCollection?.rollArtifacts?.(1, 'hachutu') || {})
+        : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss:false, theme:chest.theme }) || {});
+      const options = Object.entries(bonusPool).filter(([, count]) => Number(count) > 0); // Select one actual item per bonus roll, not a whole additional chest.
+      const choice = options[Math.floor(Math.random() * options.length)];
+      const key = choice?.[0] || (chest.culture === 'hachutu' ? 'hachutuMoneyBones' : 'harlyaoCopperCoin');
+      const quantity = choice ? Math.max(1, Math.floor(Number(choice[1]) || 1)) : 1;
+      gained[key] = (Number(gained[key]) || 0) + quantity;
+    }
     // Old/local pool overrides and config load failures still award a guaranteed artifact batch.
     if (!Object.keys(gained).some(key => window.ArtifactCollection?.ARTIFACTS?.[key] && gained[key] > 0)) {
       Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier,chest.culture) || (chest.culture==='hachutu'?{hachutuMoneyBones:1}:{harlyaoCopperCoin:1}));
@@ -161,7 +172,7 @@
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;
     deps?.showToast?.(parts.length ? `${title}: ${parts.join(', ')}` : `${title}: artifact recovered.`, true);
-    window.__farmLog?.(`[random-ruin] opened ${chest.id} tier ${chest.tier}: ${JSON.stringify(gained)}`, 'world');
+    window.__farmLog?.(`[random-ruin] opened ${chest.id} tier ${chest.tier}, bonus drops ${extraCount}: ${JSON.stringify(gained)}`, 'world');
     return true;
   }
 
