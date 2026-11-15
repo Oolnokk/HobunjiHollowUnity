@@ -89,6 +89,34 @@ These two handoffs are specifically addressed, **not proof that all animation
 paths use the ledger**. The player render composer, quaternion-based impact
 animation, and authored IK retain their existing independent owners.
 
+## Cross-action interruption suite and quaternion ownership
+
+`scripts/test-pose-cross-action-interruptions.js` executes the production
+`RigTransformLayers`, drunken-gait wrapper, `PlayerCrawl`,
+`ImpactRagdollPlayback`, NPC dance presentation and Tzatzul visual
+release in the same controlled VM. It transitions through walking, seated
+movement, drunken thigh/foot/body offsets, named yawn head/chest offsets,
+dance hand cancellation without a render, crawl and a held knockdown, visual
+capture release, and repeated rig reconstruction. The existing full yawn,
+Tzatzul flight and visual-release regression suites remain separate tests
+run by `scripts/run-tests.js`; the cross-action suite does not duplicate
+their deep browser/AI setup.
+
+**Additional confirmed handoff:** the drunken foot and NPC torso cleanup
+previously multiplied inverse quaternions unconditionally. If combat,
+seating, a grab or IK had already assigned a new absolute orientation,
+that cleanup could rotate the new pose incorrectly. Each drunken handle
+now records its actual last-applied foot/body quaternions, and only undoes
+its twist while the orientation still matches. Otherwise the old delta is
+discarded, the new pose is preserved, and mobile
+`HobunjiDrunkWalk.getDebug().poseHandoffs` exposes foot/body takeover counts.
+Still-owned offsets continue to restore on cancellation/disposal.
+
+This is a reproducible *unit integration* harness with targeted Three.js
+doubles, not proof that every scene-render/reparenting interaction works
+in a browser. A separate live browser cross-action smoke remains desirable
+for ragdoll pivot parentage and attachment draw passes.
+
 ## Recommended next migration/testing pass
 
 Continue auditing remaining overlap beyond the corrected dance-hand and
