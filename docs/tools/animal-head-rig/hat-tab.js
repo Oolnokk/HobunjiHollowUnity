@@ -156,6 +156,7 @@
   buildRecord = function buildRecordWithHats() {
     const record = originalBuildRecord();
     if (view.authored) record.hatAttachment = attachmentFromControls();
+    else delete record.hatAttachment; // Reset fit removes previously authored species placement from loaded JSON.
     return record;
   };
   const originalPopulateAnimalSelect = populateAnimalSelect; // Mirror the one authoritative animal selector.
