@@ -26,7 +26,7 @@
   // throughout game.js.
   const scriptUrls = [
     "js/terrain-geometry.js?v=20261114waterBrick1",
-    "js/vegetation-crop-rendering.js?v=20261115h4a0f672",
+    "js/vegetation-crop-rendering.js?v=20261115mushtardCutout1",
     "js/grid-tile-accessors.js?v=20261114balcony2"
   ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
