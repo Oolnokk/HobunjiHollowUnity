@@ -174,6 +174,41 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     'native roof-shell bypass still rejects independent furniture collisions');
 }
 {
+  // The shipped rooftop uses a narrow rail: walking must stop, but a normal jump clears it and falls to ground.
+  const roofY = 1.75, railHeight = .46; // Mirrors the authored IKMC deck and lowered rail in a one-tile fixture.
+  const h = harness({ start: { x: 2.5, z: 3.5 },
+    heightBlocked: (x,z,feetY) => x>=2 && x<3 && z>=3 && z<4 && feetY<roofY-.2 }); // Shell remains solid beneath the deck.
+  h.setArea('town');
+  const overRoof = (x,z) => x>=2 && x<3 && z>=3 && z<4; // The elevated support disappears beyond the rail.
+  const railOverlaps = (x,z,half) => Math.abs(x-3)<=half+.045 && z+half>=3 && z-half<=4; // Narrow boundary face, not the entire deck tile.
+  h.window.HobunjiWalkableElevation = {
+    worldSurfaceTopAt(x,z,base,area,maxY=Infinity) {
+      return area==='town' && overRoof(x,z) && roofY<=maxY+.01 ? roofY : base;
+    },
+    isBalconyAt(x,z,y,area) { return area==='town' && overRoof(x,z) && Math.abs(y-roofY)<=.25; },
+    isAboveBalconyAt(x,z,y,area) { return area==='town' && overRoof(x,z) && y>=roofY-.2; },
+    railBlocksBox(x,z,half,feetY=null,actorHeight=0) {
+      return railOverlaps(x,z,half) && (feetY==null ||
+        (feetY+actorHeight>=roofY-.05 && feetY<=roofY+railHeight+.05));
+    },
+  };
+  h.window.GridTileAccessors.isTownBuildingCollisionTile = (col,row,area,feetY) =>
+    area==='town' && col===2 && row===3 &&
+      !h.window.HobunjiWalkableElevation.isAboveBalconyAt(col+.5,row+.5,feetY,area);
+  h.window.AreaFootprintBlockers.blocksBox = (area,x,z,half,feetY) =>
+    area==='town' && h.window.HobunjiWalkableElevation.railBlocksBox(x,z,half,feetY);
+  assert(h.window.PlayerJump.enterRoofSupport({topY:roofY,col:2,row:3,balconyId:'ikmc_rooftop'}));
+  h.input.x=1;
+  h.advance(.4);
+  assert(h.player.x/TILE<2.79,'supported walking cannot ghost through the mid-height fence beams');
+  assert(h.window.PlayerJump.debug.blockedMoves>0,'a blocked balcony walk produces mobile collision diagnostics');
+  assert(h.window.PlayerJump.start(),'the same railing remains traversable with an ordinary jump');
+  h.advance(1.8);
+  assert(h.player.x/TILE>3.2,'jumping carries the actor past the rooftop perimeter');
+  assert.equal(h.player._freeJump,null,'descending past the rooftop must land on exterior ground');
+  assert.equal(h.window.PlayerJump.debug.lastEvent,'landed on ground','roof-to-ground drop retains normal ground landing');
+}
+{
   const h = harness();
   assert.equal(h.window.PlayerJump.start(), true, 'empty ground must be jumpable');
   const { launchSpeed, gravity } = h.window.PlayerJump.config; // Validate the configured half-height apex independent of frame stepping.
