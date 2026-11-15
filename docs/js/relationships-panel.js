@@ -592,7 +592,7 @@
       .sort((a, b) => Number(b.relation === 'Spouse') - Number(a.relation === 'Spouse') || b.favor - a.favor)
       .forEach(({ npcId, rec, profile, tier, favor, next, relation }) => {
         ensureChathead(npcId, profile);
-        const name = rec?.name || window.RomanceSystem?.helpers?.npcName?.(npcId) || npcId.replace(/_/g, ' '); // Absent traveling spouses and in-laws still have readable entries.
+        const name = rec?.name || npcId.split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' '); // Missing remote walker records still render readable family names.
         const favorDisplay = Math.round(favor * 10) / 10;
         const progressNote = next != null ? `${Math.round((next - favor) * 10) / 10} favor to Tier ${tier + 1}` : 'max tier';
         // Same renderer the dialogue box's heart readout uses (see
