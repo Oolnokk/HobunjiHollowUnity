@@ -27,6 +27,10 @@
     const {room,seed,theme,parent,THREE,getPlayerPosition,getPlayerY,addControl,removeControl}=options;
     const spec=planForRoom(room,seed,theme);
     if(!spec||!parent||!THREE?.Group)return null;
+    if(options.allowBrood===false){ // Large ruins use a bounded number of GPU-heavy individual flying rigs.
+      spec.babies=0;
+      if(!spec.kind)return null; // A nest-only roll is empty once the brood budget is exhausted.
+    }
     const chests=root.DevRandomRuinDungeonChests; // Canonical chest locks, world-save open flags and loot ownership.
     const DS=options.DynamicSurfaces||root.DynamicSurfaces; // Ordinary room collision, not a new pathing layer.
     const bus=root.DevRandomRuinSimplePuzzles; // Canonical swept projectile intersections and target hum.
