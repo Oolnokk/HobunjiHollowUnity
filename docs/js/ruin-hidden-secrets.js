@@ -38,7 +38,9 @@
     const edgeX=left?room.x:room.x+room.w,edgeZ=top?room.z:room.z+room.d;
     const at=(dx,dz)=>({x:edgeX+sx*dx,z:edgeZ+sz*dz});
     const center=at(1.55,1.55),mouth=at(3.3,1.95);
-    const mat=new THREE.MeshBasicMaterial({color:0x625d57}); // Low-contrast ruin stone keeps the secret visually understated.
+    const mat=root.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#625d57'
+    })||new THREE.MeshBasicMaterial({color:0x625d57}); // Reuse the ruin's authored carved stone rather than flat gray geometry.
     const dark=new THREE.MeshBasicMaterial({color:0x383733});
     const accent=new THREE.MeshBasicMaterial({color:0x8d806f});
     const ice=new THREE.MeshBasicMaterial({color:0x96cad8,transparent:true,opacity:.56,depthWrite:false});
@@ -191,8 +193,11 @@
       const bx=left?room.x+room.w-1.2:room.x+1.2;
       const bz=top?room.z+room.d-1.2:room.z+1.2;
       const shelf=box('secret-skeeri-stone-shelf-'+rec.id,2.15,.3,1.05,bx,floor+2.05,bz);
-      const nest=box('secret-skeeri-nest-'+rec.id,1.45,.14,.85,bx,floor+2.27,bz,accent);
-      rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest};
+      const nest=root.ProceduralFurniture?.buildFurnitureGroup?.('nest',0x756044)
+        ||box('secret-skeeri-nest-'+rec.id,1.45,.14,.85,bx,floor+2.27,bz,accent);
+      if(!nest.parent){nest.name='secret-skeeri-nest-'+rec.id;nest.position.set(bx,floor+2.19,bz);
+        nest.scale.setScalar(.67);nest.userData.devRuinFootprintIgnore=true;group.add(nest);}
+      rec.nest={x:bx,z:bz,babies:spec.babies,loaded:0,shelf,nest,anim:[],elapsed:0}; // Dormant hatchling motion updates only in the active room.
       for(let i=0;i<spec.babies;i++){
         const identity=String(seed)+':'+room.id+':baby:'+i;
         const palette=root.SkeeriRuins?.paletteFor?.(spec.theme,identity);
@@ -203,6 +208,8 @@
           rig.root.position.set(bx+(i-(spec.babies-1)/2)*.52,floor+2.32,bz);
           rig.root.rotation.y=(hash(identity+':yaw')%5-2)*.2;
           group.add(rig.root);art.push(rig);rec.nest.loaded++;
+          rec.nest.anim.push({root:rig.root,baseY:rig.root.position.y,baseYaw:rig.root.rotation.y,
+            phase:(hash(identity+':phase')%628)/100}); // Tiny independent breathing/ruffling, not adult combat flight.
         }).catch(error=>root.__farmLog?.('[ruin-secrets] Baby Skeeri rig: '+error.message,'warn'));
       }
       registerControl({kind:'ruinSkeeriNest',object:nest,promptRoot:nest,floorY:floor,
@@ -215,6 +222,13 @@
     rec.tick=dt=>{
       if(rec.disposed)return;
       const t=Math.min(.05,Math.max(0,Number(dt)||0));
+      if(rec.nest?.anim.length){
+        rec.nest.elapsed+=t;
+        for(const baby of rec.nest.anim){
+          baby.root.position.y=baby.baseY+.016*Math.sin(rec.nest.elapsed*2.4+baby.phase);
+          baby.root.rotation.y=baby.baseYaw+.09*Math.sin(rec.nest.elapsed*1.1+baby.phase);
+        }
+      }
       if(rec.gate&&rec.unlocked&&rec.gateProgress<1){
         rec.gateProgress=Math.min(1,rec.gateProgress+t*1.7);
         rec.gate.position.y=rec.gateY+rec.gateProgress*3;
