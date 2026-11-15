@@ -303,6 +303,17 @@
         d.setActiveTool('weapon', { silent: true });
         return key;
       },
+      equipPreviewTool(key) {
+        if (!window.__hobunjiPrecreatorArena) return null; // An ordinary arena visit cannot grant permanent tools.
+        const def = d.toolDefs?.[key];
+        const slot = def?.slots?.find(name => ['weapon', 'axe', 'pickaxe', 'shovel', 'hoe', 'instrument'].includes(name));
+        if (!slot || !d.gearTools?.() || !d.equipmentSlots) return null;
+        d.gearTools()[key] = true; // The quarantined guest gear inventory accepts the real authored item.
+        d.equipmentSlots[slot] = key;
+        d.rebuildToolMeshes();
+        d.setActiveTool(slot, { silent: true });
+        return { key, slot, label: String(def.label || key) };
+      },
       // Character view with the camera swung round to the player's front, so the front portrait and the weapon held
       // against it are on screen (weapon-vs-front-plane layering checks).
       frontView(on) {
@@ -352,9 +363,27 @@
     if (!grassTimer) { grassTimer = setInterval(() => { if (grassHidden && deps?.getCurrentArea?.() === ARENA_ID) applyGrassVisibility(); }, 1000); grassTimer.unref?.(); }
   }
 
+  function previewToolChoices() {
+    if (!window.__hobunjiPrecreatorArena || !look || !deps?.devTestLookDeps?.toolDefs) return [];
+    const defs = deps.devTestLookDeps.toolDefs;
+    return Object.entries(defs).filter(([key, def]) => !key.startsWith('modular:')
+      && Array.isArray(def?.slots) && def.slots.some(slot => ['weapon', 'axe', 'pickaxe', 'shovel', 'hoe', 'instrument'].includes(slot)))
+      .map(([key, def]) => ({ key, label: String(def.label || key), slots: def.slots.slice() }));
+  }
+  async function previewApplyAppearance(speciesId, gender) {
+    if (!window.__hobunjiPrecreatorArena || deps?.getCurrentArea?.() !== ARENA_ID || !look) return false;
+    const d = deps.devTestLookDeps; // Reuse the proven live appearance rebuild and preserve its existing camera offsets.
+    return look.apply(speciesId, gender, d.getShoulderOffsets()[0], d.getCameraPitchOffset());
+  }
+  function previewEquipTool(key) {
+    if (!window.__hobunjiPrecreatorArena || deps?.getCurrentArea?.() !== ARENA_ID || !look) return null;
+    return look.equipPreviewTool(key);
+  }
+
   window.DevArenaPondDummy = {
     version: 1,
     init, ensurePond, setGrassHidden, applyGrassVisibility, standAtPond, applyTestLook, restoreLook, toggleFrontView, equipFlail, makeTestLook, equipFlail, spawnDummy, clearDummies,
+    previewToolChoices, previewApplyAppearance, previewEquipTool,
     snapshot: () => ({ pond: !!arenaScene()?.userData?.devArenaPond, waterfall: !!arenaScene()?.userData?.devArenaWaterfall, dummies: [...dummies.keys()] }),
   };
 })();
