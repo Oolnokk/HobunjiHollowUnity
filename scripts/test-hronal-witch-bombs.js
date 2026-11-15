@@ -136,6 +136,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  scene.isScene=true;
  const burdens=new Map(),factories=new Map(),glowStates=[];
  let clock=1000,spawns=0,releases=0;
+ let testArea='map_witch_bomb_runtime',testGrid=null,supportAt=null; // Mutable terrain/area fixtures exercise actual void and elevated-support decisions.
  const playedSfx=[]; // Captures the exact cue emitted when the runtime blast occurs.
  const positionedSfx=[]; // Captures the actual world-space blast for dispenser, fuse and chain-reaction regression.
  const tube={isObject3D:true,id:'tube-fixture',parent:scene,
@@ -147,7 +148,8 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    InstancedMesh:RuntimeGroup,Object3D:RuntimeGroup,
    SphereGeometry:RuntimeDisposable,ConeGeometry:RuntimeDisposable,MeshBasicMaterial:RuntimeDisposable,
   },
-  GridTileAccessors:{getCurrentArea:()=> 'map_witch_bomb_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+  GridTileAccessors:{getCurrentArea:()=>testArea,getActiveScene:()=>scene,getActiveGrid:()=>testGrid},
+  DynamicSurfaces:{sampleSupport(...args){return supportAt?.(...args)||null;}}, // A shaft platform can exist above a bottomless base-grid tile.
   Shattercasks:{
    registerBurdenFactory(kind,factory){factories.set(kind,factory);return true;},
    async createHangingBurden(options){
@@ -290,6 +292,33 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  assert.equal(landed.onImpact(landed,'ceiling-witch-bomb-collision'),false,'non-ground collision does not detonate');
  assert.equal(playedSfx.length,groundSounds,'a bomb colliding with another object does not play a false ground hit');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().groundHitPitchSemitones,-9,'mobile diagnostics identify the intended landing pitch');
+ let dropCallbacks=0; // Existing authored onDrop handlers must survive the positional impact wrapper.
+ const playerBomb=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:0,z:6,
+  onDrop:()=>dropCallbacks++,fuseSeconds:120});
+ playerBomb.onDrop(playerBomb);
+ assert.equal(dropCallbacks,1,'the player’s direct-drop audio preserves the prior onDrop callback');
+ assert.deepEqual(positionedSfx.at(-1),{x:5,z:6,mapId:testArea,y:0,reverse:false,pitch:Math.pow(2,-9/12)},
+  'Action 2 floor placement also plays the same lowered, spatial ground impact');
+ const hazardousGrid=Array.from({length:8},()=>Array.from({length:8},()=>({type:'void'}))); // Void tiles reject a false stone impact.
+ testGrid=hazardousGrid;
+ const water=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:.45,z:6,fuseSeconds:120});
+ hazardousGrid[6][5]={type:'water'};
+ const beforeWater=playedSfx.length;
+ assert.equal(water.onImpact(water,'released-ground-impact'),true,'water contact discards the bomb');
+ assert.equal(playedSfx.length,beforeWater,'water does not sound like a stone floor');
+ hazardousGrid[6][5]={type:'void'};
+ testArea='map_i_dev_random_ruin';supportAt=()=>({y:4});
+ const elevated=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:4.45,z:6,fuseSeconds:120});
+ assert.equal(elevated.onImpact(elevated,'ceiling-witch-bomb-ground-impact'),false,
+  'a solid elevated ruin platform catches a falling bomb even above a void base-grid tile');
+ assert.deepEqual(positionedSfx.at(-1),{x:5,z:6,mapId:testArea,y:4,reverse:false,pitch:Math.pow(2,-9/12)},
+  'the 3D impact comes from the shaft platform height rather than from the pit below');
+ supportAt=null;
+ const fallingIntoVoid=await runtimeWindow.HronalWitchBombs.spawn({mapId:testArea,scene,x:5,y:4.45,z:6,fuseSeconds:120});
+ const beforeVoid=playedSfx.length;
+ assert.equal(fallingIntoVoid.onImpact(fallingIntoVoid,'ceiling-witch-bomb-ground-impact'),true,
+  'a genuinely unsupported ruin void disposes of the burden');
+ assert.equal(playedSfx.length,beforeVoid,'a bottomless pit makes no artificial stone thud');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
