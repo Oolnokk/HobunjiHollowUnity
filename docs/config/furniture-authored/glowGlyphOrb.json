@@ -1,0 +1,146 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "glowGlyphOrb",
+  "id": "glowGlyphOrb",
+  "name": "Glowing Glyph Orb",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "A transparent camera-facing glyph floating in a stationary radial blue-white glow. Neither collision nor a physical light.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": false,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "orbBillboard",
+      "kind": "transparentBillboardSurface",
+      "name": "Orb Glyph Billboard",
+      "transform": {
+        "x": 0,
+        "y": 0.8,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.65,
+        "sy": 0.65,
+        "sz": 0.001
+      },
+      "color": "#ffffff",
+      "surfaceOpacity": 0
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "orbBillboard:surface:0",
+      "partId": "orbBillboard",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.4225,
+      "localCentroid": [
+        0,
+        0,
+        0
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.325,
+        "maxU": 0.325,
+        "minV": -0.325,
+        "maxV": 0.325
+      },
+      "label": "Floating Glyph",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "orbGlyphDecal",
+      "name": "Floating Glyph",
+      "surfaceId": "orbBillboard:surface:0",
+      "surfacePartId": "orbBillboard",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        0,
+        1
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "ruin_glyph_rune.png",
+      "offsetU": 0,
+      "offsetV": 0,
+      "width": 0.72,
+      "height": 0.72,
+      "rotationDeg": 0,
+      "normalOffset": 0.002,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#d4f5ff"
+        ],
+        "on": [
+          "#d4f5ff"
+        ],
+        "cycleSeconds": 1.6,
+        "pulse": 0
+      }
+    }
+  ],
+  "particleEmitters": [
+    {
+      "id": "orbGlow",
+      "name": "Stationary Radial Glow",
+      "type": "glowingSphere",
+      "enabled": true,
+      "attachedPartId": "orbBillboard",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 0,
+      "lifetime": 1,
+      "size": 1.1,
+      "speed": 0,
+      "spread": 0,
+      "radius": 0,
+      "gravity": 0,
+      "colorA": "#efffff",
+      "colorB": "#438eff"
+    }
+  ],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "seatAnchors": [],
+  "itemPlacements": []
+}
