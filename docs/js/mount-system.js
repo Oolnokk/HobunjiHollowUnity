@@ -51,11 +51,13 @@
   const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
   const CRUISE_SPEED_RATIO = 0.66; // Hands-free forward riding speed, below the maximum gallop.
   const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
-  const MOUNT_HOP_MAX_ROCK_RISE = 0.72; // World units: only finite, short wilderness rock cover is auto-jumpable.
+  const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
   let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
   let mountBoostS = 0; // Remaining surge time; read by movement and the exertion scheduler.
   let mountBreathClockS = 0; // Cadence timer for one animal exertion clip at a time.
+  let mountRockScanS = 0; // Throttles short-rock lookahead to avoid repeated tile and collision probes every frame.
+  const MOUNT_ROCK_SCAN_INTERVAL_S = 0.07; // Fast enough to catch rocks at boosted speed without a per-frame radius scan.
   let mountWheatHud = null; // Retained DOM view; only updated when charge/state changes.
   let lastHudSignature = ''; // Avoids per-frame DOM mutation and MutationObserver loops.
   let mountActionsClaimed = false; // Mirrors the action router's mounted dodge/jump overrides.
@@ -144,11 +146,19 @@
   }
 
   function pressMountedAction(actionId) {
-    if (mountRideState !== 'mounted') return false;
+    if (mountRideState !== 'mounted' || gameInputBlocked()) return false;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (now - (lastMountedActionMs[actionId] ?? -10000) < 140) return true;
     lastMountedActionMs[actionId] = now;
-    return actionId === 'dodge' ? accelerateMount() : actionId === 'jump' ? jumpMount() : false;
+    return actionId === 'dodge' ? accelerateMount() : actionId === 'jump' ? (window.ClimbSystem?.jumpAction?.() ?? jumpMount()) : false; // Preserve existing mounted cliff crossings; jumpMount handles open ground.
+  }
+
+  function gameInputBlocked(event = null) {
+    if (typeof document === 'undefined') return false;
+    if (event?.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return true;
+    if (document.getElementById('menuPanel')?.classList?.contains?.('open')) return true;
+    if (window.Fishing?.state?.active) return true; // Fishing and other overlays own their input semantics.
+    return false;
   }
 
   // The action router owns gameplay claims; these device-edge listeners cover
@@ -159,8 +169,7 @@
     if (mountInputInstalled || typeof window?.addEventListener !== 'function') return;
     mountInputInstalled = true;
     window.addEventListener('keydown', event => {
-      if (mountRideState !== 'mounted' || event.repeat || event.defaultPrevented) return;
-      if (event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
+      if (mountRideState !== 'mounted' || event.repeat || event.defaultPrevented || gameInputBlocked(event)) return;
       const bindings = window.InputBindings?.getCurrentBindings?.()?.desktop || {};
       const action = event.code === (bindings.dodge || 'KeyX') ? 'dodge' : event.code === (bindings.jump || 'Space') ? 'jump' : null; // Match game's legacy X/Space controls when Jump is absent from user-remappable bindings.
       if (!action) return;
@@ -170,7 +179,7 @@
     }, true);
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('pointerdown', event => {
-        if (mountRideState !== 'mounted') return;
+        if (mountRideState !== 'mounted' || gameInputBlocked(event)) return;
         const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
         if (!target) return;
         const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
@@ -180,7 +189,7 @@
         pressMountedAction(action);
       }, true);
       document.addEventListener('click', event => {
-        if (mountRideState !== 'mounted') return;
+        if (mountRideState !== 'mounted' || gameInputBlocked(event)) return;
         const target = event.target?.closest?.('#dodgeBtn,#jumpBtn');
         if (!target) return;
         const action = target.id === 'dodgeBtn' ? 'dodge' : 'jump';
@@ -192,7 +201,7 @@
       }, true);
     }
     window.ControllerInput?.subscribe?.('mount-riding-actions', frame => {
-      if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false) return;
+      if (mountRideState !== 'mounted' || frame.owner !== 'gameplay' || frame.focused === false || gameInputBlocked()) return;
       const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
       if (bindings.dodge && frame.pressed?.has?.(bindings.dodge)) pressMountedAction('dodge');
       if ((bindings.jump || bindings.interact || 'Button0') && frame.pressed?.has?.(bindings.jump || bindings.interact || 'Button0')) pressMountedAction('jump'); // Default A/Interact is the controller's Jump/Climb input.
@@ -224,6 +233,7 @@
     wheatRecoveryS = 0;
     mountBoostS = 0;
     mountBreathClockS = 0;
+    mountRockScanS = 0;
     refreshMountWheatHud();
   }
 
@@ -819,6 +829,7 @@
     m.areaId = deps.getCurrentArea();
     m.x = deps.player.x; m.y = deps.player.y;
     m._mountHop = null; m._banditLungeHopCurrent = 0; // Area transitions cancel any in-flight wilderness hop before reseating the rider.
+    mountRockScanS = 0;
     m.vx = 0; m.vy = 0;
     window.AudioSystem?.resetCreatureGait?.(m);
     mountFootstepDebug.surfaceKey = null;
@@ -959,10 +970,19 @@
     if (braking && !m._mountHop) {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
       window.GroundObstacleAvoidance?.reset('mounted');
+      if (mountCurrentSpeedPxS < 1) {
+        // Once fully stopped, allow an explicit opposite stick/key direction to turn around.
+        const desiredAngle = Math.atan2(iy, ix);
+        const diff = deps.angleDiff(desiredAngle, mountAngle);
+        mountAngle += deps.clamp(diff, -MOUNT_TURN_RATE_MAX * dt, MOUNT_TURN_RATE_MAX * dt);
+      }
     } else {
       if (mountCurrentSpeedPxS < desiredSpeed) mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
       else mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
-      const rockPlan = m._mountHop ? null : planMountHop(m, currentArea);
+      mountRockScanS -= dt;
+      const scanRocks = !m._mountHop && mountRockScanS <= 0;
+      if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
+      const rockPlan = scanRocks ? planMountHop(m, currentArea) : null;
       const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
       const steerX = inputStrength > 0.01 ? ix : Math.cos(mountAngle);
       const steerY = inputStrength > 0.01 ? iy : Math.sin(mountAngle);
