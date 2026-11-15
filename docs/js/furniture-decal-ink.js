@@ -73,26 +73,33 @@
     mesh.userData.glyphInk = ink;
     if (ink.glowStrength <= 0 || ink.glowRadius <= 0) return ink;
 
-    const expansion = 1 + ink.glowRadius * 4; // A wider quad leaves room for the blurred edges.
     const width = Math.max(.001, Number(mesh.geometry.parameters?.width) || 1);
     const height = Math.max(.001, Number(mesh.geometry.parameters?.height) || 1);
-    const haloMaterial = new THREE.MeshBasicMaterial({
-      color: ink.color, map: material.map || null,
-      transparent: true, opacity: ink.glowStrength * .35, // Attenuated additive fringe: glow without overexposing the exact ink hue.
-      depthTest: true, depthWrite: false, side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    });
-    haloFromAlpha(haloMaterial, ink.glowRadius, expansion);
-    const halo = new THREE.Mesh(new THREE.PlaneGeometry(width * expansion, height * expansion), haloMaterial);
-    halo.name = 'decal_ink_halo';
-    halo.renderOrder = 1;
-    halo.position.z = -0.0003; // Still in front of the authored surface, just behind the ink itself.
-    halo.visible = !!material.map;
-    halo.raycast = () => {};
-    halo.userData.glyphInkHalo = true; // Editor cleanup and game diagnostics can identify this child.
-    mesh.add(halo);
-    mesh.userData.glyphInkHalo = halo;
+    const halos = []; // Both emissive layers share the selected ink and PNG alpha, behind the solid-color letter face.
+    const addHalo = (name, spread, strength, order, z) => {
+      const expansion = 1 + spread * 4; // Sample off the source silhouette without clipping the glowing fringe.
+      const haloMaterial = new THREE.MeshBasicMaterial({
+        color: ink.color, map: material.map || null,
+        transparent: true, opacity: Math.min(1, ink.glowStrength * strength),
+        depthTest: true, depthWrite: false, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      });
+      haloFromAlpha(haloMaterial, spread, expansion);
+      const halo = new THREE.Mesh(new THREE.PlaneGeometry(width * expansion, height * expansion), haloMaterial);
+      halo.name = name;
+      halo.renderOrder = order; // Both additive passes draw before the normally blended colored letter.
+      halo.position.z = z;
+      halo.visible = !!material.map;
+      halo.raycast = () => {};
+      halo.userData.glyphInkHalo = true;
+      mesh.add(halo);
+      halos.push(halo);
+    };
+    addHalo('decal_ink_outer_glow', Math.min(.25, ink.glowRadius * 1.6), .8, 0, -.0004);
+    addHalo('decal_ink_hot_glow', ink.glowRadius * .55, 1.15, 1, -.0002);
+    mesh.userData.glyphInkHalos = halos; // Editor disposal and async texture binding handle both layers together.
+    mesh.userData.glyphInkHalo = halos[0]; // Keep the original diagnostic reference stable.
     return ink;
   }
 
@@ -100,8 +107,8 @@
     if (!mesh?.material) return;
     mesh.material.map = texture || null;
     mesh.material.needsUpdate = true;
-    const halo = mesh.userData?.glyphInkHalo;
-    if (halo?.material) {
+    for (const halo of mesh.userData?.glyphInkHalos || (mesh.userData?.glyphInkHalo ? [mesh.userData.glyphInkHalo] : [])) {
+      if (!halo.material) continue;
       halo.material.map = texture || null;
       halo.material.needsUpdate = true;
       halo.visible = !!texture;
