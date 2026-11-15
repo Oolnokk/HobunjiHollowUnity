@@ -52,7 +52,7 @@
     if (!current || !expected) return false;
     if (typeof current.dot === 'function') {
       const dot = Math.abs(current.dot(expected)); // Quaternions q and -q represent the same orientation.
-      return Number.isFinite(dot) && dot >= 1 - 1e-8;
+      return Number.isFinite(dot) && dot >= 1 - 1e-12;
     }
     return current.equals?.(expected) === true; // Preview/test quaternions may expose equality without a dot product.
   }
@@ -317,7 +317,10 @@
     rememberCaptive(prey, group); // A visual streamed in after capture must still save the upright baseline before tilting.
     payload.matrix.decompose(group.position, group.quaternion, group.scale);
     const captivePose = captivePoses.get(prey); // Used by restoreCaptive to identify the exact orientation this talon pass last wrote.
-    if (captivePose?.group === group) captivePose.lastAlignedQuaternion = group.quaternion.clone();
+    if (captivePose?.group === group) {
+      if (captivePose.lastAlignedQuaternion) captivePose.lastAlignedQuaternion.copy(group.quaternion);
+      else captivePose.lastAlignedQuaternion = group.quaternion.clone(); // Allocate once per capture, not per animated flight frame.
+    }
     group.scale.copy(payload.scale);
     group.updateWorldMatrix(false, true);
     return true;
