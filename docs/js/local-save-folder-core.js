@@ -129,6 +129,9 @@
   let _ignoredFarmLayoutBackupFiles = []; // Exposes version-copy filenames in existing mobile save diagnostics.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
+  let _committedFileState = null; // Per-file content fingerprints and timestamps used to skip unchanged canonical writes.
+  let _lastSaveWork = { written: 0, unchanged: 0 }; // File-level save counts exposed in mobile diagnostics.
+  let _unchangedAutosavesSkipped = 0; // Automatic saves avoided because captured live data did not change.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
   let _recoveryHandleFresh = false; // True only after a current-session user gesture supplies a new directory handle specifically safe to probe for recovery.
   const _listeners = new Set();
@@ -150,6 +153,8 @@
       backgroundSyncQueued: _backgroundSyncQueued,
       dataLossRisk: _lastDataLossRisk,
       patternMirror: _lastPatternMirror,
+      saveFileWork: { ..._lastSaveWork },
+      unchangedAutosavesSkipped: _unchangedAutosavesSkipped,
       browserMirrorWarning: _lastBrowserMirrorWarning || null,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
       recoveryHandleFresh: _recoveryHandleFresh,
@@ -372,14 +377,115 @@
     return result;
   }
 
-  async function writeEntities(dirName, entities, nameField) {
+
+  function fileKey(dirName, filename) {
+    return dirName + '/' + filename;
+  }
+
+  // Avoid pinning full copies of large JSON files in RAM between saves.
+  function contentFingerprint(raw) {
+    let a = 2166136261, b = 0x9e3779b9;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw.charCodeAt(i);
+      a = Math.imul(a ^ ch, 16777619);
+      b = Math.imul(b ^ ch, 2246822519);
+    }
+    return raw.length + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+  }
+
+  function diskStamp(file) {
+    return Number.isFinite(file?.size) && Number.isFinite(file?.lastModified)
+      ? { size: file.size, modified: file.lastModified } : null;
+  }
+
+  function sameDiskStamp(a, b) {
+    return !!a && !!b && a.size === b.size && a.modified === b.modified;
+  }
+
+  // A full first save streams the files individually. Only later saves build
+  // a delta; changed JSON strings are released as soon as they reach disk.
+  function prepareChangedFiles(meta, layouts) {
+    if (!_committedFileState) return null;
+    const digests = new Map(); // Expected canonical filenames and content fingerprints, including deletion detection.
+    const changedText = new Map(); // Only strings for changed files, reused by the actual writer.
+    const visit = (dirName, filename, value) => {
+      const key = fileKey(dirName, filename);
+      const raw = JSON.stringify(value);
+      const digest = contentFingerprint(raw);
+      digests.set(key, digest);
+      if (_committedFileState.get(key)?.digest !== digest) changedText.set(key, raw);
+    };
+    for (const character of meta.characters || []) {
+      if (character?.id) visit(CHARACTERS_DIR, slugify(character.nickname) + '-' + character.id + '.json', character);
+    }
+    for (const world of meta.worlds || []) {
+      if (world?.id) visit(WORLDS_DIR, slugify(world.label) + '-' + world.id + '.json', world);
+    }
+    for (const world of meta.worlds || []) {
+      if (!world?.id || !Object.prototype.hasOwnProperty.call(layouts, world.id)) continue;
+      visit(FARM_LAYOUTS_DIR, farmLayoutFilename(world.id), { worldId: world.id, layout: layouts[world.id] });
+    }
+    return { digests, changedText, changed: changedText.size > 0 || digests.size !== _committedFileState.size };
+  }
+
+  async function writeTrackedFile(dirHandle, dirName, filename, payload, delta, next, work) {
+    const key = fileKey(dirName, filename);
+    const old = _committedFileState?.get(key);
+    const digest = delta?.digests.get(key);
+    let raw = delta?.changedText.get(key);
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    if (old && digest === old.digest && old.stamp) {
+      // A deleted or externally modified disk file cannot be called saved just
+      // because the browser's copy has not changed.
+      let stamp = null;
+      try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
+      if (sameDiskStamp(stamp, old.stamp)) {
+        next.set(key, old);
+        work.unchanged++;
+        return;
+      }
+    }
+    if (raw === undefined) raw = JSON.stringify(payload);
+    const writable = await fileHandle.createWritable();
+    await writable.write(raw);
+    await writable.close();
+    let stamp = null;
+    try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
+    next.set(key, { digest: digest || contentFingerprint(raw), stamp });
+    work.written++;
+    delta?.changedText.delete(key);
+  }
+
+  // A fast metadata pass is sufficient only for known, untouched farm files.
+  // Unexpected/edited files fall back to the full JSON integrity check.
+  async function farmLayoutFilesUnmodified() {
+    if (!_committedFileState) return false;
+    const expected = new Map([..._committedFileState].filter(([key]) => key.startsWith(FARM_LAYOUTS_DIR + '/')));
+    let dirHandle;
+    try { dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR); }
+    catch { return expected.size === 0; }
+    const seen = new Set(); // Canonical layout files verified against the last completed folder write.
+    try {
+      for await (const [name, entry] of dirHandle.entries()) {
+        if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue;
+        if (_ignoredFarmLayoutBackupFiles.includes(name)) continue;
+        const key = fileKey(FARM_LAYOUTS_DIR, name);
+        const stamp = expected.get(key)?.stamp;
+        if (!stamp || !sameDiskStamp(stamp, diskStamp(await entry.getFile()))) return false;
+        seen.add(key);
+      }
+    } catch { return false; }
+    return seen.size === expected.size;
+  }
+
+  async function writeEntities(dirName, entities, nameField, delta, next, work) {
     const dirHandle = await _handle.getDirectoryHandle(dirName, { create: true });
     const keep = new Set();
     for (const entity of entities) {
       if (!entity?.id) continue;
       const filename = `${slugify(entity[nameField])}-${entity.id}.json`;
       keep.add(filename);
-      await writeJsonFile(dirHandle, filename, entity);
+      await writeTrackedFile(dirHandle, dirName, filename, entity, delta, next, work);
     }
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind === 'file' && !keep.has(name)) {
@@ -552,7 +658,7 @@
     return { layouts, corruptFiles, backupFiles, missingCanonicalBackups };
   }
 
-  async function writeFarmLayouts(meta, layouts) {
+  async function writeFarmLayouts(meta, layouts, delta, next, work) {
     const dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR, { create: true });
     const worldIds = new Set((meta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
     const keep = new Set();
@@ -562,7 +668,7 @@
       if (!Object.prototype.hasOwnProperty.call(layouts, worldId)) continue;
       const filename = farmLayoutFilename(worldId);
       keep.add(filename);
-      await writeJsonFile(dirHandle, filename, { worldId, layout: layouts[worldId] });
+      await writeTrackedFile(dirHandle, FARM_LAYOUTS_DIR, filename, { worldId, layout: layouts[worldId] }, delta, next, work);
       written++;
     }
 
