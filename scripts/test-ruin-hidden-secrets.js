@@ -45,7 +45,9 @@ global.PuzzleCaveMelody={ruinDifficulty:()=>3,generate:()=>({notes:[{index:1}],b
  createSession:(_song,cbs)=>({step(){},note(){},stop(){},solve:()=>cbs.onSolved()})};
 global.RuinMelodyGlyphDecal={create:()=>({dispose(){}})};
 global.addEventListener=()=>{};global.removeEventListener=()=>{};
-global.SkeeriRuins={paletteFor:theme=>({theme}),createRig:async()=>({root:new Group(),dispose(){}})};
+const rigUpdates=[]; // Each baby must receive the actual rig's folded-wing hatchling pose, not render as an adult flyer.
+global.DevRandomRuinInteractions={activeCamera:()=>({getWorldPosition(){}})};
+global.SkeeriRuins={paletteFor:theme=>({theme}),createRig:async()=>({root:new Group(),update:(_camera,pose)=>rigUpdates.push(pose),dispose(){this.disposed=true;}})};
 const controls=new Set();
 for(const [key,seed] of Object.entries(found)){
  const owner=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
@@ -62,12 +64,29 @@ for(const [key,seed] of Object.entries(found)){
  if(key.startsWith('suspended:')){
    for(let i=0;i<30;i++)owner.tick(.05);
    assert.equal(owner.chest.group.position.y,room.y,'chest dropped to floor');
+   assert(Math.abs(owner.targets[0].object.position.x-owner.chest.group.position.x)>.6,
+     'projectile clasp must be outside the ice/net cover rather than embedded inside');
  }
  assert.equal(owner.snapshot().babies,owner.babies);
+ assert([...controls].filter(c=>c.kind==='ruinSkeeriNest').every(c=>c.claimAction1!==true),
+   'inspecting the hidden brood must not steal weapon Action 1');
  owner.dispose();
  assert.equal(global.DynamicSurfaces.ids.size,0);
  assert.equal(projectiles.size,0);
  assert.equal(fire.size,0);
  assert.equal(controls.size,0);
 }
-console.log('Hidden ruin secrets: deterministic types, puzzle activations, ceiling drop and cleanup PASS');
+// Wait for the same asynchronous flying-rig creation used by real game assets before inspecting its pose.
+const seed=found.babies,brood=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
+  getPlayerY:()=>12,getPlayerPosition:()=>({x:43,z:53}),
+  addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
+Promise.resolve().then(()=>Promise.resolve()).then(()=>{
+  assert.equal(brood.nest.loaded,brood.babies,'all hatchling rigs resolve into the intended shelf');
+  brood.tick(.05);
+  assert(rigUpdates.length>=brood.babies&&rigUpdates.every(pose=>pose==='hatchling'),
+    'every flying animal rig must explicitly enter hatchling pose with the actual camera');
+  brood.dispose();
+  assert.equal(controls.size,0);
+  assert.equal(global.DynamicSurfaces.ids.size,0);
+  console.log('Hidden ruin secrets: deterministic generation, reachable switches, folded Skeeri, and cleanup PASS');
+}).catch(error=>{console.error(error);process.exitCode=1;});
