@@ -141,6 +141,12 @@
     drawSoon();
     updateOutput();
   }
+  const originalApplyRigToPaint = applyRigToPaint; // Asynchronous sprite loads finish after animal selection changes.
+  applyRigToPaint = function applyRigToPaintWithHats(rig) {
+    const result = originalApplyRigToPaint(rig);
+    if (!view.authored) fillAttachment(null); // Refresh derived hat position once the new sprite/pivot and weight map are ready.
+    return result;
+  };
   const originalApplyRecord = applyRecord; // Integrates imports, bestiary selection and blank records without replacing neck behavior.
   applyRecord = function applyRecordWithHats(record, index) {
     const result = originalApplyRecord(record, index);
