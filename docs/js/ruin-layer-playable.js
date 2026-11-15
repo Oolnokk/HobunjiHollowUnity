@@ -430,11 +430,14 @@
             setGate(challenge,true,true); // Locked until this stage solves; afterward proximity controls it.
           }
           record.challenges.push(challenge);
-          const secret=root.RuinHiddenSecrets?.create?.({room,seed:ruin.seed??plan.options?.seed??0,
-            theme:ruin.theme,ruinTier:ruin.tier??plan.options?.tier,THREE,parent:activeRoot,DynamicSurfaces:DS,
-            mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),getPlayerPosition,getPlayerY,
-            addControl,removeControl,showToast:options.showToast,onStateChange:options.onStateChange});
-          if(secret)secrets.push(secret); // No existing challenge or objective ownership is changed.
+          if(secrets.length<6){ // Optional rewards have a bounded per-ruin footprint; even dense five-floor layouts stay mobile-safe.
+            const secret=root.RuinHiddenSecrets?.create?.({room,seed:ruin.seed??plan.options?.seed??0,
+              theme:ruin.theme,ruinTier:ruin.tier??plan.options?.tier,THREE,parent:activeRoot,DynamicSurfaces:DS,
+              mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),getPlayerPosition,getPlayerY,
+              allowBrood:secrets.filter(entry=>entry.babies>0).length<2, // At most two independent hatchling shelves in the entire layered ruin.
+              addControl,removeControl,showToast:options.showToast,onStateChange:options.onStateChange});
+            if(secret)secrets.push(secret); // No existing challenge or objective ownership is changed.
+          }
         }
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
         // The sanctum's stone-bowl brazier, bigger, burning in the lich's colour (the same
