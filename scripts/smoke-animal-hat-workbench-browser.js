@@ -90,7 +90,8 @@ async function spritePng(page, animal) {
     await page.mouse.move(art.x + art.width * .74, art.y + art.height * .5, { steps: 10 });
     await page.mouse.up();
     const debug = () => page.evaluate(() => window.HobunjiAnimalHatWorkbench.getDebug());
-    assert.equal((await debug()).layers[0].dirty, true, 'smudge must alter real hat pixels');
+    assert.equal((await debug()).layers[0].dirty, true, 'smudge must mark a hat as edited');
+    assert((await debug()).layers[0].changedPixels > 0, 'smudge must actually move colored/outlined PNG pixels');
     await page.locator('#hatUndo').click();
     assert.equal((await debug()).layers[0].dirty, false, 'Undo restores source image');
     await page.locator('#hatRedo').click();
