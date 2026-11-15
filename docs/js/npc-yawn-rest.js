@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 5; // Player yawns now own a final-render two-arm stretch and held-equipment presentation.
+  const VERSION = 7; // Fallback yawns play the untouched intensity-5 clip at 0.350x tempo until its natural end.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -19,8 +19,10 @@
   const PLAYER_KOMA_ID = '__player_daily_koma__'; // Separate per-character cooldown key for the player's own daily Koma dose.
   const SAVE_PREFIX = 'hobunji_npc_yawn_rest_v2:'; // New per-character namespace avoids importing old, non-monotonic midnight timestamps.
   const YAWN_ROOT = 'assets/audio/sfx/utterances/'; // A new recording can be dropped here without changing NPC logic.
-  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Intensity-5 combat breath supplies the full yawn when no recording exists.
+  const BREATH_FALLBACK = 'assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a'; // Missing yawn recordings use the existing intensity-5 breath asset.
+  const BREATH_FALLBACK_TEMPO = 0.35; // The ordinary utterance renderer plays this breath at a fixed, pitch-preserving 0.350x tempo.
   const active = new Set(); // Live 5-second presentation/voice objects; nothing is evaluated per-frame for inactive walkers.
+  const trailingBreaths = new Set(); // Completed poses retain audible fallback breaths until the recording ends or the save is unloaded.
   const activeById = new Map(); // O(1) lookups from each NPC's movement-speed chokepoint, even during crowd-wide yawns.
   const fileProbes = new Map(); // One HEAD lookup per future yawn-asset filename, reused for every NPC.
   const voicePlans = new Map(); // Species+gender-specific resolution promises shared by all actors of that identity.
@@ -64,6 +66,7 @@
     if (!id) {
       if (saveCharacterId) {
         for (const entry of [...active]) finish(entry, 'character unloaded'); // Leaving a save must not strand hidden tools or a player action lock at the title screen.
+        for (const entry of [...trailingBreaths]) stopVoice(entry); // Leaving a character stops any breath still sounding after its pose.
         flush(); // Persist the outgoing character's final rest state before clearing its namespace.
         saveCharacterId = null;
         saved = {};
@@ -79,6 +82,7 @@
     }
     if (saveCharacterId === id) return true;
     for (const entry of [...active]) finish(entry, 'character changed');
+    for (const entry of [...trailingBreaths]) stopVoice(entry); // A new character never inherits the previous save's lingering breath.
     flush();
     saveCharacterId = id;
     try {
@@ -207,17 +211,18 @@
       }
       return {
         url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
-        pitch: Number(mod.pitchSemitones) || 0,
-        tempo: 1, // The source breath's natural pitch/time contours stay intact; the composer owns its five-second duration.
-        cadence: Number(mod.tempo) || 1, // Reuses each species/gender's combat voice tempo as the grain pacing.
-        gain: Number(mod.gain) || 1,
-        source: 'reconstructed breathing',
+        pitch: 0, // Fallback plays the original breath without species/gender pitch modulation.
+        tempo: BREATH_FALLBACK_TEMPO, // Exact utterance tempo; no inherited species cadence.
+        gain: 1, // No combat voice-gain multiplier; normal SFX mixing remains in startVoice.
+        fallbackBreath: true, // Used to leave the recording untrimmed and let it finish after the pose.
+        source: 'breath 5 (0.350x utterance tempo)',
       };
     })());
     return voicePlans.get(key);
   }
 
   function stopVoice(entry) {
+    trailingBreaths.delete(entry); // Explicit stops, including save switches, release completed-breath ownership.
     if (entry.voiceDebug && !['finished', 'error'].includes(entry.voiceDebug.status))
       entry.voiceDebug.status = 'stopped'; // Distinguishes a clip canceled before decode from one the browser actually started.
     entry.voice?.stop?.(0.12);
@@ -257,8 +262,7 @@
     if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     const voiceDebug = {
       npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
-      source: plan.source, url: plan.url, tempo: plan.tempo, cadence: plan.cadence || null,
-      composedDurationS: plan.cadence ? YAWN_DURATION_S : null, pitch: plan.pitch, volume,
+      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
       positional: !entry.isPlayer, status: 'queued',
     }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
     entry.voiceDebug = voiceDebug;
@@ -271,10 +275,9 @@
         voiceDebug.status = 'error';
         lastError = 'audio: ' + String(error?.message || error);
       },
-      tempo: plan.tempo, pitchSemitones: plan.pitch, volume, trimSilence: true,
-      breathYawnDurationS: plan.cadence ? YAWN_DURATION_S : undefined, // Only breathing fallbacks are composed; authentic yawns never enter this path.
-      breathYawnCadence: plan.cadence || undefined, // Keeps species-relative speaking/breathing cadence without stretching a transient 4x.
-      preservePitchOnFallback: true, // A locked/unsupported Web Audio device must not turn a fourfold breath stretch into a low-pitched recording.
+      tempo: plan.tempo, pitchSemitones: plan.pitch, volume,
+      trimSilence: !plan.fallbackBreath, // The fallback uses the complete, untrimmed intensity-5 recording.
+      preservePitchOnFallback: true, // Native playback should preserve source pitch when Web Audio is unavailable.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
@@ -282,7 +285,9 @@
       area: walker.area,
       onFinished: () => {
         if (voiceDebug.status !== 'error' && voiceDebug.status !== 'stopped') voiceDebug.status = 'finished';
+        trailingBreaths.delete(entry); // Release a completed pose's remaining audio without polling it per frame.
         if (entry.voiceClaim === claim) { owner?.release?.(claim); entry.voiceClaim = null; }
+        entry.voice = null; // The finished voice handle must not remain attached to the discarded pose.
       },
     });
     if (!entry.voice) {
@@ -326,7 +331,9 @@
     if (!entry || entry.finished) return;
     entry.finished = true;
     restorePose(entry);
-    stopVoice(entry);
+    if (reason === 'complete' && entry.voiceDebug?.fallbackBreath === true
+        && entry.voiceDebug.status === 'playing') trailingBreaths.add(entry); // Let the unaltered breath reach its natural end after the 5s pose.
+    else stopVoice(entry); // Interruptions, late-rendered voices and dedicated yawns retain the original cancellation behavior.
     if (entry.komaStarted && reason !== 'complete') window.NpcDrinkInteraction?.stopAutonomous?.(entry.walker, '__daily_koma_leaf__');
     active.delete(entry);
     if (activeById.get(entry.state.id) === entry) activeById.delete(entry.state.id);
@@ -571,7 +578,7 @@
 
   window.RuntimeFrameScheduler?.register?.('npc-yawn-rest', frame, {
     phase: 'pre-render', owner: 'NpcYawnRest',
-    description: 'NPC rested timers, five-second yawns, natural reconstructed breathing fallback and daily Koma drink',
+    description: 'NPC rested timers, five-second poses, untrimmed intensity-5 breath at 0.350x tempo and daily Koma drink',
   });
   window.addEventListener?.('hobunji-time-passage', event => {
     if (event?.detail?.kind === 'sleep' && Number(event.detail.hours) > 0) playerWakePending = true; // Only actual completed player Sleep, never Wait or dev time skips.
@@ -584,7 +591,7 @@
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastPlayerVoice, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastPlayerVoice, trailingBreathCount: trailingBreaths.size, lastError,
       playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),

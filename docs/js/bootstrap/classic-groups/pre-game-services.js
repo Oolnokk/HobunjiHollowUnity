@@ -7,7 +7,7 @@
     "js/audio-system.js?v=20261114posobj1754",
     "js/honeyfuzzle-audio.js?v=20261114queenPerf1",
     "js/scratchbones-emoji-reactions.js?v=20261109scaleglow1",
-    "js/animal-vocalizations.js?v=20261115skeeriEgg3",
+    "js/animal-vocalizations.js?v=20261115breath03502",
     "js/music-system.js?v=20261108shaftfade1",
     "js/audio-track-gain-settings.js?v=20260920trackgain2"
   ]; // Cache versions are owned by this feature area, rather than the shared index page.
