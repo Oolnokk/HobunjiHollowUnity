@@ -440,7 +440,7 @@
     }; // SAT half-widths permit an actor-sized square to approach an angled rail accurately.
   }
 
-  function railBlocksBox(x, z, half = 0, worldY = null) {
+  function railBlocksBox(x, z, half = 0, worldY = null, actorHeight = 0) {
     if (!railCollisionCells.size) return false;
     const query = ++railCollisionQuery; // A wide actor box can overlap a rail's indexed cells more than once.
     const edge = Math.max(0, Number(half) || 0);
@@ -460,7 +460,7 @@
             if (Math.abs(dx * oriented.n1x + dz * oriented.n1z) > oriented.r1 + edge * (Math.abs(oriented.n1x) + Math.abs(oriented.n1z))) continue;
             if (Math.abs(dx * oriented.n2x + dz * oriented.n2z) > oriented.r2 + edge * (Math.abs(oriented.n2x) + Math.abs(oriented.n2z))) continue;
           }
-          if (Number.isFinite(worldY) && (worldY < b.minY - 0.05 || worldY > b.maxY + 0.05)) continue;
+          if (Number.isFinite(worldY) && (worldY + Math.max(0, Number(actorHeight) || 0) < b.minY - 0.05 || worldY > b.maxY + 0.05)) continue; // Supported walkers collide with beams above their feet; airborne probes pass no actor height.
           return true;
         }
       }
