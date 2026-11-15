@@ -608,6 +608,12 @@
     }
 
     const portableVersion = Number(manifest?.portableSaveVersion) || 1;
+    const declaredFarmCount = Number(manifest?.farmLayoutCount); // Canonical manifest count detects deleted/renamed farm files even without backup copies.
+    const knownWorldIds = new Set(worlds.map(world => world?.id).filter(Boolean)); // Only layouts belonging to saved worlds count toward manifest integrity.
+    const actualFarmCount = Object.keys(farm.layouts).filter(id => knownWorldIds.has(id)).length; // Compared to the last completed folder-save manifest.
+    if (portableVersion >= PORTABLE_SAVE_VERSION && Number.isInteger(declaredFarmCount) && declaredFarmCount > actualFarmCount) {
+      farm.missingCanonicalBackups.push('manifest.json: expected ' + declaredFarmCount + ' canonical farm layout(s), found ' + actualFarmCount);
+    }
     const hasPortableFarmLayouts = portableVersion >= PORTABLE_SAVE_VERSION || Object.keys(farm.layouts).length > 0;
     return {
       exists: manifestExists || characters.length > 0 || worlds.length > 0 || corruptEntityFiles.length > 0,
