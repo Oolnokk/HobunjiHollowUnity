@@ -315,7 +315,7 @@
     const preset = DIAGNOSTIC_BY_ID.get(id); // A tested preset is always reproducible from repository defaults.
     if (!preset) return null;
     const rules = {};
-    for (const key of keys) rules[key] = RULES[key].default;
+    for (const key of keys) rules[key] = key === 'ground.showZone' ? state[key] : RULES[key].default; // Debug visualization persists while trying render presets; it is not a compositing experiment.
     for (const [key, value] of Object.entries(preset.rules)) {
       if (!RULES[key]?.options.includes(value)) return null;
       rules[key] = value;
