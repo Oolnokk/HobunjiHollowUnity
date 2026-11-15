@@ -42,6 +42,7 @@ const straight = step(3.5 * TILE, 6.5 * TILE, 1, 0);
 assert(straight.vx > 0 && Math.abs(straight.vy) < 1e-8,
   'open ground leaves normal acceleration completely unchanged');
 
+window.GroundObstacleAvoidance.reset('foot'); // Test fixture teleports between independent scenario starting positions.
 const assisted = step(5.1 * TILE, 6.5 * TILE, 1, 0);
 assert(assisted.vx > 0 && assisted.vy > 0, 'real player acceleration turns gently around a nearby rock');
 assert(Math.atan2(Math.abs(assisted.vy), assisted.vx) <= Math.PI / 7 + 1e-8,
