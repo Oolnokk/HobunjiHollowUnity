@@ -496,11 +496,16 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     FarmhouseRoomPlanner: { restore() {} },
     FarmProduction: { serialize: () => [] },
   }; // Minimal authentic house footprints: spawning registers tiles, clearing releases them.
+  let persistedFarmLayout = JSON.stringify(layout); // Canonical browser mirror remains bit-for-bit intact across blocked startup/partial saves.
+  let farmLayoutWrites = 0; // Test verifies that saveFarmLayout never reaches storage while saved stations are missing.
   const ctx = {
-    window, console,
-    localStorage: { getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? JSON.stringify(layout) : null; } },
+    window, console: { error() {}, warn() {}, log() {} },
+    localStorage: {
+      getItem(key) { return key === 'hobunji_farm_layout_v3:world_p6bt8ho6' ? persistedFarmLayout : null; },
+      setItem(key, value) { if (key === 'hobunji_farm_layout_v3:world_p6bt8ho6') { persistedFarmLayout = value; farmLayoutWrites++; } },
+    },
     document: { getElementById() { return null; }, querySelector() { return null; } },
-  }; // Test reads the on-disk layout mirror without DevTools or a graphical scene.
+  }; // Test uses a writable local-storage mirror to prove a failed save cannot corrupt the original JSON.
   vm.runInNewContext(editorSource, ctx, { filename: 'farm-editor.js' });
   window.FarmEditor.init({
     threeContainer: { addEventListener() {} },
@@ -523,6 +528,8 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   });
   window.__hobunjiGameStarted = false; // Reproduces the period when a saved farm exists but the full world has not hydrated yet.
   strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /not fully hydrated/, 'startup cannot overwrite the correct farm with default house/furniture state');
+  strictAssert.equal(window.FarmEditor.saveFarmLayout(), false, 'startup save returns an explicit failure');
+  strictAssert.equal(farmLayoutWrites, 0, 'the existing farm file is not rewritten during bootstrap');
   window.__hobunjiGameStarted = true;
   window.FarmEditor.applyFarmLayoutObjects(layout);
   strictAssert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
@@ -543,6 +550,9 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   strictAssert.equal(blocked.restoreProtection.blockers[0].reason, 'house_piece', 'mobile diagnostics identifies the exact live blocking object');
   strictAssert.equal(objectMap.get('25,0')?.type, 'house_piece', 'real saved house footprint is never deleted by recovery');
   strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /saved processing stations/, 'a partial restore cannot destroy the authoritative farm layout');
+  strictAssert.equal(window.FarmEditor.saveFarmLayout(), false, 'incomplete restore refuses an ordinary save as well as folder capture');
+  strictAssert.equal(farmLayoutWrites, 0, 'rejected incomplete restore never replaces the full seven-processor JSON');
+  strictAssert.equal(JSON.parse(persistedFarmLayout).furniture.length, 7, 'the original saved seven processors survive both rejected writes');
 }
 
 verifyMovedHouseUnblocksAllSavedProcessors();
