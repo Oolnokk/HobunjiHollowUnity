@@ -218,6 +218,7 @@
     'voorg-ass': ['belly'],
     moot: [], // Moot inherits its single coat color and Size without requiring unauthored pattern sprites.
     pingdort: [], // Wild fertile eggs and farm breeding inherit coat color and Size; no invented Pingdort pattern overlays.
+    skeeri: [], // Fertile ruin eggs and breeding inherit coat color and Size via the existing system.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
     nelk: ['brushtail', 'cape', 'spectacles'],
     nazgraku: ['spectacles'],
@@ -403,7 +404,7 @@
   function creatureSizeTrait(kind, genotype) {
     const sizeScale = creatureSizeScale(kind, genotype); // Supplies UI labels and the same percentages used in-world.
     const defaultSizeClass = normalizeCreatureSizeClass(deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'); // Flags inherited non-default sizes.
-    const role = kind === 'pingdort' && sizeScale.sizeClass === 'large' ? 'companion' : CREATURE_SIZE_ROLE[sizeScale.sizeClass]; // Even a large Pingdort is a bombing companion, never a rideable mount.
+    const role = (kind === 'pingdort' || kind === 'skeeri') && sizeScale.sizeClass === 'large' ? 'companion' : CREATURE_SIZE_ROLE[sizeScale.sizeClass]; // Even a large Pingdort is a bombing companion, never a rideable mount.
     return {
       ...sizeScale,
       label: CREATURE_SIZE_LABEL[sizeScale.sizeClass],
@@ -469,7 +470,7 @@
   }
   function stableEntryRole(entry) {
     const sizeClass=creatureSizeClass(entry?.kind,entry?.genotype); // Shared size calculation remains authoritative for breedable Pingdorts.
-    return entry?.kind==='pingdort'&&sizeClass==='large'?'companion':CREATURE_SIZE_ROLE[sizeClass]; // Never equip a large Pingdort as a mount.
+    return (entry?.kind==='pingdort'||entry?.kind==='skeeri')&&sizeClass==='large'?'companion':CREATURE_SIZE_ROLE[sizeClass]; // Never equip a large Pingdort as a mount.
   }
   // Steps a Size one notch up or down with no wraparound. Endpoint classes
   // always step inward so a successful rare mutation can never silently
