@@ -13,6 +13,7 @@ const baseline = { // Relative order anchors from the first migration, not an ex
   qol: ['toast-notifications', 'location-arrival', 'qol-hotkeys', 'inventory-search'],
   guild: ['delvers-guild-story', 'town-magic-checkpoint', 'delvers-vault-signal'],
   render: ['npc-view-frustum-cull', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks', 'scissor-depth-snapshot', 'actor-render-occlusion'],
+  'farm-buildings': ['farm-buildings', 'farm-troughs', 'house-pieces'],
 };
 const groups = [...html.matchAll(/data-classic-group="([a-z][a-z0-9-]*)"/g)].map(m => m[1]); // Discovers future groups without changing this file.
 assert(groups.length > 0, 'the game page defines at least one classic group');
@@ -38,7 +39,7 @@ for (const group of groups) {
   const urls = [...manifestWrites[0].matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
   assert(urls.length > 0, group + ' must contain at least one script');
   assert.equal(new Set(urls.map(u => u.split('?')[0])).size, urls.length, group + ' must not duplicate module paths');
-  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+$/.test(url)), group + ' modules need versioned URLs');
+  assert(urls.every(url => /\?v=[a-zA-Z0-9_-]+(?:&amp;|$)/.test(url)), group + ' modules need versioned URLs');
   const names = urls.map(url => url.replace(/^js\/|\.js\?.*$/g, '')); // Module names used for baseline ordering checks.
   let previous = -1; // Tracks each baseline member's position as new modules are inserted.
   for (const anchor of baseline[group] || []) {
@@ -55,6 +56,8 @@ for (const anchor of Object.values(baseline).flat()) {
 assert(expanded.indexOf('js/toast-notifications.js') < expanded.indexOf('js/delvers-guild-story.js'));
 assert(expanded.indexOf('js/delvers-vault-signal.js') < expanded.indexOf('js/bed-lie-pose.js'));
 assert(expanded.indexOf('js/actor-render-occlusion.js') < expanded.indexOf('src="game.js?v='));
+assert(expanded.indexOf('js/farm-animals.js?v=') < expanded.indexOf('js/farm-buildings.js?v='));
+assert(expanded.indexOf('js/house-pieces.js?v=') < expanded.indexOf('js/creature-death.js?v='));
 assert(!expanded.includes('data-classic-group='), 'the test view expands all registered groups');
 assert.throws(() => vm.runInNewContext(loader, {
   document: { readyState: 'complete', currentScript: { getAttribute: () => 'qol' }, write() {} },

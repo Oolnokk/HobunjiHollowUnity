@@ -3,7 +3,7 @@
 
   // Parser-time entrypoint for the modular-house feature. The stable house
   // architecture core stays separate from optional terrain/elevation glue,
-  // while index.html keeps a single long-lived js/house-pieces.js include.
+  // while the farm-buildings manifest owns this bootstrap's cache versions.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
   const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261113terrainpass2') : '20261113terrainpass2'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
@@ -77,7 +77,7 @@
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],
-    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261112hc8db9a2'],
+    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261115hf8cf420'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],

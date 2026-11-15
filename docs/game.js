@@ -23560,6 +23560,7 @@
         if (!mesh) return;
         const idColor = _terrainIdColors[category] || _terrainIdColors[TileType.GRASS];
         mesh.layers.enable(3);
+        mesh.userData.hobunjiTerrainEdgeIdColor = idColor; // Shared per category: lets js/farm-tile-render-batches.js merge tiles that draw identically, hook included.
         mesh.onBeforeRender = function (renderer, scene, camera, geometry, material) {
           if (material !== _furnitureIdMat) return;
           _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
@@ -27436,6 +27437,10 @@
         // portrait, limbs and clothing disable Three's individual frustum
         // culling. Suspend off-camera NPC visuals across ALL world passes,
         // then restore before any gameplay tick or subsequent render.
+        // The farm's ~1,000 per-tile ground meshes draw as merged 8x8-tile
+        // batches for this render only (js/farm-tile-render-batches.js); the
+        // tiles themselves stay the authority for edits and raycasts.
+        const restoreFarmTileBatches = window.FarmTileRenderBatches?.suspendForRender?.(activeScene);
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
         // Same contract for instanced brick walls/paths and grass, which Three r128
         // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
@@ -27580,6 +27585,7 @@
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
           restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
           restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
+          restoreFarmTileBatches?.(); // Tile edits, raycasts and other renderers see the per-tile meshes again.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);

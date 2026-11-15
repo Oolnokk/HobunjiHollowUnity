@@ -137,8 +137,34 @@
     } };
   }
 
-  function cloneJigsawMaterial(mat, wallLike, shareChunkTexture = false) {
+  // Every jigsaw-baked mesh used to get its own material AND texture clone.
+  // On the farm that is every tile (~430 of them): 430 copies of the same
+  // grass texture on the GPU, a texture bind per tile draw, and no two tiles
+  // that could ever be batched (js/farm-tile-render-batches.js groups by
+  // material). The clone is fully determined by its source material and the
+  // wall flag (UVs live in the baked geometry; the texture transform is reset
+  // to identity), so for farm tiles (userData.hobunjiFarmTile: their materials
+  // are never disposed on replacement, only removed from the scene) one clone
+  // per (source, wall) is shared while the source is unchanged (same material
+  // version and map). Every other caller keeps independent ownership, because
+  // wilderness chunk cleanup disposes the materials it owns.
+  const jigsawMaterialCache = new WeakMap(); // source material -> { wall, flat } of { version, map, clone }
+  let jigsawMaterialReuses = 0;
+  function cloneJigsawMaterial(mat, wallLike, shareChunkTexture = false, shareMaterial = false) {
     if (!mat) return mat;
+    if (shareMaterial && !shareChunkTexture) {
+      const slot = wallLike ? 'wall' : 'flat';
+      const entry = jigsawMaterialCache.get(mat)?.[slot];
+      if (entry && entry.version === mat.version && entry.map === mat.map && entry.clone) { jigsawMaterialReuses++; return entry.clone; }
+      const clone = cloneJigsawMaterialUncached(mat, wallLike, false);
+      const bySlot = jigsawMaterialCache.get(mat) || {};
+      bySlot[slot] = { version: mat.version, map: mat.map, clone };
+      jigsawMaterialCache.set(mat, bySlot);
+      return clone;
+    }
+    return cloneJigsawMaterialUncached(mat, wallLike, shareChunkTexture);
+  }
+  function cloneJigsawMaterialUncached(mat, wallLike, shareChunkTexture) {
     const out = mat.clone();
     out.userData = Object.assign({}, mat.userData, { terrainJigsawMaterial: true });
     if (mat.map && shareChunkTexture) {
@@ -410,7 +436,7 @@
     next.computeBoundingBox();next.computeBoundingSphere();
 
     const mats=Array.isArray(mesh.material)?mesh.material.slice():[mesh.material];
-    for(let i=0;i<mats.length;i++)if(materialEligible(mats[i]))mats[i]=cloneJigsawMaterial(mats[i],!!wallByMaterial.get(i), options.shareChunkTexture === true);
+    for(let i=0;i<mats.length;i++)if(materialEligible(mats[i]))mats[i]=cloneJigsawMaterial(mats[i],!!wallByMaterial.get(i), options.shareChunkTexture === true, mesh.userData?.hobunjiFarmTile === true);
     const oldGeo=mesh.geometry;mesh.geometry=next;mesh.material=Array.isArray(mesh.material)?mats:mats[0];
     mesh.userData.terrainGeometryRevision=(Number(mesh.userData.terrainGeometryRevision)||0)+1;
     if(options.disposeSource!==false){try{oldGeo.dispose?.();}catch(_){}}
@@ -502,7 +528,7 @@
     return notified;
   }
 
-  const jigsawApi={installed:true,bakeMesh,scanScene:scanJigsawScene,defaults:{edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD},snapshot(){return{meshesBaked:jigsawMeshesBaked,islandsBaked:jigsawIslandsBaked,trianglesBaked:jigsawTrianglesBaked,sharedChunkTextures:chunkJigsawTextureCount,sharedChunkTextureRefs:chunkJigsawTextureRefs,edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD};}};
+  const jigsawApi={installed:true,bakeMesh,scanScene:scanJigsawScene,defaults:{edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD},snapshot(){return{meshesBaked:jigsawMeshesBaked,islandsBaked:jigsawIslandsBaked,trianglesBaked:jigsawTrianglesBaked,sharedChunkTextures:chunkJigsawTextureCount,sharedChunkTextureRefs:chunkJigsawTextureRefs,sharedJigsawMaterialReuses:jigsawMaterialReuses,edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD};}};
   const chunkApi={installed:true,scanScene:scanChunkScene,snapshot(){return{sourceMeshesChunked,chunksCreated,sourceTrianglesChunked,chunkTiles:CHUNK_TILES,chunkWorldSize:CHUNK_WORLD,chunkCoordinateUnits:'tiles',rejectedTooFewBuckets,rejectedTooManyBuckets};}};
 
   function wrappedRender(scene,camera){const now=performance.now();scanJigsawScene(scene,now);scanChunkScene(scene,now);notifyTerrainGeometryReady(scene);return originalRender.call(this,scene,camera);}
