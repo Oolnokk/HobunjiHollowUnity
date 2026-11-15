@@ -63,6 +63,16 @@ for (let row = 1; row <= 12; row++) blocked.add('6,' + row);
 const noRoute = steering.steer('mounted', 'fence', 5.4 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60);
 assert.equal(noRoute, null, 'unreachable solid walls do not produce fake navigation paths');
 assert.equal(steering.debugSnapshot().mounted.status, 'no-route');
+const fencePlans = steering.debugSnapshot().mounted.plans; // Counts failed searches while input remains pressed into the fence.
+for (let frame = 0; frame < 30; frame++) {
+  const stillBlocked = steering.steer('mounted', 'fence', 5.4 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60);
+  assert.equal(stillBlocked, null, 'a held input into the fence never forges a path');
+}
+assert.equal(steering.debugSnapshot().mounted.plans, fencePlans,
+  'failed route is cached for at least 0.5 seconds; no per-frame A* retry loop');
+for (let frame = 0; frame < 6; frame++) steering.steer('mounted', 'fence', 5.4 * tile, 6.5 * tile, 1, 0, tile, occupied, 1 / 60);
+assert.equal(steering.debugSnapshot().mounted.plans, fencePlans + 1,
+  'long-held input eventually retries after the bounded route cooldown');
 blocked.clear();
 
 // Input reversal and area changes must invalidate old routes, even if
