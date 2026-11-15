@@ -698,6 +698,19 @@
           notify();
           return getStatus();
         }
+        if (_lastKnownFarmLayoutFingerprint !== null) {
+          const disk = await readFolderFarmLayouts(); // A Drive version restore can change the disk file without touching browser localStorage.
+          const diskFingerprint = farmLayoutFingerprint(disk.layouts);
+          if (disk.corruptFiles.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
+            _lastDataLossRisk = disk.corruptFiles.length
+              ? 'farm-layout files on disk are unreadable'
+              : 'farm-layout files changed outside this game session';
+            _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Use Load from Folder to recover the new layout before saving.';
+            _lastAction = automatic ? 'autosync-blocked-external-layout' : 'save-blocked-external-layout';
+            notify();
+            return getStatus();
+          }
+        }
         const checkpointRisk = checkpointIntegrityRisk(saveSnapshot, { automatic, force, recoveryKind }); // Farm-specific inventory/storage/livestock reset detection runs before canonical writes.
         if (checkpointRisk) {
           _lastDataLossRisk = checkpointRisk;
@@ -707,19 +720,7 @@
           return getStatus();
         }
       }
-      if (!force && _lastKnownFarmLayoutFingerprint !== null) {
-        const disk = await readFolderFarmLayouts(); // A Drive version restore can change the disk file without touching browser localStorage.
-        const diskFingerprint = farmLayoutFingerprint(disk.layouts);
-        if (disk.corruptFiles.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
-          _lastDataLossRisk = disk.corruptFiles.length
-            ? 'farm-layout files on disk are unreadable'
-            : 'farm-layout files changed outside this game session';
-          _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Use Load from Folder to recover the new layout before saving.';
-          _lastAction = automatic ? 'autosync-blocked-external-layout' : 'save-blocked-external-layout';
-          notify();
-          return getStatus();
-        }
-      }
+
       _lastDataLossRisk = null;
 
       await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
