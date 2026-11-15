@@ -95,8 +95,8 @@ for (const key of ['glowGlyphOrb','flamingLichHeart','unsleepingLichHeart','sigh
   assert.ok(Math.abs(surface.area-.325*.325)<1e-10);
   assert.equal(surface.bounds.minU,-.1625);
   assert.equal(surface.bounds.maxV,.1625);
-  assert.equal(decal.width, .15, 'decal width halved again independently of billboard');
-  assert.equal(decal.height, .15, 'decal height halved again independently of billboard');
+  assert.equal(decal.width, .8, 'decal X scale matches authored 0.8 independently of billboard');
+  assert.equal(decal.height, .8, 'decal Y scale matches authored 0.8 independently of billboard');
   assert.equal(decal.glyphInk?.enabled,true);
   assert.ok(decal.glyphInk.glowStrength>0);
   assert.ok(decal.glyphInk.glowRadius>0);
