@@ -58,7 +58,7 @@ const w = {
     getNpcDlgState: () => ({ favor: 0 }),
     recordNpcMemory() {}
   },
-  NpcFollowing: { clear() {} }
+  NpcFollowing: { init() {}, clear() {} } // Exercise the real spouse init and bedtime override in this headless fixture.
 };
 const context = vm.createContext({ window: w, console, setInterval() {}, clearInterval() {} });
 vm.runInContext(sourceFile('docs/js/spouse-social-life.js'), context, { filename: 'spouse-social-life.js' });
