@@ -100,8 +100,8 @@
     wardensAmulet: {
       id: 'wardensAmulet', displayName: "Warden's Amulet", icon: '🔰', attunementCost: 3,
       source: 'buriedTreasure', category: 'combat',
-      description: 'Maximum Footing +45%.',
-      effects: { stats: { maxFooting: 1.45 } },
+      description: 'Maximum Footing +60%.',
+      effects: { stats: { maxFooting: 1.60 } },
     },
 
     // ── Harlyao ruins (dungeon chests) — Combat perk vocabulary ───────
