@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-ray-authority.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 const rangedWeaponsSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'); // Verifies release-frame aim and spawn share the same held transform sample.
-const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Verifies warm clients fetch the updated combat loader.
+const indexSource = require('./classic-script-group-index.js').expandClassicScriptGroups(); // Verifies the parser-inserted combat loader retains a fresh version for warm clients.
 assert.doesNotMatch(source, /setInterval\s*\(/, 'ranged authority adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'ranged authority adds no frame loop');
 
