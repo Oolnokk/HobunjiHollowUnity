@@ -242,6 +242,16 @@
     for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
     ctx.closePath();
   }
+  function drawLightBand(ctx,outer,inner,alpha,draw){
+    ctx.save();
+    try{
+      ctx.globalAlpha*=alpha;
+      ctx.beginPath();traceHull(ctx,outer);
+      if(inner)traceHull(ctx,inner);
+      ctx.clip(inner?'evenodd':'nonzero');
+      draw();
+    }finally{ctx.restore();}
+  }
   function drawClippedRoomLight(ctx,clip,draw){
     if(clip.outer.length<3){draw();return;}
     ctx.save();
@@ -251,20 +261,9 @@
       }
       // Nonoverlapping convex bands fade to zero at the room's actual edge.
       // Keep the original destination-out/source-over operation and don't draw outside the room.
-      for(const band of [
-        {outer:clip.inner,inner:null,alpha:1},
-        {outer:clip.mid,inner:clip.inner,alpha:.65},
-        {outer:clip.outer,inner:clip.mid,alpha:.22},
-      ]){
-        ctx.save();
-        try{
-          ctx.globalAlpha*=band.alpha;
-          ctx.beginPath();traceHull(ctx,band.outer);
-          if(band.inner)traceHull(ctx,band.inner);
-          ctx.clip(band.inner?'evenodd':'nonzero');
-          draw();
-        }finally{ctx.restore();}
-      }
+      drawLightBand(ctx,clip.inner,null,1,draw);
+      drawLightBand(ctx,clip.mid,clip.inner,.65,draw);
+      drawLightBand(ctx,clip.outer,clip.mid,.22,draw);
     }finally{ctx.restore();}
   }
 
@@ -412,7 +411,8 @@
       snapshot(){return {activeRoomId:active?.id||null,totalRooms:rooms.length,
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
-        assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[]};},
+        assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
+        lightClip:{featherPx:LIGHT_CLIP_FEATHER_PX,feathered:!!lightHull?.inner}};},
     };
     live=session;
     return session;
