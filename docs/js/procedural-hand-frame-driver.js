@@ -680,6 +680,19 @@
       }
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
+      // Refresh the player's *rendered* weapon stance before reading its grip sockets.
+      // The pre-render hand pass otherwise consumes last frame's baked holder matrix:
+      // weapons follow the latest head/aim pose, but hands remain at the older pose.
+      // Do this once for the whole grip solve (not once per hand), after head-relative
+      // attachments have been positioned by the render compositor when applicable.
+      const playerOwnedHolder = !inAttackEditor()
+        && !record.avatarRoot?.userData?.proceduralHandToolHolder
+        && !!gameDeps?.playerMesh
+        && record.rig?.parent === gameDeps.playerMesh
+        && toolHolder === gameDeps.toolHolder;
+      if (playerOwnedHolder && global.WeaponToolStances?.lastHolderMatrixWorld) {
+        toolHolder.updateMatrixWorld?.(true); // Re-bakes the transient stance using the CURRENT holder pose; both hands read the same snapshot.
+      }
       const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
