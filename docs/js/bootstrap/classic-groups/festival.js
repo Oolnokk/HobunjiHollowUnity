@@ -11,7 +11,7 @@
     "js/festival-locale-activities.js?v=20261109festivalMerge2",
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
     "js/festival-system.js?v=20261114activeBuffMenu1",
-    "js/festival-dialogue.js?v=20261022h561ec26",
+    "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261110tzkFortune1"
 ]; // Independently versioned modules loaded before game.js.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
