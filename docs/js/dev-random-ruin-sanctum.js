@@ -1087,11 +1087,23 @@
     entity.avatarRef?.dispose?.();
   }
 
+  function removeLichHeart(owner = s) {
+    if (!owner?.heart) return; // The physical pickup and its controls share this one disposal path.
+    const group = owner.heart.group; // Authored furniture keeps shared decal textures, but owns its glow-material and decal meshes.
+    for (const glow of group.userData?.staticGlowEmitterVisuals || []) glow?.dispose?.(); // Dispose per-instance halo sprites without disposing the global texture.
+    for (const decal of group.userData?.authoredDecalMeshes || []) {
+      decal.geometry?.dispose?.();
+      decal.material?.dispose?.(); // Materials are instance-specific; their cached image textures remain shared.
+    }
+    group.parent?.remove?.(group);
+    owner.heart = null;
+  }
+
   function syncLichHeart() {
     if (!s?.built || !s.isSpecialBoss || !s.bossDefeated || !s.sanctumRoot) return; // Ordinary liches never drop authored heart relics.
     const heart = window.LichHeartSystem?.forType?.(s.bossType); // Shared registry maps each named guardian to one real furniture piece.
     if (!heart || window.LichHeartSystem?.has?.(s.bossType)) {
-      if (s.heart) { s.heart.group.parent?.remove?.(s.heart.group); s.heart = null; } // Ownership is authoritative on load and after pickup.
+      removeLichHeart(); // Ownership is authoritative on load and after pickup.
       return;
     }
     if (s.heart) return; // Repeated update ticks never instantiate duplicates.
@@ -1106,7 +1118,7 @@
     s.sanctumRoot.add(group);
     const owner = s; // A stale controller cannot change another ruin after a shift/rebuild.
     const control = {
-      kind:'lichHeart', object:group, promptRoot:group, range:2.2, priority:24, claimAction1:true, touchIcon:'💠',
+      kind:'lichHeart', object:group, promptRoot:group, floorY, range:2.2, priority:24, claimAction1:true, touchIcon:'💠', // A floor-local pickup must not be claimable through a stacked ruin room.
       label:'Claim ' + heart.label,
       onPress:() => {
         if (s !== owner || owner.heart?.group !== group) return false;
@@ -1115,8 +1127,7 @@
           deps?.showToast?.(result?.message || 'Could not save the Lich-heart. Try again.', false);
           return false;
         }
-        group.parent?.remove?.(group);
-        owner.heart = null;
+        removeLichHeart(owner); // Includes authored static glow cleanup; no stale prompt or GPU material survives collection.
         return true;
       },
     };
@@ -1244,7 +1255,7 @@
     clear() {
       if (!s) return;
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
-      if (s.heart) { s.heart.group.parent?.remove?.(s.heart.group); s.heart = null; } // Old pickup and interaction must not survive teardown.
+      removeLichHeart(); // Old pickup and its glow material must not survive ruin teardown.
       if (s.boss) { for (const minion of s.boss._lichSummons || []) disposeActor(minion); disposeActor(s.boss); }
       for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
       if (s.boss) window.SpecialHarlyaoLiches?.applyPlasmSkin?.(s.boss,false); // Temporary charge-retexture materials never survive a reroll.
