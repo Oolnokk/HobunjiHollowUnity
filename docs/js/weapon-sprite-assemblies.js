@@ -118,7 +118,7 @@
     return result.setFromRotationMatrix(scratch.basis.makeBasis(right, up, normal));
   }
 
-  function buildPlane(THREE, image, tex, unit, order, offset = null) {
+  function buildPlane(THREE, image, tex, unit, order, offset = null, writesDepth = false) {
     const w = image.naturalWidth || image.width || 1;
     const h = image.naturalHeight || image.height || 1;
     const geometry = new THREE.PlaneGeometry(w * unit, h * unit);
@@ -126,10 +126,13 @@
     map.needsUpdate = true;
     const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit; // Use the same unlit PNG material pipeline as the game's other sprites.
     const material = surface?.makeMaterial
-      ? surface.makeMaterial(THREE, map, 'weapon-assembly-layer', { side: THREE.DoubleSide, depthWrite: true })
-      : new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: true });
-    material.depthWrite = true; // Visible head/layer pixels participate in held-object depth replay like the haft.
-    material.alphaTest = Math.max(0.08, Number(material.alphaTest) || 0); // Discard transparent sprite fringes before writing depth.
+      ? surface.makeMaterial(THREE, map, 'weapon-assembly-layer', { side: THREE.DoubleSide, depthWrite: writesDepth })
+      : new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: writesDepth ? 0.35 : 0.08,
+          side: THREE.DoubleSide, depthWrite: writesDepth }); // Only physical flail head/chain art writes depth; decorative weapon layers retain their original blending.
+    if (writesDepth) {
+      material.depthWrite = true; // A factory override must not disable solid head/chain depth in the held overlay.
+      material.alphaTest = Math.max(Number(material.alphaTest) || 0, Number(surface?.maskAlphaTest?.()) || 0.35); // Match the game's solid PNG depth mask.
+    }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set((Number(offset?.x) || 0) * unit, -(Number(offset?.y) || 0) * unit, 0);
     mesh.renderOrder = order;
@@ -325,7 +328,7 @@
       const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Only the virtual rope endpoint span changes.
       const chain = isRope
         ? makeRope(THREE, { ...f.chain, lengthPx: ropePixels }, unit, order + 0.01, ropeTexture)
-        : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
+        : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01, null, true); // Raster chains also x-ray as physical flail attachments.
       if (!isRope) effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating; generated natural rope keeps its authored bark-brown surface.
       const headRoot = new THREE.Group();
       headRoot.name = itemKey + '_flail_head';
@@ -341,7 +344,7 @@
       }
       const headOrder = f.head.layerOrder === 'haft-over-head' ? order - 0.02 : order + 0.02; // Pair-only foreground choice; original multi-sprite flails keep their authored front order.
       f.head.layers.forEach((layer, i) => {
-        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, headOrder + i * 0.001, layer.offsetPx);
+        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, headOrder + i * 0.001, layer.offsetPx, true); // Both authored head layers participate in held depth.
         headArtworkRoot.add(mesh); // Shared pair transform preserves authored per-layer geometry and effects.
         state.headParts.push(mesh);
         effects?.registerLayer(state, mesh, layer, headTextures[i].image);
@@ -562,7 +565,7 @@
     map.needsUpdate = true;
     const material = new THREE.MeshBasicMaterial({
       map, color: '#FFFFFF', side: THREE.DoubleSide, // Pixel colors are already adjusted; do not multiply the whole shaded PNG again.
-      transparent: true, alphaTest: 0.12, depthWrite: true, toneMapped: false, // Solid rope pixels write depth; translucent fringes do not.
+      transparent: true, alphaTest: 0.35, depthWrite: true, toneMapped: false, // Match the game's solid PNG depth mask; thin fringes never write foreground depth.
     }); // Same unlit, transparent, double-sided rendering as DungeonRopeArt.
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(aspect, 1), material);
     mesh.name = 'flail_ruin_rope_sprite';
