@@ -416,11 +416,21 @@
   let airborneDepthRebuilds = 0; // Counts raised-gear frames that rebuilt ordinary depth without horizon masks.
   let backgroundDepthMeshesExcluded = 0; // Counts background depth submissions suppressed from gear/shell depth replays.
 
+  // A manual rank can cross the front-portrait/held-overlay pass boundary only
+  // by changing the owner's stencil relationship, never by reordering depth passes.
+  function manualBehindFront(layer) {
+    if (xrayRule('layers.manualOrder') !== 'on' || !window.XrayHierarchy?.layerRank) return null;
+    return window.XrayHierarchy.layerRank(layer) < window.XrayHierarchy.layerRank('actor.front');
+  }
+  function heldPriorityLayer() {
+    return xrayRule('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands';
+  }
   function isPortraitMaskedGear(object) {
     const data = object?.userData;
     if (data?.hobunjiHeldObjectPlane !== true || data.hobunjiProceduralFoot === true) return false;
-    if (data.hobunjiProceduralHand === true) return maskedHands.has(object) && xrayRule('hand.frontPlaneMask') !== 'off'; // Hands join the front-art mask only when the hand rule selects them.
-    return xrayRule('weapon.frontPlaneMask') !== 'off';
+    if (data.hobunjiProceduralHand === true) return maskedHands.has(object) && xrayRule('hand.frontPlaneMask') !== 'off';
+    if (xrayRule('weapon.frontPlaneMask') === 'off') return false;
+    return manualBehindFront(heldPriorityLayer()) !== false; // The hand's layer carries its held tool unless explicitly unlinked.
   }
 
   // Hands: a hand with a part behind its holder's front portrait plane (camera on the front side) must not
@@ -471,11 +481,12 @@
     // Per-hand state rather than clear-and-rebuild: the world is rendered more than once per frame and a pass
     // that collects no hands must not un-mask the ones an earlier pass decided about.
     const rule = xrayRule('hand.frontPlaneMask');
+    const manualFront = manualBehindFront('actor.hands'); // An explicitly frontmost hand cannot be stencil-masked as behind.
     let frontByOwner = null; // Owner -> front portrait, built once per call and only if a hand needs it.
     for (const mesh of held) {
       if (mesh.userData?.hobunjiProceduralHand !== true) continue;
-      let masked = rule === 'always';
-      if (rule === 'behind') {
+      let masked = manualFront === false ? false : rule === 'always';
+      if (manualFront !== false && rule === 'behind') {
         if (!frontByOwner) {
           frontByOwner = new Map();
           for (const portrait of collectVisible(frontPortraitRegistry, scene)) {
@@ -550,7 +561,7 @@
       || /^hobunji_cloud_/.test(name) || Number.isFinite(material?.userData?.skyLayerDepthNdc) ? 'sky' : 'distant';
     if (data.hobunjiProceduralHand === true || data.hobunjiPortraitOccludedWingLayer === true) return 'actor.hands';
     if (data.hobunjiProceduralFoot === true) return 'actor.feet';
-    if (data.hobunjiHeldObjectPlane === true || data.hobunjiWeaponAssemblyPart === true) return 'item.weapons';
+    if (data.hobunjiHeldObjectPlane === true || data.hobunjiWeaponAssemblyPart === true) return heldPriorityLayer(); // Shared hand priority by default, separable in Dev Companion.
     if (data.hobunjiPantsGarment === true) return 'garment.pants';
     if (/hat_xray|headwear|hat_plane/.test(name)) return 'garment.headwear';
     if (/skinned_front_material/.test(materialName) || /avatar_front_plane/.test(name)) return 'actor.front';
@@ -2703,7 +2714,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       && Number(flight.heightAboveGround) > 0.05;
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : [];
-    const rebuildAirborne = airborne && backgroundMeshes.length > 0 && xrayRule('airborne.rebuildDepth') !== 'off';
+    const rebuildAirborne = airborne && overlayMeshes.length > 0 && backgroundMeshes.length > 0 && xrayRule('airborne.rebuildDepth') !== 'off';
     if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
     let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
