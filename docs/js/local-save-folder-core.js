@@ -130,6 +130,7 @@
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
   let _committedFileState = null; // Per-file content fingerprints and timestamps used to skip unchanged canonical writes.
+  let _lastManifestStamp = null; // The completed manifest must still be present before a no-op autosave is permitted.
   let _lastSaveWork = { written: 0, unchanged: 0 }; // File-level save counts exposed in mobile diagnostics.
   let _unchangedAutosavesSkipped = 0; // Automatic saves avoided because captured live data did not change.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
@@ -459,11 +460,13 @@
   // A fast metadata pass is sufficient only for known, untouched farm files.
   // Unexpected/edited files fall back to the full JSON integrity check.
   async function canonicalFilesUnmodified() {
-    if (!_committedFileState) return false;
+    if (!_committedFileState || !_lastManifestStamp) return false;
     // A no-op save is safe only if every canonical disk file remains present
     // and unchanged. On browsers without file timestamps we take the normal
     // guarded write path rather than trusting a stale in-memory fingerprint.
     try {
+      const manifestHandle = await _handle.getFileHandle(MANIFEST_FILE_NAME); // Missing or externally changed manifest invalidates no-op autosaves.
+      if (!sameDiskStamp(_lastManifestStamp, diskStamp(await manifestHandle.getFile()))) return false;
       for (const [key, previous] of _committedFileState) {
         if (!previous.stamp) return false;
         const separator = key.indexOf('/');
@@ -928,6 +931,8 @@
       try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
 
       _committedFileState = nextFiles;
+      try { _lastManifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile()); }
+      catch { _lastManifestStamp = null; }
       _lastSaveWork = work;
       _lastKnownFolderMeta = meta;
       _lastSyncedAt = savedAt;
@@ -965,6 +970,7 @@
 
     } catch (error) {
       _committedFileState = null; // A partial file write cannot authorize later no-op saves.
+      _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
     }
@@ -994,6 +1000,7 @@
 
     try {
       _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
+      _lastManifestStamp = null;
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
         _lastAction = 'initialized-empty-folder';
@@ -1135,6 +1142,7 @@
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       _handle = handle;
       _committedFileState = null; // Do not reuse signatures from another save folder.
+      _lastManifestStamp = null;
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
@@ -1207,6 +1215,7 @@
       _state = granted ? 'ready' : 'needs-permission';
       stopAutoSync();
       _committedFileState = null; // Reconnection may follow external changes during a permissions gap.
+      _lastManifestStamp = null;
       if (granted) {
         await inspectConnectedFolder();
         _lastAction = 'permission-restored-awaiting-choice';
@@ -1236,6 +1245,7 @@
     _lastKnownFolderMeta = null;
     _lastKnownFarmLayoutFingerprint = null;
     _committedFileState = null;
+    _lastManifestStamp = null;
     _lastSaveWork = { written: 0, unchanged: 0 };
     _ignoredFarmLayoutBackupFiles = [];
     _lastDataLossRisk = null;
