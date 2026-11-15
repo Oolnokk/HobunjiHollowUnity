@@ -1099,11 +1099,14 @@
   function makePingdortAnimal(col, row, livestockId, genotype) {
     return makePatternLivestockAnimal('pingdort', 'Pingdort', '🐦', col, row, livestockId, genotype); // Reuses farm housing, breeding, size genetics and egg production without a second farm model.
   }
+  function makeSkeeriAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('skeeri', 'Skeeri', '🐦', col, row, livestockId, genotype); // Exactly the same barn wander/housing and resource rules as Pingdort.
+  }
 
   // Livestock kind → factory, so restoring saved livestock on world load
   // can dispatch by kind without hardcoding uumkao'ii — the array this
   // reads is meant to grow into other livestock types later.
-  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal, moot: makeMootAnimal, pingdort: makePingdortAnimal };
+  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal, moot: makeMootAnimal, pingdort: makePingdortAnimal, skeeri: makeSkeeriAnimal };
 
   // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
   // that item — populated when a Den-Mother's nest grants an egg/baby
