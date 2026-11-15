@@ -125,6 +125,8 @@ function normalizeDecal(record = {}) {
     imageName: record.imageName || '',
     tankanText: String(record.tankanText || ''),
     visible: record.visible !== false,
+    ...(record.glow && typeof record.glow === 'object' ? { glow: dclone(record.glow) } : {}), // Keep puzzle OFF/ON glow when normalizing imported furniture.
+    ...(window.FurnitureDecalInk?.normalize?.(record.glyphInk) ? { glyphInk: window.FurnitureDecalInk.normalize(record.glyphInk) } : {}), // Keep standalone ink settings for both image and Tankan decals.
   };
   if (sourceType === TANKAN_SOURCE_TYPE) return { ...common, ...normalizedTankanRecord(record) };
   return {
@@ -402,6 +404,8 @@ function disposeDecalMesh(id) {
   mesh.geometry?.dispose?.();
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const material of materials.filter(Boolean)) material.dispose?.();
+  const halo = mesh.userData?.glyphInkHalo; // Editor rebuilds many meshes; dispose the effect's separate GPU geometry/material.
+  if (halo) { halo.geometry?.dispose?.(); halo.material?.dispose?.(); }
   const outline = mesh.userData?.outline;
   if (outline) {
     outline.geometry?.dispose?.();
@@ -449,11 +453,12 @@ function buildDecalMesh(record) {
     polygonOffsetUnits: -2,
   });
   const previewGlow = record.glow && typeof record.glow === 'object' ? (glowPreviewOn ? (record.glow.on?.length ? record.glow.on : record.glow.off) : (record.glow.off?.length ? record.glow.off : record.glow.on)) : null;
-  if (previewGlow?.[0]) material.color.set(previewGlow[0]); // Preview the authored OFF/ON glow tint (first colour of the chosen state).
+  if (previewGlow?.[0] && !window.FurnitureDecalInk?.normalize?.(record.glyphInk)) material.color.set(previewGlow[0]); // Static ink replaces puzzle glow when enabled.
   const mesh = new THREE.Mesh(geometry, material);
   const textureKey = decalTextureKey(record);
   mesh.name = record.name || 'Furniture Decal';
   mesh.userData = { type: 'furnitureDecal', id: record.id, surfaceId: group.id, decalTextureKey: textureKey, tankanFitScale: transform.tankanFitScale ?? null };
+  window.FurnitureDecalInk?.decorate?.(mesh, record.glyphInk); // Exact same shader, alpha-only recolor, and halo as the in-game renderer.
   mesh.raycast = () => {};
 
   const halfU = frame.dimensions.width / 2;
@@ -489,7 +494,8 @@ function buildDecalMesh(record) {
   loadDecalTexture(record).then(textures => {
     const live = decalMeshes.get(record.id);
     if (live?.material && live.userData?.decalTextureKey === textureKey && textures?.map) {
-      live.material.map = textures.map;
+      if (window.FurnitureDecalInk?.setTexture) window.FurnitureDecalInk.setTexture(live, textures.map); // Updates halo and ink together when image loading is async.
+      else live.material.map = textures.map;
       live.material.alphaMap = textures.alphaMap || null;
       live.material.needsUpdate = true;
       if (isTankanTextDecal(record) && textures.layout) {
@@ -675,6 +681,15 @@ function updateSelectedDecalFromUi({ recordHistory = true } = {}) {
   record.normalOffset = tankan ? finiteOr(dq('decalLift')?.value, 0) : Math.max(0.0002, finiteOr(dq('decalLift')?.value, 0.003));
   record.opacity = dclamp(dq('decalOpacity')?.value ?? (tankan ? TANKAN_BASELINE.opacity : 1), 0, 1);
   record.visible = dq('decalVisible')?.checked !== false;
+  if (dq('decalGlyphInkEnabled')?.checked) {
+    record.glyphInk = window.FurnitureDecalInk?.normalize?.({
+      enabled: true,
+      color: dq('decalGlyphInkColor')?.value || '#ffffff',
+      glowStrength: finiteOr(dq('decalGlyphInkStrength')?.value, .75),
+      glowRadius: finiteOr(dq('decalGlyphInkRadius')?.value, .07),
+    });
+  } else delete record.glyphInk;
+  dq('decalGlyphInkFields')?.classList.toggle('hidden', !record.glyphInk);
   if (dq('decalGlowEnabled')?.checked) {
     const colors = id => String(dq(id)?.value || '').split(',').map(value => value.trim()).filter(value => /^#[0-9a-f]{6}$/i.test(value));
     record.glow = {
@@ -769,8 +784,14 @@ function renderDecalEditor() {
   dq('decalOpacity').value = record.opacity;
   dq('decalVisible').checked = record.visible !== false;
   const glow = record.glow && typeof record.glow === 'object' ? record.glow : null;
-  if (dq('decalGlowEnabled')) dq('decalGlowEnabled').checked = !!glow;
-  dq('decalGlowFields')?.classList.toggle('hidden', !glow);
+  if (dq('decalGlowEnabled')) dq('decalGlowEnabled').checked = !!glow && !record.glyphInk;
+  dq('decalGlowFields')?.classList.toggle('hidden', !glow || !!record.glyphInk);
+  const glyphInk = window.FurnitureDecalInk?.normalize?.(record.glyphInk);
+  if (dq('decalGlyphInkEnabled')) dq('decalGlyphInkEnabled').checked = !!glyphInk;
+  dq('decalGlyphInkFields')?.classList.toggle('hidden', !glyphInk);
+  if (dq('decalGlyphInkColor')) dq('decalGlyphInkColor').value = glyphInk?.color || '#ffffff';
+  if (dq('decalGlyphInkStrength')) dq('decalGlyphInkStrength').value = glyphInk?.glowStrength ?? .75;
+  if (dq('decalGlyphInkRadius')) dq('decalGlyphInkRadius').value = glyphInk?.glowRadius ?? .07;
   if (dq('decalGlowOff')) dq('decalGlowOff').value = (glow?.off || []).join(', ');
   if (dq('decalGlowOn')) dq('decalGlowOn').value = (glow?.on || []).join(', ');
   if (dq('decalGlowCycle')) dq('decalGlowCycle').value = glow?.cycleSeconds ?? 1.2;
@@ -850,6 +871,11 @@ function installDecalUi() {
       <div class="g2"><div><label id="decalWidthLabel">Width scale</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label id="decalHeightLabel">Height scale</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
       <div class="g3"><div><label>Rotation°</label><input id="decalRotation" type="number" step="1"></div><div><label>Surface-lift offset</label><input id="decalLift" type="number" step="0.001"></div><div><label>Opacity</label><input id="decalOpacity" type="number" min="0" max="1" step="0.05"></div></div>
       <label class="row"><input id="decalVisible" type="checkbox"> Visible</label>
+      <hr><label class="row"><input id="decalGlyphInkEnabled" type="checkbox"> Recolor glyph + glow (static)</label>
+      <div id="decalGlyphInkFields" class="hidden">
+        <div class="muted tight">Uses the PNG's transparency as the glyph silhouette, ignoring dark ink pixels. Glow adds a soft additive halo, visible in this editor and in game. Strength 0 recolors without glow; this replaces puzzle OFF/ON glow when enabled.</div>
+        <div class="g3"><div><label>Glyph color</label><input id="decalGlyphInkColor" type="color" value="#ffffff"></div><div><label>Glow strength (0–1)</label><input id="decalGlyphInkStrength" type="number" min="0" max="1" step="0.05" value="0.75"></div><div><label>Glow spread (0–0.25)</label><input id="decalGlyphInkRadius" type="number" min="0" max="0.25" step="0.01" value="0.07"></div></div>
+      </div>
       <hr><label class="row"><input id="decalGlowEnabled" type="checkbox"> State glow (puzzle OFF / ON)</label>
       <div id="decalGlowFields" class="hidden">
         <div class="muted tight">The decal image is tinted by these colours, so white artwork glows exactly them. Several colours per state (comma-separated #hex) cycle over the cycle time. In game the OFF→ON blend follows this furniture's puzzle state.</div>
@@ -896,8 +922,13 @@ function installDecalUi() {
     const file = event.target?.files?.[0];
     if (file && decalFileTargetSurfaceId) addDecalFromFile(file, decalFileTargetSurfaceId);
   });
-  for (const id of ['decalGlowEnabled','decalGlowOff','decalGlowOn','decalGlowCycle','decalGlowPulse','decalGlowPreview']) {
-    dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
+  for (const id of ['decalGlyphInkEnabled','decalGlyphInkColor','decalGlyphInkStrength','decalGlyphInkRadius','decalGlowEnabled','decalGlowOff','decalGlowOn','decalGlowCycle','decalGlowPulse','decalGlowPreview']) {
+    dq(id)?.addEventListener('change', () => {
+      if (id === 'decalGlyphInkEnabled' && dq(id)?.checked) dq('decalGlowEnabled').checked = false; // Two independent glow modes never fight for the same image.
+      if (id === 'decalGlowEnabled' && dq(id)?.checked) dq('decalGlyphInkEnabled').checked = false;
+      updateSelectedDecalFromUi({ recordHistory: true });
+      renderDecalEditor();
+    });
   }
   for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor','decalTankanLayoutMode','decalTankanRingRadius','decalTankanRingTextScale','decalTankanRingRotationDeg']) {
     dq(id)?.addEventListener('change', () => { updateSelectedDecalFromUi({ recordHistory: true }); if (id === 'decalTankanLayoutMode') renderDecalEditor(); });
