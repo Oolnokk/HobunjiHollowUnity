@@ -174,8 +174,16 @@
       "file": "config/furniture-authored/festivalSweets.json"
     },
     {
+      "key": "flamingLichHeart",
+      "file": "config/furniture-authored/flamingLichHeart.json"
+    },
+    {
       "key": "generalStoreSign",
       "file": "config/furniture-authored/generalStoreSign.json"
+    },
+    {
+      "key": "glowGlyphOrb",
+      "file": "config/furniture-authored/glowGlyphOrb.json"
     },
     {
       "key": "handMill",
@@ -318,6 +326,10 @@
       "file": "config/furniture-authored/shippingBox.json"
     },
     {
+      "key": "sightlessLichHeart",
+      "file": "config/furniture-authored/sightlessLichHeart.json"
+    },
+    {
       "key": "smoker",
       "file": "config/furniture-authored/smoker.json"
     },
@@ -364,6 +376,10 @@
     {
       "key": "trough",
       "file": "config/furniture-authored/trough.json"
+    },
+    {
+      "key": "unsleepingLichHeart",
+      "file": "config/furniture-authored/unsleepingLichHeart.json"
     },
     {
       "key": "wardrobe",
