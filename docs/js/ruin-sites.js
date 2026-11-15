@@ -186,6 +186,8 @@
       col:Number(o.col ?? o.x ?? o.gridX), row:Number(o.row ?? o.y ?? o.gridZ),
     })).filter(p => Number.isFinite(p.col) && Number.isFinite(p.row)); // Avoid landmarks/den mouths, not every bush and forage resource across a dense wilderness.
     const previous = saved?.zoneId === zoneId ? saved : null; // A revealed hole remains revealed if the terrain moves on a Shift.
+    const namedBurrows=Object.values(progressStore().authored).filter(record=>record?.zoneId===zoneId&&record?.cycle===cycle()
+      &&!record.completed&&record.buried); // Read metadata once rather than parsing it on every candidate tile.
     let picks = deps?.findZoneFlatEmptyTiles?.(zoneId, 48, rng, avoid) || [];
     const viableFrom = candidates => candidates.filter(({col,row}) => {
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 8 || row < 8 || col >= zi.cols - 8 || row >= zi.rows - 8) return false;
@@ -194,8 +196,7 @@
       if (avoid.some(point => Math.hypot(point.col - col, point.row - row) < 6)) return false;
       if ((deps?._zoneTreasurePersist?.get?.(zoneId)?.placements || []).some(p => p.col === col && p.row === row)) return false;
       if (Object.values(state().holes || {}).some(hole => hole.zoneId === zoneId && hole.state === 'open' && hole.col === col && hole.row === row)) return false;
-      if(Object.values(progressStore().authored).some(record=>record?.zoneId===zoneId&&record?.cycle===cycle()&&!record.completed&&record.buried
-        &&record.col===col&&record.row===row))return false; // Story and named Lich burrows must never share a buried entrance tile.
+      if(namedBurrows.some(record=>record.col===col&&record.row===row))return false; // Story and named Lich burrows must never share a buried entrance tile.
       return true;
     });
     let viable = viableFrom(picks);
