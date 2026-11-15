@@ -490,7 +490,7 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
         houses = []; // Actual HousePieces.clearAll invokes setHousePieces([]), rather than mutating its old array.
       },
       spawnEntry: occupy,
-      loadFixtureInventory() {},
+      loadFixtureInventory() {}, getFixtureInventory() { return []; },
     },
     DewVats: { rebuildMeshesFromGrid() {} },
     FarmhouseRoomPlanner: { restore() {} },
@@ -514,6 +514,8 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     DECORATIVE_FURNITURE_DEFS: {},
     getShippingBoxObject: () => null, getSupplyBoxObject: () => null,
     getHousePieces: () => houses, getFarmBuildings: () => [],
+    getWorldRoutes: () => [], getWorldNpcPaths: () => [], getWorldTransitions: () => [], // Starter-grant capture must serialize a fully hydrated farm, including travel metadata.
+    COLS: 0, ROWS: 0, // The processor fixture has no grid edits; skip tile serialization while still validating saved objects.
     getBarnTiers: () => ({}),
     getHousePieceCatalog: () => ({ starter: { w: 4, h: 3 } }),
     getCurrentArea: () => 'farm', getGrid: () => [],
@@ -528,6 +530,8 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   });
   window.__hobunjiGameStarted = false; // Reproduces the period when a saved farm exists but the full world has not hydrated yet.
   strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /not fully hydrated/, 'startup cannot overwrite the correct farm with default house/furniture state');
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(undefined, { allowStartupStarterGrant: true }), /not fully hydrated/,
+    'the starter grant cannot bypass protection before saved furniture and buildings have been restored');
   strictAssert.equal(window.FarmEditor.saveFarmLayout(), false, 'startup save returns an explicit failure');
   strictAssert.equal(farmLayoutWrites, 0, 'the existing farm file is not rewritten during bootstrap');
   window.__hobunjiGameStarted = true;
@@ -542,6 +546,12 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
   strictAssert.equal(diagnostics.live.processing, 7);
   strictAssert.equal(diagnostics.missing.processing.length, 0, 'all seven processors occupy their exact saved tiles');
   strictAssert.equal(diagnostics.restoreProtection.missingProcessors, 0, 'successful restore removes the incomplete-save barrier');
+  window.__hobunjiGameStarted = false; // FarmProduction can grant starter buildings after layout restoration but before the avatar is fully spawned.
+  strictAssert.throws(() => window.FarmEditor.captureFarmLayout(), /not fully hydrated/, 'ordinary pre-login farm captures stay blocked');
+  const safeStarterCapture = window.FarmEditor.captureFarmLayout(undefined, { allowStartupStarterGrant: true }); // Explicit limited exception for FarmProduction.ensureStarters.
+  strictAssert.equal(safeStarterCapture.furniture.length, 7, 'trusted starter grant retains every saved processor after complete hydration');
+  strictAssert.equal(farmLayoutWrites, 0, 'the starter-grant test captures without replacing the original disk/browser layout');
+  window.__hobunjiGameStarted = true;
 
   // Never mistake a legitimate SAVED house footprint for a bootstrap ghost. The unresolved station must block future saves.
   window.FarmEditor.applyFarmLayoutObjects({ ...layout, housePieces: [], furniture: [{ key: 'squeezer', col: 25, row: 0 }] });
