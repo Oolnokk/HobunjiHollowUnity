@@ -21,7 +21,7 @@
       area: null, lastX: NaN, lastY: NaN, dirX: 0, dirY: 0, planDirX: 0, planDirY: 0,
       scanAge: Infinity, routeAge: Infinity, blocked: false, clearScans: 0,
       path: null, index: 0, footSide: 0, footStepTiles: 0, footStallS: 0,
-      probes: 0, plans: 0, status: 'idle', // Recent physical travel and stalling close the low-FPS collision gap.
+      probes: 0, plans: 0, contactTiles: 0, status: 'idle', // Recent physical travel and stalling close the low-FPS collision gap.
       output: { x: 0, y: 0, engaged: true, turnRad: 0 },
     };
   }
@@ -36,6 +36,7 @@
     st.dirX = st.dirY = 0;
     st.footStepTiles = 0;
     st.footStallS = 0;
+    st.contactTiles = 0;
     st.blocked = false;
     st.planDirX = st.planDirY = 0; // Tracks the intentional direction at the last route plan.
     st.clearScans = 0;
@@ -107,12 +108,15 @@
   // player must already be within ~0.055 tile of colliding before we act.
   // Once pressed against an obstacle, choose only a short free sideways lane
   // and bend velocity slightly toward it; native axis collision does the rest.
-  function steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy) {
+  function steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy, dt) {
     // A fixed 0.055-tile probe can miss genuine native collision at low FPS.
     // Use the last actual movement step, or a tiny fallback after stalled
     // input, so this tests the imminent collision instead of seeing ahead.
-    const contactTiles = Math.min(0.22, Math.max(profile.contactTiles, st.footStepTiles * 1.05,
-      st.footStallS >= 0.07 ? 0.18 : 0)); // Always local, never a mounted route lookahead.
+    const stalledFrameReach = st.footStallS >= 0.07
+      ? Math.min(0.48, 4.8 * Math.max(0, Number(dt) || 0)) : 0; // Last-resort low-FPS collision recovery, less than half a tile.
+    const contactTiles = Math.min(0.48, Math.max(profile.contactTiles, st.footStepTiles * 1.05,
+      stalledFrameReach)); // At most one plausible ground-movement frame, never a planned route.
+    st.contactTiles = contactTiles; // Diagnostic snapshot shows the actual probe, not a recomputed estimate.
     const contactX = x + dx * contactTiles * tile, contactY = y + dy * contactTiles * tile; // Native collision remains authoritative.
     if (canOccupy(contactX, contactY)) {
       st.blocked = false;
@@ -183,7 +187,7 @@
           st.footStallS += Math.max(0, dt || 0);
         }
       }
-      return steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy); // Walking never enters A*.
+      return steerFoot(st, profile, area, x, y, dx, dy, tile, canOccupy, dt); // Walking never enters A*.
     }
 
     if (st.scanAge >= SCAN_INTERVAL_S) {
@@ -247,7 +251,7 @@
         status: st.status, area: st.area, blocked: st.blocked,
         waypoint: st.path?.[st.index] || null, plans: st.plans, probes: st.probes,
         side: mode === 'foot' ? st.footSide : null,
-        contactTiles: mode === 'foot' ? Math.min(0.22, Math.max(PROFILES.foot.contactTiles, st.footStepTiles * 1.05, st.footStallS >= 0.07 ? 0.18 : 0)) : null,
+        contactTiles: mode === 'foot' ? st.contactTiles : null,
       };
     }
     return out;
