@@ -231,6 +231,10 @@ assert.ok(/backgroundDepthMeshesExcluded/.test(render) && /airborneDepthRebuilds
 assert.ok(/frontPortraitGearCandidates: lastFrontPortraitGearCandidates/.test(render)
   && /frontPortraitMaskedGear: lastFrontPortraitMaskedGear/.test(render),
   'renderer reports whether stencil masking actually covered tools rather than merely reading the UI rank');
+assert.ok(/heldOrderNormalizations,/.test(render) && /lastHeldOrderNormalization: lastHeldOrderNormalization/.test(render),
+  'renderer reports when it overwrites the authored held renderOrder');
+assert.ok(/Held renderOrder overrides/.test(xray) && /lastHeldOrderNormalization/.test(xray),
+  'mobile X-ray Companion explains the automatic renderer overrides');
 
 // Execute the renderer classification and live render-list sorting (without a GL context).
 const backdropStart = render.indexOf('  function isPresentationBackdrop(');
@@ -268,6 +272,22 @@ visualSort.withVisualSort(rendererMock, null, () => {
 });
 assert.strictEqual(rendererMock.transparent, null, 'transparent renderer state restored after a sort');
 assert.strictEqual(rendererMock.opaque, null, 'opaque renderer state restored after a sort');
+// A manual visual rank must never reorder render-time pose sentinels, sky depth masks,
+// or final overlay art across the protected phases that are not editable color layers.
+const earlyPoseSentinel = { ...handItem, renderOrder: -100000, id: 50 };
+const cloudDepthMask = { ...drawn({}, 'hobunji_cloud_depth_mask_0'), renderOrder: 100000, id: 51 };
+const lateOverlay = { ...drawn({}, 'world_popup_text'), renderOrder: 1210, id: 52 };
+visualSort.withVisualSort(rendererMock, null, () => {
+  for (const compare of [rendererMock.transparent, rendererMock.opaque]) {
+    assert.ok(compare(earlyPoseSentinel, weaponItem) < 0, 'pose driver must run before user-ranked gear');
+    assert.ok(compare(cloudDepthMask, weaponItem) > 0, 'late cloud depth mask must follow ordinary opaque art');
+    assert.ok(compare(lateOverlay, weaponItem) > 0, 'late text/overlay must not fall behind gear');
+    assert.ok(compare({ ...weaponItem, groupOrder: 1 }, { ...handItem, groupOrder: 0 }) > 0,
+      'manual ranks cannot override an explicit Three.js group boundary');
+  }
+});
+assert.strictEqual(rendererMock.transparent, null, 'protected transparent sort transaction restores defaults');
+assert.strictEqual(rendererMock.opaque, null, 'protected opaque sort transaction restores defaults');
 const farOwner = { id: 100 }, nearOwner = { id: 101 };
 const actorOrder = { ranks: new Map([
   [weaponItem.object, { owner: farOwner, depth: 0.8 }],
