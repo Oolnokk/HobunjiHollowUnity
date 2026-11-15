@@ -60,7 +60,11 @@ failSave = true;
 assert.equal(hearts.collect('kanthic').ok, false);
 assert.equal(hearts.has('kanthic'), false, 'failed save leaves the heart unclaimed');
 failSave = false;
-assert.equal(hearts.collect('tothal').granted, true);
+window.EquipmentPanel = {buildEquipmentSlots(){throw Error('Simulated Gear display failure');}}; // Presentation failure must not lose a character-owned reward.
+window.Combat.deps.showToast = () => {throw Error('Simulated HUD toast failure');};
+assert.equal(hearts.collect('tothal').granted, true,'saved ownership must succeed even when optional UI callbacks throw');
+window.EquipmentPanel = null;
+window.Combat.deps.showToast = text => messages.push(text);
 assert.equal(trinkets.capacity(), 9);
 profile.characterId = 'heroA';
 profile.gearInventory = {keyItems:[...meta.characters[0].gearInventory.keyItems]};
@@ -89,6 +93,8 @@ let composer = null; // Captures the shipped sanctum composer without constructi
 let allowClaim = true; // Simulates persistence success/failure for a world pickup.
 const collectedThemes = new Set(); // Distinct character-owned rewards drive removal and repeat-spawn gating.
 const sceneGroups = []; // Tracks spawned authored furniture and parent cleanup in the fake scene.
+let disposedHalos = 0; // Confirms per-instance GPU halo materials are released on collection and teardown.
+let disposedDecals = 0; // Confirms per-instance decal mesh and material resources are released without touching shared textures.
 const testRoot = { // Real THREE.Group's add/remove ownership contract used by the sanctum.
   children: [],
   add(child) { child.parent = this; this.children.push(child); },
@@ -108,6 +114,8 @@ const sceneWindow = {
         traverse(callback){callback(this);},
       }; // Full authored furniture construction is separately covered by test-lich-heart-furniture.js.
       group.userData.ruinFurnitureKey = key;
+      group.userData.staticGlowEmitterVisuals = [{dispose(){disposedHalos++;}}];
+      group.userData.authoredDecalMeshes = [{geometry:{dispose(){disposedDecals++;}},material:{dispose(){disposedDecals++;}}}];
       sceneGroups.push(group);
       return group;
     },
@@ -150,14 +158,18 @@ assert.equal(sanctumState.heart.group.position.y,2,'heart uses the sanctum floor
 assert.equal(sanctumState.heart.group.position.z,17,'heart is at the arena center Z');
 const control = composer.controls({}).find(item=>item.kind==='lichHeart');
 assert(control && control.claimAction1 && control.promptRoot === sanctumState.heart.group,'heart uses the real in-world Action 1 interaction pipeline');
+assert.equal(control.floorY,2,'the relic prompt is floor-gated in stacked ruins');
 composer.update({deps:{}},101,0.016);
 assert.equal(sceneGroups.length,1,'per-frame updates cannot duplicate pickups');
 allowClaim = false;
 assert.equal(control.onPress(),false,'a failed save never claims the relic');
 assert.equal(testRoot.children.length,1,'failed save leaves the original heart in the world');
+assert.equal(disposedHalos,0,'failed pickup leaves its glowing furniture resources intact');
 allowClaim = true;
 assert.equal(control.onPress(),true,'successful interaction claims the heart');
 assert.equal(testRoot.children.length,0,'claimed heart is removed from the world');
+assert.equal(disposedHalos,1,'claim releases its authored glow halo without touching shared textures');
+assert.equal(disposedDecals,2,'claim releases its per-instance decal material and geometry');
 assert.equal(composer.controls({}).some(item=>item.kind==='lichHeart'),false,'collected heart interaction disappears');
 assert.equal(control.onPress(),false,'stale input cannot duplicate a collected reward');
 composer.update({deps:{}},102,0.016);
@@ -168,11 +180,13 @@ assert.equal(testRoot.children.length,0,'owned heart does not return after reent
 sanctumState = loadSanctum('tothal');
 composer.update({deps:{}},104,0.016);
 assert.equal(sanctumState.heart?.furnitureKey,'unsleepingLichHeart','Nanahi receives the distinct authored reward');
-sanctumState.heart.group.parent.remove(sanctumState.heart.group);
+composer.clear();
+assert.equal(disposedHalos,2,'ruin teardown releases the unclaimed heart halo');
 sanctumState = loadSanctum('kanthic');
 composer.update({deps:{}},105,0.016);
 assert.equal(sanctumState.heart?.furnitureKey,'sightlessLichHeart','Imlao receives the distinct authored reward');
-sanctumState.heart.group.parent.remove(sanctumState.heart.group);
+composer.clear();
+assert.equal(disposedHalos,3,'all three named heart effects are cleaned up on exit');
 sanctumState = loadSanctum('tothal',false);
 composer.update({deps:{}},106,0.016);
 assert.equal(sanctumState.heart,undefined,'ordinary liches must not spawn authored hearts');
