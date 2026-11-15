@@ -44,9 +44,9 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-15-uploads5-nine-independent-shoulders');
+assert.equal(api.version, '2026-11-15-uploads6-moot-voorg-shoulder');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'moot', 'nelk', 'drenkirra', 'nazgraku']; // Seven Puktuk copies; Uumkao’ii and Voorg-Ass have distinct uploaded poses.
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six original Puktuk shoulder copies; Moot has an independently editable Voorg-Ass copy.
 const puktuk = api.get('puktuk');
 const expectedShoulder = puktuk.shoulderRest;
 assert.deepEqual(plain(puktuk.pivot), { x: .484375, y: .5 }, 'uploaded shoulder must not overwrite Puktuk head paint');
@@ -112,6 +112,13 @@ assert.equal(voorgShoulder.beforePoints.length, 7);
 assert.equal(voorgShoulder.afterPoints.length, 7);
 assert.deepEqual(plain(voorgShoulder.beforePoints[6]), { x: .9599996666666666, y: .572691993389205 });
 assert.deepEqual(plain(voorgShoulder.afterPoints[6]), { x: .6976709902869936, y: 1.2729887486531961 });
+const mootShoulder = api.get('moot').shoulderRest; // Moot starts from the latest Voorg-Ass pose, but remains separately editable.
+assert.deepEqual(plain(mootShoulder), plain(voorgShoulder), 'Moot copies every setting and spline point from Voorg-Ass');
+assert.notStrictEqual(mootShoulder, voorgShoulder, 'Moot has a separate shoulder settings object');
+assert.notStrictEqual(mootShoulder.beforePoints, voorgShoulder.beforePoints, 'Moot has separate BEFORE points');
+assert.notStrictEqual(mootShoulder.afterPoints, voorgShoulder.afterPoints, 'Moot has separate AFTER points');
+assert.notStrictEqual(mootShoulder.afterPoints[0], voorgShoulder.afterPoints[0], 'Moot has separate control point objects');
+assert.notStrictEqual(api.get('moot'), api.get('voorg-ass'), 'Moot retains its own head carrier');
 assert.equal(api.get('voorg-ass').pivot.x, .37400034701593793, 'Voorg-Ass original head paint and pivot retained');
 assert.equal(api.get('voorg-ass').weightMap.width, 128, 'Voorg-Ass original head map retained');
 assert.notStrictEqual(uumkaoiiShoulder.beforePoints, voorgShoulder.beforePoints, 'uploaded species have independent point arrays');
@@ -121,4 +128,9 @@ const originalX = expectedShoulder.beforePoints[0].x;
 api.get('gar-wolf').shoulderRest.beforePoints[0].x = -.5;
 assert.equal(expectedShoulder.beforePoints[0].x, originalX, 'editing Gar-wolf cannot move Puktuk');
 assert.notEqual(api.get('dabinggi-hound').shoulderRest.beforePoints[0].x, -.5, 'editing Gar-wolf cannot move Dabinggi');
-console.log('animal-head-rig-authored: nine independent shoulder rigs, two latest uploads, original head paint and unchanged Grehlr passed');
+const voorgEnd = voorgShoulder.afterPoints[6].y; // Mutations to either species' editable points must not affect the other.
+mootShoulder.afterPoints[6].y += .1;
+assert.equal(voorgShoulder.afterPoints[6].y, voorgEnd, 'editing Moot does not alter Voorg-Ass');
+voorgShoulder.beforePoints[0].x += .1;
+assert.notEqual(mootShoulder.beforePoints[0].x, voorgShoulder.beforePoints[0].x, 'editing Voorg-Ass does not alter Moot');
+console.log('animal-head-rig-authored: Moot duplicates latest Voorg-Ass independently; nine head carriers preserve original paint');
