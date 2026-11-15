@@ -38,7 +38,6 @@
     const edgeX=left?room.x:room.x+room.w,edgeZ=top?room.z:room.z+room.d;
     const at=(dx,dz)=>({x:edgeX+sx*dx,z:edgeZ+sz*dz});
     const center=at(1.55,1.55),mouth=at(3.3,1.95);
-    const sibling=at(2.1,2.1);
     const mat=new THREE.MeshBasicMaterial({color:0x625d57}); // Low-contrast ruin stone keeps the secret visually understated.
     const dark=new THREE.MeshBasicMaterial({color:0x383733});
     const accent=new THREE.MeshBasicMaterial({color:0x8d806f});
@@ -72,6 +71,7 @@
     function unlock(){
       if(rec.unlocked||rec.disposed)return false;
       rec.unlocked=true;
+      if(rec.kind==='suspended'&&rec.cover)rec.cover.visible=false; // Ice/net parts visibly give way before the real chest settles.
       root.RuinInteractionAudio?.mechanism?.(rec.gate||rec.cover||rec.group,{size:2});
       options.onStateChange?.();
       return true; // Do not touch wing objective/gate state: this is always optional.
@@ -82,7 +82,7 @@
       if(chest){
         rec.chest=chest;
         const control=chest.control;
-        control.available=()=>!rec.disposed&&rec.unlocked&&rec.gateProgress>=.98&&nearFloor(getPlayerY,floor);
+        control.available=()=>!rec.disposed&&!chest.opened&&rec.unlocked&&rec.gateProgress>=.98&&nearFloor(getPlayerY,floor);
         control.floorY=floor;
         registerControl(control);
       }
@@ -165,21 +165,23 @@
       else if(spec.trigger==='fire')fireAt(switchAt.x,switchAt.z,unlock);
       else if(!melodyAt(switchAt.x,switchAt.z,unlock))targetAt(switchAt.x,floor+1.5,switchAt.z,unlock);
     }else if(spec.kind==='suspended'){
-      const height=floor+Math.max(2.7,Math.min(3.4,(options.ceilingHeight||3.6)-.75));
+      const height=floor+Math.max(2.3,Math.min(2.75,(options.ceilingHeight||3.6)-1.15)); // The chest, cover and target must stay BELOW the airtight room cap.
       const chest=chestAt(center.x,center.z,height);
       if(chest){
-        const topY=height+.45;
+        const topY=height+.35;
         rec.cover=spec.suspension==='ice'
           ?box('secret-ceiling-ice-prison-'+rec.id,1.15,1.0,1.05,center.x,topY,center.z,ice)
           :new THREE.Group();
         if(spec.suspension==='net'){
-          rec.cover.name='secret-ceiling-net-'+rec.id;group.add(rec.cover);
-          for(const p of [-.5,-.15,.2,.5]){
-            const strand=box('secret-net-strand',.045,1.1,1.1,center.x+p,topY,center.z,accent);
-            rec.cover.add(strand);strand.position.x=p;strand.position.z=0;strand.position.y=0;
+          rec.cover.name='secret-ceiling-net-'+rec.id;
+          rec.cover.position.set(center.x,topY,center.z);group.add(rec.cover);
+          for(const p of [-.48,-.16,.16,.48]){
+            const strand=new THREE.Mesh(new THREE.BoxGeometry(.045,.87,1.05),accent);
+            strand.name='secret-net-strand';strand.position.set(p,0,0);
+            strand.userData.devRuinFootprintIgnore=true;rec.cover.add(strand);
           }
         }
-        targetAt(center.x,height+.85,center.z,unlock);
+        targetAt(center.x+.48,height+.37,center.z+.15,unlock); // Exposed edge of the hanging cover: visible and shootable from floor.
       }
     }
     if(spec.babies){
@@ -237,6 +239,11 @@
         rec.fireId=fire?.registerTarget?.(rec.fireRecord)||null;
     };
     if(rec.chest&&spec.kind==='suspended')rec.chestDropHeight=rec.chest.group.position.y;
+    if(rec.chest?.opened){ // Opened caches remain visible and accessible after site restoration, without replaying the secret switch.
+      rec.unlocked=true;rec.gateProgress=1;
+      if(rec.gate)rec.gate.position.y=rec.gateY+3;
+      if(spec.kind==='suspended'){rec.chest.group.position.y=floor;if(rec.cover)rec.cover.visible=false;}
+    }
     rec.snapshot=()=>({id:rec.id,kind:rec.kind,trigger:rec.kind==='closet'?rec.trigger:rec.suspension,
       tier:rec.tier,unlocked:rec.unlocked,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
       chestOpened:rec.chest?.opened??null,babies:rec.babies,nestLoaded:rec.nest?.loaded||0,
@@ -251,6 +258,7 @@
       for(const a of art)a.dispose?.();
       for(const id of colliders)DS?.remove?.(id);
       for(const m of materials)m.dispose?.();
+      group.parent?.remove?.(group); // Native V50 composer also releases this scene-owned root on clear.
       // The owner disposes all scene geometry after its puzzles; do not release
       // a shared authored chest texture or remove the group before that sweep.
     };
