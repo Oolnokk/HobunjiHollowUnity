@@ -151,9 +151,10 @@ const context = {
     THREE,
     Combat: { deps: { player } },
     HobunjiDrunkWalk: {
-      getDebug() {
-        return { pitchDeg: 12, rollDeg: -18, lastUpdatedAtMs: lastDrunkSampleAtMs };
+      currentPlayerPoseSample() {
+        return { pitch: 12 * Math.PI / 180, roll: -18 * Math.PI / 180, lastUpdatedAtMs: lastDrunkSampleAtMs }; // Real runtime returns its shared state without allocating.
       },
+      getDebug() { throw new Error('The renderer must not call the expensive diagnostics snapshot'); },
     },
   },
 };
