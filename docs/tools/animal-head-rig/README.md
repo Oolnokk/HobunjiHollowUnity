@@ -70,7 +70,7 @@ The shoulder body rig has two explicit seven-point curves.
 - **Edit 2-point endpoints** is a simplified view of the same AFTER curve. It exposes only point 1 (beginning) and point 2 (ending); moving either edits only the corresponding first/last AFTER vertex and leaves the five middle vertices untouched.
 - Two snap buttons place point 1 at the frame-shift center and point 2 at the center of the right-frame PNG's right edge.
 
-The spline is currently enabled only for **Grehlr, Voorg-Ass, Uumkao’ii, Gar-wolf, and Dabinggi-hound**. Those species temporarily start from Grehlr's current shoulder pose until individually authored.
+The spline is enabled for **Grehlr, Voorg-Ass, Uumkao’ii, Puktuk, Gar-wolf, Dabinggi-hound, Moot, Nelk, Drenkirra, and Nazgraku**. Puktuk, Gar-wolf, Dabinggi-hound, Nelk, Drenkirra, and Nazgraku have separate copies of the original Puktuk shoulder pose. **Moot now has its own independent copy of the latest Voorg-Ass shoulder pose**, while Voorg-Ass and Uumkao’ii retain their separately uploaded, editable poses. Each species keeps its own head map and pivot; modifying either Moot's or Voorg-Ass's shoulder points never changes the other. Voorg-Ass appears in the standalone painter’s species picker even before its game renderer is registered; its sprite paths are known to the picker.
 
 ### Right-side shoulder paint
 

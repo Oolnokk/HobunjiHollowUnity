@@ -17,6 +17,7 @@ const baseMap = {
   puktuk: { legacy: true },
   'gar-wolf': { legacy: true },
   'dabinggi-hound': dabinggiBase,
+  nazgraku: { enabled:true,pivot:{x:.421875,y:.42592592592592593},weightMap:{marker:'nazgraku-head'} }, // Original head data must be retained.
 };
 const renderer = {
   ANIMAL_HEAD_RIGS: baseMap,
@@ -47,32 +48,51 @@ const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
 assert.match(String(api.version), /uploads/, 'uploaded rig layer reports its data version');
 
+const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six species retain the original Puktuk shoulder pose.
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
-assert.equal(puktuk.pivot.x, 0.484375);
-assert.equal(puktuk.pivot.y, 0.5);
-assert.equal(puktuk.shoulderRest.enabled, true);
-assert.equal(puktuk.shoulderRest.useSpline, false, 'Puktuk keeps the exported initial spline-off state while remaining spline-capable');
-assert.equal(puktuk.shoulderRest.frameShiftX, 0.52);
-
+assert.equal(puktuk.pivot.x, .484375, 'Puktuk retains its original head pivot');
+assert.equal(puktuk.pivot.y, .5);
+assert.equal(puktuk.shoulderRest.useSpline, true);
+assert.equal(puktuk.shoulderRest.useRun1, true);
+assert.equal(puktuk.shoulderRest.splitFrame, false);
+assert.equal(puktuk.shoulderRest.frameShiftX, .51);
+assert.equal(puktuk.shoulderRest.separatorRotationDeg, -13);
+assert.equal(puktuk.shoulderRest.afterPoints.length, 7);
+for(const kind of targets) {
+  const rig = renderer.ANIMAL_HEAD_RIGS[kind];
+  assert(rig?.shoulderRest, kind + ' has an installed authored shoulder rig');
+  assert.deepEqual(JSON.parse(JSON.stringify(rig.shoulderRest)), JSON.parse(JSON.stringify(puktuk.shoulderRest)), kind + ' begins with the exact Puktuk shoulder pose');
+  if(kind !== 'puktuk') {
+    assert.notStrictEqual(rig.shoulderRest, puktuk.shoulderRest, kind + ' shoulder settings are not linked');
+    assert.notStrictEqual(rig.shoulderRest.beforePoints[0], puktuk.shoulderRest.beforePoints[0], kind + ' points are not linked');
+  }
+}
+const uumkaoii = renderer.ANIMAL_HEAD_RIGS.uumkaoii; // Newly uploaded species-specific shoulder pose.
+const voorg = renderer.ANIMAL_HEAD_RIGS['voorg-ass']; // Newly uploaded Voorg-Ass pose, different from Puktuk.
+assert.equal(uumkaoii.shoulderRest.useRun1, false, 'Uumkao’ii follows the updated file, not Puktuk');
+assert.equal(uumkaoii.shoulderRest.separatorRotationDeg, -1);
+assert.equal(uumkaoii.shoulderRest.afterPoints[6].y, .9348808700890657);
+assert.equal(voorg.shoulderRest.frameShiftX, .46);
+assert.equal(voorg.shoulderRest.splitRightUsesIdle, false);
+assert.equal(voorg.shoulderRest.afterPoints[6].y, 1.2729887486531961);
+assert.notStrictEqual(voorg.shoulderRest, uumkaoii.shoulderRest, 'uploaded shoulder profiles remain independent');
+const moot = renderer.ANIMAL_HEAD_RIGS.moot; // Own copy of the updated Voorg-Ass shoulder, not its head paint.
+assert.deepEqual(JSON.parse(JSON.stringify(moot.shoulderRest)), JSON.parse(JSON.stringify(voorg.shoulderRest)), 'Moot duplicates the entire latest Voorg-Ass shoulder settings');
+assert.notStrictEqual(moot.shoulderRest, voorg.shoulderRest, 'Moot shoulder is an independent record');
+assert.notStrictEqual(moot.shoulderRest.beforePoints, voorg.shoulderRest.beforePoints, 'Moot before points are independently editable');
+assert.notStrictEqual(moot.shoulderRest.afterPoints[6], voorg.shoulderRest.afterPoints[6], 'Moot after points are independently editable');
+assert.equal(moot.weightMap.width, 2, 'Moot does not inherit Voorg-Ass painted head geometry');
+assert.notStrictEqual(uumkaoii.shoulderRest, puktuk.shoulderRest, 'Uumkao’ii stays independent of Puktuk');
 const gar = renderer.ANIMAL_HEAD_RIGS['gar-wolf'];
-assert.equal(gar.pivot.x, 0.328125);
-assert.equal(gar.shoulderRest.useSpline, true);
-assert.equal(gar.shoulderRest.frameShiftX, 0.46);
-assert.equal(gar.shoulderRest.separatorRotationDeg, -35);
-assert.equal(gar.shoulderRest.beforePoints.length, 7);
-assert.equal(gar.shoulderRest.afterPoints.length, 7);
-assert(gar.shoulderRest.weightMap, 'Gar-wolf uploaded shoulder Influence paint is retained');
-
-const grehlr = renderer.ANIMAL_HEAD_RIGS.grehlr;
-assert.equal(grehlr.pivot.x, 0.3615050095996143);
-assert.equal(grehlr.pivot.y, 0.4662322932868983);
-assert.equal(grehlr.shoulderRest.useSpline, true);
-assert.equal(grehlr.shoulderRest.frameShiftX, 0.54);
-
+assert.equal(gar.pivot.x, .328125, 'Gar-wolf keeps its original head pivot');
 const dabinggi = renderer.ANIMAL_HEAD_RIGS['dabinggi-hound'];
 assert.equal(dabinggi.ownHeadMarker, 'dabinggi-head-stays-dabinggi', 'Dabinggi keeps its own head rig');
-assert.deepEqual(JSON.parse(JSON.stringify(dabinggi.shoulderRest)), JSON.parse(JSON.stringify(gar.shoulderRest)),
-  'Dabinggi receives Gar-wolf shoulder paint, separator and vertex placement exactly');
-assert.notEqual(dabinggi.shoulderRest, gar.shoulderRest, 'Dabinggi shoulder data is deep-cloned, not shared by reference');
+assert.equal(renderer.ANIMAL_HEAD_RIGS.nazgraku.weightMap.marker, 'nazgraku-head', 'Nazgraku keeps its own painted neck');
+assert.equal(renderer.ANIMAL_HEAD_RIGS.uumkaoii.weightMap.width, 128, 'Uumkao\'ii retains its own original detailed head paint');
+const grehlr = renderer.ANIMAL_HEAD_RIGS.grehlr;
+assert.equal(grehlr.pivot.x, .3615050095996143);
+assert.equal(grehlr.shoulderRest.frameShiftX, .54, 'Grehlr remains unchanged');
+const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
+assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
-console.log('uploaded animal head rigs + Dabinggi shoulder mirror passed');
+console.log('uploaded animal head rigs: Moot has an independent Voorg-Ass shoulder copy and its own head carrier');
