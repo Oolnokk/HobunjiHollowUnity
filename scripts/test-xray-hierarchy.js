@@ -120,7 +120,8 @@ const layerStart = render.indexOf('  function visualLayerFor(');
 const layerEnd = render.indexOf('\n  function nearbyPortraitOrder(', layerStart);
 const visualSort = new Function('window', 'xrayRule', 'isPresentationBackdrop', 'surfaceKindForObject', 'comparePortraitDraws', 'heldPriorityLayer',
   render.slice(layerStart, layerEnd) + '; return { visualLayerFor, withVisualSort };')(
-  win, key => X.get(key), isBackdrop, () => 'solid', () => 0,
+  win, key => X.get(key), isBackdrop, () => 'solid', (a, b, ranks) =>
+    (ranks.get(b.object)?.depth ?? b.z) - (ranks.get(a.object)?.depth ?? a.z),
   () => X.get('weapon.followHandLayer') === 'off' ? 'item.weapons' : 'actor.hands');
 const drawn = (data, name) => ({ object: { userData: data, name: name || '' }, material: { id: 3 }, groupOrder: 0, renderOrder: 0, z: 0, id: 1 });
 const handItem = drawn({ hobunjiProceduralHand: true });
@@ -140,6 +141,17 @@ visualSort.withVisualSort(rendererMock, null, () => {
 });
 assert.strictEqual(rendererMock.transparent, null, 'transparent renderer state restored after a sort');
 assert.strictEqual(rendererMock.opaque, null, 'opaque renderer state restored after a sort');
+const farOwner = { id: 100 }, nearOwner = { id: 101 };
+const actorOrder = { ranks: new Map([
+  [weaponItem.object, { owner: farOwner, depth: 0.8 }],
+  [handItem.object, { owner: nearOwner, depth: 0.2 }],
+]), extras: new Map() };
+X.moveLayer('item.weapons', '__end'); // Edit would otherwise draw the farther weapon last.
+visualSort.withVisualSort(rendererMock, actorOrder, () => {
+  assert.ok(rendererMock.transparent(weaponItem, handItem) < 0,
+    'near NPC portrait still covers far NPC weapon despite the weapon manual priority');
+});
+assert.strictEqual(rendererMock.transparent, null, 'actor-aware visual sort transaction restores renderer state');
 X.reset();
 
 // The stencil owner rule must use manually chosen front-plane priorities, not
