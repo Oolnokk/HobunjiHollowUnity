@@ -71,6 +71,34 @@
     return saved?.version===1&&saved.cycle===cycle()&&saved.sites&&typeof saved.sites==='object'
       ?{...saved,authored}:{version:1,cycle:cycle(),sites:{},authored}; // Only ordinary procedural ruins expire on a shift.
   }
+  function migrateLegacyAuthoredSites() {
+    const original=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Migrates active pre-update boss assignments without dropping their checkpoint data.
+    let prior=null;
+    try{prior=JSON.parse(localStorage.getItem(STORE_KEY)||'{}')?.[worldId()]||null;}catch(_){}
+    if(!prior?.bossSites)return false;
+    const store=progressStore();
+    let changed=false;
+    for(const [theme,siteId] of Object.entries(prior.bossSites)){
+      if(!['hronal','tothal','kanthic'].includes(theme)||!siteId||store.authored[theme])continue;
+      const zoneFromHole=prior.holes?.[siteId]?.zoneId; // Existing ordinary buried holes already know their zone.
+      const zoneFromSites=[...sitesByZone].find(([,sites])=>sites.some(site=>site.id===siteId))?.[0];
+      const zoneIndex=String(siteId).match(/_c\d+_(\d+)_\d+(?:_|$)/)?.[1]; // Legacy cliff copies encode a stable zone ordinal.
+      const zoneFromIndex=zoneIndex ? window.WildernessMapGenerator?.zoneMapIds?.()[Number(zoneIndex)-1] : null;
+      const zoneId=zoneFromHole||zoneFromSites||zoneFromIndex;
+      if(!zoneId)continue; // Defer migration until enough of the old world is available; never guess another zone.
+      const snapshot=original?.version===1 ? original.sites?.[siteId] : null;
+      const oldCycle=Number(prior.cycle)||cycle();
+      const completed=prior.entrances?.[siteId]?.spent===true||prior.holes?.[siteId]?.state==='cleared';
+      store.authored[theme]={siteId,zoneId,seed:Number(snapshot?.seed) || (RL.hashString(`${worldId()}|${oldCycle}|${siteId}`)>>>0),
+        cycle:oldCycle,buried:false,dug:false,completed,...(!completed&&snapshot?{progress:snapshot}:{})};
+      if(original?.sites?.[siteId])delete store.sites[siteId]; // A named tomb now owns this snapshot instead of the expiring regular site pool.
+      changed=true;
+    }
+    if(changed&&!window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)){
+      debug.progressSaveError='Legacy named tomb migration could not be saved';return false;
+    }
+    return changed;
+  }
   function authoredRecordForVisit(visit,store=progressStore()) {
     const record=store.authored?.[visit?.theme]; // Named guardians use their original identity/seed even after a new buried entrance appears.
     return record?.siteId===visit?.id&&!record.completed ? record : null;
@@ -295,6 +323,7 @@
       });
     }
     sitesByZone.set(String(zoneId), sites);
+    migrateLegacyAuthoredSites(); // Legacy named sites may only become identifiable when their zone registers.
     debug.registered = [...sitesByZone.values()].reduce((sum, list) => sum + list.length, 0);
     return sites;
   }
@@ -877,6 +906,7 @@
 
   function init(injected) {
     deps = injected;
+    migrateLegacyAuthoredSites(); // Upgrade already-entered Lich ruins before the next Tothal Shift drops ordinary progress.
     const wild = window.WildTreasure; // Shares the exact post-dig refresh seam already used to uncover ordinary treasure shafts.
     if (wild?.syncZoneInteractivity && !wild.__storyVaultDigWrapped) {
       const previous = wild.syncZoneInteractivity;
@@ -959,6 +989,7 @@
       for (const record of runtime?.sites || []) for (const pillar of record.pillars) strike(record, pillar);
       return !!runtime;
     },
+    debugEnterVisit(visit) { return enterSite(visit); }, // Mobile/test diagnostic for a specific site without locating its mesh.
     debugEnter(siteId) {
       for (const runtime of rendered.values()) {
         const record = runtime.sites.find(entry => !siteId || entry.site.id === siteId);
