@@ -186,8 +186,8 @@
     const h = gameHour();
     if (!Number.isFinite(h)) return false;
     if (kind === 'prayer') return isAnan() && !!window.TemplePrayerRestBlessings && !window.TemplePrayerRestBlessings.activePrayer?.(); // No unavailable/duplicate weekly prayer invitations.
-    if (kind === 'communion') return isAnan() && h >= 0 && h < 5;
-    if (kind === 'festival') return !!festival() && h >= 12 && h < 22;
+    if (kind === 'communion') return isAnan() && h >= 0 && h < 3; // Temple's authored Spirit Communion layout ends at 03:00.
+    if (kind === 'festival') return !!festival() && !!window.FestivalSystem?.festivalHours?.(); // Respect each festival's real gathering window, including events that run past midnight.
     if (kind === 'family') return spouseId() === 'nashka_khibu' && h >= 13 && h < 20;
     if (kind === 'inn') return h >= 16 && h < 22;
     return false;
