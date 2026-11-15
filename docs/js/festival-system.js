@@ -602,11 +602,17 @@
     const def = window.FestivalCalendar.blessings[stat];
     return buff?.stat === stat && def && Number.isFinite(buff.expiresDay) && day() < buff.expiresDay ? 1 + Math.min(5, Math.max(1, buff.level)) * def.perLevel : 1;
   }
+  function ancestorBlessingDescription(def, level) {
+    const perLevel = Math.max(0, Number(def?.perLevel) || 0); // Mirrors fortuneBonus/blessingMultiplier without creating a second bonus formula.
+    const strength = Math.round(Math.min(5, Math.max(1, Number(level) || 1)) * perLevel * 1000) / 10;
+    const unit = def?.unit === 'chance' ? ' percentage points' : '%'; // Fortune chance buffs add probability; weight buffs multiply selection weight.
+    return (def?.description || def?.target || def?.label || 'Offering benefit') + ': +' + strength + unit + '.';
+  }
   function buffEntries() {
     const buff = state.blessing; // EffectBuffBar handles display alongside food and alchemy.
     if (!deps || !window.CalendarSystem?.isInitialized?.() || !buff || day() >= buff.expiresDay) return [];
     const def = window.FestivalCalendar.blessings[buff.stat];
-    return def ? [{ key: 'ancestor-blessing', label: `${def.label} ${buff.level} · ${Math.ceil(buff.expiresDay - day())} days`, icon: def.icon, sourceLabel: 'Ancestor offering', description: `Your ancestor offering increases ${def.label} at blessing level ${buff.level}.`, durationS: 336, remainingS: buff.expiresDay - day(), stacks: buff.level }] : [];
+    return def ? [{ key: 'ancestor-blessing', label: `${def.label} ${buff.level} · ${Math.ceil(buff.expiresDay - day())} days`, icon: def.icon, sourceLabel: 'Ancestor offering', description: ancestorBlessingDescription(def, buff.level), timeBasis: 'day', durationS: 336, remainingS: buff.expiresDay - day(), stacks: buff.level }] : [];
   }
   function serialize() {
     const copy=JSON.parse(JSON.stringify(state));
