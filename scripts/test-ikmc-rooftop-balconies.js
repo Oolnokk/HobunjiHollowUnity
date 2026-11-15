@@ -147,6 +147,18 @@ assert.equal(envGlobals.__interiorEnvironmentDebug().ladderFallbackRungs,9,
   'mobile debug snapshot exposes the exact provisional rung count');
 assert.equal(envGlobals.__interiorEnvironmentDebug().lastLadderBuildKey,'ikmcBalconyLadder',
   'mobile debug snapshot confirms that the placed ladder hit the authored visual key');
+// The existing fire-furniture alias decorator is installed after the ladder
+// bridge during boot; verify both wrappers cooperate instead of replacing one another.
+envGlobals.ProceduralFurniture.CATALOG.campfire=[{kind:'box'}];
+vm.runInNewContext(fs.readFileSync('docs/js/interior-fire-void-runtime.js','utf8'),{
+  window:envGlobals,location:{pathname:'/docs/index.html'},setTimeout:()=>0,console,
+},{filename:'interior-fire-void-runtime.js'});
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup('campfireFurniture').key,'campfire',
+  'the fire alias still works alongside the IKMC ladder decorator');
+assert.equal(envGlobals.ProceduralFurniture.buildFurnitureGroup('ikmcBalconyLadderFurniture').key,'ikmcBalconyLadder',
+  'the ladder alias survives installation of the fire and black-void decorator');
+assert.equal(ladderFallbackRecipe.filter(p=>/^ikmc_fallback_rung_\d+$/.test(p.id||'')).length,9,
+  'decorator composition never duplicates provisional ladder rungs');
 const environmentSource=fs.readFileSync('docs/js/interior-environment-runtime.js','utf8'); // Ceiling stretch height ownership comes from the actual shared runtime.
 const fitStart=environmentSource.indexOf('  function fitCeilingFurniture(');
 const fitEnd=environmentSource.indexOf('  function applyEnvironmentToScene(',fitStart);
