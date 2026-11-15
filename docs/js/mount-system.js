@@ -361,6 +361,7 @@
     if (!mount) return;
     deps.companionObjects.add(mount);
     mountRideEntity = mount;
+    window.GroundObstacleAvoidance?.reset('mounted'); // A summoned animal starts with no steering history from a prior ride.
     mountRideState = 'rushingIn';
     mountAngle = deps.player.angle;
     mountCurrentSpeedPxS = 0;
@@ -377,6 +378,7 @@
   }
 
   function beginDismissMount() {
+    window.GroundObstacleAvoidance?.reset('mounted'); // Dismount immediately discards stored obstacle waypoints.
     if (!mountRideEntity) { mountRideState = 'none'; return; }
     mountRideState = 'dismountingDown';
     mountTransitionT = 0;
