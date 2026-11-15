@@ -1216,6 +1216,12 @@
       const flags = volumeDebug.options || {};
       lines.push(`Nearby cover: enabled=${flags.enabled} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t cached=${volumeDebug.candidates} segment=${volumeDebug.lastSegmentCandidateCount}/${volumeDebug.maxSegmentCandidateCount} refreshes=${volumeDebug.refreshCount} rebuild=${volumeDebug.lastRebuildMs}ms rays=${volumeDebug.testedRayCount} rayWork=${volumeDebug.lastSegmentMs}/${volumeDebug.maxSegmentMs}ms tileTrees=${volumeDebug.skippedTileCoverCount} leafCards=${volumeDebug.skippedLeafCardCount} lastBlock=${blocked}`);
     }
+    const obstacleRoutes = window.GroundObstacleAvoidance?.debugSnapshot?.(); // Bounded route status is copyable on mobile, including failed or stale plans.
+    if (obstacleRoutes) {
+      const footRoute = obstacleRoutes.foot || {};
+      const mountRoute = obstacleRoutes.mounted || {};
+      lines.push(`Ground steering: foot=${footRoute.status || '-'} blocked=${!!footRoute.blocked} waypoint=${footRoute.waypoint ? footRoute.waypoint.col + ',' + footRoute.waypoint.row : '-'} plans=${footRoute.plans ?? 0} mount=${mountRoute.status || '-'} blocked=${!!mountRoute.blocked} waypoint=${mountRoute.waypoint ? mountRoute.waypoint.col + ',' + mountRoute.waypoint.row : '-'} plans=${mountRoute.plans ?? 0}`);
+    }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
       lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
