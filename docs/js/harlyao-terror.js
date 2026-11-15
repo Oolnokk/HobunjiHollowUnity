@@ -62,6 +62,7 @@
       icon: config?.terror?.icon || '◉',
       kind: 'bane',
       sourceLabel: 'Harlyao Presence',
+      description: `Movement speed -${Math.round((1 - movementMultiplierFor()) * 100)}%; lantern radius decreases and unlit areas grow darker.`,
       stacks,
       durationS: 1,
       remainingS: 1,
