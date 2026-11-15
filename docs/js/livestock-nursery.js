@@ -30,6 +30,7 @@
     drenkirra: '🦎',
     moot: '🐾', // Displayed on the Nursery baby list for Moot offspring.
     pingdort: '🐦', // Fertile wild flock eggs hatch in the existing nursery and barn facilities.
+    skeeri: '🐦', // Ruin eggs use the same Nursery facilities and maturation rules.
   };
   const SPECIES_LABELS = {
     uumkaoii: "Uumkao'ii",
@@ -39,6 +40,7 @@
     drenkirra: 'Drenkirra',
     moot: 'Moot', // Keeps the Ranch starter's juvenile name consistent with its adult creature label.
     pingdort: 'Pingdort', // Shares inherited Stable size and coat lineage.
+    skeeri: 'Skeeri', // The saved coat and Size follow the same inherited lineage.
   };
 
   let animalDeps = null; // Captures FarmAnimals' existing injected save/world/permission seam.
