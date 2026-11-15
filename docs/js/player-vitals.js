@@ -22,10 +22,78 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+  // Two player preferences for how afflictions read on the vitals bar (Settings > Visual Effects).
+  // Animated effects (falling droplets, flame flutter, ember breathing, entrancement waves, mirror sweep, SVG
+  // drip/balloon morphs) cost a lot where the page is software-composited (see
+  // docs/architecture/performance-investigation-log.md, 15 Nov 2026 follow-up), so they are OFF by default and the
+  // bar shows each affliction's name instead (ON by default). Both are plain classes on #vitalsBar that style.css
+  // keys off, so toggling never rebuilds a segment.
+  const ANIMATIONS_KEY = 'hobunjiVitalsAnimations';
+  const NAMES_KEY = 'hobunjiVitalsNames';
+  function readPref(key, fallbackOn) {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored === null ? fallbackOn : stored !== '0';
+    } catch (_) { return fallbackOn; }
+  }
+  function animationsEnabled() { return readPref(ANIMATIONS_KEY, false); }
+  function namesEnabled() { return readPref(NAMES_KEY, true); }
+  let appliedAnimations = null; // Last values pushed to the DOM, so a refresh with unchanged prefs writes nothing.
+  let appliedNames = null;
+  function applySvgAnimationState(root, animated) {
+    for (const svg of root.querySelectorAll?.('svg') || []) {
+      try { if (animated) svg.unpauseAnimations(); else svg.pauseAnimations(); } catch (_) {}
+    }
+  }
+  function applyVitalsPrefs() {
+    if (!hudRoot) return;
+    const animated = animationsEnabled();
+    const names = namesEnabled();
+    if (animated !== appliedAnimations) {
+      appliedAnimations = animated;
+      hudRoot.classList.toggle('vb-fx-animated', animated);
+      for (const spec of HUD_RESOURCES) { // SMIL drip/balloon morphs ignore CSS `animation: none`, so pause/resume the tracked shapes directly.
+        const nodes = hudNodes[spec.key];
+        if (!nodes) continue;
+        for (const segment of nodes.segmentsByKey.values()) { applySvgAnimationState(segment, animated); segment._vbSmilFor = animated; }
+        if (nodes.cap) applySvgAnimationState(nodes.cap, animated);
+      }
+    }
+    if (names !== appliedNames) {
+      appliedNames = names;
+      hudRoot.classList.toggle('vb-fx-names', names);
+    }
+  }
+  function setAnimationsEnabled(on) {
+    try { localStorage.setItem(ANIMATIONS_KEY, on ? '1' : '0'); } catch (_) {}
+    applyVitalsPrefs();
+  }
+  function setNamesEnabled(on) {
+    try { localStorage.setItem(NAMES_KEY, on ? '1' : '0'); } catch (_) {}
+    applyVitalsPrefs();
+  }
+  function bindSettingsToggles() {
+    if (typeof document === 'undefined') return;
+    const bind = (id, read, write) => {
+      const box = document.getElementById(id);
+      if (!box || box.dataset.vitalsBound) return;
+      box.dataset.vitalsBound = '1';
+      box.checked = read();
+      box.addEventListener('change', () => write(box.checked));
+    };
+    bind('settingVitalsAnimations', animationsEnabled, setAnimationsEnabled);
+    bind('settingVitalsNames', namesEnabled, setNamesEnabled);
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', bindSettingsToggles, { once: true });
+    else bindSettingsToggles();
+  }
+
   function resolveHudNodes() {
     if (hudRoot) return true;
     hudRoot = document.getElementById('vitalsBar');
     if (!hudRoot) return false; // The script loads before <body>; retry on the next tick.
+    applyVitalsPrefs();
     for (const spec of HUD_RESOURCES) {
       hudNodes[spec.key] = {
         row: document.getElementById('vb' + spec.label + 'Row'),
@@ -366,6 +434,14 @@
       if (treatment === 'balloon' || treatment === 'crenellated') {
         ensureEnhancedShape(segment, treatment, (piece.end - piece.start) / denominator, piece.color);
       }
+      if (!segment._vbName) { // Added after any SVG shape above, so the shape stays the segment's first child.
+        const label = document.createElement('span'); // Clipped by its own overflow:hidden box, so the segment's droplets/shapes are unaffected.
+        label.className = 'vb-name';
+        label.textContent = piece.name;
+        segment.appendChild(label);
+        segment._vbName = label;
+      }
+      if (segment._vbSmilFor !== appliedAnimations && segment.querySelector?.('svg')) { applySvgAnimationState(segment, appliedAnimations === true); segment._vbSmilFor = appliedAnimations; } // A shape added after the last preference change picks up the current play/pause state once.
       next.set(key, segment);
       order.push(segment);
     }
@@ -519,6 +595,7 @@
     init,
     updatePlayerVitals,
     refreshVitalsHud,
+    animationsEnabled, setAnimationsEnabled, namesEnabled, setNamesEnabled, bindSettingsToggles,
     getDebug: () => ({
       health: Number(deps?.player?.health) || 0,
       maxHealth: Number(deps?.player?.maxHealth) || 0,

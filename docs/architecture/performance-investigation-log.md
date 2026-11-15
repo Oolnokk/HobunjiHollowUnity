@@ -1,5 +1,27 @@
 # Performance investigation log
 
+## 15 Nov 2026 (applied): vitals-bar affliction animations off by default, affliction names printed on the segments
+
+Acting on the entry below: `player-vitals.js` now has two preferences (Settings > Visual Effects, persisted in
+`localStorage` as `hobunjiVitalsAnimations` / `hobunjiVitalsNames`, exposed as `PlayerVitals.animationsEnabled /
+setAnimationsEnabled / namesEnabled / setNamesEnabled`). Both are classes on `#vitalsBar` (`vb-fx-animated`,
+`vb-fx-names`) that `style.css` keys off, so toggling never rebuilds a segment:
+- **Animations: OFF by default.** Without `vb-fx-animated`, every `.vb-affliction-segment` and its `::before/::after`
+  gets `animation: none !important` (droplets, whose base opacity is 0, simply do not show; flame/ember/entranced/mirror
+  keep their static look), and the SVG SMIL drip/balloon morphs are paused with `svg.pauseAnimations()` (SMIL ignores
+  the CSS rule). New segments pick up the current play/pause state once, tracked per segment.
+- **Names: ON by default.** Each new affliction segment gets a `.vb-name` span printing the affliction's name,
+  centred, in `'KhymeryyanRomanLetters+Numbers'` (the project's HUD face from `style.css`), white with a black outline.
+  The label has its own `overflow: hidden` box over the segment, so a long name is clipped by the segment and bar edges
+  but droplets and SVG shapes are not. Added after any shape so the shape stays the segment's first child.
+
+Verified in the headless game with the real Settings checkboxes: defaults `{animations: false, names: true}`, font loaded,
+toggles flip the classes and persist; burning with the defaults **190-191 ms vs 284-298 ms with animations on** (control
+174-205), wounded health 177-220 vs 234-262 (control level again). Screenshots show the names in the segments.
+`scripts/test-player-vitals-hud.js` covers the defaults, the label text, both toggles, SMIL pause/resume and no label
+duplication across refreshes (mutation-checked). `style.css` is not covered by `check-cache-busts.js`: its `?v=` token in
+`index.html` was bumped by hand (`20261115vitalsNames1`); do the same for any later stylesheet change.
+
 ## 15 Nov 2026 (follow-up): afflictions, knockback, hit/knock-down/low-Footing animation, lunge ring trail (headless)
 
 Headless arena, player as the subject, per-tick frame wall time via a `Combat.update` hook, control = 14-24 neutral

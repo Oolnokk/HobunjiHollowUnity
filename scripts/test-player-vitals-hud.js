@@ -18,6 +18,15 @@ function element(id) {
       contains(name) { return classes.has(name); },
     },
     append(...children) { this.children.push(...children); },
+    querySelectorAll(selector) { // Only the 'svg' descendants query used by the animation toggle.
+      const found = [];
+      const walk = node => { for (const child of node.children || []) { if (selector === 'svg' && child.id === 'svg') found.push(child); walk(child); } };
+      walk(this);
+      return found;
+    },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    pauseAnimations() { this.animationsPaused = true; },
+    unpauseAnimations() { this.animationsPaused = false; },
     appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
     setAttribute(name, value) { attributes[name] = String(value); this[name] = String(value); },
@@ -33,8 +42,10 @@ for (const resource of ['Health', 'Stamina', 'Footing']) {
     elements.set(id, element(id));
   }
 }
+const storage = new Map(); // Stands in for localStorage so the preferences can be toggled and re-read.
 const context = {
   console,
+  localStorage: { getItem: key => (storage.has(key) ? storage.get(key) : null), setItem: (key, value) => storage.set(key, String(value)) },
   performance: { now: () => 0 },
   document: {
     getElementById: id => elements.get(id) || null,
@@ -98,6 +109,27 @@ assert.equal(elements.get('vbHealthNormal').children.length, 1, 'underlying ordi
 assert.equal(elements.get('vbHealthNormal').children[0].style.width, '60.0%', 'ordinary top and bottom borders stop before the bleeding interval');
 const bleedingSpan = elements.get('vbHealthSegments').children[0];
 assert(bleedingSpan.className.includes('vb-effect-drip'), 'bleeding shows falling drops');
+// Affliction presentation preferences: names ON and animations OFF by default.
+const vitalsBar = elements.get('vitalsBar');
+assert.equal(vitalsBar.classList.contains('vb-fx-names'), true, 'affliction names are on by default');
+assert.equal(vitalsBar.classList.contains('vb-fx-animated'), false, 'affliction animations are off by default');
+const nameLabel = bleedingSpan.children.find(child => child.className === 'vb-name');
+assert.ok(nameLabel, 'each affliction segment carries a name label');
+assert.equal(nameLabel.textContent, context.ResourceSystem.AFFLICTIONS.bleedingHealth.name, 'the label prints the affliction name');
+assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'one label per segment');
+const bleedingSvg = bleedingSpan.children[0];
+assert.equal(bleedingSvg.animationsPaused, true, 'SMIL drip morph is paused while animations are off');
+context.PlayerVitals.setAnimationsEnabled(true);
+assert.equal(vitalsBar.classList.contains('vb-fx-animated'), true, 'enabling animations sets the class');
+assert.equal(bleedingSvg.animationsPaused, false, 'enabling animations resumes the SMIL morphs');
+assert.equal(context.PlayerVitals.animationsEnabled(), true, 'the animation preference persists');
+context.PlayerVitals.setNamesEnabled(false);
+assert.equal(vitalsBar.classList.contains('vb-fx-names'), false, 'disabling names clears the class');
+context.PlayerVitals.setNamesEnabled(true);
+context.PlayerVitals.setAnimationsEnabled(false);
+assert.equal(bleedingSvg.animationsPaused, true, 'disabling animations pauses the morphs again');
+refresh();
+assert.equal(bleedingSpan.children.filter(child => child.className === 'vb-name').length, 1, 'refresh does not duplicate the label');
 player.afflictions.bleedingHealth = 38;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bleedingSpan, 'CSS animations survive frequent affliction-value updates');
