@@ -108,6 +108,17 @@ if (THREE) {
   assert.equal(roundedRock.userData.noOutline, undefined, 'rock remapping must allow rounded outlines');
   assert.equal(cliff.layers.mask, 0b0001, 'the faceted cliff skips the shell draw despite sharing the rock texture');
   assert.equal(cliff.userData.noOutline, true, 'the cliff still uses the faceted outline policy');
+  // A second ZoneTerrainFeatures.init without markOutline must not break wilderness chunk streaming.
+  renderWindow.ZoneTerrainFeatures.init({
+    TileType: { ROCK: 'rock' }, NORMAL_TOP: 0, PLATEAU_UNIT: 0.5,
+    displaceZoneGeometry() {}, resolveTileMat: () => new THREE.MeshLambertMaterial(),
+    markTerrainEdgeId(mesh) { mesh.layers.enable(3); }, terrainCategoryFor: type => type,
+  });
+  const fallbackChunk = new THREE.Group(); // Regression host for a chunk built after an incomplete dependency re-init.
+  const [fallbackRock] = renderWindow.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(fallbackChunk, grid, 6, 5, 'map:test');
+  assert(fallbackRock, 'missing outline callback must not prevent boulder mesh generation');
+  assert(fallbackRock.layers.isEnabled(1), 'fallback boulder must remain on the outline layer');
+  assert(fallbackRock.layers.isEnabled(3), 'fallback boulder must still register its terrain ID');
 }
 
 const TerrainPreview = require('../docs/js/terrain-preview.js'); // Actual generator-to-game tile fold, exercised without a WebGL renderer.
