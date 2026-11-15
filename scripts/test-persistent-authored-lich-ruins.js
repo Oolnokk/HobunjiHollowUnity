@@ -45,11 +45,13 @@ function harness({ oldSite, oldProgress } = {}) {
   const THREE={Group};
   const makeGrid=()=>Array.from({length:60},()=>Array.from({length:60},()=>({type:'grass',water:0})));
   const makeZone=()=>({grid:makeGrid(),cols:60,rows:60,scene:new Group()});
+  const makeLayout=()=>({cols:60,rows:60,dens:[],buildings:[],localeInstances:[],
+    tiles:Array.from({length:60*60},(_,i)=>({c:i%60,r:Math.floor(i/60),type:'grass'}))}); // Available immediately after Tothal even without a zone scene.
   let currentCycle=oldSite?2:1;
   let currentWorld=world;
   let zi=makeZone();
   const zones=new Map([[zone,zi]]);
-  const layouts=new Map([[zone,{localeInstances:[],dens:[],buildings:[]}]]);
+  const layouts=new Map([[zone,makeLayout()]]);
   const generated=[];
   const window={
     THREE,WorldMetaStore:meta,
@@ -82,6 +84,8 @@ function harness({ oldSite, oldProgress } = {}) {
     shift:()=>{currentCycle++;zi=makeZone();zones.set(zone,zi);return zi;},
     setWritable:value=>{writable=value;},
     setExitsAvailable:value=>{exitsAvailable=value;},
+    dropZoneScene:()=>{zones.delete(zone);}, // Simulates opening the Map tab before visiting this wilderness zone.
+    restoreZoneScene:()=>{zones.set(zone,zi);},
     newWorld:()=>{currentWorld='another-world';savedWorlds.set(currentWorld,null);},
     grid:()=>zi.grid,
   };
@@ -164,8 +168,15 @@ async function main() {
   const older=harness({oldSite:legacyId,oldProgress:{
     version:1,cycle:1,sites:{[legacyId]:{version:1,seed:1234,travel:{activeCheckpoint:'shaft'}}},
   }});
+  older.dropZoneScene(); // The layout exists but buildZoneScene has not run, as on most Tothal shifts.
   const migrated=older.window.RuinSites.authoredBuriedSites(older.zone);
   assert.equal(migrated.length,1,'pre-update assigned guardians migrate on world load');
+  assert(Number.isInteger(migrated[0].col)&&Number.isInteger(migrated[0].row),
+    'unvisited wilderness receives a concrete diggable coordinate from the map layout');
+  older.window.RuinSites.syncMapMarkers();
+  assert(older.layouts.get(older.zone).localeInstances.some(marker=>marker.localeId==='authored_tomb_tothal'),
+    'the map contains the new buried tomb before a wilderness scene is loaded');
+  older.restoreZoneScene();
   assert.equal(migrated[0].seed,1234,'migration preserves the existing layout seed');
   assert.equal(older.saved().authored.tothal.progress.travel.activeCheckpoint,'shaft');
   assert(fs.readFileSync(path.join(__dirname,'../docs/js/dev-random-ruin-interior-map.js'),'utf8').includes('window.RuinSites?.relocatedReturnAnchor?.()'),
