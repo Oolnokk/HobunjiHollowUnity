@@ -253,7 +253,7 @@
     }finally{ctx.restore();}
   }
   function drawClippedRoomLight(ctx,clip,draw){
-    if(clip.outer.length<3){draw();return;}
+    if(clip.outer.length<3)return; // No safe projected room: do not reveal light outside its sealed boundaries.
     ctx.save();
     try{
       if(!clip.inner||!clip.mid){ // Degenerate/very narrow projections still retain strict isolation.
@@ -382,7 +382,9 @@
         if(!session.lightAllowed(light))return false;
         const room=lookup(Number(light?.x),Number(light?.z),Number(light?.y));
         if(!room||!ctx?.save||!ctx?.clip||typeof project!=='function'){draw();return true;}
-        drawClippedRoomLight(ctx,lightHull||roomLightClip(room,project),draw);
+        const clip=lightHull||roomLightClip(room,project);
+        if(clip.outer.length<3)return false; // A collapsed camera projection must never reveal the neighboring room.
+        drawClippedRoomLight(ctx,clip,draw);
         return true;
       },
       tick(dt){
