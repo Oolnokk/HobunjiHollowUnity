@@ -16,7 +16,7 @@ async function main() {
   let ceremonies = 0; // Counts Slagothim Koma events without rendering Three.js.
   let interruptions = 0; // Counts aborted ceremonial drinks after combat begins.
   let audioOptions = null; // Records actual independently modulated pitch and tempo.
-  const audioCalls = []; // Records each yawn playback to separate real recordings from fallback composition.
+  const audioCalls = []; // Records recorded yawns and intensity-5 breath requests to verify the exact 0.350x playback options.
   let audioActor = null; // Used to prove spatial voice remains attached to a moving NPC.
   let playerSpatialChecks = 0; // Fails loudly if the player yawn is incorrectly gated by the NPC distance curve.
   const expressions = new Map(); // Tracks yawn mouth ownership and verifies it is cleaned up.
@@ -217,9 +217,9 @@ async function main() {
   assert.equal(ceremonies, 2, 'first eligible yawn after 24 rolling in-game hours repeats Koma');
 
   const noYawnClip = await runtime._test.voiceFor('kenkari', 'female');
-  assert.equal(noYawnClip.source, 'reconstructed breathing');
-  assert.equal(noYawnClip.tempo, 1, 'fallback breathing must not run the old robotic quarter-speed WSOLA');
-  assert.equal(noYawnClip.cadence, 0.8, 'species-relative tempo becomes grain cadence without stretching the actual breath');
+  assert.equal(noYawnClip.source, 'breath 5 (0.350x utterance tempo)');
+  assert.equal(noYawnClip.tempo, 0.35, 'missing-yawn breath always uses the exact 0.350x utterance tempo');
+  assert.equal(noYawnClip.cadence, undefined, 'fallback must not include any old grain-composer cadence');
   assert.equal(noYawnClip.pitch, 7, 'breath fallback keeps the full female species modulation');
   assert.equal(noYawnClip.url, expectedYawnBreathUrl, 'missing dedicated yawns use configured intensity-5 breathing');
   const configuredGetVoice = window.CombatVocalizations.getConfig; // Restored after verifying the built-in source without a loaded combat config.
@@ -350,11 +350,14 @@ async function main() {
   assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
   for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
   const playerBreath = audioCalls.find(call => call.url === expectedYawnBreathUrl
-    && call.opts.breathYawnDurationS === 5 && call.opts.breathYawnCadence === 0.8
-    && call.opts.tempo === 1 && call.opts.pitchSemitones === 7); // Captures the last reconstructed player voice without assuming how many NPCs yawned.
-  assert.ok(playerBreath, 'missing yawn recordings use a five-second composition with species pitch/cadence');
+    && call.opts.tempo === 0.35 && call.opts.pitchSemitones === 7
+    && !Object.hasOwn(call.opts, 'breathYawnDurationS')
+    && !Object.hasOwn(call.opts, 'breathYawnCadence')); // Checks the real 0.350x utterance call never enables reconstruction.
+  assert.ok(playerBreath, 'missing yawn recordings play breath 5 directly with the exact tempo and species pitch');
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
   assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.tempo, 0.35, 'mobile diagnostics show the exact fallback utterance tempo');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.composedDurationS, undefined, 'mobile diagnostics cannot report obsolete yawn synthesis');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
   const playerEvents = audioCalls.filter(call => call.opts.sourceActor === null && call.url === expectedYawnBreathUrl);
   playerEvents[playerEvents.length - 1]?.opts.onStarted?.();
