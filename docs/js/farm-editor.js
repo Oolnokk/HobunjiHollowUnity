@@ -683,38 +683,84 @@
   }
 
   function inspectFarmRestore() {
-    if (!deps) return { ready: false }; // Save Diagnostics can be opened before the game has initialized the farm editor.
-    const worldId = (window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId || null; // The selected world determines the browser-mirror layout to compare against live objects.
-    const key = farmLayoutKey(); // Exact same storage key used by the actual farm loader.
-    const saved = parseStoredJson(key); // Read-only source of expected placement counts; never writes or repairs a save.
-    const processing = [...deps.processingFurnitureObjects]; // Current processor instances compared with saved squeezer/churn/barrel placements.
-    const decor = deps.interiorFurnitureObjects; // Current furniture instances compared by ID (or key and coordinates for older saves).
-    const barns = deps.getFarmBuildings(); // Live barn registry, including nursery and starter barn.
-    const houses = deps.getHousePieces(); // Live modular house registry.
-    const production = window.FarmProduction?.serialize?.(); // Loaded specialty production buildings; null means hydration is not finished.
-    const layout = saved?.version === 3 ? saved : null; // Avoid treating unsupported or absent layout records as empty farms.
+    if (!deps) return { ready: false }; // Save Diagnostics may be opened before the runtime farm editor is initialized.
+    const worldId = (window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId || null; // Selected world determines the authoritative browser-mirror key.
+    const key = farmLayoutKey(); // Same world-scoped browser key used by loadFarmLayout, not a guessed folder filename.
+    const saved = parseStoredJson(key); // Read-only snapshot; diagnostics never repairs or overwrites a farm layout.
+    const layout = saved?.version === 3 ? saved : null; // Unsupported versions must not be presented as successfully loaded empty farms.
+    const records = {
+      tiles: Array.isArray(layout?.tiles) ? layout.tiles : [],
+      processing: Array.isArray(layout?.furniture) ? layout.furniture : [],
+      decor: Array.isArray(layout?.decor) ? layout.decor.filter(item => item && !item.derivedLinkedWindow) : [],
+      barns: Array.isArray(layout?.buildings) ? layout.buildings : [],
+      houses: Array.isArray(layout?.housePieces) ? layout.housePieces : [],
+      production: Array.isArray(layout?.productionBuildings) ? layout.productionBuildings : [],
+    }; // Saved per-category placement records compared with actual instantiated objects below.
+    const grid = deps.getGrid(); // The actual hydrated farm tiles; pre-player defaults can differ from restored overrides.
+    const processing = [...deps.processingFurnitureObjects]; // Live processing stations including squeezers and aging vessels.
+    const decor = deps.interiorFurnitureObjects.filter(item => !item.derivedLinkedWindow); // Decor peers generated from windows are not independently saved.
+    const barns = deps.getFarmBuildings(); // Current barn and nursery registry.
+    const houses = deps.getHousePieces(); // Current modular house and annex registry.
+    const production = window.FarmProduction?.serialize?.(); // Null indicates specialty production has not finished loading.
+    const placed = (savedItem, currentItem) => currentItem?.col === savedItem.col && currentItem?.row === savedItem.row; // Tile placement comparison detects default-position resets with matching IDs.
+    const matchingTile = item => {
+      const tile = grid[item.r]?.[item.c];
+      return !!tile && tile.type === item.type
+        && (tile.crop || '') === (item.crop || '') && (tile.dewPile || '') === (item.dewPile || '');
+    }; // Compare persistent geometry, crops and dew piles; time-dependent crop growth is intentionally excluded.
+    const findDecor = item => decor.find(actual => item.id
+      ? actual.id === item.id
+      : actual.key === item.key && (actual.area || 'farm') === (item.area || 'farm') && placed(item, actual)); // Legacy ID-less records use their original placement for identification.
+    const findById = (items, entry) => items?.find(actual => actual.id === entry.id); // Durable building IDs distinguish moved buildings from missing ones.
+    const describe = item => (item?.key || item?.pieceKey || item?.kind || item?.id || 'unknown') + '@' + item.col + ',' + item.row; // Compact mobile debug labels for misplaced structures.
     const expected = {
-      processing: layout?.furniture?.length ?? 0,
-      decor: layout?.decor?.filter(item => !item.derivedLinkedWindow).length ?? 0,
-      barns: layout?.buildings?.length ?? 0,
-      houses: layout?.housePieces?.length ?? 0,
-      production: layout?.productionBuildings?.length ?? 0,
-    }; // Stored record counts shown next to runtime counts in mobile Save Diagnostics.
+      tiles: records.tiles.length,
+      processing: records.processing.length,
+      decor: records.decor.length,
+      barns: records.barns.length,
+      houses: records.houses.length,
+      production: records.production.length,
+    }; // Expected serialized record counts for the selected world.
     const live = {
+      tiles: records.tiles.filter(matchingTile).length,
       processing: processing.length,
-      decor: decor.filter(item => !item.derivedLinkedWindow).length,
+      decor: decor.length,
       barns: barns.length,
       houses: houses.length,
       production: production?.length ?? null,
-    }; // Count actual spawned objects rather than assuming successful JSON import means successful hydration.
+    }; // Live tile matches and registry counts from the running scene.
     const missing = {
-      processing: (layout?.furniture || []).filter(item => !processing.some(actual => actual.furnitureKey === item.key && actual.col === item.col && actual.row === item.row)).map(item => item.key + '@' + item.col + ',' + item.row).slice(0, 8),
-      decor: (layout?.decor || []).filter(item => !item.derivedLinkedWindow && !decor.some(actual => item.id ? actual.id === item.id : actual.key === item.key && actual.col === item.col && actual.row === item.row && (actual.area || 'farm') === (item.area || 'farm'))).map(item => item.key + '@' + item.col + ',' + item.row).slice(0, 8),
-      barns: (layout?.buildings || []).filter(item => !barns.some(actual => actual.id === item.id)).map(item => String(item.id || item.tier)).slice(0, 8),
-      houses: (layout?.housePieces || []).filter(item => !houses.some(actual => actual.id === item.id)).map(item => String(item.id || item.pieceKey)).slice(0, 8),
-      production: (layout?.productionBuildings || []).filter(item => !production?.some(actual => actual.id === item.id)).map(item => String(item.id || item.key)).slice(0, 8),
-    }; // First eight absent objects in each group diagnose partial restores without requiring a browser console.
-    return { ready: window.__hobunjiGameStarted === true, worldId, key, storedLayoutVersion: saved?.version ?? null, expected, live, missing };
+      tiles: records.tiles.filter(item => !matchingTile(item)).map(item => describe({ ...item, key: item.type, col: item.c, row: item.r })).slice(0, 8),
+      processing: records.processing.filter(item => !processing.some(actual => actual.furnitureKey === item.key && placed(item, actual))).map(describe).slice(0, 8),
+      decor: records.decor.filter(item => !findDecor(item)).map(describe).slice(0, 8),
+      barns: records.barns.filter(item => !findById(barns, item)).map(describe).slice(0, 8),
+      houses: records.houses.filter(item => !findById(houses, item)).map(describe).slice(0, 8),
+      production: production === null ? [] : records.production.filter(item => !findById(production, item)).map(describe).slice(0, 8),
+    }; // First eight missing records in each category; no console or devtools required.
+    const misplaced = {
+      decor: records.decor.filter(item => {
+        const actual = findDecor(item);
+        return actual && (!placed(item, actual) || (actual.area || 'farm') !== (item.area || 'farm'));
+      }).map(describe).slice(0, 8),
+      barns: records.barns.filter(item => {
+        const actual = findById(barns, item);
+        return actual && !placed(item, actual);
+      }).map(describe).slice(0, 8),
+      houses: records.houses.filter(item => {
+        const actual = findById(houses, item);
+        return actual && !placed(item, actual);
+      }).map(describe).slice(0, 8),
+      production: production === null ? [] : records.production.filter(item => {
+        const actual = findById(production, item);
+        return actual && !placed(item, actual);
+      }).map(describe).slice(0, 8),
+    }; // Matching IDs but wrong coordinates are equally important when a layout appears reset.
+    return {
+      ready: window.__hobunjiGameStarted === true,
+      source: 'selected-world-browser-mirror',
+      worldId, key, storedLayoutVersion: saved?.version ?? null,
+      expected, live, missing, misplaced,
+    };
   }
 
   window.FarmEditor = {
