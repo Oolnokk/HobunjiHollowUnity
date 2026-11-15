@@ -161,4 +161,33 @@ assert(game.includes('GroundObstacleAvoidance?.steer('), 'walking integrates wit
 assert(mounts.includes("GroundObstacleAvoidance?.steer('mounted'"), 'mounted input uses the same planner before turning');
 assert(html.includes('js/ground-obstacle-avoidance.js?v='), 'the browser loads steering before game startup');
 
+// The jump-stop rule must use real PlayerJump support geometry rather than
+// deciding that every low collision shape is something the player can land on.
+const jumpWindow = {
+  ProjectileTileCover: { coverTop: tile => tile.projectileCoverHeightTiles },
+}; // Minimal production jump-physics context with the exact finite rock cover metadata.
+const jumpContext = vm.createContext({ window: jumpWindow, Math });
+vm.runInContext(fs.readFileSync('docs/js/player-jump.js', 'utf8'), jumpContext, { filename: 'player-jump.js' });
+const jumpGrid = Array.from({ length: 13 }, () =>
+  Array.from({ length: 13 }, () => ({ type: 'grass' }))); // Small floor with one cover tile directly ahead.
+const jumpPlayer = { x: footX, y: footY };
+jumpWindow.PlayerJump.init({
+  player: jumpPlayer, TILE: tile, getActiveGrid: () => jumpGrid,
+  getCurrentArea: () => 'field', _isZoneArea: () => true,
+  isSolid: kind => kind === 'rock', worldSurfaceY: () => 0,
+  tileSurfaceYInArea: () => 0,
+});
+jumpGrid[6][6] = { type: 'rock', projectileCoverHeightTiles: 0.49 };
+assert.equal(jumpWindow.PlayerJump.hasJumpableSupportAhead(footX, footY, 1, 0), true,
+  'a finite, reachable rock top is an intentional Jump target');
+jumpGrid[6][6].projectileCoverHeightTiles = 1.8;
+assert.equal(jumpWindow.PlayerJump.hasJumpableSupportAhead(footX, footY, 1, 0), false,
+  'a tall wall must not impersonate an accessible jump top');
+jumpGrid[6][6].projectileCoverHeightTiles = 0.15;
+assert.equal(jumpWindow.PlayerJump.hasJumpableSupportAhead(footX, footY, 1, 0), false,
+  'low brush and other non-landing cover still permit subtle foot avoidance');
+jumpGrid[6][6] = { type: 'grass' };
+assert.equal(jumpWindow.PlayerJump.hasJumpableSupportAhead(footX, footY, 1, 0), false,
+  'empty ground is not a jumpable obstacle');
+
 console.log('ground obstacle avoidance checks passed');
