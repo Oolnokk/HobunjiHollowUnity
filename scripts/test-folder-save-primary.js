@@ -436,6 +436,7 @@ function verifySavedProcessingRestoresAfterStaleProduction() {
 verifySavedProcessingRestoresAfterStaleProduction();
 
 function verifyMovedHouseUnblocksAllSavedProcessors() {
+  const strictAssert = require('node:assert/strict'); // Full structural assertions alongside this test file's lightweight message logger.
   const editorSource = read('docs/js/farm-editor.js'); // Real farm loader, including the moved-house restoration order.
   const objectMap = new Map(); // Simulates the same worldObjects tile occupancy used by canPlaceFurnitureAt in game.js.
   const processors = new Set(); // Counts fully restored processing objects, rather than just parsed JSON records.
@@ -463,7 +464,7 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     }
   };
   houses.forEach(occupy);
-  assert.equal(savedFurniture.filter(item => objectMap.has(item.col + ',' + item.row)).length, 6,
+  strictAssert.equal(savedFurniture.filter(item => objectMap.has(item.col + ',' + item.row)).length, 6,
     'regression fixture recreates the six saved processing tiles blocked by the default house');
   const layout = {
     version: 3, objects: {}, tiles: [], decor: [], buildings: [],
@@ -518,14 +519,14 @@ function verifyMovedHouseUnblocksAllSavedProcessors() {
     debugLog() {},
   });
   window.FarmEditor.applyFarmLayoutObjects(layout);
-  assert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
-  assert.equal(houses.length, 2, 'the restored house still includes the complete saved main room and annex');
+  strictAssert.equal(processors.size, 7, 'moving the temporary house before furniture placement restores all seven processors');
+  strictAssert.equal(houses.length, 2, 'the restored house still includes the complete saved main room and annex');
   assert(houses.every(entry => entry._footprintObject), 'house registry contains spawned saved entries, not stale objects from before clearAll');
-  assert.deepEqual(houses.map(house => [house.col, house.row]), [[25, 0], [29, 0]], 'saved house coordinates win over bootstrap defaults');
+  strictAssert.deepEqual(houses.map(house => [house.col, house.row]), [[25, 0], [29, 0]], 'saved house coordinates win over bootstrap defaults');
   const diagnostics = window.FarmEditor.inspectFarmRestore(); // Inspect the same mobile-visible counters users will check after importing.
-  assert.equal(diagnostics.expected.processing, 7);
-  assert.equal(diagnostics.live.processing, 7);
-  assert.equal(diagnostics.missing.processing.length, 0, 'all seven processors occupy their exact saved tiles');
+  strictAssert.equal(diagnostics.expected.processing, 7);
+  strictAssert.equal(diagnostics.live.processing, 7);
+  strictAssert.equal(diagnostics.missing.processing.length, 0, 'all seven processors occupy their exact saved tiles');
 }
 
 verifyMovedHouseUnblocksAllSavedProcessors();
