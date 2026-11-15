@@ -455,7 +455,7 @@
       // pieces; an old pre-modular-house save only ever has the legacy
       // houseCol/houseRow fields, which just repositions the starter with
       // nothing else to restore.
-      const housePieces = deps.getHousePieces();
+      let housePieces = deps.getHousePieces(); // Registry is replaced by clearAll; refresh this reference before populating or reconciling pieces.
       let starterEntry = housePieces.find(p => p.id === 'house_starter');
       if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
         const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
@@ -466,6 +466,7 @@
           // path restored the main room but silently reset a rearranged
           // starter annex to its default position on every reload.
           window.HousePieces.clearAll();
+          housePieces = deps.getHousePieces(); // clearAll replaces the registry array; never append saved pieces to the discarded one.
           layout.housePieces.forEach(saved => {
             const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
             if (!def || !saved.id) return;
@@ -495,6 +496,7 @@
                  && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
         window.HousePieces.clearAll();
         window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
+        housePieces = deps.getHousePieces(); // Legacy relocation also replaces the whole registry.
       }
       (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
         // Guarded per-entry: one malformed saved processing station must not
