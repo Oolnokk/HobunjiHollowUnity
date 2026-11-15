@@ -30,6 +30,7 @@ function directory(name, counters) {
         let modified = ++counters.clock; // Used by the incremental writer's external-edit protection.
         files.set(key, {
           kind: 'file',
+          replaceBytesPreservingMetadata(next) { raw = String(next); }, // Models an external restore that preserves file size and modification time.
           getFile: async () => {
             if (counters.onFileRead) {
               const listener = counters.onFileRead; // Single injected in-flight edit for no-op race regression.
@@ -159,6 +160,24 @@ async function main() {
   const farmUpdate = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(farmUpdate.lastError, null);
   assert.equal(farmUpdate.saveFileWork.written, 1, 'editing a farm writes its layout file without rewriting world and character');
+
+  const canonicalFarm = folder.folders.get('farm-layouts').files.get('world.json');
+  const originalFarmBytes = await (await canonicalFarm.getFile()).text(); // Authoritative disk contents before the simulated outside restore.
+  const externallyRestored = originalFarmBytes.replace('"c":1', '"c":9');
+  assert.notEqual(externallyRestored, originalFarmBytes, 'the test modifies canonical layout content');
+  assert.equal(externallyRestored.length, originalFarmBytes.length, 'the external edit preserves the exact byte count');
+  canonicalFarm.replaceBytesPreservingMetadata(externallyRestored);
+  const noOpDuringExternalRestore = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(noOpDuringExternalRestore.lastAction, 'autosync-skipped-unchanged', 'a no-op does not overwrite the externally edited farm');
+  meta.worlds[0].day = 2.5;
+  saveMeta();
+  const preservedExternalFarm = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(preservedExternalFarm.lastAction, 'autosync-blocked-external-layout',
+    'a changed save must detect external farm contents even when size and timestamp were preserved');
+  assert.equal(await (await canonicalFarm.getFile()).text(), externallyRestored, 'outside farm data was not overwritten');
+  canonicalFarm.replaceBytesPreservingMetadata(originalFarmBytes);
+  const correctedAfterInspection = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(correctedAfterInspection.lastError, null, 'restoring the original farm allows the pending world change to save');
 
   folder.folders.get('characters').files.delete('farmer-char.json');
   meta.worlds[0].day = 3; saveMeta();
