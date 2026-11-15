@@ -15,6 +15,7 @@
 
   const VERSION = 1;
   const STORAGE_KEY = 'hobunji.xrayHierarchy.v1'; // Per-browser dev overrides only; never part of a save.
+  const DIAGNOSTIC_KEY = 'hobunji.xrayHierarchy.diagnostics.v1'; // Restorable original settings while testing presets, including after a reload.
 
   // Rule display order; these controls govern different render passes, NOT a single GPU depth hierarchy.
   const RULES = Object.freeze({
@@ -59,7 +60,7 @@
 
   // Manual color-sort priorities shared across all listed categories. Group labels are only descriptive;
   // opaque, transparent, portrait stencil and held-depth replay remain separate rendering passes.
-  // The front-portrait crossing alone is translated to an owner-specific stencil decision.
+  // Front-portrait cover is a separate owner-stencil switch, never an ordinary color rank.
   const DRAW_LAYERS = Object.freeze([
     { id: 'sky', group: 'World', label: 'Sky and clouds' },
     { id: 'distant', group: 'World', label: 'Distant landscape' },
@@ -85,6 +86,9 @@
   let drawOrder = DEFAULT_DRAW_ORDER.slice(); // Mutable live order read by the render-list sort when enabled.
   let selectedLayer = 'actor.hands'; // Currently edited drawing category in Dev Companion; tools share this when linked.
   let selectedStage = 'held'; // Active render-stage picker; never changes the game's pass order.
+  let selectedPresetId = 'baseline'; // Highlighted hypothesis in the Dev Companion preset picker.
+  let activePresetId = null; // Most recently applied diagnostic experiment, or null when not testing.
+  let originalBeforePresets = null; // Complete original configuration saved before the first experiment.
   const DRAW_ORDER_KEY = '__drawOrder'; // Reserved key within the existing versioned override record.
 
   function validDrawOrder(order) {
@@ -177,6 +181,193 @@
   }
   function resetDrawOrder() { return setDrawOrder(DEFAULT_DRAW_ORDER); }
 
+  // Each diagnostic experiment starts from shipped defaults: never layer one experiment over another.
+  // These are controlled A/B probes, not claimed fixes; the observation tells us which mechanism to investigate.
+  const DIAGNOSTIC_PRESETS = Object.freeze([
+    {
+      id: 'baseline', label: '0 · Repository baseline', rules: {},
+      hypothesis: 'An old browser override or changed color order may be responsible.',
+      changed: 'If this clears the artifact, one of your previous overrides was involved.',
+      unchanged: 'If it persists, the problem occurs with shipped X-ray defaults.',
+    },
+    {
+      id: 'front-mask-off', label: '1 · Turn off owner front masks',
+      rules: { 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off' },
+      hypothesis: 'The late held overlay may not be receiving its owner-front portrait stencil.',
+      changed: 'More gear visible through your own body means the stencil was hiding at least some pixels.',
+      unchanged: 'If overlapping gear does not change, inspect stencil bits and masked gear counts; an owner/material may be missing.',
+    },
+    {
+      id: 'hands-always-masked', label: '2 · Force hands behind front art',
+      rules: { 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'always' },
+      hypothesis: 'The hand-behind-plane geometry test may be allowing fingers or outlines through.',
+      changed: 'If fingers/ink disappear but gear does not, compare the hand and weapon stencil ownership.',
+      unchanged: 'No difference may mean those parts were already masked, or never entered the eligible overlay.',
+    },
+    {
+      id: 'legacy-horizon-depth', label: '3 · Allow original sky/depth occlusion',
+      rules: { 'background.gearDepth': 'original', 'airborne.rebuildDepth': 'off' },
+      hypothesis: 'Visual-only sky masks or distant cliffs may be mistaken for solid cover.',
+      changed: 'If gear acquires cut-out sky/cliff shapes, background depth is participating incorrectly.',
+      unchanged: 'No difference suggests the bad pixels come from another pass or these backdrops were not submitted.',
+    },
+    {
+      id: 'no-airborne-rebuild', label: '4 · Disable jump-only depth rebuild',
+      rules: { 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'off' },
+      hypothesis: 'When jumping, the ordinary held group may reuse a contaminated world depth buffer.',
+      changed: 'If jumping gets worse, the airborne depth rebuild is preventing the horizon occlusion.',
+      unchanged: 'If nothing changes while airborne, check whether the airborne rebuild counter normally increases.',
+    },
+    {
+      id: 'nearby-actor-sort', label: '5 · Use old near-only actor order',
+      rules: { 'actors.order': 'near' },
+      hypothesis: 'Player/NPC depth sorting may give other characters the wrong stacking priority.',
+      changed: 'If the problem changes only when crossing NPCs, actor ordering is involved.',
+      unchanged: 'With no overlapping actors, no change is expected; test beside an NPC.',
+    },
+    {
+      id: 'pants-not-ranked', label: '6 · Draw pants outside actor ordering',
+      rules: { 'pants.sortWithActor': 'off' },
+      hypothesis: 'A separate worn-garment mesh may be painting over the wrong portrait.',
+      changed: 'If trousers or garments change but weapons do not, focus on garment sorting.',
+      unchanged: 'This does not affect the weapon stencil; unchanged tools are expected.',
+    },
+    {
+      id: 'tool-before-hand', label: '7 · Tools before hands in held pass',
+      rules: { 'weapon.followHandLayer': 'off', 'layers.manualOrder': 'on' },
+      layerProfile: 'before-hand',
+      hypothesis: 'The tool/hand overlap may be an intra-overlay transparency sorting issue.',
+      changed: 'If the tool moves behind the hand but not behind the portrait, it is a same-pass sort issue.',
+      unchanged: 'No difference suggests an opacity bucket, physical depth or the front-art stencil dominates.',
+    },
+    {
+      id: 'tool-after-hand', label: '8 · Tools after hands in held pass',
+      rules: { 'weapon.followHandLayer': 'off', 'layers.manualOrder': 'on' },
+      layerProfile: 'after-hand',
+      hypothesis: 'The late tool/hand color order may be responsible rather than front masking.',
+      changed: 'If overlap with hands reverses versus preset 7, transparent draw order is implicated.',
+      unchanged: 'If both priorities look identical, the parts may be in distinct opacity buckets or depth-tested.',
+    },
+    {
+      id: 'portrait-water-off', label: '9 · Disable portrait water tint',
+      rules: { 'portrait.waterTint': 'off' },
+      hypothesis: 'Water showing on a character portrait may resemble an X-ray of the held item.',
+      changed: 'If only the character tint changes, the cause is portrait-water blending, not tool stencil.',
+      unchanged: 'This changes portrait tint only, not held-tool water compositing.',
+    },
+  ]);
+  const DIAGNOSTIC_BY_ID = new Map(DIAGNOSTIC_PRESETS.map(preset => [preset.id, preset])); // Validates picker/actions without string eval.
+
+  function captureConfiguration() {
+    const rules = {}; // Snapshot of every shipped rule so restoring cannot inherit newer experiment values.
+    for (const key of keys) rules[key] = state[key];
+    return { rules, drawOrder: drawOrder.slice(), stage: selectedStage, layer: selectedLayer };
+  }
+  function validConfiguration(snapshot) {
+    return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
+      && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
+      && keys.every(key => RULES[key].options.includes(snapshot.rules[key]))
+      && ['held', 'world'].includes(snapshot.stage)
+      && DRAW_LAYER_IDS.has(snapshot.layer);
+  }
+  function applyConfiguration(snapshot) {
+    if (!validConfiguration(snapshot)) return false; // Fully validate before mutating any live rules.
+    for (const key of keys) set(key, snapshot.rules[key]);
+    setDrawOrder(snapshot.drawOrder);
+    selectedStage = snapshot.stage;
+    selectedLayer = snapshot.layer;
+    if (state['weapon.followHandLayer'] === 'on') selectedLayer = effectiveLayerId(selectedLayer);
+    return true;
+  }
+  function presetConfiguration(id) {
+    const preset = DIAGNOSTIC_BY_ID.get(id); // A tested preset is always reproducible from repository defaults.
+    if (!preset) return null;
+    const rules = {};
+    for (const key of keys) rules[key] = RULES[key].default;
+    for (const [key, value] of Object.entries(preset.rules)) {
+      if (!RULES[key]?.options.includes(value)) return null;
+      rules[key] = value;
+    }
+    const order = DEFAULT_DRAW_ORDER.slice();
+    if (preset.layerProfile) {
+      const toolIndex = order.indexOf('item.weapons');
+      order.splice(toolIndex, 1);
+      const handIndex = order.indexOf('actor.hands');
+      order.splice(handIndex + (preset.layerProfile === 'after-hand' ? 1 : 0), 0, 'item.weapons');
+    }
+    return { rules, drawOrder: order, stage: preset.layerProfile ? 'held' : selectedStage,
+      layer: preset.layerProfile ? 'item.weapons' : selectedLayer };
+  }
+  function matchesConfiguration(snapshot) {
+    return validConfiguration(snapshot)
+      && keys.every(key => state[key] === snapshot.rules[key])
+      && drawOrder.every((id, index) => id === snapshot.drawOrder[index]);
+  }
+  function persistDiagnosticSession() {
+    try {
+      if (originalBeforePresets && activePresetId) {
+        localStorage.setItem(DIAGNOSTIC_KEY, JSON.stringify({
+          version: 1, original: originalBeforePresets, active: activePresetId,
+        }));
+      } else localStorage.removeItem(DIAGNOSTIC_KEY);
+    } catch (_) { /* A blocked browser store still allows reversible testing until reload. */ }
+  }
+  function discardDiagnosticSession() {
+    originalBeforePresets = null;
+    activePresetId = null;
+    persistDiagnosticSession();
+  }
+  function loadDiagnosticSession() {
+    try {
+      const record = JSON.parse(localStorage.getItem(DIAGNOSTIC_KEY) || 'null');
+      if (record?.version !== 1 || !DIAGNOSTIC_BY_ID.has(record.active)
+          || !validConfiguration(record.original)) return;
+      originalBeforePresets = record.original;
+      activePresetId = record.active;
+      selectedPresetId = record.active;
+    } catch (_) { /* Never trust stale or partial browser data. */ }
+  }
+  function applyDiagnosticPreset(id) {
+    const next = presetConfiguration(id);
+    if (!next || !validConfiguration(next)) return false;
+    const backup = originalBeforePresets || captureConfiguration(); // Retain the FIRST pre-test configuration when switching hypotheses.
+    if (!applyConfiguration(next)) return false;
+    originalBeforePresets = backup;
+    activePresetId = id;
+    selectedPresetId = id;
+    persistDiagnosticSession();
+    return true;
+  }
+  function restoreBeforePresets() {
+    if (!originalBeforePresets || !validConfiguration(originalBeforePresets)) return false;
+    const saved = originalBeforePresets;
+    if (!applyConfiguration(saved)) return false;
+    discardDiagnosticSession();
+    return true;
+  }
+  function diagnosticReport() {
+    const preset = DIAGNOSTIC_BY_ID.get(activePresetId);
+    const live = window.HeldObjectRenderOrder?.snapshot?.() || {};
+    const diagnostics = {};
+    for (const field of ['stencilBits', 'frontPortraitMasks', 'frontPortraitGearCandidates',
+      'frontPortraitMaskedGear', 'handsBehindFrontPlane', 'baseReplayCandidates',
+      'baseOffscreenFiltered', 'registeredBackgroundDepthMeshes', 'airborneDepthRebuilds',
+      'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
+      'selectiveOverlays', 'lastHeldFullscreenReason']) {
+      if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
+    }
+    return JSON.stringify({ xrayDiagnosis: {
+      selectedPreset: selectedPresetId, activePreset: activePresetId,
+      status: preset ? (matchesConfiguration(presetConfiguration(preset.id)) ? 'applied' : 'modified after apply') : 'no active preset',
+      hypothesis: preset?.hypothesis || null, ifChanged: preset?.changed || null,
+      ifUnchanged: preset?.unchanged || null,
+      stencilAndReplay: diagnostics, browserBackupAvailable: !!originalBeforePresets,
+    }, xrayHierarchy: {
+      version: VERSION, effective: captureConfiguration().rules,
+      drawOrder: drawOrder.slice(), changes: diff(),
+    } }, null, 2);
+  }
+
   const keys = Object.keys(RULES).sort((a, b) => RULES[a].order - RULES[b].order);
   const state = {};
   const listeners = new Set();
@@ -220,6 +411,7 @@
       resetDrawOrder();
       changed = true;
     }
+    if (key === null) discardDiagnosticSession(); // A full reset ends any diagnostic experiment and its backup.
     return changed;
   }
 
@@ -265,6 +457,7 @@
   }
 
   load();
+  loadDiagnosticSession(); // Restore the original-before-presets backup after mobile refreshes.
 
   // Dev Companion groups actions by the REAL compositing decisions, not a fictional global hierarchy.
   function registerPanel() {
