@@ -471,6 +471,9 @@
       render: () => {
         const changes = Object.keys(diff()).length;
         const live = window.HeldObjectRenderOrder?.snapshot?.() || {};
+        const selectedPreset = DIAGNOSTIC_BY_ID.get(selectedPresetId);
+        const activePreset = DIAGNOSTIC_BY_ID.get(activePresetId);
+        const presetUnmodified = !!activePreset && matchesConfiguration(presetConfiguration(activePreset.id));
         const layers = editableLayers(selectedStage);
         if (!layers.some(layer => layer.id === selectedLayer)) selectedLayer = layers[0]?.id || 'actor.hands';
         const activeLayer = layers.find(layer => layer.id === selectedLayer) || layers[0];
@@ -484,8 +487,16 @@
           ? 'Mask enabled: holder front art covers gear'
           : 'Mask disabled: gear may show through front art';
         return {
-          summary: changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults',
+          summary: (activePreset ? 'experiment · ' : '') +
+            (changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults'),
           rows: [
+            ['Experiment', activePreset
+              ? activePreset.label + (presetUnmodified ? ' (applied)' : ' (modified manually)')
+              : 'None — original settings are in use'],
+            ['Original settings', originalBeforePresets ? 'Saved for restoration, including after reload' : 'No active experiment'],
+            ['Testing', selectedPreset?.hypothesis || '-'],
+            ['If appearance changes', selectedPreset?.changed || '-'],
+            ['If nothing changes', selectedPreset?.unchanged || '-'],
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Tool vs its own front art', frontPriority],
@@ -495,8 +506,19 @@
             ['Airborne depth rebuilds / backdrop exclusions',
               String(live.airborneDepthRebuilds ?? '-') + ' / ' + String(live.backgroundDepthMeshesExcluded ?? '-')],
           ],
-          note: 'Visual priority is only compared WITHIN the selected render stage and its opaque/transparent bucket. The world and held overlay are separate GPU draws, not interchangeable categories. Tool-vs-front-art masking is the direct control above (requires an 8-bit stencil buffer); moving equipment cannot override a stencil, water, physical depth, or the outline pass.',
+          note: 'Test the SAME camera, pose and scene with Repository baseline, then one suspected cause. Presets replace all X-ray rules and ranks with a reproducible test setup; they do not stack. Restore pre-test settings when finished. The stencil, physical depth, water and outline passes remain independent of same-pass visual ordering.',
           actions: [
+            { id: 'focus-preset', label: 'Possible explanation to test', value: selectedPresetId,
+              options: DIAGNOSTIC_PRESETS.map(preset => ({ value: preset.id, label: preset.label })),
+              group: 'Diagnostic presets' },
+            { id: 'apply-preset', label: 'Apply selected experiment', group: 'Diagnostic presets',
+              title: 'Resets only X-ray controls to repository defaults plus the selected experiment. Your original settings are saved and can be restored.' },
+            ...(originalBeforePresets ? [
+              { id: 'restore-original', label: 'Restore my pre-test settings', group: 'Diagnostic presets',
+                confirm: 'Restore the X-ray rules and layer order saved before the FIRST experiment, and end this diagnostic session?' },
+            ] : []),
+            { id: 'report', label: '📋 Copy mobile diagnostic report', group: 'Diagnostic presets',
+              title: 'Copies the current experiment, hypothesis, applicable counters and all X-ray settings.' },
             { id: 'set', args: { key: 'weapon.frontPlaneMask' }, label: 'Held tools behind owner front art',
               value: state['weapon.frontPlaneMask'], options: RULES['weapon.frontPlaneMask'].options.map(value => ({ value, label: value })),
               group: 'Front portrait occlusion', title: RULES['weapon.frontPlaneMask'].help },
@@ -549,6 +571,16 @@
         };
       },
       onAction: (action, args = {}) => {
+        if (action === 'focus-preset') {
+          if (!DIAGNOSTIC_BY_ID.has(args.value)) return { ok: false, error: 'Unknown experiment.' };
+          selectedPresetId = args.value;
+          return { ok: true };
+        }
+        if (action === 'apply-preset') return applyDiagnosticPreset(selectedPresetId)
+          ? { ok: true } : { ok: false, error: 'Experiment could not be applied.' };
+        if (action === 'restore-original') return restoreBeforePresets()
+          ? { ok: true } : { ok: false, error: 'No valid pre-test configuration to restore.' };
+        if (action === 'report') return { ok: true, title: 'X-ray diagnosis (mobile)', text: diagnosticReport() };
         if (action === 'set') {
           const ok = set(String(args.key || ''), String(args.value ?? ''));
           if (ok && args.key === 'weapon.followHandLayer' && args.value === 'on') selectedLayer = effectiveLayerId(selectedLayer);
@@ -589,6 +621,7 @@
   window.XrayHierarchy = {
     version: VERSION, RULES, keys: () => keys.slice(),
     get, set, reset, diff, exportDiff, importDiff, describe, registerPanel,
+    DIAGNOSTIC_PRESETS, applyDiagnosticPreset, restoreBeforePresets, diagnosticReport,
     DRAW_LAYERS, DEFAULT_DRAW_ORDER, describeLayers, drawStage, editableLayers, effectiveLayerId, layerRank, setDrawOrder, moveLayer, shiftLayer, moveLayerInStage, shiftLayerInStage, resetDrawOrder,
     onChange(listener) { if (typeof listener === 'function') listeners.add(listener); return () => listeners.delete(listener); },
   };
