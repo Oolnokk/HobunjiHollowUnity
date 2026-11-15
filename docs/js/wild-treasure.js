@@ -434,9 +434,16 @@
   // Nearest still-buried chest in a zone (its tile isn't a dug trench
   // yet), in the same pixel-space coordinates as creature x/y — used by
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
+  const authoredHintCache={area:null,expires:0,spots:[]}; // Prevent a world-metadata clone on every companion frame; terrain checks still filter freshly dug tiles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
     const persisted = deps._zoneTreasurePersist.get(mapId);
-    const authored=window.RuinSites?.authoredDigSpots?.(mapId)||[]; // Companions can point to named tomb excavation sites as well.
+    const now=Date.now();
+    if(authoredHintCache.area!==mapId||now>=authoredHintCache.expires){
+      authoredHintCache.area=mapId;
+      authoredHintCache.expires=now+750;
+      authoredHintCache.spots=window.RuinSites?.authoredDigSpots?.(mapId)||[];
+    }
+    const authored=authoredHintCache.spots; // Companions can point to the named tomb's excavation tile without repeated saves reads.
     let best = null, bestDist = Infinity;
     for (const placement of [...(persisted?.placements||[]),...authored]) {
       if (placement.found) continue;
