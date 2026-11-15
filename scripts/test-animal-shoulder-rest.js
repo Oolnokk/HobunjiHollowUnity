@@ -193,10 +193,10 @@ assert.equal(oldCurl.beforePoints.length, 7, 'rotation/falloff export gets a BEF
 assert.equal(oldCurl.afterPoints.length, 7, 'rotation/falloff export gets an AFTER line');
 assert(!Object.hasOwn(oldCurl, 'weightFalloff'));
 
-assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk', 'moot', 'nelk', 'drenkirra'\]/,
+assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk', 'moot', 'nelk', 'drenkirra', 'nazgraku'\]/,
   'ground species with independent shoulder rigs must be supported');
-assert.match(profilesSource, /version: 4, species: SPECIES/,
-  'profile registry version bump prevents cached pre-Moot/Nelk/Drenkirra allowlists from being accepted');
+assert.match(profilesSource, /version: 5, species: SPECIES/,
+  'profile registry version bump prevents cached pre-Nazgraku allowlists from being accepted');
 assert.match(profilesSource, /beforePoints:\s*GREHLR_BEFORE/);
 assert.match(profilesSource, /afterPoints:\s*GREHLR_AFTER/);
 assert.match(profilesSource, /bodyOnlyRig\(\)/, 'Voorg-Ass/Uumkao’ii can carry a body spline before head paint exists');
