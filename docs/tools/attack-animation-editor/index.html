@@ -315,7 +315,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20261115spherical2"></script>
-<script src="../../js/species-pose-scaling.js?v=20261115spherical1"></script>
+<script src="../../js/species-pose-scaling.js?v=20261115shoulders3"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
 <!-- Feet + pants for the preview: the SAME procedural leg handle and pants garment the game uses, so body sink bends the real legs. -->
 <script src="../../js/leg-bones.js?v=20261013hb53d07e"></script>
@@ -624,7 +624,16 @@ function refreshPreviewDebug() {
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
-    `Spherical orbit centroid (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
+    (() => {
+      const orbit = window.HobunjiSpeciesPoseScale?.shoulderOrbitGeometry?.({
+        cx: 0, cz: 0, floorY: 0,
+        speciesId: currentSpeciesId, gender: currentGender,
+        modelHeight: currentAvatarModelHeight, armLength: currentArmLength,
+      }); // Display the real shoulder-derived envelope, not the obsolete body-centroid authoring multiplier.
+      return orbit
+        ? `Spherical orbit: midpoint (${orbit.center.x.toFixed(4)}, ${orbit.center.y.toFixed(4)}, ${orbit.center.z.toFixed(4)}) · diameter ${orbit.diameter.toFixed(4)} = arm ${orbit.finalArmLength.toFixed(4)} × 2 + shoulder gap ${orbit.shoulderGap.toFixed(4)}`
+        : 'Spherical orbit: shoulder geometry unavailable; using legacy pose scaling';
+    })(),
     `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
     `Final scaled rig: (${lastScaledRigPose.x.toFixed(4)}, ${lastScaledRigPose.y.toFixed(4)}, ${lastScaledRigPose.z.toFixed(4)}) · world: (${lastScaledWorldPose.x.toFixed(4)}, ${lastScaledWorldPose.y.toFixed(4)}, ${lastScaledWorldPose.z.toFixed(4)})`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -1929,7 +1938,7 @@ function applyPoseToRig(pose) {
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
-  }); // Apply the rigger height first, then scale all three axes about the body centroid.
+  }); // Map around the shoulder midpoint with the measured arm-and-shoulder sphere (legacy height mapping only for missing anchors).
   lastScaledRigPose.x = poseOrbitScratch.x; lastScaledRigPose.y = poseOrbitScratch.y; lastScaledRigPose.z = poseOrbitScratch.z;
   toolHolder.position.set(poseOrbitScratch.x - toolBase.position.x, poseOrbitScratch.y - toolBase.position.y, poseOrbitScratch.z - toolBase.position.z);
   toolHolder.updateWorldMatrix?.(true, false);

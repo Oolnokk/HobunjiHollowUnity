@@ -77,4 +77,90 @@ const scalarLegacy = api.scalePointAroundCentroid({ ...raw }, 0, 0.3, 0, 9, 0.5)
 near(scalarLegacy.y, 0.3 + (raw.y - 0.3) * 0.5, 'legacy scalar orbit scales Y');
 near(legacy.x, 0.3, 'legacy X'); near(legacy.z, -1, 'legacy Z'); near(legacy.y, 0.3 + (0.7 - 0.3) * 0.5, 'legacy Y around the centroid');
 
+// With the actual attachment shoulder pair available, the orbit's centre and
+// diameter come from rendered anatomy, not the old per-species scalar table.
+const anchors = (left, right) => ({
+  anchors: { leftHandShoulder: { position: left }, rightHandShoulder: { position: right } },
+  anatomy: { portraitScale: 1, portraitVerticalPlacementRatio: 0.5 },
+});
+const mao = anchors({ x: -0.3, y: 0.65, z: 0 }, { x: 0.3, y: 0.65, z: 0 });
+const eng = anchors({ x: -0.2, y: 0.7, z: -0.15 }, { x: 0.4, y: 0.9, z: 0.25 });
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {
+  characters: { 'mao-ao::male': mao, 'engh-sho::male': eng },
+};
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_MATH = { characterArmLength: () => 0.5 };
+sandbox.window.HobunjiCharacterRigScale = {
+  scaleFor: (species) => species === 'engh-sho' ? { x: 1.5, y: 1.2 } : { x: 1, y: 1 },
+};
+const shoulderOpts = {
+  cx: 2, cy: 99, cz: -3, floorY: 0.3, baseY: 0.4, speciesId: 'engh-sho',
+  gender: 'male', modelHeight: 1.1, armLength: 0.45, poseOrbitScale: 0.01,
+};
+const geometry = api.shoulderOrbitGeometry(shoulderOpts);
+assert.ok(geometry, 'the shoulder pair enables geometry-led orbit mapping');
+const expectedGap = Math.hypot((eng.anchors.leftHandShoulder.position.x - eng.anchors.rightHandShoulder.position.x) * 1.5,
+  (eng.anchors.leftHandShoulder.position.y - eng.anchors.rightHandShoulder.position.y) * 1.2,
+  (eng.anchors.leftHandShoulder.position.z - eng.anchors.rightHandShoulder.position.z) * 1.5);
+near(geometry.shoulderGap, expectedGap, '3D shoulder distance in final rig space');
+near(geometry.finalArmLength, 0.45 * 1.2, 'final arm length includes the render rig scale');
+near(geometry.diameter, 2 * 0.45 * 1.2 + expectedGap, 'diameter is twice arm reach plus shoulder separation');
+near(geometry.center.x, 2 + 0.1 * 1.5, 'sphere X is midway between rendered shoulders');
+near(geometry.center.y, 0.3 + 0.8 * 1.2, 'sphere Y is midway between rendered shoulders');
+near(geometry.center.z, -3 + 0.05 * 1.5, 'sphere Z is midway between rendered shoulders');
+near(geometry.referenceRadius, 0.5 + 0.6 / 2, 'Mao-ao male shoulder envelope defines original authored radius');
+for (const axis of ['x', 'y', 'z']) {
+  const authored = { ...geometry.rawCenter, [axis]: geometry.rawCenter[axis] + geometry.referenceRadius };
+  const finished = api.transformPosePoint({ ...authored }, shoulderOpts);
+  for (const other of ['x', 'y', 'z']) {
+    near(finished[other], geometry.center[other] + (other === axis ? geometry.radius : 0),
+      `spherical ${axis} orbit has computed final radius on ${other}`);
+  }
+  const oldAxesIgnored = api.transformPosePoint({ ...authored }, { ...shoulderOpts, poseOrbitScale: { x: 3, y: 0.1, z: 2 } });
+  for (const other of ['x', 'y', 'z']) near(oldAxesIgnored[other], finished[other], 'automatic shoulder orbit overrides old authored axes');
+  const undone = api.untransformPosePoint({ ...finished }, shoulderOpts);
+  for (const other of ['x', 'y', 'z']) near(undone[other], authored[other], 'geometry-led inverse round-trip');
+}
+for (const yawRad of [0, Math.PI / 2, -2.3]) {
+  const opts = { ...shoulderOpts, yawRad, orbitOffset: { x: 0.17, y: -0.08, z: 0.13 } };
+  const sphere = api.shoulderOrbitGeometry(opts);
+  const uprightSphere = api.shoulderOrbitGeometry({ ...opts, orbitOffset: null });
+  near(sphere.center.x - uprightSphere.center.x, 0.17 * Math.cos(yawRad) + 0.13 * Math.sin(yawRad), 'reported orbit centre follows turned spine X');
+  near(sphere.center.y - uprightSphere.center.y, -0.08, 'reported orbit centre follows lowered shoulders Y');
+  near(sphere.center.z - uprightSphere.center.z, -0.17 * Math.sin(yawRad) + 0.13 * Math.cos(yawRad), 'reported orbit centre follows turned spine Z');
+  const rawPoint = { x: sphere.rawCenter.x + 0.25, y: sphere.rawCenter.y - 0.14, z: sphere.rawCenter.z + 0.31 };
+  const transformed = api.transformPosePoint({ ...rawPoint }, opts);
+  const roundTrip = api.untransformPosePoint({ ...transformed }, opts);
+  for (const axis of ['x', 'y', 'z']) near(roundTrip[axis], rawPoint[axis], `turned spine pose round-trip ${axis}`);
+}
+// Shoulder edits affect the very next sample, without reloading a cached orbit
+// scalar; missing shoulder geometry retains the documented compatibility path.
+eng.anchors.leftHandShoulder.position.x -= 0.1;
+assert.notEqual(api.shoulderOrbitGeometry(shoulderOpts).diameter, geometry.diameter, 'live shoulder spacing changes the orbit immediately');
+assert.equal(api.shoulderOrbitGeometry({ ...shoulderOpts, speciesId: 'no-such-species' }), null, 'unknown rig uses the legacy fallback');
+const oldFallback = api.transformPosePoint({ x: 1, y: 0.4, z: 0 }, { ...shoulderOpts, speciesId: 'no-such-species', cx: 0, cz: 0, poseOrbitScale: 0.5 });
+near(oldFallback.x, 0.5, 'a missing shoulder pair still respects the old config multiplier');
+
+// Depth-offset shoulder anchors are a diagonal arm: nonuniform X/Y rig
+// scaling must project Y and Z separately before sizing the final sphere.
+const depthRig = anchors({ x: -0.2, y: 0.7, z: 0.3 }, { x: 0.3, y: 0.7, z: -0.3 });
+depthRig.anatomy.armLengthHeightPercentOffset = 0;
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['depth-wing::male'] = depthRig;
+const previousScaleFor = sandbox.window.HobunjiCharacterRigScale.scaleFor;
+sandbox.window.HobunjiCharacterRigScale.scaleFor = species =>
+  species === 'depth-wing' ? { x: 2, y: 1 } : previousScaleFor(species);
+sandbox.window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY = () => 0.25;
+const diagonalReach = Math.hypot(0.45, 0.3);
+const depthOptions = {
+  ...shoulderOpts, speciesId: 'depth-wing', modelHeight: 1, armLength: diagonalReach,
+  rigScaleY: 1, baseY: 0.4,
+};
+const depthSphere = api.shoulderOrbitGeometry(depthOptions);
+near(depthSphere.finalArmLength, Math.hypot(0.45, 0.6), 'rendered arm reach must use Y for height and X for depth');
+near(depthSphere.shoulderGap, Math.hypot(0.5 * 2, 0.6 * 2), '3D shoulder gap follows nonuniform rig scale');
+near(depthSphere.diameter, 2 * Math.hypot(0.45, 0.6) + Math.hypot(1, 1.2),
+  'sphere diameter uses final rendered 3D arm length, not raw arm length times Y');
+const depthTestPoint = { x: depthSphere.rawCenter.x + 0.13, y: depthSphere.rawCenter.y + 0.26, z: depthSphere.rawCenter.z - 0.41 };
+const depthInverse = api.untransformPosePoint(api.transformPosePoint({ ...depthTestPoint }, depthOptions), depthOptions);
+for (const axis of ['x', 'y', 'z']) near(depthInverse[axis], depthTestPoint[axis], `nonuniform arm rig inverse on ${axis}`);
+
 console.log('species pose orbit axes ok');
