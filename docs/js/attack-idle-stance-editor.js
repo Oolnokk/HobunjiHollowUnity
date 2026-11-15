@@ -32,7 +32,7 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-      torchHold: Object.freeze({ x: 0.13, y: 0, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, worldUpright: true }), // Same as committed torch idle pose.
+      torchHold: Object.freeze({x: -0.03,y: 0.08,z: 0.17,pitch: 10,yaw: 0,bodyYaw: 0,roll: 0,scale: 0.64,headRelative: false,bodySink: 0,flailLengthScale: 1,shoulderAim: {grip: true,palmNormal: true},secondaryGrip: {enabled: false,percent: 50,primaryPercent: 50},dualWield: {enabled: false},elbows: {right: {x: -0.04,y: -0.19,z: 0}},worldUpright: true}), // Same as committed torch idle pose.
       topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
@@ -43,7 +43,7 @@
   });
 
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
-  const PREVIOUS_TORCH_HOLD_STANCE = Object.freeze({ x: 0.13, y: 0.16, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }); // Only the unedited legacy browser default is migrated.
+  const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }))); // Both shipped torch defaults are obsolete; customized stances remain untouched.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -58,6 +58,14 @@
     }
     if (typeof source.worldUpright === 'boolean' || typeof fallback.worldUpright === 'boolean')
       out.worldUpright = typeof source.worldUpright === 'boolean' ? source.worldUpright : fallback.worldUpright; // Preserve authored world-space rotation in saved JSON.
+    for (const key of ['scale', 'bodySink']) {
+      if (source[key] != null || fallback[key] != null) out[key] = key === 'scale' ? Math.max(0.1, numberOr(source[key], fallback[key] ?? 1)) : numberOr(source[key], fallback[key] ?? 0); // Preserve authored Neutral size/sink through Local Override and export.
+    }
+    if (source.headRelative != null || fallback.headRelative != null) out.headRelative = source.headRelative === true;
+    for (const key of ['shoulderAim', 'secondaryGrip', 'dualWield', 'elbows']) {
+      const value = source[key] ?? fallback[key]; // Existing attack-pose metadata is not represented by the seven stance sliders.
+      if (value && typeof value === 'object') out[key] = clone(value);
+    }
     return out;
   }
 
@@ -72,8 +80,8 @@
     );
     if (wasPreviousDefault) out.stances.lightWeapon.y = 0;
     const oldTorch = raw?.stances?.torchHold; // Preserve custom heights, but migrate an untouched old browser override.
-    if (oldTorch && ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll'].every(key =>
-      Math.abs(numberOr(oldTorch[key]) - PREVIOUS_TORCH_HOLD_STANCE[key]) < 1e-9)) out.stances.torchHold.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
+    if (oldTorch && PREVIOUS_TORCH_HOLD_STANCES.some(old => ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll'].every(key =>
+      Math.abs(numberOr(oldTorch[key]) - old[key]) < 1e-9))) out.stances.torchHold = clone(fallback.stances.torchHold); // The new complete Neutral replaces only an untouched old default.
     const incomingTopHeavy = raw?.stances?.topHeavyTool; // An older browser's unedited Top-heavy saved pose should inherit the new Pick-Shovel copy.
     if (incomingTopHeavy && FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
       Math.abs(numberOr(incomingTopHeavy[field.key]) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field.key]) < 1e-9)) {
