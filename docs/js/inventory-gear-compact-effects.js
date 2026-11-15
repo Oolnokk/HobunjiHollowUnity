@@ -464,6 +464,7 @@
       lastGearVisible = gearActive;
       const relevant = visibilityChanged || (gearActive && records.some((record) => {
         const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+        if (target?.closest?.('.gear-active-buff-list')) return false; // One-second buff countdown, icon, or description updates cannot change the independent right-hand item-detail geometry.
         if (record.type === 'attributes') {
           // Non-Gear tab changes and class churn on the inventory pane itself
           // are not changes to item-detail geometry.
