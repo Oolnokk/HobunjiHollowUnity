@@ -137,6 +137,9 @@
       });
       rec.melodyListener=event=>{
         if(rec.disposed||rec.unlocked||event?.detail?.area!==(options.mapId||MAP_ID))return;
+        const player=getPlayerPosition?.();
+        if(!player||!nearFloor(getPlayerY,floor)
+          ||Math.hypot(player.x-rec.platePoint.x,player.z-rec.platePoint.z)>.48)return; // Other hidden plates in the same ruin never hear this performance.
         rec.melody?.note?.(event.detail.noteIndex,event.detail.pressedAtMs);
       };
       root.addEventListener?.('hobunji-kurraya-puzzle-note',rec.melodyListener);
@@ -247,8 +250,8 @@
         rec.gateProgress=Math.min(1,rec.gateProgress+t*2.3);
         rec.chest.group.position.y=floor+(1-rec.gateProgress)*(rec.chestDropHeight-floor);
       }
-      if(rec.fireRecord&&!rec.unlocked&&rec.firePoint
-        &&root.PersistentGroundFire?.intersects?.(options.mapId||MAP_ID,rec.firePoint.x,rec.firePoint.z,.38))unlock();
+      if(rec.fireRecord&&!rec.unlocked&&rec.firePoint&&nearFloor(getPlayerY,floor)
+        &&root.PersistentGroundFire?.intersects?.(options.mapId||MAP_ID,rec.firePoint.x,rec.firePoint.z,.38))unlock(); // A burning patch on another stacked story is NOT this switch.
       if(rec.melody&&!rec.unlocked){
         const p=getPlayerPosition?.(),standing=p&&nearFloor(getPlayerY,floor)
           &&Math.hypot(p.x-rec.platePoint.x,p.z-rec.platePoint.z)<.48;
