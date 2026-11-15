@@ -78,6 +78,20 @@ async function main() {
     assert.equal(flushed.captured, true, 'explicit runtime flush should use the real member save callback');
     assert.equal(persistedStinkOil, 2, 'explicit runtime flush must capture the latest live inventory');
     assert.equal(farmSaves, 1, 'explicit runtime flush should also persist the current farm layout');
+    // A missing/restoration-blocked farm must stop a legacy browser-folder flush.
+    // An explicit false result from FarmEditor is a failure, even if member data saved.
+    context.window.FarmAnimals.init({
+      inventory,
+      saveMemberWorldData() { memberSaves++; },
+      saveFarmLayout() { farmSaves++; return false; },
+    });
+    const blockedFarmFlush = context.window.HobunjiRuntimeSave.flushNow({ reason: 'restore-blocked-test' });
+    assert.equal(blockedFarmFlush.ok, false, 'a rejected farm save cannot masquerade as a successful folder runtime flush');
+    assert.match(blockedFarmFlush.error, /farm layout was not saved/i, 'failed folder flush names the protected farm');
+    assert.equal(context.window.__hobunjiRuntimeSaveDebug.snapshot().flushCount, 1, 'rejected farm save does not increment successful flush counter');
+    assert.equal(context.window.__hobunjiRuntimeSaveDebug.snapshot().lastError, blockedFarmFlush.error, 'mobile diagnostics show why the folder sync was blocked');
+    context.window.FarmAnimals.init({ inventory, saveMemberWorldData() {}, saveFarmLayout() {} }); // Restore the benign stub for subsequent live-capture assertions.
+
 
     // A live folder capture must not stringify the entire old browser save just
     // to detect if it changes while the canonical disk write is in flight.
