@@ -12,7 +12,7 @@ const store = {};
 const panels = [];
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
-  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1 }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2 }) },
   __hobunjiGameStarted: true,
 };
 global.window = win;
@@ -51,11 +51,23 @@ X.reset();
 
 // Manual rank editing, strict validation, clipboard persistence and reset.
 const shippedOrder = X.DEFAULT_DRAW_ORDER.slice();
-assert.strictEqual(X.describeLayers().length, 18, 'all visual categories (including material types, hands, feet and weapons) are exposed');
+assert.strictEqual(X.describeLayers().length, 18, 'every category remains in persisted/exported visual order');
+assert.strictEqual(X.editableLayers().length, 17, 'linked weapons are not a fake independent UI control');
+assert.ok(!X.editableLayers().some(layer => layer.id === 'item.weapons'));
+assert.match(X.editableLayers().find(layer => layer.id === 'actor.hands').label, /held tools/);
+assert.strictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'), 'linked gear has exactly one effective rank');
 assert.strictEqual(X.setDrawOrder(['actor.hands']), false, 'cannot remove layers');
 assert.strictEqual(X.setDrawOrder([...shippedOrder.slice(1), shippedOrder[1]]), false, 'cannot duplicate layers');
-assert.strictEqual(X.moveLayer('actor.hands', '__end'), true, 'can move between category groups');
+assert.strictEqual(X.moveLayer('item.weapons', '__end'), true, 'moving a linked weapon changes the effective hand rank, not a phantom weapon rank');
 assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
+assert.strictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'));
+assert.strictEqual(X.shiftLayer('item.weapons', -1), true, 'linked weapon nudge moves the hand entry across active categories');
+assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 2);
+assert.strictEqual(X.moveLayer('item.weapons', '__end'), true);
+X.set('weapon.followHandLayer', 'off');
+assert.strictEqual(X.editableLayers().length, 18, 'unlinked weapons expose their own independently editable rank');
+assert.notStrictEqual(X.layerRank('item.weapons'), X.layerRank('actor.hands'), 'only explicit unlink enables independent positioning');
+X.set('weapon.followHandLayer', 'on');
 assert.ok(Array.isArray(JSON.parse(store['hobunji.xrayHierarchy.v1']).__drawOrder), 'manual order survives reload storage');
 const orderExport = X.exportDiff();
 X.reset();
@@ -64,25 +76,136 @@ assert.strictEqual(X.importDiff(orderExport).ok, true, 'layer ranks round-trip t
 assert.strictEqual(X.layerRank('actor.hands'), shippedOrder.length - 1);
 X.reset();
 
-// Dev Companion panel: hierarchy rows, dropdowns, nested action paths and export text.
+// Dev Companion panel: pass-aware, flat functional controls, live diagnostics, reset to repo and export.
 assert.strictEqual(panels.length, 1);
 const panel = panels[0];
 assert.strictEqual(panel.when(), true);
 const view = panel.render();
 const dropdowns = view.actions.filter(a => a.options);
 assert.ok(dropdowns.length >= X.keys().length, 'all rules and the layer pickers have dropdowns');
-assert.ok(view.actions.some(action => action.id === 'move-before' && action.path.length === 2), 'manual reorder picker is inside a nested branch');
-assert.ok(view.rows.some(r => /Hands behind front plane/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
+assert.ok(view.actions.every(action => !action.path?.length), 'there is no misleading nested hierarchy');
+assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 'Reset all to repo' && action.confirm), 'explicit confirmed reset to repository defaults exists');
+assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.options.length === 2), 'render passes are explicit choices');
+assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
+assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
+assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
+assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
+assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
+assert.ok(X.moveLayerInStage('item.weapons', 'actor.feet') === true, 'linked weapons can move within the held stage');
+X.reset();
+assert.ok(view.rows.some(r => /Hands masked by front art/.test(r[0]) && r[1] === '1'), 'live renderer counters are shown');
 assert.deepStrictEqual(panel.onAction('set', { key: 'pants.sortWithActor', value: 'off' }), { ok: true });
 assert.strictEqual(X.get('pants.sortWithActor'), 'off');
-assert.match(panel.render().summary, /1 change/);
+assert.match(panel.render().summary, /1 override/);
 const exportResult = panel.onAction('export', {});
 assert.ok(exportResult.text.includes('pants.sortWithActor') && exportResult.title);
 panel.onAction('reset', {});
 assert.strictEqual(X.get('pants.sortWithActor'), 'on');
-assert.deepStrictEqual(panel.onAction('shift', { delta: 1 }), { ok: true }, 'nudge changes the live hierarchy');
+assert.deepStrictEqual(X.diff(), {}, 'reset button clears every override, including rank edits');
+assert.strictEqual(store['hobunji.xrayHierarchy.v1'], undefined, 'reset button removes stored browser overrides');
+assert.deepStrictEqual(panel.onAction('shift', { delta: -1 }), { ok: true }, 'nudge reorders only within the selected held stage');
 assert.strictEqual(X.get('layers.manualOrder'), 'on', 'moving a layer automatically enables the color sorter');
 panel.onAction('reset', {});
+panel.onAction('set', { key: 'weapon.followHandLayer', value: 'off' });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 3);
+assert.deepStrictEqual(panel.onAction('focus-layer', { value: 'item.weapons' }), { ok: true });
+panel.onAction('set', { key: 'weapon.followHandLayer', value: 'on' });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').value, 'actor.hands',
+  'relinking switches the editor away from the now-inert weapon position');
+panel.onAction('reset', {});
+assert.deepStrictEqual(panel.onAction('focus-stage', { value: 'world' }), { ok: true });
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-layer').options.length, 15,
+  'world stage has its own 15 categories, excluding held/feet overlay entries');
+assert.deepStrictEqual(panel.onAction('move-before', { value: 'actor.hands' }).ok, false,
+  'cannot move world item into the held stage');
+panel.onAction('reset', {});
+assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-stage').value, 'held',
+  'full reset restores stage selection');
+
+// Diagnostic hypothesis presets: each experiment is a fresh, reversible config, not a stack of overrides.
+assert.equal(X.DIAGNOSTIC_PRESETS.length, 10, 'ten grounded A/B diagnostic setups are available');
+const presetPicker = panel.render().actions.find(action => action.id === 'focus-preset');
+assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all experiments appear in one mobile dropdown');
+assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
+X.set('hand.frontPlaneMask', 'off');
+X.set('actors.order', 'near');
+X.moveLayer('actor.hands', '__end');
+const pretestRules = Object.fromEntries(X.keys().map(key => [key, X.get(key)])); // Simulates the user's custom pre-diagnosis configuration.
+const pretestOrder = X.describeLayers().map(layer => layer.id); // Capture the exact non-default custom rank arrangement.
+for (const experiment of X.DIAGNOSTIC_PRESETS) {
+  const beforeActive = panel.render().rows.find(row => row[0] === 'Active experiment')?.[1];
+  const beforeGuidance = panel.render().rows.find(row => row[0] === 'Testing')?.[1];
+  assert.deepStrictEqual(panel.onAction('focus-preset', { value: experiment.id }), { ok: true });
+  const pending = panel.render();
+  assert.equal(pending.rows.find(row => row[0] === 'Active experiment')?.[1], beforeActive,
+    'selecting a new experiment does not change the actual active one');
+  assert.equal(pending.rows.find(row => row[0] === 'Testing')?.[1], beforeGuidance,
+    'selected-but-not-applied setup never replaces guidance for the active experiment');
+  assert.ok(pending.rows.find(row => row[0] === 'Selected next experiment')?.[1].includes(experiment.label),
+    'pending selection clearly names the next experiment');
+  assert.deepStrictEqual(panel.onAction('apply-preset', {}), { ok: true }, 'diagnostic preset applies from shipped defaults');
+  for (const key of X.keys()) assert.equal(X.get(key), experiment.rules[key] ?? X.RULES[key].default,
+    experiment.id + ' sets a reproducible ' + key + ' rather than preserving a previous experiment');
+  assert.equal(X.get('layers.manualOrder'), experiment.rules['layers.manualOrder'] ?? 'off',
+    'the experiment does not inherit another color sort switch');
+  if (experiment.id === 'tool-before-hand') {
+    assert.ok(X.layerRank('item.weapons') < X.layerRank('actor.hands'), 'tool-under-hand preset changes the actual rank');
+    assert.equal(X.get('weapon.followHandLayer'), 'off', 'independent priority is enabled before moving tools');
+  }
+  if (experiment.id === 'tool-after-hand') {
+    assert.ok(X.layerRank('item.weapons') > X.layerRank('actor.hands'), 'tool-over-hand preset reverses that rank');
+  }
+  assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(applied)')),
+    'active experiment status distinguishes applied from manually edited');
+  assert.equal(panel.render().rows.find(row => row[0] === 'Testing')?.[1], experiment.hypothesis,
+    'testing guidance refers to the actually applied setup, not the dropdown selection');
+  const report = JSON.parse(panel.onAction('report', {}).text);
+  assert.equal(report.xrayDiagnosis.activePreset, experiment.id, 'report carries the actual active preset');
+  assert.equal(report.xrayDiagnosis.status, 'applied', 'report shows an unchanged experiment');
+  assert.equal(report.xrayDiagnosis.stencilAndReplay.frontPortraitMaskedGear, 2,
+    'mobile diagnosis includes the real owner-stencil assignment counter');
+}
+assert.ok(panel.render().actions.some(action => action.id === 'restore-original'),
+  'the first configuration can be restored at any point in the experiment');
+const savedOriginal = JSON.parse(store['hobunji.xrayHierarchy.diagnostics.v1']);
+assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets retain the original rules, not the previous preset');
+assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
+assert.equal(savedOriginal.active, 'portrait-water-off', 'last applied experiment survives browser reload');
+X.set('hand.frontPlaneMask', 'off');
+assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(modified manually)')),
+  'editing one rule after applying a preset is reported, not silently treated as the preset');
+const modifiedReport = JSON.parse(panel.onAction('report', {}).text);
+assert.equal(modifiedReport.xrayDiagnosis.status, 'modified after apply');
+
+const reloadedPanels = []; // Simulates loading the same game configuration into a new mobile tab.
+const reloadedWin = {
+  DevCompanion: { registerPanel: panel => reloadedPanels.push(panel) },
+  HeldObjectRenderOrder: win.HeldObjectRenderOrder,
+  __hobunjiGameStarted: true,
+};
+global.window = reloadedWin;
+new Function(cfgSource)();
+const Y = reloadedWin.XrayHierarchy;
+assert.equal(reloadedPanels.length, 1, 'reloaded X-ray panel is registered');
+assert.equal(Y.get('hand.frontPlaneMask'), 'off', 'user edits during the experiment still persist');
+assert.ok(reloadedPanels[0].render().actions.some(action => action.id === 'restore-original'),
+  'the original configuration is available after a page reload');
+assert.equal(Y.restoreBeforePresets(), true, 'restoring after reload succeeds');
+assert.equal(reloadedPanels[0].render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
+  'restoration cannot leave the former experiment preselected');
+for (const key of X.keys()) assert.equal(Y.get(key), pretestRules[key],
+  'restore brings back the rule values from before the first experiment');
+assert.deepStrictEqual(Y.describeLayers().map(layer => layer.id), pretestOrder,
+  'restore brings back the exact pre-experiment draw order');
+assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'restoring clears the backup record');
+assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup twice');
+global.window = win;
+panel.onAction('reset', {});
+assert.equal(panel.render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
+  'repo reset clears the previously highlighted experiment');
+assert.equal(store['hobunji.xrayHierarchy.v1'], undefined, 'reset to repo clears experiment values');
+assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'reset to repo clears the diagnostic session too');
+assert.deepStrictEqual(X.diff(), {}, "remaining renderer checks start at shipped defaults");
 
 // The renderer's own fallback table (used only if this module is absent) must not drift from the shipped defaults.
 const fallbackSource = /const XRAY_RULE_FALLBACK = (\{[^}]*\});/.exec(render);
@@ -105,6 +228,9 @@ assert.ok(/isPresentationBackdrop\(object\).*backgroundDepthRegistry\.add\(objec
   'sky and horizon meshes are registered without a new scene traversal per gear draw');
 assert.ok(/backgroundDepthMeshesExcluded/.test(render) && /airborneDepthRebuilds/.test(render),
   'mobile Dev Companion diagnostics expose both airborne fixes');
+assert.ok(/frontPortraitGearCandidates: lastFrontPortraitGearCandidates/.test(render)
+  && /frontPortraitMaskedGear: lastFrontPortraitMaskedGear/.test(render),
+  'renderer reports whether stencil masking actually covered tools rather than merely reading the UI rank');
 
 // Execute the renderer classification and live render-list sorting (without a GL context).
 const backdropStart = render.indexOf('  function isPresentationBackdrop(');
@@ -174,22 +300,27 @@ visualSort.withVisualSort(rendererMock, heldSort, () => {
 });
 X.reset();
 
-// The stencil owner rule must use manually chosen front-plane priorities, not
-// rely on WebGL draw-pass order (hands and their tools are in the held pass).
-const maskBegin = render.indexOf('  function manualBehindFront(');
+// Stencil and visual priority are independent: rank movement cannot reorder a later overlay over its owner's front portrait.
+const maskBegin = render.indexOf('  function heldPriorityLayer(');
 const maskEnd = render.indexOf('\n  // Hands:', maskBegin);
 const maskScope = new Function('window', 'xrayRule', 'maskedHands',
-  render.slice(maskBegin, maskEnd) + '; return { manualBehindFront, heldPriorityLayer, isPortraitMaskedGear };')(
+  render.slice(maskBegin, maskEnd) + '; return { heldPriorityLayer, isPortraitMaskedGear };')(
     win, key => X.get(key), new Set([handItem.object]));
-X.set('layers.manualOrder', 'on');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
-  'weapon remains behind front portrait while the hand is behind');
-X.moveLayer('actor.hands', '__end');
-assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
-  'moving the hand in front also brings its held weapon forward through the portrait mask');
+  'front art masks a held weapon by direct stencil policy');
+X.set('layers.manualOrder', 'on');
+X.moveLayer('item.weapons', '__end');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'no cross-pass movement silently removes the owner front-art mask');
 X.set('weapon.followHandLayer', 'off');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
-  'unlinked weapon retains its independent front-art mask');
+  'unlinking tool position has no effect on whether the front stencil masks it');
+X.set('weapon.frontPlaneMask', 'off');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'direct mask switch disables owner stencil regardless of rank');
+X.set('weapon.frontPlaneMask', 'on');
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
+  'direct mask switch re-enables owner stencil regardless of rank');
 X.reset();
 
 // Execute the production "hand behind its front plane" math with a tiny matrix stand-in.

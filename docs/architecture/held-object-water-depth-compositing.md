@@ -236,10 +236,11 @@ set of options, and the renderer reads it through `XrayHierarchy.get()` every fr
 next frame. Add new rules there (default + options + the read where the behaviour lives) instead of hard-coding
 another switch in the compositor.
 
-The Dev Companion has an **X-ray hierarchy** card: the ordered hierarchy with live values and renderer counters,
-one dropdown per rule, *Export diff* (copies the changes against the shipped defaults plus the full effective
-hierarchy) and *Reset all*. Dev overrides persist per browser only (`localStorage`), never in a save. To make a
-proven setting the default, change `RULES[<key>].default` and run `scripts/test-xray-hierarchy.js`.
+Dev Companion's **X-ray and layer compositing** card shows pass-specific controls, live stencil coverage,
+one dropdown per rule, *Export overrides and layer ranks* and a confirmed **Reset all to repo** button.
+Reset restores every rule and draw-order entry to the defaults in this repository version, removes the
+browser-local override record, and does not alter a world save. To make a tested setting the shipped
+default, edit `RULES[<key>].default` and run `scripts/test-xray-hierarchy.js`.
 
 `hand.frontPlaneMask` (default `behind`): a procedural hand whose centre sits behind its holder's front portrait
 plane, with the camera on the front side, joins the front-art stencil mask and loses its shell outline layer
@@ -491,29 +492,68 @@ procedural hands/feet, depth textures or render-target setup:
   cover must remain an occluder unless it is specifically intended to be
   the game's x-rayed **base** grass/path.
 
-## Dev Companion manual layer hierarchy and airborne horizon mask
+## Pass-aware X-ray controls and airborne horizon mask
 
-The **X-ray hierarchy** panel now separates logical visual priority from the
-existing protected occlusion pipeline. Expand **Draw order** to select one of
-World / Materials / Characters / Equipment, then choose a layer and move it
-before another layer (or nudge one slot at a time). Its list includes
-terrain/path/floor, the sky and visual-only backdrops, opaque/cutout/transparent
-materials, front/back body planes, hands, feet, pants, headwear and held
-weapons/tools. Held weapons/tools follow the hand layer by default,
-including the owner-front-art stencil priority. Set
-`weapon.followHandLayer=off` under **Exceptions → Equipment** to give weapons
-their own independent rank. Edits are stored only in the existing browser-scoped
-`hobunji.xrayHierarchy.v1` override record and round-trip through **Export
-all changes**. Moving a layer activates `layers.manualOrder`; **Reset all**
-restores the shipped visual hierarchy and the established mask rules.
+The Dev Companion now groups controls by their **actual render decisions**:
+front portrait stencil occlusion, world/airborne depth, water compositing,
+actor stacking and same-pass visual priority. These are independent render
+operations, **not** 18 competing depth hierarchies. The GPU draws an ordinary
+world scene, then a dedicated held-hand/weapon/foot overlay (with selective
+depth rebuild), then water and outline passes. Opaque and transparent materials
+also have distinct draw lists **inside** a render stage. A material's physical
+depth test remains authoritative over each color-list rank.
 
-The configurable visual sorter runs on the ordinary base color draw and on
-the separate held gear/hand/foot color draw. It never reorders the renderer's
-depth, shell, stencil or water restoration passes, never changes physical
-depth tests, and cannot swap the underlying opaque and transparent WebGL
-passes; these are necessary rendering boundaries, not missing UI choices.
-A single skinned portrait can have separate material-specific (front/rear)
-draw-list entries.
+The **Render stage** picker offers only components that participate in that
+stage: *Held overlay* (hands/tools and feet) or *World color*. Cross-stage
+moves are rejected instead of misleadingly appearing to work. The visual
+categories are kept in the existing `__drawOrder` export and storage format
+for backward compatibility; a linked `item.weapons` entry has no independent
+effective priority and is hidden in the editor. Selecting that identifier in
+the public movement API moves the actual `actor.hands` entry. Unlinking the
+tool exposes its separate slot. All of these priority edits still sort
+only within an appropriate opaque or transparent draw list.
+
+**Crucially, the weapon's front-art mask is not a sort position.**
+The direct `weapon.frontPlaneMask` switch decides whether the owner's opaque
+front-portrait pixels stencil out held gear in the later overlay pass.
+The independent `hand.frontPlaneMask` rule handles hands that straddle the
+front plane. The old assumption that moving a tool's color-list rank relative
+to `actor.front` could control the stencil was removed. Front masking requires
+8 stencil bits in the active framebuffer. For mobile investigations the card
+now displays stencil-bit availability and **actually assigned masked gear**
+versus eligible gear; zero assignments despite eligible parts means the
+owner/front portrait mapping or stencil framebuffer must be investigated.
+
+The *Reset all to repo* action discards all rule and ordering overrides stored
+in the browser and restores the currently shipped defaults. Changing priorities
+does not override the scene's physical depth, water tint, front mask or shell
+outline. Moving a layer activates `layers.manualOrder`.
+
+### Diagnostic hypothesis presets
+
+The X-ray Dev Companion also exposes a single **Possible explanation to test** selector
+and **Apply selected experiment**. Experiments are **temporary A/B tests**, not proposed
+production fixes. Each experiment discards the previous experiment's edits and derives a
+complete, validated setting set **from this repo's defaults**; no settings leak between
+experiments. The selectable scenarios are: repository baseline; owner-front stencil off;
+force all hands under their front art; legacy sky/background occlusion; jump-depth rebuild
+off; older near-only actor sorting; pants outside actor sorting; tool before hands in the
+held overlay; tool after hands; and portrait-water tint off. The latter affects portrait
+tint, **not** the weapon water compositor. Tool ordering cannot override the owner stencil.
+The panel spells out the hypothesis, what a visible change would suggest, and what lack
+of change would suggest; neither result proves a cause without comparing the **same
+scene and pose** against the baseline.
+
+On the **first** application, a complete copy of the user's prior rules, draw order, and
+editor selection is stored in `hobunji.xrayHierarchy.diagnostics.v1` in the browser.
+Subsequent experiments reuse that **original** backup, including across page reloads.
+**Restore my pre-test settings** applies that backup and deletes it. **Reset all to repo**
+also deletes the backup, deliberately discarding the old custom configuration. A user
+who edits settings while a preset is active sees **modified manually**, rather than a
+false claim that the selected experiment is still exact. **Copy mobile diagnostic report**
+contains the active hypothesis and comparison guidance, all rule values and drawing
+ranks, and the actual available stencil/airborne/overlay counters. This is useful on
+mobile without the browser console. These presets do not alter player/world saves.
 
 **Jumping regression:** a player airborne in `PlayerJump.debug` has
 physically raised gear. The compositor's ordinary-depth shortcut previously
@@ -532,7 +572,7 @@ a complete colorless world-depth rebuild followed by a held-object depth redraw,
 rather than leaving a cleared sky buffer for later water/postprocess passes.
 The default `background.gearDepth=ignore` and
 `airborne.rebuildDepth=on` options can be toggled independently in
-**Exceptions → Airborne** to A/B-test the issue.
+**World depth and airborne replay** to A/B-test the issue.
 
 `HeldObjectRenderOrder.snapshot()` reports
 `airborneDepthRebuilds`, `backgroundDepthMeshesExcluded` and
