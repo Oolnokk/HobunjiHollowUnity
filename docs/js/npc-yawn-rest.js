@@ -262,7 +262,7 @@
     if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     const voiceDebug = {
       npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
-      source: plan.source, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
+      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
       positional: !entry.isPlayer, status: 'queued',
     }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
     entry.voiceDebug = voiceDebug;
@@ -331,7 +331,7 @@
     if (!entry || entry.finished) return;
     entry.finished = true;
     restorePose(entry);
-    if (reason === 'complete' && entry.voiceDebug?.source === 'breath 5 (0.350x utterance tempo)'
+    if (reason === 'complete' && entry.voiceDebug?.fallbackBreath === true
         && entry.voiceDebug.status === 'playing') trailingBreaths.add(entry); // Let the unaltered breath reach its natural end after the 5s pose.
     else stopVoice(entry); // Interruptions, late-rendered voices and dedicated yawns retain the original cancellation behavior.
     if (entry.komaStarted && reason !== 'complete') window.NpcDrinkInteraction?.stopAutonomous?.(entry.walker, '__daily_koma_leaf__');
