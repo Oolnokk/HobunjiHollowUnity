@@ -19,7 +19,7 @@ const production = [
   section('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
 const THREE = { LessEqualDepth: 1, AlwaysStencilFunc: 2, NotEqualStencilFunc: 3,
-  KeepStencilOp: 4, ReplaceStencilOp: 5 }; // Fake GL constants verify equal/not-equal and write masks.
+  KeepStencilOp: 4, ReplaceStencilOp: 5, Matrix4: class {}, Vector3: class {} }; // Fake GL constants verify equal/not-equal and write masks; math stand-ins for module-scope scratch objects.
 const scene = { isScene: true, name: 'world' }; // Owner lookup stops before the active scene.
 const root = (name,parent=scene,tag={}) => ({ name, parent, userData:tag }); // Shared player/NPC hierarchy matching production actor roots.
 const player = root('player_avatar');
@@ -128,7 +128,7 @@ failRender=false;
 const hand=mesh('hand',mat('hand'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralHand:true}});
 const foot=mesh('foot',mat('foot'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralFoot:true}});
 const cask=mesh('cask',mat('physical'),player,{tags:{}});
-assert.equal(runtime.isPortraitMaskedGear(hand),false,'procedural hands are unmasked');
+assert.equal(runtime.isPortraitMaskedGear(hand),false,'procedural hands are unmasked unless the hand rule selects them this frame');
 assert.equal(runtime.isPortraitMaskedGear(foot),false,'procedural feet are unmasked');
 assert.equal(runtime.isPortraitMaskedGear(cask),false,'physical carryables are unmasked');
 let state=runtime.preparePortraitGearStencilMaterials([playerWeapon,npcWeapon,hand,foot,cask],assigned.gearIds);
@@ -194,6 +194,28 @@ assert.throws(() => portraitOrder.withPortraitDrawOrder(renderer, { ranks, neare
 }, true), /interrupted portrait draw/);
 assert.equal(sort, null);
 assert.equal(nearby.depthWrite, true);
+
+// Worn pants (renderOrder 28) sort with their wearer: a farther actor's garment must draw before a nearer actor's
+// portrait instead of after every portrait, where it would show through any actor with no depth of its own.
+{
+  const farRank = { owner: { id: 5 }, depth: .9, close: false }, midRank = { owner: { id: 2 }, depth: .5, close: true }, nearRank = { owner: { id: 3 }, depth: .2, close: true };
+  const farPortrait = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .9, id: 40 };
+  const farPants = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 28, z: .9, id: 41 };
+  const playerFront = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .5, id: 42 };
+  const nearPortrait = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .2, id: 43 };
+  const playerPants = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 28, z: .5, id: 44 };
+  const ranks3 = new Map([[farPortrait.object, farRank], [playerFront.object, midRank], [nearPortrait.object, nearRank]]);
+  const extras = new Map([[farPants.object, farRank], [playerPants.object, midRank]]);
+  const sorted = [playerPants, nearPortrait, farPants, playerFront, farPortrait].sort((a, b) => portraitOrder.comparePortraitDraws(a, b, ranks3, extras));
+  assert.deepEqual(sorted.map(d => d.id), [40, 41, 42, 44, 43], 'actors draw far to near; each actor\'s pants follow its own portrait');
+  let sort3 = null;
+  portraitOrder.withPortraitDrawOrder({ setTransparentSort(fn) { sort3 = fn; } }, { ranks: ranks3, extras, nearest: nearRank }, () => {
+    assert.equal(farPortrait.object.material.depthWrite, true, 'actors outside the crossing radius keep their normal depth write');
+    assert.equal(playerFront.object.material.depthWrite, false, 'a close non-nearest portrait still defers its depth write');
+    assert.equal(farPants.object.material.depthWrite, true, 'garments are ordered, never depth-deferred');
+  }, true);
+  assert.ok(/extras\.set\(mesh, rank\)/.test(source) && /PantsGarmentRenderer\?\.liveHandles/.test(source), 'real render path ranks worn pants with their actor');
+}
 
 assert.ok(source.includes('portraitGearIds = portraitMask.gearIds'),'overlay receives actual per-owner gear lookup');
 assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)'),'mask is invoked from real render path');

@@ -13,7 +13,7 @@
   // slot between the farm-editor pencil button and the dev-spawner paw
   // button and has to toggle both.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.DevArenaPondDummy?.init?.(injectedDeps); } // Pond + dummy NPC section now lives in js/dev-arena-pond-dummy.js.
 
   const DEV_ARENA_ZONE_ID = 'map_dev_arena';
   // Remembers where the player was standing before warping into the arena
@@ -63,6 +63,7 @@
       deps.player.vx = 0; deps.player.vy = 0;
       deps._snapCameraTarget();
       _addPlayerToScene(deps.buildZoneScene(DEV_ARENA_ZONE_ID)?.scene);
+      window.DevArenaPondDummy?.ensurePond?.(); // Arena pond for standing in front of / wading into (js/dev-arena-pond-dummy.js).
       deps.refreshActionBar();
       deps.showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
       deps.closeMenu();

@@ -392,11 +392,109 @@
       && String(object.material[0]?.name || '').includes('avatar_skinned_front_material');
   }
 
+  // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'behind', 'portrait.waterTint': 'wet-tile' };
+  function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
+
+  const maskedHands = new Set(); // Procedural hands the front-plane rule masks in the current world frame.
+  let lastHandsBehindFrontPlane = 0; // Diagnostics: hands hidden under their holder's front art this frame.
+
   function isPortraitMaskedGear(object) {
     const data = object?.userData;
-    return data?.hobunjiHeldObjectPlane === true
-      && data.hobunjiProceduralHand !== true
-      && data.hobunjiProceduralFoot !== true;
+    if (data?.hobunjiHeldObjectPlane !== true || data.hobunjiProceduralFoot === true) return false;
+    if (data.hobunjiProceduralHand === true) return maskedHands.has(object) && xrayRule('hand.frontPlaneMask') !== 'off'; // Hands join the front-art mask only when the hand rule selects them.
+    return xrayRule('weapon.frontPlaneMask') !== 'off';
+  }
+
+  // Hands: a hand with a part behind its holder's front portrait plane (camera on the front side) must not
+  // show through the front art, and neither may its shell outline (the loops around a gripping hand). The hand
+  // joins the same stencil mask the weapons use and loses its shell layer while it is behind the plane.
+  const handPlaneInverse = new THREE.Matrix4(); // Scratch: portrait plane's world->local transform.
+  const handPlaneLocal = new THREE.Vector3(); // Scratch: hand origin in plane space (only when it has no geometry box).
+  const handPlaneCamera = new THREE.Vector3(); // Scratch: camera in plane space.
+  const HAND_BEHIND_PLANE_EPS = 0.01; // Camera must be at least this far in front of the plane for front art to be on screen.
+  const handShellSuppressed = new WeakSet(); // Hands whose shell layer this rule switched off.
+  const handWingHidden = new WeakSet(); // Wing-continuation sub-meshes this rule hid with their hand.
+
+  const handToPlane = new THREE.Matrix4(); // Scratch: hand local -> portrait plane space.
+  const handCorner = new THREE.Vector3(); // Scratch: one corner of the hand geometry box in plane space.
+  const handProbe = { cameraZ: NaN, handMinZ: NaN, handMaxZ: NaN, hands: 0 }; // Last evaluated plane-space numbers, for diagnostics.
+  const HAND_PART_BEHIND_EPS = 0.03; // How far a part must reach behind the plane before the hand counts as behind it.
+
+  // The furthest-behind point of the hand (lowest plane-space z). A gripping hand usually straddles the card, so
+  // its centre alone says "in front" even while part of it, and its outline, sits behind the front art.
+  function handBehindFrontPlane(hand, portrait, camera) {
+    if (!hand.matrixWorld || !portrait.matrixWorld || !camera.matrixWorld) return false;
+    handPlaneInverse.copy(portrait.matrixWorld).invert();
+    handPlaneCamera.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(handPlaneInverse);
+    handProbe.hands++;
+    handProbe.cameraZ = handPlaneCamera.z;
+    if (!(handPlaneCamera.z > HAND_BEHIND_PLANE_EPS)) return false; // Camera is not on the front side: no front art is on screen to hide under.
+    const geometry = hand.geometry;
+    if (geometry && !geometry.boundingBox) geometry.computeBoundingBox?.(); // Once per geometry.
+    let minZ, maxZ;
+    if (geometry?.boundingBox && handToPlane.multiplyMatrices) {
+      handToPlane.multiplyMatrices(handPlaneInverse, hand.matrixWorld);
+      const { min, max } = geometry.boundingBox;
+      minZ = Infinity; maxZ = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        const z = handCorner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).applyMatrix4(handToPlane).z;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+    } else {
+      handPlaneLocal.setFromMatrixPosition(hand.matrixWorld).applyMatrix4(handPlaneInverse); // No geometry box: the mesh origin alone.
+      minZ = maxZ = handPlaneLocal.z;
+    }
+    handProbe.handMinZ = minZ; handProbe.handMaxZ = maxZ;
+    return minZ < -HAND_PART_BEHIND_EPS; // +z is the front face of a portrait card.
+  }
+
+  function updateFrontPlaneHands(held, scene, camera) {
+    // Per-hand state rather than clear-and-rebuild: the world is rendered more than once per frame and a pass
+    // that collects no hands must not un-mask the ones an earlier pass decided about.
+    const rule = xrayRule('hand.frontPlaneMask');
+    let frontByOwner = null; // Owner -> front portrait, built once per call and only if a hand needs it.
+    for (const mesh of held) {
+      if (mesh.userData?.hobunjiProceduralHand !== true) continue;
+      let masked = rule === 'always';
+      if (rule === 'behind') {
+        if (!frontByOwner) {
+          frontByOwner = new Map();
+          for (const portrait of collectVisible(frontPortraitRegistry, scene)) {
+            const owner = portraitStencilOwner(portrait, scene);
+            if (owner && !frontByOwner.has(owner)) frontByOwner.set(owner, portrait);
+          }
+        }
+        const owner = portraitStencilOwner(mesh, scene);
+        const portrait = owner ? frontByOwner.get(owner) : null;
+        masked = !!portrait && handBehindFrontPlane(mesh, portrait, camera);
+      }
+      if (masked) {
+        maskedHands.add(mesh);
+        if (hasLayer(mesh, SHELL_LAYER)) { mesh.layers.disable(SHELL_LAYER); handShellSuppressed.add(mesh); }
+      } else {
+        maskedHands.delete(mesh);
+        if (handShellSuppressed.has(mesh)) {
+          mesh.layers.enable(SHELL_LAYER); // The hand came out from behind the plane (or the rule was switched off): outline returns.
+          handShellSuppressed.delete(mesh);
+        }
+      }
+      // A parrot hand's wing continuation is a separate sub-mesh (portrait-occluded wing layer) that is not a held
+      // plane; it follows the hand: hidden, outline included, while the hand is behind the front plane.
+      const siblings = mesh.parent?.children;
+      if (siblings) for (const sibling of siblings) {
+        if (sibling === mesh || !sibling.isMesh || sibling.userData?.hobunjiPortraitOccludedWingLayer !== true) continue;
+        if (masked) {
+          if (sibling.visible) { sibling.visible = false; handWingHidden.add(sibling); }
+        } else if (handWingHidden.has(sibling)) {
+          sibling.visible = true;
+          handWingHidden.delete(sibling);
+        }
+      }
+    }
+    if (maskedHands.size > 8) for (const mesh of maskedHands) if (!mesh.parent) maskedHands.delete(mesh); // Dropped hand rigs.
+    lastHandsBehindFrontPlane = maskedHands.size;
   }
 
   function portraitStencilOwner(mesh, scene) {
@@ -431,6 +529,7 @@
     const playerWorld = player.matrixWorld.elements;
     const actors = new Map(); // A front/rear pair and any split materials share the same camera-depth key.
     const ranks = new Map();
+    const orderAll = xrayRule('actors.order') !== 'near';
     for (const portrait of portraits) {
       if (portrait.renderOrder >= 900) continue; // A lying portrait keeps its bed overlay order.
       let owner = portraitStencilOwner(portrait, scene);
@@ -441,10 +540,13 @@
       if (!actors.has(owner)) {
         owner.updateWorldMatrix(true, false);
         const world = owner.matrixWorld.elements;
+        // Every visible actor is ordered by its own camera depth, near or far, so the player never ends up
+        // in front of a distant NPC's garment just because that NPC was outside the crossing radius.
+        // Only actors close enough to cross planes with the player take part in the depth-write deferral.
         const close = Math.hypot(world[12] - playerWorld[12], world[13] - playerWorld[13], world[14] - playerWorld[14]) <= PORTRAIT_SORT_DISTANCE;
-        const depth = close ? portraitSortPoint.set(world[12], world[13], world[14])
-          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z : NaN;
-        actors.set(owner, Number.isFinite(depth) ? { owner, depth } : null);
+        const depth = (close || orderAll) ? portraitSortPoint.set(world[12], world[13], world[14])
+          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z : NaN; // actors.order 'near' ranks only actors within the crossing radius.
+        actors.set(owner, Number.isFinite(depth) ? { owner, depth, close } : null);
       }
       const rank = actors.get(owner);
       if (rank) ranks.set(portrait, rank);
@@ -455,17 +557,30 @@
     for (const rank of actors.values()) {
       if (!rank) continue;
       count++;
+      if (!rank.close) continue; // The nearest-portrait protection is only about actors near the player.
       if (!nearest || rank.depth < nearest.depth
           || (rank.depth === nearest.depth && rank.owner.id > nearest.owner.id)) nearest = rank;
     }
-    return count > 1 ? { ranks, nearest, count } : null;
+    if (count < 2) return null;
+    // Worn pants are separate meshes drawn at renderOrder 28, i.e. after every portrait. Left to depth alone they
+    // show through any actor whose portrait skipped its depth write (see withPortraitDrawOrder) and through
+    // closer actors generally, so they sort with the actor that wears them instead.
+    const extras = new Map();
+    if (xrayRule('pants.sortWithActor') !== 'off') for (const handle of window.PantsGarmentRenderer?.liveHandles?.() || []) {
+      const mesh = handle?.mesh;
+      if (!mesh?.parent) continue;
+      const rank = actors.get(portraitStencilOwner(mesh, scene));
+      if (rank) extras.set(mesh, rank);
+    }
+    return { ranks, extras, nearest, count };
   }
 
-  function comparePortraitDraws(a, b, ranks) {
-    const actorA = ranks.get(a.object), actorB = ranks.get(b.object);
+  function comparePortraitDraws(a, b, ranks, extras = null) {
+    const actorA = ranks.get(a.object) || extras?.get(a.object), actorB = ranks.get(b.object) || extras?.get(b.object);
     // Three r128 compares group, render order, projected Z, then object ID.
     // A ranked portrait substitutes the actor's depth and keeps the original
-    // front/back/shoulder layer order within that one actor.
+    // front/back/shoulder layer order within that one actor. Garments ranked
+    // with their wearer draw right after that wearer's portrait (renderOrder).
     return (actorA ? 0 : a.groupOrder) - (actorB ? 0 : b.groupOrder)
       || (actorA ? PORTRAIT_SORT_ORDER : a.renderOrder) - (actorB ? PORTRAIT_SORT_ORDER : b.renderOrder)
       || (actorB?.depth ?? b.z) - (actorA?.depth ?? a.z)
@@ -476,10 +591,10 @@
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
     if (!order || !renderer.setTransparentSort) return draw();
-    const changed = new Set(); // Only the farther portraits defer depth writes during the ordinary color draw.
+    const changed = new Set(); // Only the farther portraits near the player defer depth writes during the ordinary color draw.
     if (protectNearPortrait) {
       for (const [mesh, rank] of order.ranks) {
-        if (rank === order.nearest) continue;
+        if (rank === order.nearest || rank.close === false) continue;
         forEachMaterial(mesh.material, material => {
           if (!material.depthWrite) return;
           material.depthWrite = false;
@@ -487,7 +602,7 @@
         });
       }
     }
-    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks));
+    renderer.setTransparentSort((a, b) => comparePortraitDraws(a, b, order.ranks, order.extras));
     try {
       return draw();
     } finally {
@@ -1970,7 +2085,20 @@
     return !isPortraitMaskedGear(mesh) || meshOverlapsWaterVolume(mesh, cover); // Hands/feet retain their existing submersion policy.
   }
 
+  // A character portrait is a flat card wider than the actor, so its bounds overlap wet tiles whenever the
+  // actor merely stands beside water. Tint a portrait only when the tile the actor stands on is itself wet.
+  // Covers without a tile footprint (scenery water/slush) keep the bounds test alone.
+  function actorStandsInWater(cover, scope) {
+    const footprint = cover.userData?.hobunjiWaterTileFootprint;
+    if (!Array.isArray(footprint?.bounds)) return true;
+    const [left, top, right, bottom] = footprint.bounds;
+    if (scope.col < left || scope.col >= right || scope.row < top || scope.row >= bottom) return false;
+    return !footprint.tiles || footprint.tiles.has(scope.col + ',' + scope.row); // No tile set = map-wide flood rectangle.
+  }
+
   function submergedPortraits(camera, covers, visiblePortraits) {
+    const tintRule = xrayRule('portrait.waterTint');
+    if (tintRule === 'off') return { portraits: [], scopes: [], touchingCovers: new Set() };
     const portraits = []; // Visible portrait meshes with a physically overlapping water/slush surface.
     const scopes = []; // Elected portrait world tiles join gear owners in the clipped water draw.
     const touchingCovers = new Set();
@@ -1981,7 +2109,7 @@
       const scope = { col: Math.floor(world[12]), row: Math.floor(world[14]) };
       let wet = false;
       for (const cover of covers) {
-        if (!tintCoverNearActor(cover, [scope]) || !meshOverlapsWaterVolume(portrait, cover, false)) continue;
+        if (!tintCoverNearActor(cover, [scope]) || (tintRule === 'wet-tile' && !actorStandsInWater(cover, scope)) || !meshOverlapsWaterVolume(portrait, cover, false)) continue;
         touchingCovers.add(cover);
         wet = true;
       }
@@ -3047,6 +3175,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
     const portraits = canTintPortraits || window.PlayerBodyTransformComposer?.getPlayerMesh?.()
       ? collectVisible(waterPortraitRegistry, scene) : [];
+    updateFrontPlaneHands(held, scene, camera);
     const portraitOrder = nearbyPortraitOrder(scene, camera, portraits);
     lastRankedPortraitActors = portraitOrder?.count || 0;
     const renderBase = () => withPortraitDrawOrder(this, portraitOrder, () => originalRender.call(this, scene, camera), true);
@@ -3126,6 +3255,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
       rankedPortraitActors: lastRankedPortraitActors,
+      handsBehindFrontPlane: lastHandsBehindFrontPlane,
+      handPlaneProbe: { ...handProbe },
       waterPortraits: lastWaterPortraits,
       dryGearWaterSkips: lastDryGearWaterSkips,
       waterClipOverflow: lastWaterClipOverflow,

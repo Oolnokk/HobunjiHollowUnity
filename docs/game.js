@@ -32599,6 +32599,32 @@
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
         regenerateWildernessLab,
+        zoneWaterMeshes: _zoneWaterMeshes, // Arena pond (js/dev-arena-pond-dummy.js) joins the shared zone water registry.
+        npcWalkers,
+        spawnNpcRecord: async (rec, target) => { // Dev dummy NPCs build a real walker through the ordinary NPC pipeline.
+          if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;
+          const walker = await makeNpcWalker(rec, target);
+          if (walker && !npcWalkers.some(w => w.rec?.id === rec.id)) npcWalkers.push(walker);
+          return walker;
+        },
+        despawnNpcWalker: walker => despawnNpcVisitor(walker),
+        // Arena "test look" (logic now lives in js/dev-arena-pond-dummy.js): only the closure state it needs is exposed here.
+        devTestLookDeps: {
+          getProfile: () => _playerData || window.__hobunjiPlayerProfile,
+          getShoulderOffsets: () => [s_shoulderSurfOffsetH_default, s_shoulderSurfOffsetH_combat],
+          setShoulderOffsets: (standing, combat) => { s_shoulderSurfOffsetH_default = standing; s_shoulderSurfOffsetH_combat = combat; s_shoulderSurfOffsetH_current = standing; },
+          getCameraPitchOffset: () => cameraAngleOffsetDeg,
+          setCameraPitchOffset: deg => { cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(deg); },
+          getCameraAzimuthOffset: () => cameraAzimuthOffsetDeg,
+          setCameraAzimuthOffset: deg => { cameraAzimuthOffsetDeg = wrapAzimuthDeg(deg); },
+          setCharacterViewMode: on => setCharacterViewMode(on, 'debug'),
+          refreshPlayerAvatar,
+          toolDefs: TOOL_ITEM_DEFS,
+          gearTools: () => gearInventory.tools,
+          equipmentSlots,
+          rebuildToolMeshes,
+          setActiveTool,
+        },
         getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
         // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
         // returns display parts; used by Random Test Ruin Dungeon Chests.

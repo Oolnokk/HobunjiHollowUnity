@@ -21,6 +21,7 @@ assert.match(dual, /root\.scale\.set\(1, 1, 1\)/, 'dual roots stay unit-scale so
 assert.match(dual, /idleStancePoses/, 'dual presentation consumes explicit main/offhand idle stance poses');
 assert.doesNotMatch(dual, /requestAnimationFrame/, 'dual-wield visuals must share the scheduler/hand-sync owners instead of starting a second frame loop');
 assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand socket transforms');
+assert.match(dual, /hobunjiDualWieldDuplicate: true, hobunjiHeldObjectPlane: true/, 'dual-wield weapon copies inherit the held-overlay layer, so they must register as held planes (front-portrait mask) instead of drawing unmasked over the holder');
 assert.match(dual, /const weapon = side === 'right' \? current\.mainMesh : current\.offMesh/, 'each hand resolves its socket from its visible child weapon');
 assert.match(dual, /planeLocalPosition = socketFrame\.position\.clone\(\)\.applyMatrix4\(inversePlaneWorld\)[\s\S]*planeLocalPosition\.clone\(\)\.applyMatrix4\(weapon\.matrixWorld\)/, 'child grip position is reconstructed in original-plane local space and resolved through the visible child weapon matrix');
 assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -source\.z, source\.w/, 'offhand grip orientation mirrors the proper frame across child-local X instead of losing the reflection in quaternion decomposition');

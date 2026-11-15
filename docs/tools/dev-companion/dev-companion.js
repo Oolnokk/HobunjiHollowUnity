@@ -643,7 +643,8 @@
                 value: option.value, text: option.label, selected: String(option.value) === String(action.value || ''),
               })))) : button(action.label, async () => {
             if (action.confirm && !confirm(action.confirm)) return;
-            await run('panel-action', { panel: panel.id, action: action.id, args: action.args || {} }, { timeoutMs: LONG_COMMAND_TIMEOUT_MS });
+            const result = await run('panel-action', { panel: panel.id, action: action.id, args: action.args || {} }, { timeoutMs: LONG_COMMAND_TIMEOUT_MS });
+            if (result?.text) copyOrShow(result.title || panel.title, result.text); // Panels can return text (e.g. an exported diff) for the clipboard.
           }, { title: action.title || null, active: !!action.active })))),
         panel.note ? el('div', { class: 'muted small-text', text: panel.note }) : null,
       );
