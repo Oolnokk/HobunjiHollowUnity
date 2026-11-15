@@ -230,12 +230,27 @@
   }
   function roomLightClip(room,project){
     const outer=projectHull(room,project);
-    if(outer.length<3)return {outer,mid:null,inner:null};
+    if(outer.length<3)return {outer,inner:null,bands:null};
     const xs=outer.map(p=>p.x),ys=outer.map(p=>p.y);
     const width=Math.max(...xs)-Math.min(...xs),height=Math.max(...ys)-Math.min(...ys);
-    const feather=Math.min(LIGHT_CLIP_FEATHER_PX,(Math.min(width,height)-2)/4);
-    const mid=insetHull(outer,feather/2),inner=insetHull(outer,feather);
-    return {outer,mid:inner&&mid?mid:null,inner:inner&&mid?inner:null};
+    let feather=Math.min(LIGHT_CLIP_FEATHER_PX,(Math.min(width,height)-2)/4); // Room size limits the fade so thin silhouettes retain their center light.
+    for(let attempt=0;attempt<4&&feather>.25;attempt++,feather/=2){
+      const count=Math.max(3,Math.min(6,Math.ceil(feather/3))); // At most six concentric bands per source; project and inset only once per overlay redraw.
+      const contours=[outer]; // Shared by all lights while the current room and camera projection are unchanged.
+      for(let i=1;i<=count;i++){
+        const inset=insetHull(outer,feather*i/count);
+        if(!inset)break;
+        contours.push(inset);
+      }
+      if(contours.length!==count+1)continue; // Narrow/acute camera projections retry with a smaller, still strictly contained feather.
+      const bands=[]; // Nonoverlapping light strips, ordered from the room interior toward the strictly sealed outer boundary.
+      for(let i=count-1;i>=0;i--){
+        const t=(i+.5)/count;
+        bands.push({outer:contours[i],inner:contours[i+1],alpha:t*t*(3-2*t)}); // Smoothstep samples approach zero at the real wall boundary.
+      }
+      return {outer,inner:contours[count],bands};
+    }
+    return {outer,inner:null,bands:null}; // Degenerate silhouettes use the original hard clip rather than leak light.
   }
   function traceHull(ctx,hull){
     ctx.moveTo(hull[0].x,hull[0].y);
@@ -256,14 +271,13 @@
     if(clip.outer.length<3)return; // No safe projected room: do not reveal light outside its sealed boundaries.
     ctx.save();
     try{
-      if(!clip.inner||!clip.mid){ // Degenerate/very narrow projections still retain strict isolation.
+      if(!clip.inner||!clip.bands?.length){ // Degenerate/very narrow projections still retain strict isolation.
         ctx.beginPath();traceHull(ctx,clip.outer);ctx.clip();draw();return;
       }
-      // Nonoverlapping convex bands fade to zero at the room's actual edge.
-      // Keep the original destination-out/source-over operation and don't draw outside the room.
+      // A solid core and smoothstep-sampled disjoint bands replace the visible three-step cutout.
+      // The outside band's opacity approaches zero without ever drawing beyond the room perimeter.
       drawLightBand(ctx,clip.inner,null,1,draw);
-      drawLightBand(ctx,clip.mid,clip.inner,.65,draw);
-      drawLightBand(ctx,clip.outer,clip.mid,.22,draw);
+      for(const band of clip.bands)drawLightBand(ctx,band.outer,band.inner,band.alpha,draw);
     }finally{ctx.restore();}
   }
 
@@ -414,7 +428,7 @@
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
-        lightClip:{featherPx:LIGHT_CLIP_FEATHER_PX,feathered:!!lightHull?.inner}};},
+        lightClip:{featherPx:LIGHT_CLIP_FEATHER_PX,feathered:!!lightHull?.inner,bands:lightHull?.bands?.length||0}};},
     };
     live=session;
     return session;
