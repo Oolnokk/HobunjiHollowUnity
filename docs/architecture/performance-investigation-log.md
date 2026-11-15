@@ -1,5 +1,43 @@
 # Performance investigation log
 
+## 15 Nov 2026: the farm draws every tile separately, with its own cloned texture
+
+Player readings on the farm (CPU-bound, GPU 10-17%): 10.6-14.5 FPS, game loop 45-52 ms, plus 20-42 ms "unattributed"
+outside game JS. Draw census on the farm (headless, outlines on): **1,103 real draws per frame** (town 573, western
+slope 183): about 500 per-tile ground slabs, about 270 shadow-map draws (`MeshDepthMaterial`; the farm sun is the only
+shadow-casting light), and multi-mesh furniture (a compost bin is 56 meshes). 1,014 of the farm's objects are
+top-level per-tile meshes. With outlines off the base replays were larger (540 vs 61 draws): the near-only depth copy
+needs the offscreen target that only exists with outlines on, so turning outlines off does not help on the farm.
+
+Three fixes:
+
+- **Terrain jigsaw cloned a material and a texture per farm tile.** `TerrainJigsawUV.bakeMesh` treats every
+  material-ID-layer mesh as terrain and gave each its own `mat.clone()` + `map.clone()`: 443 distinct materials and
+  ~220 extra GPU textures of the same grass image on the farm. The clone is determined by its source material and the
+  wall flag, so farm tiles (now tagged `userData.hobunjiFarmTile` by `vegetation-crop-rendering.js`) share one clone
+  per (source, wall) while the source's `version` and `map` are unchanged. Other callers keep independent clones
+  (wilderness chunk cleanup disposes the materials it owns; `test-chunk-jigsaw-texture-sharing.js` pins that).
+  Farm GPU textures 353 -> 135; `TerrainJigsawUV.snapshot().sharedJigsawMaterialReuses` counts reuses.
+- **`js/farm-tile-render-batches.js`:** for the world render only, farm tiles game.js marked as terrain are hidden
+  and drawn as merged world-space meshes per 8x8-tile cell and identical render state (material, layers, shadow
+  flags, render order, edge-ID colour, ground tags). Tiles stay the authority for edits and raycasts; a batch is
+  rebuilt only when a member mesh, its geometry/attribute versions or world position change. game.js records the
+  edge-ID colour (`userData.hobunjiTerrainEdgeIdColor`) so the batch can carry the same seam hook. Batches are tagged
+  `terrainRenderChunk` so the held-object ground x-ray classifies them as terrain and the jigsaw/chunker skip them.
+  Farm: 970 tiles in 53 batches; **draws per frame 1,357 -> 881** (base pass 1,103 -> 645). Batched vs unbatched
+  synchronous frames differ by 652 px, the same as two identical unbatched frames (646) or batched frames (631): only
+  the turning windmill blades differ. `FarmTileRenderBatches.setEnabled(false)` is the A/B switch; `snapshot()` has
+  per-reason rejection counts.
+- **`js/shadow-map-refresh-throttle.js`:** the farm sun and shadow camera never move, so the shadow map is refreshed
+  every 250 ms or when the active scene or its direct child count changes, instead of every frame. Most farm ground
+  is unlit `MeshBasicMaterial` and never shows these shadows. `ShadowMapRefreshThrottle.setEnabled(false)` restores
+  per-frame updates. (Not visible in headless counts, where every frame is longer than 250 ms.)
+
+Also from the same readings: `inventory-ui.js` re-ran its full `decorate()` (77-87 ms on the player's desktop) for
+every inventory DOM change, including item pickups while the menu is closed; it now defers until the inventory pane is
+on screen. `local-save-folder-core.js` re-read the whole browser save every second to detect changes; it now polls
+every 5 s (syncs were already debounced 4 s and held to one per 20 s).
+
 ## 14 Nov 2026 (device data): CPU-bound on draw submission; most draws were hand/foot replays for NPCs
 
 **First real-device reading** (player's desktop, Opera GX, outdoors, Performance Profiler overlay): GPU 8-14%

@@ -782,6 +782,15 @@
   }
 
   // Update a single tile mesh (called after shovel actions)
+  // Every object a farm tile builds is tagged so other systems can tell farm
+  // ground from town/wilderness ground: TerrainJigsawUV shares one material
+  // clone per source material for these tiles (instead of one per tile), which
+  // in turn lets js/farm-tile-render-batches.js merge them.
+  function _addFarmTileObject(object) {
+    object.userData.hobunjiFarmTile = true;
+    deps.scene.add(object);
+  }
+
   function _buildOneTileMesh(col, row) {
     const TileType = deps.TileType;
     const i    = row * deps.COLS + col;
@@ -794,7 +803,7 @@
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.resolveTileMat('farm', TileType.GRASS));
       setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.NORMAL_TOP - deps.SLAB_H / 2, row + 0.5);
-      deps.scene.add(floorMesh);
+      _addFarmTileObject(floorMesh);
       tileMeshes[i] = floorMesh;
       deps.markTerrainEdgeId(floorMesh, TileType.GRASS);
       // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
@@ -806,7 +815,7 @@
         if (!window.FacetedNaturalSurfaceShellReduction?.installed) window.OreRockTextures?.fitRockMesh?.(m, `farm:${col},${row}`); // Standalone editor fallback when the gameplay post-build styling module is absent.
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         deps.markTerrainEdgeId(m, TileType.ROCK);
         moundRoot = m;
       }
@@ -814,7 +823,7 @@
         const m = new THREE.Mesh(grassGeo, deps.resolveTileMat('farm', TileType.GRASS));
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         deps.markTerrainEdgeId(m, TileType.GRASS);
         if (!moundRoot) moundRoot = m;
       }
@@ -829,7 +838,7 @@
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.vegFloorMat);
       setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.tileYCenter(TileType.GRASS), row + 0.5);
-      deps.scene.add(floorMesh);
+      _addFarmTileObject(floorMesh);
       tileMeshes[i] = floorMesh;
       deps.markTerrainEdgeId(floorMesh, TileType.GRASS);
 
@@ -840,7 +849,7 @@
       // is already the regular wilderness-bush size. Do not apply the old
       // generic shrub x2 farm boost here.
       vegGroup.position.set(col + 0.5, deps.tileSurfaceY(tile.type), row + 0.5);
-      deps.scene.add(vegGroup);
+      _addFarmTileObject(vegGroup);
       setVegFoliageMesh(i, vegGroup);
       deps.markOutline(vegGroup);
       return;
@@ -851,7 +860,7 @@
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.vegFloorMat);
       setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.tileYCenter(TileType.GRASS), row + 0.5);
-      deps.scene.add(floorMesh);
+      _addFarmTileObject(floorMesh);
       tileMeshes[i] = floorMesh;
       deps.markTerrainEdgeId(floorMesh, TileType.GRASS);
 
@@ -871,7 +880,7 @@
         }
         vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
         vegGroup._windAmp   = 0.10;
-        deps.scene.add(vegGroup);
+        _addFarmTileObject(vegGroup);
         setVegFoliageMesh(i, vegGroup);
         deps.markOutline(vegGroup);
       }
@@ -886,7 +895,7 @@
         const m = new THREE.Mesh(dirtGeo, deps.resolveTileMat('farm', TileType.TRENCH));
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         m.layers.enable(1);  // material transition outline
         deps.markTerrainEdgeId(m, TileType.TRENCH);
         primary = m;
@@ -896,7 +905,7 @@
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
         m._windAmp = 0;
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         m.layers.enable(1);  // material transition outline
         deps.markTerrainEdgeId(m, TileType.GRASS);
         setVegFoliageMesh(i, m);
@@ -918,14 +927,14 @@
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
         deps.markTerrainEdgeId(m, TileType.GRASS);
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         primary = m;
       }
       if (grassGeo) {
         const m = new THREE.Mesh(grassGeo, deps.resolveTileMat('farm', TileType.GRASS));
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
-        deps.scene.add(m);
+        _addFarmTileObject(m);
         deps.markTerrainEdgeId(m, TileType.GRASS);
         if (!primary) primary = m;
       }
@@ -946,7 +955,7 @@
     if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) mesh.castShadow = mesh.receiveShadow = true;
     else setFlatSlabShadowFlags(mesh);
     mesh.position.set(col + 0.5, deps.tileYCenter(tile.type), row + 0.5);
-    deps.scene.add(mesh);
+    _addFarmTileObject(mesh);
     tileMeshes[i] = mesh;
     // Rock and fallback vegetation get outlines; flat floor tiles do not.
     if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {

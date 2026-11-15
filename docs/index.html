@@ -299,7 +299,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261113idle1"></script>
+  <script src="js/local-save-folder.js?v=20261115h512dd0a"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
@@ -437,7 +437,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261114hprobehouse&surfaceUv=20261113terrainpass2"></script>
+  <script src="js/house-pieces.js?v=20261115h7e07305&surfaceUv=20261113terrainpass2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -770,7 +770,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261110stoneclockmerge1"></script>
+  <script src="js/equipment-panel.js?v=20261115h9f0b49d"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near

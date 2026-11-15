@@ -318,10 +318,36 @@
     return true; // Truly neutral gray or faded white gets the green muted tone.
   }
 
+  // Every item pickup re-renders the inventory DOM, and this observer used to
+  // run the full decorate() (77-87 ms on the player's desktop) while the menu
+  // was closed and nothing was visible: a frame hitch per pickup outdoors.
+  // While the inventory pane is not on screen the pass is deferred and runs
+  // once when the menu opens on it (class changes on #menuPanel/#mpInventory).
+  let decoratePending = false;
+  let deferredDecorates = 0; // Diagnostics: observer-driven passes skipped while hidden (debugSnapshot()).
+  let visibilityObserver = null;
+  function inventoryPaneVisible() {
+    const panel = document.getElementById('menuPanel');
+    const pane = document.getElementById('mpInventory');
+    return !!panel?.classList.contains('open') && !!pane?.classList.contains('active');
+  }
+  function installDecorateVisibilityObserver() {
+    if (visibilityObserver || typeof MutationObserver !== 'function') return;
+    const targets = ['menuPanel', 'mpInventory'].map(id => document.getElementById(id)).filter(Boolean);
+    if (!targets.length) return;
+    visibilityObserver = new MutationObserver(() => { if (decoratePending && inventoryPaneVisible()) scheduleDecorate(); });
+    for (const target of targets) visibilityObserver.observe(target, { attributes: true, attributeFilter: ['class'] });
+  }
+
   function scheduleDecorate() {
     if (decorateQueued) return;
     decorateQueued = true;
-    requestAnimationFrame(() => { decorateQueued = false; decorate(); });
+    requestAnimationFrame(() => {
+      decorateQueued = false;
+      if (!inventoryPaneVisible()) { decoratePending = true; deferredDecorates++; installDecorateVisibilityObserver(); return; }
+      decoratePending = false;
+      decorate();
+    });
   }
 
   function decorate() {
@@ -909,6 +935,7 @@
     const combatDeps = window.Combat?.deps || null;
     return {
       mode,
+      deferredDecorates, decoratePending, // Observer passes skipped while the inventory was not on screen.
       stackIcons: window.InventoryStacks?.getDebug?.() || null,
       packItems: document.querySelectorAll('#invGrid .inv-item-box:not(.empty)').length,
       integratedPackClothing: document.querySelectorAll('#invGrid .pack-clothing-tile').length,

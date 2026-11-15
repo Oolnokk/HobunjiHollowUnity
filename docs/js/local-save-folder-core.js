@@ -32,7 +32,7 @@
   const PORTABLE_SAVE_VERSION = 2;
   const RECOVERY_SAVE_VERSION = 1; // Manifest/debug marker for the independent recovery directory format.
   const AUTO_SYNC_MS = 30000;
-  const CHANGE_POLL_MS = 1000;
+  const CHANGE_POLL_MS = 5000; // Each poll re-reads the whole browser save (MBs with embedded clothing art; ~4 ms on a desktop). Syncs are debounced 4 s and held to one per 20 s anyway.
   const CHANGE_DEBOUNCE_MS = 4000; // Groups rapid browser-cache updates into one folder autosave.
   const CHANGE_MIN_SYNC_MS = 20000; // Stops frequent cache changes from triggering full disk writes every second.
 
