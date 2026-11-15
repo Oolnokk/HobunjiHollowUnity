@@ -9,7 +9,8 @@
   const ASSET_BASE = new URL('assets/', DOCS_BASE).href;
   const CONFIG_BASE = new URL('config/', DOCS_BASE).href;
   const BESTIARY_URL = new URL('config/creatures/hobunji-creature-bestiary.json', DOCS_BASE).href;
-  const PREVIEW_STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // Same-origin authoring override written by the Animal Head Rig Painter.
+  const PREVIEW_STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // Complete neck-rig previews, never used for hat-only data.
+  const HAT_PREVIEW_STORAGE_KEY = 'hobunji_animal_hat_fits_v1'; // Independent hat authoring previews; cannot override head deformation.
   const DEFAULT_ATTACHMENT = Object.freeze({
     enabled: true,
     coordinateSpace: 'sprite-normalized-top-left',
@@ -47,6 +48,16 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(PREVIEW_STORAGE_KEY) || '{}');
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed[normalizeKind(kind)] || null : null;
+    } catch (_) { return null; }
+  }
+
+  function previewHatForKind(kind) {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HAT_PREVIEW_STORAGE_KEY) || '{}');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const id = normalizeKind(kind);
+      return Object.prototype.hasOwnProperty.call(parsed, id) ? parsed[id] : null;
     } catch (_) { return null; }
   }
 
@@ -149,6 +160,11 @@
     const normalized = normalizeKind(kind);
     const liveRig = headRigForKind(normalized);
     const previewRig = previewRigForKind(normalized); // Lets Save rig for game preview immediately test hat placement without committing the bestiary.
+    const hatPreview = previewHatForKind(normalized);
+    if (hatPreview) {
+      debugState.lastAttachmentSource = 'hat-preview';
+      return normalizeAttachment(hatPreview, previewRig?.weightMap ? previewRig : liveRig);
+    }
     if (previewRig?.hatAttachment) {
       debugState.lastAttachmentSource = 'browser-preview';
       return normalizeAttachment(previewRig.hatAttachment, previewRig);
@@ -307,6 +323,7 @@
     normalizeAttachment,
     deriveAttachmentFromHeadRig,
     previewRigForKind,
+    previewHatForKind,
     attachmentForKind,
     hatOptions,
     resolveHatOption,
