@@ -30,7 +30,6 @@ global.window = {
 global.THREE = THREE; // vegetation-crop-rendering's classic script expects the actual browser-level THREE identifier.
 require('../docs/js/foliage-generator.js'); // Existing cached eight-variant Bush preset, including the actual alpha-tested leaves.
 require('../docs/js/vegetation-crop-rendering.js'); // The exact production crop renderer and fruit-placement algorithm.
-THREE.TextureLoader.prototype.load = textureLoad;
 
 const api = window.VegetationCropRendering; // Builds the same standalone crop geometry used by NPC farm plots.
 const species = {
@@ -77,4 +76,5 @@ const hybrid = api.buildStandaloneCropMesh('cv_blueberries_112233_8739b7', 1, tr
 assert.equal(hybrid.children[1].material.color.getHex(), 0x8739b7, 'crossbred berries use exact inherited color');
 assert.equal(hybrid.children[0].children.length >= 2, true, 'crossbred bush retains original living branches and leaves');
 assert.ok(instances.every(geometry => geometry?.attributes?.position?.count > 0), 'native bushes use genuine procedural geometry');
+THREE.TextureLoader.prototype.load = textureLoad; // Restore Three.js's loader after the last real foliage geometry has been constructed.
 console.log('ok - real Three.js berry bushes retain leafy silhouettes, rooted 3D fruit and inherited pigments');
