@@ -78,7 +78,12 @@
     const requestedVisible = overlay.parent?.userData?.hobunjiShoulderRest?.splitOverlayVisible === true; // Shoulder presentation owns whether this helper layer exists at all; parity may only gate that request by the paired source face's visibility.
     overlay.visible = requestedVisible && source.visible !== false;
     overlay.frustumCulled = source.frustumCulled;
-    if (source.layers && overlay.layers && Number.isFinite(source.layers.mask)) overlay.layers.mask = source.layers.mask;
+    if (source.layers && overlay.layers && Number.isFinite(source.layers.mask)) {
+      const ownerStencilMask = 1 << 24; // The main held compositor owns private front-portrait stencil participation.
+      overlay.layers.mask = (source.layers.mask & ~ownerStencilMask)
+        | (overlay.userData?.hobunjiShoulderPetStencilForeground === true
+          ? source.layers.mask & ownerStencilMask : 0); // Do not copy the source's front-stencil layer to a background split half.
+    }
     copyMaterialRenderState(source, overlay);
     overlay.userData = overlay.userData || {};
     overlay.userData.hobunjiShoulderSplitLayerParity = {
