@@ -18,6 +18,7 @@
     if(kindRoll>=.38&&nestRoll>=.16)return null;
     const kinds=['pillar','closet','suspended'];
     const kind=kindRoll<.38?kinds[hash(id+':style')%kinds.length]:null;
+    if(kind==='closet'&&(room.w<12||room.d<12))return null; // The switch at 4.6x3.4 cannot overlap a small room's mandatory central puzzle.
     return {id:'secret-'+room.id,roomId:String(room.id),theme:theme||'hronal',
       corner:hash(id+':corner')%4,kind,trigger:['projectile','fire','melody'][hash(id+':trigger')%3],
       suspension:hash(id+':cover')%2?'ice':'net',tier:unit(id+':tier')<.77?1:2,
