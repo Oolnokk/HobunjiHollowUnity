@@ -9,7 +9,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/wild-treasure.js', 'utf8'); // Production logic exercised in this deterministic browser-like harness.
 const trinketSource = fs.readFileSync('docs/js/trinket-system.js', 'utf8'); // Authored single-effect trinket costs used to check loot tier balance.
-const trinketIdsByTier = { 2: ['wanderersAnklet', 'herbalistsPendant'], 3: ['rangersBeads', 'brawlersRing', 'guardiansBrooch'], 4: ['duelistsSignet', 'wardensAmulet'] }; // Expected available curios at each rarity.
+const trinketIdsByTier = { 2: ['wanderersAnklet', 'herbalistsPendant'], 3: ['rangersBeads', 'brawlersRing', 'guardiansBrooch', 'fightersBelt', 'swiftbladeRing', 'defendersBrooch', 'steadfastBeads', 'runnersCord', 'masonsRing'], 4: ['duelistsSignet', 'wardensAmulet'] }; // Expected available curios at each rarity.
 
 for (const [tierText, ids] of Object.entries(trinketIdsByTier)) {
   const tier = Number(tierText); // Ensures rewards scale from 1, through 2, to 3 Attunement points.
