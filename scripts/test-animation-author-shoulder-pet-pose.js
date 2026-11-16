@@ -11,8 +11,9 @@ const scriptPaths = [
   'js/animal-shoulder-spline-profiles.js',
   'js/animal-shoulder-spline.js',
 ]; // Must load after CreatureGeneticsRender and in the same order as the gameplay renderer.
-const positions = scriptPaths.map(path => html.indexOf("  '" + path + "'"));
-assert(positions.every(x => x > html.indexOf('  CREATURE_RENDER_SCRIPT,')), 'all authored shoulder scripts load after creature genetics');
+const scriptList = html.slice(html.indexOf('const REQUIRED_SCRIPTS = ['), html.indexOf('];', html.indexOf('const REQUIRED_SCRIPTS = ['))); // Ignore the nearby paired-runtime URL map when checking loader order.
+const positions = scriptPaths.map(path => scriptList.indexOf("  '" + path + "'"));
+assert(positions.every(x => x > scriptList.indexOf('  CREATURE_RENDER_SCRIPT,')), 'all authored shoulder scripts load after creature genetics');
 assert(positions.every((x, i) => !i || positions[i - 1] < x), 'shoulder scripts load in dependency order');
 assert.match(html, /animation-author-shoulder-pose-preview\.js\?v=/, 'the editor loads the reusable shoulder pose controller');
 assert.match(html, /creatureId: kind, \/\/ The authored head\/shoulder rig resolves by species/,
