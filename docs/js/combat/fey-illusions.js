@@ -133,7 +133,11 @@
     tick();
   }
 
-  ensureBuffProvider(); // Works in standalone previews whose HUD owner was loaded earlier, too.
+  ensureBuffProvider(); // Works in standalone previews whose HUD owner loaded earlier, too.
+  if (!registered && typeof document !== 'undefined') {
+    document.addEventListener?.('DOMContentLoaded', ensureBuffProvider, { once: true }); // Installs after the shared buff-bar script even when saved illusions exist before a new Fey strike.
+  }
+  window.addEventListener?.('hobunjiPlayerReady', ensureBuffProvider); // Refresh provider ownership as the authoritative character changes after loading a save.
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms,
     ensureBuffProvider,
