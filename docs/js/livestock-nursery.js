@@ -445,12 +445,41 @@
     });
   }
 
+  const rawBabyFrameCache = new Map(); // Shares raw fallback sprites across nursery babies when a species lacks genotype composition.
+  function rawBabyFrameCanvas(url) {
+    if (!url) return Promise.resolve(null);
+    if (rawBabyFrameCache.has(url)) return rawBabyFrameCache.get(url);
+    const pending = new Promise(resolve => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous'; // The idle-mask generator must be able to read raw PNG alpha.
+      image.onload = () => {
+        const canvas = document.createElement('canvas'); // Unmodified sprite at its native pixel resolution.
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        canvas.getContext('2d').drawImage(image, 0, 0);
+        resolve(canvas);
+      };
+      image.onerror = () => resolve(null); // The normal baby remains visible if an optional pose is absent.
+      image.src = url;
+    });
+    rawBabyFrameCache.set(url, pending);
+    return pending;
+  }
+
   async function prepareAgentFrames(agent, entry, token) {
     const renderer = window.CreatureGeneticsRender;
-    if (!renderer?.composeFrame) return;
+    if (!renderer) return;
     try {
       const names = ['idle', 'run1', 'run2'];
-      const canvases = await Promise.all(names.map(name => renderer.composeFrame(entry.kind, name, entry.genotype, false)));
+      const species = renderer.SPECIES?.[entry.kind]; // Registered species retain complete recolor, pattern and eye layers.
+      const sprites = animalDeps?.CREATURE_DB?.[entry.kind]?.sprites || {};
+      const rawRun = Array.isArray(sprites.run) ? sprites.run : sprites.run ? [sprites.run] : [];
+      const rawPaths = { idle: sprites.idle, run1: rawRun[0] || sprites.idle, run2: rawRun[1] || rawRun[0] || sprites.idle };
+      const canvases = await Promise.all(names.map(async name => {
+        const composed = species && typeof renderer.composeFrame === 'function'
+          ? await renderer.composeFrame(entry.kind, name, entry.genotype, false) : null;
+        return composed || rawBabyFrameCanvas(species?.base?.[name] || rawPaths[name]);
+      }));
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
       if (canvases[0]) await window.BabyAnimalHeadWarp?.ensureIdleMask?.(entry.kind, canvases[0]); // Seed once from the true idle composition, not a later run pose.
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
@@ -503,10 +532,9 @@
     const avatarApi = window.PNGPlaneAvatar;
     if (typeof THREE === 'undefined' || !renderer || !avatarApi?.buildAnimalPlaneAvatarModel || token !== swarmGeneration) return null;
     const spec = renderer.SPECIES?.[entry.kind];
-    const idleUrl = spec?.base?.idle;
+    const speciesDef = animalDeps?.CREATURE_DB?.[entry.kind] || {}; // Some baby species have authored PNGs but no genotype compositor entry.
+    const idleUrl = spec?.base?.idle || speciesDef.sprites?.idle;
     if (!idleUrl) return null;
-
-    const speciesDef = animalDeps?.CREATURE_DB?.[entry.kind] || {};
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
     const adultWidth = entry.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[entry.kind]) || 1.7); // Match Uumkao'ii's standing adult width after source-aspect correction.
     const spriteAspect = Number(speciesDef.spriteAspect) || (entry.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);
