@@ -14,8 +14,10 @@ assert(editor.indexOf('id="babyHeadScalePanel"') < editor.indexOf('<h2>Animal va
 assert(editor.indexOf('attachment-rig-profiles.js') < editor.indexOf('baby-animal-head-warp.js'), 'authored species frames load before baby warp');
 assert(editor.indexOf('author-part10.js') > editor.indexOf('author-part9.js'), 'final authoring extension loads after existing shoulder handlers');
 assert(part1.includes('let previewImageForAnimal = image => image'), 'core preview works before extension loads');
+assert(part1.includes('let previewSplitLayerCanvases = () => splitLayerCanvases()'), 'shoulder preview has a separate hook from unwarped paint layers');
 assert(part3.includes('drawImage(previewImageForAnimal(state.image)'), 'neck deformation uses baby preview pixels');
 assert(part6.includes('drawImage(previewImageForAnimal(image)'), 'shoulder-spline preview uses baby texture');
+assert(part6.includes('const layers=previewSplitLayerCanvases()'), 'shoulder preview enlarges source before doing its split');
 assert(!part3.includes('paintCtx.drawImage(previewImageForAnimal('), 'painting remains unwarped');
 assert(!part6.includes('paintCtx.drawImage(previewImageForAnimal('), 'shoulder painting remains unwarped');
 
@@ -28,7 +30,8 @@ for (const id of ['babyHeadScale', 'babyHeadScaleLabel', 'babyHeadCompare', 'bab
     listeners.set(key, [...(listeners.get(key) || []), fn]);
   }, setAttribute(k, v) { attrs.set(k, v); }, getAttribute(k) { return attrs.get(k); } });
 }
-let draws = 0, checkpoints = 0, applied = 0, guides = 0;
+let draws = 0, checkpoints = 0, applied = 0, guides = 0, splitCalls = 0;
+const splitInputs = []; // Captures the true order of warp and separator clipping.
 let lastPreviewScale = null, lastPreviewFrame = null;
 const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 'sprite-normalized-top-left' };
 const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
@@ -66,6 +69,12 @@ const ctx = {
   restoreHistoryState: snap => snap,
   updateStatus: () => { elements.get('status').textContent = 'Head rig ready.'; },
   drawGuides: () => {},
+  rightShoulderSource: () => image,
+  shoulderFrameShiftValue: () => .52,
+  shoulderSeparatorRotationValue: () => 12,
+  drawSeparatorSide: (_ctx, source, _width, _height, keepRight) => splitInputs.push({ source, keepRight }),
+  splitLayerCanvases: () => { splitCalls++; return { left: image, right: image }; },
+
   draw: () => { elements.get('previewBadge').textContent = '0°'; },
   previewImageForAnimal: source => source,
   paintCtx: {
@@ -106,9 +115,20 @@ assert.equal(lastPreviewScale, 1.45);
 assert.equal(lastPreviewFrame.width, canonical.width);
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
 assert.equal(applied, 1, 'no per-triangle recomposition');
+const split = ctx.previewSplitLayerCanvases();
+assert.equal(splitInputs.length, 2, 'each shoulder side is clipped after pixel enlargement');
+assert.equal(splitInputs[0].source, first, 'left sprite is enlarged before the separator cuts it');
+assert.equal(splitInputs[1].source, first, 'right sprite is enlarged before the separator cuts it');
+assert.equal(ctx.previewImageForAnimal(split.left), split.left, 'clipped left sprite is not warped a second time');
+assert.equal(ctx.previewImageForAnimal(split.right), split.right, 'clipped right sprite is not warped a second time');
+assert.equal(ctx.previewSplitLayerCanvases(), split, 'prewarped split layers are cached across mesh redraws');
+assert.equal(windowStub.__animalHeadRigBabyPreview.debugSnapshot().splitsAfterWarp, 1);
+
 listeners.get('babyHeadCompare:click')[0]();
 ctx.draw();
 assert.equal(ctx.previewImageForAnimal(image), image, 'original comparison never deforms source');
+assert.equal(ctx.previewSplitLayerCanvases().left, image, 'original comparison uses original shoulder split');
+assert.equal(splitCalls, 1, 'original compare takes the regular unwarped split path');
 assert.match(elements.get('babyHeadPreviewState').textContent, /Showing original/);
 assert.equal(ctx.normalizedRig().babyHeadScale, 1.45, 'comparison does not mutate authored scale');
 listeners.get('babyHeadCompare:click')[0]();
