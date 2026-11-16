@@ -239,7 +239,9 @@
       // plain damage with no afflictions at all.
       const weaponKey = deps.currentWeaponKey(); // One equipped-weapon identity reused by mastery, reach and combat-event preparation.
       const effects = window.CombatProgression?.getEffects(weaponKey, id) || { afflictions: {}, stats: {} };
-      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const mounted = window.Mounts?.rideState === 'mounted'; // Mounted jabs retain ordinary quick-attack mastery, but exchange their forward lunge for a carrier burst.
+      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency)
+        * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -261,10 +263,10 @@
         knockbackPxS: baseAbil.knockbackPxS,
         rangePx,
         halfConeRad,
-        lungePx: baseLungePx,
-        metadata: { attackAngle: deps.player.angle },
+        lungePx: mounted ? 0 : baseLungePx,
+        metadata: { attackAngle: deps.player.angle, mounted },
       }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
-      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const lungePx = mounted ? 0 : baseLungePx * (attackContext.modifiers?.lunge || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
 
@@ -281,7 +283,8 @@
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
+      if (mounted) window.Mounts?.beginMountedCombatBurst?.(1.95, Math.max(1.05, windupS + strikeS + 0.45)); // Speed follows real mount steering, rock collision and inertia.
+      else deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -333,7 +336,8 @@
             }
 
             const hitAfflictions = conditionBonusUsed ? mergeEffectMaps(attackAfflictions, quickBonusAfflictions) : attackAfflictions;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Strike-frame carrier velocity, never desired speed.
+            deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
               abilityId: id, conditionBonusUsed, // Identifies the committed cooldown-ready bonus hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',
