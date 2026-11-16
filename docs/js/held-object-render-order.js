@@ -2372,7 +2372,7 @@
       if (geometry && !geometry.boundingBox) geometry.computeBoundingBox?.();
       const source = geometry?.boundingBox;
       const parity = mesh?.__hobunjiXrayBoundParity;
-      const posed = parity?.hook === mesh.onBeforeRender && parity.isFresh?.() ? parity.visibleMatrixWorld : null;
+      const posed = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.() ? parity.visibleMatrixWorld : null;
       const matrices = posed ? [mesh.matrixWorld, posed] : [mesh.matrixWorld]; // Cover both authored and replay-time poses.
       for (const matrix of matrices) {
         if (!matrix?.elements) continue;
