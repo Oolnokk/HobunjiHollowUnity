@@ -1,6 +1,8 @@
 // Folder Save Device Provenance — remembers only an anonymous installation id,
 // never a device name/fingerprint, and stamps it into portable save entities so
 // onboarding can say whether the folder was last overwritten here or elsewhere.
+// The folder core stamps only changed entities and records the writer in the
+// manifest; this wrapper must never mutate the whole browser meta on Save Now.
 (() => {
   'use strict';
 
@@ -8,8 +10,8 @@
   if (!save?.syncNow || window.FolderSaveDeviceProvenance) return;
 
   const DEVICE_ID_KEY = 'hobunjiSaveDeviceId.v1'; // Local-only anonymous installation id used solely for same/different-device comparison.
-  const SAVE_META_KEY = 'hobunjiSaveMeta'; // Existing browser save metadata stamped immediately before a folder overwrite.
-  const PROVENANCE_KEY = 'folderSaveProvenance'; // Per-entity portable field preserved by the core's character/world JSON files.
+  const SAVE_META_KEY = 'hobunjiSaveMeta'; // Existing browser save metadata retained for old-folder provenance fallback.
+  const PROVENANCE_KEY = 'folderSaveProvenance'; // Legacy per-entity portable writer info read if the manifest predates this fix.
   const rawSyncNow = save.syncNow.bind(save); // Prior sync wrapper retained so existing locks/data-loss protection still execute.
   const rawLoadFromFolder = save.loadFromFolder.bind(save); // Prior load wrapper retained so empty-folder/onboarding behavior stays intact.
   let lastObservedSource = 'unknown'; // Mobile-visible source most recently established by a successful folder load/write.
@@ -44,34 +46,9 @@
     try { return JSON.parse(raw); } catch { return null; }
   }
 
-  function stampBrowserMeta() {
-    const beforeRaw = readMetaRaw(); // Exact pre-stamp text restored if the folder write is blocked or fails.
-    if (!beforeRaw) return { beforeRaw: null, stamp: null };
-    let meta;
-    try { meta = JSON.parse(beforeRaw); } catch { return { beforeRaw, stamp: null }; }
-
-    const stamp = {
-      version: 1,
-      lastWriterDeviceId: getDeviceId(),
-      writtenAt: Date.now(),
-    }; // Portable overwrite provenance copied onto every character/world written in this folder snapshot.
-
-    for (const character of (meta.characters || [])) {
-      if (character && typeof character === 'object') character[PROVENANCE_KEY] = { ...stamp };
-    }
-    for (const world of (meta.worlds || [])) {
-      if (world && typeof world === 'object') world[PROVENANCE_KEY] = { ...stamp };
-    }
-    try { localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta)); } catch {}
-    return { beforeRaw, stamp };
-  }
-
-  function restoreBrowserMeta(raw) {
-    if (raw == null) return;
-    try { localStorage.setItem(SAVE_META_KEY, raw); } catch {}
-  }
-
   function latestProvenance(meta = readMeta()) {
+    const status = save.getStatus?.(); // The durable manifest is authoritative even when the optional browser mirror is unavailable.
+    if (status?.state === 'ready' && status.lastWriterProvenance?.lastWriterDeviceId) return { ...status.lastWriterProvenance };
     let latest = null; // Most recent portable overwrite stamp found among entities in the currently loaded save.
     const consider = value => {
       const stamp = value?.[PROVENANCE_KEY];
@@ -90,20 +67,18 @@
   }
 
   save.syncNow = async (options = {}) => {
-    const stamped = stampBrowserMeta(); // Provenance is added before the core serializes entity files and manifest.
     try {
-      const result = await rawSyncNow(options);
-      if (result?.lastError || result?.dataLossRisk) {
-        restoreBrowserMeta(stamped.beforeRaw);
+      const result = await rawSyncNow(options); // No read/parse/stringify of all browser metadata just to update the writer.
+      if (result?.dataLossRisk || (result?.lastError && !String(result?.lastAction || '').includes('primary-recovery-error'))) {
         lastError = result.lastError || String(result.dataLossRisk || 'Folder write was blocked.');
-      } else if (stamped.stamp) {
-        lastObservedSource = 'folder-written-here';
-        lastError = '';
+      } else {
+        if (['saved-browser-to-folder', 'autosaved-browser-to-folder', 'saved-primary-recovery-error', 'autosaved-primary-recovery-error']
+          .includes(result?.lastAction)) lastObservedSource = 'folder-written-here';
+        lastError = result?.lastError || '';
       }
       scheduleResumeSourceRefresh();
       return result;
     } catch (error) {
-      restoreBrowserMeta(stamped.beforeRaw);
       lastError = String(error?.message || error);
       scheduleResumeSourceRefresh();
       throw error;
