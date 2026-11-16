@@ -508,9 +508,11 @@
   function onDefensive(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish') return false;
+    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey') return false; // Illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
+    const handler = FLOURISH_HANDLERS[id];
+    if (typeof handler !== 'function') return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
-    if (def.alignment !== 'Fey') FLOURISH_HANDLERS[id]?.(event, def, power); // Offensive-only illusion Flourishes have no defensive counterattack without a real hit.
+    handler(event, def, power);
     logEvent(event.defensiveResult === 'block' ? 'Defensive Flourish triggered on block' : 'Defensive Flourish triggered on near-hit dodge');
     return true;
   }
