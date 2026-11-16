@@ -5739,14 +5739,6 @@ function applyViewportRotationDeadzones(dt = 0) {
   const hysteresisRad = degToRad(facing.hysteresisDeg);
   const lerpAmount = Math.min(1, Math.max(0, dt) * 10);
   for (const actor of animationAuthor.actors) {
-    if (actor.source?.type === 'creature' && shoulderPetCarrierV1521(actor)) {
-      // Gameplay pins the entire shoulder pet after bypassing its generic
-      // creature PNG deadzone; preserve the authored base plane Y rotations.
-      for (const plane of actor.viewportVisual?.creaturePlanes || []) {
-        if (plane.object) plane.object.rotation.y = plane.baseRotationY;
-      }
-      continue;
-    }
     const rawYaw = viewportActorWorldYaw(actor);
     const record = actor.viewportFacingState || (actor.viewportFacingState = { perpSides: [null, null], locked: [false, false], visualYaw: null });
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
@@ -8755,6 +8747,18 @@ applyViewportRotationDeadzones = function(dt = 0) {
   const orderedActors = viewportActorsParentFirst(); // Used so a carrier facing transform reaches its rider before rider yaw is measured.
 
   for (const actor of orderedActors) {
+    if (actor.source?.type === 'creature' && shoulderPetCarrierV1521(actor)) {
+      const facingRoot = actor.viewportFacingRoot || actor.viewportVisual?.facingRoot; // V15.12 uses this shared root, not the retired per-plane camera correction.
+      if (facingRoot) {
+        facingRoot.rotation.y = finiteNumber(actor.viewportVisual?.facingRootBaseRotationY, 0); // Gameplay leaves a pinned shoulder pet's full PNG root at its authored Y orientation.
+        facingRoot.updateMatrixWorld(true);
+      } else {
+        for (const plane of actor.viewportVisual?.creaturePlanes || []) {
+          if (plane.object) plane.object.rotation.y = plane.baseRotationY; // Rigid/legacy editor actor fallback.
+        }
+      }
+      continue;
+    }
     const rawYaw = viewportActorWorldYaw(actor); // Used as the inherited authored yaw before this actor's own visible deadzone correction.
     const record = actor.viewportFacingState || (actor.viewportFacingState = { perpSides: [null, null], locked: [false, false], visualYaw: null }); // Used to retain deadzone hysteresis between frames.
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
