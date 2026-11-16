@@ -54,8 +54,11 @@ global.DungeonRopeArt={createNetFrustum(w,d,drop){
   net.userData.dungeonNetAtlas='assets/objectsprites/rope_long.png';
   return net;
 }};
-global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},
- sampleSupport:()=>({y:room.y}),ids:new Set()}; // Real side puzzles require the same flat physical support as the main stages.
+global.DynamicSurfaces={
+ registerBlocker(x){this.ids.add(x.id);this.blockers.set(x.id,x);},
+ remove(id){this.ids.delete(id);this.blockers.delete(id);},
+ sampleSupport:()=>({y:room.y}),ids:new Set(),blockers:new Map(),
+}; // The real walkable floor and scoped blockers share one placement authority.
 global.DevRandomRuinDungeonChests={create(o){
  const group=new Group();group.position.set(o.x,o.y,o.z);o.parent.add(group);
  return {group,opened:false,control:{kind:'dungeonChest'}};}};
@@ -103,6 +106,10 @@ for(const [key,seed] of Object.entries(found)){
    }
  });
  assert(secretStone.length>=1,'every optional secret has visible textured masonry');
+ if(key.startsWith('suspended:')){
+   const cover=[...global.DynamicSurfaces.blockers.values()].find(b=>b.id.endsWith(':cache-cover'));
+   assert(cover?.enabled(),'the visible loot cover must physically block the unopened cache');
+ }
  if(key==='suspended:ice'){
    assert(owner.icePlacement?.iceLayer,'ice reward cover uses authored Tothal ice growth');
    assert.equal(owner.cover.children.find(child=>child.name?.includes('secret-ice-growth-seed'))?.visible,false,
@@ -136,6 +143,8 @@ for(const [key,seed] of Object.entries(found)){
  if(key==='suspended:net')assert.equal(owner.cover.position.y,room.y+1.75,
    'net spans from its four grounded supporting columns down to the floor');
  if(key.startsWith('suspended:')){
+   const cover=[...global.DynamicSurfaces.blockers.values()].find(b=>b.id.endsWith(':cache-cover'));
+   assert.equal(cover?.enabled(),false,'solving a cache unregisters its effective ice/net collision immediately');
    assert.equal(owner.chest.group.position.y,room.y,'an optional prize chest starts on the physical room floor');
    assert.equal(owner.cover.visible,false,'the struck ice/net cover gives way without any floating reward animation');
    assert(Math.abs(owner.targets[0].object.position.x-owner.chest.group.position.x)>.6,
@@ -144,11 +153,15 @@ for(const [key,seed] of Object.entries(found)){
  if(owner.chest&&key!=='nest'&&key!=='babies')assert.equal(owner.chest.control.available(),owner.unlocked&&owner.gateProgress>=.98,
    'optional chest cannot be opened until its real switch is solved and its gate has opened');
  if(owner.plate)assert.equal(owner.plate.position.y,room.y+.07,'melody trigger is flush on the room floor');
+ assert.equal(owner.snapshot().art.stone,'carved_smooth.png','mobile debug identifies the shared authored masonry texture');
+ if(key==='suspended:ice')assert.equal(owner.snapshot().art.cover,'authored-ice-growth');
+ if(key==='suspended:net')assert.equal(owner.snapshot().art.cover,'assets/objectsprites/rope_long.png');
  assert.equal(owner.snapshot().babies,owner.babies);
  assert([...controls].filter(c=>c.kind==='ruinSkeeriNest').every(c=>c.claimAction1!==true),
    'inspecting the hidden brood must not steal weapon Action 1');
  owner.dispose();
  assert.equal(global.DynamicSurfaces.ids.size,0);
+ assert.equal(global.DynamicSurfaces.blockers.size,0,'no hidden cache leaves collision behind after unloading');
  assert.equal(projectiles.size,0);
  assert.equal(fire.size,0);
  assert.equal(controls.size,0);
