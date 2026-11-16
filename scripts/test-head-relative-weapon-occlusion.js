@@ -13,8 +13,9 @@ const selectiveStart = compositor.indexOf('function replaySelectiveHeldOverlay('
 const selectiveEnd = compositor.indexOf('function isShellOutlinePass(', selectiveStart);
 const selectiveReplay = compositor.slice(selectiveStart, selectiveEnd);
 assert.match(selectiveReplay, /for \(const group of groups\)[\s\S]*?const overlayStates = tintOverlay\s*\? prepareSubmergedOverlayStencilMaterials\(group\.meshes, group\.tintStencilRef, portraitGearIds\)/, 'held tools retain the shared water-tint path with per-owner portrait masking');
-assert.match(selectiveReplay, /portraitMask\?\.portraits\.length && stampFrontPortraitStencil\(renderer, scene, camera, portraitMask\.portraits, portraitMask\.ownerIds, portraitOrder\)/, 'front art masks held weapons without restoring the retired owner-backplane pass');
-assert.match(compositor, /const needsOwnerMask = lastBaseStencilBits >= 8 && held\.some\(isPortraitMaskedGear\)/,
+assert.match(selectiveReplay, /lastBaseStencilBits >= 8 && portraitMask\?\.portraits\.length[\s\S]{0,180}stampFrontPortraitStencil\(renderer, scene, camera, portraitMask\.portraits, portraitMask\.ownerIds, portraitOrder\)/, "8-bit stencil still masks held weapons with their owner's front art");
+assert.match(selectiveReplay, /stampFrontPortraitDepthFallback\(renderer, scene, camera, portraitMask\.portraits, portraitMask\.ownerIds, portraitOrder\)/, 'stencil-less targets retain a front portrait depth fallback');
+assert.match(compositor, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'the owner front art masks held tools even in interiors without ground or water');
 assert.match(compositor, /!ground\.length && !topFaceGround\.length && !tintCovers\.length && !needsOwnerMask/,
   'interiors with neither ground/tint nor owner-front stencil needs keep the ordinary render path');

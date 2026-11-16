@@ -98,6 +98,7 @@
     'engh-sho::female': [-0.18678622648700421,0.69825,0],
   });
 
+  const DRENKIRRA_SHOULDER_GRIP_YAW_DEG = 61; // The shoulder solver inverts grip yaw; Drenkirra needs the reverse signed full-plane offset.
   const creatureRecords = [
     ['drenkirra',[0,0.030605877381859603,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],
     ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
@@ -247,7 +248,7 @@
     };
     masterCreatures[kind] = {
       kind, chatheadFrame: creatureChatheadFrames[kind] ? { ...creatureChatheadFrames[kind] } : null,
-      anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, kind === 'uumkaoii' ? 0 : -61) }, // Uumkao'ii's Oct 22 grip has a neutral authored yaw.
+      anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, kind === 'drenkirra' ? DRENKIRRA_SHOULDER_GRIP_YAW_DEG : (kind === 'uumkaoii' ? 0 : -61)) }, // Reverse Drenkirra's whole-pet Y rotation; Uumkao'ii remains neutral and other authored grips remain unchanged.
       saddleRule,
       shoulderGripRule: { source: creatureAuthoredSource, coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
       sizeScales, groundOffsets: { ...(creatureGroundOffsets[kind] || { large:0, medium:0, small:0 }) },
@@ -263,6 +264,10 @@
   }
 
   // One NPC lower half, not a wildlife species: standalone animal-style rig data.
+  const isStaleDrenkirraShoulderGripYaw = (kind, grip) => kind === 'drenkirra'
+    && sameNumber(grip?.rotationDeg?.y, -61)
+    && samePosition(grip?.position, masterCreatures.drenkirra.anchors.shoulderGrip.position); // Detects only the old stock Drenkirra yaw at its unchanged authored grip position.
+
   const omgurkuLowerRig = clone(masterCreatures['voorg-ass']); // Independent floor profile; preserve Voorg-ass genotypes and rig values.
   omgurkuLowerRig.kind = 'omgurku-lower';
   omgurkuLowerRig.groundOffsets = { large: 0, medium: 0.3, small: 0 }; // Fixed adult hybrid lower half sits 0.3 world units above its gameplay floor.
@@ -501,7 +506,25 @@
       const candidate = output.creatures[kind] || {};
       const merged = { ...clone(canonical), ...candidate, anchors: { ...clone(canonical.anchors), ...(candidate.anchors || {}) } };
       const oldGrip = merged.anchors.shoulderGrip;
+      const drenkirraOldPosition = kind === 'drenkirra' && normalizeStalePositions(staleCreatureShoulderGrips.drenkirra)
+        .some(position => samePosition(oldGrip?.position, position)); // Detects a known obsolete socket XYZ independently from any hand-authored rotation.
       merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
+      if (drenkirraOldPosition && oldGrip?.rotationDeg) {
+        const canonicalRotation = canonical.anchors.shoulderGrip.rotationDeg; // Keeps unchanged components while correcting the known obsolete stock Y.
+        const authoredRotation = oldGrip.rotationDeg; // Preserves custom yaw/pitch/roll even when its old grip POSITION needs migrating.
+        const restoredRotation = { ...canonicalRotation };
+        for (const axis of ['x', 'y', 'z']) {
+          const value = Number(authoredRotation[axis]);
+          if (Number.isFinite(value)) restoredRotation[axis] = axis === 'y' && sameNumber(value, -61) ? canonicalRotation.y : value;
+        }
+        merged.anchors.shoulderGrip.rotationDeg = restoredRotation;
+        if (oldGrip.scale && ['x', 'y', 'z'].every(axis => Number.isFinite(Number(oldGrip.scale[axis])) && Number(oldGrip.scale[axis]) > 0)) {
+          merged.anchors.shoulderGrip.scale = { ...oldGrip.scale }; // A deliberately scaled old grip must not lose its independent user-authored scale.
+        }
+      }
+      if (isStaleDrenkirraShoulderGripYaw(kind, merged.anchors.shoulderGrip)) {
+        merged.anchors.shoulderGrip.rotationDeg = { ...merged.anchors.shoulderGrip.rotationDeg, y: canonical.anchors.shoulderGrip.rotationDeg.y }; // Migrate only obsolete stock Drenkirra Y; never rewrite grip position or custom pose.
+      }
       if (oldGrip && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
       const oldSaddle = merged.anchors.saddle; // Used to restore canonical rule metadata only when an exact superseded default is migrated.
       merged.anchors.saddle = reconcileAnchor(oldSaddle, canonical.anchors.saddle, staleCreatureSaddles[kind]);
@@ -638,8 +661,9 @@
         if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.saddle`);
       }
       for (const [kind, positions] of Object.entries(staleCreatureShoulderGrips)) {
-        const position = live?.creatures?.[kind]?.anchors?.shoulderGrip?.position;
-        if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.shoulderGrip`);
+        const grip = live?.creatures?.[kind]?.anchors?.shoulderGrip;
+        if (normalizeStalePositions(positions).some(candidate => samePosition(grip?.position, candidate))) stale.push(`${kind}.shoulderGrip`);
+        if (isStaleDrenkirraShoulderGripYaw(kind, grip)) stale.push(`${kind}.shoulderGrip.rotationDeg.y`); // Let Animation Author repair its cached stock Y direction on Rig open.
       }
       for (const kind of Object.keys(staleCreatureGroundOffsets)) {
         const candidate = live?.creatures?.[kind]; // Checks known old editor rows for exactly matching obsolete values.

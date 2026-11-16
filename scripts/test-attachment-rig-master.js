@@ -130,6 +130,10 @@ assert.strictEqual(
 
 // Latest intentional creature field families and the duplicate defaults table must agree.
 assert.strictEqual(profiles.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'August 28 Drenkirra shoulder grip must remain authoritative');
+assert.strictEqual(profiles.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, 61, 'Drenkirra authored grip must reverse the whole-pet Y angle');
+assert.strictEqual(profiles.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y, -61, 'Puktuk retains its original grip Y rotation');
+assert.strictEqual(profiles.creatures.uumkaoii.anchors.shoulderGrip.rotationDeg.y, 0, 'Uumkaoii still has a neutral authored grip Y');
+assert.strictEqual(-profiles.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, -61, 'the attachment solver inverse yields negative 61 degree root yaw before player head rotation');
 assert.strictEqual(profiles.creatureShoulderGripDefaults.drenkirra.y, -0.11914729549653388, 'shoulderGrip defaults must not retain the older stale coordinate');
 assert.strictEqual(profiles.creatures.drenkirra.sizeScales.small.x, 0.9, 'current Drenkirra small scale must remain 0.9');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.drenkirra.anchors.saddle.position)), { x: 0, y: 0.030605877381859603, z: 0.02 }, 'October 17 Drenkirra saddle must remain authoritative');
@@ -143,6 +147,31 @@ assert.match(source, /Object\.entries\(staleCreatureSaddles\)[\s\S]*?stale\.push
 
 // Reconcile the exact corruption patterns introduced by v1 and the older v9 bulk export.
 const old = JSON.parse(JSON.stringify(profiles));
+const oldDrenkirraYaw = JSON.parse(JSON.stringify(profiles)); // Simulates an existing editor autosave authored before the Y-direction correction.
+oldDrenkirraYaw.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y = -61;
+const migratedYaw = guard.reconcileProfiles(oldDrenkirraYaw); // The exact old stock grip yaw is upgraded without touching its XYZ, scale, or other species.
+assert.strictEqual(migratedYaw.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, 61, 'stale Drenkirra -61 degree yaw migrates to +61 degree');
+assert.deepStrictEqual(migratedYaw.creatures.drenkirra.anchors.shoulderGrip.position, profiles.creatures.drenkirra.anchors.shoulderGrip.position, 'yaw migration never changes the grip socket position');
+assert.strictEqual(migratedYaw.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y, -61, 'reconciliation preserves other species yaw');
+const customDrenkirraYaw = JSON.parse(JSON.stringify(oldDrenkirraYaw)); // Validates that a deliberately moved grip retains its independent rotation.
+customDrenkirraYaw.creatures.drenkirra.anchors.shoulderGrip.position.x += 0.013;
+const preservedCustomYaw = guard.reconcileProfiles(customDrenkirraYaw);
+assert.strictEqual(preservedCustomYaw.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, -61, 'custom Drenkirra grip may retain its intentional negative Y authoring');
+const legacyDrenkirraEditedRotation = JSON.parse(JSON.stringify(profiles)); // Regression: stale stock grip position and intentional custom rotation must coexist safely.
+const oldSocket = legacyDrenkirraEditedRotation.creatures.drenkirra.anchors.shoulderGrip;
+oldSocket.position = { x: 0.01, y: -0.1636307385658067, z: 0.0009131708735385657 };
+oldSocket.rotationDeg = { x: 9, y: 17, z: -4 };
+oldSocket.scale = { x: 0.8, y: 0.9, z: 1 };
+const preservedOldSocket = guard.reconcileProfiles(legacyDrenkirraEditedRotation).creatures.drenkirra.anchors.shoulderGrip;
+assert.deepStrictEqual(preservedOldSocket.position, profiles.creatures.drenkirra.anchors.shoulderGrip.position, 'outdated stock XYZ migrates to current approved Drenkirra grip');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(preservedOldSocket.rotationDeg)), { x: 9, y: 17, z: -4 }, 'custom Y/X/Z rotation survives even when legacy XYZ needs migration');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(preservedOldSocket.scale)), { x: 0.8, y: 0.9, z: 1 }, 'custom grip scale survives legacy XYZ migration');
+const oldSocketWithStockYaw = JSON.parse(JSON.stringify(legacyDrenkirraEditedRotation));
+oldSocketWithStockYaw.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y = -61;
+const correctedOldSocket = guard.reconcileProfiles(oldSocketWithStockYaw).creatures.drenkirra.anchors.shoulderGrip;
+assert.deepStrictEqual(JSON.parse(JSON.stringify(correctedOldSocket.rotationDeg)), { x: 9, y: 61, z: -4 }, 'only the obsolete stock -61 yaw is upgraded, without erasing custom X/Z');
+const newDrenkirraYaw = JSON.parse(JSON.stringify(profiles)); // Checks that previously corrected +61 degree values remain stable under repeated reconciliation.
+assert.strictEqual(guard.reconcileProfiles(newDrenkirraYaw).creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, 61, 'canonical Y rotation must not migrate twice');
 old.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor = 0;
 old.characters['mao-ao::male'].anchors.leftHandShoulder.position = { x: 0.1716052361925984, y: 0.6252801516658442, z: 0 };
 old.characters['mao-ao::male'].anchors.shoulderPerch.position = { x: -0.29650716367602115, y: 0.6473130571424927, z: 0 };
