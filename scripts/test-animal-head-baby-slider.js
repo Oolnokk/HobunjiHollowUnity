@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const editor = fs.readFileSync('docs/tools/animal-head-rig/index.html', 'utf8');
 const part1 = fs.readFileSync('docs/tools/animal-head-rig/author-part1.js', 'utf8');
 const part3 = fs.readFileSync('docs/tools/animal-head-rig/author-part3.js', 'utf8');
+const part4 = fs.readFileSync('docs/tools/animal-head-rig/author-part4.js', 'utf8');
 const part6 = fs.readFileSync('docs/tools/animal-head-rig/author-part6.js', 'utf8');
 const part10 = fs.readFileSync('docs/tools/animal-head-rig/author-part10.js', 'utf8');
 assert(editor.includes('id="babyHeadScale" type="range" min="100" max="145"'), 'the slider supports 100–145% on mobile');
@@ -14,6 +15,16 @@ assert(editor.indexOf('id="babyHeadScalePanel"') < editor.indexOf('<h2>Animal va
 assert(editor.indexOf('attachment-rig-profiles.js') < editor.indexOf('baby-animal-head-warp.js'), 'authored species frames load before baby warp');
 assert(editor.indexOf('author-part10.js') > editor.indexOf('author-part9.js'), 'final authoring extension loads after existing shoulder handlers');
 assert(part1.includes('let previewImageForAnimal = image => image'), 'core preview works before extension loads');
+assert(part4.includes("image.crossOrigin='anonymous'") && part4.indexOf("image.crossOrigin='anonymous'") < part4.indexOf('image.src=url'),
+  'idle image must be requested in CORS mode before assigning src, not after it has tainted a canvas');
+assert(part6.includes("image.crossOrigin='anonymous'") && part6.indexOf("image.crossOrigin='anonymous'") < part6.indexOf('image.src=repoSpriteUrl(path)'),
+  'run1 shoulder source must also be CORS-readable before the baby split');
+assert(part4.includes("if(/^(?:https?:|blob:|data:)/i.test(raw))return raw"),
+  'explicit remote sprite URLs must not be rewritten as relative repo paths');
+assert(part10.includes('if (warped === source) throw new Error('),
+  'a refused getImageData must not be cached as a successful enlargement');
+assert(part10.includes('readableBabyError(error)') && part10.includes('Choose image'),
+  'mobile error status must explain how to import inaccessible PNGs');
 assert(part1.includes('let previewSplitLayerCanvases = () => splitLayerCanvases()'), 'shoulder preview has a separate hook from unwarped paint layers');
 assert(part3.includes('drawImage(previewImageForAnimal(state.image)'), 'neck deformation uses baby preview pixels');
 assert(part6.includes('drawImage(previewImageForAnimal(image)'), 'shoulder-spline preview uses baby texture');
