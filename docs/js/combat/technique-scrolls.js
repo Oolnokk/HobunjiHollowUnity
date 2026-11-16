@@ -435,7 +435,7 @@
     if (status.textContent !== statusText) status.textContent = statusText;
     ['tap2', 'hold1', 'hold2'].forEach(slot => {
       const select = document.getElementById(`combatLoadout_${slot}`); // Used to stop the browser visually auto-selecting an unlocked attack while the actual slot is still empty.
-      if (!select || window.Combat.loadout.getSlot(slot)) return;
+      if (!select || window.Combat.loadout.getSlot(slot, window.CombatLoadoutUI?.getMode?.() || 'auto')) return;
       let option = [...select.options].find(o => o.dataset?.techniquePlaceholder);
       if (!option) { option = document.createElement('option'); option.value = ''; option.textContent = 'No technique equipped'; option.disabled = true; option.dataset.techniquePlaceholder = '1'; select.prepend(option); }
       option.selected = true;
