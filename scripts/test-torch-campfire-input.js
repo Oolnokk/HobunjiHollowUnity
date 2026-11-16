@@ -77,13 +77,18 @@ const actions = camp.getNearbyActions(); // Real live nearby buttons after visua
 assert.equal(actions.length,1,'one held campfire menu replaces three instant interactions');
 assert.equal(actions[0].inputAction,'action2');
 assert.equal(actions[0].requiresHold,true);
+assert.equal(actions[0].holdSeconds,0.5,'without shared settings, the authored 500 ms hold remains available');
 assert.equal(camp.beginInteractionHold('action2'),true);
 assert.equal(timers.size,1);
+assert.equal([...timers.values()][0].ms,500,'older hosts retain the baseline hold threshold');
 camp.endInteractionHold('action2');
 assert.equal(timers.size,0,'tap cancels pending menu timer');
 assert.equal(arch.mode,null,'tap cannot save, cook or brew');
+windowMock.InputHoldTiming = { thresholdMs: ms => ms + 30 }; // Simulates the newly merged player tap/hold timing preference.
+assert.equal(camp.getNearbyActions()[0].holdSeconds,0.53,'the campfire Action 2 hint reflects the player setting');
 assert.equal(camp.beginInteractionHold('action2'),true);
-for(const [id,scheduled] of [...timers]){timers.delete(id);assert.equal(scheduled.ms,500);scheduled.handler();}
+assert.equal(camp.getDebugState().interactionHold.durationMs,530,'mobile diagnostics show the actual threshold captured on press');
+for(const [id,scheduled] of [...timers]){timers.delete(id);assert.equal(scheduled.ms,530);scheduled.handler();}
 assert.equal(arch.mode,'campfire','sustained Action 2 opens the shared selection arch');
 assert.equal(arch.entries.length,4);
 assert.equal(arch.entries[2].disabled,true,'Herbalist-only brewing stays disabled without the perk');

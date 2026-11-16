@@ -12,7 +12,10 @@
   // Reuses the authored campfire furniture + its existing
   // Save/Cook/Brew/Return-to-Camp interactions.
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
-  const CAMPFIRE_HOLD_MS = 500; // Action 2 must stay held this long before the shared campfire selection arch opens.
+  const CAMPFIRE_HOLD_MS = 500; // Authored base hold duration; the player's global tap/hold adjustment applies at press time.
+  function campfireHoldMs() {
+    return window.InputHoldTiming?.thresholdMs?.(CAMPFIRE_HOLD_MS) ?? CAMPFIRE_HOLD_MS; // Shares the player setting without requiring that optional module in older saves/tests.
+  }
 
   let deps = null;
   let group = null; // Live campfire THREE.Group in whichever scene currently owns the saved campfire map.
@@ -292,7 +295,7 @@
   function beginInteractionHold(source = 'action2') {
     if (interactionHold || !withinInteractionRange()) return false;
     const owner = String(source); // Pairs this exact keyboard/controller or touch pointer with its eventual release.
-    const hold = { owner, timer:null, opened:false }; // Used to prevent an old timeout from opening a menu after ownership changed.
+    const hold = { owner, timer:null, opened:false, durationMs:campfireHoldMs() }; // Captures this press's chosen hold threshold even if Settings changes during the hold.
     interactionHold = hold;
     hold.timer = setTimeout(() => {
       hold.timer = null;
@@ -304,7 +307,7 @@
       window._desktopSelectionArc.openEntries('campfire', campfireMenuEntries());
       hold.opened = true;
       recordDebug('campfire-hold-menu-open', { owner });
-    }, CAMPFIRE_HOLD_MS);
+    }, hold.durationMs);
     recordDebug('campfire-hold-start', { owner });
     return true;
   }
@@ -330,7 +333,7 @@
     return [{
       icon:'🔥', label:'Hold for Campfire', action:'campfire_menu', inputAction:'action2',
       style:'secondary', allowed:true, worldInteraction:true, promptRoot:group,
-      requiresHold:true, holdSeconds:CAMPFIRE_HOLD_MS / 1000,
+      requiresHold:true, holdSeconds:campfireHoldMs() / 1000,
     }]; // One contextual Action 2 replaces Throw, never the primary tool swing or a held item's own input.
   }
 
@@ -385,7 +388,7 @@
 
   function getDebugState() {
     return {
-      interactionHold: interactionHold ? { owner:interactionHold.owner, opened:interactionHold.opened, durationMs:CAMPFIRE_HOLD_MS } : null,
+      interactionHold: interactionHold ? { owner:interactionHold.owner, opened:interactionHold.opened, durationMs:interactionHold.durationMs } : null,
       state: serialize(),
       visualArea,
       hasVisual: !!group,
