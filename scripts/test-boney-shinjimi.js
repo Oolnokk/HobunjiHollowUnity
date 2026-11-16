@@ -203,6 +203,12 @@ async function testRealEncounterFlow() {
   for(let i=0;i<8;i++)await Promise.resolve(); // Resolve the independent house-fetch and NPC-building promises without wall-clock timers.
   C.update(.05);
   assert.equal(spawned.length,1,'single NPC materialization');
+  const firstSightProxy=C.__test.sightProxy(npc); // RangedWeapons caches LOS and hitboxes on this object; it must be reused across scans.
+  npc.root.position.x+=.25;
+  const secondSightProxy=C.__test.sightProxy(npc);
+  assert.equal(firstSightProxy,secondSightProxy,'Boney retains one identity for RangedWeapons LOS/hitbox caches');
+  assert.equal(secondSightProxy.x,(center.c+1.75)*64,'cached sight proxy still samples live walker motion');
+  npc.root.position.x-=.25;
   const bystander={area:'map_western_slope',rec:{id:'bystander'},root:{position:{x:npc.root.position.x+1,z:npc.root.position.z}}}; // Ordinary pedestrian must be an avoidance target.
   game.npcWalkers.push(bystander);
   assert.equal(C.__test.nearbyOtherNpc().x,bystander.root.position.x,'Boney detects nearby NPC walkers');
