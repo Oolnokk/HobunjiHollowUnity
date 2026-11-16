@@ -15139,6 +15139,7 @@ async function buildShoulderCarrierV1553(actor, npcId) {
     visualOffset.scale.setScalar(targetScale / Math.max(.001, builtScale)); // Matches NPC body calibration before the inverse carrier solve.
     const perch = new THREE.Group(); // Hidden carrier anchor carries position, YXZ orientation and pet scale.
     perch.name = 'ShoulderGripCarrierPerch_' + profileKey;
+    perch.rotation.order = 'YXZ'; // Gameplay's shoulder socket evaluates pitch, yaw and roll in YXZ order.
     visualOffset.add(perch);
     applyTransformSnapshot(perch, profile.anchors.shoulderPerch);
     animationAuthor.modeRoots.rig.add(root);
