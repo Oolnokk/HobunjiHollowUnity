@@ -5,7 +5,7 @@ const vm=require('node:vm');
 
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
-let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0;
+let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0,stagedCancelled=0,telegraphsCancelled=0;
 const timers=new Map(),nodes=[],enemies=new Set();
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
@@ -30,7 +30,8 @@ function actor(options){
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   DevRandomRuin:{setPlayerWorldPoint:()=>{playerTeleports++;return true;},getSeed:()=>77},
-  BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}}, // Use the canonical teardown path in the real encounter.
+  BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}},
+  Combat:{telegraph:{cancel(){telegraphsCancelled++;}},cancelStagedForAttacker(){stagedCancelled++;}}, // Use the canonical teardown path in the real encounter.
   MinionCombat:{makeEntity:async options=>({id:'skeleton'+(++skeletons),x:options.x,y:options.y,health:50,avatarRef:{dispose(){skeletonDisposals++;}}})},
 
   HarlyaoLichCombat:{allowArea(){},TYPE_DEFS:{kanthic:{label:'Kanthic Lich'}},
@@ -83,6 +84,8 @@ async function run(){
   assert.equal(state.coffins[0].skeleton,null);
   assert.equal(skeletonDisposals,1,'the existing coffin skeleton avatar must be retired');
   assert.equal(discarded,2,'boss and skeleton must use canonical entity teardown');
+  assert.equal(stagedCancelled,2,'both boss and coffin guard must lose queued staged attacks');
+  assert.equal(telegraphsCancelled,2,'combat telegraphs cannot survive encounter retirement');
   assert.equal(warhammers,1,'boss weapon-specific textures need an explicit reset');
   assert.equal(enemies.size,0);
   assert.equal(title.removed,true);
