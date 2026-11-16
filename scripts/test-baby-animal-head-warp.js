@@ -161,7 +161,13 @@ assert(warp.debugSnapshot().applied > 0, 'diagnostics report actual use');
 assert(index.indexOf('baby-animal-head-warp.js') > index.indexOf('creature-genetics-render.js'), 'runtime module loads after genotype renderer');
 assert(nursery.includes('BabyAnimalHeadWarp?.applyToCanvas(canvases[i], entry.kind)'), 'all baby nursery movement frames use the warp');
 assert(nursery.includes('ensureIdleMask?.(entry.kind, canvases[0])'), 'nursery primes the fixed mask from the actual idle frame before run frames');
+assert(nursery.includes('speciesDef.sprites?.idle') && nursery.includes('rawBabyFrameCanvas('),
+  'nursery baby visuals work for species with ordinary PNG sprites and no genotype-compositor registry');
+assert(nursery.includes("image.crossOrigin = 'anonymous'"),
+  'raw nursery sources are CORS readable for the idle alpha mask');
 assert(incubator.includes('ensureIdleMask?.(slot.baby.kind, composed)'), 'incubator primes from composed idle before sleep presentation');
+assert(incubator.includes('speciesDef.sprites?.idle') && incubator.includes("image.crossOrigin = 'anonymous'"),
+  'incubator babies without a genotype renderer use their authored idle sprite with a readable opacity mask');
 assert(nest.includes('ensureIdleMask?.(kind, canvas)'), 'nest babies prime from their idle silhouette before applying their pose');
 const bridge = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8');
 assert(bridge.includes('await warp?.ensureIdleMask?.(kind)'),
