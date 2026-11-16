@@ -683,10 +683,10 @@
     const entries = debug.entries || [];
     const lines = [`Frame scheduler: registered=${debug.registered} enabled=${debug.enabled} scheduled=${debug.scheduled ? 1 : 0} frameDriver=${debug.hasFrameDriver ? 'attached' : 'MISSING'}${debug.frameDriverErrorCount ? ` driverErrors=${debug.frameDriverErrorCount} lastDriverError=${String(debug.frameDriverLastError || '').split('\n')[0]}` : ''}`];
     if (debug.frameDriverLastError) lines.push(`Gameplay error trace: ${String(debug.frameDriverLastError).split('\n').slice(0, 6).join(' | ')}`);
-    const portraitLife = window.WorldPortraitLife?.snapshot?.(); // On-demand mobile report verifies the one-tile breathing limit and crowd render pressure.
+    const portraitLife = window.WorldPortraitLife?.snapshot?.(); // On-demand mobile report verifies the nearby expression radius, live uploads and stale async guards.
     if (portraitLife) {
-      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tile; NPC refreshes=${portraitLife.npcRefreshes} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} pending=${portraitLife.npcLifePending ? 1 : 0}`);
-      lines.push('Latest breathing change: one-tile NPC radius; one NPC portrait composite at a time; player animation remains independent.');
+      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tiles (full speed to ${portraitLife.config.nearTiles}); NPC composites=${portraitLife.npcRefreshes} uploads=${portraitLife.npcUploads} stale skips=${portraitLife.npcStaleSkips} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} pending=${portraitLife.npcLifePending ? 1 : 0}`);
+      lines.push('Latest breathing change: nearby NPC expression sprites update their own live portrait plane; farther NPCs use a slower cadence, and only one NPC composite runs at once.');
     }
     for (const walker of window._npcWalkers || []) {
       if (walker._npcUpdateError) lines.push(`NPC update error (${walker.rec?.id || 'npc'}): ${walker._npcUpdateError.stack.split('\n').slice(0, 6).join(' | ')}`);
