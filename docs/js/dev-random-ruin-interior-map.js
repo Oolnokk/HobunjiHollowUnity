@@ -1774,15 +1774,16 @@
     if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return false;
     if(![x,z,half,minY,maxY].every(Number.isFinite)||minY>maxY)return false;
     const h=Math.max(.005,half); // Tested horizontal body extent, not a center-point-only wall probe.
-    for(const {grid:g,contains} of ruin.shaftGrids.values()){
+    for(const {grid:g} of ruin.shaftGrids.values()){
       if(!g)continue;
       const c0=Math.max(0,g.xToCol(x-h+.00001)),c1=Math.min(g.cols-1,g.xToCol(x+h-.00001));
       const r0=Math.max(0,g.zToRow(z-h+.00001)),r1=Math.min(g.rows-1,g.zToRow(z+h-.00001));
       const l0=Math.max(0,g.yToLevel(minY+.00001)),l1=Math.min(g.levels-1,g.yToLevel(maxY-.00001));
       if(c0>c1||r0>r1||l0>l1)continue; // Do not mistake an overhead wing's implicit bedrock for a wall below it.
       for(let c=c0;c<=c1;c++)for(let r=r0;r<=r1;r++){
-        if(typeof contains==='function'&&!contains(g.colToX(c+.5),g.rowToZ(r+.5))&&!contains(x,z))continue; // Keep stacked wing allocations out of unrelated rooms.
-        for(let l=l0;l<=l1;l++)if(g.isSolid(c,r,l))return true; // The exact same live voxel is authoritative for collision and climbing.
+        // Wall-border voxels lie outside the walkable contains() mask: collision must test the actual stone cells.
+        // Other floor allocations default to AIR, and the Y band keeps stacked stories independent.
+        for(let l=l0;l<=l1;l++)if(g.isSolid(c,r,l))return true;
       }
     }
     return false;
