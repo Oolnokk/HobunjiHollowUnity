@@ -60,4 +60,38 @@ inRuin = false;
 assert.equal(native.invokeAction(chest.action), false, 'leaving the ruin clears authority to activate old buttons');
 inRuin = true;
 assert.equal(native.invokeAction('dev_ruin_world_fixed_action1_missing'), false, 'unadvertised actions are ignored');
-console.log('hidden ruin chest touch input: fixed/indexed/door dispatch and stale-action guards PASS');
+// Verify the primary mobile pathway too. A chest's Action 1 claim is dispatched on
+// pointerdown, before the generic useActiveAction fallback this patch repairs.
+const claimsSource = fs.readFileSync('docs/js/world-action-input-claims.js', 'utf8'); // Actual shared physical input router, not a mock.
+const claimsWindow = { addEventListener() {} }; // Simulates a real tab without subscribing to global browser events.
+vm.runInNewContext(claimsSource, {
+  window: claimsWindow, document: { hidden: false, addEventListener() {} }, console,
+});
+let claimedChestOpens = 0; // Real routed Action 1 presses, counted across repeated and paired releases.
+const claimRow = {
+  action: 'dev_ruin_world_fixed_action1_0', kind: 'dungeonchest', label: 'Open Weathered Dungeon Chest',
+  inputAction: 'action1', priority: 22, nativeInput: false, onPress() { claimedChestOpens++; },
+}; // Same fields produced by the authoritative ruin mapper for a discovered chest.
+const claimContext = {
+  window: { WorldActionInputClaims: claimsWindow.WorldActionInputClaims,
+    AdventuringTools: { isHoldingTorch: () => false } },
+  PROXIMITY_DOOR_KINDS: new Set(['transitdoor', 'v50nativetransitdoor']),
+  INPUT_CLAIM_OWNER: 'dev-random-ruin',
+};
+const syncSource = between(ruin, '  function syncInputClaims(rows) {', '\n\n  // Distance is deliberately left out:');
+const syncClaims = vm.runInNewContext(syncSource + '\nsyncInputClaims', claimContext);
+syncClaims([claimRow]);
+const route = claimsWindow.GameplayInputRouter.route; // Real input router receives physical touch and keyboard events.
+assert.equal(route('action1', 'press', { source: 'touch-arch:7' }), true);
+assert.equal(claimedChestOpens, 1, 'normal touch pointerdown already reaches chest.onPress via claims');
+assert.equal(route('action1', 'press', { source: 'touch-arch:7' }), true);
+assert.equal(claimedChestOpens, 1, 'touch repeats cannot double-open a chest');
+assert.equal(route('action1', 'release', { source: 'touch-arch:7' }), true);
+assert.equal(route('action1', 'press', { source: 'controller:Button0' }), true);
+assert.equal(claimedChestOpens, 2, 'controller uses same canonical claim');
+assert.equal(route('action1', 'release', { source: 'controller:Button0' }), true);
+claimsWindow.WorldActionInputClaims.clearClaims('dev-random-ruin');
+assert.equal(route('action1', 'press', { source: 'touch-arch:8' }), false,
+  'lost claim falls back to generic action handling rather than activating a stale chest');
+
+console.log('hidden ruin chest touch input: primary claims, fallback, door dispatch and stale-action guards PASS');
