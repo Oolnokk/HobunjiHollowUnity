@@ -15,6 +15,20 @@
 <section class="panel controls">
   <div><h1>Animal Head Rig Painter</h1><div class="hint">Left-source paint authors the head rig. Right/Composite paint authors the shoulder spline’s own Influence, Compressibility, and Stretchability.</div></div>
   <div><h2>Source</h2><div class="row"><button id="loadBestiary">Load repo bestiary</button><button id="loadJsonButton">Load JSON</button><input id="jsonFile" type="file" accept="application/json,.json" hidden></div><label>Animal<select id="animalSelect"><option value="">New / custom animal</option></select></label><div class="row"><button id="loadSpritePath">Load sprite path</button><button id="pickImageButton">Choose image</button><input id="imageFile" type="file" accept="image/*" hidden></div></div>
+  <div id="babyHeadScalePanel" style="border:1px solid #7c7252;border-radius:10px;padding:10px;background:rgba(240,200,120,.055);">
+    <h2>Baby head proportions · experimental</h2>
+    <label>Head enlargement <span id="babyHeadScaleLabel">122% · inherited default</span>
+      <input id="babyHeadScale" type="range" min="100" max="145" step="1" value="122">
+    </label>
+    <div class="row" style="margin-top:8px;">
+      <button id="babyHeadCompare" type="button" aria-pressed="false">Show original for comparison</button>
+      <span id="babyHeadPreviewState" class="small" role="status" aria-live="polite">Load a species to preview.</span>
+    </div>
+    <div class="hint" style="margin-top:6px;">Choose an animal above, then watch the Live deformation preview. 100% is original; 145% makes the change easiest to see. Original paint coordinates stay intact. Saving the rig exports this species' setting.</div>
+    <div class="row" style="justify-content:space-around;font-size:12px;margin-top:8px"><span>Original head</span><span>Enlarged head</span></div>
+    <canvas id="babyHeadComparisonCanvas" width="580" height="180" aria-label="Original and enlarged head pixels side by side" style="width:100%;height:135px;border:1px solid var(--line);border-radius:8px;background:#30353c;image-rendering:pixelated;touch-action:auto"></canvas>
+    <div id="babyHeadPixelDelta" class="hint" role="status" aria-live="polite">Load an animal to compare its actual head pixels.</div>
+  </div>
   <div><h2>Animal variables</h2><div class="grid2"><label>ID<input id="animalId" placeholder="grehlr"></label><label>Label<input id="animalLabel" placeholder="Grehlr"></label><label>Model width<input id="modelWidth" type="number" min=".01" step=".01" value="1"></label><label>Sprite aspect<input id="spriteAspect" type="number" min=".01" step=".00001" value="1"></label><label>Tint<input id="tint" type="color" value="#ffffff"></label><label>Diet<input id="diet" placeholder="omnivore"></label></div><label class="row" style="margin-top:8px;justify-content:flex-start"><input id="hostile" type="checkbox"> Hostile</label><label>Idle sprite path<input id="idleSprite" placeholder="assets/creaturesprites/..._idle.png"></label><label>Additional variables (JSON object)<textarea id="extraVars" spellcheck="false">{}</textarea></label><div class="hint">Unknown/new animal fields are preserved. This remains usable as the general animal-variable editor while authoring the rig.</div></div>
   <div><h2>Rig paint</h2><div class="row"><button id="layerInfluence" class="active">Influence</button><button id="layerCompress"><span class="swatch" style="background:var(--compress)"></span> Compressibility</button><button id="layerStretch"><span class="swatch" style="background:var(--stretch)"></span> Stretchability</button></div><div id="influenceTargets" class="row"><button id="targetHead" class="active"><span class="swatch" style="background:var(--head)"></span> Head</button><button id="targetBody"><span class="swatch" style="background:var(--body)"></span> Body</button></div><div id="materialHint" class="hint hidden">Brush/Fill only reduce the selected channel below Influence. “Toward Influence” restores it toward the current Influence weight. Painting Influence resets both channels in the touched cells so they track the new Influence again. Stretchability also limits yaw head turns in either direction.</div><div class="row"><button id="undoButton" disabled>↶ Undo</button><button id="redoButton" disabled>↷ Redo</button></div><div class="row"><button id="toolBrush" class="active">Brush</button><button id="toolBucket">Fill bucket</button><button id="toolEraser">Eraser</button><button id="toolPivot">Set pivot</button></div><label>Brush strength <span id="brushStrengthLabel">100%</span><input id="brushStrength" type="range" min="1" max="100" step="1" value="100"></label><label>Brush radius <span id="brushRadiusLabel">40 px</span><input id="brushRadius" type="range" min="1" max="512" step="1" value="40"></label><label>Bucket color tolerance <span id="bucketToleranceLabel">32</span><input id="bucketTolerance" type="range" min="0" max="255" step="1" value="32"></label><div class="hint">Bucket flood-fills connected opaque sprite cells close to the selected paint-source art. Brush strength applies to fill as well.</div><label>Expand/blend radius <span id="expandRadiusLabel">60 px</span><input id="expandRadius" type="range" min="1" max="512" step="1" value="60"></label><button id="expandInfluence" class="primary">Expand Head influence</button><div class="hint">Expand is for the head Influence workflow. Shoulder Influence already defaults to full strength on the separator’s right side.</div><div class="row"><button id="autoPivot">Auto pivot from Head</button><button id="clearWeights">Clear Influence paint</button></div><div class="grid2"><label>Facing<select id="facing"><option value="left">Left</option><option value="right">Right</option></select></label><label>Mesh detail<input id="meshResolution" type="number" min="12" max="72" step="1" value="48"></label></div></div>
   <div><h2>Game preview</h2><div class="row"><button id="savePreviewRig" class="primary">Save rig for game preview</button><button id="clearPreviewRig">Clear saved preview rig</button><button id="clearAllPreviewRigs">Clear all in-game previews</button></div><div class="hint">Stored only in this browser under the same origin. Reload/respawn affected animals in the game after saving or clearing previews.</div></div>
@@ -50,23 +64,26 @@
 </section>
 </div>
 <script src="../../js/creature-genetics-render.js?v=20261104nelkRig1"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261116shoulderParity2"></script> <!-- Match the game's authored chathead boxes in baby-size previews. -->
+<script src="../../js/baby-animal-head-warp.js?v=20261116babyPets123b"></script>
 <script src="../../js/creature-genetics.js"></script>
 <script src="../../js/grehlr-head-rig-correction.js?v=20260917uploads1"></script>
-<script src="../../js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1"></script>
+<script src="../../js/animal-head-rig-authored.js?v=20261116mootPaintBaby1"></script>
 <script src="../../js/animal-head-material-response.js"></script>
 <script src="../../js/animal-shoulder-spline-profiles.js?v=20261115groundRoster5"></script>
 <script src="../../js/animal-shoulder-spline.js?v=20260917spline10"></script>
 <script src="../../js/animal-shoulder-spline-layering.js?v=20260917parity2"></script>
 <script src="../../js/animal-npc-headwear.js?v=20261115hatTab1"></script>
-<script src="./author-part1.js?v=20261115groundRigger2"></script>
+<script src="./author-part1.js?v=20261116babyRig2"></script>
 <script src="./author-part2.js"></script>
-<script src="./author-part3.js"></script>
-<script src="./author-part4.js?v=20261115groundRigger2"></script>
+<script src="./author-part3.js?v=20261116babyRig1"></script>
+<script src="./author-part4.js?v=20261116babyCors1"></script>
 <script src="./author-part5.js"></script>
-<script src="./author-part6.js?v=20261115groundRigger1"></script>
+<script src="./author-part6.js?v=20261116babyCors1"></script>
 <script src="./author-part7.js"></script>
 <script src="./author-part8.js"></script>
 <script src="./author-part9.js"></script>
+<script src="./author-part10.js?v=20261116babyCors1"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
 <script src="../../js/modular-weapon-bridge-fill.js?v=20261115hatTab1"></script>
 <script src="./hat-tab.js?v=20261115hatTab1"></script>
 </body>

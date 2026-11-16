@@ -983,8 +983,9 @@
     sleepingBabies.set(key, { avatarRef, babyId: slot.baby.id });
 
     try {
-      const canvas = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); // Applies the baby's actual inherited colors/patterns.
-      if (!canvas || !sleepingBabies.has(key)) return;
+      const composed = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); // Sleep wrapper first selects run2 and closed eyes.
+      if (!composed || !sleepingBabies.has(key)) return;
+      const canvas = window.BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind) || composed; // Baby-only warp preserves the adult genotype canvas.
       const front = new THREE.CanvasTexture(canvas); // Front genotype texture.
       const back = new THREE.CanvasTexture(canvas); // Mirrored back genotype texture.
       if ('colorSpace' in front && THREE.SRGBColorSpace) { front.colorSpace = THREE.SRGBColorSpace; back.colorSpace = THREE.SRGBColorSpace; }

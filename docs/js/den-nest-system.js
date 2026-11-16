@@ -563,6 +563,7 @@
         canvas = await _loadImageCanvas(idleUrl);
       }
       if (record.disposed || state.scene !== record.scene) return;
+      canvas = window.BabyAnimalHeadWarp?.applyToCanvas(canvas, kind) || canvas; // Runs after closed-eye/run2 selection or fallback art, leaving adult textures untouched.
 
       record.buildStage = 'target-planes';
       _nestContentDebug.lastBabyBuildStage = record.buildStage;
