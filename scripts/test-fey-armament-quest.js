@@ -161,6 +161,10 @@ assert.equal(quest.completed(), true);
 assert.equal(quest.maybeStart(), false, 'completed quest cannot restart');
 assert.equal(profile.questProgress[quest.QUEST_ID].status, 'complete');
 assert.equal(quest.menuStatus().active, false, 'Completed quest no longer offers another handoff');
+const savesAfterCompletion = saves; // A restored completed quest must never repeat its initial grant or mutate the save.
+assert.equal(quest.syncFromInventory(), false);
+assert.equal(saves, savesAfterCompletion);
+assert.equal(finish('garanki_gabu', returning), false, 'Stale dialogue callbacks cannot complete the quest twice');
 
 relics.render();
 const itemsAfterQuest = allElements(list);
@@ -184,6 +188,12 @@ assert.equal(inventory.gold, before - 900, 'Fey Base enchantment costs double');
 before = inventory.gold;
 assert.equal(relics.clearSlot('sword', 'base', 0).ok, true);
 assert.equal(inventory.gold, before - 80, 'Fey removal costs double');
+before = inventory.gold;
+assert.equal(relics.applyFlourish('sword', 'tap1', 'feyFeint').ok, true);
+assert.equal(inventory.gold, before - 600, 'Fey Flourish enchanting costs double');
+before = inventory.gold;
+assert.equal(relics.clearSlot('sword', 'flourish', 'tap1').ok, true);
+assert.equal(inventory.gold, before - 80, 'Fey Flourish removal also costs double');
 before = inventory.gold;
 assert.equal(relics.applyBase('sword', 0, 'hroFlame').ok, true);
 assert.equal(inventory.gold, before - 450, 'Hronal enchanting keeps original price');
