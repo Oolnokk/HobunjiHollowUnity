@@ -248,8 +248,10 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().phase,'leaving','old inconsistent saves with an awarded prize are upgraded to departure');
   for(let i=0;i<4;i++)C.update(.10);
   assert.equal(rewards.length,1,'reloading in a gifted house never awards another item');
+  game.player.y=(center.r+3.3)*64; // Player steps beyond the physical south doorway, remaining in the same wilderness zone.
+  C.update(.1);
+  assert.equal(C.debugSnapshot().phase,'complete','crossing the door threshold makes the enchanted house vanish immediately');
   where='town';C.update(.1);
-  assert.equal(C.debugSnapshot().phase,'complete','exiting zone makes the enchanted house vanish');
   assert.equal(C.debugSnapshot().collision,false);
   const finished=C.serialize();
   assert.equal(finished.completedCycle,finished.cycle,'moon cycle recorded as claimed');
