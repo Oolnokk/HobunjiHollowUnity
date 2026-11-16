@@ -32,4 +32,15 @@ assert.match(gameSource,
   'the pet root is re-solved after rotation so shoulderGrip remains pinned to shoulderPerch');
 assert.match(gameSource, /authoritativeRootTransform: true/,
   'final attachment remains authoritative');
+assert.match(gameSource,
+  /const shoulderLeanDeg = Number\(pet\?\.shoulderCuriosity\?\.currentLeanDeg\);[\s\S]{0,260}worldQuaternion\.multiply\(SHOULDER_PET_LEAN_QUATERNION\.setFromAxisAngle\(SHOULDER_PET_LEAN_AXIS, THREE\.MathUtils\.degToRad\(shoulderLeanDeg\)\)\)/,
+  'whole-pet curiosity lean participates in the final root rotation before grip translation');
+assert.match(gameSource,
+  /const SHOULDER_PET_LEAN_AXIS = new THREE\.Vector3\(1, 0, 0\)/,
+  'sprite-plane Z roll is represented as a pet-local X rotation without foreshortening');
+const curiositySource = gameSource.slice(gameSource.indexOf('function _applyShoulderPetCuriosity'), gameSource.indexOf('function _isPlayerGenuinelyIdle'));
+assert.doesNotMatch(curiositySource, /frontPlane\.rotation\.z|backPlane\.rotation\.z|baseFrontRoll|baseBackRoll/,
+  'curiosity does not rotate the visible image planes about their centers');
+assert.match(gameSource, /shoulderLeanDeg: Number\(finalTransform\.shoulderLeanDeg\) \|\| 0/,
+  'mobile attachment debug reports the lean included in the grip pin');
 console.log('shoulder pet direction-signed rotation tests passed');
