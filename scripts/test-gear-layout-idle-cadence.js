@@ -11,7 +11,7 @@ const source = fs.readFileSync('docs/js/inventory-gear-compact-effects.js', 'utf
 const queued = []; // Deterministic rAF callbacks; tests drain them explicitly instead of relying on the browser clock.
 const observers = []; // Captures the one inventory MutationObserver for synthetic update bursts.
 const resizers = []; // Captures resize observers so the test can verify invalidation after a real layout change.
-let layoutReads = 0; // Counts expensive item-info width measurements made by refreshPresentation.
+let layoutReads = 0; // Counts item-info bounding-rectangle reads, which should happen only on explicit debug snapshots.
 let styleWrites = 0; // Detects the binary font-fit pipeline running while Gear is hidden.
 let disconnects = 0; // Verifies hidden Gear stops observing resize changes.
 let currentInfoFontPx = 10.5; // Mirrors the CSS variable used by the real detail overflow measurements.
@@ -34,7 +34,7 @@ const detail = {
   get scrollWidth() { return 200; },
   querySelectorAll() { return []; },
 }; // Geometry fixture exercises the real overflow branch and nine-step binary fit.
-const summary = {
+let summary = {
   nodeType: 1,
   classList: { contains(name) { return name === 'gear-summary-panel'; } },
   scrollHeight: 400, clientHeight: 300,
@@ -46,6 +46,7 @@ const owned = {
 }; // Independently scrolling middle owned-gear panel.
 const section = {
   nodeType: 1,
+  closest(selector) { return selector.includes('#invEquipSection') ? this : null; },
   querySelector(selector) {
     if (selector === ':scope > .gear-loadout-grid') return summary;
     if (selector === ':scope > .gear-owned-section') return owned;
@@ -203,4 +204,15 @@ assert(currentInfoFontPx <= 4 && currentInfoFontPx > 3.9, 'resize recomputes the
 assert.equal(afterResize.fitStats.detailFits, 5, 'resizing forces fresh content measurements');
 assert.equal(afterResize.fitStats.passes, 7);
 assert.equal(layoutReads, 4, 'only explicit diagnostics produce layout width reads');
+
+// EquipmentPanel can replace a summary node without changing #invEquipSection.
+const previousSummary = summary; // A stale observation should not outlive the replaced inner Gear rail.
+summary = { ...previousSummary }; // New node with equivalent dimensions, but a different DOM identity.
+observer.notify([mutation(section, 'childList')]);
+flushFrames();
+const rebuiltObserver = resizers.at(-1);
+assert.notEqual(rebuiltObserver, reopenedObserver, 'replacing only the inner summary reattaches ResizeObserver');
+assert(rebuiltObserver.targets.includes(summary), 'new summary is watched after the rebuild');
+assert(!rebuiltObserver.targets.includes(previousSummary), 'detached summary is no longer watched');
+assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.detailFits, 5, 'inner Gear replacement does not refit the unchanged right panel');
 console.log('Gear layout idle-cadence tests passed');
