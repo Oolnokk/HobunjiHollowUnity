@@ -5739,6 +5739,14 @@ function applyViewportRotationDeadzones(dt = 0) {
   const hysteresisRad = degToRad(facing.hysteresisDeg);
   const lerpAmount = Math.min(1, Math.max(0, dt) * 10);
   for (const actor of animationAuthor.actors) {
+    if (actor.source?.type === 'creature' && shoulderPetCarrierV1521(actor)) {
+      // Gameplay pins the entire shoulder pet after bypassing its generic
+      // creature PNG deadzone; preserve the authored base plane Y rotations.
+      for (const plane of actor.viewportVisual?.creaturePlanes || []) {
+        if (plane.object) plane.object.rotation.y = plane.baseRotationY;
+      }
+      continue;
+    }
     const rawYaw = viewportActorWorldYaw(actor);
     const record = actor.viewportFacingState || (actor.viewportFacingState = { perpSides: [null, null], locked: [false, false], visualYaw: null });
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
