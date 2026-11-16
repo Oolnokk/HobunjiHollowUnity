@@ -110,7 +110,7 @@ const layerStart = render.indexOf('  function visualLayerFor(');
 const layerEnd = render.indexOf('  function protectedDrawPhase(', layerStart);
 assert.ok(layerStart >= 0 && layerEnd > layerStart);
 const visualLayerFor = new Function('isPresentationBackdrop', 'heldPriorityLayer', 'surfaceKindForObject',
-  render.slice(layerStart, layerEnd) + '\\nreturn visualLayerFor;')(
+  render.slice(layerStart, layerEnd) + '\nreturn visualLayerFor;')(
     () => false, () => 'actor.hands', () => 'solid');
 assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPortraitFace:'front'}},
   material: {name:'avatar_skinned_back_material'}}), 'actor.front');
