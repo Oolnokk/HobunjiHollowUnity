@@ -1,4 +1,4 @@
-// Ensures the head-rigger slider edits individual animal rigs without moving paint coordinates.
+// Baby head size must be discoverable, visibly previewed, and saved per species without changing source art.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -8,52 +8,70 @@ const part1 = fs.readFileSync('docs/tools/animal-head-rig/author-part1.js', 'utf
 const part3 = fs.readFileSync('docs/tools/animal-head-rig/author-part3.js', 'utf8');
 const part6 = fs.readFileSync('docs/tools/animal-head-rig/author-part6.js', 'utf8');
 const part10 = fs.readFileSync('docs/tools/animal-head-rig/author-part10.js', 'utf8');
-assert(editor.includes('id="babyHeadScale" type="range" min="100" max="145"'), 'mobile slider supports 100–145%');
-assert(editor.indexOf('attachment-rig-profiles.js') < editor.indexOf('baby-animal-head-warp.js'), 'authored chathead boxes load before baby warp');
-assert(editor.indexOf('author-part10.js') > editor.indexOf('author-part9.js'), 'authoring extension loads after existing shoulder handlers');
-assert(part1.includes('let previewImageForAnimal = image => image'), 'preview renderer stays safe before final part loads');
-assert(part3.includes('drawImage(previewImageForAnimal(state.image)'), 'ordinary neck deformation uses baby preview texture');
-assert(part6.includes('drawImage(previewImageForAnimal(image)'), 'shoulder-spline/split-frame preview uses baby texture too');
-assert(!part3.includes('paintCtx.drawImage(previewImageForAnimal('), 'the paint surface never receives enlargement');
-assert(!part6.includes('paintCtx.drawImage(previewImageForAnimal('), 'shoulder paint still uses unwarped source');
+assert(editor.includes('id="babyHeadScale" type="range" min="100" max="145"'), 'the slider supports 100–145% on mobile');
+assert(editor.includes('id="babyHeadCompare"'), 'comparison button is available without devtools');
+assert(editor.indexOf('id="babyHeadScalePanel"') < editor.indexOf('<h2>Animal variables'), 'baby size is at the top of the editor instead of hidden in preview settings');
+assert(editor.indexOf('attachment-rig-profiles.js') < editor.indexOf('baby-animal-head-warp.js'), 'authored species frames load before baby warp');
+assert(editor.indexOf('author-part10.js') > editor.indexOf('author-part9.js'), 'final authoring extension loads after existing shoulder handlers');
+assert(part1.includes('let previewImageForAnimal = image => image'), 'core preview works before extension loads');
+assert(part3.includes('drawImage(previewImageForAnimal(state.image)'), 'neck deformation uses baby preview pixels');
+assert(part6.includes('drawImage(previewImageForAnimal(image)'), 'shoulder-spline preview uses baby texture');
+assert(!part3.includes('paintCtx.drawImage(previewImageForAnimal('), 'painting remains unwarped');
+assert(!part6.includes('paintCtx.drawImage(previewImageForAnimal('), 'shoulder painting remains unwarped');
 
-const listeners = new Map();
-const elements = new Map();
-for (const id of ['babyHeadScale', 'babyHeadScaleLabel', 'animalId', 'status']) {
-  const control = { value: '', textContent: '', addEventListener(event, fn) {
+const listeners = new Map(); // Event callbacks used to simulate mobile slider changes and compare taps.
+const elements = new Map(); // Minimal DOM fixtures for the public editor controls.
+for (const id of ['babyHeadScale', 'babyHeadScaleLabel', 'babyHeadCompare', 'babyHeadPreviewState', 'animalId', 'status', 'previewAngle', 'previewBadge']) {
+  const attrs = new Map();
+  elements.set(id, { value: '', textContent: '', addEventListener(event, fn) {
     const key = id + ':' + event;
     listeners.set(key, [...(listeners.get(key) || []), fn]);
-  }};
-  elements.set(id, control);
+  }, setAttribute(k, v) { attrs.set(k, v); }, getAttribute(k) { return attrs.get(k); } });
 }
-let draws = 0, checkpoints = 0, applied = 0;
-let lastPreviewScale = null;
-const frame = { x: 0.2, y: 0.2, width: 0.3, height: 0.3 };
+let draws = 0, checkpoints = 0, applied = 0, guides = 0;
+let lastPreviewScale = null, lastPreviewFrame = null;
+const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 'sprite-normalized-top-left' };
+const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
 const warp = {
-  getScale: () => 1.22,
-  MAX_SCALE: 1.45,
-  frameForKind: kind => kind === 'grehlr' ? frame : null,
-  applyToCanvas: (_source, kind, scale) => {
-    applied++;
-    lastPreviewScale = scale;
-    return { kind, scale, warped: true };
+  getScale: () => 1.22, MAX_SCALE: 1.45, validateFrame,
+  frameForKind: kind => kind === 'grehlr' ? canonical : null,
+  applyToCanvas: (_source, kind, scale, frame) => {
+    applied++; lastPreviewScale = scale; lastPreviewFrame = frame;
+    return { kind, scale, frame, warped: true };
   },
 };
-const windowStub = { BabyAnimalHeadWarp: warp };
+const windowStub = {
+  BabyAnimalHeadWarp: warp,
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: { grehlr: { chatheadFrame: canonical } } },
+  devicePixelRatio: 1,
+};
+const image = { width: 32, height: 32 };
+const state = {
+  image, baseRecord: {},
+  weights: { width: 4, height: 4 },
+};
 const ctx = {
-  window: windowStub,
+  window: windowStub, state,
   $: id => elements.get(id),
   clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
+  numberOr: (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback,
+  headBounds: () => ({ minX: 1, minY: 1, maxX: 2, maxY: 2 }),
   requestDraw: () => { draws++; },
   checkpointHistory: () => { checkpoints++; },
   readPreviewRigs: () => ({}),
   normalizedRig: () => ({ enabled: true, pivot: { x: 0.5, y: 0.5 } }),
-  applyRecord: record => { elements.get('animalId').value = record?.id || ''; return record; },
+  applyRecord: record => { state.baseRecord = record || {}; elements.get('animalId').value = record?.id || ''; return record; },
   captureHistoryState: () => ({ basic: true }),
   historySignature: () => 'base',
   restoreHistoryState: snap => snap,
   updateStatus: () => { elements.get('status').textContent = 'Head rig ready.'; },
-  previewImageForAnimal: image => image,
+  drawGuides: () => {},
+  draw: () => { elements.get('previewBadge').textContent = '0°'; },
+  previewImageForAnimal: source => source,
+  paintCtx: {
+    save() {}, restore() {}, setLineDash() {}, strokeRect() { guides++; },
+    set strokeStyle(_v) {}, set lineWidth(_v) {},
+  },
   document: { createElement: tag => {
     assert.equal(tag, 'canvas');
     const canvas = { width: 0, height: 0 };
@@ -65,34 +83,57 @@ const ctx = {
 vm.runInNewContext(part10, ctx, { filename: 'author-part10.js' });
 const slider = elements.get('babyHeadScale');
 const label = elements.get('babyHeadScaleLabel');
-assert.equal(slider.value, '122', 'new/unknown species inherits global default');
+ctx.draw();
+assert.equal(slider.value, '122', 'new species inherits Nursery default');
 assert.match(label.textContent, /inherited/);
 ctx.applyRecord({ id: 'grehlr', headRig: { babyHeadScale: 1.35 } });
-assert.equal(slider.value, '135', 'switching to a species restores its authored head size');
-assert.equal(ctx.normalizedRig().babyHeadScale, 1.35, 'export contains the species-specific head scale');
+ctx.draw();
+assert.equal(slider.value, '135', 'switching species loads its authored baby size');
+assert.equal(ctx.normalizedRig().babyHeadScale, 1.35, 'export includes the per-species size');
 assert.equal(ctx.captureHistoryState().babyHeadScale, 1.35);
 listeners.get('babyHeadScale:pointerdown')[0]();
-assert.equal(checkpoints, 1, 'one undo snapshot is taken at pointerdown');
+assert.equal(checkpoints, 1, 'slider begins an undoable edit');
+slider.value = '145';
+listeners.get('babyHeadScale:input')[0]();
+ctx.draw();
+assert.equal(ctx.normalizedRig().babyHeadScale, 1.45, 'slider updates exported head rig');
+assert.match(label.textContent, /species override/);
+assert(draws > 0, 'slider requests a live preview redraw');
+assert.match(elements.get('previewBadge').textContent, /Baby 145%/, 'preview visibly labels enlarged result');
+const first = ctx.previewImageForAnimal(image);
+assert.equal(applied, 1, 'new scale produces exactly one rasterized preview');
+assert.equal(lastPreviewScale, 1.45);
+assert.equal(lastPreviewFrame.width, canonical.width);
+assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
+assert.equal(applied, 1, 'no per-triangle recomposition');
+listeners.get('babyHeadCompare:click')[0]();
+ctx.draw();
+assert.equal(ctx.previewImageForAnimal(image), image, 'original comparison never deforms source');
+assert.match(elements.get('babyHeadPreviewState').textContent, /Showing original/);
+assert.equal(ctx.normalizedRig().babyHeadScale, 1.45, 'comparison does not mutate authored scale');
+listeners.get('babyHeadCompare:click')[0]();
+ctx.draw();
+assert.equal(ctx.previewImageForAnimal(image), first, 'switching back immediately restores cached enlarged preview');
+ctx.drawGuides({ x: 0, y: 0, width: 100, height: 100 });
+assert.equal(guides, 1, 'source canvas outlines the actual head frame as a guide only');
+ctx.restoreHistoryState({ basic: true, babyHeadScale: 1.35 });
+ctx.draw();
+assert.equal(slider.value, '135', 'undo restores the slider');
+ctx.applyRecord({ id: 'custom-pet', headRig: {} });
+ctx.draw();
+assert.equal(slider.value, '122', 'switching species does not leak another animal setting');
+assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
 slider.value = '140';
 listeners.get('babyHeadScale:input')[0]();
-assert.equal(ctx.normalizedRig().babyHeadScale, 1.4, 'slider updates exported head rig');
-assert.equal(slider.value, '140');
-assert.match(label.textContent, /species override/);
-assert(draws > 0, 'slider queues a live preview redraw');
-const source = { width: 32, height: 32 };
-const first = ctx.previewImageForAnimal(source);
-assert.equal(applied, 1, 'one native pixel warp is done for a new scale');
-assert.equal(lastPreviewScale, 1.4, 'preview uses the slider, not a global preference');
-assert.equal(ctx.previewImageForAnimal(source), first, 'mesh triangles reuse one cached warped texture');
-assert.equal(applied, 1, 'no per-triangle recompositions');
-ctx.restoreHistoryState({ basic: true, babyHeadScale: 1.35 });
-assert.equal(slider.value, '135', 'undo restores the slider');
-assert.equal(ctx.normalizedRig().babyHeadScale, 1.35);
-ctx.applyRecord({ id: 'new-species', headRig: {} });
-assert.equal(slider.value, '122', 'switching species does not carry an earlier override');
-assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species does not gain an authored override');
-assert.equal(ctx.previewImageForAnimal(source), source, 'without a head box preview remains the original image');
+ctx.draw();
+assert.equal(ctx.normalizedRig().babyHeadScale, 1.4);
+assert.equal(ctx.normalizedRig().babyHeadFrame.coordinateSpace, 'sprite-normalized-top-left', 'custom animals export painted head frame for runtime');
+assert.match(elements.get('babyHeadPreviewState').textContent, /painted Head influence/);
+assert.notEqual(ctx.previewImageForAnimal(image), image, 'a custom animal with painted head weights is previewable');
+state.weights = null;
+ctx.draw();
+assert.match(elements.get('babyHeadPreviewState').textContent, /No head frame/, 'missing frames are explicitly reported instead of silently failing');
 ctx.updateStatus();
-assert.match(elements.get('status').textContent, /no authored chathead frame/, 'unavailable framing is reported on screen');
-assert.equal(windowStub.__animalHeadRigBabyPreview.debugSnapshot().explicit, false, 'mobile diagnostics expose inheritance state');
-console.log('Per-species rigger slider, pixel-preview cache, undo, export and species switching passed.');
+assert.match(elements.get('status').textContent, /missing frame/, 'status is readable on mobile');
+assert.equal(windowStub.__animalHeadRigBabyPreview.debugSnapshot().explicit, true);
+console.log('Rigger slider discoverability, live comparison, painted-head fallback, undo, export and cache passed.');
