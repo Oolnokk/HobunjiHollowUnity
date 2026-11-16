@@ -138,6 +138,28 @@
 
       debugLog('main game script started');
 
+      // UI menu visibility belongs here; feature-owned rendering is registered once and dispatched by panel id.
+      window.MenuPanelRenderers?.init?.({
+        inventory: () => { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); },
+        crafting: () => window.CraftingPanel.render(),
+        calendar: () => window.CalendarSystem.renderCalendarPanel(),
+        map: () => { window.WildernessMap.renderMapPanel(); renderNpcGatheringPanel(); },
+        farm: () => window.FarmPanel.render(),
+        stable: () => window.FarmPanel.renderStablePanel(),
+        shipping: () => window.ShippingPanel.build(),
+        supplies: () => window.SupplyPage.render(),
+        generalStore: () => window.GeneralStore.render(),
+        carpenterShop: () => window.CarpenterShop.render(),
+        jubmirShop: () => window.JubmirShop.render(),
+        metalCraftShop: () => window.MetalCraftShop.render(),
+        garankiEnchanter: () => window.HarlyaoRelics?.render?.(),
+        alchemy: () => window.AlchemySystem.renderPanel(),
+        tasks: () => window.TasksPanel.render(),
+        relationships: () => window.RelationshipsPanel.render(),
+        debug: () => window._renderDebugPanel?.(),
+        wildlife: () => { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); },
+      }); // Only active panels render; no additional panel render in openMenu.
+
       // ── Menu open/close ────────────────────────────────────
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
@@ -152,20 +174,10 @@
         menuBackdrop.classList.add('open');
         menuPanel.classList.add('open');
         paused = true;
-        switchMenuPanel(targetPanel);
-        buildInventoryGrid();
-        window.EquipmentPanel.buildEquipmentSlots();
-        if (targetPanel === 'crafting') window.CraftingPanel.render();
-        if (targetPanel === 'shipping') window.ShippingPanel.build();
-        if (targetPanel === 'supplies') window.SupplyPage.render();
-        if (targetPanel === 'generalStore') window.GeneralStore.render();
-        if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
-        if (targetPanel === 'jubmirShop') window.JubmirShop.render();
-        if (targetPanel === 'metalCraftShop') window.MetalCraftShop.render();
-        if (targetPanel === 'garankiEnchanter') window.HarlyaoRelics?.render?.();
-        if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
-        if (targetPanel === 'tasks') window.TasksPanel.render();
-        if (targetPanel === 'relationships') window.RelationshipsPanel.render();
+        switchMenuPanel(targetPanel); // Dispatches this panel's renderer exactly once.
+        // Historically, opening any tab also refreshed the hidden Pack/Gear controls.
+        // Preserve that side effect for other tabs; the Inventory renderer already did it.
+        if (targetPanel !== 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
         auditInventorySizing();
         // The furniture placer button sits in the same fixed top-right
         // corner the open menu panel covers — hide it immediately rather
@@ -211,24 +223,7 @@
         document.querySelectorAll('.mp-pane').forEach(p =>
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
-        if (id === 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
-        if (id === 'crafting') window.CraftingPanel.render();
-        if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
-        if (id === 'map') { window.WildernessMap.renderMapPanel(); renderNpcGatheringPanel(); }
-        if (id === 'farm') window.FarmPanel.render();
-        if (id === 'stable') window.FarmPanel.renderStablePanel();
-        if (id === 'shipping') window.ShippingPanel.build();
-        if (id === 'supplies') window.SupplyPage.render();
-        if (id === 'generalStore') window.GeneralStore.render();
-        if (id === 'carpenterShop') window.CarpenterShop.render();
-        if (id === 'jubmirShop') window.JubmirShop.render();
-        if (id === 'metalCraftShop') window.MetalCraftShop.render();
-        if (id === 'garankiEnchanter') window.HarlyaoRelics?.render?.();
-        if (id === 'alchemy') window.AlchemySystem.renderPanel();
-        if (id === 'tasks') window.TasksPanel.render();
-        if (id === 'relationships') window.RelationshipsPanel.render();
-        if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); }
+        window.MenuPanelRenderers?.render?.(id); // One feature-owned callback per selected menu tab.
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -402,132 +397,9 @@
           return;
         }
 
-        if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
-
-        // Task turn-in — checked before everything else (including a fresh
-        // request/favor ask): if this NPC posted/asked a quest that's now
-        // sitting ready in the player's log, offer to hand it over right
-        // here rather than piling a new ask on top of an already-completed
-        // one.
-        const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
-        if (_turnInTask) {
-          const _commissionPrompt = _turnInTask.commission ? window.NpcCraftingCommissionDelivery?.turnInPrompt?.(_turnInTask) : null; // Crafting jobs carry a real garment/furniture deliverable, not fetch items.
-          const _turnInLabel = (_turnInTask.items || []).map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', '); // Ordinary request/favor items still use their existing labels.
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: _commissionPrompt?.text || 'Ah — did you bring what I asked for?',
-            choices: [
-              { label: _commissionPrompt?.label || (_turnInLabel ? `Here's your ${_turnInLabel}.` : 'Here is what you asked for.'), actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
-              { label: 'Not yet.', actions: [] },
-            ],
-          });
-          return;
-        }
-
-        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
-          window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
-          return;
-        }
-
-        // Named quest-givers — replaces the old bulletin board. Once a
-        // request has been announced (see ProceduralTasks.
-        // maybeRefreshRequestPostings, and the purple ambient greeting/
-        // compass '!' that flags it before this point), the first
-        // conversation after that proposes the job in the NPC's own voice.
-        // Checked ahead of the generic favor ask below since a named
-        // quest-giver's own request always takes priority over a random
-        // favor roll.
-        const _requestOffer = rec?.id ? await window.ProceduralTasks.maybeProposeRequest(rec) : null;
-        if (_requestOffer) {
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: _requestOffer.askText,
-            choices: [
-              { label: "I'll help.", actions: [{ type: 'acceptRequest', taskId: _requestOffer.task.id }] },
-              { label: 'Not right now.', actions: [{ type: 'declineRequest', taskId: _requestOffer.task.id }] },
-            ],
-          });
-          return;
-        }
-
-        // Trusted-NPC favors — checked ahead of every other fast-path
-        // (including the merchant shop shortcuts below, so shopkeepers can
-        // ask for favors too, not just villagers with an authored dialogue
-        // tree) whenever the NPC currently has, or freshly rolls, a favor to
-        // ask — gated by friendship tier. Same synthetic choice-node
-        // shortcut the shop fast-paths use. See maybeOfferFavor.
-        const _favorTask = window.ProceduralTasks.maybeOfferFavor(rec);
-        if (_favorTask) {
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: window.ProceduralTasks.favorAskLine(_favorTask),
-            choices: [
-              { label: "I'll help.", actions: [{ type: 'acceptFavor', taskId: _favorTask.id }] },
-              { label: 'Not right now.', actions: [{ type: 'declineFavor', taskId: _favorTask.id }] },
-            ],
-          });
-          return;
-        }
-
-        // These synthetic pre-choice screens are a fast-path shortcut for
-        // when the NPC happens to be caught right at their counter — a
-        // quicker single-tap route to the shop than navigating their own
-        // dialogue tree. They are NOT the reliable path: that fast-path
-        // condition (idle, exact station, label match) is easy to miss if
-        // the NPC has stepped away or is mid-transition, which is why every
-        // shopkeeper below also gets a real "openShop" choice baked into
-        // their own dialogueTrees — reachable through ordinary conversation
-        // any time, with no station/idle requirement at all.
-        if (isGeneralStoreNpcOnDuty(walker)) {
-          const cfg = generalStoreButtonConfig();
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: cfg.shopGreeting || 'What can I do for you?',
-            choices: [
-              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'generalStoreWares' }] },
-              { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
-            ],
-          });
-          return;
-        }
-
-        if (isCarpenterNpcOnDuty(walker)) {
-          const cfg = carpenterButtonConfig();
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: cfg.shopGreeting || 'What can I do for you?',
-            choices: [
-              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'carpenterBarnPlans' }] },
-              { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
-            ],
-          });
-          return;
-        }
-
-        // Jubmir the traveling trader — unlike the General Store/Carpenter,
-        // he isn't tied to a shop counter (he wanders per his schedule), so
-        // this choice is offered any time you talk to him at all rather
-        // than being station-gated. "Chat" re-enters his normal dialogue
-        // tree exactly like the General Store's Chat option does.
-        if (rec?.id === 'jubmir') {
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: 'What can I do for you?',
-            choices: [
-              { label: 'See Wares', actions: [{ type: 'openShop', pool: 'jubmirWares' }] },
-              { label: 'Chat', actions: [{ type: 'startChat' }] },
-            ],
-          });
-          return;
-        }
-
-        window.DialogueContent?.beginNpcConversation(rec);
+        // Content/priority/merchant selection is feature-owned; this function keeps staging and camera duties.
+        if (window.NpcDialogueEntryRouter?.route) await window.NpcDialogueEntryRouter.route(rec, walker);
+        else window.DialogueContent?.beginNpcConversation(rec);
       }
 
       // advanceNpcDialogue now lives in js/dialogue-content.js
@@ -9419,7 +9291,7 @@
         member.packClothing    = [...packClothing];
         member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
         member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
-        member.questProgress    = { ...questProgress };
+        member.questProgress    = { ...window.QuestProgressStore.snapshot() };
         member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
         member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
         member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
@@ -9503,26 +9375,7 @@
       }
 
       // ── Quest progress (per world, per character) ─────────────────────
-      // No quest content is authored yet — this is the tracking scaffold
-      // future quest-giving dialogue/hooks can call into. { [questId]:
-      // { status: 'not_started'|'in_progress'|'completed', progress, completedAt } }
-      let questProgress = {};
-
-      function getQuestState(questId) {
-        return questProgress[questId] || { status: 'not_started', progress: {}, completedAt: null };
-      }
-
-      function canAccessQuest(quest) {
-        return canAccessContent(quest?.visibility);
-      }
-
-      function setQuestStatus(questId, status, progressPatch) {
-        const st = questProgress[questId] || (questProgress[questId] = { status: 'not_started', progress: {}, completedAt: null });
-        st.status = status;
-        if (progressPatch) Object.assign(st.progress, progressPatch);
-        if (status === 'completed' && !st.completedAt) st.completedAt = Date.now();
-        saveMemberWorldData();
-      }
+      window.QuestProgressStore?.init?.({ saveMemberWorldData, canAccessContent }); // One authoritative store for authored and procedural quest state.
 
       let _tothalShiftInFlight = false;
       // Set while a shift is running so enterZone() can wait for it instead
@@ -28877,7 +28730,7 @@
         if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
         else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
         if (gearInventory?.tools?.crossbow)               equipmentSlots.ranged = 'crossbow';
-        // Farm resets do not auto-equip owned whistles; the whistle slot remains empty.
+        // Reset keeps owned whistles but leaves their slot empty.
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
@@ -30858,6 +30711,13 @@
 
       window.DialogueCameraFraming?.init?.({ getStagingConfig: npcDialogueStagingConfig }); // Ordinary dialogue camera orbit: js/dialogue-camera-framing.js.
 
+      window.NpcDialogueEntryRouter?.init?.({
+        ITEM_DEFS,
+        isGeneralStoreNpcOnDuty,
+        generalStoreButtonConfig,
+        isCarpenterNpcOnDuty,
+        carpenterButtonConfig,
+      }); // Private station predicates stay here; their priority policy and content live outside game.js.
       window.DialogueContent?.init({
         calendar,
         getNpcRecords: () => npcWalkers.map(w => w.rec).filter(Boolean), // Used by adjustNpcFavor's household/workplace spillover.
@@ -30871,7 +30731,7 @@
         fishingTimeOfDay: () => window.Fishing.timeOfDay(),
         normalizeStationLabel,
         canAccessContent,
-        setQuestStatus,
+        setQuestStatus: window.QuestProgressStore.setStatus,
         turnInTask: taskId => window.ProceduralTasks.turnInTask(taskId), // Resolve the latest commission adapter at click time rather than capturing a pre-patch fetch-only handler.
         showToast,
         openMenu,
@@ -31825,7 +31685,7 @@
         ITEM_DEFS,
         esc: window.FormatUtils.esc,
         WMAP_ZONE_LABELS,
-        getQuestProgress: () => questProgress,
+        getQuestProgress: () => window.QuestProgressStore.snapshot(),
         inventory,
       });
 
@@ -31982,7 +31842,7 @@
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
       });
       window.CombatTutorial?.init?.({
-        getQuestProgress: () => questProgress,
+        getQuestProgress: () => window.QuestProgressStore.snapshot(),
         save: saveMemberWorldData,
         playerPosition: () => ({ c: player.x / TILE, r: player.y / TILE }),
         getArea: () => currentArea,
@@ -32089,8 +31949,8 @@
       });
 
       window.BanubuQuestline?.init?.({
-        getQuestProgress: () => questProgress, // Banubu must mutate the same live object TasksPanel and saveMemberWorldData read.
-        setQuestStatus,
+        getQuestProgress: () => window.QuestProgressStore.snapshot(), // Banubu must mutate the same live object TasksPanel and saveMemberWorldData read.
+        setQuestStatus: window.QuestProgressStore.setStatus,
         saveMemberWorldData,
       });
 
@@ -33195,6 +33055,10 @@
           if (walker) { closeMenu(); openNpcDialogue(walker); }
         },
       });
+      window.GearMemberTransaction?.init?.({
+        inventory, getGearInventory: () => gearInventory, captureMemberWorldData,
+        buildInventoryGrid, buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(), showToast,
+      }); // One CharacterMetaSave write persists both gear and the member inventory after Garanki's mutations.
       window.HarlyaoRelics?.init({
         TOOL_ITEM_DEFS,
         ITEM_DEFS,
@@ -33652,8 +33516,8 @@
         toolMasteryLevel,
         equipmentSlots,
         calendar,
-        setQuestStatus,
-        getQuestProgress: () => questProgress,
+        setQuestStatus: window.QuestProgressStore.setStatus,
+        getQuestProgress: () => window.QuestProgressStore.snapshot(),
         npcWalkers,
         inventory,
         clampInventoryStack,
@@ -33663,8 +33527,8 @@
       });
 
       window.BountyBoard?.init({
-        getQuestProgress: () => questProgress,
-        setQuestStatus,
+        getQuestProgress: () => window.QuestProgressStore.snapshot(),
+        setQuestStatus: window.QuestProgressStore.setStatus,
         showToast,
         inventory,
         calendar,
@@ -33896,7 +33760,7 @@
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
         window.DialogueContent?.loadNpcRelationships(playerData);
-        questProgress = { ...(playerData.questProgress || {}) };
+        window.QuestProgressStore.restore(playerData.questProgress);
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
         window.NpcFarmPlots?.restore?.(playerData.npcFarmPlotState); // NPC-tended field/trench state (js/npc-farm-plots.js).
@@ -33973,9 +33837,9 @@
         activeShoulderPetId = playerData.activeShoulderPetId ?? null;
         if (!stable.length) {
           const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
-          stable.push(starter); // Keep the starter animal as an owned, unequipped Stable entry.
+          stable.push(starter); // Starter animal remains owned but not equipped.
         }
-        // A null active role is intentional, even when animals are owned.
+        // A null active companion role is intentional, even for a nonempty Stable.
         // Backfill genotype-less stable entries from older saves (e.g. a
         // starter Bingo saved before pattern genes existed) so they render
         // real genes instead of the plain uncolored sprite forever. Also
@@ -33995,7 +33859,7 @@
         // whose saved item no longer exists in this character's gearInventory
         // (sold/lost since, or a save from before this field existed), which
         // then falls through to the starter-gear defaults just below.
-        equipmentSlots.whistle = null; // Only an explicitly saved whistle selection can fill the slot.
+        equipmentSlots.whistle = null; // Clear the previous character's choice before restoring the current one.
         if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
           for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
             if (!itemId || !(slot in equipmentSlots)) continue;
@@ -34014,12 +33878,12 @@
         if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
         else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
-        // Whistles remain owned but unequipped until the player explicitly chooses one.
+        // Ownership of a whistle does not imply that it should be equipped.
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
         // save via docs/index.html's onboarding-profile handoff, and the
-        // player may explicitly equip one; cutscene previews still suppress
-        // any saved whistle so an uninvited companion animal cannot spawn
+        // player may have explicitly equipped a whistle; in preview an
+        // uninvited companion animal would otherwise spawn
         // and compete for camera framing in a scene the Director never
         // authored one for. A scene's own creature actors are unaffected;
         // this only clears the real player's own companion slot.

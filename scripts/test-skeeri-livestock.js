@@ -153,7 +153,6 @@ vm.runInNewContext(read('docs/js/farm-animals.js'),farmRuntime);
 const realFarm=farmWindow.FarmAnimals;
 const farms=[],personalStable=[]; // World-shared vs individual animal ownership is asserted separately.
 const farmBag={fertileSkeeriEgg:2,skeeriEgg:1}; // Ordinary food eggs must remain inedible as livestock.
-const roleSelections=[];
 realFarm.init({
   LIVESTOCK_ITEM_KINDS:W.SCRATCHBONES_CONFIG.game.livestock.itemKinds,
   LIVESTOCK_RESOURCE_DEFS:W.SCRATCHBONES_CONFIG.game.livestock.resources,
@@ -161,7 +160,6 @@ realFarm.init({
   loadWorldLivestock:()=>farms,saveWorldLivestock() {},
   getStable:()=>personalStable,saveStable() {},
   companionAiTypeForKind:()=> 'companion',
-  _autoAssignStableRole:entry=>roleSelections.push(genetic.stableEntryRole(entry)),
 });
 const bloodline=stats.genotypes[0].genotype; // Actual collected egg genotype from the production nest grant above.
 const farmResult=realFarm.addFromItem('fertileSkeeriEgg',{carriedGenotype:bloodline});
@@ -183,7 +181,7 @@ assert(stableResult.ok,'fertile Skeeri eggs must also enter a personal Stable');
 assert.equal(personalStable.length,1);
 assert.equal(personalStable[0].kind,'skeeri');
 assert.deepEqual(JSON.parse(JSON.stringify(personalStable[0].genotype)),JSON.parse(JSON.stringify(bloodline)));
-assert.equal(roleSelections[0],'shoulderPet','wild small Skeeri start in the shoulder pet role');
+assert.equal(genetic.stableEntryRole(personalStable[0]),'shoulderPet','small Skeeri remain eligible for the shoulder-pet role without auto-equipping');
 assert.equal(farmBag.fertileSkeeriEgg,0);
 assert.equal(realFarm.addFromItem('skeeriEgg').ok,false,'ordinary farm eggs may never hatch');
 assert.equal(realFarm.addToStable('skeeriEgg').ok,false,'ordinary farm eggs may never enter the Stable');

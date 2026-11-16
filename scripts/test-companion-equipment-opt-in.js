@@ -111,3 +111,45 @@ assert.equal(transfer.stable.length, 1, 'farm transfer keeps the animal');
 assert.equal(transfer.saves, 1, 'farm transfer persists without equipping it');
 
 console.log('Companion equipment opt-in checks passed: ownership, saves, whistle restoration, acquisitions and transfers.');
+
+const companions = new Set(); // Tracks spawned companion entities for the production sync function.
+const selections = { companion: null, shoulderPet: null }; // Simulates explicitly selected Stable IDs.
+const master = { x: 10, y: 10, angle: 0 }; // Player position for production companion placement.
+const liveStable = [{ id: 'wolf', kind: 'gar-wolf', name: 'Wolf', genotype: { sizeClass: 'medium' } }]; // Owned but initially not equipped.
+const liveGear = { whistles: [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }] }; // Starter whistle remains owned.
+const liveSlots = { whistle: null }; // Whistle starts unequipped.
+let spawned = 0; // Counts actual entity requests so invisible fallback spawning is also caught.
+const context = {
+  window: { FarmPanel: { activeStableIdForRole: role => selections[role] }, CompanionDowned: { onCompanionSpawned() {} }, __farmLog() {} },
+  player: master, stable: liveStable, gearInventory: liveGear,
+  equipmentSlots: liveSlots, companionObjects: companions, cutscenePreviewActive: false,
+  CREATURE_DB: { 'gar-wolf': {}, 'dabinggi-hound': {} }, TILE: 64, currentArea: 'farm',
+  makeCreatureEntity: (creatureKey, x, y, options) => {
+    spawned++;
+    return { creatureKey, x, y, areaId: 'farm', ...options };
+  },
+  despawnCompanions: (owner, role) => {
+    for (const entry of companions) if (entry.master === owner && entry.stableRole === role) companions.delete(entry);
+  },
+}; // Stubs world placement only: all slot and species decisions come from real source code.
+vm.runInNewContext(
+  section(game, '      function syncCompanionFromWhistle(master = player) {', '\n      // Mount ride logic')
+    + '\nthis.sync = syncCompanionFromWhistle;', context,
+);
+context.sync();
+assert.equal(companions.size, 0, 'owned animals and whistles do not summon anything when slots are empty');
+assert.equal(spawned, 0, 'no fallback entity spawn is requested');
+selections.companion = 'wolf';
+context.sync();
+assert.equal(companions.size, 1, 'explicitly selecting an animal spawns it');
+assert.equal([...companions][0].creatureKey, 'gar-wolf');
+selections.companion = null;
+context.sync();
+assert.equal(companions.size, 0, 'unequipping the companion removes it');
+liveSlots.whistle = 'whistle_bingo';
+context.sync();
+assert.equal([...companions][0]?.creatureKey, 'dabinggi-hound', 'explicitly equipped legacy whistles continue working');
+liveSlots.whistle = null;
+context.sync();
+assert.equal(companions.size, 0, 'unequipping the whistle removes the companion');
+console.log('Live companion selection and whistle fallback tests passed.');

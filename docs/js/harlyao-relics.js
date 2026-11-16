@@ -76,6 +76,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.FeyArmamentQuest?.bindInventoryDeps?.(injectedDeps); // Shares the actual relic/gear save seam with the Fey quest.
     window.HachutuRelics?.init?.(injectedDeps); // Share the exact gear/inventory save seam with the dev-only Hachutu weapon drop.
   }
 
@@ -83,6 +84,14 @@
   const rnd = () => window.GameRandom?.random?.() ?? Math.random();
   const slotIds = () => window.Combat?.loadout?.SLOT_IDS || SLOT_IDS;
   const gear = () => deps?.getGearInventory?.() || null;
+  const feyServiceUnlocked = () => window.FeyArmamentQuest?.completed?.() === true; // Garanki only agrees to pretend after the final conversation.
+  const isFeyEnchantment = id => ES()?.DEFINITIONS?.[id]?.alignment === 'Fey'; // Shared by service pricing, text, and option filtering.
+  const feyServicePrice = (price, isFey) => isFey ? price * 2 : price; // Garanki's extra fee applies to every Fey service, not other planar magic.
+  function requireFeyQuest() {
+    if (feyServiceUnlocked()) return true;
+    deps?.showToast?.('Finish The Knotworked Armament before asking Garanki to handle Fey-knotwork.', false);
+    return false;
+  }
 
   function esc(text) {
     return deps?.esc ? deps.esc(text) : String(text ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -157,8 +166,8 @@
     return parts;
   }
 
-  function unbindPrice(enchantments) {
-    return TUNING.UNBIND_BASE_PRICE + TUNING.UNBIND_PRICE_PER_ENCHANTMENT * enchantmentCount(enchantments);
+  function unbindPrice(enchantments, origin = 'Harlyao') {
+    return feyServicePrice(TUNING.UNBIND_BASE_PRICE + TUNING.UNBIND_PRICE_PER_ENCHANTMENT * enchantmentCount(enchantments), origin === 'Fey');
   }
 
   // ── Rolling ─────────────────────────────────────────────────────
@@ -207,7 +216,7 @@
       sellPrice: 90 + 30 * enchantmentCount(relic.enchantments), // Recovered bound relics can be sold without paying to unbind them.
       spriteIcon: '../toolsprites/' + shape.sprite.split('/').pop(), // applyItemSpriteIcon resolves under assets/objectsprites/.
       tags: [relic.origin || 'Harlyao', 'Relic', 'Bound'], // Distinguishes Fey treasures from ordinary ruin artifacts.
-      desc: `${relic.origin === 'Fey' ? 'A Fey-touched' : 'An ancient'} ${shape.label.replace(/^Harlyao |^Fey /, '').toLowerCase()} ${relic.origin === 'Fey' ? 'whose illusions unsettle the senses' : 'still bound to its long-dead Harlyao owner'} — it cannot be wielded. Garanki Gabu can unbind it (${unbindPrice(relic.enchantments)}g). Enchantments: ${lines.join('; ') || 'none'}.`,
+      desc: `${relic.origin === 'Fey' ? 'A Fey-touched' : 'An ancient'} ${shape.label.replace(/^Harlyao |^Fey /, '').toLowerCase()} ${relic.origin === 'Fey' ? 'whose illusions unsettle the senses' : 'still bound to its long-dead Harlyao owner'} — it cannot be wielded. Garanki Gabu can ${relic.origin === 'Fey' ? 'pretend to unbind' : 'unbind'} it (${unbindPrice(relic.enchantments, relic.origin)}g) after you meet his requirements. Enchantments: ${lines.join('; ') || 'none'}.`,
       harlyaoBoundRelic: true,
     };
     if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(entry => entry.key === key)) {
@@ -222,15 +231,28 @@
 
   function grantBoundRelic(relic = makeRelic()) {
     if (!deps?.inventory || !relic || !SHAPES[relic.shape]) return null;
+    const shapeOrigin = SHAPES[relic.shape].origin || 'Harlyao'; // The encoded key selects its prefix by shape, so an incompatible declared origin would be unsalvageable on reload.
+    if ((relic.origin || 'Harlyao') !== shapeOrigin) return null;
     if (relic.origin === 'Fey') {
       const ids=[...(relic.enchantments?.base || []), ...Object.values(relic.enchantments?.flourishes || {})]; // Fey items cannot smuggle planar enchantments into the bound-codec.
       if (!ids.length || ids.some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')) return null;
     }
     const key = encodeBoundKey(relic);
     ensureBoundItemDef(key);
+    const previousQuantity = deps.inventory[key]; // Restored if the shared bound-weapon and quest save is explicitly rejected.
     deps.inventory[key] = 1;
+    const questStarted = relic.origin === 'Fey' && window.FeyArmamentQuest?.maybeStart?.({ deferSave: true, silent: true }); // Save the new quest and first Fey weapon atomically.
     deps.buildInventoryGrid?.();
-    deps.saveMemberWorldData?.();
+    const saved = deps.saveMemberWorldData?.(); // The game's canonical member serializer returns false when persistence fails.
+    if (saved === false) {
+      if (previousQuantity === undefined) delete deps.inventory[key];
+      else deps.inventory[key] = previousQuantity;
+      if (questStarted) window.FeyArmamentQuest?.rollbackDeferredStart?.();
+      deps.buildInventoryGrid?.();
+      deps.showToast?.('The bound weapon could not be saved. No weapon was granted; please retry.', false);
+      return null;
+    }
+    if (questStarted) window.FeyArmamentQuest?.notifyStarted?.();
     ES()?.logEvent?.(`Found bound ${SHAPES[relic.shape].label}: ${describeEnchantments(relic.enchantments).join(', ')}`);
     return key;
   }
@@ -339,39 +361,50 @@
     if (!requireService('unbind')) return { ok: false, reason: 'collection' };
     const relic = decodeBoundKey(boundKey);
     if (!relic || !((deps?.inventory?.[boundKey] || 0) > 0)) return { ok: false, reason: 'not-owned' };
-    const price = unbindPrice(relic.enchantments);
-    if (!gear()) return { ok: false, reason: 'gear' };
-    if (!spendGold(price)) return { ok: false, reason: 'gold', price };
+    if (relic.origin === 'Fey' && !requireFeyQuest()) return { ok: false, reason: 'quest' };
+    const price = unbindPrice(relic.enchantments, relic.origin); // One validated fee for the unbinding transaction.
     const g = gear();
-    const toolKey = relicToolKey(relic);
-    delete deps.inventory[boundKey];
-    if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object') g.harlyaoRelics = {};
-    g.harlyaoRelics[toolKey] = { shape: relic.shape, origin: relic.origin, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
-    if (relic.visual) { // A looted enemy weapon keeps its random particle color/effect (WeaponEnchantmentVFX validates the choice on use).
-      if (!g.weaponEnchantmentVisuals || typeof g.weaponEnchantmentVisuals !== 'object') g.weaponEnchantmentVisuals = {};
-      g.weaponEnchantmentVisuals[toolKey] = { ...relic.visual };
-    }
-    if (!g.tools) g.tools = {};
-    g.tools[toolKey] = true;
-    if (!g.toolMastery) g.toolMastery = {};
-    g.toolMastery[toolKey] = { xp: 0 }; // Unbinding releases the former owner's affinity and clears mastery-driven verdigris.
-    delete g.toolPlating?.[toolKey];
-    registerRelicTool(toolKey, g.harlyaoRelics[toolKey]);
-    const es = ES();
-    if (es) {
-      es.stateFor(toolKey, true);
-      for (const id of relic.enchantments.base) es.addBase(toolKey, id);
-      for (const [slot, id] of Object.entries(relic.enchantments.flourishes)) es.setFlourish(toolKey, slot, id);
-    }
-    const learned = es?.unlockFromState?.(relic.enchantments) || [];
+    if (!g) return { ok: false, reason: 'gear' };
+    const toolKey = relicToolKey(relic); // Stable derived key persists in character gear once the member's bound key is removed.
+    const result = window.GearMemberTransaction?.run?.({
+      inventoryKeys: [boundKey],
+      mutate: () => {
+        if (!spendGold(price)) return { ok: false, reason: 'gold', price };
+        delete deps.inventory[boundKey];
+        if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object') g.harlyaoRelics = {};
+        g.harlyaoRelics[toolKey] = { shape: relic.shape, origin: relic.origin, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
+        if (relic.visual) { // Preserve authored particle style from looted enemy weapons.
+          if (!g.weaponEnchantmentVisuals || typeof g.weaponEnchantmentVisuals !== 'object') g.weaponEnchantmentVisuals = {};
+          g.weaponEnchantmentVisuals[toolKey] = { ...relic.visual };
+        }
+        if (!g.tools) g.tools = {};
+        g.tools[toolKey] = true;
+        if (!g.toolMastery) g.toolMastery = {};
+        g.toolMastery[toolKey] = { xp: 0 };
+        delete g.toolPlating?.[toolKey];
+        const es = ES();
+        if (es) {
+          es.stateFor(toolKey, true);
+          for (const id of relic.enchantments.base) {
+            if (!es.addBase(toolKey, id, { deferSave: true })) throw new Error('Invalid bound Base enchantment');
+          }
+          for (const [slot, id] of Object.entries(relic.enchantments.flourishes)) {
+            if (!es.setFlourish(toolKey, slot, id, { deferSave: true })) throw new Error('Invalid bound Flourish');
+          }
+        }
+        const learned = es?.unlockFromState?.(relic.enchantments, { deferSave: true }) || [];
+        return { ok: true, toolKey, learned, price };
+      },
+    }) || { ok: false, reason: 'unavailable' };
+    if (!result.ok) return result;
+    registerRelicTool(toolKey, g.harlyaoRelics[toolKey]); // Runtime texture/definition work only after the gear/member save succeeded.
     window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
-    deps.saveGearInventory?.();
-    deps.saveMemberWorldData?.();
     deps.buildInventoryGrid?.();
     deps.buildEquipmentSlots?.();
-    deps.showToast?.(`Garanki unbinds the ${SHAPES[relic.shape].label}. Its verdigris clears and its Mastery returns to 0${learned.length ? ` — and he has learned ${learned.join(', ')}` : ''}.`, true);
+    ES()?.logEvent?.(result.learned.length ? 'Garanki learned: ' + result.learned.join(', ') : 'Garanki unbound a relic');
+    deps.showToast?.(`Garanki ${relic.origin === 'Fey' ? 'pretends to unbind' : 'unbinds'} the ${SHAPES[relic.shape].label}. Its verdigris clears and its Mastery returns to 0${result.learned.length ? ` — and he has learned ${result.learned.join(', ')}` : ''}.`, true);
     render();
-    return { ok: true, toolKey, learned, price };
+    return result;
   }
 
   function ownedWeaponKeys() {
@@ -385,18 +418,24 @@
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
     if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= es.BASE_LIMIT) return { ok: false, reason: 'slot' };
     if (!es.isBaseUnlocked(id)) return { ok: false, reason: 'locked' };
+    if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
     const current = es.stateFor(weaponKey).base;
     if (current[slotIndex] === id) return { ok: false, reason: 'unchanged' };
     if (current.includes(id)) {
       deps?.showToast?.('That weapon already carries that enchantment.', false);
       return { ok: false, reason: 'duplicate' };
     }
-    if (slotIndex >= es.BASE_LIMIT) return { ok: false, reason: 'limit' };
-    if (!spendGold(TUNING.APPLY_BASE_PRICE)) return { ok: false, reason: 'gold' };
-    const index = Math.min(slotIndex, current.length); // Filling slot 2 while slot 1 is empty lands in slot 1.
-    es.equipBase(weaponKey, index, id);
-    afterEnchant(`Garanki enchants the weapon with ${es.DEFINITIONS[id].displayName}.`);
-    return { ok: true };
+    const price = feyServicePrice(TUNING.APPLY_BASE_PRICE, isFeyEnchantment(id)); // Charged once within the combined save transaction.
+    const index = Math.min(slotIndex, current.length);
+    const result = window.GearMemberTransaction?.run?.({
+      mutate: () => {
+        if (!spendGold(price)) return { ok: false, reason: 'gold', price };
+        return es.equipBase(weaponKey, index, id, { deferSave: true })
+          ? { ok: true, price } : { ok: false, reason: 'enchant' };
+      },
+    }) || { ok: false, reason: 'unavailable' };
+    if (result.ok) afterEnchant(`Garanki ${isFeyEnchantment(id) ? 'pretends to enchant' : 'enchants'} the weapon with ${es.DEFINITIONS[id].displayName}.`);
+    return result;
   }
 
   function applyFlourish(weaponKey, slotId, id) {
@@ -405,11 +444,18 @@
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
     if (!slotIds().includes(slotId)) return { ok: false, reason: 'slot' };
     if (!es.isFlourishUnlocked(id, slotId)) return { ok: false, reason: 'locked' };
+    if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
     if (es.flourishForSlot(slotId, weaponKey) === id) return { ok: false, reason: 'unchanged' };
-    if (!spendGold(TUNING.APPLY_FLOURISH_PRICE)) return { ok: false, reason: 'gold' };
-    es.setFlourish(weaponKey, slotId, id); // One Flourish per slot: this replaces whatever was there.
-    afterEnchant(`Garanki binds a ${es.DEFINITIONS[id].displayName} Flourish to ${slotId.toUpperCase()}.`);
-    return { ok: true };
+    const price = feyServicePrice(TUNING.APPLY_FLOURISH_PRICE, isFeyEnchantment(id)); // Same Fey fee rules as Base enchanting.
+    const result = window.GearMemberTransaction?.run?.({
+      mutate: () => {
+        if (!spendGold(price)) return { ok: false, reason: 'gold', price };
+        return es.setFlourish(weaponKey, slotId, id, { deferSave: true })
+          ? { ok: true, price } : { ok: false, reason: 'enchant' };
+      },
+    }) || { ok: false, reason: 'unavailable' };
+    if (result.ok) afterEnchant(`Garanki ${isFeyEnchantment(id) ? 'pretends to bind' : 'binds'} a ${es.DEFINITIONS[id].displayName} Flourish to ${slotId.toUpperCase()}.`);
+    return result;
   }
 
   function clearSlot(weaponKey, kind, slot) {
@@ -418,18 +464,25 @@
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
     if (kind !== 'base' && kind !== 'flourish') return { ok: false, reason: 'kind' };
     if (kind === 'base' ? !Number.isInteger(slot) || slot < 0 || slot >= es.BASE_LIMIT : !slotIds().includes(slot)) return { ok: false, reason: 'slot' };
-    const has = kind === 'base' ? !!es.stateFor(weaponKey).base[slot] : !!es.flourishForSlot(slot, weaponKey);
-    if (!has) return { ok: false, reason: 'empty' };
-    if (!spendGold(TUNING.REMOVE_PRICE)) return { ok: false, reason: 'gold' };
-    if (kind === 'base') es.equipBase(weaponKey, slot, null);
-    else es.setFlourish(weaponKey, slot, null);
-    afterEnchant('Garanki strips the enchantment away.');
-    return { ok: true };
+    const currentId = kind === 'base' ? es.stateFor(weaponKey).base[slot] : es.flourishForSlot(slot, weaponKey);
+    if (!currentId) return { ok: false, reason: 'empty' };
+    if (isFeyEnchantment(currentId) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
+    const price = feyServicePrice(TUNING.REMOVE_PRICE, isFeyEnchantment(currentId)); // Uses the removed effect's origin rather than the weapon's origin.
+    const result = window.GearMemberTransaction?.run?.({
+      mutate: () => {
+        if (!spendGold(price)) return { ok: false, reason: 'gold', price };
+        const succeeded = kind === 'base'
+          ? es.equipBase(weaponKey, slot, null, { deferSave: true })
+          : es.setFlourish(weaponKey, slot, null, { deferSave: true });
+        return succeeded ? { ok: true, price } : { ok: false, reason: 'enchant' };
+      },
+    }) || { ok: false, reason: 'unavailable' };
+    if (result.ok) afterEnchant(isFeyEnchantment(currentId) ? 'Garanki pretends to strip the enchantment away.' : 'Garanki strips the enchantment away.');
+    return result;
   }
 
   function afterEnchant(message) {
-    deps?.saveGearInventory?.();
-    deps?.saveMemberWorldData?.();
+    // Gear and member inventory were already captured together in one CharacterMetaSave write.
     deps?.showToast?.(message, true);
     window.CombatLoadoutUI?.render?.();
     render();
@@ -508,16 +561,18 @@
     window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
     // Bound relics
-    list.appendChild(heading('Bound relics · Harlyao and Fey'));
+    list.appendChild(heading(feyServiceUnlocked() ? 'Bound relics · Harlyao and Fey' : 'Bound relics · Harlyao'));
     if (!window.ArtifactCollection?.unlocked?.('unbind')) list.appendChild(note('Donate your first artifact to unlock weapon unbinding.'));
-    const bound = boundRelicsInInventory();
-    if (!bound.length) list.appendChild(note('Bring Garanki a bound relic from a Harlyao boss vault or Boney Shinjimi and he will release its enchantments.'));
+    const allBound = boundRelicsInInventory(); // Kept intact while the menu hides Fey origins until the investigation is complete.
+    const bound = allBound.filter(relic => relic.origin !== 'Fey' || feyServiceUnlocked());
+    if (!bound.length) list.appendChild(note('Bring Garanki a bound relic from a Harlyao boss vault.'));
+    if (!feyServiceUnlocked() && allBound.some(relic => relic.origin === 'Fey')) list.appendChild(note('Garanki does not believe the knotworked weapon is magical. Follow The Knotworked Armament to persuade him.'));
     for (const relic of bound) {
-      const price = unbindPrice(relic.enchantments);
+      const price = unbindPrice(relic.enchantments, relic.origin);
       const shape = SHAPES[relic.shape];
       list.appendChild(row(shape.icon, esc(`Bound ${shape.label}`),
         esc(describeEnchantments(relic.enchantments).join(' · ') || 'No enchantments'),
-        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < price)]));
+        [button(`${relic.origin === 'Fey' ? 'Pretend to unbind' : 'Unbind'} (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < price)]));
     }
 
     // Cursed lich circlets
@@ -532,7 +587,7 @@
     // Enchant a weapon
     list.appendChild(heading('Enchant a weapon'));
     if (window.DelversGuild && !window.DelversGuild.canEnchant()) list.appendChild(note('New enchanting is illegal. Bring Garanki four distinct artifacts and speak with him privately at his tent to earn his trust.'));
-    const weapons = ownedWeaponKeys();
+    const weapons = ownedWeaponKeys().filter(key => feyServiceUnlocked() || gear()?.harlyaoRelics?.[key]?.origin !== 'Fey'); // Hidden Fey gear cannot enter the service panel before the dialogue unlock.
     if (!weapons.length) { list.appendChild(note('You own no weapons.')); return; }
     const equipped = window.Combat?.deps?.currentWeaponKey?.();
     if (!weapons.includes(selectedWeaponKey)) selectedWeaponKey = weapons.includes(equipped) ? equipped : weapons[0];
@@ -542,7 +597,11 @@
     if (es) {
       list.appendChild(note(`Immundanity ${es.getWeaponImmundanity(selectedWeaponKey)} · Enchantment power ×${es.getEnchantmentPowerMultiplier(selectedWeaponKey).toFixed(2)} · Mastery effects ×${es.getMasteryPowerMultiplier(selectedWeaponKey).toFixed(2)}`));
     }
-    const unlocked = es?.unlockedOptions?.() || { base: [], flourish: [] };
+    const known = es?.unlockedOptions?.() || { base: [], flourish: [] }; // The enchantment system continues retaining learned Fey magic even while Garanki refuses it.
+    const unlocked = {
+      base: (known.base || []).filter(id => !isFeyEnchantment(id) || feyServiceUnlocked()),
+      flourish: (known.flourish || []).filter(entry => !isFeyEnchantment(entry.id) || feyServiceUnlocked()),
+    };
     const state = es?.stateFor?.(selectedWeaponKey) || { base: [], flourishes: {} };
 
     for (let i = 0; i < (es?.BASE_LIMIT || 2); i++) {
@@ -550,8 +609,12 @@
       const options = [{ value: '', label: '— choose a learned Base enchantment —' }]
         .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · ${defs[id].alignment}` })));
       const pick = select(options, current);
-      const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
+      const apply = button('Apply', () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length); // Label reflects the currently selected Fey/planar origin.
+      const updateApplyLabel = () => { apply.textContent = `${isFeyEnchantment(pick.value) ? 'Pretend to enchant' : 'Apply'} (${feyServicePrice(TUNING.APPLY_BASE_PRICE, isFeyEnchantment(pick.value))}g)`; };
+      pick.addEventListener('change', updateApplyLabel);
+      updateApplyLabel();
+      const controls = [pick, apply];
+      if (current) controls.push(button(`${isFeyEnchantment(current) ? 'Pretend to remove' : 'Remove'} (${feyServicePrice(TUNING.REMOVE_PRICE, isFeyEnchantment(current))}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('✦', `Base Enchantment ${i + 1}`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
     }
@@ -562,8 +625,12 @@
         .concat(unlocked.flourish.filter(entry => entry.slotId === slotId).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
-      const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
+      const apply = button('Apply', () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any); // Fey Flourishes use the same doubled fee and pretend label as Base magic.
+      const updateApplyLabel = () => { apply.textContent = `${isFeyEnchantment(pick.value) ? 'Pretend to enchant' : 'Apply'} (${feyServicePrice(TUNING.APPLY_FLOURISH_PRICE, isFeyEnchantment(pick.value))}g)`; };
+      pick.addEventListener('change', updateApplyLabel);
+      updateApplyLabel();
+      const controls = [pick, apply];
+      if (current) controls.push(button(`${isFeyEnchantment(current) ? 'Pretend to remove' : 'Remove'} (${feyServicePrice(TUNING.REMOVE_PRICE, isFeyEnchantment(current))}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('❋', `${esc(flourishTriggerLabel(slotId, selectedWeaponKey))} Flourish`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
     }
@@ -580,11 +647,12 @@
 
   function debugSnapshot() {
     return {
-      bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments) })),
+      bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, origin: entry.origin, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments, entry.origin) })),
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
+      feyQuest: window.FeyArmamentQuest?.debugSnapshot?.() || null, // Visible through the existing mobile artifact/enchanting diagnostics.
     };
   }
 

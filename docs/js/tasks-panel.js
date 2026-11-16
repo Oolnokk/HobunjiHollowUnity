@@ -170,6 +170,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     window.DelversGuild?.bindQuestDeps?.(injectedDeps); // Shares the live quest store with the Guild's three-key-stones story task.
+    window.FeyArmamentQuest?.bindQuestDeps?.(injectedDeps); // The knotwork investigation uses the same saved member Quest Log.
     _installBanditCampDangerSubtitle();
   }
 
@@ -342,7 +343,8 @@
             </div>
           `;
         } else if (task.kind === 'story') {
-          const live = task.provider === 'banubu' ? window.BanubuQuestline?.menuStatus?.() : null; // Optional live readiness comes from the same matcher that routes Banubu to his ready-to-turn-in dialogue.
+          const live = task.provider === 'banubu' ? window.BanubuQuestline?.menuStatus?.()
+            : task.provider === 'feyArmament' ? window.FeyArmamentQuest?.menuStatus?.() : null; // Story quest owners supply live readiness without changing saved stage data.
           const ready = live?.active ? !!live.ready : !!task.ready;
           const giver = task.npcName || 'Quest giver';
           row.innerHTML = `
@@ -351,7 +353,7 @@
               <div class="sh-name">${deps.esc(task.title || 'Quest')}</div>
               <div class="sh-desc">${deps.esc(live?.objective || task.objective || 'Continue the quest.')}</div>
               ${task.detail ? `<div class="sh-desc" style="margin-top:2px;">${deps.esc(task.detail)}</div>` : ''}
-              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
+              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${live?.statusText ? deps.esc(live.statusText) : ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
             </div>
           `;
         } else if (task.commission) {

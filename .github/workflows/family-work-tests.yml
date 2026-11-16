@@ -5,6 +5,10 @@ on:
     paths:
       - 'docs/game.js'
       - 'docs/js/romance-family.js'
+      - 'docs/js/farm-animals.js'
+      - 'docs/js/farm-panel-core.js'
+      - 'scripts/test-companion-equipment-opt-in.js'
+      - 'scripts/test-skeeri-livestock.js'
       - 'docs/js/npc-farm-plots.js'
       - 'docs/js/farm-plot-editor.js'
       - 'docs/js/dew-vats.js'
@@ -39,3 +43,8 @@ jobs:
         run: node scripts/test-family-harvest-quality.js
       - name: Vat quality and save-bound external workers
         run: node scripts/test-item-quality-and-blackout-wander.js
+
+      - name: Opt-in companion and Skeeri Stable regression tests
+        run: |
+          node scripts/test-companion-equipment-opt-in.js
+          node scripts/test-skeeri-livestock.js

@@ -1540,7 +1540,7 @@
       aiType: deps.companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
     };
     deps.getStable().push(entry);
-    // Collecting an animal grants ownership, never an automatic companion/mount/perch assignment.
+    // Newly stabled animals are owned but are never equipped automatically.
     deps.saveStable();
     return { ok: true, message: `${entry.name} added to your stable!`, entry };
   }

@@ -1585,8 +1585,8 @@
   }
   function _addToOwnStable(stabledEntry) {
     deps.getStable().push(stabledEntry);
-    const isBaby = stabledEntry.lifeStage === 'baby'; // Transferred babies still receive their naming prompt.
-    // Newly acquired adults also remain unequipped until selected in the Stable.
+    const isBaby = stabledEntry.lifeStage === 'baby'; // Babies still receive their naming prompt.
+    // Transferred animals remain unequipped until the player selects them.
     deps.saveStable();
     if (isBaby) window.AnimalBabyArrival?.requestName?.(stabledEntry, {
       scope: 'stable',
