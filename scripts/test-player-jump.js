@@ -74,9 +74,35 @@ assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY); // c
     Jump.platformSlabBlocksAt(raisedSlabs,x,z,half,worldY,half);
   assert.equal(probe(3.5*64,3.5*64,4),true,'standing on a raised jump slab no longer collides with its own top');
   assert.equal(probe(4.4*64,3.5*64,4),false,'a taller neighbouring slab still blocks walking through its side');
-  world.AreaFootprintBlockers.blocksBox = (_area,_x,_z,half,worldY) =>
-    worldY - half < 4; // Emulates a gallery-ring voxel floor touching the lower edge of the body.
-  assert.equal(probe(3.5*64,3.5*64,4),true,'the upper gallery floor does not immobilize its own walker');
+  const Hub = require('../docs/js/shaft-hub.js'); // The upper-ring regression uses real shaft voxel cells, not invented floor collision.
+  const hub = Hub.compose({seed:5,floors:2,chambers:false,wall:8,shaft:23,spacing:6,
+    traversal:'jumpPlatforms',entranceSide:'S',theme:'tothal',portals:[{floor:0,side:'N'}]});
+  assert(hub.ok && hub.stories[1].gallery.length>0,'a real upper gallery is generated for collision verification');
+  const gridLevel = hub.options.spacing; // The real upper-ring voxel layer, used to find its solid boundary and deck.
+  const directions = [[1,0],[-1,0],[0,1],[0,-1]]; // Four immediate neighbours used to locate a genuine adjacent wall.
+  const edge = hub.stories[1].gallery.map(cell => {
+    const offset = directions.find(([dx,dz]) => hub.grid.inBounds(cell.col+dx,cell.row+dz,gridLevel)
+      && hub.grid.isSolid(cell.col+dx,cell.row+dz,gridLevel));
+    return offset ? {cell,wall:{col:cell.col+offset[0],row:cell.row+offset[1]}} : null;
+  }).find(Boolean);
+  assert(edge,'an upper gallery abuts a real shaft wall');
+  const worldCell = cell => ({x:hub.grid.colToX(cell.col+.5),z:hub.grid.rowToZ(cell.row+.5)});
+  const deck = worldCell(edge.cell), wall = worldCell(edge.wall); // Both are tested at their physical world X/Z.
+  const deckY = hub.grid.levelToY(gridLevel); // Exact supported height above the ring's floor voxel.
+  const voxelStart = ruinSource.indexOf('  function shaftVoxelBlocksAt(');
+  const voxelEnd = ruinSource.indexOf('  function shaftBodyBlocksAt(',voxelStart);
+  assert(voxelStart>=0 && voxelEnd>voxelStart,'the real ruin voxel collider remains available for the regression');
+  const shaftVoxelBlocksAt = new Function('ruin','deps','window','MAP_ID',
+    ruinSource.slice(voxelStart,voxelEnd)+'\\nreturn shaftVoxelBlocksAt;')(
+      {shaftGrids:new Map([['shaft-hub',{grid:hub.grid}]])},
+      {getCurrentArea:()=> 'map_i_dev_random_ruin'},
+      {RuinLayerPlayable:{selectGrid:()=>hub.grid}},'map_i_dev_random_ruin');
+  assert(shaftVoxelBlocksAt(deck.x,deck.z,radius,deckY+.05-radius,deckY+.05+radius),
+    'the old feet-centred collision probe reproduces the upper-ring floor obstruction');
+  world.AreaFootprintBlockers.blocksBox = (_area,x,z,half,worldY) =>
+    shaftVoxelBlocksAt(x,z,half,worldY-half,worldY+half);
+  assert.equal(probe(deck.x*64,deck.z*64,deckY),true,'the corrected full movement probe clears the real upper-gallery deck');
+  assert.equal(probe(wall.x*64,wall.z*64,deckY),false,'real upper-gallery masonry remains impassable');
 }
 
 assert(ruinSource.includes('const freeJump=deps.player?._freeJump;'), 'native ruin floor reconciliation must honor airborne jump state');
