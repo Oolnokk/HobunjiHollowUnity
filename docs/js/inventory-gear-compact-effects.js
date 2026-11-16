@@ -14,7 +14,10 @@
   let inventoryMutationObserver = null; // Watches Gear rebuilds, item-detail changes, and readability-floor annotations.
   let fitQueued = false; // Coalesces rebuild/resize/orientation bursts into one presentation pass.
   let lastDebug = null; // Mobile-friendly snapshot of the latest workspace + item-detail fit.
-  const fitStats = { passes: 0, inactiveSkips: 0, ignoredMutations: 0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
+  let detailFitInvalidated = true; // Item-detail mutations, visibility changes, or resizes require a new measured font fit.
+  let lastFittedInfo = null; // The specific detail node whose most recent fit can be reused during left-rail updates.
+  let lastDetailFit = null; // Result reused when only the independent Gear summary/inventory changes.
+  const fitStats = { passes: 0, detailFits: 0, reusedDetailFits: 0, inactiveSkips: 0, ignoredMutations: 0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
 
   function installStyles() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -403,7 +406,7 @@
     resizeObserver?.disconnect?.();
     observedSection = workspace?.section || null;
     observedInfo = info || null;
-    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleFit) : null;
+    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(invalidateDetailFit) : null;
     [workspace?.section, workspace?.summary, workspace?.owned, info].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
   }
 
@@ -423,6 +426,9 @@
       // attached; the pane's Gear-mode class change schedules the next fit.
       fitStats.inactiveSkips++;
       hookResizeTargets(null, null);
+      lastFittedInfo = null;
+      lastDetailFit = null;
+      detailFitInvalidated = true; // Hidden Gear can change without tracked item-detail mutations; always fit on the next open.
       lastDebug = { version:VERSION, gearActive:false, workspaceReady:false };
       return lastDebug;
     }
@@ -430,20 +436,30 @@
     const workspace = ensureGearWorkspace();
     const info = document.getElementById('invInfo');
     hookResizeTargets(workspace, info);
-    const detailFit = fitInfoPanel(info);
+    if (detailFitInvalidated || info !== lastFittedInfo) {
+      lastDetailFit = fitInfoPanel(info);
+      lastFittedInfo = info;
+      detailFitInvalidated = false;
+      fitStats.detailFits++;
+    } else {
+      fitStats.reusedDetailFits++; // Rebuilding the left summary cannot change the independent right-panel font fit.
+    }
 
+    // Debug-only geometry measurements used to force a synchronous layout after
+    // every refresh. The on-demand snapshot reads them only when requested.
     lastDebug = {
       version:VERSION,
       gearActive:true,
       workspaceReady:!!workspace,
-      summaryScrollHeight:Number((workspace?.summary?.scrollHeight || 0).toFixed?.(2) || 0),
-      summaryClientHeight:Number((workspace?.summary?.clientHeight || 0).toFixed?.(2) || 0),
-      ownedClientHeight:Number((workspace?.owned?.clientHeight || 0).toFixed?.(2) || 0),
-      detailWidth:Number((info?.getBoundingClientRect?.().width || 0).toFixed?.(2) || 0),
-      detailFit,
+      detailFit:lastDetailFit,
       viewport:[window.innerWidth || 0, window.innerHeight || 0],
     };
     return lastDebug;
+  }
+
+  function invalidateDetailFit() {
+    detailFitInvalidated = true;
+    scheduleFit();
   }
 
   function scheduleFit() {
@@ -475,8 +491,17 @@
         // child change is relevant because it can replace either region.
         return target === pane || !!target?.closest?.('#invEquipSection, #invInfo');
       }));
-      if (relevant) scheduleFit();
-      else fitStats.ignoredMutations += records.length;
+      if (relevant) {
+        if (visibilityChanged || records.some((record) => {
+          const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+          // Direct pane replacements can swap the info node; other left-rail
+          // mutations only need workspace maintenance, not font measurement.
+          return (record.type === 'childList' && target === pane)
+            || target === document.getElementById('invInfo')
+            || !!target?.closest?.('#invInfo');
+        })) detailFitInvalidated = true;
+        scheduleFit();
+      } else fitStats.ignoredMutations += records.length;
     });
     const menu = document.getElementById('menuPanel'); // Closing/reopening the opacity-hidden menu must also release/restart Gear fitting.
     menu && inventoryMutationObserver.observe(menu, { attributes:true, attributeFilter:['class'] });
@@ -487,16 +512,31 @@
       attributes:true,
       attributeFilter:['class','data-menu-font-floor'],
     });
-    window.addEventListener?.('resize', scheduleFit, { passive:true });
-    window.addEventListener?.('orientationchange', scheduleFit, { passive:true });
+    window.addEventListener?.('resize', invalidateDetailFit, { passive:true });
+    window.addEventListener?.('orientationchange', invalidateDetailFit, { passive:true });
     scheduleFit();
   }
 
   function debugSnapshot() {
-    return { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } };
+    const snapshot = { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } };
+    if (snapshot.gearActive) {
+      const summary = observedSection?.querySelector?.('.gear-summary-panel');
+      const owned = observedSection?.querySelector?.('.gear-middle-inventory');
+      const info = observedInfo;
+      snapshot.summaryScrollHeight = Number((summary?.scrollHeight || 0).toFixed?.(2) || 0);
+      snapshot.summaryClientHeight = Number((summary?.clientHeight || 0).toFixed?.(2) || 0);
+      snapshot.ownedClientHeight = Number((owned?.clientHeight || 0).toFixed?.(2) || 0);
+      snapshot.detailWidth = Number((info?.getBoundingClientRect?.().width || 0).toFixed?.(2) || 0);
+    }
+    return snapshot;
   }
 
-  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh:refreshPresentation, debugSnapshot });
+  function refresh() {
+    refreshPresentation();
+    return debugSnapshot(); // Explicit developer refresh retains the old measured diagnostics.
+  }
+
+  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh, debugSnapshot });
   window.__inventoryGearCompactEffectsDebug = debugSnapshot;
 
   if (typeof document !== 'undefined') {
