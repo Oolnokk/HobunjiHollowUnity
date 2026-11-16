@@ -33,6 +33,7 @@
     ['Hold Q', 'Item wheel'],
     ['X', 'Climb / cliff-dive the wall ahead, otherwise dodge'],
     ['Z', 'Put away held equipment'],
+    ['Alt + P', 'Dequip / re-equip your shoulder pet'],
     ['Esc / Tab', 'Open or close the menu'],
     ['F1 / ?', 'This cheat sheet'],
     ['H', 'Message log'],
@@ -245,8 +246,17 @@
   // ── Key handling ────────────────────────────────────────────────────────
   // Returns true when the event was consumed.
   function handleKey(event) {
-    if (!event || event.ctrlKey || event.altKey || event.metaKey) return false;
+    if (!event) return false;
     if (rebindingInProgress()) return false;
+    // Alt+P: shoulder pet dequip/re-equip. Alt combos are otherwise ignored here,
+    // and a plain P stays the Progress tab.
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.code === 'KeyP') {
+      if (deps.isBlocked?.() || !deps.toggleShoulderPet) return false;
+      event.preventDefault();
+      if (!event.repeat) deps.toggleShoulderPet();
+      return true;
+    }
+    if (event.ctrlKey || event.altKey || event.metaKey) return false;
     if (event.code === 'F1' || (event.key === '?' && !boundToGameplayAction(event.code))) {
       event.preventDefault();
       if (!event.repeat) toggle('help');

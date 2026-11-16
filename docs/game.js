@@ -190,7 +190,17 @@
       // Menu-tab letter hotkeys (M/I/K/J/N/P/L/O), the F1 controls cheat
       // sheet and the H message log live in js/qol-hotkeys.js
       // (window.QolHotkeys); the keydown handler below forwards to it.
+      // Alt+P shoulder pet dequip/re-equip lives in js/shoulder-pet-toggle.js.
+      window.ShoulderPetToggle?.init({
+        getStable: () => stable,
+        getActiveId: () => activeShoulderPetId,
+        setActiveId: id => { activeShoulderPetId = id; },
+        saveStable: () => saveStable(),
+        stableEntryRole: entry => window.CreatureGenetics.stableEntryRole(entry),
+        showToast: (msg, ok, silent) => showToast(msg, ok, silent),
+      });
       window.QolHotkeys.init({
+        toggleShoulderPet: () => window.ShoulderPetToggle?.toggle(),
         openMenu: panel => openMenu(panel),
         closeMenu: () => closeMenu(),
         switchMenuPanel: panel => switchMenuPanel(panel),
