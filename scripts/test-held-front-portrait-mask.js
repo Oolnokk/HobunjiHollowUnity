@@ -204,6 +204,7 @@ runtime.setPetForeground([]);
 delete petBack.userData.hobunjiShoulderPetStencilForeground;
 delete petSplitBack.userData.hobunjiShoulderPetStencilForeground;
 petRoot.userData.hobunjiShoulderPetLayering.active=false;
+activePetRoot = null; // The composer no longer registers a detached pet as an external player root.
 const behindAssigned=runtime.assignPortraitStencilOwners([playerWeapon],bothFaces,scene);
 assert.equal(behindAssigned.portraits.length,1,'detached pet cannot erase owner-held tool pixels');
 
