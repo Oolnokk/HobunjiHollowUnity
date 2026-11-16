@@ -211,8 +211,9 @@ assert.equal(win.Mounts.ridingDebug.wheatRemaining, 5, 'duplicate press is debou
 now += 300;
 boost.onPress(); now += 300; boost.onPress(); now += 300; boost.onPress();
 assert.equal(win.Mounts.ridingDebug.wheatRemaining, 2, 'each genuine additional press uses exactly one charge');
+const beforeBindingJump = win.Mounts.ridingDebug.manualJumps; // A bound press must add one hop regardless of earlier regression jumps.
 jump.onPress();
-assert.equal(win.Mounts.ridingDebug.manualJumps, 1, 'jump binding initiates a manual mounted hop');
+assert.equal(win.Mounts.ridingDebug.manualJumps, beforeBindingJump + 1, 'jump binding initiates a manual mounted hop');
 for (let i = 0; i < 340; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
 assert(breaths > 0, 'partially spent wheat produces periodic species exertion calls');
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'manual hop finishes and clears its visual arc');
