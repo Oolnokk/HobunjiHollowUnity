@@ -180,7 +180,7 @@ const configManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/combat-
 const configLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskCoverage4'),
   'game parser must invalidate its cached combat bootstrap when shoulder-pet integration changes');
-assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMask132b'),
+assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMaskCoverage4'),
   'game combat bootstrap must load the audited shoulder-pet bridge, not its prior cached implementation');
 const farmManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/farm-buildings.js', 'utf8');
 const troughs = fs.readFileSync('docs/js/farm-troughs.js', 'utf8');
