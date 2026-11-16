@@ -129,6 +129,10 @@
   let _ignoredFarmLayoutBackupFiles = []; // Exposes version-copy filenames in existing mobile save diagnostics.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
+  let _committedFileState = null; // Per-file content fingerprints and timestamps used to skip unchanged canonical writes.
+  let _lastManifestStamp = null; // The completed manifest must still be present before a no-op autosave is permitted.
+  let _lastSaveWork = { written: 0, unchanged: 0 }; // File-level save counts exposed in mobile diagnostics.
+  let _unchangedAutosavesSkipped = 0; // Automatic saves avoided because captured live data did not change.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
   let _recoveryHandleFresh = false; // True only after a current-session user gesture supplies a new directory handle specifically safe to probe for recovery.
   const _listeners = new Set();
@@ -150,6 +154,8 @@
       backgroundSyncQueued: _backgroundSyncQueued,
       dataLossRisk: _lastDataLossRisk,
       patternMirror: _lastPatternMirror,
+      saveFileWork: { ..._lastSaveWork },
+      unchangedAutosavesSkipped: _unchangedAutosavesSkipped,
       browserMirrorWarning: _lastBrowserMirrorWarning || null,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
       recoveryHandleFresh: _recoveryHandleFresh,
@@ -372,14 +378,139 @@
     return result;
   }
 
-  async function writeEntities(dirName, entities, nameField) {
+
+  function fileKey(dirName, filename) {
+    return dirName + '/' + filename;
+  }
+
+  // Avoid pinning full copies of large JSON files in RAM between saves.
+  function contentFingerprint(raw) {
+    let a = 2166136261, b = 0x9e3779b9;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw.charCodeAt(i);
+      a = Math.imul(a ^ ch, 16777619);
+      b = Math.imul(b ^ ch, 2246822519);
+    }
+    return raw.length + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+  }
+
+  function diskStamp(file) {
+    return Number.isFinite(file?.size) && Number.isFinite(file?.lastModified)
+      ? { size: file.size, modified: file.lastModified } : null;
+  }
+
+  function sameDiskStamp(a, b) {
+    return !!a && !!b && a.size === b.size && a.modified === b.modified;
+  }
+
+  // Full and incremental saves serialize one entity at a time. Fingerprint
+  // comparisons retain only short hashes, not duplicate multi-MB JSON strings.
+  function prepareChangedFiles(meta, layouts) {
+    if (!_committedFileState) return null;
+    const digests = new Map(); // Expected canonical filenames and content fingerprints, including deletion detection.
+    let changed = false; // True if any canonical file's JSON changed or its filename is new.
+    const visit = (dirName, filename, value) => {
+      const key = fileKey(dirName, filename);
+      const raw = JSON.stringify(value);
+      const digest = contentFingerprint(raw);
+      digests.set(key, digest);
+      if (_committedFileState.get(key)?.digest !== digest) changed = true;
+    };
+    for (const character of meta.characters || []) {
+      if (character?.id) visit(CHARACTERS_DIR, slugify(character.nickname) + '-' + character.id + '.json', character);
+    }
+    for (const world of meta.worlds || []) {
+      if (world?.id) visit(WORLDS_DIR, slugify(world.label) + '-' + world.id + '.json', world);
+    }
+    for (const world of meta.worlds || []) {
+      if (!world?.id || !Object.prototype.hasOwnProperty.call(layouts, world.id)) continue;
+      visit(FARM_LAYOUTS_DIR, farmLayoutFilename(world.id), { worldId: world.id, layout: layouts[world.id] });
+    }
+    return { digests, changed: changed || digests.size !== _committedFileState.size };
+  }
+
+  async function writeTrackedFile(dirHandle, dirName, filename, payload, delta, next, work) {
+    const key = fileKey(dirName, filename);
+    const old = _committedFileState?.get(key);
+    const digest = delta?.digests.get(key);
+    // Changed payloads are serialized only when written; no full JSON buffer
+    // survives the delta scan while disk safety guards perform asynchronous I/O.
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    if (old && digest === old.digest && old.stamp) {
+      // A deleted or externally modified disk file cannot be called saved just
+      // because the browser's copy has not changed.
+      let stamp = null;
+      try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
+      if (sameDiskStamp(stamp, old.stamp)) {
+        next.set(key, old);
+        work.unchanged++;
+        return;
+      }
+    }
+    const raw = JSON.stringify(payload); // Only the single file currently being committed occupies a JSON string.
+    const actualDigest = contentFingerprint(raw); // The catalog must describe bytes committed, never an earlier mutable snapshot.
+    if (digest !== undefined && actualDigest !== digest) {
+      throw new Error('Save snapshot changed during the folder write. Retry with a stable snapshot.');
+    }
+    const writable = await fileHandle.createWritable();
+    await writable.write(raw);
+    await writable.close();
+    let stamp = null;
+    try { stamp = diskStamp(await fileHandle.getFile()); } catch {}
+    next.set(key, { digest: actualDigest, stamp });
+    work.written++;
+  }
+
+  // A fast metadata pass is sufficient only for known, untouched farm files.
+  // Unexpected/edited files fall back to the full JSON integrity check.
+  async function canonicalFilesUnmodified() {
+    if (!_committedFileState || !_lastManifestStamp) return false;
+    // A no-op save is safe only if every canonical disk file remains present
+    // and unchanged. On browsers without file timestamps we take the normal
+    // guarded write path rather than trusting a stale in-memory fingerprint.
+    try {
+      const manifestHandle = await _handle.getFileHandle(MANIFEST_FILE_NAME); // Missing or externally changed manifest invalidates no-op autosaves.
+      if (!sameDiskStamp(_lastManifestStamp, diskStamp(await manifestHandle.getFile()))) return false;
+      for (const [key, previous] of _committedFileState) {
+        if (!previous.stamp) return false;
+        const separator = key.indexOf('/');
+        if (separator < 0) return false;
+        const directory = await _handle.getDirectoryHandle(key.slice(0, separator));
+        const handle = await directory.getFileHandle(key.slice(separator + 1));
+        if (!sameDiskStamp(previous.stamp, diskStamp(await handle.getFile()))) return false;
+      }
+      return true;
+    } catch { return false; }
+  }
+
+  async function farmLayoutFilesUnmodified() {
+    if (!_committedFileState) return false;
+    const expected = new Map([..._committedFileState].filter(([key]) => key.startsWith(FARM_LAYOUTS_DIR + '/')));
+    let dirHandle;
+    try { dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR); }
+    catch { return expected.size === 0; }
+    const seen = new Set(); // Canonical layout files verified against the last completed folder write.
+    try {
+      for await (const [name, entry] of dirHandle.entries()) {
+        if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue;
+        if (_ignoredFarmLayoutBackupFiles.includes(name)) continue;
+        const key = fileKey(FARM_LAYOUTS_DIR, name);
+        const stamp = expected.get(key)?.stamp;
+        if (!stamp || !sameDiskStamp(stamp, diskStamp(await entry.getFile()))) return false;
+        seen.add(key);
+      }
+    } catch { return false; }
+    return seen.size === expected.size;
+  }
+
+  async function writeEntities(dirName, entities, nameField, delta, next, work) {
     const dirHandle = await _handle.getDirectoryHandle(dirName, { create: true });
     const keep = new Set();
     for (const entity of entities) {
       if (!entity?.id) continue;
       const filename = `${slugify(entity[nameField])}-${entity.id}.json`;
       keep.add(filename);
-      await writeJsonFile(dirHandle, filename, entity);
+      await writeTrackedFile(dirHandle, dirName, filename, entity, delta, next, work);
     }
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind === 'file' && !keep.has(name)) {
@@ -511,7 +642,7 @@
     return snapshot;
   }
 
-  async function readFolderFarmLayouts(validWorldIds = null) {
+  async function readFolderFarmLayouts(validWorldIds = null, { canonicalOnly = false } = {}) {
     const layouts = {};
     const corruptFiles = [];
     const backupFiles = []; // Noncanonical JSON filenames are recovery copies, never competing live layouts.
@@ -521,8 +652,11 @@
     catch { return { layouts, corruptFiles, backupFiles, missingCanonicalBackups }; }
 
     const backupsByWorld = new Map(); // Used after enumeration to tell harmless backups from missing canonical files.
+    const canonicalNames = canonicalOnly && validWorldIds
+      ? new Set([...validWorldIds].map(farmLayoutFilename)) : null; // On write checks, inspect only authoritative files, not gigabytes of numbered backups.
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue;
+      if (canonicalNames && !canonicalNames.has(name)) continue; // Recovery copies are still fully scanned by folder import and diagnostics.
       try {
         const payload = JSON.parse(await (await entry.getFile()).text());
         if (!payload || typeof payload.worldId !== 'string' || !payload.worldId || !payload.layout || typeof payload.layout !== 'object' || Array.isArray(payload.layout)) {
@@ -552,7 +686,7 @@
     return { layouts, corruptFiles, backupFiles, missingCanonicalBackups };
   }
 
-  async function writeFarmLayouts(meta, layouts) {
+  async function writeFarmLayouts(meta, layouts, delta, next, work) {
     const dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR, { create: true });
     const worldIds = new Set((meta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
     const keep = new Set();
@@ -562,16 +696,21 @@
       if (!Object.prototype.hasOwnProperty.call(layouts, worldId)) continue;
       const filename = farmLayoutFilename(worldId);
       keep.add(filename);
-      await writeJsonFile(dirHandle, filename, { worldId, layout: layouts[worldId] });
+      await writeTrackedFile(dirHandle, FARM_LAYOUTS_DIR, filename, { worldId, layout: layouts[worldId] }, delta, next, work);
       written++;
     }
 
-    for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind !== 'file' || keep.has(name)) continue;
-      try {
-        const payload = JSON.parse(await (await entry.getFile()).text());
-        if (payload?.worldId && !worldIds.has(String(payload.worldId))) await dirHandle.removeEntry(name);
-      } catch { /* preserve unreadable files for recovery */ }
+    // Only remove canonical layouts for worlds this folder previously owned.
+    // Never parse every version-copy / recovery JSON on each autosave: a folder
+    // containing many large "world(1).json" backups otherwise rereads them all.
+    const oldWorldIds = (_lastKnownFolderMeta?.worlds || []).map(world => world?.id).filter(Boolean); // Last accepted folder snapshot, not arbitrary filenames.
+    for (const oldId of oldWorldIds) {
+      if (worldIds.has(String(oldId))) continue;
+      const filename = farmLayoutFilename(oldId); // Known canonical name; versioned recovery copies are intentionally retained.
+      if (keep.has(filename)) continue;
+      try { await dirHandle.removeEntry(filename); } catch (error) {
+        if (error?.name !== 'NotFoundError') throw error; // Unexpected disk errors still fail the canonical save.
+      }
     }
     return written;
   }
@@ -675,8 +814,14 @@
     return folder;
   }
 
-  function farmLayoutFingerprint(layouts) {
-    return JSON.stringify(Object.keys(layouts || {}).sort().map(id => [id, layouts[id]])); // Stable across directory iteration order and JSON formatting.
+  function farmLayoutFingerprint(layouts, fileState = null) {
+    // Keep only compact, ordered fingerprints, not a second full-size JSON
+    // mirror of every farm in memory between saves.
+    return JSON.stringify(Object.keys(layouts || {}).sort().map(id => {
+      const entry = fileState?.get(fileKey(FARM_LAYOUTS_DIR, farmLayoutFilename(id)));
+      const committedDigest = typeof entry === 'string' ? entry : entry?.digest; // Successful writer can reuse its already-calculated file digest.
+      return [id, committedDigest || contentFingerprint(JSON.stringify({ worldId: id, layout: layouts[id] }))];
+    }));
   }
 
   function folderFarmLayoutsDiffer(folderMeta, browserLayouts, folderLayouts) {
@@ -719,6 +864,26 @@
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
+      const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
+      if (automatic && !force && recoveryKind === 'auto' && delta && !delta.changed && !_lastError
+        && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
+        _lastSaveWork = { written: 0, unchanged: delta.digests.size };
+        _unchangedAutosavesSkipped++;
+        _lastAction = 'autosync-skipped-unchanged';
+        // Browser edits can arrive while the disk metadata checks await I/O.
+        // Don't hide them by replacing the change poll baseline silently.
+        const browserChangedWhileChecking = Array.isArray(saveSnapshot.browserBaselineParts)
+          ? !browserFingerprintMatches(window.HobunjiSaveSnapshot?.browserCacheParts?.(), saveSnapshot.browserBaselineParts)
+          : saveSnapshot.browserBaselineFingerprint !== undefined
+            && window.HobunjiSaveSnapshot?.fingerprint?.() !== saveSnapshot.browserBaselineFingerprint;
+        _lastObservedFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
+        if (browserChangedWhileChecking && _autoSyncArmed) {
+          _lastBrowserMirrorWarning = 'Primary folder unchanged; newer browser changes made during the disk check were queued for saving.';
+          scheduleChangeSync(); // Save the new data instead of treating the stale snapshot as the last version.
+        }
+        notify();
+        return getStatus(); // Do not churn manifest, canonical files, browser mirrors or recovery checkpoints.
+      }
 
       if (!force) {
         const risk = describeDataLossRisk(_lastKnownFolderMeta, meta);
@@ -730,8 +895,23 @@
           return getStatus();
         }
         if (_lastKnownFarmLayoutFingerprint !== null) {
-          const disk = await readFolderFarmLayouts(new Set((meta.worlds || []).map(world => world?.id).filter(Boolean))); // Compare only canonical layout names.
+          // Only a true no-op may use file timestamps. Any save that writes
+          // bytes must compare the complete canonical farm content, including
+          // same-size edits with preserved timestamps from external restores.
+          const guardWorldIds = new Set([...(meta.worlds || []), ...(_lastKnownFolderMeta?.worlds || [])]
+            .map(world => world?.id).filter(Boolean)); // Deleted worlds remain in the baseline until this write intentionally removes them.
+          const disk = await readFolderFarmLayouts(guardWorldIds, { canonicalOnly: true });
           const diskFingerprint = farmLayoutFingerprint(disk.layouts);
+          const incomingWorldIds = new Set((meta.worlds || []).map(world => world?.id).filter(Boolean)); // Worlds expected to survive this save.
+          const missingIncomingLayouts = Object.keys(disk.layouts).filter(id =>
+            incomingWorldIds.has(id) && !Object.prototype.hasOwnProperty.call(farmLayouts, id)); // Reject missing browser mirrors instead of advancing the manifest without the existing farm.
+          if (missingIncomingLayouts.length) {
+            _lastDataLossRisk = 'browser snapshot is missing the existing disk farm layout for ' + missingIncomingLayouts.join(', ');
+            _lastError = 'Skipped folder save: ' + _lastDataLossRisk + '. Load from Folder or restore the missing layout before saving.';
+            _lastAction = automatic ? 'autosync-blocked-missing-layout' : 'save-blocked-missing-layout';
+            notify();
+            return getStatus();
+          }
           if (disk.corruptFiles.length || disk.missingCanonicalBackups.length || diskFingerprint !== _lastKnownFarmLayoutFingerprint) {
             _lastDataLossRisk = disk.corruptFiles.length
               ? 'farm-layout files on disk are unreadable'
@@ -756,10 +936,12 @@
 
       _lastDataLossRisk = null;
 
-      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
-      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
-      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
-      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts); // A successful write becomes the next external-edit baseline.
+      const nextFiles = new Map(); // The new per-file baseline is published only after the canonical commit succeeds.
+      const work = { written: 0, unchanged: 0 }; // Last save's filesystem work, visible without developer tools.
+      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname', delta, nextFiles, work);
+      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label', delta, nextFiles, work);
+      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts, delta, nextFiles, work);
+      _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(farmLayouts, nextFiles); // A successful write becomes the next external-edit baseline.
       _folderSupportsFarmLayouts = true;
 
       // Custom pattern PNGs are stored outside character/world JSON. Mirror every
@@ -785,6 +967,10 @@
       });
       try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
 
+      _committedFileState = nextFiles;
+      try { _lastManifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile()); }
+      catch { _lastManifestStamp = null; }
+      _lastSaveWork = work;
       _lastKnownFolderMeta = meta;
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
@@ -820,6 +1006,8 @@
       }
 
     } catch (error) {
+      _committedFileState = null; // A partial file write cannot authorize later no-op saves.
+      _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
     }
@@ -848,6 +1036,8 @@
     }
 
     try {
+      _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
+      _lastManifestStamp = null;
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
         _lastAction = 'initialized-empty-folder';
@@ -988,6 +1178,8 @@
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       _handle = handle;
+      _committedFileState = null; // Do not reuse signatures from another save folder.
+      _lastManifestStamp = null;
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
@@ -1020,6 +1212,8 @@
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Use the same minimal picker invocation as the proven normal folder chooser; no stale-handle-derived options or recovery-specific picker state.
       _handle = handle;
+      _committedFileState = null; // Recovery-only folder switches also invalidate the old primary save's file catalog.
+      _lastManifestStamp = null; // The new folder cannot inherit the previous folder's verified manifest.
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
@@ -1059,6 +1253,8 @@
       const granted = await ensurePermission(_handle, true);
       _state = granted ? 'ready' : 'needs-permission';
       stopAutoSync();
+      _committedFileState = null; // Reconnection may follow external changes during a permissions gap.
+      _lastManifestStamp = null;
       if (granted) {
         await inspectConnectedFolder();
         _lastAction = 'permission-restored-awaiting-choice';
@@ -1087,6 +1283,9 @@
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
     _lastKnownFarmLayoutFingerprint = null;
+    _committedFileState = null;
+    _lastManifestStamp = null;
+    _lastSaveWork = { written: 0, unchanged: 0 };
     _ignoredFarmLayoutBackupFiles = [];
     _lastDataLossRisk = null;
     _lastPatternMirror = null;
