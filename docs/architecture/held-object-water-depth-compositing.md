@@ -201,9 +201,13 @@ on both success and a thrown render.
 
 The optional floor exception now uses a **filled circle in world X/Z**, rather
 than a square of nearby tiles. The shipped authored radius of one tile on each
-side corresponds to a 1.5-world-unit circle, preserving the previous three-tile
-diameter without snapping its center to a grid corner. The shader checks the
-squared distance of each eligible ground fragment to the actor's world X/Z,
+side corresponds to a **minimum** 1.5-world-unit circle. On a held-object
+replay the radius grows only as needed to contain the live world-space X/Z
+bounds of the actor's equipped weapon, rope, head and other held parts, with
+a small allowance for pose motion. This avoids a hard line of terrain
+occlusion when a swing leaves the base circle. The same elevation and material
+classification restrictions still apply outside that original radius.
+The shader checks the squared distance of each eligible ground fragment to the actor's world X/Z,
 after applying the existing standing-elevation and upward-floor-face tests.
 Actual 3D geometry, walls, raised floors, water, snow and grass billboards
 continue to follow their own physical depth rules.
@@ -211,13 +215,16 @@ continue to follow their own physical depth rules.
 The existing per-tile lookup remains only a CPU batching index: characters
 standing at different coordinates inside one tile have separate circle centers.
 Both the standard clear-and-rebuild pass and stencil floor-punch use the same
-circle centers. The patch-refill cull uses a conservative bounding square plus
-the existing margin; it is an optimization, not the visible boundary.
+circle centers **and per-actor squared radii**, including wet/dry subdivisions.
+The patch-refill cull uses each circle's effective bounds plus the existing
+margin; it is an optimization, not the visible boundary. The shader retains
+the existing eight-actor batch budget.
 
 Dev Companion → X-ray and layer compositing → **Show ground X-ray circle in the
 world** toggles a translucent filled disc and rim at the player's standing
-elevation. That geometry is created lazily, follows the player, and is removed
-when disabled or when switching scenes. It does not write depth and cannot
+elevation. It shows the most recent frame's effective player radius,
+including the reach of an extended swing. That geometry is created lazily,
+follows the player, and is removed when disabled or when switching scenes. It does not write depth and cannot
 change the X-ray mask. This switch is a developer-only browser override, not
 part of save data.
 
