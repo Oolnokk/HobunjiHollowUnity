@@ -211,6 +211,7 @@ console.log('Baby animal authored-head warp integration and pixel tests passed.'
   const decoratedIdle = { width, height, data: decorated };
   const established = await api.ensureIdleMask('grehlr', decoratedIdle);
   assert(established && established.opaquePixels === 16, 'only the original base IDLE opaque pixels establish the shared mask');
+  assert.equal(established.sourceLabel, 'unmodified-base-idle-png', 'species masks must record that the authoritative sprite was used');
   assert.equal(requested.length, 1, 'load the base idle PNG exactly once');
   assert.equal(requested[0].mode, 'anonymous', 'CORS mode precedes base idle PNG source assignment');
   assert.match(requested[0].url, /grehlr_idle\.png$/, 'the source is always the idle sprite, not a running frame');
