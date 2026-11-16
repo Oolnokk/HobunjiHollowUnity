@@ -28,7 +28,7 @@
     "js/combat/combat-flurry.js?v=20261106trinkets20",
     "js/combat/combat-loadout-ui.js?v=20261110tzkFortune1",
     "js/combat/combat-enchantments.js?v=20261116fey1",
-    "js/combat/fey-illusions.js?v=20261116fey1",
+    "js/combat/fey-illusions.js?v=20261116feyAudited2",
     "js/combat/weapon-enchantment-vfx.js?v=20261116feyFireflies2",
     "js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"
 ]; // Versioned modules evaluated before gameplay boot.
