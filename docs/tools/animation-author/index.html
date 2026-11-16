@@ -1424,6 +1424,15 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   } finally { clearTimeout(timeout); }
 }
 
+function boundedEditorLoad(promise, stage, timeoutMs = 120000) {
+  let deadline; // Clears the browser-visible startup timeout once this awaited stage resolves.
+  const expired = new Promise((_, reject) => {
+    deadline = setTimeout(() => reject(new Error(stage + ' exceeded ' + Math.ceil(timeoutMs / 1000)
+      + 's. Open Diagnostics → Copy for the latest completed stage.')), timeoutMs);
+  });
+  return Promise.race([Promise.resolve(promise), expired]).finally(() => clearTimeout(deadline));
+}
+
 async function resolveCommit(settings) {
   const api = `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/commits/${encodeURIComponent(settings.ref)}`;
   try {
@@ -2772,7 +2781,7 @@ async function loadSource(settings = settingsFromInputs()) {
 
     setStatus('Loading portrait runtime…', 'warn');
     showOverlay('Loading portrait runtime', 'Fetching the same shared scripts used by the Character Studio.', true);
-    await loadRepositoryRuntime(settings);
+    await boundedEditorLoad(loadRepositoryRuntime(settings), 'Repository portrait runtime', 120000);
 
     setStatus('Loading NPC database…', 'warn');
     showOverlay('Loading NPC database', settings.dbPath, true);
@@ -2784,8 +2793,13 @@ async function loadSource(settings = settingsFromInputs()) {
     state.selectedNpc = null;
     updateSourceDetails(settings);
     renderNpcList();
-    if (window.MultiAvatarAnimationAuthor?.repositoryReady) await window.MultiAvatarAnimationAuthor.repositoryReady();
-    else await selectNpc(state.npcs[0]);
+    setStatus('Preparing animation workspace and previews…', 'warn');
+    showOverlay('Preparing animation workspace', 'Loading the animation catalog and the initial preview. Diagnostics → Copy shows completed stages.', true);
+    if (window.MultiAvatarAnimationAuthor?.repositoryReady) {
+      await boundedEditorLoad(window.MultiAvatarAnimationAuthor.repositoryReady(), 'Animation workspace / initial preview', 120000);
+    } else {
+      await boundedEditorLoad(selectNpc(state.npcs[0]), 'Initial NPC preview', 60000);
+    }
     $('repoSettings').open = false;
     setStatus(`Loaded ${state.npcs.length} NPCs · ${compactSha(state.resolvedSha)}`, 'good');
   } catch (error) {
