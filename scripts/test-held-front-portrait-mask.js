@@ -290,11 +290,12 @@ assert.equal(overflow.portraits.length,63,'excess portraits are excluded instead
 assert.equal(overflow.gearIds.size,63,'excess weapons safely retain original rendering without accidental NPC masking');
 
 // Execute the actual Three sort transaction with opposite plane-center depths.
-const portraitOrder = new Function('THREE', 'forEachMaterial', 'xrayRule', 'window', 'isPresentationBackdrop', 'surfaceKindForObject', [
+const portraitOrder = new Function('THREE', 'forEachMaterial', 'xrayRule', 'window', 'isPresentationBackdrop', 'surfaceKindForObject',
+  'shoulderPetPresentation', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces', [
   section('  const portraitSortPoint = ', '  function assignPortraitStencilOwners('),
   'return { comparePortraitDraws, withPortraitDrawOrder };',
 ].join('\n'))({ Vector3: class {} }, (material, fn) => fn(material),
-  () => 'off', {}, () => false, () => 'solid'); // Native portrait order stays unchanged unless the Dev Companion explicitly enables manual ranks.
+  () => 'off', {}, () => false, () => 'solid', null, () => null, () => 0); // Native portrait order stays unchanged unless the Dev Companion explicitly enables manual ranks.
 const fogged = { depthWrite: true }, nearby = { depthWrite: true };
 const npcDraw = { object: { material: fogged }, groupOrder: 0, renderOrder: 2, z: .1, id: 30 };
 const playerDraw = { object: { material: nearby }, groupOrder: 0, renderOrder: 4, z: .8, id: 31 };
