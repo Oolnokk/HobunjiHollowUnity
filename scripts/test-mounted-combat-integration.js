@@ -208,12 +208,19 @@ assert.equal(windupBoosts.at(-1).spentFraction, 0, 'no free speed at the start o
 const chargedPaymentsBefore = staminaSpent.length; // Existing cost begins only at release-ready pose.
 chargePose = 0.4;
 heavy.onHoldUpdate({}, 0.1);
-assert.equal(staminaSpent.length, chargedPaymentsBefore, 'unready hold spends no stamina');
-assert.equal(windupBoosts.at(-1).spentFraction, 0, 'unpaid hold cannot accelerate the mount');
+assert(staminaSpent.length > chargedPaymentsBefore, 'mounted hold begins spending stamina before its release-ready pose');
+const earlyFunded = windupBoosts.at(-1).spentFraction; // Actual payment drives speed, not a hidden clock.
+assert(earlyFunded > 0 && earlyFunded < 0.5, 'unready paid windup gains only a partial speed');
+chargePose = 0.47;
+heavy.onHoldUpdate({}, 0.1);
+const justBeforeReady = windupBoosts.at(-1).spentFraction; // No first-ready 24-stamina jump.
+chargePose = 0.49;
+heavy.onHoldUpdate({}, 0.1);
+assert(windupBoosts.at(-1).spentFraction - justBeforeReady < 0.1, 'threshold crossing must not jump charge speed');
 chargePose = 0.57;
 heavy.onHoldUpdate({}, 0.1);
 const initialFunded = windupBoosts.at(-1).spentFraction; // Compare paid progress, not visual clock.
-assert(initialFunded > 0 && initialFunded < 1, 'partial cost grants partial speed');
+assert(initialFunded > earlyFunded && initialFunded < 1, 'further stamina expenditure accelerates mounted charge');
 assert(windupBoosts.at(-1).multiplier > 3, 'heavy lunge mastery raises mounted speed ceiling');
 chargePose = 0.8;
 heavy.onHoldUpdate({}, 0.1);
@@ -225,6 +232,12 @@ assert.equal(strikes.length, heavyStagesBefore + 1, 'release still schedules rea
 assert.equal(windupBoosts.length, boostsBeforeHeavyRelease, 'release never launches a fresh speed boost');
 assert.equal(windupClears.at(-1), 'mountedCharge', 'release clears windup speed for strike');
 assert.equal(lunges, 0, 'mounted heavy never starts rider lunge');
+const damageBeforeLateDismount = hits.length; // A valid release may still lose its mount before its strike frame.
+riding = 'none';
+strikes[heavyStagesBefore].onStrike();
+strikes[heavyStagesBefore].onComplete?.();
+assert.equal(hits.length, damageBeforeLateDismount, 'dismount between release and strike suppresses damage');
+riding = 'mounted';
 
 heavy.onHoldStart();
 assert.equal(regenBlocked, true);

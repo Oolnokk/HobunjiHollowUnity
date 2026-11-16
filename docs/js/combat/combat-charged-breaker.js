@@ -136,12 +136,16 @@
     window.Combat.weaponChargeGlow?.clear?.('chargedBreaker');
   }
 
-  function chargeCostForPose(poseCharge, staminaCostMul = 1) {
-    const pose = clamp01(poseCharge); // Visible pose percentage is the same progress axis used by the interruptible total-cost curve.
-    if (pose < MIN_READY_POSE) return 0; // Before the first releasable frame, there is no attack cost.
-    const readyProgress = clamp01((pose - MIN_READY_POSE) / Math.max(1e-6, 1 - MIN_READY_POSE)); // Only the releasable segment has a cost.
-    const multiplier = Number(staminaCostMul); // Used by both melee and thrown holds to apply progression modifiers.
-    return Math.max(0, lerp(COST_MIN, COST_MAX, readyProgress) * (Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1));
+  function chargeCostForPose(poseCharge, staminaCostMul = 1, mounted = false) {
+    const pose = clamp01(poseCharge); // The same visible weapon pose funds both charge and acceleration.
+    const multiplier = Number(staminaCostMul); // Shared mastery factor for mounted and on-foot holds.
+    const scale = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1; // Clamp invalid or negative stamina costs.
+    if (pose < MIN_READY_POSE) {
+      // Mounted Charge pays smoothly from the first windup frame; on-foot attacks keep their former free unready segment.
+      return mounted ? Math.max(0, COST_MIN * pose / Math.max(1e-6, MIN_READY_POSE) * scale) : 0;
+    }
+    const readyProgress = clamp01((pose - MIN_READY_POSE) / Math.max(1e-6, 1 - MIN_READY_POSE));
+    return Math.max(0, lerp(COST_MIN, COST_MAX, readyProgress) * scale);
   }
 
   function isFullChargePose(poseCharge) {
@@ -175,7 +179,7 @@
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
       const mounted = window.Mounts?.rideState === 'mounted'; // Mounted Charged Breaker reuses the same heavy mastery, with riding-specific stamina training.
-      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency
+      const target = chargeCostForPose(poseCharge, progressionMultiplier, mounted) / efficiency
         * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Cumulative pre-tax price for the visible pose.
       debugState.staminaCostTarget = target;
       const delta = Math.max(0, target - paidChargeBaseline); // Never compare a pre-tax target against an already-discounted actual payment.
@@ -242,6 +246,7 @@
         return;
       }
       startedAt = -1;
+      const releasedMounted = startedMounted; // Capture the original riding state for early-release diagnostics.
       startedMounted = false;
       window.Mounts?.clearMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER); // Release ends the boost; the actual carrier velocity carries the attack.
       const deps = window.Combat.deps;
@@ -264,8 +269,8 @@
         const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
         const readyPct = Math.round(MIN_READY_POSE * 100);
         deps.showToast(forced
-          ? `Charged Breaker fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
-          : `Charged Breaker released too early (${posePct}% pose, needed ${readyPct}%).`, false);
+          ? `${releasedMounted ? 'Mounted Charge' : 'Charged Breaker'} fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
+          : `${releasedMounted ? 'Mounted Charge' : 'Charged Breaker'} released too early (${posePct}% pose, needed ${readyPct}%).`, false);
         return;
       }
 
@@ -358,6 +363,7 @@
         strikeS: 0,
         recoverS: 0,
         onStrike: () => {
+          if (mounted && window.Mounts?.rideState !== 'mounted') return; // A dismount after release cannot turn this committed attack into a phantom on-foot hit.
           const vegetationCleared = deps.clearVegetationInAttackCone?.(
             deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad,
           ) || 0;
