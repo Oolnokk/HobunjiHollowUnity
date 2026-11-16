@@ -12,13 +12,13 @@
   const unit=value=>hash(value)/4294967296; // Independent deterministic roll for each placement decision.
   const nearFloor=(getPlayerY,y)=>Math.abs(Number(getPlayerY?.())-y)<0.9;
   function planForRoom(room,seed,theme){
-    if(!room||room.kind!=='challenge-room'||room.w<10||room.d<10||!SAFE_CHALLENGES.has(room.challenge))return null;
+    if(!room||room.kind!=='challenge-room'||room.w<12||room.d<12||!SAFE_CHALLENGES.has(room.challenge))return null;
     const id=String(seed)+':'+String(room.id);
     const kindRoll=unit(id+':kind'),nestRoll=unit(id+':nest');
     if(kindRoll>=.38&&nestRoll>=.16)return null;
     const kinds=['pillar','closet','suspended'];
     const kind=kindRoll<.38?kinds[hash(id+':style')%kinds.length]:null;
-    if(kind==='closet'&&(room.w<12||room.d<12))return null; // The switch at 4.6x3.4 cannot overlap a small room's mandatory central puzzle.
+    if(kind==='closet'&&(room.w<14||room.d<14))return null; // A main puzzle's central footprint must be clear of the optional alcove trigger.
     return {id:'secret-'+room.id,roomId:String(room.id),theme:theme||'hronal',
       corner:hash(id+':corner')%4,kind,trigger:['projectile','fire','melody'][hash(id+':trigger')%3],
       suspension:hash(id+':cover')%2?'ice':'net',tier:unit(id+':tier')<.77?1:2,
@@ -36,7 +36,30 @@
     const DS=options.DynamicSurfaces||root.DynamicSurfaces; // Ordinary room collision, not a new pathing layer.
     const bus=root.DevRandomRuinSimplePuzzles; // Canonical swept projectile intersections and target hum.
     const fire=root.DungeonFire; // Lit torch melee and flaming projectile contact share this one receiver.
-    const floor=Number(room.y)||0,group=new THREE.Group();
+    const floor=Number(room.y)||0; // The real stone floor anchors every bonus switch, chest, cover and hatchling plinth.
+    const supportedSite=(corner,dx,dz)=>{
+      const left=(corner&1)===0,top=(corner&2)===0;
+      const x=(left?room.x:room.x+room.w)+(left?dx:-dx);
+      const z=(top?room.z:room.z+room.d)+(top?dz:-dz);
+      if(x<room.x+.55||x>room.x+room.w-.55||z<room.z+.55||z>room.z+room.d-.55)return false;
+      const sample=DS?.sampleSupport?.(x,z,{minY:floor-.16,maxY:floor+.16,pad:.025});
+      if(typeof DS?.sampleSupport==='function'&&(!sample||Math.abs(Number(sample.y)-floor)>.12))return false;
+      return root.DevRandomRuinTileOccupancy?.solidAt?.(x,z,.22,floor)!==true;
+    }; // Existing physical support and collision, not visual mesh height, decide whether a reward puzzle can spawn.
+    const requiredSites=spec.kind==='closet'
+      ?[[1.55,1.55],[2.6,2.55],[3.3,1.95],[4.6,3.4]]
+      :spec.kind==='suspended'?[[1.55,1.55],[2.6,2.55],[2.50,2.35]]
+      :[[1.55,1.55],[2.6,2.55]];
+    let chosenCorner=-1; // Try all four authored corner orientations before giving up rather than leaving a floating plate.
+    for(let offset=0;offset<4;offset++){
+      const corner=(spec.corner+offset)%4;
+      if(requiredSites.every(([x,z])=>supportedSite(corner,x,z))){chosenCorner=corner;break;}
+    }
+    if(spec.kind&&chosenCorner<0)return null;
+    if(chosenCorner>=0)spec.corner=chosenCorner;
+    if(spec.babies>0&&!supportedSite(spec.corner,room.w-1.2,room.d-1.2))spec.babies=0;
+    if(!spec.kind&&!spec.babies)return null;
+    const group=new THREE.Group();
     group.name='ruin-hidden-discoveries-'+room.id;parent.add(group);
     const left=(spec.corner&1)===0,top=(spec.corner&2)===0;
     const sx=left?1:-1,sz=top?1:-1;
@@ -54,7 +77,7 @@
     const controls=[]; // Interactions participate in the existing ruin resolver and its teardown.
     const links=[]; // Projectile and fire target disposers, tied to this room's lifetime.
     const art=[]; // Asynchronously loaded baby rigs and audio emitters that have their own dispose().
-    const rec={...spec,group,unlocked:spec.kind==='pillar',linked:false,disposed:false,discovered:false,
+    const rec={...spec,group,unlocked:!spec.kind,linked:false,disposed:false,discovered:false,
       gateProgress:0,chest:null,nest:null,targets:[],fireId:null,melody:null,notes:[],
       x:center.x,z:center.z,y:floor};
     const box=(name,w,h,d,x,y,z,material=mat)=>{
@@ -79,7 +102,8 @@
       if(rec.unlocked||rec.disposed)return false;
       rec.unlocked=true;
       if(rec.chest)rec.chest.secretRevealed=true;
-      if(rec.kind==='suspended'&&rec.cover)rec.cover.visible=false; // Ice/net parts visibly give way before the real chest settles.
+      if(rec.kind!=='closet')rec.gateProgress=1; // Freestanding mechanisms reveal a grounded chest immediately; only a real stone door animates.
+      if(rec.kind==='suspended'&&rec.cover)rec.cover.visible=false; // Grounded cage or ice cover breaks open without suspending the reward.
       root.RuinInteractionAudio?.mechanism?.(rec.gate||rec.cover||rec.group,{size:2});
       options.onStateChange?.();
       return true; // Do not touch wing objective/gate state: this is always optional.
@@ -109,8 +133,9 @@
       return target;
     }
     function fireAt(x,z,onBurn){
-      const vessel=box('secret-unlit-brazier-'+rec.id,.6,.32,.6,x,floor+.93,z,accent);
-      const ember=box('secret-brazier-ember-'+rec.id,.4,.08,.4,x,floor+1.11,z,dark);
+      box('secret-brazier-grounded-base-'+rec.id,.82,.54,.82,x,floor+.27,z);
+      const vessel=box('secret-unlit-brazier-'+rec.id,.6,.32,.6,x,floor+.69,z,accent);
+      const ember=box('secret-brazier-ember-'+rec.id,.4,.08,.4,x,floor+.89,z,dark);
       rec.fireVessel=vessel;rec.ember=ember;
       rec.fireRecord={id:rec.id+':fire',object:vessel,active:true,
         isActive:()=>!rec.disposed&&!rec.unlocked&&nearFloor(getPlayerY,floor),
@@ -120,8 +145,17 @@
     function melodyAt(x,z,onSolved){
       const composer=root.PuzzleCaveMelody;
       if(!composer?.generate||!composer?.createSession)return false;
-      const plate=box('unmarked-music-pressure-stone-'+rec.id,.9,.075,.9,x,floor+.042,z,mat);
-      rec.plate=plate;rec.platePoint={x,z}; // Nearly flush, no glowing glyph on the trigger itself.
+      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.14,32),mat);
+      plate.name='secret-Haouun-melody-pressure-stone-'+rec.id;
+      plate.position.set(x,floor+.07,z);
+      plate.userData.devRuinFootprintIgnore=true;group.add(plate);
+      rec.plate=plate;rec.platePoint={x,z}; // Same one-tile grounded circular trigger as the main timed melody puzzles.
+      rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
+        width:.12,height:.12,idleColor:'#e5aa55',activeColor:'#65ffaf'
+      })||null;
+      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+        radius:.46,thickness:.14,toward:{x:0,z:1}
+      })||null; // Shared Hao'uun inscription, not a tiny floating unmarked plate.
       const song=composer.generate(rec.id+':melody',{difficulty:composer.ruinDifficulty?.(options.ruinTier)??3});
       rec.notes=song.notes.map(note=>note.index);
       const glyphs=root.RuinMelodyGlyphDecal?.create?.({
@@ -152,10 +186,11 @@
     }
     if(spec.kind==='pillar'){
       const pillar=at(2.6,2.55);
-      box('secret-sightline-pillar-'+rec.id,.85,2.55,.85,pillar.x,floor+1.27,pillar.z);
+      box('secret-sightline-pillar-'+rec.id,.85,2.55,.85,pillar.x,floor+1.275,pillar.z);
       blocker('pillar',pillar.x,pillar.z,.85,.85,()=>true);
       chestAt(center.x,center.z,floor);
-      rec.gateProgress=1;
+      targetAt(pillar.x+sx*.44,floor+1.28,pillar.z+sz*.44,unlock); // The hidden target is built onto the stone pillar's room-facing corner.
+      rec.gateProgress=0; // The loot is optional but must still be earned with the shared projectile mechanism.
     }else if(spec.kind==='closet'){
       // L-shaped partition occupies existing floor cells: no new doorway, dead tile, or
       // exterior mesh leak. Its only opening faces the room and has an actual blocker.
@@ -179,24 +214,21 @@
       else if(spec.trigger==='fire')fireAt(switchAt.x,switchAt.z,unlock);
       else if(!melodyAt(switchAt.x,switchAt.z,unlock))targetAt(switchAt.x,floor+1.5,switchAt.z,unlock);
     }else if(spec.kind==='suspended'){
-      const height=floor+Math.max(2.3,Math.min(2.75,(options.ceilingHeight||3.6)-1.15)); // The chest, cover and target must stay BELOW the airtight room cap.
-      const chest=chestAt(center.x,center.z,height);
-      if(chest){
-        const topY=height+.35;
-        rec.cover=spec.suspension==='ice'
-          ?box('secret-ceiling-ice-prison-'+rec.id,1.15,1.0,1.05,center.x,topY,center.z,ice)
-          :new THREE.Group();
-        if(spec.suspension==='net'){
-          rec.cover.name='secret-ceiling-net-'+rec.id;
-          rec.cover.position.set(center.x,topY,center.z);group.add(rec.cover);
-          for(const p of [-.48,-.16,.16,.48]){
-            const strand=new THREE.Mesh(new THREE.BoxGeometry(.045,.87,1.05),accent);
-            strand.name='secret-net-strand';strand.position.set(p,0,0);
-            strand.userData.devRuinFootprintIgnore=true;rec.cover.add(strand);
-          }
+      chestAt(center.x,center.z,floor);
+      box('secret-clasp-grounded-plinth-'+rec.id,.65,.9,.65,center.x+sx*.95,floor+.45,center.z+sz*.35);
+      rec.cover=spec.suspension==='ice'
+        ?box('secret-grounded-ice-prison-'+rec.id,1.3,1.75,1.3,center.x,floor+.875,center.z,ice)
+        :new THREE.Group();
+      if(spec.suspension==='net'){
+        rec.cover.name='secret-grounded-net-cage-'+rec.id;
+        rec.cover.position.set(center.x,floor+.88,center.z);group.add(rec.cover);
+        for(const p of [-.54,-.18,.18,.54]){
+          const strand=new THREE.Mesh(new THREE.BoxGeometry(.045,1.76,1.24),accent);
+          strand.name='secret-net-cage-strand';strand.position.set(p,0,0);
+          strand.userData.devRuinFootprintIgnore=true;rec.cover.add(strand);
         }
-        targetAt(center.x+sx*.83,height+.16,center.z+sz*.20,unlock); // A visible clasp outside the ice block and net strands, so ranged hits actually reach it.
       }
+      targetAt(center.x+sx*.95,floor+1.11,center.z+sz*.35,unlock); // Clasp rests on the stone plinth, not unsupported air.
     }
     const cameraForBrood=()=>root.DevRandomRuinInteractions?.activeCamera?.()
       ||root.Combat?.deps?.getActiveCamera?.()||null; // Shared camera for the entire active-room hatchling rig update.
@@ -205,7 +237,8 @@
       // not overlap the main objective. These are real planebent flying rigs, not eggs.
       const bx=left?room.x+room.w-1.2:room.x+1.2;
       const bz=top?room.z+room.d-1.2:room.z+1.2;
-      const shelf=box('secret-skeeri-stone-shelf-'+rec.id,2.15,.3,1.05,bx,floor+2.05,bz);
+      const shelf=box('secret-skeeri-grounded-plinth-'+rec.id,2.15,2.2,1.05,bx,floor+1.1,bz);
+      blocker('brood-plinth',bx,bz,2.15,1.05,()=>true); // A real solid column under the nest, not a floating slab in a narrow corner.
       const nest=root.ProceduralFurniture?.buildFurnitureGroup?.('nest',0x756044)
         ||box('secret-skeeri-nest-'+rec.id,1.45,.14,.85,bx,floor+2.27,bz,accent);
       if(!nest.parent){nest.name='secret-skeeri-nest-'+rec.id;nest.position.set(bx,floor+2.19,bz);
@@ -262,10 +295,6 @@
         rec.gateProgress=Math.min(1,rec.gateProgress+t*1.7);
         rec.gate.position.y=rec.gateY+rec.gateProgress*3;
       }
-      if(spec.kind==='suspended'&&rec.chest&&rec.unlocked&&rec.gateProgress<1){
-        rec.gateProgress=Math.min(1,rec.gateProgress+t*2.3);
-        rec.chest.group.position.y=floor+(1-rec.gateProgress)*(rec.chestDropHeight-floor);
-      }
       if(rec.fireRecord&&!rec.unlocked&&rec.firePoint&&nearFloor(getPlayerY,floor)
         &&root.PersistentGroundFire?.intersects?.(options.mapId||MAP_ID,rec.firePoint.x,rec.firePoint.z,.38))unlock(); // A burning patch on another stacked story is NOT this switch.
       if(rec.melody&&!rec.unlocked){
@@ -289,11 +318,10 @@
       if(rec.fireRecord&&!rec.fireId&&bus?.hasActiveRuinState?.()===true)
         rec.fireId=fire?.registerTarget?.(rec.fireRecord)||null;
     };
-    if(rec.chest&&spec.kind==='suspended')rec.chestDropHeight=rec.chest.group.position.y;
     if(rec.chest?.opened){ // Opened caches remain visible and accessible after site restoration, without replaying the secret switch.
       rec.unlocked=true;rec.gateProgress=1;
       if(rec.gate)rec.gate.position.y=rec.gateY+3;
-      if(spec.kind==='suspended'){rec.chest.group.position.y=floor;if(rec.cover)rec.cover.visible=false;}
+      if(spec.kind==='suspended'&&rec.cover)rec.cover.visible=false;
     }
     rec.snapshot=()=>({id:rec.id,kind:rec.kind,trigger:rec.kind==='closet'?rec.trigger:rec.suspension,
       tier:rec.tier,unlocked:rec.unlocked,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
@@ -307,6 +335,8 @@
       if(rec.fireId)fire?.unregisterTarget?.(rec.fireId);
       if(rec.melodyListener)root.removeEventListener?.('hobunji-kurraya-puzzle-note',rec.melodyListener);
       rec.melody?.stop?.();
+      rec.plateArt?.dispose?.(); // Hao'uun plate decoration follows the same lifecycle as the main melody plates.
+      rec.plateSignal?.dispose?.();
       for(const a of art)a.dispose?.();
       for(const id of colliders)DS?.remove?.(id);
       const geometries=new Set(); // Destroy detached secret meshes in both layer and V50 sessions; neither owner traverses them after removal.
