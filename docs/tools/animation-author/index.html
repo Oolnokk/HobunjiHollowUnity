@@ -14858,9 +14858,9 @@ window.addEventListener('resize', syncAllMaaPanelBodies);
 const baseApprovedRigLibraryCloneV1548 = approvedRigLibraryCloneV1524;
 approvedRigLibraryCloneV1524 = function() {
   const approved = baseApprovedRigLibraryCloneV1548(); // Keeps all other approved species and coordinates intact.
-  const currentDrenkirra = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.drenkirra?.anchors?.shoulderGrip;
-  if (approved?.creatures?.drenkirra?.anchors?.shoulderGrip && Number.isFinite(Number(currentDrenkirra?.rotationDeg?.y))) {
-    approved.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y = Number(currentDrenkirra.rotationDeg.y);
+  const currentDrenkirra = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.drenkirra;
+  if (approved?.creatures && currentDrenkirra?.anchors?.shoulderGrip) {
+    approved.creatures.drenkirra = structuredCloneSafe(currentDrenkirra); // The old embedded V15.24 default also had a stale grip XYZ; reset must use the exact gameplay rig, not just its yaw.
   }
   return approved;
 };
@@ -14871,11 +14871,17 @@ function reconcileShoulderGripPreviewYawV1548(kind, profile, originalGrip) {
   const savedRotation = originalGrip?.rotationDeg; // Explicit editor authoring must survive legacy default loaders for every species.
   if (savedRotation) target.rotationDeg = { ...target.rotationDeg, ...savedRotation };
   const canonicalGrip = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[kind]?.anchors?.shoulderGrip;
-  const staleDrenkirra = kind === 'drenkirra'
-    && Number(target.rotationDeg?.y) === -61
-    && canonicalGrip?.position
-    && ['x', 'y', 'z'].every(axis => Math.abs((Number(target.position?.[axis]) || 0) - Number(canonicalGrip.position[axis])) < 1e-9);
-  if (staleDrenkirra) target.rotationDeg.y = Number(canonicalGrip.rotationDeg.y); // Only the old default Drenkirra grip needs a sign migration.
+  const atPosition = xyz => xyz && ['x', 'y', 'z'].every(axis => Math.abs((Number(target.position?.[axis]) || 0) - xyz[axis]) < 1e-9);
+  const obsoleteDrenkirraGrips = [
+    { x: 0.01, y: -0.1636307385658067, z: 0.0009131708735385657 },
+    { x: 0.01, y: -0.1636307385658067, z: 0.003984738737597559 },
+  ]; // Only the known older Drenkirra defaults, not a hand-adjusted socket, should migrate.
+  const stalePosition = kind === 'drenkirra' && obsoleteDrenkirraGrips.some(atPosition);
+  if (stalePosition && canonicalGrip) target.position = { ...canonicalGrip.position }; // Match the corrected gameplay socket as well as its yaw.
+  if (kind === 'drenkirra' && canonicalGrip && Number(target.rotationDeg?.y) === -61
+      && (stalePosition || atPosition(canonicalGrip.position))) {
+    target.rotationDeg.y = Number(canonicalGrip.rotationDeg.y); // −61° is an obsolete Drenkirra default only at its stock grip.
+  }
 }
 const baseNormalizedRigProfileLibraryV1548 = normalizedRigProfileLibrary;
 normalizedRigProfileLibrary = function(value = {}) {
