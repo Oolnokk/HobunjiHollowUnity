@@ -126,7 +126,8 @@ let activeCamera = camera; // Set to null to verify the safe radial-only fallbac
 let now = 0; // Deterministic idle-validation clock.
 let domLookups = 0; // Ensures the dev panel isn't queried every frame.
 const fog = { init() {}, update() {} };
-const root = { THREE, CloudForestFog: fog, TreeAssetLibrary: { getMode: () => 'baked' },
+let assetMode = 'baked'; // Switches between the opt-in baked and default procedural tree renderer.
+const root = { THREE, CloudForestFog: fog, TreeAssetLibrary: { getMode: () => assetMode },
   Combat: { deps: { getActiveCamera: () => activeCamera } } };
 let currentScene = scene; // Switches zones to verify late arrival of baked trees after initial empty-scene caching.
 const script = fs.readFileSync(path.join(__dirname, '../docs/js/cloud-forest-tree-batcher.js'), 'utf8');
@@ -206,4 +207,16 @@ now += 1600;
 root.CloudForestFog.update(0.016);
 assert.equal(api.getDebugState().status, 'ready', 'batching must recover when tree roots are attached');
 assert.equal(api.getDebugState().treeCount, 1);
-console.log('Cloud Forest tree batching: LOD deduplication, camera, visibility ownership, late roots, and fallback passed');
+
+// Default procedural trees never enter the baked-only batcher, even after a previous baked scene.
+const proceduralScene = new Group(); // Simulates reentering the Cloud Forest with the default saved tree-source setting.
+currentScene = proceduralScene;
+assetMode = 'procedural';
+now += 4000;
+root.CloudForestFog.update(0.016);
+stats = api.getDebugState();
+assert.equal(stats.enabled, false);
+assert.equal(stats.treeSourceMode, 'procedural');
+assert.equal(stats.status, 'procedural-mode');
+assert.equal(proceduralScene.children.length, 0, 'no baked batch groups should be installed');
+console.log('Cloud Forest tree batching: LOD deduplication, camera, visibility ownership, late roots, and procedural fallback passed');
