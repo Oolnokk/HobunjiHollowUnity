@@ -8,6 +8,12 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'); // Serve actual committed modules/assets from one origin.
 const mime = { '.js': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
+let externalSpritePng = null; // Real PNG bytes served from a different origin to reproduce tainted-canvas failures.
+const corsSpriteServer = http.createServer((_req, res) => {
+  if (!externalSpritePng) { res.writeHead(404); res.end('Sprite not ready'); return; }
+  res.writeHead(200, { 'Content-Type': 'image/png', 'Access-Control-Allow-Origin': '*' }); // Explicit CORS opt-in required for pixel reads.
+  res.end(externalSpritePng);
+});
 const server = http.createServer((req, res) => {
   const route = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
   const file = path.resolve(root, route);
@@ -31,6 +37,7 @@ async function spritePng(page, animal) {
 }
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await new Promise(resolve => corsSpriteServer.listen(0, '127.0.0.1', resolve));
   let browser;
   const errors = []; // Real page exceptions are printed without needing the phone's browser console.
   try {
@@ -142,6 +149,26 @@ async function spritePng(page, animal) {
     assert.equal(headDebug.scale, 1.45);
     assert(headDebug.comparisonPixelChanges > 0, 'original and enlarged source pixels must actually differ');
     assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/);
+
+    // A second localhost port is genuinely cross-origin. Image.onload alone cannot prove the pixels are readable.
+    externalSpritePng = await spritePng(page, true);
+    const externalSpriteUrl = 'http://127.0.0.1:' + corsSpriteServer.address().port + '/animal-fixture.png';
+    await page.evaluate(src => loadImageUrl(src, 'cors-fixture.png'), externalSpriteUrl);
+    await page.waitForFunction(src => state.image?.src === src, externalSpriteUrl);
+    const externalRead = await page.evaluate(() => {
+      const image = state.image, test = document.createElement('canvas');
+      test.width = test.height = 8;
+      test.getContext('2d').drawImage(image, 0, 0, 8, 8);
+      const alpha = test.getContext('2d').getImageData(0, 0, 8, 8).data[3];
+      return { corsMode: image.crossOrigin, alpha, source: image.src };
+    });
+    assert.equal(externalRead.corsMode, 'anonymous', 'rigger requests CORS access before loading sprite');
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.comparisonPixelChanges > 0);
+    assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/,
+      'even a cross-origin loaded sprite must have readable image data for actual enlargement');
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).lastError, null,
+      'successful cross-origin pixel read must clear any earlier tainted-canvas error');
+
     await page.locator('#shoulderRestSplitFrame').check();
     await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.splitsAfterWarp > 0);
     await page.locator('#babyHeadCompare').click();
@@ -157,6 +184,9 @@ async function spritePng(page, animal) {
     throw error;
   } finally {
     await browser?.close();
-    await new Promise(resolve => server.close(resolve));
+    await Promise.all([
+      new Promise(resolve => server.close(resolve)),
+      new Promise(resolve => corsSpriteServer.close(resolve)),
+    ]);
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
