@@ -1148,7 +1148,9 @@
       const effectiveDarknessAlpha = farmhouseSceneActive ? INTERIOR_DARKNESS_OVERLAY_ALPHA : darknessAlpha; // The farmhouse uses 80% base darkness regardless of a lagging outdoor area id.
       const roomAmbient = currentArea==='map_i_dev_random_ruin' ? window.RuinRoomSystem?.ambient?.() : null; // Room-specific ambient settings preserve the user's darkness preference.
       const roomAlpha=clamp01(effectiveDarknessAlpha+(roomAmbient?.darknessOffset||0));
-      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: effectiveDarknessAlpha, at: now }; // Mobile diagnostics reflect the painted base, not a hypothetical calculation.
+      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: roomAlpha,
+        baseAlpha: effectiveDarknessAlpha, roomId: roomAmbient?.roomId||null,
+        roomIllumination: roomAmbient?.illumination||0, at: now }; // Mobile Pixel Probe exposes the actual room-darkness result, not just its base setting.
       ctx.globalCompositeOperation = 'source-over';
       const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
       ctx.fillStyle = roomAmbient?.color ? 'rgba('+roomAmbient.color.join(',')+','+roomAlpha+')'
@@ -1260,7 +1262,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic uses stable screen darkness; moving mist cylinders and projected light hulls disabled.',
+        latestChange: 'All ruin traditions keep room-local light sources and steady viewport ambience without projected tunnel frames.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? 'screen-overlay-no-mist-geometry' : null, // Mobile Pixel Probe confirms the Kanthic geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
