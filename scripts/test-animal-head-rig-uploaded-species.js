@@ -90,7 +90,7 @@ delete mootNeck.shoulderRest;
 delete voorgNeck.shoulderRest;
 assert.notDeepEqual(mootNeck, voorgNeck, 'Moot has its own independently authored head paint and pivot');
 assert.equal(moot.pivot.x, .37400034701593793, 'Moot retains the uploaded head pivot');
-assert.equal(moot.babyHeadScale, undefined, 'Moot inherits the universal 132% default');
+assert.equal(moot.babyHeadScale, undefined, 'Moot inherits the universal 123% default');
 assert.equal(moot.babyHeadFrame.width, .46468750000000003, 'Moot preserves its uploaded head-frame fallback');
 assert.notStrictEqual(moot.weightMap.data, voorg.weightMap.data, 'Moot neck paint is independently editable');
 assert.notStrictEqual(moot.compressibilityMap.data, voorg.compressibilityMap.data, 'Moot neck compression is independently editable');
