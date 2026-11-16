@@ -1,0 +1,189 @@
+'use strict';
+
+// Regression coverage for the Fey-knot quest's actual runtime modules.
+// Run: node scripts/test-fey-armament-quest.js
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+class Element {
+  constructor(tagName = 'div') {
+    this.tagName = tagName; // Used to inspect real Garanki panel buttons and selects.
+    this.children = []; // Collects controls created by the original render function.
+    this.style = {}; // Matches the minimal style surface used by Garanki's rows.
+    this.listeners = {}; // Allows the test to emulate player option changes.
+    this.textContent = '';
+    this.className = '';
+    this.value = '';
+    this.disabled = false;
+  }
+  set innerHTML(value) { this._innerHTML = value; this.children = []; }
+  get innerHTML() { return this._innerHTML || ''; }
+  appendChild(child) {
+    this.children.push(child);
+    if (this.tagName === 'select' && child.selected) this.value = child.value;
+    return child;
+  }
+  addEventListener(event, fn) { this.listeners[event] = fn; }
+}
+
+const list = new Element();
+const goldDisplay = new Element();
+const document = {
+  addEventListener() {},
+  createElement: tag => new Element(tag),
+  getElementById(id) { return id === 'garankiEnchanterList' ? list : id === 'gkGoldDisplay' ? goldDisplay : null; },
+};
+const registered = { trees: {}, contexts: {}, nodes: {} };
+const inventory = { gold: 30000 };
+const gear = { tools: { sword: true }, harlyaoRelics: {}, toolMastery: {}, weaponEnchantments: {} };
+const profile = { worldId: 'quest-test', questProgress: {} };
+const enchantmentStates = {};
+let saves = 0; // Verifies new weapon and quest persist together on first acquisition.
+let gearSaves = 0; // Verifies enchanting uses the existing gear-save adapter.
+const messages = [];
+const enchantments = {
+  BASE_LIMIT: 2,
+  DEFINITIONS: {
+    feyMist: { id: 'feyMist', alignment: 'Fey', type: 'Base', displayName: 'Fey Mist', description: 'An illusory mist.' },
+    hroFlame: { id: 'hroFlame', alignment: 'Hronal', type: 'Base', displayName: 'Hro Flame', description: 'A fire spell.' },
+    feyFeint: { id: 'feyFeint', alignment: 'Fey', type: 'Flourish', displayName: 'Fey Feint', description: 'A phantom feint.' },
+  },
+  cleanWeaponState: state => state,
+  stateFor(key, create) {
+    return enchantmentStates[key] || (create ? (enchantmentStates[key] = { base: [], flourishes: {} }) : { base: [], flourishes: {} });
+  },
+  addBase(key, id) { this.stateFor(key, true).base.push(id); },
+  equipBase(key, index, id) {
+    const state = this.stateFor(key, true);
+    if (id) state.base[index] = id;
+    else state.base.splice(index, 1);
+  },
+  setFlourish(key, slot, id) { this.stateFor(key, true).flourishes[slot] = id; },
+  flourishForSlot(slot, key) { return this.stateFor(key).flourishes[slot]; },
+  isBaseUnlocked(id) { return !!this.DEFINITIONS[id]; },
+  isFlourishUnlocked(id) { return !!this.DEFINITIONS[id]; },
+  unlockFromState: state => [...state.base],
+  unlockedOptions: () => ({ base: ['feyMist', 'hroFlame'], flourish: [{ id: 'feyFeint', slotId: 'tap1' }] }),
+  getWeaponImmundanity: () => 0,
+  getEnchantmentPowerMultiplier: () => 1,
+  getMasteryPowerMultiplier: () => 1,
+  logEvent() {},
+};
+const window = {
+  __hobunjiPlayerProfile: profile,
+  EnchantmentSystem: enchantments,
+  DialogueContent: {
+    registerTreeProvider(id, handler) { registered.trees[id] = handler; },
+    registerContextProvider(id, handler) { registered.contexts[id] = handler; },
+    registerNodeEnterHandler(id, handler) { registered.nodes[id] = handler; },
+  },
+  DelversGuild: { isMember: () => true, canEnchant: () => true, dialogueTree: () => null },
+  WorldMetaStore: { loadArtifactCollection: () => ({ donated: [], pendingUnlocks: [] }), saveArtifactCollection: () => true },
+  TasksPanel: { render() {} },
+  setTimeout(fn) { fn(); },
+};
+const context = vm.createContext({ window, document, console, Date, Math, performance: { now: () => 0 } });
+for (const path of ['docs/js/fey-armament-quest.js', 'docs/js/harlyao-relics.js', 'docs/js/artifact-collection.js']) {
+  vm.runInContext(fs.readFileSync(path, 'utf8'), context, { filename: path });
+}
+const deps = {
+  inventory,
+  ITEM_DEFS: {},
+  inventoryItems: [],
+  TOOL_ITEM_DEFS: { sword: { label: 'Sword', slots: ['weapon'] } },
+  getGearInventory: () => gear,
+  getQuestProgress: () => profile.questProgress,
+  saveMemberWorldData() { saves++; },
+  saveGearInventory() { gearSaves++; },
+  showToast(message) { messages.push(message); },
+  buildInventoryGrid() {},
+  buildEquipmentSlots() {},
+  tothalWorldId: () => profile.worldId,
+};
+const relics = window.HarlyaoRelics;
+const quest = window.FeyArmamentQuest;
+relics.init(deps);
+quest.bindQuestDeps(deps);
+window.ArtifactCollection.init(deps);
+window.ArtifactCollection = { unlocked: () => true, render() {} }; // Service tests bypass unrelated museum-donation milestones.
+
+function treeForGaranki() { return registered.trees.garanki_gabu(); }
+function finish(npcId, tree) {
+  const last = tree.nodes[tree.nodes.length - 1];
+  return registered.nodes[npcId](last, { npc: { id: npcId }, tree });
+}
+function allElements(root) {
+  return [root, ...root.children.flatMap(allElements)];
+}
+
+assert.equal(quest.maybeStart(), false, 'no quest from ordinary weapons');
+const key = relics.grantBoundRelic({ shape: 'dagger', origin: 'Fey', uid: 'abc123', enchantments: { base: ['feyMist'], flourishes: {} } });
+assert.match(key, /^feyBound_/);
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 0);
+assert.equal(saves, 1, 'first Fey weapon and quest saved in one member write');
+assert.equal(relics.unbindPrice({ base: ['feyMist'], flourishes: {} }), 160);
+assert.equal(relics.unbindPrice({ base: ['feyMist'], flourishes: {} }, 'Fey'), 320);
+assert.equal(relics.unbind(key).reason, 'quest', 'service is unavailable until the player persuades Garanki');
+
+relics.render();
+assert.equal(allElements(list).some(el => el.textContent.includes('Pretend to unbind')), false, 'Fey weapons are hidden before the quest reward');
+assert.equal(allElements(list).filter(el => el.tagName === 'option').some(el => el.textContent.includes('Fey Mist')), false, 'Fey enchantments are hidden before the quest reward');
+
+const first = treeForGaranki();
+assert.equal(first.id, 'fey_knot_garanki_first', 'quest gets Garanki dialogue without replacing the Guild provider');
+registered.nodes.garanki_gabu(first.nodes[0], { npc: { id: 'garanki_gabu' }, tree: first });
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 0, 'opening or abandoning a conversation does not advance the quest');
+assert.equal(finish('garanki_gabu', first), true);
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 1);
+
+const jubmir = registered.contexts[quest.QUEST_ID].treeFor({ id: 'jubmir' });
+assert.equal(jubmir.id, 'fey_knot_jubmir');
+assert.equal(jubmir.nodes.filter(node => node.type === 'choice').length, 2);
+delete inventory[key];
+assert.equal(finish('jubmir', jubmir), false, 'cannot advance without a weapon');
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 1);
+assert.equal(quest.dialogueTreeFor('jubmir'), null);
+inventory[key] = 1;
+assert.equal(finish('jubmir', jubmir), true);
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 2);
+
+const returning = treeForGaranki();
+assert.equal(returning.id, 'fey_knot_garanki_return');
+assert.equal(finish('garanki_gabu', returning), true);
+assert.equal(quest.completed(), true);
+assert.equal(quest.maybeStart(), false, 'completed quest cannot restart');
+assert.equal(profile.questProgress[quest.QUEST_ID].status, 'complete');
+
+relics.render();
+const itemsAfterQuest = allElements(list);
+assert(itemsAfterQuest.some(el => el.textContent === 'Pretend to unbind (320g)'), 'Fey unbinding appears with doubled fee');
+const basePick = itemsAfterQuest.find(el => el.tagName === 'select' && el.children.some(o => o.value === 'feyMist'));
+assert(basePick, 'learned Fey Base enchantment becomes selectable');
+basePick.value = 'feyMist';
+basePick.listeners.change();
+assert(itemsAfterQuest.some(el => el.textContent === 'Pretend to enchant (900g)'), 'Fey selected enchantment updates the button label and price');
+
+const beforeUnbind = inventory.gold;
+const unbound = relics.unbind(key);
+assert.equal(unbound.ok, true);
+assert.equal(unbound.price, 320);
+assert.equal(inventory.gold, beforeUnbind - 320);
+assert(gear.tools[unbound.toolKey], 'unbound Fey weapon goes to real gear inventory');
+
+let before = inventory.gold;
+assert.equal(relics.applyBase('sword', 0, 'feyMist').ok, true);
+assert.equal(inventory.gold, before - 900, 'Fey Base enchantment costs double');
+before = inventory.gold;
+assert.equal(relics.clearSlot('sword', 'base', 0).ok, true);
+assert.equal(inventory.gold, before - 80, 'Fey removal costs double');
+before = inventory.gold;
+assert.equal(relics.applyBase('sword', 0, 'hroFlame').ok, true);
+assert.equal(inventory.gold, before - 450, 'Hronal enchanting keeps original price');
+before = inventory.gold;
+assert.equal(relics.clearSlot('sword', 'base', 0).ok, true);
+assert.equal(inventory.gold, before - 40, 'Hronal removal keeps original price');
+
+assert(gearSaves >= 4, 'all enchant changes persist through existing gear-save callbacks');
+assert.equal(quest.debugSnapshot().stage, 3, 'mobile diagnostics show the completed quest');
+console.log('Fey Knotworked Armament: acquisition, dialogue, persistence, menu and fees passed.');
