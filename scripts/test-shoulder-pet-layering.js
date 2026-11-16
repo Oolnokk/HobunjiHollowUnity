@@ -80,8 +80,13 @@ const makePet = () => {
 };
 const pet = makePet();
 for (const mesh of pet.avatarRef.group.children) mesh.parent = pet.avatarRef.group;
-const use = (companion, viewerSeesFront) => api.setShoulderPetLayering(
-  companion, front, back, front.material, back.material, viewerSeesFront);
+const activeOwner = { frontMesh: front, backMesh: back }; // Tracks the actual owner meshes in both rigid and skinned portrait test setups.
+const use = (companion, viewerSeesFront) => {
+  activeOwner.frontMesh = front;
+  activeOwner.backMesh = back;
+  return api.setShoulderPetLayering(
+    companion, front, back, front.material, back.material, viewerSeesFront);
+};
 
 function testFacing(inward) {
   pet.__hobunjiShoulderFacingInward = inward;
@@ -165,6 +170,8 @@ testFacing(true);
 const sharedSkinnedOwner = makeMesh('player_avatar_skinned_plane');
 const skinnedFrontMaterial = {name:'npc_avatar_skinned_front_material',depthWrite:true};
 const skinnedBackMaterial = {name:'npc_avatar_skinned_back_material',depthWrite:true};
+activeOwner.frontMesh = sharedSkinnedOwner;
+activeOwner.backMesh = sharedSkinnedOwner;
 api.setShoulderPetLayering(pet,sharedSkinnedOwner,sharedSkinnedOwner,skinnedFrontMaterial,skinnedBackMaterial);
 assert.equal(api.shoulderPetDrawFace({object:sharedSkinnedOwner,material:skinnedFrontMaterial}), 'owner-front',
   'one skinned owner mesh still exposes its front material stage');
@@ -186,7 +193,8 @@ const faceRankStart = render.indexOf('  function shoulderPetFaceSortRank(');
 const faceRankEnd = render.indexOf('  function compareShoulderPetDrawFaces(', faceRankStart);
 assert(faceRankStart > 0 && faceRankEnd > faceRankStart, 'production face-rank helper is available for the real transparent sorter');
 assert(sorterStart > 0 && sorterEnd > sorterStart);
-const stateRef = { get pet() { return api.state.active ? pet : null; }, frontMesh: front, backMesh: back }; // Reuses the active pet and its owner's portrait meshes in the production comparator.
+const stateRef = { get pet() { return api.state.active ? pet : null; },
+  get frontMesh() { return activeOwner.frontMesh; }, get backMesh() { return activeOwner.backMesh; } }; // Reflects the actual skinned/rigid owner passed into the compositor.
 const overrideRank = category => category === 'garment.headwear' ? 8 : 1; // Manual sorter deliberately prefers owner hat over pet front art.
 windowStub.XrayHierarchy = { layerRank: overrideRank };
 let useManual = false;
@@ -252,6 +260,8 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
 // catches both front/back material groups sharing one mesh and renderOrder.
 for (const inward of [false, true]) {
   pet.__hobunjiShoulderFacingInward = inward;
+  activeOwner.frontMesh = sharedSkinnedOwner;
+  activeOwner.backMesh = sharedSkinnedOwner;
   api.setShoulderPetLayering(pet, sharedSkinnedOwner, sharedSkinnedOwner,
     skinnedFrontMaterial, skinnedBackMaterial);
   useManual = false;
@@ -318,6 +328,47 @@ for (const inward of [false, true]) for (const manual of [false, true]) for (con
       if (a === b || b === c || a === c) continue;
       assert.ok(!(compare(a, b) < 0 && compare(b, c) < 0 && compare(c, a) < 0),
         'ranked transparent-list comparisons must remain transitive across nearby actors and effects');
+    }
+  });
+}
+// The ordinary player portrait is one SkinnedMesh with two material groups;
+// combine that real shape with nearby-actor sorting, rather than testing its
+// two material groups only in an otherwise empty scene.
+for (const inward of [false, true]) for (const manual of [false, true]) {
+  pet.__hobunjiShoulderFacingInward = inward;
+  activeOwner.frontMesh = sharedSkinnedOwner;
+  activeOwner.backMesh = sharedSkinnedOwner;
+  api.setShoulderPetLayering(pet, sharedSkinnedOwner, sharedSkinnedOwner,
+    skinnedFrontMaterial, skinnedBackMaterial);
+  useManual = manual;
+  const playerRank = { owner: { id: 1 }, depth: 0.3 }; // Both material groups receive one shared actor camera-depth rank.
+  const npcRank = { owner: { id: 2 }, depth: 0.6 }; // Another actor activates portrait depth sorting.
+  const rankedOrder = { ranks: new Map([[sharedSkinnedOwner, playerRank], [nearbyNpcPortrait, npcRank]]), extras: new Map() };
+  const frontItem = { ...drawItem(sharedSkinnedOwner), material: skinnedFrontMaterial };
+  const backItem = { ...drawItem(sharedSkinnedOwner), material: skinnedBackMaterial };
+  productionSort(sorterRenderer, rankedOrder, () => {
+    const items = [
+      drawItem(pet.avatarRef.frontPlane), frontItem, drawItem(ownerHatFront),
+      drawItem(pet.avatarRef.backPlane), backItem, drawItem(ownerHatBack),
+      drawItem(nearbyNpcPortrait), drawItem(unrelatedTransparent),
+    ]; // Covers skinned front/back groups, both pet faces, hats, a nearby NPC and unrelated art.
+    for (let shift = 0; shift < items.length; shift++) for (const reverse of [false, true]) {
+      const ordered = items.slice(shift).concat(items.slice(0, shift));
+      if (reverse) ordered.reverse();
+      ordered.sort(sorterRenderer.sort);
+      const position = item => ordered.indexOf(item); // Distinguishes two render items sharing the same SkinnedMesh object.
+      const petFront = ordered.find(item => item.object === pet.avatarRef.frontPlane);
+      const petBack = ordered.find(item => item.object === pet.avatarRef.backPlane);
+      const hatFront = ordered.find(item => item.object === ownerHatFront);
+      const hatBack = ordered.find(item => item.object === ownerHatBack);
+      assert.equal(position(petFront) > position(frontItem), inward,
+        'the real skinned front material must swap relative to the pet front on observation');
+      assert.equal(position(petBack) > position(backItem), !inward,
+        'the real skinned back material must swap relative to the pet back on observation');
+      assert.equal(position(petFront) > position(hatFront), inward,
+        'skinned front-owner hats remain in the same pet orientation stage');
+      assert.equal(position(petBack) > position(hatBack), !inward,
+        'skinned back-owner hats remain in the same pet orientation stage');
     }
   });
 }
