@@ -640,6 +640,6 @@
   }
   window.BoneyShinjimiWilderness=Object.freeze({
     init,update,serialize,restore,debugSnapshot,sceneDefinition,
-    __test:Object.freeze({lunarDay,moonCycle,chooseHouseSite,wallHit,targetFor,record,finishEncounter,beginFlight,nearbyOtherNpc}),
+    __test:Object.freeze({lunarDay,moonCycle,chooseHouseSite,wallHit,targetFor,record,finishEncounter,beginFlight,nearbyOtherNpc,sightProxy}),
   });
 })();
