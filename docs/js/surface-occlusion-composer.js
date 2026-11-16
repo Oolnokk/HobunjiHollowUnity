@@ -96,6 +96,7 @@
     const interiorFloorMaterial = someMaterial(object.material, material =>
       material?.userData?.hobunjiInteriorFloorMaterial === true);
     const authoredWalkableFloor = data.cavernWalkableFloor === true
+      || data.hobunjiRuinFloorSurface === true // Authoritative flat ruin floor tag applied by registerFloor.
       || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
       || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor');
     if (hints.walkableFloor === true || interiorFloorMaterial || authoredWalkableFloor) {

@@ -105,12 +105,23 @@ assert(runtime.includes("pieceSet:'stoneAge',floorProps:'pillarsOnly'"),'Stone A
 assert(!runtime.includes("singleRoom:true,roomPreset:'veryLarge'"),'Stone Age mode must not force the author preview single-room layout');
 assert(/buildRoom\(\{[^}]*floorHeights[,}]/.test(runtime),'Stone Age runtime must pass registered multi-level floor heights to scenery');
 assert(runtime.includes('await prepareStoneAgeScenery(ruin)'),'Stone Age environment must be built before entering gameplay');
+assert.match(runtime,/floorMesh\.userData\.hobunjiRuinFloorSurface\s*=\s*true/,
+  'the V50 runtime marks the authoritative floor rather than every WallBuilder recipe-2 object');
 assert(runtime.includes('await ensureStoneAgeSceneryDependencies()'),'Rock authoring dependencies must load in playable mode');
 assert(runtime.includes('js/natural-surface-materials.js?v=') && runtime.includes('js/surface-stretch-uv-furniture.js?v='),'The playable page must lazy-load the preview stone material and UV mapper');
 assert(!read('docs/index.html').includes('src="js/natural-surface-materials.js'),'Harlyao worlds should not eagerly install additional natural-surface hooks');
 assert(runtime.includes('stoneAgeScenery?.cover?.dispose()')&&runtime.includes('stoneAgeScenery?.dispose()'),'clear/retry must restore V50 sources and release scenery buffers');
 assert(runtime.includes('rootMechanisms:selected,stoneAge:selected'),'the existing checkbox must enable the complete ruin type');
 assert(shared.includes('item.mesh.layers.disable(0)')&&shared.includes('item.mesh.layers.mask=item.layerMask'),'native wall rendering must be suppressed without disabling SolidFootprints collision');
+assert.match(shared,/const floorMaterial=stoneMaterial\.clone\(\)/,'replacement stone floors receive an independent material so they cannot change wall occlusion');
+assert.match(shared,/floorMaterial\.userData=\{\.\.\.floorMaterial\.userData,hobunjiInteriorFloorMaterial:true\}/,
+  'the floor-only material requests the existing any-facing floor x-ray policy');
+assert.match(shared,/ruinMappedFloorMesh\(meta,seed,floorMaterial,floorHeights\):ruinFloorMesh\(meta,seed,floorMaterial\)/,
+  'all ruin replacement floor variants use the x-ray-capable floor material');
+assert.equal((shared.match(/floorMaterial\.dispose\(\)/g)||[]).length,2,
+  'the independent floor material is released on both successful teardown and failed builds');
+assert(!/stoneMaterial\.userData\s*=.*hobunjiInteriorFloorMaterial/.test(shared),
+  'wall and pillar stone material must not be tagged as a floor');
 assert(!shared.includes('item.mesh.visible=false'),'hidden meshes are non-solid in the runtime footprint scanner');
 assert(runtime.includes('replaced.has(occlusion[i])'),'camera occlusion must remove the masked source walls explicitly');
 assert(runtime.includes('stoneAgeStats:ruin.stoneAgeStats||null'),'mobile debug must expose stone, floor and root counts');

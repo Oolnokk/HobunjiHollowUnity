@@ -318,6 +318,12 @@
           group.add(particles);
         }
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
+        let nativeFloorMesh=null; // The floor used by held-object depth replay on this upper story, independent of wall pieces.
+        nativeRoot.traverse(node=>{if(!nativeFloorMesh&&node.isMesh&&node.userData?.wallBuilderRecipe==='wallrecipe2.json')nativeFloorMesh=node;});
+        if(nativeFloorMesh){
+          nativeFloorMesh.userData.hobunjiRuinFloorSurface=true; // Flat upper-story V50 floors have no plateau data but still need selective x-ray.
+          root.HeldObjectRenderOrder?.markGroundMesh?.(nativeFloorMesh,'interior-floor');
+        }
         const RoomSystem=root.RuinRoomSystem,faces=root.RuinWallFaces; // Shared with authored wing rooms; no per-native-floor room manager or scene.
         const nativeRooms=RoomSystem?.v50Rooms?.(meta,{
           originX:place.originX,originZ:place.originZ,tileScale:options.tileScale||2,

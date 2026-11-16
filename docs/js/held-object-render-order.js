@@ -249,10 +249,10 @@
     if (data.hobunjiGroundSurface === true || data.cavernWalkableFloor === true) return true;
     if (materialMarksInteriorFloor(object.material)) return true;
 
-    // Debrisifier V50 exposes its stepped/sunken ruin floor as one WallBuilder
-    // surface carrying a plateau model. Treat that authored walkable surface as
-    // ground too, including cells above/below the base floor elevation.
-    if (data.wallBuilderRecipe === 'wallrecipe2.json' && data.plateauModel?.levelByCell) return true;
+    // A V50 flat floor gets its identity from registerFloor; untagged
+    // recipe-2 meshes are not automatically floors. Stepped floors also
+    // expose their plateau map directly and retain the existing exception.
+    if (data.hobunjiRuinFloorSurface === true || (data.wallBuilderRecipe === 'wallrecipe2.json' && data.plateauModel?.levelByCell)) return true;
     return false;
   }
 
@@ -316,6 +316,7 @@
     const walkableFloor = !!object?.isMesh && !object.isSkinnedMesh && (
       materialMarksInteriorFloor(object.material)
       || data.cavernWalkableFloor === true
+      || data.hobunjiRuinFloorSurface === true
       || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
       || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor')
     );
