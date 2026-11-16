@@ -73,7 +73,7 @@ const extendedGroup = { ...group, regions: [{ ...group.regions[0], radius: 3.4 }
 const extendedFloor = boxed(14.2, 14.4, 10, 11); // Beyond the old radius + refill margin.
 const extendedHidden = api.hideOutsideFloorPatch([extendedFloor], extendedGroup);
 assert.equal(extendedFloor.visible, true, 'local depth refill follows a weapon-extended radius outside the original ground circle');
-restoreVisibility(extendedHidden);
+if (extendedHidden) restoreVisibility(extendedHidden);
 
 api.setEnabled(false);
 assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [], groundMats, colorBuffer), false, 'A/B switch');
