@@ -10,9 +10,15 @@ const render = fs.readFileSync(path.join(root, 'js', 'held-object-render-order.j
 
 const store = {};
 const panels = [];
+let floorPunchTestEnabled = true; // Captures mobile A/B toggle changes in the fake renderer.
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
-  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2 }) },
+  HeldObjectRenderOrder: {
+    snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8,
+      frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2, forcedGroundDepthMaterials: 3,
+      elevationShaderFallbacks: 0, floorPunch: { enabled: floorPunchTestEnabled } }),
+    setFloorPunchEnabled(value) { floorPunchTestEnabled = value !== false; return floorPunchTestEnabled; },
+  },
   __hobunjiGameStarted: true,
 };
 global.window = win;
@@ -91,6 +97,17 @@ assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.opti
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
 const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
 assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
+assert.ok(view.rows.some(row => row[0] === 'Ground depth writers repaired (last replay)' && row[1] === '3'),
+  'phone panel shows how many non-depth-writing ground materials were repaired during gear replay');
+assert.ok(view.rows.some(row => row[0] === 'Ground shader fallbacks' && row[1] === '0'),
+  'phone panel reports failed ground shader compatibility');
+assert.deepStrictEqual(panel.onAction('toggle-floor-punch', { checked: false }), { ok: true },
+  'mobile A/B control disables stencil floor punch to isolate its contribution');
+assert.equal(panel.render().actions.find(action => action.id === 'toggle-floor-punch').checked, false);
+assert.deepStrictEqual(JSON.parse(X.diagnosticReport()).xrayDiagnosis.stencilAndReplay.floorPunch, { enabled: false },
+  'mobile clipboard diagnosis reports the selected floor-punch path');
+assert.deepStrictEqual(panel.onAction('toggle-floor-punch', { checked: true }), { ok: true },
+  'the full renderer floor-punch path can be restored from the same menu');
 assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
 assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
 // Mock the 3D scene only for the debug overlay. It must not create persistent
