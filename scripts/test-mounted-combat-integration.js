@@ -17,10 +17,12 @@ let staminaSpent = []; // Detects the independent mounted-training discount on t
 let legacy = 0; // Counts inappropriate ordinary weapon fallback attacks.
 let lunges = 0; // Counts inappropriate rider lunges.
 let alignmentRequests = 0; // Counts on-foot target alignment attempted while seated.
-let bursts = []; // Actual mounted quick/heavy movement bursts requested by their production abilities.
+let windupBoosts = []; // Captures mount acceleration adjustments made only during windup.
+let windupClears = []; // Tracks release, impact and dismount cleanup of temporary speed.
+let chargePose = 0.8; // Mutable real-pose sensor for funded heavy hold milestones.
 let holdCancelled = 0; // Ensures dismounting cancels the charged visual, not an on-foot release.
 let regenBlocked = false; // Checks that the heavy hold removes its stamina-regeneration blocker.
-let lungeMasteryBonus = 0; // Exercises the normal on-foot lunge upgrade in its mounted speed/duration replacement.
+let lungeMasteryBonus = 0; // Existing lunge upgrades increase mounted windup speed.
 
 const player = { x: 0, y: 0, stamina: 100, angle: 0 };
 const foe = { health: 1000, areaId: 'field', x: 36, y: 0, def: { label: 'target' } };
@@ -44,7 +46,7 @@ const deps = {
   triggerWeaponHoldVisual() {},
   releaseWeaponSwingHold() {},
   cancelWeaponSwingHold: () => { holdCancelled++; },
-  getWeaponSwingWindupPoseProgress: () => 0.8,
+  getWeaponSwingWindupPoseProgress: () => chargePose,
   clearVegetationInAttackCone: () => 0,
   fireLegacyWeaponAction: () => { legacy++; },
   beginCombatLunge: () => { lunges++; },
@@ -75,7 +77,9 @@ const window = {
     get rideEntity() { return riding === 'mounted' ? mount : null; },
     mountedMeleeDamageMultiplier: () => momentum,
     mountedMeleeStaminaMultiplier: () => 0.8,
-    beginMountedCombatBurst: (multiplier, seconds) => { bursts.push({ multiplier, seconds }); return true; },
+    beginMountedCombatBurst: () => { throw Error('no speed burst may start on release'); },
+    setMountedCombatWindupBoost: (owner, multiplier, spentFraction) => { windupBoosts.push({ owner, multiplier, spentFraction }); return true; },
+    clearMountedCombatWindupBoost: owner => { windupClears.push(owner); return true; },
   },
   __hobunjiPlayerProfile: profile,
   MeleePoseSpacing: {}, WeaponToolStances: { init() {} },
@@ -165,52 +169,87 @@ assert.equal(store.characters[0].combatLoadout.__mountedCombatLoadouts['test-hat
 const saved = Combat.loadout.serialize();
 Combat.loadout.load(saved);
 assert.equal(Combat.loadout.getSlot('tap2', 'mounted'), 'exhaustCutter');
-// Quick Attack tap reuses its real mastery and swaps rider lunge for a mount burst.
+// Quick attacks already pay stamina at tap; speed builds during the windup,
+// then the staged strike receives only real existing carrier momentum.
 riding = 'mounted';
-const quick = Combat.abilities.get('exhaustCutter'); // Production Quick Attack (not a fake registered ability).
+const quick = Combat.abilities.get('exhaustCutter'); // Production mastered Quick Attack.
 const quickStagesBefore = strikes.length;
-const quickBurstsBefore = bursts.length;
-lungeMasteryBonus = 0.4; // Same purchased Quick Attack lunge mastery should amplify its mounted gallop.
+lungeMasteryBonus = 0.4; // Preserve ordinary mastery as a higher mounted speed ceiling.
 quick.onTap();
-assert.equal(strikes.length, quickStagesBefore + 1, 'mounted quick uses production staged attack timeline');
-assert.equal(bursts.length, quickBurstsBefore + 1, 'mounted quick replaces its lunge with a speed burst');
-assert(Math.abs(bursts.at(-1).multiplier - 1.95 * 1.4) < 1e-9, 'Quick Attack lunge mastery enhances mounted speed multiplier');
-assert(bursts.at(-1).seconds > 1.05, 'Quick Attack lunge mastery also lengthens the capped-speed burst');
-assert.equal(lunges, 0, 'mounted quick does not move the player with a lunge');
-const hitsBeforeQuickDismount = hits.length; // Delayed strike must be harmless after dismounting.
+assert.equal(strikes.length, quickStagesBefore + 1, 'mounted quick schedules a real staged attack');
+const quickAction = strikes[quickStagesBefore];
+assert(quickAction.windupS > Combat.quickAttackData.WINDUP_S * 3, 'mounted jab windup allows meaningful time for mount acceleration');
+assert.equal(windupBoosts.at(-1).owner, 'mountedQuickAttack');
+assert.equal(windupBoosts.at(-1).spentFraction, 0, 'quick press starts with zero extra speed');
+assert(Math.abs(windupBoosts.at(-1).multiplier - 1.95 * 1.4) < 1e-9, 'quick mastery enhances peak windup acceleration');
+quickAction.onUpdate({ t: quickAction.windupS * 0.5 });
+assert(Math.abs(windupBoosts.at(-1).spentFraction - 0.5) < 1e-9, 'quick speed builds during its funded windup');
+const boostsAtImpact = windupBoosts.length; // No added speed on the impact boundary.
+quickAction.onUpdate({ t: quickAction.windupS });
+assert.equal(windupBoosts.length, boostsAtImpact, 'impact does not refresh the speed boost');
+assert.equal(windupClears.at(-1), 'mountedQuickAttack', 'quick windup speed ends at impact');
+assert.equal(lunges, 0, 'mounted jab never lunges the rider');
+const hitsBeforeQuickDismount = hits.length; // A cancelled mounted jab cannot become an on-foot hit.
 riding = 'none';
-strikes[quickStagesBefore].onStrike();
-strikes[quickStagesBefore].onComplete?.();
-assert.equal(hits.length, hitsBeforeQuickDismount, 'mounted quick cannot hit as a phantom foot strike after dismount');
+quickAction.onStrike();
+quickAction.onComplete?.();
+assert.equal(hits.length, hitsBeforeQuickDismount, 'dismounted quick cannot strike on foot');
+assert.equal(windupClears.at(-1), 'mountedQuickAttack', 'quick completion cleans up the boost');
 
-// Charged Breaker remains the original heavy ability, with its mastery and
-// visible charge, but the release accelerates the mount rather than the rider.
+// Mounted Charge consumes the real pose-based staged stamina cost: without
+// payment, there is no acceleration; more committed stamina means more speed.
 riding = 'mounted';
-const heavy = Combat.abilities.get('chargedBreaker'); // Locked mounted hold1 resolves to the production heavy ability.
+const heavy = Combat.abilities.get('chargedBreaker'); // Mounted Charge still shares authored heavy mastery.
 const heavyStagesBefore = strikes.length;
-const heavyBurstsBefore = bursts.length;
-lungeMasteryBonus = 0.5; // Heavy lunge mastery remains valuable after its on-foot lunge is replaced.
+lungeMasteryBonus = 0.5;
 heavy.onHoldStart();
-assert.equal(regenBlocked, true, 'heavy hold blocks stamina regeneration while charging');
+assert.equal(regenBlocked, true, 'hold blocks stamina regeneration');
+assert.equal(windupBoosts.at(-1).owner, 'mountedCharge');
+assert.equal(windupBoosts.at(-1).spentFraction, 0, 'no free speed at the start of a hold');
+const chargedPaymentsBefore = staminaSpent.length; // Existing cost begins only at release-ready pose.
+chargePose = 0.4;
+heavy.onHoldUpdate({}, 0.1);
+assert(staminaSpent.length > chargedPaymentsBefore, 'mounted hold begins spending stamina before its release-ready pose');
+const earlyFunded = windupBoosts.at(-1).spentFraction; // Actual payment drives speed, not a hidden clock.
+assert(earlyFunded > 0 && earlyFunded < 0.5, 'unready paid windup gains only a partial speed');
+chargePose = 0.47;
+heavy.onHoldUpdate({}, 0.1);
+const justBeforeReady = windupBoosts.at(-1).spentFraction; // No first-ready 24-stamina jump.
+chargePose = 0.49;
+heavy.onHoldUpdate({}, 0.1);
+assert(windupBoosts.at(-1).spentFraction - justBeforeReady < 0.1, 'threshold crossing must not jump charge speed');
+chargePose = 0.57;
+heavy.onHoldUpdate({}, 0.1);
+const initialFunded = windupBoosts.at(-1).spentFraction; // Compare paid progress, not visual clock.
+assert(initialFunded > earlyFunded && initialFunded < 1, 'further stamina expenditure accelerates mounted charge');
+assert(windupBoosts.at(-1).multiplier > 3, 'heavy lunge mastery raises mounted speed ceiling');
+chargePose = 0.8;
+heavy.onHoldUpdate({}, 0.1);
+assert(windupBoosts.at(-1).spentFraction > initialFunded, 'new stamina spent raises acceleration progressively');
+const boostsBeforeHeavyRelease = windupBoosts.length;
 heavy.onHoldEnd();
-assert.equal(regenBlocked, false, 'heavy release restores stamina regeneration');
-assert.equal(strikes.length, heavyStagesBefore + 1, 'charged mounted strike is still scheduled');
-assert.equal(bursts.length, heavyBurstsBefore + 1, 'charged heavy releases the mount gallop multiplier');
-assert(bursts.at(-1).multiplier > 3.2, 'Charged Breaker lunge mastery increases mounted speed');
-assert(bursts.at(-1).seconds > 2.5, 'Charged Breaker lunge mastery increases burst duration at the speed cap');
-assert.equal(lunges, 0, 'mounted heavy release never calls the player lunge');
+assert.equal(regenBlocked, false, 'release restores stamina regeneration');
+assert.equal(strikes.length, heavyStagesBefore + 1, 'release still schedules real charged strike');
+assert.equal(windupBoosts.length, boostsBeforeHeavyRelease, 'release never launches a fresh speed boost');
+assert.equal(windupClears.at(-1), 'mountedCharge', 'release clears windup speed for strike');
+assert.equal(lunges, 0, 'mounted heavy never starts rider lunge');
+const damageBeforeLateDismount = hits.length; // A valid release may still lose its mount before its strike frame.
+riding = 'none';
+strikes[heavyStagesBefore].onStrike();
+strikes[heavyStagesBefore].onComplete?.();
+assert.equal(hits.length, damageBeforeLateDismount, 'dismount between release and strike suppresses damage');
+riding = 'mounted';
 
 heavy.onHoldStart();
 assert.equal(regenBlocked, true);
 riding = 'none';
 const heavyStrikesBeforeDismount = strikes.length;
-const heavyBurstsBeforeDismount = bursts.length;
 heavy.onHoldEnd();
-assert.equal(strikes.length, heavyStrikesBeforeDismount, 'dismounted heavy hold cannot release a phantom foot strike');
-assert.equal(bursts.length, heavyBurstsBeforeDismount, 'dismount cannot trigger a stale mount burst');
-assert.equal(lunges, 0, 'dismounted heavy hold cannot produce an on-foot lunge');
-assert(holdCancelled > 0, 'dismounted heavy cancels its held weapon pose');
-assert.equal(regenBlocked, false, 'dismount fully releases heavy stamina regeneration block');
+assert.equal(strikes.length, heavyStrikesBeforeDismount, 'dismount prevents phantom mounted heavy strike');
+assert.equal(windupClears.at(-1), 'mountedCharge', 'dismount cleans up unfinished acceleration');
+assert.equal(lunges, 0, 'dismount cannot produce an on-foot lunge');
+assert(holdCancelled > 0, 'dismounted heavy cancels its visible charge pose');
+assert.equal(regenBlocked, false, 'dismount restores heavy hold stamina regeneration');
 lungeMasteryBonus = 0;
 // A scripted cliff crossing retains the mounted loadout for its duration,
 // but does not permit a quick/heavy to fall through as a rider lunge.
