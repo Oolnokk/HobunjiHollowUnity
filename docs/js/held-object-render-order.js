@@ -2444,9 +2444,6 @@
     for (const region of regions) {
       const { elevation, x, z } = region;
       region.radius = heldXrayFootprintRadius(region); // One conservative world-space circle covers all actual held-part bounds.
-      if (shellPadding === null && region.root === window.PlayerBodyTransformComposer?.getPlayerMesh?.()) {
-        lastPlayerXrayRadius = Math.max(lastPlayerXrayRadius, region.radius); // The optional visual follows real weapon reach.
-      }
       if (region.meshes.every(canBoundXrayMesh)
           && replayScissorRect(renderer, camera, region.meshes, xrayGearRect, null, shellPadding ?? 0)) {
         if (shellPadding === null && camera.isPerspectiveCamera && cameraY > elevation + band
@@ -2464,6 +2461,9 @@
           }
           region.groundRect = { x: xrayGroundRect.x, y: xrayGroundRect.y, z: xrayGroundRect.z, w: xrayGroundRect.w };
         }
+      }
+      if (shellPadding === null && region.root === window.PlayerBodyTransformComposer?.getPlayerMesh?.()) {
+        lastPlayerXrayRadius = Math.max(lastPlayerXrayRadius, region.radius); // Only effective depth groups expand the mobile preview.
       }
       let group = region.groundRect && groups.find(batch =>
         batch.regions.length < XRAY_MAX_BATCH_TILES
@@ -3722,13 +3722,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const renderBase = () => withPortraitDrawOrder(this, portraitOrder, () => originalRender.call(this, scene, camera), true);
     lastWaterPortraits = 0;
     lastDryGearWaterSkips = 0;
-    if (!held.length && !feet.length && !canTintPortraits) return renderBase();
+    if (!held.length && !feet.length && !canTintPortraits) { lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; return renderBase(); } // No active weapon reach.
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
     const needsOwnerMask = held.some(isPortraitMaskedGear)
       && collectVisible(frontPortraitRegistry, scene).length > 0; // Do not early-return when the private stencil is absent.
     if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
       lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+      lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; // No floor exception is active on this map.
       return renderBase();
     }
 
