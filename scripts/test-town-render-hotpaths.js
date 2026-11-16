@@ -555,7 +555,7 @@ const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isRepla
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
   const xrayGroundBox = { min: point(), max: point() };
-  const XRAY_HELD_FOOTPRINT_MARGIN = 0.12, window = {};
+  const XRAY_HELD_FOOTPRINT_MARGIN = 0.12, window = {}, objectProto = { onBeforeRender: undefined };
   const xrayHeldFootprintBox = {
     copy(bounds) { this.min = { ...bounds.min }; this.max = { ...bounds.max }; return this; },
     applyMatrix4(matrix) { for (const axis of ['x', 'z']) { const offset = matrix.elements[axis === 'x' ? 12 : 14] || 0; this.min[axis] += offset; this.max[axis] += offset; } return this; },
