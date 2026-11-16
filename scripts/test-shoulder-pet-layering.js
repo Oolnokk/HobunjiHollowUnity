@@ -278,12 +278,12 @@ for (const inward of [false, true]) {
 // relative ordering whether the pet itself was registered as an actor
 // portrait or inherited its holder's player rank through the compositor.
 const nearbyNpcPortrait = makeMesh('npc_avatar_front_plane'); // Represents another visible actor whose depth ranking enables the ranked sorter.
-for (const inward of [false, true]) for (const manual of [false, true]) for (const petDirectlyRanked of [false, true]) {
+for (const inward of [false, true]) for (const manual of [false, true]) for (const petDirectlyRanked of [false, true]) for (const npcDepth of [0.1, 0.6]) {
   pet.__hobunjiShoulderFacingInward = inward;
   use(pet, true);
   useManual = manual;
   const ownerRank = { owner: { id: 1 }, depth: 0.3 }; // The active player's rank, reused by the pet's two face stages.
-  const npcRank = { owner: { id: 2 }, depth: 0.6 }; // A farther NPC activates actor-aware sorting in this frame.
+  const npcRank = { owner: { id: 2 }, depth: npcDepth }; // Compare actors nearer and farther than the player without affecting the pet's internal ordering.
   const ranks = new Map([[front, ownerRank], [back, ownerRank], [nearbyNpcPortrait, npcRank]]);
   if (petDirectlyRanked) { ranks.set(pet.avatarRef.frontPlane, ownerRank); ranks.set(pet.avatarRef.backPlane, ownerRank); }
   const nearbyActorOrder = { ranks, extras: new Map() };
@@ -299,7 +299,9 @@ for (const inward of [false, true]) for (const manual of [false, true]) for (con
       const ordered = items.slice(shift).concat(items.slice(0, shift));
       if (reverse) ordered.reverse();
       ordered.sort(compare);
-      const indexOf = mesh => ordered.findIndex(item => item.object === mesh);
+      const indexOf = mesh => ordered.findIndex(item => item.object === mesh); // Reads the actual sorted list, including the external actor.
+      assert.equal(indexOf(nearbyNpcPortrait) < indexOf(front), npcDepth > ownerRank.depth,
+        'all actor portraits keep far-to-near order while the shoulder pet flips');
       assert.equal(indexOf(pet.avatarRef.frontPlane) > indexOf(ownerHatFront), inward,
         'nearby NPC and manual ranks must not prevent the front observation face swap');
       assert.equal(indexOf(pet.avatarRef.backPlane) > indexOf(ownerHatBack), !inward,
