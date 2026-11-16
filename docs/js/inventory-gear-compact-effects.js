@@ -10,7 +10,8 @@
 
   let observedSection = null; // Tracks the current Gear equipment root; EquipmentPanel may rebuild it at runtime.
   let observedInfo = null; // Tracks the item-detail panel so resize fitting follows menu/orientation changes.
-  let resizeObserver = null; // Re-fits only when one of the three Gear regions actually changes size.
+  let resizeObserver = null; // Watches Gear region dimensions without treating independent left-side resizing as a detail-font change.
+  let resizeTargetSizes = new WeakMap(); // Last ResizeObserver content-box size per node; first notifications are baselines, not changes.
   let inventoryMutationObserver = null; // Watches Gear rebuilds, item-detail changes, and readability-floor annotations.
   let fitQueued = false; // Coalesces rebuild/resize/orientation bursts into one presentation pass.
   let lastDebug = null; // Mobile-friendly snapshot of the latest workspace + item-detail fit.
@@ -402,12 +403,35 @@
   }
 
   function hookResizeTargets(workspace, info) {
-    if (workspace?.section === observedSection && info === observedInfo) return;
+    const section = workspace?.section || null; // Stable workspace identity, including the no-section case while Gear is rebuilding.
+    const detail = info || null; // Actual detail node; replacement always needs a newly measured font fit.
+    if (section === observedSection && detail === observedInfo) return;
     resizeObserver?.disconnect?.();
-    observedSection = workspace?.section || null;
-    observedInfo = info || null;
-    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(invalidateDetailFit) : null;
-    [workspace?.section, workspace?.summary, workspace?.owned, info].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
+    observedSection = section;
+    observedInfo = detail;
+    resizeTargetSizes = new WeakMap(); // Old observed targets must not influence the new workspace's first size notifications.
+    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
+      let workspaceResized = false; // Non-detail region changes need only to refresh the presentation workspace.
+      let detailResized = false; // Only the detail or its overall section can invalidate the fitted font.
+      for (const entry of entries) {
+        const target = entry?.target;
+        const width = entry?.contentRect?.width;
+        const height = entry?.contentRect?.height;
+        if (!target) continue;
+        if (!Number.isFinite(width) || !Number.isFinite(height)) {
+          detailResized = true; // Missing dimensions: preserve old fail-safe resize behavior.
+          break;
+        }
+        const previous = resizeTargetSizes.get(target);
+        resizeTargetSizes.set(target, { width, height });
+        if (!previous || (previous.width === width && previous.height === height)) continue;
+        workspaceResized = true;
+        if (target === observedInfo || target === observedSection) detailResized = true;
+      }
+      if (detailResized) invalidateDetailFit();
+      else if (workspaceResized) scheduleFit();
+    }) : null;
+    [section, workspace?.summary, workspace?.owned, detail].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
   }
 
   function gearActuallyVisible(pane) {
