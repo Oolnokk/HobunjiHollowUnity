@@ -27,7 +27,7 @@ function readableBabyError(error) {
 }
 
 function syncBabyHeadScaleControl() {
-  const inherited = babyHeadWarp?.getScale?.() || 1.32; // Universal 132% for species without explicit overrides.
+  const inherited = babyHeadWarp?.getScale?.() || 1.23; // Universal 123% for species without explicit overrides.
   const percent = Math.round((authoredBabyHeadScale ?? inherited) * 100);
   babyHeadScaleSlider.value = String(percent);
   babyHeadScaleLabel.textContent = percent + '%' + (authoredBabyHeadScale == null ? ' · inherited default' : ' · species override');
@@ -106,7 +106,7 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   const rig = exportRigBeforeBabyHead();
   if (!rig) return rig;
   if (authoredBabyHeadScale != null) rig.babyHeadScale = authoredBabyHeadScale; // Percent and source region are independent authoring settings.
-  else delete rig.babyHeadScale; // Inherit 132% without discarding the actual authored head mask source.
+  else delete rig.babyHeadScale; // Inherit 123% without discarding the actual authored head mask source.
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
   const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
   const frame = babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
