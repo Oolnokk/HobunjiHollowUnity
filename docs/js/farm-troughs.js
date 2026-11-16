@@ -397,7 +397,7 @@
   'use strict';
   if (window.LivestockNursery) return;
   const nurserySrc = 'js/livestock-nursery.js?v=20261116idleMaskCoverage3';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261116idleMask132b';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261116idleMaskCoverage3';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);
