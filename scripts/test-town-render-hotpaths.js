@@ -294,9 +294,9 @@ const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
 const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
 assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
   'owner-aware wet/dry grouping is part of the production renderer');
-const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'XRAY_CIRCLE_RADIUS', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
+const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
   heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
-)(8, 1.5, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
+)(8, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
 const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
 const wetHeld = { material: sharedMaterial };
 const dryHeld = { material: sharedMaterial };
@@ -305,8 +305,8 @@ const dryActor = scope(18, 18);
 const tintScopes = new Map([[wetHeld, wetActor], [dryHeld, dryActor]]);
 const mixedGroup = {
   elevation: 0.2,
-  regions: [{ col: 5, row: 5, x: 5.5, z: 5.5, radius: 3.4, elevation: 0.2, meshes: [wetHeld] },
-    { col: 18, row: 18, x: 18.5, z: 18.5, radius: 2.1, elevation: 0.2, meshes: [dryHeld] }],
+  regions: [{ col: 5, row: 5, x: 5.5, z: 5.5, elevation: 0.2, meshes: [wetHeld] },
+    { col: 18, row: 18, x: 18.5, z: 18.5, elevation: 0.2, meshes: [dryHeld] }],
   meshes: [wetHeld, dryHeld],
 };
 const separatedTintGroups = splitTintGroups([mixedGroup], tintScopes, [sparseWaterMesh]);
@@ -322,10 +322,6 @@ assert.equal(separatedTintGroups[0].centers[0], 5.5,
   'wet x-ray group keeps its physical world-space center');
 assert.equal(separatedTintGroups[1].centers[0], 18.5,
   'dry x-ray group retains its own actor center rather than inheriting the wet actor center');
-assert.ok(Math.abs(separatedTintGroups[0].radiiSq[0] - 3.4 ** 2) < 0.00001,
-  'wet x-ray group retains the extended weapon radius through shared-material stencil splitting');
-assert.ok(Math.abs(separatedTintGroups[1].radiiSq[0] - 2.1 ** 2) < 0.00001,
-  'dry x-ray group keeps its own weapon radius, not the wet actor radius');
 const ordinaryMixed = splitTintGroups([
   { elevation: undefined, regions: [], meshes: [wetHeld, dryHeld] },
 ], tintScopes, [sparseWaterMesh]);
@@ -551,15 +547,10 @@ assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 
 const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
   '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_CIRCLE_RADIUS = 1.5, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
-  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2, lastPlayerXrayRadius = 1.5;
+  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
   const xrayGroundBox = { min: point(), max: point() };
-  const XRAY_HELD_FOOTPRINT_MARGIN = 0.12, window = {}, objectProto = { onBeforeRender: undefined };
-  const xrayHeldFootprintBox = {
-    copy(bounds) { this.min = { ...bounds.min }; this.max = { ...bounds.max }; return this; },
-    applyMatrix4(matrix) { for (const axis of ['x', 'z']) { const offset = matrix.elements[axis === 'x' ? 12 : 14] || 0; this.min[axis] += offset; this.max[axis] += offset; } return this; },
-  };
   function rectsOverlap`
 ) + elevationNewline + 'return buildXrayGroups;')(
   mesh => mesh.scope,
@@ -579,25 +570,6 @@ assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far],
   'only screen-separated same-height holder neighborhoods share a depth rebuild');
 assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
 assert.deepEqual([...grouped.groups[0].centers.slice(0, 4)], [0.5, 0.5, 10.5, 0.5], 'one batch carries both world-space circle centers to the shader');
-assert.equal(grouped.groups[0].radiiSq[0], 2.25, 'short held art retains the authored 1.5-unit circle');
-const extendedWeapon = { ...part(0, 0), x: 3, z: 0.5,
-  geometry: { boundingBox: { min: { x: -0.1, y: 0, z: -0.1 }, max: { x: 0.1, y: 0.1, z: 0.1 } } },
-  matrixWorld: { elements: { 12: 3, 14: 0.5 } } };
-const swungGroup = groupMeshes({}, actorScene, {}, [extendedWeapon]);
-assert.equal(swungGroup.groups.length, 1, 'held weapon remains eligible after leaving the actor-centered base circle');
-assert.ok(swungGroup.groups[0].radiiSq[0] > 2.25 && swungGroup.groups[0].regions[0].radius > 2.5,
-  'world-space held sprite bounds extend the floor exception beyond the old hard circle edge');
-const rotatingRope = { ...part(0, 0), userData: { hobunjiGeneratedRope: true },
-  geometry: {
-    boundingBox: { min: { x: -0.01, y: -0.01, z: -0.01 }, max: { x: 0.01, y: 0.01, z: 0.01 } },
-    boundingSphere: { radius: 0.75, center: { x: 0, y: 0, z: 0 } },
-  },
-  matrixWorld: { elements: { 12: 3, 14: 0.5 }, getMaxScaleOnAxis: () => 2 },
-  onBeforeRender() {}, // Like the real flail rope, this callback rotates the sprite when drawn.
-};
-const ropeGroup = groupMeshes({}, actorScene, {}, [rotatingRope]);
-assert.ok(ropeGroup.groups[0].regions[0].radius >= 4.11,
-  'camera-facing flail rope uses its rotation-safe world bounding sphere, not stale pre-render plane bounds');
 assert.match(heldRender, /const regionsByTile = new Map\(\)/,
   'held x-ray scopes are bucketed by tile while preserving per-actor positions');
 const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
@@ -652,10 +624,6 @@ assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && stan
 assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
-assert.equal(standardGroundShader.uniforms.uHobunjiXrayRadiiSq, groundShaderState.uniforms.radiiSq,
-  'per-actor extended radii are bound to the actual ground fragment shader');
-assert.ok(standardGroundShader.fragmentShader.includes('dot(offsetFromActor, offsetFromActor) <= uHobunjiXrayRadiiSq[i]'),
-  'ground discard uses the current held footprint rather than a compiled constant');
 const copiedGroundMaterial = {
   userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.
   onBeforeCompile: groundMaterial.onBeforeCompile,
@@ -749,7 +717,7 @@ assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs on
 assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
 assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
   'the selective depth shader still binds the clone-specific elevation after running the prior hook');
-assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v7',
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v6',
   'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
@@ -798,11 +766,10 @@ assert.equal(uniforms.enabled.value, 1);
 assert.equal(uniforms.elevation.value, tileBatch.elevation);
 assert.equal(uniforms.centerCount.value, 2);
 assert.equal(uniforms.centers.value, tileBatch.centers);
-assert.equal(uniforms.radiiSq.value, tileBatch.radiiSq, 'each packed holder passes its own squared X-ray radius to the ground shader');
 setFilter(filterStates, null);
 assert.equal(uniforms.enabled.value, 0, 'ordinary depth and subsequent lighting passes disable the tile filter');
-assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= uHobunjiXrayRadiiSq\[i\]/,
-  "shader performs one world-space circle test against each holder's live squared radius");
+assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= 2\.250000/,
+  'shader performs one world-space circular radius test per candidate center');
 assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldXZ = hobunjiXrayWorldPosition.xz;'));
 const sharedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
