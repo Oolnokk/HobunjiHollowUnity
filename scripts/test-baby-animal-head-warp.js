@@ -159,7 +159,7 @@ assert(nursery.includes('ensureIdleMask?.(entry.kind, canvases[0])'), 'nursery p
 assert(incubator.includes('ensureIdleMask?.(slot.baby.kind, composed)'), 'incubator primes from composed idle before sleep presentation');
 assert(nest.includes('ensureIdleMask?.(kind, canvas)'), 'nest babies prime from their idle silhouette before applying their pose');
 const bridge = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8');
-assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind)'),
+assert(bridge.includes('await warp?.ensureIdleMask?.(kind)'),
   'small shoulder-pet frame pipeline awaits the registered idle sprite');
 assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource)'),
   'small shoulder-pet split source uses the LEFT idle sprite before clipping run1');
