@@ -253,6 +253,7 @@
     }
 
     if (needsSmallPetHead(companion, combatDeps)) {
+      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource); // Reuse the left IDLE silhouette across both pre-split composed layers.
       const left = warpSmallPetSource(idleSource, kind); // All genotype pattern and eye pixels already exist; warp before seam clipping.
       const right = rightUsesIdle ? left : warpSmallPetSource(rightSource, kind);
       idleSource = left;
