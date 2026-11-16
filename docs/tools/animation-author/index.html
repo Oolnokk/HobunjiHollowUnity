@@ -15176,6 +15176,17 @@ async function buildShoulderCarrierV1553(actor, npcId) {
       name: root.name + '_portrait',
       userData: { source: 'shoulder-grip-carrier-preview', nonInteractive: true, npcId },
     });
+    try {
+      await buildNpcNeckRig(model, avatar, npc); // Standard Animation Author NPCs replace their initial (globally horizontally flipped) PNGPlaneAvatar textures with this unflipped skinned portrait.
+    } catch (error) {
+      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
+      throw new Error('Could not create the normal NPC portrait face: ' + error.message); // Visible in the temporary-carrier status; never silently show the mirrored fallback.
+    }
+    if (generation !== shoulderCarrierGenerationV1553 || !shoulderCarrierEditingV1553(actor)
+        || selectedAnimationActor() !== actor) {
+      window.PNGPlaneAvatar?.disposeAvatarModel?.(model); // A slow head-only portrait bake cannot resurrect a carrier discarded while it was loading.
+      return;
+    }
     model.userData.proceduralHandParent = visualOffset;
     visualOffset.add(model);
     const modelHeight = Number(model.userData.portraitModelHeight) || 1;
@@ -15216,7 +15227,7 @@ async function buildShoulderCarrierV1553(actor, npcId) {
       return;
     }
     syncShoulderCarrierV1553();
-    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · NPC portrait front (+Z) faces camera · shoulder position pinned · animal fixed at Small.');
+    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · normal NPC skinned portrait (not horizontally mirrored) · front (+Z) faces camera · Small pet fixed.');
     frameAllAnimationActors('angle');
   })();
   shoulderCarrierTaskV1553 = task;
@@ -15307,7 +15318,7 @@ renderAttachmentRigInspector = function(...args) {
     + '<select id="maaShoulderCarrierNpcV1553">' + choices.map(choice =>
       '<option value="' + escapeHtml(choice.npcId) + '">' + escapeHtml(choice.key + ' · ' + choice.label) + '</option>').join('') + '</select></div>'
     + '<div class="maaSmall maaMuted" id="maaShoulderCarrierStatusV1553">Comparing Small creature with its owner’s authored shoulder perch…</div>'
-    + '<div class="maaSmall maaMuted">The animal remains fixed. The NPC uses the normal character portrait (front +Z, unlike animal +X) and turns to face the orbit camera, so you never see its reversed back plane. Its shoulder remains pinned to the grip as the view changes. Rotating the animal grip will not flip the NPC. Switch NPCs to compare fits.</div>';
+    + '<div class="maaSmall maaMuted">The animal remains fixed. This NPC now uses the exact skinned portrait renderer used by the tool’s normal NPC actors, rather than the initial horizontally flipped fallback planes. Its front (+Z) faces the orbit camera and its shoulder stays pinned to the grip. Switch NPCs to compare fits.</div>';
   $('maaInspector')?.appendChild(section);
   const select = section.querySelector('#maaShoulderCarrierNpcV1553');
   select.value = shoulderCarrierNpcIdV1553;
@@ -15319,7 +15330,7 @@ renderAttachmentRigInspector = function(...args) {
       && shoulderCarrierPreviewV1553.npcId === shoulderCarrierNpcIdV1553) {
     syncShoulderCarrierV1553();
     shoulderCarrierStatusV1553('Carrier: ' + shoulderCarrierPreviewV1553.profileKey
-      + ' · NPC portrait front (+Z) faces camera · shoulder position pinned · animal fixed at Small.');
+      + ' · normal NPC skinned portrait (not horizontally mirrored) · front (+Z) faces camera · Small pet fixed.');
   } else if (!shoulderCarrierTaskV1553
       || shoulderCarrierRequestedV1553?.creatureId !== actor.id
       || shoulderCarrierRequestedV1553?.npcId !== shoulderCarrierNpcIdV1553) {
