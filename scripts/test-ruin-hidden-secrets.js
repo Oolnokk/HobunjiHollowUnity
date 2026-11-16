@@ -30,6 +30,30 @@ class Mesh extends Group{constructor(geometry,material){super();this.geometry=ge
 class Geometry{dispose(){}}
 class Material{constructor(opts){Object.assign(this,opts);}dispose(){}}
 global.THREE={Group,Mesh,BoxGeometry:Geometry,CylinderGeometry:Geometry,MeshBasicMaterial:Material};
+const materialSpecs=[]; // Verify actual authored stone texture/color-fill settings, not only color literals.
+global.ProceduralFurniture={makePartMaterial:spec=>{
+  materialSpecs.push(spec);
+  return new Material({sourceTexture:spec.materialTexture,fillMode:spec.materialFillMode,
+    fillColor:spec.materialFillColor,opacity:spec.surfaceOpacity??1});
+}};
+global.HobunjiSurfaceStretchUV={mapMesh(mesh,settings){
+  assert.equal(settings.label,'ruin-side-treasure-stone');
+  mesh.userData.uvMapped=true;return {ok:true};
+}}; // Each generated box must use the main puzzle's connected-surface UV mapping.
+let authoredIceCount=0,ropeNetCount=0; // Confirm secret covers reuse existing ice growth and rope_long atlas modules.
+global.DungeonDoorIceCoverage={create({parent,groundY,seed}){
+  authoredIceCount++;
+  assert.equal(groundY,room.y);assert(seed.includes('ice-cover'));
+  const authoredLayer=new Mesh(new Geometry(),new Material({artSource:'IceStalagmiteCoverage'}));
+  parent.add(authoredLayer);return {iceLayer:authoredLayer,ownsLayer:true};
+}};
+global.DungeonRopeArt={createNetFrustum(w,d,drop){
+  ropeNetCount++;
+  assert(w>1&&d>1&&Math.abs(drop-1.75)<1e-8);
+  const net=new Mesh(new Geometry(),new Material({artSource:'assets/objectsprites/rope_long.png'}));
+  net.userData.dungeonNetAtlas='assets/objectsprites/rope_long.png';
+  return net;
+}};
 global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},
  sampleSupport:()=>({y:room.y}),ids:new Set()}; // Real side puzzles require the same flat physical support as the main stages.
 global.DevRandomRuinDungeonChests={create(o){
@@ -47,6 +71,11 @@ let notesReceived=0,melodyListener=null; // Confirms one secret score cannot rec
 global.PuzzleCaveMelody={ruinDifficulty:()=>3,generate:()=>({notes:[{index:1}],bpm:90}),
  createSession:(_song,cbs)=>({step(){},note(){notesReceived++;},stop(){},solve:()=>cbs.onSolved()})};
 global.RuinMelodyGlyphDecal={create:()=>({dispose(){}})};
+global.PuzzleCavePlateArt={decorate:(_THREE,plate,settings)=>{
+  assert.equal(plate.material.sourceTexture,'carved_smooth.png','Hao\'uun stone plate uses the real ruin texture');
+  assert.equal(settings.radius,.46);
+  return {dispose(){}};
+}};
 global.addEventListener=(_type,callback)=>{melodyListener=callback;};
 global.removeEventListener=(_type,callback)=>{if(melodyListener===callback)melodyListener=null;};
 const rigUpdates=[]; // Each baby must receive the actual rig's folded-wing hatchling pose, not render as an adult flyer.
@@ -64,6 +93,27 @@ for(const [key,seed] of Object.entries(found)){
   getPlayerY:()=>feetY,getPlayerPosition:()=>player,
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
  assert(owner);
+ const secretStone=[];
+ owner.group.traverse(node=>{
+   if(node.userData?.ruinSecretTexturedStone){
+     secretStone.push(node);
+     assert.equal(node.material?.sourceTexture,'carved_smooth.png',
+       'every secondary mechanism, seal, pillar and nest column uses the authored stone PNG');
+     assert.equal(node.userData.uvMapped,true,'every authored stone has its connected-surface UV mapping');
+   }
+ });
+ assert(secretStone.length>=1,'every optional secret has visible textured masonry');
+ if(key==='suspended:ice'){
+   assert(owner.icePlacement?.iceLayer,'ice reward cover uses authored Tothal ice growth');
+   assert.equal(owner.cover.children.find(child=>child.name?.includes('secret-ice-growth-seed'))?.visible,false,
+     'authored faceted ice replaces the placeholder ice box instead of rendering both');
+ }
+ if(key==='suspended:net'){
+   assert(owner.cover.children.some(node=>node.userData?.dungeonNetAtlas==='assets/objectsprites/rope_long.png'),
+     'net reward cover uses the same original rope_long atlas as the main dungeon ropes');
+   assert.equal(owner.cover.children.filter(node=>node.name?.includes('grounded-column')).length,4,
+     'four stone columns actually support the rope net rather than leaving floating strands');
+ }
  owner.tick(.05);
  if(key==='pillar'||key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
    assert.equal(owner.targets.length,1);owner.targets[0].onHit();assert(owner.unlocked);
@@ -83,8 +133,8 @@ for(const [key,seed] of Object.entries(found)){
    feetY=12;melodyListener(noteEvent);assert.equal(notesReceived,1,'notes at the correct plate reach the judge');
    owner.melody.solve();assert(owner.unlocked);
  }
- if(key==='suspended:net')assert(owner.cover.position.y>=room.y&&owner.cover.position.y<room.y+1.5,
-   'a side cache net must stand on the real floor rather than hang as a floating shelf');
+ if(key==='suspended:net')assert.equal(owner.cover.position.y,room.y+1.75,
+   'net spans from its four grounded supporting columns down to the floor');
  if(key.startsWith('suspended:')){
    assert.equal(owner.chest.group.position.y,room.y,'an optional prize chest starts on the physical room floor');
    assert.equal(owner.cover.visible,false,'the struck ice/net cover gives way without any floating reward animation');
@@ -103,6 +153,14 @@ for(const [key,seed] of Object.entries(found)){
  assert.equal(fire.size,0);
  assert.equal(controls.size,0);
 }
+assert(authoredIceCount>0,'optional Tothal secrets invoke the real ice growth adapter');
+assert(ropeNetCount>0,'optional net secrets invoke the shared sprite atlas');
+assert(materialSpecs.every(spec=>spec.materialTexture==='carved_smooth.png'),
+  'all per-secret authored material instances use the same ruin texture');
+assert(materialSpecs.some(spec=>spec.materialFillMode==='always'&&spec.materialFillColor==='#b08d57'),
+  'accent fittings recolor the PNG itself rather than being flat bronze rectangles');
+assert(materialSpecs.some(spec=>spec.materialFillMode==='never'),
+  'structural masonry retains the original unfilled carved stone texture');
 // Wait for the same asynchronous flying-rig creation used by real game assets before inspecting its pose.
 const seed=found.babies,brood=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
   getPlayerY:()=>12,getPlayerPosition:()=>({x:43,z:53}),
