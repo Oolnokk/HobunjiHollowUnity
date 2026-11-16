@@ -10,9 +10,13 @@ for (const consumer of ['docs/index.html', 'docs/tools/animation-author/index.ht
   assert(fs.readFileSync(consumer, 'utf8').includes(rigCacheVersion), consumer + ' must load the corrected attachment-rig version');
 }
 const rig = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Canonical gameplay socket used in the parity assertions.
+const mainEditorScriptStart = html.indexOf('<script>\n(() => {'); // The actual Animation Author runs in a private IIFE, not the separate global layout script.
+const mainEditorScriptEnd = html.indexOf('</script>', mainEditorScriptStart);
 const begin = html.lastIndexOf('// V15.48 — Shoulder-pet viewport parity with the gameplay attachment solver.');
-const end = html.lastIndexOf('</script>');
-assert(begin > 0 && end > begin);
+const end = html.indexOf('\n})();\n</script>', begin); // Only evaluate the parity adapter itself in the isolated harness.
+assert(mainEditorScriptStart > 0 && mainEditorScriptEnd > mainEditorScriptStart);
+assert(begin > mainEditorScriptStart && begin < mainEditorScriptEnd && end > begin,
+  'shoulder-pet preview adapter must share the actual Animation Author IIFE scope, not the separate layout script');
 const clone = item => JSON.parse(JSON.stringify(item));
 const rigWindow = { SCRATCHBONES_CONFIG:{game:{appearanceEditor:{species:{}},assets:{pngPlaneAvatar:{
   behindView:{headUrls:{}},portraitScaleBySpecies:{},portraitVerticalPlacement:{},proceduralFeet:{footScale:{default:1}},
