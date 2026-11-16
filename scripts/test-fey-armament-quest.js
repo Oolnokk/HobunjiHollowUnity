@@ -110,8 +110,10 @@ window.ArtifactCollection = { unlocked: () => true, render() {} }; // Service te
 
 function treeForGaranki() { return registered.trees.garanki_gabu(); }
 function finish(npcId, tree) {
-  const last = tree.nodes[tree.nodes.length - 1];
-  return registered.nodes[npcId](last, { npc: { id: npcId }, tree });
+  const last = tree.nodes[tree.nodes.length - 1]; // Exercises the same entered end node that the real dialogue renderer publishes.
+  const before = profile.questProgress[quest.QUEST_ID]?.stage; // Node listeners update state, and Garanki's composed handler does not return a value.
+  registered.nodes[npcId](last, { npc: { id: npcId }, tree });
+  return profile.questProgress[quest.QUEST_ID]?.stage !== before;
 }
 function allElements(root) {
   return [root, ...root.children.flatMap(allElements)];
