@@ -193,6 +193,50 @@ for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkao
 }
 
 
+// November 16 export: animal-only updates. Character/NPC anatomy and posterior data from the same export are deliberately excluded.
+const novemberAnimalAuthoring = {"gar-wolf":{"grip":{"x":0.01,"y":-0.14097888312228624,"z":0.07486897921502367},"small":{"x":0.28,"y":0.34}},"dabinggi-hound":{"grip":{"x":-0.16036566987282258,"y":-0.12636677592420467,"z":0.12410100452746164},"small":{"x":0.35,"y":0.35}},"drenkirra":{"grip":{"x":-0.0036970156287619823,"y":-0.11914729549653388,"z":0.09707381568917758},"small":{"x":0.9,"y":0.9}},"puktuk":{"grip":{"x":0,"y":-0.257,"z":0.034273761545456985},"small":{"x":0.28,"y":0.28}},"voorg-ass":{"grip":{"x":0,"y":-0.11122461401165312,"z":0.05961047587703741},"small":{"x":0.34,"y":0.34}},"nelk":{"grip":{"x":0.05838103969211583,"y":-0.06616055534830413,"z":0.05330590874914502},"small":{"x":0.44,"y":0.44}},"nazgraku":{"grip":{"x":-0.010120303229480966,"y":-0.112,"z":0.04704726667943677},"small":{"x":0.5,"y":0.5}},"uumkaoii":{"grip":{"x":0,"y":-0.2057328849409156,"z":-0.004605298975405354},"small":{"x":0.24,"y":0.24}},"moot":{"grip":{"x":0,"y":-0.09985368986154525,"z":0.1},"small":{"x":0.35,"y":0.35},"saddle":{"x":0,"y":0.1892393302917481,"z":0.02},"large":{"x":1.5,"y":1.5},"medium":{"x":1,"y":1}}}; // Exact approved creature shoulders and Small sizes from the supplied rig JSON.
+for (const [kind, expected] of Object.entries(novemberAnimalAuthoring)) {
+  const animal = profiles.creatures[kind]; // Checks shared gameplay defaults used by Animation Author, without replacing any character fields.
+  assert(animal, kind + ' must be present in canonical runtime rig profiles');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.anchors.shoulderGrip.position)), expected.grip, kind + ' November 16 shoulder grip');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.sizeScales.small)), expected.small, kind + ' November 16 Small size');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.sizeScalePercentages.small)), {
+    x: expected.small.x * 100, y: expected.small.y * 100,
+  }, kind + ' Small percent controls match the numeric size');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatureShoulderGripDefaults[kind])), expected.grip, kind + ' duplicated grip defaults follow the master');
+  if (kind === 'moot') {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.anchors.saddle.position)), expected.saddle, 'Moot uses its own authored saddle');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.sizeScales.large)), expected.large, 'Moot Large scale is not inherited from Voorg-ass');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(animal.sizeScales.medium)), expected.medium, 'Moot Medium scale is independent');
+  }
+}
+const retiredAnimalGrips = {"gar-wolf":{"x":0.01,"y":-0.26545210788556156,"z":0.07486897921502367},"dabinggi-hound":{"x":0.01,"y":-0.20203700498816118,"z":0.09104867302389968},"drenkirra":{"x":0.01,"y":-0.11914729549653388,"z":-0.001096892109713506},"puktuk":{"x":0.01,"y":-0.29715994741785007,"z":-0.0010889163404909086},"voorg-ass":{"x":0.01,"y":-0.33453636625016553,"z":0.0181046276028018},"nelk":{"x":0.030176488041515424,"y":-0.11264054358274966,"z":0.028253979555520257},"nazgraku":{"x":0.011498553593554665,"y":-0.14241261412989242,"z":0.000946211786312177}}; // Exact pre-November 16 canonical grip fingerprints, not broad bounds or guesses.
+for (const [kind, position] of Object.entries(retiredAnimalGrips)) {
+  const imported = JSON.parse(JSON.stringify(profiles)); // Simulates an existing browser autosave still holding the old grip.
+  imported.creatures[kind].anchors.shoulderGrip.position = position;
+  const migrated = guard.reconcileProfiles(imported).creatures[kind];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(migrated.anchors.shoulderGrip.position)),
+    novemberAnimalAuthoring[kind].grip, kind + ' old stock grip must migrate');
+  const custom = JSON.parse(JSON.stringify(imported)); // Deliberately moved positions must remain user-authored.
+  custom.creatures[kind].anchors.shoulderGrip.position.x += 0.007;
+  assert.strictEqual(guard.reconcileProfiles(custom).creatures[kind].anchors.shoulderGrip.position.x,
+    position.x + 0.007, kind + ' customized shoulder grip survives stock migration');
+}
+const retiredAnimalSmallSizes = {"gar-wolf":{"x":0.35,"y":0.35},"uumkaoii":{"x":0.2,"y":0.2},"puktuk":{"x":0.3,"y":0.3},"voorg-ass":{"x":0.27,"y":0.27},"nelk":{"x":0.35,"y":0.35},"nazgraku":{"x":0.35,"y":0.35}}; // Exact previous canonical Small X/Y, used for narrowly scoped old-autosave repair.
+for (const [kind, small] of Object.entries(retiredAnimalSmallSizes)) {
+  const imported = JSON.parse(JSON.stringify(profiles)); // Simulates the older editor's unmodified Small-size defaults.
+  imported.creatures[kind].sizeScales.small = small;
+  imported.creatures[kind].sizeScalePercentages.small = { x: small.x * 100, y: small.y * 100 };
+  const migrated = guard.reconcileProfiles(imported).creatures[kind];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(migrated.sizeScales.small)), novemberAnimalAuthoring[kind].small, kind + ' exact old Small size must migrate');
+  const custom = JSON.parse(JSON.stringify(imported)); // Only an exact fingerprint can trigger the migration.
+  custom.creatures[kind].sizeScales.small.x += 0.013;
+  assert.strictEqual(guard.reconcileProfiles(custom).creatures[kind].sizeScales.small.x,
+    small.x + 0.013, kind + ' custom creature Small scale survives migration');
+}
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['omgurku-lower'].sizeScales.small)), { x: 1, y: 1 },
+  'the independent hybrid lower-half rig is not part of the animal-only import');
+
 const stalePosteriorDefaults = JSON.parse(JSON.stringify(profiles));
 const supersededPosteriorFloors = {
   'tletingan::male': 24.829594593937666,
@@ -259,8 +303,8 @@ assert.strictEqual(w.HobunjiHandShoulderPoints.keyFor('rakakoan', 'male'), 'kenk
 assert.strictEqual(w.HobunjiAttachmentRigRecovery, undefined, 'hand-shoulder config must not own attachment-rig recovery anymore');
 
 const newRigs = {
-  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.030176488041515424,-0.11264054358274966,0.028253979555520257], ground:[0.28,0.18,0.065] },
-  nazgraku: { saddle:[0,0.07886458733711826,-0.0022188537422596633], grip:[0.011498553593554665,-0.14241261412989242,0.000946211786312177], ground:[0.31,0.2,0.07] },
+  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.05838103969211583,-0.06616055534830413,0.05330590874914502], ground:[0.28,0.18,0.065] },
+  nazgraku: { saddle:[0,0.07886458733711826,-0.0022188537422596633], grip:[-0.010120303229480966,-0.112,0.04704726667943677], ground:[0.31,0.2,0.07] },
 }; // Regression fixtures use the user's October 22 calibration exports, not guessed attachment defaults.
 for (const [kind, expected] of Object.entries(newRigs)) {
   const profile = profiles.creatures[kind]; // Runtime rig must contain the authored values without an editor import.

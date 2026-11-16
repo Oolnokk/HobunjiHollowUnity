@@ -30,7 +30,7 @@ const rig = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); /
 const mainEditorScriptStart = html.indexOf('<script>\n(() => {'); // The actual Animation Author runs in a private IIFE, not the separate global layout script.
 const mainEditorScriptEnd = html.indexOf('</script>', mainEditorScriptStart);
 const begin = html.lastIndexOf('// V15.48 — Shoulder-pet viewport parity with the gameplay attachment solver.');
-const end = html.indexOf('\n})();\n</script>', begin); // Only evaluate the parity adapter itself in the isolated harness.
+const end = html.indexOf('// V15.49 — Rig Coordinates:', begin); // Isolate V15.48 without accidentally executing the newer shoulder-pose preview adapter.
 assert(mainEditorScriptStart > 0 && mainEditorScriptEnd > mainEditorScriptStart);
 assert(begin > mainEditorScriptStart && begin < mainEditorScriptEnd && end > begin,
   'shoulder-pet preview adapter must share the actual Animation Author IIFE scope, not the separate layout script');

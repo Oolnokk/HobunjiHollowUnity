@@ -176,8 +176,8 @@ assert.doesNotMatch(source,
   /state\.targetYawDeg = (?:side|leanSide) \*/,
   'body-lean randomness can never choose the shoulder pet head-yaw direction');
 assert.match(rigSource,
-  /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
-  'Drenkirra uses the supplied shoulderGrip');
+  /\['drenkirra'[\s\S]{0,180}\[-0\.0036970156287619823,-0\.11914729549653388,0\.09707381568917758\]/,
+  'Drenkirra retains its canonical authored XYZ grip without reverting to the former default');
 assert.match(rigSource,
   /\['uumkaoii'[\s\S]{0,180}\[0,-0\.2057328849409156,-0\.004605298975405354\]/,
   'Uumkaoii uses the supplied shoulderGrip');

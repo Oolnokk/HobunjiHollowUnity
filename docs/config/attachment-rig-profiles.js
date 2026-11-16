@@ -100,16 +100,18 @@
 
   const DRENKIRRA_SHOULDER_GRIP_YAW_DEG = 61; // The shoulder solver inverts grip yaw; Drenkirra needs the reverse signed full-plane offset.
   const creatureRecords = [
-    ['drenkirra',[0,0.030605877381859603,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],
+    ['drenkirra',[0,0.030605877381859603,0.02],'built-in-approved-rig-json-v1524',null,null,null,[-0.0036970156287619823,-0.11914729549653388,0.09707381568917758],[[4,4],[2,2],[0.9,0.9]],null],
     ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
-    ['gar-wolf',[0,0.15973815894365057,0.3293044388176616],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],
-    ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
-    ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.2,0.2]],null],
-    ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
-    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.1,1.1],[0.75,0.75],[0.27,0.27]],null], // Large scale 1.1 and Large ground offset 0.462 from the October 25 Rig Coordinates export.
+    ['gar-wolf',[0,0.15973815894365057,0.3293044388176616],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.14097888312228624,0.07486897921502367],[[1.5,1.5],[1,1],[0.28,0.34]],null],
+    ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[-0.16036566987282258,-0.12636677592420467,0.12410100452746164],[[2,2],[1,1],[0.35,0.35]],null],
+    ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.24,0.24]],null],
+    ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0,-0.257,0.034273761545456985],[[1,1],[0.6,0.6],[0.28,0.28]],null],
+    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0,-0.11122461401165312,0.05961047587703741],[[1.1,1.1],[0.75,0.75],[0.34,0.34]],null], // Large scale 1.1 and Large ground offset 0.462 from the October 25 Rig Coordinates export.
     // Recovered saddle and shoulder-grip authoring from the October 22 exports (19), (20), and (21).
-    ['nelk',[0,0.12365496943656872,0.09343178888117182],'animation-author-export-2026-10-22',null,null,null,[0.030176488041515424,-0.11264054358274966,0.028253979555520257],[[1.5,1.5],[1,1],[0.35,0.35]],null],
-    ['nazgraku',[0,0.07886458733711826,-0.0022188537422596633],'animation-author-export-2026-10-22',null,null,null,[0.011498553593554665,-0.14241261412989242,0.000946211786312177],[[1.5,1.5],[1,1],[0.35,0.35]],null],
+    ['nelk',[0,0.12365496943656872,0.09343178888117182],'animation-author-export-2026-10-22',null,null,null,[0.05838103969211583,-0.06616055534830413,0.05330590874914502],[[1.5,1.5],[1,1],[0.44,0.44]],null],
+    ['nazgraku',[0,0.07886458733711826,-0.0022188537422596633],'animation-author-export-2026-10-22',null,null,null,[-0.010120303229480966,-0.112,0.04704726667943677],[[1.5,1.5],[1,1],[0.5,0.5]],null],
+    // New November 16 authoring: independently maintained Moot creature shoulder and size profile.
+    ['moot',[0,0.1892393302917481,0.02],'animation-author-export-2026-11-16',null,null,null,[0,-0.09985368986154525,0.1],[[1.5,1.5],[1,1],[0.35,0.35]],null],
   ];
   const staleCreatureSaddles = Object.freeze({ // Used by reconcileProfiles and the Animation Author repair bridge to migrate only exact superseded defaults.
     drenkirra: Object.freeze([Object.freeze([0,0.09289353489875796,0.02])]),
@@ -123,16 +125,27 @@
     nazgraku: Object.freeze([Object.freeze([0,0,0])]),
   });
   const staleCreatureShoulderGrips = Object.freeze({
-    nelk: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
-    nazgraku: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
+    'gar-wolf': Object.freeze([Object.freeze([0.01,-0.26545210788556156,0.07486897921502367])]), // Exact old master grip; user-authored positions remain untouched.
+    'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
+    'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
+    'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018])]), // Exact old master grip; user-authored positions remain untouched.
+    nelk: Object.freeze([Object.freeze([0.030176488041515424,-0.11264054358274966,0.028253979555520257]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
+    nazgraku: Object.freeze([Object.freeze([0.011498553593554665,-0.14241261412989242,0.000946211786312177]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
     drenkirra: Object.freeze([
+      Object.freeze([0.01,-0.11914729549653388,-0.001096892109713506]), // November 16: former canonical grip; migrate only its exact old XYZ.
       Object.freeze([0.01,-0.1636307385658067,0.0009131708735385657]),
       Object.freeze([0.01,-0.1636307385658067,0.003984738737597559]),
     ]),
     uumkaoii: Object.freeze([Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352]), Object.freeze([0.01,-0.3636087789187775,-0.18395679109723])]),
   });
   const staleCreatureSizeScales = Object.freeze({
+    'gar-wolf': Object.freeze({ small: Object.freeze({ x: 0.35, y: 0.35 }) }), // Migrate only the previous default Small-scale tuple.
+    'uumkaoii': Object.freeze({ small: Object.freeze({ x: 0.2, y: 0.2 }) }), // Migrate only the previous default Small-scale tuple.
+    'puktuk': Object.freeze({ small: Object.freeze({ x: 0.3, y: 0.3 }) }), // Migrate only the previous default Small-scale tuple.
+    'voorg-ass': Object.freeze({ small: Object.freeze({ x: 0.27, y: 0.27 }) }), // Migrate only the previous default Small-scale tuple.
+    'nelk': Object.freeze({ small: Object.freeze({ x: 0.35, y: 0.35 }) }), // Migrate only the previous default Small-scale tuple.
+    'nazgraku': Object.freeze({ small: Object.freeze({ x: 0.35, y: 0.35 }) }), // Migrate only the previous default Small-scale tuple.
     grehlr: Object.freeze({ small: Object.freeze({ x: 0.2, y: 0.2 }) }),
     drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }),
   });
@@ -236,7 +249,7 @@
 
   const masterCreatures = {};
   for (const [kind, saddle, saddleSource, saddleOffset, saddlePixel, midlineSearchRadiusPx, shoulderGrip, scales, grehlrSizeScaleDefaultVersion] of creatureRecords) {
-    const creatureAuthoredSource = kind === 'grehlr'
+    const creatureAuthoredSource = kind === 'moot' ? 'animation-author-export-2026-11-16' : kind === 'grehlr'
       ? 'animation-author-export-2026-09-16'
       : ((kind === 'puktuk' || kind === 'voorg-ass') ? 'animation-author-export-2026-09-15'
         : ((kind === 'nelk' || kind === 'nazgraku' || kind === 'uumkaoii') ? 'animation-author-export-2026-10-22' : 'authored-2026-08-28-attachpointsv1')); // New/current creature grip coordinates keep their actual authored pass instead of inheriting an older baseline label.
