@@ -29,9 +29,9 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-15-uploads7-moot-voorg-neck') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-16-moot-painted-baby-pets1') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261116mootPaintBaby1', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261116mootPaintBaby1', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -125,6 +125,7 @@
       if (!url) return reject(new Error('missing frame URL'));
       const image = new Image();
       image.decoding = 'async';
+      image.crossOrigin = 'anonymous'; // Remote fallback sprite pixels must be readable before head enlargement.
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error(`could not load ${url}`));
       image.src = url;
@@ -142,6 +143,80 @@
     ctx.clip();
     ctx.drawImage(image, 0, 0, width, height);
     ctx.restore();
+    return true;
+  }
+
+  const smallPetHeadFrameCache = new WeakMap(); // Per-pet async composed sprite, reused across repeated render-provider calls.
+  const smallPetHeadDebug = { applied: 0, failed: 0, lastError: null }; // In-game mobile diagnostic for small-pet head processing.
+  function needsSmallPetHead(companion, combatDeps) {
+    const kind = genotypeKindFor(companion, combatDeps); // Actual genotype species, never a visual-size guess.
+    return !!window.BabyAnimalHeadWarp?.isSmallSizeVariantPet?.(kind, companion?.genotype, companion?.stableRole);
+  }
+  function warpSmallPetSource(source, kind) {
+    const warp = window.BabyAnimalHeadWarp; // The final genotype image already contains base color, patterns and eyes.
+    if (!warp || !source) return source;
+    const width = Number(source.naturalWidth || source.width), height = Number(source.naturalHeight || source.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return source;
+    const canvas = typeof source.getContext === 'function' ? source : document.createElement('canvas');
+    if (canvas !== source) {
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(source, 0, 0, width, height);
+    }
+    return warp.applyToCanvas(canvas, kind); // Produces independent texture; the genotype cache remains unchanged.
+  }
+  function smallPetVisualKey(companion, combatDeps, frameName) {
+    const kind = genotypeKindFor(companion, combatDeps);
+    const renderer = window.CreatureGeneticsRender, warp = window.BabyAnimalHeadWarp;
+    const signature = renderer?.genotypeSignature?.(kind, companion?.genotype) || JSON.stringify(companion?.genotype || {});
+    const frame = warp?.frameForKind?.(kind);
+    return [kind, frameName, signature, warp?.scaleForKind?.(kind) || 1,
+      frame ? [frame.x, frame.y, frame.width, frame.height].join(',') : 'no-frame'].join('|'); // Cache invalidates when genotype, frame, head box or percent changes.
+  }
+  function ensureSmallPetHeadFrame(companion, combatDeps, frameName) {
+    if (!needsSmallPetHead(companion, combatDeps)) return false;
+    const kind = genotypeKindFor(companion, combatDeps);
+    const renderer = window.CreatureGeneticsRender;
+    if (typeof renderer?.composeFrame !== 'function' || typeof combatDeps?.setCreatureFrame !== 'function') return false;
+    const key = smallPetVisualKey(companion, combatDeps, frameName);
+    const existing = smallPetHeadFrameCache.get(companion);
+    if (existing?.key === key) {
+      if (existing.url) {
+        if (companion.currentFrameUrl !== existing.url) {
+          combatDeps.setCreatureFrame(companion.avatarRef, existing.url, null, 'idle', null); // Already carries eyes, coat and recolored patterns.
+          companion.currentFrameUrl = existing.url;
+        }
+        companion.__hobunjiShoulderFrame = existing.url;
+        companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? existing.url : null;
+        companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? existing.url : null;
+        companion.__hobunjiShoulderSplitFrame = null;
+        return true;
+      }
+      return !!existing.pending; // Prevent recompiling on every render tick or repeatedly retrying a missing sprite.
+    }
+    const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
+    smallPetHeadFrameCache.set(companion, entry);
+    Promise.resolve().then(() => renderer.composeFrame(kind, frameName, companion.genotype, false)).then(composed => {
+      if (!composed) throw new Error('Genotype frame unavailable');
+      const enlarged = warpSmallPetSource(composed, kind);
+      if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
+      const url = enlarged.toDataURL('image/png');
+      if (smallPetHeadFrameCache.get(companion) !== entry) return;
+      entry.url = url;
+      entry.pending = false;
+      smallPetHeadDebug.applied++;
+      const owner = combatDeps?.player;
+      if (companion.health > 0 && companion.stableRole === 'shoulderPet'
+        && (companion.master || owner) === owner && !effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
+        combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
+        companion.currentFrameUrl = url;
+      }
+    }).catch(error => {
+      if (smallPetHeadFrameCache.get(companion) !== entry) return;
+      entry.pending = false;
+      smallPetHeadDebug.failed++;
+      smallPetHeadDebug.lastError = String(error?.message || error); // Visible through PlayerBodyAttachmentBridge.getDebug() on mobile.
+    });
     return true;
   }
 
