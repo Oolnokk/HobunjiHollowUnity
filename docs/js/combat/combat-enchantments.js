@@ -223,7 +223,7 @@
 
   // Unlocks everything present on an enchantment state (e.g. an unbound
   // relic). Returns the list of newly learned labels for the UI toast.
-  function unlockFromState(raw) {
+  function unlockFromState(raw, options = {}) {
     const clean = cleanWeaponState(raw);
     const u = unlockStore();
     const learned = [];
@@ -239,8 +239,8 @@
       learned.push(`${DEFINITIONS[id].displayName} (${slotId.toUpperCase()} Flourish)`);
     }
     if (learned.length) {
-      persist();
-      logEvent(`Garanki learned: ${learned.join(', ')}`);
+      if (options.deferSave !== true) persist(); // Garanki's gear/member transaction persists its entire learned batch in one write.
+      if (options.deferSave !== true) logEvent(`Garanki learned: ${learned.join(', ')}`); // Only report committed normal operations.
     }
     return learned;
   }
@@ -258,7 +258,7 @@
 
   // Rejects rather than silently dropping: the caller learns a third Base
   // enchantment is illegal instead of having one quietly vanish.
-  function equipBase(key, slotIndex, enchantmentId) {
+  function equipBase(key, slotIndex, enchantmentId, options = {}) {
     const current = stateFor(key).base;
     if (enchantmentId && Math.floor(Number(slotIndex) || 0) >= BASE_LIMIT) return false;
     if (enchantmentId && current.includes(enchantmentId) && current[Math.floor(Number(slotIndex) || 0)] !== enchantmentId) return false; // The same Base enchantment twice on one weapon is not a second enchantment.
@@ -274,25 +274,25 @@
       next[index] = enchantmentId;
     }
     state.base = next.filter(Boolean).slice(0, BASE_LIMIT);
-    persist();
-    if (def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // An owned ordinary weapon gaining Fey magic also starts the one-time investigation.
+    if (options.deferSave !== true) persist(); // Deferred only for a validated combined gear/member transaction.
+    if (options.deferSave !== true && def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // An owned ordinary weapon gaining Fey magic also starts the one-time investigation.
     return true;
   }
 
   // Appends into the first free Base slot; false when both are taken.
-  function addBase(key, enchantmentId) {
-    return equipBase(key, stateFor(key).base.length, enchantmentId);
+  function addBase(key, enchantmentId, options = {}) {
+    return equipBase(key, stateFor(key).base.length, enchantmentId, options);
   }
 
-  function setFlourish(key, slotId, enchantmentId) {
+  function setFlourish(key, slotId, enchantmentId, options = {}) {
     if (!(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).includes(slotId)) return false;
     const def = DEFINITIONS[enchantmentId];
     if (enchantmentId && def?.type !== 'Flourish') return false;
     const state = stateFor(key, true);
     if (enchantmentId) state.flourishes[slotId] = enchantmentId;
     else delete state.flourishes[slotId];
-    persist();
-    if (def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // Flourish-only Fey equipment follows the same acquisition rule.
+    if (options.deferSave !== true) persist(); // Garanki commits the entire transaction once after mutation.
+    if (options.deferSave !== true && def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // Flourish-only Fey equipment follows the same acquisition rule.
     return true;
   }
 
