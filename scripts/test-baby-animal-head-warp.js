@@ -40,6 +40,14 @@ const warp = windowStub.BabyAnimalHeadWarp;
 assert.equal(warp.getScale(), 1.32, 'every species defaults to the new 132% scale');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
+windowStub.AnimalChatheadFrame = { frameForKind: () => ({ ...head, source: 'animal-head-rig-fallback' }) }; // The dialogue module returns a generic crop even for non-species.
+assert.equal(warp.frameForKind('missing'), null, 'generic chathead fallback must not enable arbitrary unknown animals');
+windowStub.HobunjiAuthoredAnimalHeadRigs = { get: kind => kind === 'moot' ? {
+  babyHeadFrame: { x: .05, y: .12, width: .4, height: .55, coordinateSpace: 'sprite-normalized-top-left' },
+} : null };
+assert.equal(warp.frameForKind('moot').height, .55, 'explicit Moot source box outranks an automatic generic dialogue fallback');
+windowStub.HobunjiAuthoredAnimalHeadRigs = null;
+windowStub.AnimalChatheadFrame = null;
 assert(warp.frameForKind('pingdort'), 'unpainted registered species retain a conservative baby head frame');
 assert.equal(warp.scaleForKind('pingdort'), 1.32, 'all baby species default to 132%, including babies of naturally small birds');
 assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'small' }, 'shoulderPet'), true,
