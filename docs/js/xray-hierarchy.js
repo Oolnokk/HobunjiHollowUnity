@@ -367,7 +367,7 @@
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
       'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
       'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor',
-      'playerGroundXrayRadius', 'xrayOrdinaryMeshes', 'elevationShaderFallbacks', 'xrayTileRegions']) {
+      'floorPunch', 'forcedGroundDepthMaterials', 'elevationShaderFallbacks', 'xrayTileRegions']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -398,7 +398,7 @@
     }
     const THREE = window.THREE;
     if (!THREE?.CircleGeometry || !THREE?.RingGeometry || !THREE?.Group) return false;
-    if (!groundZoneMarker) { // A changing weapon reach must not regenerate two geometries every frame.
+    if (!groundZoneMarker || groundZoneMarker.userData.radius !== radius) {
       if (groundZoneScene && groundZoneMarker) groundZoneScene.remove(groundZoneMarker);
       if (groundZoneMarker) groundZoneMarker.traverse(node => {
         node.geometry?.dispose?.();
@@ -407,11 +407,11 @@
       groundZoneScene = null;
       groundZoneMarker = new THREE.Group();
       groundZoneMarker.name = 'debug_ground_xray_circle';
-      groundZoneMarker.userData.radius = radius; // Updated below; retained for diagnostics.
-      const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 64),
+      groundZoneMarker.userData.radius = radius; // Match the renderer's exact radius.
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(radius, 64),
         new THREE.MeshBasicMaterial({ color: 0x31bdec, transparent: true, opacity: 0.15,
           depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
-      const rim = new THREE.Mesh(new THREE.RingGeometry(0.99, 1.01, 64),
+      const rim = new THREE.Mesh(new THREE.RingGeometry(radius - 0.028, radius + 0.028, 64),
         new THREE.MeshBasicMaterial({ color: 0x0ce6fa, transparent: true, opacity: 0.9,
           depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
       for (const [mesh, order] of [[fill, 960], [rim, 961]]) {
@@ -427,8 +427,6 @@
       scene.add(groundZoneMarker);
       groundZoneScene = scene;
     }
-    groundZoneMarker.userData.radius = radius; // Preserve the live footprint for Dev Companion and mobile inspection.
-    groundZoneMarker.scale.set(radius, 1, radius); // Unit disc grows without allocating GPU geometry on every swing.
     groundZoneMarker.position.set(scope.x, scope.elevation + 0.025, scope.z);
     return true;
   }
@@ -567,9 +565,10 @@
             ...(selectedPresetId !== activePresetId && selectedPreset
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
-            ['Ground X-ray zone', 'Minimum 1.5 tiles; latest player held reach ' +
-               (Number.isFinite(live.playerGroundXrayRadius) ? live.playerGroundXrayRadius.toFixed(2) : '-') +
-               ' tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
+            ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
+            ['Ground depth writers repaired (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
+            ['Ground shader fallbacks', String(live.elevationShaderFallbacks ?? '-')],
+            ['Stencil floor punch', live.floorPunch?.enabled === false ? 'Disabled (full depth rebuild)' : 'Enabled'],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
             ['Last held order override', live.lastHeldOrderNormalization
@@ -607,6 +606,9 @@
               group: 'Front portrait occlusion', title: RULES['hand.frontPlaneMask'].help },
             { id: 'toggle-ground-zone', label: 'Show ground X-ray circle in the world', checkbox: true,
                checked: state['ground.showZone'] === 'on', group: 'World depth and airborne replay', title: RULES['ground.showZone'].help },
+            { id: 'toggle-floor-punch', label: 'Use stencil floor punch (A/B test)', checkbox: true,
+               checked: live.floorPunch?.enabled !== false, group: 'World depth and airborne replay',
+               title: 'On: local stencil floor reset; off: full depth rebuild. Test the same weapon and ground without changing other settings.' },
             { id: 'set', args: { key: 'background.gearDepth' }, label: RULES['background.gearDepth'].label,
               value: state['background.gearDepth'], options: RULES['background.gearDepth'].options.map(value => ({ value, label: value })),
               group: 'World depth and airborne replay', title: RULES['background.gearDepth'].help },
@@ -665,6 +667,10 @@
         if (action === 'report') return { ok: true, title: 'X-ray diagnosis (mobile)', text: diagnosticReport() };
         if (action === 'toggle-ground-zone') return set('ground.showZone', args.checked === true ? 'on' : 'off')
           ? { ok: true } : { ok: false, error: 'Could not toggle zone preview.' };
+        if (action === 'toggle-floor-punch') {
+          const enabled = window.HeldObjectRenderOrder?.setFloorPunchEnabled?.(args.checked === true);
+          return typeof enabled === 'boolean' ? { ok: true } : { ok: false, error: 'Floor punch controller unavailable.' };
+        }
         if (action === 'set') {
           const ok = set(String(args.key || ''), String(args.value ?? ''));
           if (ok && args.key === 'weapon.followHandLayer' && args.value === 'on') selectedLayer = effectiveLayerId(selectedLayer);
@@ -690,6 +696,7 @@
           return { ok: true };
         }
         if (action === 'reset') {
+          window.HeldObjectRenderOrder?.setFloorPunchEnabled?.(true); // Restore the renderer's default experiment state too.
           reset();
           selectedStage = 'held'; // Reopen the common equipment stage after a full reset.
           selectedLayer = 'actor.hands'; // Make the newly restored, linked position visible.
