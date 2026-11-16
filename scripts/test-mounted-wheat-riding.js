@@ -332,9 +332,8 @@ assert(Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y) < orbitStartDi
   'orbit does not drift substantially farther from the chosen enemy than its acquired distance');
 win.Combat.deps.getActiveTool = () => 'weapon';
 mount.x = 28 * T; mount.y = 9 * T;
-const meleeModeY = mount.y;
 for (let i = 0; i < 12; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
-assert.equal(win.Mounts.ridingDebug.orbitTarget, 'orbited-enemy', 'orbit diagnostic retains last chosen target for inspection');
+assert.equal(win.Mounts.ridingDebug.orbitActive, false, 'switching from a ranged weapon to melee cancels mount auto-orbit');
 win.Combat.input.isAutoTargetEnabled = () => false;
 input.x = 0; input.y = 0;
 
