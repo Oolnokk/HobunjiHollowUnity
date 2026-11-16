@@ -64,10 +64,13 @@ class FakeImage {
     if (url.startsWith('https://raw.githubusercontent.com/')) queueMicrotask(() => this.onload?.());
   }
 }
-const repositoryStart = portrait.indexOf('function portraitRepositoryUrlCandidates(');
-const repositoryEnd = portrait.indexOf('// ── CSS filter helpers', repositoryStart);
+const patchedPortrait = prepare(portrait, 'js/portrait-utils.js', { docsRoot: 'docs/' }); // The editor's dynamically loaded runtime is intentionally bounded without changing game.js.
+assert.notEqual(patchedPortrait, portrait, 'editor should install a bounded image loader');
+assert.match(patchedPortrait, /Portrait image timeout \(15s\)/, 'portrait editor shim must report the failing URL');
+const repositoryStart = patchedPortrait.indexOf('function portraitRepositoryUrlCandidates(');
+const repositoryEnd = patchedPortrait.indexOf('// ── CSS filter helpers', repositoryStart);
 assert(repositoryStart > 0 && repositoryEnd > repositoryStart);
-const runSource = portrait.slice(repositoryStart, repositoryEnd) + '; return { loadImg };';
+const runSource = patchedPortrait.slice(repositoryStart, repositoryEnd) + '; return { loadImg };';
 const cdnRoot = 'https://cdn.jsdelivr.net/gh/Oolnokk/HobunjiHollowUnity@TEST_COMMIT/docs/assets/';
 const timeouts = new Set(); // Advances stalled image timers quickly without waiting 15 seconds in CI.
 const setTimeoutFast = fn => { const timer = setTimeout(fn, 2); timeouts.add(timer); return timer; };
