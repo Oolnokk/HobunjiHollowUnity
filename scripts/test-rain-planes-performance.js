@@ -161,6 +161,15 @@ rain.update(1 / 60);
 assert.equal(rain.getDebugState().activeContent, 'blizzard');
 assert.notEqual(group.children[0].material.map, rainTexture, 'Western Slope really swaps the same material to snow artwork');
 assert.equal(group.children.length, 17, 'snow reuses the precipitation pool');
+assert.ok(group.children.every(mesh => mesh.material.map.image.width === 640),
+  'all active snow planes must use blizzard artwork, not the rain texture');
+rain.setSettings({ frontCount: 12, behindCount: 12 });
+rain.update(1 / 60);
+assert.equal(group.children.length, 24, 'expanding bands must allocate only the additional pool members');
+assert.ok(group.children.every(mesh => mesh.material.map.image.width === 640),
+  'new bands created during a blizzard must inherit snow artwork');
+rain.setSettings({ frontCount: 5, behindCount: 12 });
+rain.update(1 / 60);
 
 rain.setSettings({ mode: 'camera' });
 rain.update(1 / 60);
