@@ -256,6 +256,21 @@
   }
 
   // ---------------------------------------------------------------- runtime
+  function platformSlabBlocksAt(platforms,x,z,half,feet,verticalRadius=null){
+    if(!Number.isFinite(feet))return false;
+    const radius=Math.max(0,Number(half)||0); // Shared mover half-width, also used by point/projectile probes.
+    const pointHalf=verticalRadius==null?null:Math.max(.025,Number(verticalRadius)||0); // Height-aware callers are small volumes, not full-height bodies.
+    const bottom=pointHalf===null?feet+.055:feet-pointHalf;
+    const top=pointHalf===null?feet+1.25:feet+pointHalf; // A grounded actor can stand ON a slab; a projectile can clear it from below.
+    for(const p of platforms||[]){
+      if(bottom>=p.y-.001||top<=p.y-THICKNESS+.001)continue;
+      if(x+radius<=p.x-p.w/2||x-radius>=p.x+p.w/2
+        ||z+radius<=p.z-p.d/2||z-radius>=p.z+p.d/2)continue;
+      return true; // An adjacent stone platform's sides block a roll/lunge at the actual platform height.
+    }
+    return false;
+  }
+
   function mount(plan, deps = {}) {
     if (!plan?.ok) throw new Error('Cannot mount an unverified jump shaft.');
     const { THREE, DynamicSurfaces: DS, parent } = deps;
@@ -319,6 +334,18 @@
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
+    const slabBlockerId=scope+'-platform-slabs'; // Reuses the ordinary forced-movement blocker registry and is removed on disposal.
+    const footprintBlockers=root.AreaFootprintBlockers; // One shared authority for walking, dodging, lunging and creatures.
+    footprintBlockers?.register?.(slabBlockerId,{
+      area:'map_i_dev_random_ruin',
+      enabled:()=>!disposed,
+      blocksBox:(x,z,half,worldY)=>{
+        const explicitY=worldY!=null?Number(worldY):NaN; // Ranged shots use the supplied point height instead of the player's story.
+        if(Number.isFinite(explicitY))return platformSlabBlocksAt(plan.platforms,x,z,half,explicitY,half);
+        const supportY=Number(deps.getPlayerY?.()); // Heightless forced movement uses the actual current player support.
+        return platformSlabBlocksAt(plan.platforms,x,z,half,supportY);
+      },
+    });
     const pillarRecords = [], attachedPillars = new Set(), attachedPlasm = new Set(); // Retry an incomplete theme mount without duplicating hazards.
     let pitPlasmAttached = false; // Kanthic's permanent pit patch must be registered exactly once.
     // The theme composer (lich-themes) owns pillar/plasm behaviour; it may not
@@ -368,6 +395,7 @@
       if (disposed) return; disposed = true;
       plan.mounted = false; // The live scene no longer owns the slots, but hazardsMounted remains an explicit historical guard.
       DS.clearScope(scope);
+      footprintBlockers?.remove?.(slabBlockerId); // No slab side collision may outlive its jump-shaft geometry.
       for (const handle of plasmHandles) handle?.dispose?.();
       plasmHandles = [];
       group.parent?.remove(group);
@@ -395,8 +423,9 @@
   let active = null;
   const mountTracked = (plan, deps) => { active?.dispose?.(); const runtime = mount(plan, deps); const dispose = runtime.dispose; active = runtime; runtime.dispose = () => { if (active === runtime) active = null; dispose(); }; return runtime; };
   return Object.freeze({
-    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles,
+    TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles, platformSlabBlocksAt, // Pure helper is also used by platform regression tests.
     isIceAt: (x, z, y) => !!active?.isIceAt?.(x, z, y),
+    flightBlockedAt:(x,z,radius,y)=>!!active&&platformSlabBlocksAt(active.plan.platforms,x,z,radius,y,radius), // Skeeri hit the same real slab volume as other flying projectiles.
     senseTargets: () => [],
   });
 });
