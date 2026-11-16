@@ -133,6 +133,7 @@
   let _lastManifestStamp = null; // The completed manifest must still be present before a no-op autosave is permitted.
   let _lastSaveWork = { written: 0, unchanged: 0 }; // File-level save counts exposed in mobile diagnostics.
   let _unchangedAutosavesSkipped = 0; // Automatic saves avoided because captured live data did not change.
+  let _recoveryNeedsRefresh = false; // A durable lock-progress-only write must receive its full recovery snapshot at the next ordinary autosave.
   let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
   let _recoveryHandleFresh = false; // True only after a current-session user gesture supplies a new directory handle specifically safe to probe for recovery.
   const _listeners = new Set();
@@ -156,6 +157,7 @@
       patternMirror: _lastPatternMirror,
       saveFileWork: { ..._lastSaveWork },
       unchangedAutosavesSkipped: _unchangedAutosavesSkipped,
+      recoveryRefreshPending: _recoveryNeedsRefresh,
       browserMirrorWarning: _lastBrowserMirrorWarning || null,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
       recoveryHandleFresh: _recoveryHandleFresh,
@@ -865,7 +867,7 @@
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
-      if (automatic && !force && recoveryKind === 'auto' && delta && !delta.changed && !_lastError
+      if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
         && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
         _lastSaveWork = { written: 0, unchanged: delta.digests.size };
         _unchangedAutosavesSkipped++;
@@ -999,6 +1001,7 @@
       if (typeof checkpointWriter === 'function') {
         try {
           await checkpointWriter(saveSnapshot, { automatic, savedAt, recoveryKind, reason });
+          _recoveryNeedsRefresh = false; // Full recovery was committed; small lock-progress changes no longer need catch-up.
         } catch (checkpointError) {
           _lastError = `Primary folder save succeeded, but recovery history could not be updated: ${String(checkpointError?.message || checkpointError)}`;
           _lastAction = automatic ? 'autosaved-primary-recovery-error' : 'saved-primary-recovery-error';
@@ -1025,6 +1028,99 @@
   async function syncSnapshot(snapshot, options = {}) {
     return syncNow({ ...options, snapshot });
   }
+  // The first miss in a lock only modifies one character field. Persist it
+  // independently of huge farm layouts and recovery JSON while retaining a
+  // full recovery refresh on the next normal autosave. The disk character is
+  // read and checked against its last committed fingerprint before patching;
+  // unrelated character, world, and farm data are never replaced.
+  function canSaveLockProgress(characterId) {
+    if (_state !== 'ready' || !_autoSyncArmed || !_handle || !_committedFileState || !_lastManifestStamp || !_lastKnownFolderMeta) return false;
+    const current = _lastKnownFolderMeta.characters?.find(character => String(character?.id) === String(characterId)); // Authoritative filename and character identity for the fast write.
+    return !!current && _committedFileState.has(fileKey(CHARACTERS_DIR, slugify(current.nickname) + '-' + current.id + '.json'));
+  }
+
+  async function _saveLockProgressImpl({ characterId, worldId, lockId, record }) {
+    try {
+      if (!canSaveLockProgress(characterId)) throw new Error('Fast lock progress save has no verified folder baseline. Use the full save.');
+      const profile = window.__hobunjiPlayerProfile; // Prevent an in-flight lock modal from changing another character after a world switch.
+      if (String(profile?.characterId) !== String(characterId) || String(profile?.worldId) !== String(worldId)) {
+        throw new Error('Lock progress save belongs to another active character or world.');
+      }
+      if (typeof lockId !== 'string' || !lockId || lockId.length > 1024
+        || ['__proto__', 'prototype', 'constructor'].includes(lockId)
+        || typeof record !== 'object' || !record || Array.isArray(record)
+        || record.version !== 2 || record.folderUnsynced !== true || !Number.isInteger(record.stage)) {
+        throw new Error('Lock progress record is invalid.');
+      }
+      const safeRecord = JSON.parse(JSON.stringify(record)); // Detached tiny payload cannot change during asynchronous folder I/O.
+      const known = _lastKnownFolderMeta.characters.find(character => String(character?.id) === String(characterId)); // Same character catalog used to construct the canonical filename.
+      const filename = slugify(known.nickname) + '-' + known.id + '.json';
+      const key = fileKey(CHARACTERS_DIR, filename);
+      const old = _committedFileState.get(key); // Prior successful canonical character write; required for external edit detection.
+      const manifestHandle = await _handle.getFileHandle(MANIFEST_FILE_NAME);
+      if (!sameDiskStamp(_lastManifestStamp, diskStamp(await manifestHandle.getFile()))) {
+        throw new Error('Primary save manifest changed outside this session. Load from Folder before saving lock progress.');
+      }
+      const dir = await _handle.getDirectoryHandle(CHARACTERS_DIR);
+      const handle = await dir.getFileHandle(filename);
+      const diskRaw = await (await handle.getFile()).text();
+      if (contentFingerprint(diskRaw) !== old?.digest) {
+        throw new Error('Character save changed outside this session. Load from Folder before saving lock progress.');
+      }
+      const character = JSON.parse(diskRaw); // Patch the true disk copy, never the potentially stale browser character.
+      if (String(character?.id) !== String(characterId)) throw new Error('Primary folder character id mismatch.');
+      const locks = character.chestLockProgress;
+      if (locks !== undefined && (!locks || typeof locks !== 'object' || Array.isArray(locks))) {
+        throw new Error('Character lock progress is malformed.');
+      }
+      character.chestLockProgress ||= {};
+      const worldLocks = character.chestLockProgress[worldId];
+      if (worldLocks !== undefined && (!worldLocks || typeof worldLocks !== 'object' || Array.isArray(worldLocks))) {
+        throw new Error('Character world lock progress is malformed.');
+      }
+      character.chestLockProgress[worldId] ||= {};
+      character.chestLockProgress[worldId][lockId] = safeRecord;
+      const raw = JSON.stringify(character); // One character, not the farm, its backups or rolling recovery snapshots.
+      const writable = await handle.createWritable();
+      await writable.write(raw);
+      await writable.close();
+      const stamp = diskStamp(await handle.getFile());
+      const manifest = await readJsonFile(_handle, MANIFEST_FILE_NAME);
+      if (!manifest || Number(manifest.savedAt) !== _lastSyncedAt) {
+        throw new Error('Primary save manifest is inconsistent after the lock progress write.');
+      }
+      const savedAt = Date.now();
+      await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt });
+      const manifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile());
+      _committedFileState = new Map(_committedFileState); // Publish the new character fingerprint only after both canonical writes succeed.
+      _committedFileState.set(key, { digest: contentFingerprint(raw), stamp });
+      _lastKnownFolderMeta = {
+        ..._lastKnownFolderMeta,
+        characters: _lastKnownFolderMeta.characters.map(entry => String(entry?.id) === String(characterId) ? character : entry),
+      }; // Future ordinary saves compare against the actual patched on-disk character.
+      _lastManifestStamp = manifestStamp;
+      _lastSyncedAt = savedAt;
+      _lastSaveWork = { written: 1, unchanged: Math.max(0, _committedFileState.size - 1) };
+      _recoveryNeedsRefresh = true; // The regular timer upgrades this tiny durable commit to a complete recoverable checkpoint.
+      _lastDataLossRisk = null;
+      _lastError = '';
+      _lastAction = 'autosaved-lock-progress';
+    } catch (error) {
+      _committedFileState = null; // Even a partial write cannot be treated as a verified incremental baseline.
+      _lastManifestStamp = null;
+      _lastError = String(error?.message || error);
+      _lastAction = 'save-error';
+    }
+    notify();
+    return getStatus();
+  }
+
+  async function saveLockProgress(details) {
+    while (_syncPromise) await _syncPromise; // Serialize against ordinary autosaves; never change a character during another folder write.
+    _syncPromise = _saveLockProgressImpl(details).finally(() => { _syncPromise = null; });
+    return _syncPromise;
+  }
+
 
   function reloadAfterFolderRestore() {
     setTimeout(() => location.reload(), 0);
@@ -1323,6 +1419,8 @@
     forget,
     syncNow,
     syncSnapshot,
+    canSaveLockProgress,
+    saveLockProgress,
     loadFromFolder,
     reconcileConnectedFolder,
     readPrimarySnapshot,
