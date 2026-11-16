@@ -68,8 +68,11 @@
   // threshold (armed), this lets the animation continue through to strike.
   function release() {
     if (!active) return;
-    const { descriptor, armed } = active;
+    if (deps?.isBlocked?.()) { abort(); return; }
+    const { descriptor, armed: alreadyArmed, downAt } = active;
+    const armed = alreadyArmed || now() - downAt + 1e-9 >= holdThresholdS(); // Recognize a real hold even when a stalled frame skipped update().
     active = null;
+    if (armed && !alreadyArmed) descriptor.onArm?.(); // Preserves the single arm callback before resuming a late-released hold.
     if (armed) descriptor.resumeVisual?.();
     else descriptor.cancelVisual?.();
   }

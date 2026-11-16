@@ -104,7 +104,7 @@
     ['js/combat/combat-vocalizations.js?v=20261115coffinVoice3', () => Number(window.CombatVocalizations?.version) >= 5],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
-    ['js/held-item-action-input.js?v=20261116tapHoldAudit2', () => !!window.HeldItemActionInput],
+    ['js/held-item-action-input.js?v=20261116holdReleaseAudit3', () => !!window.HeldItemActionInput],
     ['js/alcohol-gameplay-bridge.js?v=20261114perfumesAudit3', () => !!window.HobunjiDrunkGameplayBridge],
     ['config/npcs/food-gift-preferences.js?v=20261001foodgift1', () => Number(window.HobunjiNpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-food-gift-preferences.js?v=20261001foodgift2', () => Number(window.NpcFoodGiftPreferences?.version) >= 1],

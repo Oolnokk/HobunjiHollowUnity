@@ -74,6 +74,25 @@ held.begin('food',{startVisual(){},onArm(){armCount++;},cancelVisual(){}});
 clock+=319;held.update();assert.equal(armCount,0);
 clock+=1;held.update();assert.equal(armCount,1);
 held.release();
+let resumeCount=0,abortCount=0,blocked=false; // Observe missed-frame hold commits, canceled taps and input-lock aborts.
+held.init({isBlocked:()=>blocked});
+held.begin('missed-frame',{startVisual(){},onArm(){armCount++;},resumeVisual(){resumeCount++;},cancelVisual(){cancelCount++;},abortVisual(){abortCount++;}});
+clock+=320;
+held.release(); // No update() before release: the player's real 320 ms hold must still arm.
+assert.equal(armCount,2,'a stalled update does not turn a complete hold into a tap');
+assert.equal(resumeCount,1,'a late-released hold resumes its animation exactly once');
+assert.equal(cancelCount,1,'a late-released hold never cancels the visual');
+assert.equal(held.isActive(),false,'late release clears the active item');
+held.begin('short-release',{startVisual(){},resumeVisual(){resumeCount++;},cancelVisual(){cancelCount++;}});
+clock+=319;
+held.release();
+assert.equal(resumeCount,1,'319 ms release without update is still a tap');
+assert.equal(cancelCount,2,'short release cancels the visual');
+held.begin('blocked-release',{startVisual(){},resumeVisual(){resumeCount++;},abortVisual(){abortCount++;}});
+clock+=320;
+blocked=true;held.release();blocked=false;
+assert.equal(resumeCount,1,'blocked release never resumes held-item consumption');
+assert.equal(abortCount,1,'blocked release aborts safely without a frame update');
 win.InputHoldTiming.setExtraMs(-80);
 assert.equal(combat.HOLD_THRESHOLD_S,0.16);
 win.InputHoldTiming.setExtraMs(10000);
