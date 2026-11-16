@@ -14962,10 +14962,23 @@ renderAttachmentRigInspector = function(...args) {
   section.innerHTML = '<b>Game shoulder-pet facing</b><label style="margin-top:8px"><input type="checkbox" id="maaShoulderPetInwardPreview" style="width:auto;min-height:auto"> Face toward owner (180° runtime stage)</label><div class="maaSmall maaMuted" id="maaShoulderPreviewSourceLabel">Preview follows owner head/neck rotation and the inverse authored grip; the other stage faces outward.</div>';
   panel.appendChild(section);
   const checkbox = section.querySelector('#maaShoulderPetInwardPreview');
+  const status = section.querySelector('#maaShoulderPreviewSourceLabel');
+  const updatePreviewDiagnostics = () => {
+    const snapshot = pet.previewShoulderParityDebug;
+    if (!snapshot || !status) return;
+    const gripYaw = Number(snapshot.gripYawDeg); // Display the real authored grip, rather than a guessed full-pet yaw, in the mobile preview.
+    status.textContent = 'Rotation source: ' + snapshot.rotationSource
+      + ' · grip Y: ' + (Number.isFinite(gripYaw) ? gripYaw.toFixed(1) + '°' : 'unavailable')
+      + ' · local facing turn: ' + snapshot.stageTurnDeg + '°'
+      + ' · game-style inverse grip (YXZ), no creature-plane deadzone.';
+  };
   checkbox.checked = pet.previewShoulderFacingInward === true;
+  syncShoulderPetPreviewFacingV1548();
+  updatePreviewDiagnostics();
   checkbox.addEventListener('change', event => {
     pet.previewShoulderFacingInward = event.currentTarget.checked;
     syncShoulderPetPreviewFacingV1548();
+    updatePreviewDiagnostics();
     setAnimationRecentChange('Preview shoulder pet: ' + (pet.previewShoulderFacingInward ? 'facing owner midline' : 'facing outward') + '. Authoring coordinates unchanged.');
   });
   return result;
