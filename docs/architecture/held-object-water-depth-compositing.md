@@ -207,6 +207,23 @@ squared distance of each eligible ground fragment to the actor's world X/Z,
 after applying the existing standing-elevation and upward-floor-face tests.
 Actual 3D geometry, walls, raised floors, water, snow and grass billboards
 continue to follow their own physical depth rules.
+**Ground depth outside the circle:** Some wilderness ground materials
+intentionally use `depthWrite: false` in the regular world color pass.
+Previously, the held-gear depth replay preserved that setting, allowing
+weapons to show through the ground *outside* the local exception even when
+the floor should obscure them. The depth-only held replay now temporarily
+enables depth writing for registered, shader-supported ground materials.
+Mode 1 still discards standing-level ground *inside* the circle; other
+fragments write actual ground depth. The material's original `depthWrite`
+value is restored through the existing transaction after that replay.
+Normal world drawing, walls, raised surfaces and water rules do not change.
+
+The mobile X-ray panel displays **Ground depth writers repaired (last replay)**,
+**Ground shader fallbacks**, and a **Use stencil floor punch (A/B test)**
+checkbox. The latter switches between the fast stencil floor reset and
+full-depth rebuild, helping isolate remaining *inside-circle* obstruction.
+The copied diagnostic report includes these counters. This does not alter
+the authored 1.5-world-unit radius.
 
 The existing per-tile lookup remains only a CPU batching index: characters
 standing at different coordinates inside one tile have separate circle centers.
