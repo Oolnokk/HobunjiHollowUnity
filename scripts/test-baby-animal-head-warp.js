@@ -102,8 +102,8 @@ const mask = warp.primeIdleMask('grehlr', idleSource);
 assert(mask && mask.opaquePixels > 0, 'idle opaque pixels inside chathead frame define the first mask');
 assert.equal(warp.maskForKind('grehlr'), mask, 'same cached idle mask is reused for every animated pose');
 const warped = warp.warpPixels(pixels, width, height, head, 1.32, mask);
-assert.notEqual(warp.warpPixels(pixels, width, height, head, 1.23, mask), pixels,
-  'the new 123% setting still produces an actual pixel deformation');
+assert(warp.warpPixels(pixels, width, height, head, 1.23, mask).some((value, i) => value !== pixels[i]),
+  'the new 123% setting must visibly change original head pixels');
 assert.notEqual(warped, pixels, 'the warp returns new pixels and never mutates shared adult art');
 assert.equal(at(warped, 0, 0), at(pixels, 0, 0), 'far-away corner is exactly unchanged');
 assert.equal(at(warped, width - 1, height - 1, 3), at(pixels, width - 1, height - 1, 3), 'distant transparency is unchanged');
