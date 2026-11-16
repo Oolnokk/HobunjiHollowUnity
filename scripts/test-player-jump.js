@@ -27,7 +27,7 @@ assert(gameSource.includes('canPlayerOccupyAtHeight, // Jump uses native world c
 assert(gameSource.includes('function furnitureBlocksMovementAt(area, x, z, worldY = null)'), 'furniture collision now understands optional height');
 assert(gameSource.includes('furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)'), 'non-cover furniture remains solid when jumping');
 
-assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY + radius / TILE)'), 'tile cover tests physical feet instead of a radius below feet');
+assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY); // canOccupyAt offsets by radius'), 'native tile cover tests the foot volume above the supported deck');
 
 // Execute the real game-owned height probe in isolation, not a mock that
 // accidentally skips the player's collision-radius conversion.
@@ -51,20 +51,58 @@ assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY + radi
         return tileFeetY > 1.11;
       }, () => false);
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), true, 'standing atop a rock is not blocked by a sample below its surface');
-  assert(Math.abs(tileFeetY - 1.15) < .001, 'tile collision samples the intended physical feet');
+  assert(Math.abs(tileFeetY - 1.155) < .001, 'tile collision samples just above the physical feet');
   world.FurnitureTableSystem.blocksBox = () => true;
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'an independent full-footprint table still blocks');
   world.FurnitureTableSystem.blocksBox = () => false;
   world.AreaFootprintBlockers.blocksBox = () => true;
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'an independent full-footprint obstacle still blocks');
   world.AreaFootprintBlockers.blocksBox = () => false;
-  const thinBarrier = (_area, _x, _z, half, worldY) => half >= radius - 1e-6 && worldY < 1.17;
+  const thinBarrier = (_area, _x, _z, half, worldY) => half >= radius - 1e-6 && worldY < 1.34;
   world.AreaFootprintBlockers.blocksBox = thinBarrier;
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'thin height-limited footprint blocks the body even between corner samples');
   world.AreaFootprintBlockers.blocksBox = () => false;
   world.FurnitureTableSystem.blocksBox = thinBarrier;
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'thin height-limited furniture blocks the full player footprint');
   world.FurnitureTableSystem.blocksBox = () => false;
+  const Jump = require('../docs/js/ruin-jump-shaft.js'); // The production slab-side volume is the source of truth for raised shaft platforms.
+  const raisedSlabs = [
+    {x:3.5,z:3.5,w:2,d:2,y:4},
+    {x:5,z:3.5,w:1,d:1,y:4.55},
+  ]; // Grounded probes must clear their own elevated slab while still hitting a higher adjacent side.
+  world.AreaFootprintBlockers.blocksBox = (_area,x,z,half,worldY) =>
+    Jump.platformSlabBlocksAt(raisedSlabs,x,z,half,worldY,half);
+  assert.equal(probe(3.5*64,3.5*64,4),true,'standing on a raised jump slab no longer collides with its own top');
+  assert.equal(probe(4.4*64,3.5*64,4),false,'a taller neighbouring slab still blocks walking through its side');
+  const Hub = require('../docs/js/shaft-hub.js'); // The upper-ring regression uses real shaft voxel cells, not invented floor collision.
+  const hub = Hub.compose({seed:5,floors:2,chambers:false,wall:8,shaft:23,spacing:6,
+    traversal:'jumpPlatforms',entranceSide:'S',theme:'tothal',portals:[{floor:0,side:'N'}]});
+  assert(hub.ok && hub.stories[1].gallery.length>0,'a real upper gallery is generated for collision verification');
+  const gridLevel = hub.options.spacing; // The real upper-ring voxel layer, used to find its solid boundary and deck.
+  const directions = [[1,0],[-1,0],[0,1],[0,-1]]; // Four immediate neighbours used to locate a genuine adjacent wall.
+  const edge = hub.stories[1].gallery.map(cell => {
+    const offset = directions.find(([dx,dz]) => hub.grid.inBounds(cell.col+dx,cell.row+dz,gridLevel)
+      && hub.grid.isSolid(cell.col+dx,cell.row+dz,gridLevel));
+    return offset ? {cell,wall:{col:cell.col+offset[0],row:cell.row+offset[1]}} : null;
+  }).find(Boolean);
+  assert(edge,'an upper gallery abuts a real shaft wall');
+  const worldCell = cell => ({x:hub.grid.colToX(cell.col+.5),z:hub.grid.rowToZ(cell.row+.5)});
+  const deck = worldCell(edge.cell), wall = worldCell(edge.wall); // Both are tested at their physical world X/Z.
+  const deckY = hub.grid.levelToY(gridLevel); // Exact supported height above the ring's floor voxel.
+  const voxelStart = ruinSource.indexOf('  function shaftVoxelBlocksAt(');
+  const voxelEnd = ruinSource.indexOf('  function shaftBodyBlocksAt(',voxelStart);
+  assert(voxelStart>=0 && voxelEnd>voxelStart,'the real ruin voxel collider remains available for the regression');
+  const shaftVoxelBlocksAt = new Function('ruin','deps','window','MAP_ID',
+    ruinSource.slice(voxelStart,voxelEnd)+'\nreturn shaftVoxelBlocksAt;')(
+      {shaftGrids:new Map([['shaft-hub',{grid:hub.grid}]])},
+      {getCurrentArea:()=> 'map_i_dev_random_ruin'},
+      {RuinLayerPlayable:{selectGrid:()=>hub.grid}},'map_i_dev_random_ruin');
+  assert(shaftVoxelBlocksAt(deck.x,deck.z,radius,deckY+.05-radius,deckY+.05+radius),
+    'the old feet-centred collision probe reproduces the upper-ring floor obstruction');
+  world.AreaFootprintBlockers.blocksBox = (_area,x,z,half,worldY) =>
+    shaftVoxelBlocksAt(x,z,half,worldY-half,worldY+half);
+  assert.equal(probe(deck.x*64,deck.z*64,deckY),true,'the corrected full movement probe clears the real upper-gallery deck');
+  assert.equal(probe(wall.x*64,wall.z*64,deckY),false,'real upper-gallery masonry remains impassable');
 }
 
 assert(ruinSource.includes('const freeJump=deps.player?._freeJump;'), 'native ruin floor reconciliation must honor airborne jump state');
@@ -139,6 +177,21 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   return { window, context, grid, player, input, advance, setArea: area => { activeArea = area; }, setCanJump: allowed => { canJump = !!allowed; } };
 }
 
+{
+  // Execute supported walking, not just the isolated collision helper: grounded ruin platforms must permit ordinary input.
+  const Jump = require('../docs/js/ruin-jump-shaft.js'); // Real slab-volume collision is shared by the runtime and this regression.
+  const h = harness({start:{x:3.5,z:3.5},deepSupportY:2}); // A raised dynamic support remains available for the entire test walk.
+  const platforms = [{x:3.5,z:3.5,w:3,d:3,y:2},{x:5.15,z:3.5,w:.9,d:.9,y:2.65}]; // The second slab is a genuine collision at lower walking height.
+  h.window.AreaFootprintBlockers.blocksBox = (_area,x,z,half,y) => Jump.platformSlabBlocksAt(platforms,x,z,half,y,half);
+  h.player._freeJump={area:'zone-test',phase:'supported',feetY:2,launchGround:2,vy:0,vx:0,vz:0};
+  h.player.physicalFeetY=2;
+  h.input.x=1;
+  h.advance(.2);
+  assert(h.player.x/TILE>3.7,'walking input moves the player across the raised shaft platform without jumping');
+  h.advance(.6);
+  assert(h.player.x/TILE<4.7,'the higher neighbouring platform still blocks grounded sideways penetration');
+  assert(h.window.PlayerJump.debug.blockedMoves>0,'mobile-visible jump diagnostics retain the detected platform-side obstruction');
+}
 {
   // Real PlayerJump runtime with a roof top and interior ladder handoff: first and second jumps must retain raised support.
   const h = harness({ heightBlocked: () => true, start: { x: 2.5, z: 3.5 } }); // Simulates the native house-shell collision beneath the rooftop.

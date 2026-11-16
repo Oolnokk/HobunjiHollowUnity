@@ -125,6 +125,7 @@
     nazgraku: Object.freeze([Object.freeze([0,0,0])]),
   });
   const staleCreatureShoulderGrips = Object.freeze({
+    pingdort: Object.freeze([Object.freeze([0, -0.14842300556586271, 0])]), // Previous native-foot grip; replace this exact old default, not independently authored grip positions.
     'gar-wolf': Object.freeze([Object.freeze([0.01,-0.26545210788556156,0.07486897921502367])]), // Exact old master grip; user-authored positions remain untouched.
     'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
     'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
@@ -140,6 +141,7 @@
     uumkaoii: Object.freeze([Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352]), Object.freeze([0.01,-0.3636087789187775,-0.18395679109723])]),
   });
   const staleCreatureSizeScales = Object.freeze({
+    pingdort: Object.freeze({ large: Object.freeze({ x: 1, y: 1 }), medium: Object.freeze({ x: 1, y: 1 }) }), // November 16 Pingdort export replaces only the two older 1x size rows.
     'gar-wolf': Object.freeze({ small: Object.freeze({ x: 0.35, y: 0.35 }) }), // Migrate only the previous default Small-scale tuple.
     'uumkaoii': Object.freeze({ small: Object.freeze({ x: 0.2, y: 0.2 }) }), // Migrate only the previous default Small-scale tuple.
     'puktuk': Object.freeze({ small: Object.freeze({ x: 0.3, y: 0.3 }) }), // Migrate only the previous default Small-scale tuple.
@@ -150,6 +152,7 @@
     drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }),
   });
   const staleCreatureGroundOffsets = Object.freeze({
+    pingdort: Object.freeze({ large: 0.14842300556586271, medium: 0.14842300556586271, small: 0.14842300556586271 }), // Exact previous floor table; the newly authored Small offset is 0.07.
     uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }), // Old master defaults; used for narrowly scoped autosave migration.
     nelk: Object.freeze({ large: 0, medium: 0, small: 0 }),
     nazgraku: Object.freeze({ large: 0, medium: 0, small: 0 }),
@@ -174,7 +177,10 @@
     nelk: Object.freeze({ large: 0.28, medium: 0.18, small: 0.065 }),
     nazgraku: Object.freeze({ large: 0.31, medium: 0.2, small: 0.07 }),
   });
+  const skeeriChatheadFrame = Object.freeze({ x: 0.6611149088541667, y: 0.24899449865398673, width: 0.04, height: 0.04, coordinateSpace: 'sprite-normalized-top-left', version: 1 }); // Shared idle-sprite chathead crop for every Skeeri size variant.
   const creatureChatheadFrames = Object.freeze({
+    'skeeri-medium': skeeriChatheadFrame,
+    moot: Object.freeze({ x: 0.0843, y: 0.085, width: 0.26, height: 0.37, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     grehlr: Object.freeze({ x: 0.10721275741258315, y: 0.349719408702988, width: 0.2558259151491218, height: 0.35439898228896183, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'gar-wolf': Object.freeze({ x: 0, y: 0.2575, width: 0.25, height: 0.3575, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
@@ -276,19 +282,34 @@
     };
   }
 
-  // Pingdort's native foot grip is at -0.48*(1000/1617)/2 on its unscaled perched plane.
-  // Ground lifts use the opposite sign so the ground meets the grip at every 1x size class.
-  const pingdortGripY = -0.14842300556586271; // Authoritative foot coordinate for Pingdort's grip and floor alignment.
+  // Pingdort's latest authored floor lifts keep the native flying-foot baseline for Large/Medium,
+  // while Small uses an independent 0.07 lift; its shoulder grip is authored separately.
+  const pingdortFootLift = 0.14842300556586271; // Used to retain the exact Large/Medium ground offsets in the exported rig.
   masterCreatures.pingdort = {
     kind: 'pingdort',
-    anchors: { saddle: null, shoulderGrip: identityAnchor([0, pingdortGripY, 0]) },
+    chatheadFrame: null,
+    anchors: { saddle: identityAnchor([0, 0, 0]), shoulderGrip: identityAnchor([0, -0.05596633162050327, 0.06962064405051654]) },
     shoulderGripRule: { source: 'native-flying-sprite-foot', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
-    sizeScales: { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } },
-    groundOffsets: { large: -pingdortGripY, medium: -pingdortGripY, small: -pingdortGripY },
-    sizeScalePercentages: { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } },
+    sizeScales: { large: { x: 3.5, y: 3.5 }, medium: { x: 1.75, y: 1.75 }, small: { x: 1, y: 1 } },
+    groundOffsets: { large: pingdortFootLift, medium: pingdortFootLift, small: 0.07 },
+    sizeScalePercentages: {},
+    saddleRule: {},
     sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds', authoredDefaultVersion: 6, authoredFixed: true },
-    shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 5,
+    shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
   };
+
+  const skeeriMediumRig = { // Medium Skeeri's authored rig; other Skeeri variants only borrow its chathead crop, not its attachments or size settings.
+    kind: 'skeeri-medium',
+    anchors: { saddle: identityAnchor([0, 0.12801484107971195, 0.02]), shoulderGrip: identityAnchor([0, -0.16357451915740964, 0]) },
+    groundOffsets: { large: 0, medium: 0, small: 0 },
+    saddleRule: {},
+    shoulderGripRule: {},
+    sizeScales: { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } },
+    sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds' },
+    shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
+    sizeScalePercentages: {},
+  };
+  masterCreatures['skeeri-medium'] = { ...skeeriMediumRig, chatheadFrame: { ...creatureChatheadFrames['skeeri-medium'] } };
 
   // One NPC lower half, not a wildlife species: standalone animal-style rig data.
   const isStaleDrenkirraShoulderGripYaw = (kind, grip) => kind === 'drenkirra'
@@ -500,7 +521,13 @@
       if (!sameNumber(current?.x, stale.x) || !sameNumber(current?.y, stale.y)) continue;
       merged.sizeScales[sizeClass] = clone(canonical.sizeScales[sizeClass]);
       if (canonical.sizeScalePercentages?.[sizeClass]) merged.sizeScalePercentages[sizeClass] = clone(canonical.sizeScalePercentages[sizeClass]);
+      else delete merged.sizeScalePercentages[sizeClass]; // The new Pingdort master intentionally has no duplicate percent rows for reauthored classes.
       repaired = true;
+    }
+    if (kind === 'pingdort' && repaired
+        && sameNumber(merged.sizeScalePercentages?.small?.x, 100)
+        && sameNumber(merged.sizeScalePercentages?.small?.y, 100)) {
+      delete merged.sizeScalePercentages.small; // Clear the old redundant 100% Small mirror only when migrating a stock Pingdort size row.
     }
     return repaired;
   }
@@ -552,18 +579,32 @@
       if (isStaleDrenkirraShoulderGripYaw(kind, merged.anchors.shoulderGrip)) {
         merged.anchors.shoulderGrip.rotationDeg = { ...merged.anchors.shoulderGrip.rotationDeg, y: canonical.anchors.shoulderGrip.rotationDeg.y }; // Migrate only obsolete stock Drenkirra Y; never rewrite grip position or custom pose.
       }
-      if (oldGrip && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
+      if (oldGrip && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) {
+        merged.shoulderGripRule = clone(canonical.shoulderGripRule);
+        if (kind === 'pingdort' && Number(candidate.creatureShoulderGripDefaultVersion) === 5) {
+          merged.creatureShoulderGripDefaultVersion = canonical.creatureShoulderGripDefaultVersion; // Retire only the old stock Pingdort version when its native-foot anchor migrates.
+        }
+      }
       const oldSaddle = merged.anchors.saddle; // Used to restore canonical rule metadata only when an exact superseded default is migrated.
       merged.anchors.saddle = reconcileAnchor(oldSaddle, canonical.anchors.saddle, staleCreatureSaddles[kind]);
       if (oldSaddle && !samePosition(oldSaddle.position, merged.anchors.saddle.position)) merged.saddleRule = clone(canonical.saddleRule);
       if (repairKnownCreatureSizeScale(kind, merged, canonical)) merged.sizeScaleRule = clone(canonical.sizeScaleRule);
       if (isStaleGroundOffsets(kind, candidate.groundOffsets)) merged.groundOffsets = clone(canonical.groundOffsets); // Only known legacy rows are replaced; custom size classes remain untouched.
-      if (isStaleCreatureFrame(kind, candidate.chatheadFrame)) merged.chatheadFrame = clone(canonical.chatheadFrame);
+      if (isStaleCreatureFrame(kind, candidate.chatheadFrame)
+          || ((kind === 'moot' || kind === 'skeeri-medium') && candidate.chatheadFrame == null)) {
+        merged.chatheadFrame = clone(canonical.chatheadFrame); // Old Moot profiles exported a null frame; supply the newly authored crop on import.
+      }
       if ((kind === 'nelk' || kind === 'nazgraku') && merged.saddleRule?.source === 'uncalibrated-defaults'
           && samePosition(merged.anchors.saddle.position, canonical.anchors.saddle.position)) merged.saddleRule = clone(canonical.saddleRule);
       if ((kind === 'nelk' || kind === 'nazgraku' || kind === 'uumkaoii') && merged.shoulderGripRule?.source === 'authored-2026-08-28-attachpointsv1'
           && samePosition(merged.anchors.shoulderGrip.position, canonical.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
       output.creatures[kind] = merged;
+    }
+    for (const kind of ['skeeri-small', 'skeeri-large']) {
+      const variant = output.creatures[kind]; // Do not manufacture an unrelated rig profile or override fixed-size creature geometry.
+      if (variant && variant.chatheadFrame == null) {
+        variant.chatheadFrame = clone(output.creatures['skeeri-medium']?.chatheadFrame || masterCreatures['skeeri-medium'].chatheadFrame); // Persist the same authored crop in any variant row that an editor already created.
+      }
     }
     output.characterTransformAliases = characterTransformAliases;
     output.masterConfigVersion = MASTER_VERSION;
@@ -683,6 +724,10 @@
     const animationAuthorCreatureSyncStatus = window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCreatureSync;
     const staleCreatureFields = live => {
       const stale = [];
+      if (!live?.creatures?.['skeeri-medium']) stale.push('skeeri-medium.profile'); // Older Rig Coordinates autosaves predate this newly authored creature.
+      for (const kind of ['moot', 'skeeri-medium', 'skeeri-small', 'skeeri-large']) {
+        if (live?.creatures?.[kind] && live.creatures[kind].chatheadFrame == null) stale.push(`${kind}.chatheadFrame`); // Repair absent first-time shared frames without changing existing authored rectangles.
+      }
       for (const [kind, positions] of Object.entries(staleCreatureSaddles)) {
         const position = live?.creatures?.[kind]?.anchors?.saddle?.position; // Used to repair old stock saddle coordinates without overwriting later custom authoring.
         if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.saddle`);
@@ -856,7 +901,7 @@
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
       const pose = d.lastPose
-        ? `${d.lastPose.creatureKey}:${d.lastPose.facingInward ? 'inward/front-180deg' : 'outward/behind-0deg'}`
+        ? `${d.lastPose.creatureKey}:${d.lastPose.facingInward ? 'inward/180deg/back-foreground' : 'outward/0deg/front-foreground'}`
         : 'none';
       const chance = d.lastPose ? `${Math.round((Number(d.lastPose.inwardChance) || 0) * 100)}%inward` : 'none';
       const hold = Number.isFinite(d.lastPose?.holdSeconds) ? d.lastPose.holdSeconds.toFixed(1) + 's' : '-';

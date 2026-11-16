@@ -5,7 +5,7 @@
   'use strict';
 
   const STORAGE_KEY = 'hobunji_baby_head_warp_scale_v1'; // Keeps the Nursery experiment's chosen scale across reloads without modifying saves.
-  const DEFAULT_SCALE = 1.32; // User-approved universal 132% for babies and qualifying genetically Small shoulder pets.
+  const DEFAULT_SCALE = 1.23; // User-approved universal 123% for babies and qualifying genetically Small shoulder pets.
   const MAX_SCALE = 1.45; // Safety cap for the Nursery slider and public setter.
   const FALLOFF_RADIUS = 0.85; // In units of the larger head-frame half-extent; adjacent neck/body pixels move less with distance.
   const debug = { applied: 0, skipped: 0, lastKind: null, lastFrame: null, lastError: null }; // Exposed in Nursery Debug for mobile inspection.
@@ -18,7 +18,7 @@
   let scale = (() => {
     try {
       const saved = window.localStorage?.getItem(STORAGE_KEY);
-      return saved == null || Number(saved) === 1.22 || Number(saved) === 1.23 ? DEFAULT_SCALE : clampScale(saved); // Move the two old inherited defaults to 132%; preserve other user choices.
+      return saved == null || Number(saved) === 1.22 || Number(saved) === 1.32 ? DEFAULT_SCALE : clampScale(saved); // Migrate earlier inherited defaults to 123%; preserve other custom choices.
     } catch (_) { return DEFAULT_SCALE; }
   })(); // Used by every new baby composition; independent of species, saved genotype and adult visuals.
 
