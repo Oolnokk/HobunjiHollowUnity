@@ -1160,7 +1160,7 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!mountedOrbitTarget, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
