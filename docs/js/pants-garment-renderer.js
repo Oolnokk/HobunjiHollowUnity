@@ -305,6 +305,126 @@
     return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - 0.012 + 0.01)) : 0;
   }
 
+  // ── GPU skinning ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  // The garment's per-frame deformation (linear-blend skin over the five weight channels, the two ankle-ring corrections and
+  // the spine shift) runs in the vertex shader: the CPU only computes the four bone transforms and two ring shifts. The
+  // position buffer holds the rest grid and is uploaded once per realignment instead of every frame the legs move. The
+  // CPU path (Core.skinWeightedPositions) stays for debug splines, the rig author's preview (reads skinned positions), lit
+  // garments (need fresh normals) and any material swapped in by another system (ghostify, mine-lit), whose shaders do not
+  // carry the skinning code.
+  const GPU_SKIN_VERTEX_DECLARATIONS = [
+    'attribute vec3 pantsSpineShift;',
+    'attribute vec4 pantsSkinW0;', // Weight channels belt, leftThigh, leftCalf, rightThigh (Core.WEIGHT_CHANNELS order).
+    'attribute float pantsSkinW1;', // rightCalf.
+    'attribute vec2 pantsRingInfluence;', // Left/right ankle-ring follow strength.
+    'uniform float uPantsGpuSkin;',
+    'uniform mat3 uPantsBoneM[4];',
+    'uniform vec3 uPantsBoneT[4];',
+    'uniform vec3 uPantsRingShift[2];',
+  ].join('\n');
+  const GPU_SKIN_VERTEX_BODY = [
+    'if (uPantsGpuSkin > 0.5) {',
+    '  vec3 pantsSkinned = pantsSkinW0.x * transformed',
+    '    + pantsSkinW0.y * (uPantsBoneM[0] * transformed + uPantsBoneT[0])',
+    '    + pantsSkinW0.z * (uPantsBoneM[1] * transformed + uPantsBoneT[1])',
+    '    + pantsSkinW0.w * (uPantsBoneM[2] * transformed + uPantsBoneT[2])',
+    '    + pantsSkinW1 * (uPantsBoneM[3] * transformed + uPantsBoneT[3]);',
+    '  pantsSkinned += uPantsRingShift[0] * pantsRingInfluence.x + uPantsRingShift[1] * pantsRingInfluence.y;',
+    '  vPantsLocal = pantsSkinned.xy;', // The mask lives in portrait space: skinned, before the spine carries it.
+    '  transformed = pantsSkinned + pantsSpineShift;',
+    '} else {',
+    '  vPantsLocal = position.xy - pantsSpineShift.xy;', // CPU path: the buffer already includes the spine shift.
+    '}',
+  ].join('\n');
+  let gpuSkinGlobal = true; // A/B switch for diagnostics (PantsGarmentRenderer.setGpuSkinning).
+
+  function installGpuSkin(THREE, handle, enabled) {
+    const count = handle.basePositions.length / 3, weights = handle.weights;
+    const w0 = new Float32Array(count * 4), w1 = new Float32Array(count), ring = new Float32Array(count * 2);
+    for (let i = 0; i < count; i++) {
+      w0[i * 4] = weights[i * 5]; w0[i * 4 + 1] = weights[i * 5 + 1]; w0[i * 4 + 2] = weights[i * 5 + 2]; w0[i * 4 + 3] = weights[i * 5 + 3];
+      w1[i] = weights[i * 5 + 4];
+      ring[i * 2] = handle.rings?.left?.influence?.[i] || 0;
+      ring[i * 2 + 1] = handle.rings?.right?.influence?.[i] || 0;
+    }
+    handle.geometry.setAttribute('pantsSkinW0', new THREE.BufferAttribute(w0, 4));
+    handle.geometry.setAttribute('pantsSkinW1', new THREE.BufferAttribute(w1, 1));
+    handle.geometry.setAttribute('pantsRingInfluence', new THREE.BufferAttribute(ring, 2));
+    Object.assign(handle.maskUniforms, {
+      uPantsGpuSkin: { value: 0 },
+      uPantsBoneM: { value: [0, 1, 2, 3].map(() => new THREE.Matrix3()) },
+      uPantsBoneT: { value: [0, 1, 2, 3].map(() => new THREE.Vector3()) },
+      uPantsRingShift: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+    });
+    handle.gpuSkinOption = enabled !== false;
+    handle.gpuSkinActive = false;
+    handle.baseVersion = 0;
+    handle.uploadedBaseVersion = -1;
+    handle.gpuScratch = { point: new Float32Array(3), corner: new Float32Array(3), shift: { x: 0, y: 0, z: 0 } };
+  }
+
+  function gpuSkinUsable(handle) {
+    const mesh = handle.mesh;
+    return gpuSkinGlobal && handle.gpuSkinOption && !handle.showSplines && !!mesh && mesh.material === handle.material && mesh.userData?.hobunjiPantsLitNormals !== true;
+  }
+
+  function writeBoneUniform(matrix, translation, transform) {
+    if (transform && transform.m) {
+      const m = transform.m;
+      matrix.set(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]); // Row-major, like Core.skinWeightedPositions.
+      translation.set(transform.tx, transform.ty, transform.tz);
+    } else if (transform) { // Planar affine: depth carried through.
+      matrix.set(transform.a, transform.c, 0, transform.b, transform.d, 0, 0, 0, 1);
+      translation.set(transform.tx, transform.ty, 0);
+    } else {
+      matrix.identity();
+      translation.set(0, 0, 0);
+    }
+  }
+
+  // One vertex of the CPU skin (identical maths to Core.skinWeightedPositions) plus the ring shifts applied so far.
+  function skinVertexInto(handle, transforms, vertex, out, ringShifts, ringSidesDone) {
+    const base = handle.basePositions, weights = handle.weights;
+    const x = base[vertex * 3], y = base[vertex * 3 + 1], z = base[vertex * 3 + 2];
+    let ox = 0, oy = 0, oz = 0;
+    for (let channel = 0; channel < 5; channel++) {
+      const weight = weights[vertex * 5 + channel];
+      if (!(weight > 0)) continue;
+      const t = transforms[channel];
+      if (t && t.m) { const m = t.m; ox += weight * (m[0] * x + m[1] * y + m[2] * z + t.tx); oy += weight * (m[3] * x + m[4] * y + m[5] * z + t.ty); oz += weight * (m[6] * x + m[7] * y + m[8] * z + t.tz); }
+      else if (t) { ox += weight * (t.a * x + t.c * y + t.tx); oy += weight * (t.b * x + t.d * y + t.ty); oz += weight * z; }
+      else { ox += weight * x; oy += weight * y; oz += weight * z; }
+    }
+    for (let s = 0; s < ringSidesDone; s++) {
+      const k = handle.rings?.[LEG_SIDES[s]]?.influence?.[vertex] || 0;
+      if (!k) continue;
+      const shift = ringShifts[s];
+      ox += shift.x * k; oy += shift.y * k; oz += shift.z * k;
+    }
+    out[0] = ox; out[1] = oy; out[2] = oz;
+  }
+
+  function writeGpuSkinUniforms(handle, transforms, aim) {
+    const Core = core(), u = handle.maskUniforms;
+    for (let channel = 1; channel < 5; channel++) writeBoneUniform(u.uPantsBoneM.value[channel - 1], u.uPantsBoneT.value[channel - 1], transforms[channel]);
+    // The ankle rings are corrected in order (left, then right on top of it), exactly as the CPU path does: each needs the skinned
+    // garment at its anchor, which is four vertices, so only those are skinned here.
+    const stride = handle.segments + 1, scratch = handle.gpuScratch, p = scratch.point, c = scratch.corner, ringShifts = u.uPantsRingShift.value;
+    for (let s = 0; s < 2; s++) {
+      const side = LEG_SIDES[s], ring = handle.rings?.[side], shift = ringShifts[s];
+      shift.set(0, 0, 0);
+      if (!ring) continue;
+      const sm = ring.anchor;
+      p[0] = p[1] = p[2] = 0;
+      for (let k = 0; k < 4; k++) { // Bilinear corners a, b (row below: c, d), as the CPU path samples them.
+        const right = k & 1, below = k >> 1, weight = (right ? sm.fx : 1 - sm.fx) * (below ? sm.fy : 1 - sm.fy);
+        skinVertexInto(handle, transforms, sm.i + right + below * stride, c, ringShifts, s);
+        p[0] += c[0] * weight; p[1] += c[1] * weight; p[2] += c[2] * weight;
+      }
+      if (Core.offsetOntoAxis(p[0], p[1], p[2], aim[side].knee, aim[side].ankle, scratch.shift)) shift.set(scratch.shift.x, scratch.shift.y, scratch.shift.z);
+    }
+  }
+
   function makeScratch(THREE) {
     const joint = () => ({ x: 0, y: 0, z: 0 });
     const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
@@ -390,7 +510,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null, gpuSkin = true } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -415,8 +535,10 @@
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
       spineSource: spine, spineCurve: null, spineShift: null, // The portrait's spine curve (js/character-spine.js): the pants ride it like an extension of the portrait.
     };
-    // Per-vertex shift the spine curve gives the garment's mask lookup (see setSpineShift): zeros for an upright character.
-    handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array((handle.basePositions.length / 3) * 2), 2));
+    // Per-vertex shift the spine curve gives the garment (see rebuildSpineShift): zeros for an upright character. The GPU path adds
+    // all three components to the skinned vertex; the mask lookup subtracts .xy in either path.
+    handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array(handle.basePositions.length), 3));
+    installGpuSkin(THREE, handle, gpuSkin);
 
     const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
     handle.setDepthBiasLimit=(owner,limit=null)=>{
@@ -442,13 +564,13 @@
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nattribute vec2 pantsSpineShift;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy - pantsSpineShift;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
+          .replace('#include <common>', `#include <common>\nvarying vec2 vPantsLocal;\n${GPU_SKIN_VERTEX_DECLARATIONS}`)
+          .replace('#include <begin_vertex>', `#include <begin_vertex>\n${GPU_SKIN_VERTEX_BODY}`); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
-      material.customProgramCacheKey = () => 'pantsOverlayMaskSpine';
+      material.customProgramCacheKey = () => 'pantsOverlayMaskSpineGpuSkin';
       return { texture, material };
     };
 
@@ -644,7 +766,7 @@
         global.HobunjiCharacterSpine.deformAt(profile, point.y, displacement);
         shift.set(displacement.x, displacement.y, displacement.z).applyMatrix3(back); // The curve is in plane axes; the garment's positions are avatar-local.
         shifts[i * 3] = shift.x; shifts[i * 3 + 1] = shift.y; shifts[i * 3 + 2] = shift.z;
-        maskAttribute.array[i * 2] = shift.x; maskAttribute.array[i * 2 + 1] = shift.y;
+        maskAttribute.array[i * 3] = shift.x; maskAttribute.array[i * 3 + 1] = shift.y; maskAttribute.array[i * 3 + 2] = shift.z;
       }
       handle.spineShift = shifts;
     };
@@ -670,6 +792,13 @@
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
+      const gpu = gpuSkinUsable(handle);
+      if (gpu !== handle.gpuSkinActive) { // Switching paths: the position buffer holds rest vertices (GPU) or skinned ones (CPU), so redo this frame.
+        handle.gpuSkinActive = gpu;
+        handle.maskUniforms.uPantsGpuSkin.value = gpu ? 1 : 0;
+        handle.uploadedBaseVersion = -1;
+        handle.dirty = true;
+      }
       if (signature === handle.lastSignature && !handle.dirty) return;
       handle.lastSignature = signature;
       handle.dirty = false;
@@ -680,6 +809,11 @@
       transforms[3] = boneTransform('right', 'hip', 'knee', aim);
       transforms[4] = boneTransform('right', 'knee', 'ankle', aim);
       const position = handle.geometry.getAttribute('position');
+      if (gpu) { // The vertex shader skins: only the bone and ring uniforms change per pose, the vertex buffer holds the rest grid.
+        if (handle.uploadedBaseVersion !== handle.baseVersion) { position.array.set(handle.basePositions); position.needsUpdate = true; handle.uploadedBaseVersion = handle.baseVersion; }
+        writeGpuSkinUniforms(handle, transforms, aim);
+        return;
+      }
       Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
       // The ring around the pole: slide each ankle ring's centre onto its 3D bone axis (closest point on the knee->ankle line) and
       // carry the rest of the ring, and the garment around it, along rigidly so the ring keeps its shape.
@@ -813,6 +947,7 @@
         }
         for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
       }
+      handle.baseVersion = (handle.baseVersion || 0) + 1; // The GPU path re-uploads the rest grid once per realignment, not per frame.
 
     };
     handle.alignToRest();
@@ -915,6 +1050,8 @@
     appearanceFromBodyColors,
     ensureNpcPants,
     garmentForCosmetics,
+    setGpuSkinning: enabled => { gpuSkinGlobal = enabled !== false; return gpuSkinGlobal; }, // Diagnostics/A-B: false forces every garment back onto the CPU skin.
+    gpuSkinningEnabled: () => gpuSkinGlobal,
     liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },

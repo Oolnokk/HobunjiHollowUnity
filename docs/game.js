@@ -23171,6 +23171,7 @@
       // blocking, not merely anything within a whole canopy-width of it.
       const OCCLUSION_XZ_RADIUS_MUL = 0.5;
       const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
+      window.ZoneTreeFade.init({ treeFadeActive: _treeFadeActive, lerpPerSec: TREE_FADE_LERP_PER_SEC });
       function ensureTreeFadeMaterials(vegGroup) {
         let mats = vegGroup.userData._fadeMaterials;
         if (mats) return mats;
@@ -23219,41 +23220,8 @@
           if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
-      function updateTreeFadeAnimation(dt) {
-        if (!_treeFadeActive.size) return;
-        const step = TREE_FADE_LERP_PER_SEC * dt;
-        for (const vegGroup of _treeFadeActive) {
-          const target = vegGroup.userData._fadeTarget ?? 1;
-          let opacity = vegGroup.userData._fadeOpacity ?? 1;
-          if (Math.abs(opacity - target) <= step) opacity = target;
-          else opacity += Math.sign(target - opacity) * step;
-          vegGroup.userData._fadeOpacity = opacity;
-          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
-          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
-        }
-      }
-      // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
-      // within `radius` of that line? Unlike a plain point-to-segment
-      // distance, this rejects anything whose projection falls outside the
-      // segment (t outside [0,1]) instead of clamping to the nearest
-      // endpoint — clamping was the bug: a tree sitting right next to the
-      // player but on the far side (behind them, from the camera's view)
-      // has an unclamped t > 1, but clamping snapped that to the player's
-      // own endpoint and reported it as "on the line" merely for being near
-      // the player, faded/ghosted every tree behind the player as well as
-      // the ones actually in front. Trees genuinely off to either side stay
-      // correctly unaffected either way since `side` (perpendicular
-      // distance) is unaffected by the clamp — only the "how far along" axis
-      // was the problem.
-      function isBetweenCameraAndPlayer2D(px, pz, ax, az, bx, bz, radius) {
-        const abx = bx - ax, abz = bz - az;
-        const abLenSq = abx * abx + abz * abz;
-        if (abLenSq < 1e-9) return false;
-        const t = ((px - ax) * abx + (pz - az) * abz) / abLenSq;
-        if (t <= 0 || t >= 1) return false;
-        const cx = ax + abx * t, cz = az + abz * t;
-        return Math.hypot(px - cx, pz - cz) < radius;
-      }
+      // updateTreeFadeAnimation and the camera-to-player sightline test (isBetweenCameraAndPlayer2D) now live in
+      // js/zone-tree-fade.js (window.ZoneTreeFade), wired below via init({ treeFadeActive, lerpPerSec }).
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
         const zi = _zoneScenes.get(currentArea);
@@ -23328,7 +23296,7 @@
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
             const blocking = activeCameraMode !== SHOULDER_SURF_MODE
               && !obj.userData.skipOcclusionFade
-              && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
+              && revealTargets.some(t => window.ZoneTreeFade.isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
             let target = blocking ? TREE_FADE_OPACITY : 1;
             let outlineAllowed = true;
             // Cloud Forest only (radialCullRadius implies it — see above):
@@ -27242,7 +27210,7 @@
           _vegCullAccum = 0;
           updateZoneVegetationCulling(force);
         }
-        updateTreeFadeAnimation(dt);
+        window.ZoneTreeFade.updateAnimation(dt);
 
         // Same camera-aligned-corridor visibility toggle, same throttle, for
         // the path brick chunks built once by registerPathBrickChunks — see
@@ -27417,6 +27385,9 @@
         // batches for this render only (js/farm-tile-render-batches.js); the
         // tiles themselves stay the authority for edits and raycasts.
         const restoreFarmTileBatches = window.FarmTileRenderBatches?.suspendForRender?.(activeScene);
+        // Wilderness props (tents, totems, herbs, berry bushes, camp furniture, cliff-door caves) get the same treatment:
+        // still prop meshes draw as merged 8x8-tile batches for this render only (js/zone-prop-render-batches.js).
+        const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender?.(activeScene, { isZone: _isZoneArea(currentArea) });
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
         // Same contract for instanced brick walls/paths and grass, which Three r128
         // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
@@ -27562,6 +27533,7 @@
           restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
           restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
           restoreFarmTileBatches?.(); // Tile edits, raycasts and other renderers see the per-tile meshes again.
+          restoreZonePropBatches?.(); // Picking, raycasts and prop animation see the individual prop meshes again.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);

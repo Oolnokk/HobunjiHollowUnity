@@ -75,6 +75,9 @@
     if (!def) return null;
     const mat = deps.getReagentPlantMaterial(def.color);
     if (!mat) return null;
+    // The shared grass-blade shader reads only world position (wind phase, fog) for this material, which never defines
+    // HOBUNJI_GRASS_DISTANCE_LOD, so its blades can be baked into world space by js/zone-prop-render-batches.js.
+    mat.userData.hobunjiWorldBakeSafe = true;
     const group = new THREE.Group();
     const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
     const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
