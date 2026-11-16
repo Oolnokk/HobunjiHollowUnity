@@ -289,12 +289,22 @@
   }
   function nearbyOtherNpc() {
     if(!walker)return null;
-    let closest=null,range=8;
+    let closest=null,range=8; // Scanned on the existing 240 ms perception tick, never in the render loop.
     const here={x:walker.root.position.x,z:walker.root.position.z};
     for(const other of (deps?.npcWalkers||[])) {
-      if(!other?.root||other===walker||other.area!==state.zone||other.animalKind||other.rec?.kind==='animal')continue;
-      const d=dist(here,{x:other.root.position.x,z:other.root.position.z});
-      if(d<range){closest=other;range=d;}
+      if(!other?.root||other===walker||other.area!==state.zone||other.animalKind
+        ||other.rec?.kind==='animal'||other.rec?.appearance?.avatarType==='animal')continue;
+      const point={x:other.root.position.x,z:other.root.position.z}; // Normalized tile-space escape reference for any ordinary NPC.
+      const d=dist(here,point);
+      if(d<range){closest=point;range=d;}
+    }
+    for(const other of (deps?.hostileObjects||[])) {
+      if(!other||other.areaId!==state.zone||!(other.health>0)||other.creatureKey)continue;
+      if(!(other.isBandit===true||other.isTribeHunter===true||other.isBarbarian===true
+        ||(other.rosterRecord?.appearance?.speciesId&&other.avatarRef?.group)))continue;
+      const point={x:finite(other.x)/tileSize(),z:finite(other.y)/tileSize()}; // Hostile humanoids are world-pixel X/Y, not NPC walker tile X/Z.
+      const d=dist(here,point);
+      if(d<range){closest=point;range=d;}
     }
     return closest;
   }
@@ -531,7 +541,7 @@
         const other=nearbyOtherNpc();
         if(other&&planTimer>=1.2) { // Avoidance route replans must not perform dozens of NPC path searches every 240 ms while another NPC stays nearby.
           planTimer=0;
-          pickChore({x:other.root.position.x,z:other.root.position.z});
+          pickChore(other); // Already normalized to tile coordinates for either a resident NPC or a bandit/barbarian.
         }
       }
     }
@@ -622,6 +632,6 @@
   }
   window.BoneyShinjimiWilderness=Object.freeze({
     init,update,serialize,restore,debugSnapshot,sceneDefinition,
-    __test:Object.freeze({lunarDay,moonCycle,chooseHouseSite,wallHit,targetFor,record,finishEncounter,beginFlight}),
+    __test:Object.freeze({lunarDay,moonCycle,chooseHouseSite,wallHit,targetFor,record,finishEncounter,beginFlight,nearbyOtherNpc}),
   });
 })();
