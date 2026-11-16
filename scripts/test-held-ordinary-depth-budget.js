@@ -6,9 +6,9 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
-    userData: { hobunjiXrayElevationShader: { supported: true } } } : null; // Reproduces wilderness ground that draws color but omits depth in the world pass.
+    userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
   const sky = { isMesh: true, visible: true, children: [], layers: { mask: 1 } }; // Far-plane cloud mask, not a physical gear occluder.
   const cutout = { isMesh: true, visible: true, children: [] }; // Portrait PNG needs forced alpha-tested depth.
@@ -113,5 +113,11 @@ assert.equal(wilderness.draws[1].groundDepthWrite, false,
 assert.equal(wilderness.draws[2].groundDepthWrite, false,
   'the final ground restore preserves wilderness material settings');
 assert.equal(wilderness.forcedGround, 1, 'the active replay exposes one repaired ground material in mobile diagnostics');
+const fallbackGround = fixture({ bounded: true, ordinary: false, wildernessGround: true, groundShaderSupported: false });
+assert.equal(fallbackGround.draws[0].groundDepthWrite, true,
+  'unsupported/cold ground shaders still write physical depth outside the player circle');
+assert.equal(fallbackGround.draws[1].groundDepthWrite, false,
+  'fallback ground cannot leak the temporary depth override into the held color pass');
+assert.equal(fallbackGround.forcedGround, 1, 'the phone counter also includes fallback material repairs');
 fixture({ bounded: true, ordinary: false, wildernessGround: true, fail: true }); // Even an interrupted render must restore the material.
 console.log('ordinary held replay: 2 passes instead of 3; no opaque terrain depth redraw; mixed/fallback/exception checks passed');
