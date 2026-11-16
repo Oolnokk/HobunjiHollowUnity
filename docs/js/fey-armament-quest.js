@@ -44,7 +44,8 @@
     }
     const definitions = window.EnchantmentSystem?.DEFINITIONS || {}; // Also recognizes normal weapons newly bearing an independently acquired Fey enchantment.
     for (const [key, enchantments] of Object.entries(gear.weaponEnchantments || {})) {
-      if (!gear.tools?.[key] || !enchantments) continue;
+      const weaponDef = inventoryDeps?.TOOL_ITEM_DEFS?.[key]; // Only actual owned weapon slots qualify; enchanting a hoe or other tool is not acquiring a Fey weapon.
+      if (!gear.tools?.[key] || !weaponDef?.slots?.includes('weapon') || !enchantments) continue;
       const ids = [...(Array.isArray(enchantments.base) ? enchantments.base : []), ...Object.values(enchantments.flourishes || {})];
       if (ids.some(id => definitions[id]?.alignment === 'Fey')) keys.add(key);
     }
