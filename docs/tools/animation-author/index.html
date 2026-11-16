@@ -1210,6 +1210,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 <script src="rig-preview-species.js?v=20261109rig2"></script>
+<script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
 
 <script>
 (() => {
@@ -1224,6 +1225,10 @@ const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261114footYaw1', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_SHOULDER_RIG_RUNTIME_URLS = Object.freeze(Object.fromEntries([
+  'js/grehlr-head-rig-correction.js', 'js/animal-head-rig-authored.js',
+  'js/animal-shoulder-spline-profiles.js', 'js/animal-shoulder-spline.js',
+].map(path => [path, new URL('../../' + path + '?v=20261116gripPose1', location.href).href]))); // Game-authored neck/shoulder rigs must match this editor version even when inspecting a different repository revision.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1245,6 +1250,10 @@ const REQUIRED_SCRIPTS = [
   'js/pants-garment-renderer.js',
   'js/held-action-animations.js',
   CREATURE_RENDER_SCRIPT,
+  'js/grehlr-head-rig-correction.js', // Game's optional Grehlr head and shoulder defaults.
+  'js/animal-head-rig-authored.js', // Independent neck/shoulder rigs, including Moot and Drenkirra.
+  'js/animal-shoulder-spline-profiles.js', // Resolves AFTER splines and browser-local painter overrides.
+  'js/animal-shoulder-spline.js', // Deforms both real skinned animal planes in the Perched pose.
 ];
 
 const CREATURE_DEFAULTS = {
@@ -1512,7 +1521,8 @@ async function loadRepositoryRuntime(settings) {
     const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
       : relativePath === 'js/character-spine.js' ? AUTHOR_SPINE_RUNTIME_SCRIPT
       : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
-        : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT : null; // Hands and feet must match the author page that implements their preview contract.
+        : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT
+        : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Hands, feet and shoulder rigs must match this author page's preview contract.
     const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
     const sourceCode = authorPairedRuntimeUrl
       ? await (await fetchWithTimeout(sourceUrl)).text()
@@ -4971,6 +4981,7 @@ async function addCreatureAnimationActor(kind, frame = 'idle', options = {}) {
     const animal = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(state.three.THREE, canvas.toDataURL('image/png'), {
       modelWidth,
       modelHeight: modelWidth * spriteAspect,
+      creatureId: kind, // The authored head/shoulder rig resolves by species, not a generated canvas URL.
       name: `AnimationCreature_${safeFilename(kind)}`,
     });
     const id = options.id || `actor_${animationAuthor.actorSerial++}`;
@@ -4980,6 +4991,8 @@ async function addCreatureAnimationActor(kind, frame = 'idle', options = {}) {
       source: { type: 'creature', kind, frame, genotype: clone(genotype) },
       model: animal.group,
     });
+    actor.shoulderRestSourceAvatar = animal; // Preserves the original runtime model so the preview can swap art without moving the authored grip.
+    actor.shoulderRestModelDimensions = { modelWidth, modelHeight: modelWidth * spriteAspect }; // The posed model shares the source's exact world-space plane dimensions.
     ensureCreatureTransformProfile(kind);
     applyCreatureSizeClass(actor, options.creatureSizeClass || 'medium', { announce: false, render: false });
     if (!options.skipDefaultPlacement) actor.root.position.x = (animationAuthor.actors.length % 4) * .9 - .9;
