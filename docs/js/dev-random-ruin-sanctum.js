@@ -1196,6 +1196,8 @@
 
   function disposeActor(entity) {
     if (!entity) return;
+    window.Combat?.telegraph?.cancel?.(entity); // Clear pending combat warnings before the abandoned actor leaves the update loop.
+    window.Combat?.cancelStagedForAttacker?.(entity); // No staged Strike callback may fire after the sanctum encounter is retired.
     deps?.hostileObjects?.delete?.(entity);
     deps?.corpseObjects?.delete?.(entity);
     if (typeof window.BanditCombat?.discardEntity === 'function') {
