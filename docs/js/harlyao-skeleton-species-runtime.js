@@ -20,7 +20,7 @@
     extremityColor: '#D4D6C9', // Fixed A/B/C descriptor consumed by procedural hand/foot body-material paths.
     genders: ['male', 'female'],
     scaleMultiplier: 1.2,
-    perchScaleByGender: { male: 0.84, female: 0.78 }, // Explicit per-gender 1.2× Engh-sho shoulder-perch scales.
+    perchScaleByGender: { male: 0.64865, female: 0.633087 }, // Fixed pet size from Harlyao world-space portrait-plane dimensions; no runtime derivation.
     allowedClothingIds: ['fine_hood', 'ragged_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho', 'rounded_pauldron', 'tangedcirclet'], // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
     behindHeads: {
       male: 'fightersprites/special_cases/head-behind_hskel_m.png',
