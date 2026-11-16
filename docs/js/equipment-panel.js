@@ -959,7 +959,7 @@
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
     if (emptyEl)  emptyEl.style.display  = 'none';
-    if (detailEl) detailEl.style.display  = '';
+    if (detailEl) { detailEl.style.display = ''; detailEl.dataset.gearToolKey = key; } // Canonical selected tool survives duplicate visible labels in the mastery panel.
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     set('iiIcon',  def.icon);
     const iiIconEl2 = document.getElementById('iiIcon');
