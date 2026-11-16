@@ -143,10 +143,14 @@ const jubmir = registered.contexts[quest.QUEST_ID].treeFor({ id: 'jubmir' });
 assert.equal(jubmir.id, 'fey_knot_jubmir');
 assert.equal(jubmir.nodes.filter(node => node.type === 'choice').length, 2);
 delete inventory[key];
+assert.equal(quest.menuStatus().ready, false, 'Quest Log readiness updates when the weapon is lost');
+assert.match(quest.menuStatus().objective, /Obtain another Fey-knotworked weapon/);
+assert.match(quest.menuStatus().statusText, /Weapon missing/);
 assert.equal(finish('jubmir', jubmir), false, 'cannot advance without a weapon');
 assert.equal(profile.questProgress[quest.QUEST_ID].stage, 1);
 assert.equal(quest.dialogueTreeFor('jubmir'), null);
 inventory[key] = 1;
+assert.equal(quest.menuStatus().ready, true, 'Quest Log readiness recovers as soon as another Fey weapon is owned');
 assert.equal(finish('jubmir', jubmir), true);
 assert.equal(profile.questProgress[quest.QUEST_ID].stage, 2);
 
@@ -156,6 +160,7 @@ assert.equal(finish('garanki_gabu', returning), true);
 assert.equal(quest.completed(), true);
 assert.equal(quest.maybeStart(), false, 'completed quest cannot restart');
 assert.equal(profile.questProgress[quest.QUEST_ID].status, 'complete');
+assert.equal(quest.menuStatus().active, false, 'Completed quest no longer offers another handoff');
 
 relics.render();
 const itemsAfterQuest = allElements(list);
