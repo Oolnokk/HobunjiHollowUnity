@@ -110,20 +110,42 @@
     return line;
   }
 
+  let lastStyleCountersSecond=-1; // Restricts mobile fishing style-counter text refreshes to once per second.
+
+  function updateFishStyleCounters(panel) {
+    const stats=window.FishCatalog?.getPresentationStyleDebug?.(); // Reads the live animation-loop counters for the existing mobile fishing debug panel.
+    if(!stats)return;
+    let line=panel.querySelector('[data-fish-style-debug]');
+    if(!line){
+      line=document.createElement('div');
+      line.setAttribute('data-fish-style-debug','true');
+      line.style.cssText='margin-top:3px;font-weight:700;color:#bde7ff;';
+      panel.appendChild(line);
+    }
+    const second=Math.floor(Date.now()/1000); // Stable bucket prevents per-frame mutations caused by the counters changing every frame.
+    if(second===lastStyleCountersSecond&&line.textContent)return;
+    lastStyleCountersSecond=second;
+    const message=`FISH SVG: ${stats.writes} writes, ${stats.skips} skipped | ${stats.running?'running':'idle'}`;
+    if(line.textContent!==message)line.textContent=message;
+  }
+
   function updateWaterDebug() {
     const line = ensureWaterDebugLine();
     if (!line) return;
+    updateFishStyleCounters(document.getElementById('fishingFeatureDebug'));
     const debug = window.AmphibiousFishing?.getDebug?.();
     if (!debug) {
-      line.textContent = 'WATER CHECK: amphibious system unavailable';
-      line.style.color = '#ffb58f';
+      if (line.textContent !== 'WATER CHECK: amphibious system unavailable') line.textContent = 'WATER CHECK: amphibious system unavailable';
+      if (line.style.color !== '#ffb58f') line.style.color = '#ffb58f';
       return;
     }
     const tile = debug.playerTile;
     const wet = debug.playerInWater === true;
     const tileText = tile ? `${tile.type || 'unknown'} @ ${tile.col},${tile.row}` : 'no tile';
-    line.textContent = `WATER CHECK: ${wet ? 'YES' : 'NO'} | ${tileText}`;
-    line.style.color = wet ? '#7fe89a' : '#ffb58f';
+    const message = `WATER CHECK: ${wet ? 'YES' : 'NO'} | ${tileText}`; // Avoids rewriting the mobile debug status on unchanged frames.
+    const color = wet ? '#7fe89a' : '#ffb58f'; // Only changes when the water check flips between wet and dry.
+    if (line.textContent !== message) line.textContent = message;
+    if (line.style.color !== color) line.style.color = color;
   }
 
   const GULLET_SCHEDULER_ID = 'fishing-presentation-gullet'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
@@ -153,6 +175,7 @@
 
   window.FishingPresentationDebug = {
     water: () => window.AmphibiousFishing?.getDebug?.() || null,
+    fishStyle: () => window.FishCatalog?.getPresentationStyleDebug?.() || null, // Lets the existing fishing debug owner inspect SVG mutation counters on demand.
     gulletBreadthMultiplier: GULLET_BREADTH_MULTIPLIER,
   };
 

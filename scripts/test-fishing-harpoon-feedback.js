@@ -29,6 +29,6 @@ assert.match(events, /distance <= GULLET_CONFIG\.hitRadius[\s\S]{0,120}playComba
 assert.match(catalog, /caughtFishIsRetracting[\s\S]*retractTimer\)>0/, 'colored fish replacement begins on the first retraction movement frame');
 assert.match(catalog, /getRecoloredCanvas\(spritePath,key\)/, 'retrieval sprite reuses FishCatalog authored recolor/pattern rendering');
 assert.match(catalog, /caughtSpriteUrl[\s\S]*renderCurvedFishFrame/, 'colored retrieval sprite replaces the silhouette in the existing fish image');
-assert.match(catalog, /image\.style\.transform=`scale\(\$\{sx\},\$\{sy\}\)`/, 'retrieval keeps the same authored minigame scale as the silhouette');
+assert.match(catalog, /applyFishPresentationStyle\(image,sx,sy\)/, 'retrieval retains the same authored minigame scale through the shared style updater');
 
 console.log('Fishing harpoon/catch feedback wiring tests passed.');
