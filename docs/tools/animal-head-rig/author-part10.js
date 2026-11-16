@@ -316,6 +316,13 @@ updateStatus = function updateStatusWithBabyHeadScale() {
   const notice = babyHeadDebug.lastError ? '\nBaby preview error: ' + babyHeadDebug.lastError : '';
   $('status').textContent += '\nBaby head: ' + babyHeadScaleLabel.textContent
     + ' | ' + (babyPreviewFrame ? babyPreviewFrameSource : 'missing frame') + notice;
+  const spriteLoading = window.__animalHeadRigSpriteLoad?.debugSnapshot?.(); // Exposes a mobile-readable error after a pending draw finishes.
+  if (spriteLoading?.status === 'error') {
+    $('status').textContent += '\nSprite load failed: ' + (spriteLoading.lastError || spriteLoading.requested);
+    $('status').className = 'status error';
+  } else if (spriteLoading?.status === 'loading') {
+    $('status').textContent += '\nLoading sprite: ' + spriteLoading.requested;
+  }
 };
 
 const drawBeforeBabyHead = draw;
