@@ -17,8 +17,12 @@ const master = clone(rigWindow.HOBUNJI_ATTACHMENT_RIG_MASTER); // Live runtime s
 const grip = master.profiles.creatures.drenkirra.anchors.shoulderGrip;
 assert.equal(grip.rotationDeg.y,61);
 const oldGrip = {position:{x:.01,y:-.1636307385658067,z:.0009131708735385657},rotationDeg:{x:0,y:-61,z:0}};
+const oldGrehlr = {position:{x:.01,y:-.3719770036140037,z:0},rotationDeg:{x:0,y:-61,z:0}}; // Previously embedded V15.24 grip.
+const oldUum = {position:{x:.01,y:-.5363283597840667,z:-.012886930890300352},rotationDeg:{x:0,y:-61,z:0}}; // Previous rotation must become gameplay's neutral 0°.
 const library = () => ({creatures:{
   drenkirra:{anchors:{shoulderGrip:clone(oldGrip)}},
+  grehlr:{anchors:{shoulderGrip:clone(oldGrehlr)}},
+  uumkaoii:{anchors:{shoulderGrip:clone(oldUum)}},
   puktuk:{anchors:{shoulderGrip:{position:{x:0,y:0,z:0},rotationDeg:{x:0,y:-61,z:0}}}},
 }});
 
@@ -62,11 +66,11 @@ const pet = {
 };
 let restorations = 0;
 const context = {
-  window:{HOBUNJI_ATTACHMENT_RIG_MASTER:master},
+  window:{HOBUNJI_ATTACHMENT_RIG_MASTER:master,HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD:rigWindow.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD},
   structuredCloneSafe:clone,animationAuthor:{actors:[pet,owner],mode:'rig',attachmentRigProfiles:library()},
   DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516:library(),
   approvedRigLibraryCloneV1524:library,
-  normalizedRigProfileLibrary:value=>{const copy=clone(value);for(const p of Object.values(copy.creatures||{}))p.anchors.shoulderGrip.rotationDeg.y=-61;return copy;},
+  normalizedRigProfileLibrary:value=>{const copy=clone(value);for(const p of Object.values(copy.creatures||{})){p.anchors.shoulderGrip.rotationDeg.y=-61;p.anchors.shoulderGrip.position.x=.01;}return copy;},
   state:{three:{THREE:{Quaternion:Q,Vector3:V,Euler}}},
   shoulderPetCarrierV1521:actor=>actor===pet?owner:null,
   actorRigAnchorLocalMatrix:()=>({decompose(p,q,s){p.copy(foot);q.copy(yaw(61));s.set(1,1,1);}}),
@@ -85,13 +89,25 @@ for(const candidate of [
   assert.deepEqual(clone(candidate.position),clone(grip.position),'default/legacy editor grip XYZ matches game');
   assert.equal(candidate.rotationDeg.y,61,'default/legacy editor grip rotation matches game');
 }
+for(const kind of ['grehlr','uumkaoii']) {
+  const current = master.profiles.creatures[kind].anchors.shoulderGrip;
+  const libraryGrip = api.normalizedRigProfileLibrary(library()).creatures[kind].anchors.shoulderGrip;
+  const defaultGrip = api.approvedRigLibraryCloneV1524().creatures[kind].anchors.shoulderGrip;
+  assert.deepEqual(clone(libraryGrip.position),clone(current.position),kind+' legacy grip position matches game');
+  assert.equal(libraryGrip.rotationDeg.y,current.rotationDeg.y,kind+' legacy grip Y matches game');
+  assert.deepEqual(clone(defaultGrip.position),clone(current.position),kind+' default grip matches game');
+  assert.equal(defaultGrip.rotationDeg.y,current.rotationDeg.y,kind+' default yaw matches game');
+}
 const edited=library();
 edited.creatures.drenkirra.anchors.shoulderGrip.position.x=.03;
 edited.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y=17;
 edited.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y=24;
 const normalized=api.normalizedRigProfileLibrary(edited);
 assert.equal(normalized.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y,17,'custom Drenkirra yaw survives');
+assert.equal(normalized.creatures.drenkirra.anchors.shoulderGrip.position.x,.03,'custom grip X survives old editor defaults');
 assert.equal(normalized.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y,24,'custom Puktuk yaw survives');
+assert.match(html, /if \(actor\.source\?\.type === 'creature' && shoulderPetCarrierV1521\(actor\)\) \{[\s\S]*?plane\.object\.rotation\.y = plane\.baseRotationY;[\s\S]*?continue;/,
+  'attached pets skip the editor creature PNG deadzone, matching gameplay');
 const worldYaw = () => angle(yaw(8).multiply(socket.quaternion).multiply(pet.attachmentAlignment.quaternion));
 api.updateAnimationRelationLines();
 near(worldYaw(),-29,'outward Y matches head 27 + perch 5 - grip 61');
