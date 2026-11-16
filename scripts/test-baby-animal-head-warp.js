@@ -178,7 +178,7 @@ assert(bridge.includes('return loadFrameImage(rawUrl)'),
   'non-composited species must still enlarge their real raw shoulder-pet sprite');
 const configManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/combat-config.js', 'utf8');
 const configLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
-assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskAudit3'),
+assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskCoverage4'),
   'game parser must invalidate its cached combat bootstrap when shoulder-pet integration changes');
 assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMask132b'),
   'game combat bootstrap must load the audited shoulder-pet bridge, not its prior cached implementation');
