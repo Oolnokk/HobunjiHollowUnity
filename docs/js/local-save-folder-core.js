@@ -1006,6 +1006,8 @@
           _lastError = `Primary folder save succeeded, but recovery history could not be updated: ${String(checkpointError?.message || checkpointError)}`;
           _lastAction = automatic ? 'autosaved-primary-recovery-error' : 'saved-primary-recovery-error';
         }
+      } else {
+        _recoveryNeedsRefresh = false; // The recovery manager is optional in isolated tests and early startup.
       }
 
     } catch (error) {
