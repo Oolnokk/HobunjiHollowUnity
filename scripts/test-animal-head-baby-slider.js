@@ -47,7 +47,7 @@ let lastPreviewScale = null, lastPreviewFrame = null;
 const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 'sprite-normalized-top-left' };
 const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
 const warp = {
-  getScale: () => 1.32, MAX_SCALE: 1.45, validateFrame,
+  getScale: () => 1.23, MAX_SCALE: 1.45, validateFrame,
   frameForKind: kind => kind === 'grehlr' ? canonical : null,
   applyToCanvas: (_source, kind, scale, frame) => {
     applied++; lastPreviewScale = scale; lastPreviewFrame = frame;
@@ -157,7 +157,7 @@ assert.equal(slider.value, '132', 'switching species does not leak another anima
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
 ctx.applyRecord({ id: 'moot', headRig: { babyHeadFrame: canonical } });
 ctx.draw();
-assert.equal(slider.value, '132', 'Moot inherits the default 132%, not the obsolete 123%');
+assert.equal(slider.value, '123', 'Moot inherits the universal 123% rather than storing a species override');
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'Moot inherits a scale without exporting a redundant override');
 assert.equal(ctx.normalizedRig().babyHeadFrame.width, canonical.width,
   'saving an inherited-scale species must NOT erase its independently authored idle mask source frame');
