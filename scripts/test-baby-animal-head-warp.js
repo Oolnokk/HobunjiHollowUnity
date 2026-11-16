@@ -233,6 +233,13 @@ console.log('Baby animal authored-head warp integration and pixel tests passed.'
   assert.match(requested[0].url, /grehlr_idle\.png$/, 'the source is always the idle sprite, not a running frame');
   assert.equal(await api.ensureIdleMask('grehlr', { width, height, data: pixels }), established,
     'a second animal with different eyes and patterns cannot replace the established idle mask');
+  assert.equal(api.frameForKind('pingdort'), null, 'a species missing from the genotype renderer is initially unknown');
+  const birdMask = await api.ensureIdleMask('pingdort', decoratedIdle); // Real baby-bird idle art still exists, despite missing genotype metadata.
+  assert(birdMask?.opaquePixels > 0, 'a supplied idle sprite establishes the baby mask for a naturally Small species');
+  assert(api.frameForKind('pingdort'), 'the chathead fallback is now available for that verified real idle-sprite species');
+  api.setScale(1.32);
+  assert.notEqual(api.applyToCanvas(input, 'pingdort'), input,
+    'a naturally Small baby without a genotype renderer still receives the universal 132% head warp');
   const alternatePose = Uint8ClampedArray.from(pixels); // Movement pose and its colored overlays are warped after the fixed source was chosen.
   alternatePose.set([245, 40, 70, 255], (21 * width + 21) * 4);
   assert.notDeepEqual(
