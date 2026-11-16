@@ -1,5 +1,31 @@
 # Performance investigation log
 
+## 15 Nov 2026 (applied): skip unrelated Gear detail-panel fitting and debug-only layout reads
+
+The 9 Nov user-run browser trace had shown intermittent `inventory-gear-compact-effects.js`
+`refreshPresentation` layout/style cost (5–12 ms per call, with 1.56 s cumulative style
+recalculation in one trace), but did not isolate the cause. Code inspection found an
+unnecessary part: every left-summary Gear rebuild caused the unrelated right-hand
+item-detail panel's font fitter to reset six CSS variables and potentially run the
+9-step overflow/binary-search measurement sequence, followed by four synchronous
+geometry reads only needed for the debug snapshot.
+
+The Gear module now reuses the last fitted result when only the left summary/inventory
+mutates; item-detail changes, pane replacement, open/reopen, ResizeObserver,
+orientation and window resize still invalidate it. Geometry for the debug snapshot is
+read on demand instead of in each scheduled frame callback. The public `refresh()`
+still returns those measurements explicitly. `InventoryGearCompactEffects.debugSnapshot()`
+reports `fitStats.detailFits` and `fitStats.reusedDetailFits` for mobile A/B checks.
+The Gear idle-cadence regression covers left-panel reuse, real info mutations, menu
+hide/show, resize invalidation and lazy debug-only reads; a direct module smoke test
+confirmed 6 CSS-var writes on open, 0 additional writes for a summary rebuild, 6 for
+an item-detail change, and 6 for resize (simple fitting fixture).
+
+**Not yet measured on real hardware:** frame-time change, or what fraction of the
+original style-recalculation trace was actually from this specific redundant fitting.
+This is removal of provably redundant synchronous-layout work, not an FPS claim.
+
+
 ## 15 Nov 2026 (applied): vitals-bar affliction animations off by default, affliction names printed on the segments
 
 Acting on the entry below: `player-vitals.js` now has two preferences (Settings > Visual Effects, persisted in
