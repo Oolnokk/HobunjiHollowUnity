@@ -1136,9 +1136,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(Math.abs(ladderAfter.elevation - ladderStart.before.elevation) > .12, 'completed ladder traversal must remain on the opposite elevation instead of snapping back: '+JSON.stringify({ ladderStart, ladderAfter }));
       assert.ok(Math.abs(ladderAfter.elevation-ladderStart.targetY)<.12,'completed ladder traversal must settle onto the authored lower landing: '+JSON.stringify({ladderStart,ladderAfter}));
       assert.ok(Math.abs(ladderAfter.bodyY - ladderAfter.elevation) < .20, 'canonical player body must settle onto the ruin support elevation: '+JSON.stringify(ladderAfter));
-      if (Number.isFinite(ladderAfter.resourceRingY) && Number.isFinite(ladderAfter.shadowY)) {
-        assert.ok(Math.abs(ladderAfter.resourceRingY - ladderAfter.shadowY) < .04, 'resource ring and ground-relative presentation must share one ruin elevation authority: '+JSON.stringify(ladderAfter));
-      }
+      assert.equal(ladderAfter.resourceRingY, undefined,
+        'the player no longer has a ground-projected resource ring in the ruin: '+JSON.stringify(ladderAfter));
     }
     activeRuns.push({
       seed,
