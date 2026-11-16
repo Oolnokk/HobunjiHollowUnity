@@ -14,7 +14,7 @@ const helpers = source.slice(start, end); // Actual unchanged production helper 
 const stable = []; // Character-scoped Stable storage filled by the real transfer helper.
 const arrivals = []; // Name prompts intercepted by the shared popup service.
 let stableSaves = 0; // Confirms both the transfer and confirmed rename persist.
-let roleAssignments = 0; // Babies must never be auto-equipped as companions/mounts.
+let roleAssignments = 0; // Neither babies nor transferred adults may be auto-equipped.
 const deps = {
   getStable: () => stable,
   companionAiTypeForKind: () => 'companion',
@@ -44,6 +44,6 @@ assert.equal(stableSaves, 2, 'transfer and naming each persisted exactly once');
 const grown = context.convert({ ...baby, lifeStage: 'adult', name: 'Adult Puktuk' }); // Ordinary mature animals should not be renamed unexpectedly.
 context.stableAnimal(grown);
 assert.equal(stable[1].lifeStage, 'adult', 'adult stays adult');
-assert.equal(roleAssignments, 1, 'adult auto-assignment behavior remains unchanged');
+assert.equal(roleAssignments, 0, 'adult transfers also leave all creature equipment slots untouched');
 assert.equal(arrivals.length, 1, 'adult transfers do not interrupt play with baby naming');
 console.log('Farm-to-Stable baby stage and naming regression tests passed.');
