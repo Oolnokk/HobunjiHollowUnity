@@ -1016,7 +1016,7 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Nursery navigation preserves focus and incubation destination during grid, stepper and unrelated menu updates.',
+      mostRecentChange: 'Experimental baby head-size slider warps authored head pixels with distance-faded neck and body transitions; 100% disables the effect.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
