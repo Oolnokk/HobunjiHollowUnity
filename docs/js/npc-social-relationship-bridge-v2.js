@@ -218,14 +218,14 @@
     const getAction = gifting.getNpcGiftOfferAction.bind(gifting); // Existing gift eligibility remains authoritative before the daily gate.
     gifting.getNpcGiftOfferAction = (walker, ...args) => {
       const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
-      return id && !canGiftToday(id) ? null : getAction(walker, ...args);
+      return id && id !== 'boney_shinjimi' && !canGiftToday(id) ? null : getAction(walker, ...args); // Boney's one-night milk trades ignore daily Favor limits.
     };
     const offerGift = gifting.offerGift.bind(gifting); // Existing gift code remains authoritative for its authored permanent Favor delta and reaction.
     gifting.offerGift = function (walker, ...args) {
       const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
-      if (!id || !canGiftToday(id)) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
+      if (!id || (id !== 'boney_shinjimi' && !canGiftToday(id))) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
       const result = offerGift(walker, ...args);
-      if (result) {
+      if (result && id !== 'boney_shinjimi') {
         markGiftedToday(id);
         touchedNpcIds.add(id);
       }
