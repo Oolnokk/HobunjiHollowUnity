@@ -144,12 +144,12 @@ oldSocket.rotationDeg = { x: 9, y: 17, z: -4 };
 oldSocket.scale = { x: 0.8, y: 0.9, z: 1 };
 const preservedOldSocket = guard.reconcileProfiles(legacyDrenkirraEditedRotation).creatures.drenkirra.anchors.shoulderGrip;
 assert.deepStrictEqual(preservedOldSocket.position, profiles.creatures.drenkirra.anchors.shoulderGrip.position, 'outdated stock XYZ migrates to current approved Drenkirra grip');
-assert.deepStrictEqual(preservedOldSocket.rotationDeg, { x: 9, y: 17, z: -4 }, 'custom Y/X/Z rotation survives even when legacy XYZ needs migration');
-assert.deepStrictEqual(preservedOldSocket.scale, { x: 0.8, y: 0.9, z: 1 }, 'custom grip scale survives legacy XYZ migration');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(preservedOldSocket.rotationDeg)), { x: 9, y: 17, z: -4 }, 'custom Y/X/Z rotation survives even when legacy XYZ needs migration');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(preservedOldSocket.scale)), { x: 0.8, y: 0.9, z: 1 }, 'custom grip scale survives legacy XYZ migration');
 const oldSocketWithStockYaw = JSON.parse(JSON.stringify(legacyDrenkirraEditedRotation));
 oldSocketWithStockYaw.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y = -61;
 const correctedOldSocket = guard.reconcileProfiles(oldSocketWithStockYaw).creatures.drenkirra.anchors.shoulderGrip;
-assert.deepStrictEqual(correctedOldSocket.rotationDeg, { x: 9, y: 61, z: -4 }, 'only the obsolete stock -61 yaw is upgraded, without erasing custom X/Z');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(correctedOldSocket.rotationDeg)), { x: 9, y: 61, z: -4 }, 'only the obsolete stock -61 yaw is upgraded, without erasing custom X/Z');
 const newDrenkirraYaw = JSON.parse(JSON.stringify(profiles)); // Checks that previously corrected +61 degree values remain stable under repeated reconciliation.
 assert.strictEqual(guard.reconcileProfiles(newDrenkirraYaw).creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y, 61, 'canonical Y rotation must not migrate twice');
 old.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor = 0;
