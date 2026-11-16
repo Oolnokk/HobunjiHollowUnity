@@ -68,8 +68,10 @@ const deps={inventory:{},ITEM_DEFS:{['cosmetic:'+hat]:{label:'Kasa'}},
 assert.equal(rewards.grant('valuable',deps,()=>0).key,'artifactHigh');
 assert.equal(deps.inventory.artifactHigh,1);
 assert.equal(rewards.grant('useful',deps,()=>0).key,'feyBound_dagger_u1');
+assert.equal(rewards.grant('milk',deps,()=>0).origin,'Fey', 'milk uses the same Fey relic generator as Useful');
 delete W.EnchantmentSystem.DEFINITIONS.locked;
 assert.equal(rewards.grant('apologize',deps,()=>0).id,'second');
+assert.equal(rewards.grant('milk',deps,()=>0).kind,'boundRelic', 'milk keeps giving a Fey weapon even after all Fey enchants are learned');
 const hatPrize=rewards.grant('hat',deps,()=>0);
 assert.equal(hatPrize.kind,'clothing');
 assert.equal(hatPrize.cosmeticId,hat);
@@ -182,11 +184,31 @@ async function testRealEncounterFlow() {
   game.despawnNpcWalker=w=>{despawned.push(w); const at=game.npcWalkers.indexOf(w);if(at>=0)game.npcWalkers.splice(at,1);return true;};
   moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
   const rewards=[];
+  const milkDialogues=[]; // Captures each actual authored milk conversation, including its three distinct greetings.
+  const snapshotsAtGrant=[]; // The real relic owner saves synchronously while granting; confirm milk and count are already updated at that point.
+  let failNextMilkGrant=false; // Simulates a failed relic award to verify rollback, without consuming the single-night allowance.
+  let deferNextMilk=false; // Keeps a milk cutscene open while the world restores, exposing stale callback races.
+  let continueDelayedMilk=null; // Test-only callback that releases the paused cutscene after a restore.
   let savedDuringGrant=null;
   moonWindow.BoneyShinjimiRewards={grant(kind){
-    rewards.push(kind); return {kind:'boundRelic',key:'feyBound_dagger_123'};
+    if(kind==='milk'){
+      snapshotsAtGrant.push({count:C.serialize().milksGiven,milk:milkInventory[held.key]});
+      if(failNextMilkGrant){failNextMilkGrant=false;throw new Error('intentional test grant failure');}
+    }
+    rewards.push(kind); return {kind:'boundRelic',origin:'Fey',key:'feyBound_dagger_123'};
   }};
   moonWindow.AuthoredCutsceneRuntime={async run(scene,handlers){
+    if(scene.stages.some(stage=>stage.id==='milk_welcome')) {
+      if(deferNextMilk){
+        deferNextMilk=false;
+        await new Promise(resolve=>{continueDelayedMilk=()=>{handlers.onDialogueContinue({id:'milk_reward'});resolve();};});
+        return;
+      }
+      milkDialogues.push(scene.stages.map(stage=>stage.text));
+      handlers.onDialogueContinue({id:'milk_reward'});
+      handlers.onDialogueContinue({id:'milk_reward'}); // A repeated Continue must not award or consume another milk.
+      return;
+    }
     const demand=scene.stages.find(stage=>stage.id==='demand');
     assert.equal(demand.options.length,4);
     assert.deepEqual(Array.from(demand.options,x=>x.text),
@@ -259,15 +281,95 @@ async function testRealEncounterFlow() {
   game.player.x=(center.c+1.5)*64; // Walk through the south opening into the house after Boney gets home.
   game.player.y=(center.r+1.5)*64;
   C.update(.1);
-  await Promise.resolve();await Promise.resolve();
+  await new Promise(resolve=>setImmediate(resolve)); // Flush the sandboxed cutscene's Promise jobs before testing post-confrontation actions.
+  assert.equal(C.debugSnapshot().phase,'leaving','the confrontation must finish before gifting becomes available');
   assert.equal(rewards.length,1,'entering while Boney is home grants exactly one chosen prize');
   assert.equal(rewards[0],'useful');
   assert.equal(savedDuringGrant.phase,'leaving','an immediate mid-cutscene save must not revive the gift dialogue');
   assert.equal(C.serialize().phase,'leaving');
+
+  // Use the actual NpcGifting module against Boney's live walker, not a simulated button handler.
+  vm.runInContext(read('docs/js/npc-gifting.js'),moonContext);
+  const milkInventory={puktukMilk:2,yellowDewMilk:1,uumkaoiiWhiteDewMilk:1,apple:2}; // Three types of real in-game milk plus a forbidden non-milk gift.
+  const milkDefs={puktukMilk:{label:'Puktuk Milk',icon:'🥛'},yellowDewMilk:{label:'Yellow Uumkao’ii Milk',icon:'🫙'},
+    uumkaoiiWhiteDewMilk:{label:'White Uumkao’ii Milk',icon:'🫙'},apple:{label:'Apple',icon:'🍎'}};
+  let held={kind:'item',key:'apple',def:milkDefs.apple}; // Swapped as the player changes the held item in the existing gifting UI.
+  const giftDeps={
+    inventory:milkInventory,getItemDefs:()=>milkDefs,getHeldGiftItem:()=>held,
+    clampInventoryStack(){},refreshItemScroll(){},buildInventoryGrid(){},buildEquipmentSlots(){},
+    refreshActionBar(){},saveMemberWorldData(){},showToast(){},
+  };
+  moonWindow.NpcGifting.init(giftDeps);
+  const gifting=moonWindow.NpcGifting;
+  const allMilkDefs=Object.values(JSON.parse(read('docs/config/items/item-index.json')))
+    .filter(item=>/Milk$/.test(item.key) && /milk$/i.test(item.label)); // Canonical milk variants, not inferred from cooking ingredients.
+  assert(allMilkDefs.length>=8,'the authored item catalog contains multiple milk variants');
+  for(const milk of allMilkDefs) {
+    assert(C.canAcceptMilkGift({kind:'item',key:milk.key,def:milk},
+      {...giftDeps,inventory:{...milkInventory,[milk.key]:1}}),milk.key+' is recognized as milk');
+  }
+  assert(C.canAcceptMilkGift({kind:'item',key:'garWolfMilk',def:{label:'Gar-wolf Milk'}},
+    {...giftDeps,inventory:{...milkInventory,garWolfMilk:1}}),'runtime livestock milk is eligible too');
+  assert.equal(gifting.getNpcGiftOfferAction(npc),null,'no gift action for non-milk, even after confrontation');
+  assert.equal(gifting.offerGift(npc),false,'direct non-milk press cannot bypass rejection');
+  assert.equal(milkInventory.apple,2,'rejected ordinary gift not consumed');
+  held={kind:'item',key:'puktukMilk',def:milkDefs.puktukMilk};
+  failNextMilkGrant=true;
+  assert.equal(gifting.offerGift(npc),true,'failed grant is attempted through real gifting');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'a failed weapon grant rolls milk back');
+  assert.equal(C.serialize().milksGiven,0,'failed weapon grant does not use a milk allowance');
+  assert.equal(rewards.length,1,'a failed weapon grant creates no new prize');
+  assert.equal(snapshotsAtGrant.length,1,'a duplicate Continue does not retry a failed award');
+  assert(gifting.getNpcGiftOfferAction(npc),'the gift can be retried after an unsuccessful award');
+  deferNextMilk=true;
+  assert.equal(gifting.offerGift(npc),true,'paused milk cutscene starts before reload');
+  assert.equal(typeof continueDelayedMilk,'function','a pending dialogue Continue is available for race testing');
+  C.restore(C.serialize()); // Same room and milk count; only encounter generation distinguishes the stale cutscene.
+  continueDelayedMilk();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'a stale post-reload dialogue cannot consume milk');
+  assert.equal(C.serialize().milksGiven,0,'a stale post-reload dialogue cannot increment the limit');
+  assert.equal(snapshotsAtGrant.length,1,'a stale post-reload dialogue cannot create another Fey relic');
+  C.update(.1); // Restores the ordinary NPC walker after scene cancellation without changing the encounter.
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(C.debugSnapshot().phase,'leaving','reloaded completed confrontation remains in post-dialogue phase');
+  for(const key of ['puktukMilk','yellowDewMilk','uumkaoiiWhiteDewMilk']) {
+    held={kind:'item',key,def:milkDefs[key]};
+    const milkAction=gifting.getNpcGiftOfferAction(npc);
+    assert(milkAction,key+' is eligible before the third exchange: '+JSON.stringify({
+      giftable:gifting.isItemGiftable(held),accepted:C.canAcceptMilkGift(held,giftDeps),
+      phase:C.debugSnapshot().phase,milkCount:C.debugSnapshot().milksGiven,
+      reward:!!C.debugSnapshot().reward,zone:C.debugSnapshot().zone,
+      player:game.player,npc:npc.root.position,
+    }));
+    assert.equal(gifting.offerGift(npc),true,'milk gift opens its cutscene');
+    assert.equal(gifting.offerGift(npc),false,'repeated input during the active cutscene is rejected');
+    await new Promise(resolve=>setImmediate(resolve)); // Finish the VM-owned milk cutscene before offering the next milk.
+    assert.equal(C.debugSnapshot().phase,'leaving','Boney remains in the house after a milk exchange');
+  }
+  assert.equal(milkInventory.puktukMilk,1);
+  assert.equal(milkInventory.yellowDewMilk,0);
+  assert.equal(milkInventory.uumkaoiiWhiteDewMilk,0);
+  assert.equal(rewards.filter(kind=>kind==='milk').length,3,'three milk gifts each get one Fey weapon');
+  assert.equal(milkDialogues.length,4,'failed first offer may be retried without using the allowance');
+  assert.match(milkDialogues[1][0],/Milk is good for my bones/);
+  assert.match(milkDialogues[2][0],/More milk/);
+  assert.match(milkDialogues[3][0],/A third milk/);
+  assert.deepEqual(snapshotsAtGrant.slice(1).map(entry=>entry.count),[1,2,3],
+    'immediate reward saves must see the incremented milk count, preventing save/load duplication');
+  assert.deepEqual(snapshotsAtGrant.slice(1).map(entry=>entry.milk),[1,0,0],
+    'immediate reward saves must see each consumed milk in inventory');
+  assert.equal(C.serialize().milksGiven,3,'milk limit persists in the existing world record');
+  held={kind:'item',key:'puktukMilk',def:milkDefs.puktukMilk};
+  assert.equal(gifting.getNpcGiftOfferAction(npc),null,'fourth milk gift is never offered');
+  assert.equal(gifting.offerGift(npc),false,'direct fourth gift cannot consume milk');
+  assert.equal(milkInventory.puktukMilk,1);
   C.restore({...C.serialize(),phase:'home'});
   assert.equal(C.debugSnapshot().phase,'leaving','old inconsistent saves with an awarded prize are upgraded to departure');
+  assert.equal(C.debugSnapshot().milksGiven,3,'gift limit survives save/restore');
   for(let i=0;i<4;i++)C.update(.10);
-  assert.equal(rewards.length,1,'reloading in a gifted house never awards another item');
+  assert.equal(rewards.length,4,'reloading in a gifted house never awards another encounter or milk prize');
   game.player.y=(center.r+3.3)*64; // Player steps beyond the physical south doorway, remaining in the same wilderness zone.
   C.update(.1);
   assert.equal(C.debugSnapshot().phase,'complete','crossing the door threshold makes the enchanted house vanish immediately');
@@ -280,6 +382,7 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().phase,'roam');
   assert.equal(C.debugSnapshot().reward,null,'next encounter begins without an old reward');
   assert.equal(C.serialize().hatTaken,false,'kasa resets for subsequent moons');
+  assert.equal(C.serialize().milksGiven,0,'the next full moon resets Boney’s per-visit milk limit');
 }
 testRealEncounterFlow().then(()=>console.log('Boney chase, scene, reward-idempotence and next-moon integration passed.'))
   .catch(error=>{console.error(error);process.exitCode=1;});

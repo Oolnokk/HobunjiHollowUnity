@@ -391,6 +391,12 @@
     const npcId = walker?.rec?.id;
     if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker.rec) || !withinPorakanekiGiftReach(walker)) return null; // Great Fey never advertise the ordinary gift action; Porakaneki require two-tile proximity.
     const held = deps.getHeldGiftItem();
+    if (npcId === 'boney_shinjimi') {
+      if (!isItemGiftable(held) || !window.BoneyShinjimiWilderness?.canAcceptMilkGift?.(held, deps)) return null;
+      return { icon: itemDefFor(held)?.icon || '🥛',
+        label: `Give ${esc(itemLabelFor(held))} to Boney Shinjimi`,
+        action: 'npc_offer_gift', style: 'secondary', allowed: true, contextualHeldItem: true };
+    } // His secret in-house exchange bypasses ordinary preferences, Favor and daily gifts.
     if (!isItemGiftable(held)) return null;
     const prefRec = preferenceRecord(walker); // Reused by both armor-specific and ordinary warning calculations.
     const metalArmor = isHeldMetalArmor(held); // Prevents unrelated clothing/color dislikes from leaking into the metal-armor prompt.
@@ -411,6 +417,9 @@
   function offerGift(walker) {
     const npcId = relationshipId(walker);
     const held = deps?.getHeldGiftItem?.();
+    if (walker?.rec?.id === 'boney_shinjimi') {
+      return isItemGiftable(held) && window.BoneyShinjimiWilderness?.offerMilk?.(held, deps) === true;
+    } // Boney only consumes milk when his post-confrontation cutscene grants a Fey weapon.
     if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker?.rec) || !isItemGiftable(held) || !withinPorakanekiGiftReach(walker)) return false; // Guard direct presses too: distant tribe gifts cannot consume items or alter Favor.
 
     const evaluation = evaluateHeldGift(preferenceRecord(walker), held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.

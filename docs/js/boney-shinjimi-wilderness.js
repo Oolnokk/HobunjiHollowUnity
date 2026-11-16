@@ -16,6 +16,7 @@
   const FLEE_BOOST_FACTOR = 2.7; // Boost affects his existing collision-aware walker route, not a direct teleport.
   const SCAN_SECONDS = 0.24; // Throttles bidirectional sight tests and population scans.
   const SAVE_VERSION = 1; // Compatible additive field inside SlagothimTraders' existing saved record.
+  const MAX_MILK_GIFTS = 3; // Secret encounter limit, independent of ordinary daily gift eligibility.
   let deps = null; // SlagothimTraders' existing injected, game-owned NPC, calendar, inventory and map adapters.
   let walker = null; // The one materialized NPC in the active exterior zone.
   let walkerBuilding = false; // Prevents asynchronous duplicate walker construction.
@@ -37,7 +38,7 @@
     return { phase:'waiting', cycle:-1, completedCycle:-1, zone:null, home:null, target:null,
       activity:'wander', resourceTarget:null, workLeft:0, fleeTime:0, boostedFor:0, boostCooldown:0,
       catches:0, weaponContacts:0, escaped:0, chores:0, lastSight:'unobserved', lastEvent:'awaiting full moon',
-      reward:null, hatTaken:false };
+      reward:null, hatTaken:false, milksGiven:0 };
   }
   function rnd() { return window.GameRandom?.random?.() ?? Math.random(); }
   function finite(value, fallback=0) { const n=Number(value); return Number.isFinite(n) ? n : fallback; }
@@ -112,7 +113,7 @@
     const choose=seeded(worldSeed()+':boney-zone:'+cycle);
     state.phase='planned';state.cycle=cycle;
     state.zone=available[Math.min(available.length-1,Math.floor(choose()*available.length))];
-    state.home=null;state.target=null;state.reward=null;state.hatTaken=false;
+    state.home=null;state.target=null;state.reward=null;state.hatTaken=false;state.milksGiven=0;
     bumpEvent('Full moon: magic home planned in '+state.zone);save();
   }
   function ensureSite() {
@@ -479,6 +480,89 @@
       ],
     };
   }
+  function isMilkGift(held, giftingDeps) {
+    if (!held?.key || held.kind === 'clothing' || !/Milk$/.test(held.key)) return false;
+    const def = held.def || giftingDeps?.getItemDefs?.()?.[held.key] || deps?.ITEM_DEFS?.[held.key]; // Item definitions distinguish actual milk from cooked food containing milk.
+    return /milk$/i.test(String(def?.label || ''));
+  }
+  function canAcceptMilkGift(held, giftingDeps) {
+    const inv = giftingDeps?.inventory;
+    return state.phase === 'leaving' && !!state.reward && !sceneRunning
+      && state.milksGiven < MAX_MILK_GIFTS && !!window.AuthoredCutsceneRuntime?.run
+      && area() === state.zone && !!walker && insideHome(playerTile(), 0.1)
+      && insideHome(position() && { x:position().x, z:position().z }, 0.1)
+      && isMilkGift(held, giftingDeps) && (Number(inv?.[held.key]) || 0) > 0;
+  }
+  function milkSceneDefinition(count) {
+    const greetings = [
+      "Milk? For me? Oh, marvelous! Milk is good for my bones, you know. Even these old ones!",
+      "More milk? Why, my bones are positively singing!",
+      "A third milk? You're too kind! But that's quite enough for one old skeleton.",
+    ]; // The secret is revealed only in this in-house dialogue, never in tips or the compendium.
+    const talk = (id, text, next='__next__') => ({ id, type:'talk', speakerId:'boney', addressedActorId:'player', text, next });
+    return {
+      version:6, title:'Boney Shinjimi', mapId:state.zone,
+      actors:sceneDefinition().actors,
+      stages:[
+        talk('milk_welcome', greetings[Math.min(count, 2)]),
+        talk('milk_reward', count === 0
+          ? "Please, take this Fey-enchanted weapon in return. It's the least I can do for my poor bones."
+          : "And here's another Fey-enchanted weapon for you. A fair trade, I'd say!"),
+        talk('milk_farewell', count === 2
+          ? "My bones thank you, truly. Now I must be on my way once you've left."
+          : "If you've more milk, I certainly won't turn it down! At least, not just yet.", '__end__'),
+      ],
+    };
+  }
+  function offerMilk(held, giftingDeps) {
+    if (!canAcceptMilkGift(held, giftingDeps)) return false;
+    const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
+    const count = state.milksGiven; // Selects first, second, or third dialogue without changing the limit early.
+    const encounterGeneration = generation; // Invalidates stale dialogue continuations after world reload, house teardown or encounter replacement.
+    let handled = false; // A double Continue or an unsuccessful grant cannot retry the same milk handover mid-dialogue.
+    sceneRunning = true; // Locks the action synchronously, before the cutscene promise yields.
+    void (async () => {
+      try {
+        await window.AuthoredCutsceneRuntime.run(milkSceneDefinition(count), {
+          onDialogueContinue(stage) {
+            if (stage?.id !== 'milk_reward' || handled || generation !== encounterGeneration || state.phase !== 'leaving'
+              || state.milksGiven !== count || area() !== state.zone
+              || !insideHome(playerTile(), 0.1) || (Number(giftingDeps.inventory?.[milkKey]) || 0) <= 0) return;
+            handled = true;
+            const previousMilk = Number(giftingDeps.inventory[milkKey]); // Rollback value if the Fey weapon could not be granted.
+            giftingDeps.inventory[milkKey] = previousMilk - 1;
+            state.milksGiven = count + 1; // HarlyaoRelics.grantBoundRelic saves immediately, so the first save must already include the exchanged milk and count.
+            let prize = null;
+            try {
+              prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+            } catch (err) {
+              bumpEvent('Fey weapon grant failed: ' + (err?.message || err));
+            }
+            if (!prize || prize.kind !== 'boundRelic' || prize.origin !== 'Fey') {
+              giftingDeps.inventory[milkKey] = previousMilk;
+              state.milksGiven = count;
+              giftingDeps.showToast?.('Boney could not find a Fey weapon to offer. Keep your milk.', false);
+              bumpEvent('Milk offer unavailable; item and exchange count restored');
+              return;
+            }
+            giftingDeps.clampInventoryStack?.(milkKey);
+            giftingDeps.refreshItemScroll?.();
+            giftingDeps.buildInventoryGrid?.();
+            giftingDeps.buildEquipmentSlots?.();
+            giftingDeps.refreshActionBar?.();
+            bumpEvent('Milk exchanged for Fey weapon (' + state.milksGiven + '/' + MAX_MILK_GIFTS + ')');
+            save(); // World encounter persistence follows the relic owner's already-consistent inventory save.
+          },
+        });
+      } catch(err) {
+        bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
+      } finally {
+        sceneRunning = false;
+        giftingDeps.refreshActionBar?.();
+      }
+    })();
+    return true; // The existing gift dispatcher is synchronous; the cutscene owns the actual handover.
+  }
   async function enterScene() {
     if(sceneRunning||state.phase!=='home'||!window.AuthoredCutsceneRuntime?.run)return;
     sceneRunning=true;state.phase='scene';
@@ -537,7 +621,7 @@
     ensureSite();
     if(state.phase==='waiting'||state.phase==='complete'||state.phase==='planned')return;
     syncZone();
-    if(state.phase==='leaving') {finishEncounter();return;} // Leaving the zone counts as exiting the magic house.
+    if(state.phase==='leaving') {if(!sceneRunning)finishEncounter();return;} // Never despawn the house during milk dialogue.
     if(area()!==state.zone||!walker)return;
     if(state.phase==='scene')return;
     contactBoost(dt);
@@ -586,7 +670,7 @@
     const d=debugSnapshot();
     debugElement.textContent='Boney Shinjimi\n'+d.phase+' / moon '+d.cycle+'\n'+(d.zone||'no zone')
       +' '+JSON.stringify(d.home)+'\nLOS '+d.lastSight+'\n'+d.lastEvent+'\n'
-      +'house '+d.houseVisible+'/'+d.collision+' NPC '+d.walker+' boosts '+d.catches;
+      +'house '+d.houseVisible+'/'+d.collision+' NPC '+d.walker+' boosts '+d.catches+' milk '+d.milksGiven+'/'+MAX_MILK_GIFTS;
   }
   function serialize() {
     return {version:SAVE_VERSION,phase:state.phase==='scene'?(state.reward?'leaving':'home'):state.phase, // Persist reward-claimed cutscenes as departure, never as retriable gift prompts.
@@ -594,7 +678,7 @@
       home:state.home&&{...state.home},target:state.target&&{...state.target},
       activity:state.activity,resourceTarget:state.resourceTarget,workLeft:state.workLeft,chores:state.chores,
       escaped:state.escaped,catches:state.catches,weaponContacts:state.weaponContacts,
-      reward:state.reward,hatTaken:state.hatTaken};
+      reward:state.reward,hatTaken:state.hatTaken,milksGiven:state.milksGiven};
   }
   function restore(raw) {
     clearHouse();releaseWalker();
@@ -618,6 +702,7 @@
     state.catches=Math.max(0,Math.floor(finite(raw.catches)));
     state.weaponContacts=Math.max(0,Math.floor(finite(raw.weaponContacts)));
     state.reward=raw.reward||null;state.hatTaken=raw.hatTaken===true;
+    state.milksGiven=clamp(Math.floor(finite(raw.milksGiven)),0,MAX_MILK_GIFTS); // Older saves default to zero milk gifts.
     if(state.reward && state.phase==='home') state.phase='leaving'; // Legacy/interrupted cutscene saves with an already-granted prize must never duplicate rewards.
     if(state.phase==='flee') {
       state.target={c:state.home.c+1,r:state.home.r+3}; // Interrupted chase resumes toward the real house.
@@ -631,7 +716,7 @@
       lastSight:state.lastSight,lastEvent:state.lastEvent,houseVisible:!!houseMesh?.visible,
       collision:!!houseUnregister,walker:!!walker,catches:state.catches,
       weaponContacts:state.weaponContacts,escaped:state.escaped,
-      chores:state.chores,reward:state.reward,hatTaken:state.hatTaken};
+      chores:state.chores,reward:state.reward,hatTaken:state.hatTaken,milksGiven:state.milksGiven};
   }
   function init(injectedDeps) {
     deps=injectedDeps;scanTimer=0;planTimer=0;
@@ -639,7 +724,7 @@
     window.DevCompanion?.registerStateProvider?.('boneyShinjimi',debugSnapshot);
   }
   window.BoneyShinjimiWilderness=Object.freeze({
-    init,update,serialize,restore,debugSnapshot,sceneDefinition,
+    init,update,serialize,restore,debugSnapshot,sceneDefinition,canAcceptMilkGift,offerMilk,
     __test:Object.freeze({lunarDay,moonCycle,chooseHouseSite,wallHit,targetFor,record,finishEncounter,beginFlight,nearbyOtherNpc,sightProxy}),
   });
 })();

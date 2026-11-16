@@ -73,7 +73,7 @@
   }
 
   function grant(kind, deps, rng = random) {
-    if (!deps?.inventory || !['valuable', 'useful', 'apologize', 'hat'].includes(kind)) return null;
+    if (!deps?.inventory || !['valuable', 'useful', 'apologize', 'hat', 'milk'].includes(kind)) return null;
     if (kind === 'hat') {
       const grant = window.EquipmentPanel?.grantPackClothing; // Actual Pack/Gear clothing owner, not numeric inventory.
       if (typeof grant !== 'function') return null;
@@ -96,7 +96,7 @@
       const choice = artifactChoice(donated, rng);
       return choice ? giveInventory(deps, choice.key, choice.label) : null;
     }
-    const relic = relicWithUnlearnedEnchantment(rng);
+    const relic = relicWithUnlearnedEnchantment(rng) || (kind === 'milk' ? window.HarlyaoRelics?.makeFeyRelic?.() : null); // Milk always pays a Fey weapon; ordinary Useful retains its trinket fallback.
     if (relic) {
       const key = window.HarlyaoRelics?.grantBoundRelic?.(relic); // Bound and unusable until Garanki unbinds it; unlocks remain untouched.
       if (key) {
@@ -105,6 +105,7 @@
       }
       return null; // Never swap an ungrantable weapon for some accidental second prize.
     }
+    if (kind === 'milk') return null; // Never silently replace the promised milk-for-weapon exchange with a trinket.
     const id = chooseTrinket(rng); // All Fey enchantments learned: unowned trinket, or any trinket when all are owned.
     const uid = id && window.TrinketSystem?.grant?.(id, 'boney-shinjimi');
     if (!uid) return null;
