@@ -42,8 +42,11 @@ function makeCanvas(tag) {
   return canvas;
 }
 function fakeAvatar() {
+  const copyable = (x, y, z, w) => ({ x, y, z, ...(w === undefined ? {} : { w }),
+    copy(value) { Object.assign(this, value); return this; } }); // Mimics the live THREE position/quaternion/scale API during sibling placement.
   const group = {
     visible: true, parent: null, children: [],
+    position: copyable(0, 0, 0), quaternion: copyable(0, 0, 0, 1), scale: copyable(1, 1, 1),
     add(child) { this.children.push(child); child.parent = this; },
     remove(child) { this.children = this.children.filter(x => x !== child); child.parent = null; },
     traverse(callback) { for (const overlay of this.overlays || []) callback(overlay); },
@@ -104,6 +107,11 @@ async function runTest() {
   assert.equal(moduleApi.create({ kind: 'nonexistent', sourceAvatar: fakeAvatar(), THREE: {} }), null);
 
   const source = fakeAvatar(), viewport = [], anchor = { x: 0.21, y: -0.32, z: 0.06 };
+  const scaledRigParent = { children: [], add(object) { this.children.push(object); object.parent = this; },
+    remove(object) { this.children = this.children.filter(entry => entry !== object); object.parent = null; } }; // Mimics CreaturePngPlaneScale, which also owns shoulderGrip but must not change during preview.
+  source.group.parent = scaledRigParent;
+  source.group.position.x = 0.11;
+  source.group.scale.z = 1.42;
   const savedAnchor = JSON.stringify(anchor); // Ensures swapping source/perched art never touches the authored grip.
   const controller = moduleApi.create({
     kind: 'puktuk', genotype: { sizeClass: 'small' }, THREE: {},
@@ -120,7 +128,10 @@ async function runTest() {
   assert.equal(source.frontPlane.visible, false);
   assert.equal(source.backPlane.visible, false);
   assert.equal(builds[0].avatar.group.visible, true);
-  assert.equal(source.group.children[0], builds[0].avatar.group, 'perched sprite inherits source actor world pose');
+  assert.equal(scaledRigParent.children[0], builds[0].avatar.group, 'perched sprite shares CreaturePngPlaneScale with the authored shoulderGrip');
+  assert.equal(source.group.children.length, 0, 'posed art remains outside actor.model bounds and cannot change auto anchor metrics');
+  assert.equal(builds[0].avatar.group.position.x, 0.11, 'posed art clones the original creature-root position');
+  assert.equal(builds[0].avatar.group.scale.z, 1.42, 'posed art clones the original creature-root scale');
   assert.equal(viewport.length, 2, 'both posed planes take part in the existing viewport orientation logic');
   const noticeCount = notifications.length; // Ensures a 60-fps editor loop does not rewrite the inspector on every tick.
   for (let i = 0; i < 60; i++) controller.setPose('perched');
@@ -134,7 +145,8 @@ async function runTest() {
   assert.equal(JSON.stringify(anchor), savedAnchor, 'the grip is not moved or reauthored');
   controller.dispose();
   assert.equal(builds[0].avatar.didDispose, true, 'extra skinned pose resources are disposed');
-  assert.equal(source.group.children.length, 0, 'disposed posed mesh cannot remain attached');
+  assert.equal(scaledRigParent.children.length, 0, 'posed sibling is removed from the real rig-scale parent on disposal');
+  assert.equal(source.group.children.length, 0, 'original model never retains a hidden posed child');
   assert.equal(viewport.length, 0, 'old skinned plane camera-yaw entries are removed with the pose');
   assert.equal(source.frontPlane.visible, true, 'normal art becomes visible after the editor clears actors');
 
