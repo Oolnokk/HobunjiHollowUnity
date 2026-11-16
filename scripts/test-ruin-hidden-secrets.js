@@ -29,7 +29,7 @@ class Group{
 class Mesh extends Group{constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
 class Geometry{dispose(){}}
 class Material{constructor(opts){Object.assign(this,opts);}dispose(){}}
-global.THREE={Group,Mesh,BoxGeometry:Geometry,MeshBasicMaterial:Material};
+global.THREE={Group,Mesh,BoxGeometry:Geometry,CylinderGeometry:Geometry,MeshBasicMaterial:Material};
 global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},ids:new Set()};
 global.DevRandomRuinDungeonChests={create(o){
  const group=new Group();group.position.set(o.x,o.y,o.z);o.parent.add(group);
@@ -59,7 +59,7 @@ for(const [key,seed] of Object.entries(found)){
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
  assert(owner);
  owner.tick(.05);
- if(key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
+ if(key==='pillar'||key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
    assert.equal(owner.targets.length,1);owner.targets[0].onHit();assert(owner.unlocked);
  }
  if(key==='closet:fire'){
@@ -77,13 +77,17 @@ for(const [key,seed] of Object.entries(found)){
    feetY=12;melodyListener(noteEvent);assert.equal(notesReceived,1,'notes at the correct plate reach the judge');
    owner.melody.solve();assert(owner.unlocked);
  }
- if(key==='suspended:net')assert(owner.cover.position.y>room.y+2,'net not at world origin');
+ if(key==='suspended:net')assert(owner.cover.position.y>=room.y&&owner.cover.position.y<room.y+1.5,
+   'a side cache net must stand on the real floor rather than hang as a floating shelf');
  if(key.startsWith('suspended:')){
-   for(let i=0;i<30;i++)owner.tick(.05);
-   assert.equal(owner.chest.group.position.y,room.y,'chest dropped to floor');
+   assert.equal(owner.chest.group.position.y,room.y,'an optional prize chest starts on the physical room floor');
+   assert.equal(owner.cover.visible,false,'the struck ice/net cover gives way without any floating reward animation');
    assert(Math.abs(owner.targets[0].object.position.x-owner.chest.group.position.x)>.6,
-     'projectile clasp must be outside the ice/net cover rather than embedded inside');
+     'projectile clasp must be outside the grounded ice/net cover rather than embedded inside');
  }
+ if(owner.chest&&key!=='nest'&&key!=='babies')assert.equal(owner.chest.control.available(),owner.unlocked&&owner.gateProgress>=.98,
+   'optional chest cannot be opened until its real switch is solved and its gate has opened');
+ if(owner.plate)assert.equal(owner.plate.position.y,room.y+.07,'melody trigger is flush on the room floor');
  assert.equal(owner.snapshot().babies,owner.babies);
  assert([...controls].filter(c=>c.kind==='ruinSkeeriNest').every(c=>c.claimAction1!==true),
    'inspecting the hidden brood must not steal weapon Action 1');
