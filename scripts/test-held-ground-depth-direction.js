@@ -22,19 +22,26 @@ const restore = saved => {
 
 const eligible = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: true } } };
 const alreadySolid = { depthWrite: true, userData: { hobunjiXrayElevationShader: { supported: true } } };
-const unsupported = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: false } } };
+const unsupported = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: false, compileAttempted: true } } };
+const coldCompile = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: false, compileAttempted: false } } }; // Shader not yet compiled during first world frame.
 const unrelated = { depthWrite: false, userData: {} };
-const materials = new Set([eligible, alreadySolid, unsupported, unrelated]);
+const materials = new Set([eligible, alreadySolid, unsupported, coldCompile, unrelated]);
 const saved = new Map();
-assert.equal(force(materials, saved), 1, 'only a supported ground material lacking depth writes is repaired');
+assert.equal(force(materials, saved), 3,
+  'all registered ground without depth writes is repaired, even on the first frame or after shader fallback');
 assert.equal(eligible.depthWrite, true, 'visible wilderness floor participates in the held depth-only replay');
 assert.equal(saved.get(eligible).depthWrite, false, 'the original material depth flag is saved');
-assert.equal(unsupported.depthWrite, false, 'unsupported shaders keep their conservative fallback');
+assert.equal(unsupported.depthWrite, true,
+  'unsupported shaders fail closed with ordinary ground occlusion, not accidental x-ray outside the circle');
+assert.equal(coldCompile.depthWrite, true,
+  'first-frame ground depth does not depend on an already compiled elevation shader');
 assert.equal(unrelated.depthWrite, false, 'unrelated transparent materials are never overridden');
 assert.equal(alreadySolid.depthWrite, true, 'already solid materials remain unchanged');
 assert.equal(force(materials, saved), 0, 'multiple groups do not save/rewrite an already repaired material');
 restore(saved);
 assert.equal(eligible.depthWrite, false, 'the original wilderness material is restored for regular rendering');
+assert.equal(unsupported.depthWrite, false, 'fallback material recovers its original world draw setting');
+assert.equal(coldCompile.depthWrite, false, 'uncompiled material recovers its original world draw setting');
 
 // The filter's actual two modes remain directional: a ground fragment within
 // the circle is omitted from depth rebuilding; outside the circle it writes.
