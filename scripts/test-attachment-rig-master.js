@@ -55,12 +55,12 @@ assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.p
 
 // Shoulder-pet scales are fixed values based ONLY on the final adult world-space
 // portrait-plane dimensions. They must not inherit the unrelated attack-orbit scale.
-const authoredPerchScales = { // Expected uniform X/Y/Z values for the ten canonical species/genders.
-  'tletingan::male': 0.5, 'tletingan::female': 0.530831,
-  'engh-sho::male': 0.540542, 'engh-sho::female': 0.527572,
-  'mao-ao::male': 0.522132, 'mao-ao::female': 0.507806,
-  'kenkari::male': 0.635813, 'kenkari::female': 0.570934,
-  'mashtzarr::male': 0.894, 'mashtzarr::female': 0.816568,
+const authoredPerchScales = { // Fixed canonical per-gender scales from the Mao-ao male world-portrait reference.
+  'tletingan::male': 0.957612, 'tletingan::female': 1.016661,
+  'engh-sho::male': 1.035258, 'engh-sho::female': 1.010418,
+  'mao-ao::male': 1, 'mao-ao::female': 0.972561,
+  'kenkari::male': 1.217724, 'kenkari::female': 1.093466,
+  'mashtzarr::male': 1.71221, 'mashtzarr::female': 1.56391,
 };
 const snapshotSource = fs.readFileSync(path.join(root, 'docs/js/attachment-rig-latest-authored-snapshot-core.js'), 'utf8'); // Latest authored portraitScale values override the older master.
 const serializedSnapshot = snapshotSource.match(/const OVERRIDES = (\{.*?\});\s*const ALIASES/s); // Parses only the literal authored JSON, not browser code.
@@ -68,8 +68,8 @@ assert(serializedSnapshot, 'latest portrait authoring must be readable');
 const latestSnapshot = JSON.parse(serializedSnapshot[1]); // Per-gender production portrait-plane multipliers.
 vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/config/character-rig-scale-defaults.js'), 'utf8'), sandbox); // Loads actual static rig X/Y defaults.
 const rigDefaults = w.HobunjiCharacterRigScaleDefaults; // Used ONLY in regression calculations, never in a runtime perch getter.
-const reference = rigDefaults.scaleFor('tletingan', 'male'); // Tletingan male is the unchanged 0.5x shoulder pet baseline.
-const referencePortraitScale = Number(latestSnapshot['tletingan::male'].anatomy.portraitScale); // Reference portrait multiplier used to form world width/height.
+const reference = rigDefaults.scaleFor('mao-ao', 'male'); // Mao-ao male retains its original 1x perch as the reference.
+const referencePortraitScale = Number(latestSnapshot['mao-ao::male'].anatomy.portraitScale); // Reference portrait multiplier used to form world width/height.
 const referenceArea = (0.9 * referencePortraitScale) ** 2 * reference.x * reference.y; // World-portrait plane width × height of the reference.
 for (const [key, authored] of Object.entries(authoredPerchScales)) {
   const profile = profiles.characters[key]; // Real canonical profile whose perch was reauthored without moving the hand target.
@@ -77,7 +77,7 @@ for (const [key, authored] of Object.entries(authoredPerchScales)) {
   const rig = rigDefaults.scaleFor(species, gender); // World-space portrait X/Y factors, excluding head/hands/feet/orbit.
   const portraitScale = Number(latestSnapshot[key]?.anatomy?.portraitScale ?? profile.anatomy.portraitScale); // Actual configured portrait-plane size.
   const worldArea = (0.9 * portraitScale) ** 2 * rig.x * rig.y; // Same plane width × height reported by CharacterDimensions.portraitPlane.
-  const predicted = 0.5 * Math.sqrt(worldArea / referenceArea); // Test-only authoring formula (not a runtime resizing rule).
+  const predicted = Math.sqrt(worldArea / referenceArea); // Test-only authoring formula (not a runtime resizing rule).
   assert(Math.abs(predicted - authored) < 0.000001, `${key} perch scale must be authored solely from portrait world dimensions`);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(profile.anchors.shoulderPerch.position)),
     JSON.parse(JSON.stringify(profile.anchors.rightHandShoulder.position)), `${key} shoulder perch must match the right-hand shoulder XYZ`);
