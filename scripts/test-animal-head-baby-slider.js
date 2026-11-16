@@ -113,7 +113,7 @@ assert.match(elements.get('previewBadge').textContent, /Baby 145%/, 'preview vis
 const first = ctx.previewImageForAnimal(image);
 assert.equal(applied, 1, 'new scale produces exactly one rasterized preview');
 assert.equal(lastPreviewScale, 1.45);
-assert.equal(lastPreviewFrame.width, canonical.width);
+assert(lastPreviewFrame.width > canonical.width, 'painted Head influence takes priority over the unrelated chathead box');
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
 assert.equal(applied, 1, 'no per-triangle recomposition');
 const split = ctx.previewSplitLayerCanvases();
