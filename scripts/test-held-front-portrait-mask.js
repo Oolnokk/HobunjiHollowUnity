@@ -345,8 +345,8 @@ assert.match(source, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/
   'no-stencil frame with an equipped pet must not bypass the held-mask depth replay');
 assert.match(source, /const portraitMask = lastFrontPortraitGearCandidates[\s\S]{0,240}assignPortraitStencilOwners/,
   'owner/pet silhouette still resolves when the stencil buffer is unavailable');
-assert.match(source, /if \(portraitMask\?\.portraits\.length && \(!portraitGearIds \|\| shoulderPetPresentation\?\.pet\?\.avatarRef\)[\s\S]{0,200}stampFrontPortraitDepthFallback/,
-  'the owner mask is stamped after rebuilding scene depth, before drawing weapon sprites: always without stencil, and also with stencil while a shoulder pet has stripped the owner front card of depth writes');
+assert.match(source, /if \(!portraitGearIds && portraitMask\?\.portraits\.length[\s\S]{0,200}stampFrontPortraitDepthFallback/,
+  'the no-stencil owner mask is stamped after rebuilding scene depth, before drawing weapon sprites');
 assert.ok(source.includes('frontPortraitRegistry.add(object)'),'front portraits are registered automatically');
 assert.match(fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),/holder\.userData\.hobunjiHeldPortraitOwner = avatarRef\.group/,'all hostile melee/ranged/flask holders receive their owner tag');
 assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/hobunjiHeldPortraitOwner: state\.walker\.root/,'watchman scene-sibling holder receives its owner tag');
