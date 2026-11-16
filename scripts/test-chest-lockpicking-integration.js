@@ -305,6 +305,10 @@ function makeElement() {
   // A verified folder baseline takes the fast route: one scoped character
   // patch instead of pinning a giant farm snapshot before the player can move.
   let fastLockWrites = 0; // Counts targeted first-failure writes without invoking the full snapshot API.
+  const stagedMutations = new Map(); // Real CharacterMetaSave captures these fine-grained lock deltas on the next ordinary save.
+  const browserWritesBeforeFast = saveWrites; // The fast path must not synchronously JSON-rewrite huge browser metadata.
+  window.CharacterMetaSave.stageMutation = (key, mutate) => { stagedMutations.set(key, mutate); return true; };
+  window.CharacterMetaSave.capturePending = meta => { for (const mutate of stagedMutations.values()) mutate(meta.characters[0]); };
   const oldFullSync = window.LocalSaveFolder.syncNow; // Restored after the fast-path integration assertion.
   const oldCapture = window.HobunjiRuntimeSave.captureSnapshot; // A fast write must not serialize the active farm.
   window.LocalSaveFolder.canSaveLockProgress = id => id === 'char_a';
@@ -329,12 +333,21 @@ function makeElement() {
   assert.equal(fastLockWrites, 1, 'first failed lock writes exactly one targeted progress update');
   assert.equal(api.snapshot().phase, 'playing');
   assert.equal(api.snapshot().lastFolderSaveAction, 'autosaved-lock-progress');
-  assert.equal(recordFor('folder-fast').folderUnsynced, false);
+  assert.equal(saveWrites, browserWritesBeforeFast, 'first failed lock stage does not write the giant browser meta blob');
+  assert.equal(recordFor('folder-fast'), undefined, 'browser metadata stays unchanged until a later ordinary mirror');
+  const stagedSnapshot = JSON.parse(JSON.stringify(storedMeta)); // Simulate the next normal runtime capture, including in-memory lock changes.
+  window.CharacterMetaSave.capturePending(stagedSnapshot);
+  assert.equal(stagedSnapshot.characters[0].chestLockProgress.world_a['folder-fast'].folderUnsynced, false,
+    'the later full snapshot contains the acknowledged disk lock penalty');
+  assert.equal(stagedSnapshot.characters[0].chestLockProgress.world_a['persistent'].stage, 1,
+    'staging a new lock preserves other existing locks');
   press('Button1'); flushMicrotasks();
   window.LocalSaveFolder.syncNow = oldFullSync;
   window.HobunjiRuntimeSave.captureSnapshot = oldCapture;
   delete window.LocalSaveFolder.canSaveLockProgress;
   delete window.LocalSaveFolder.saveLockProgress;
+  delete window.CharacterMetaSave.stageMutation;
+  delete window.CharacterMetaSave.capturePending;
 
   // Primary-folder saves must keep working when browser storage is full.
   // CharacterMetaSave.schedule is also used by the real direct-snapshot writer.
