@@ -96,6 +96,8 @@ async function run(){
   assert.equal(state.boss,null);
   assert.equal(active,null);
   assert.equal(locks,releases,'intro locks must be returned after exits');
+  await advance(350); // Finish the physical return fade before interacting with the Great Door again.
+  assert.equal(state.leavingSanctum,false);
   let resolveSpawn;
   slowSpawn=()=>new Promise(resolve=>{resolveSpawn=resolve;});
   win.DevRandomRuinSanctum.enter();
