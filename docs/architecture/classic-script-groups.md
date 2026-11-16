@@ -22,7 +22,7 @@ Currently migrated:
 
 The stable index entry is:
 ```html
-<script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="qol"></script>
+<script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="qol"></script>
 ```
 
 The loader runs while the HTML parser is active, writes a uniquely queried
@@ -40,11 +40,22 @@ To add or update a script in an existing group:
    suite. The test discovers groups and allows new members without editing a shared
    test file, while guarding the baseline dependency order.
 
-The manifests are fetched with `?load=<Date.now()>` per navigation so manifest
-edits do not require touching a common index cache token. Child modules retain
-their usual versioned cache URLs; this costs one tiny extra manifest request per
-group. The loader itself remains cache-versioned in `index.html` and should
-rarely need changes.
+The early `classic-script-preload.js` entrypoint now starts low-priority
+`rel=preload` fetches for every manifest before the game scripts. This reduces
+the serial manifest-fetch waterfall but **does not evaluate** any manifest early:
+`classic-script-group-loader.js` still writes its manifest at the original
+parser slot, and the manifest still writes its versioned children in order.
+The preloader and loader use an identical query token, allowing reuse of the
+preloaded response. On commit-pinned RawGitHack/jsDelivr `/docs/` URLs the token
+is the immutable commit SHA (reloading the same commit can reuse cached
+manifests); on mutable branch and GitHub Pages URLs it is `Date.now()` to keep
+rapid manifest edits visible immediately. Child scripts retain their own
+versioned cache URLs. The preloader itself is cache-versioned in `index.html`.
+When a newly added group is placed in the index, also add it to the preloader's
+`groups` list. `scripts/test-classic-script-preload.js` checks this list against
+all current parser groups and verifies the cache tokens and slow-load notice.
+If HTML parsing has not finished after 15 seconds, a temporary screen notice
+shows how many groups were reached; it disappears on `DOMContentLoaded`.
 
 Tests that need the **effective** shipped script list can import
 `expandClassicScriptGroups` from `scripts/classic-script-group-index.js`.
