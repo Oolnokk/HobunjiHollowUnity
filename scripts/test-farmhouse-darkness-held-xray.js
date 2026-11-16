@@ -107,8 +107,10 @@ const caveWalkableFloor = mesh(otherInterior, untaggedMaterial, { cavernWalkable
 assert.equal(xray.classify(caveWalkableFloor).ground, true, 'cavern walkable floors x-ray independently of the walls');
 const v50Floor = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe2.json', plateauModel: { levelByCell: { '2,3': 1 } } });
 assert.equal(xray.classify(v50Floor).ground, true, 'stepped V50 ruin floor joins the held-object ground replay');
-const flatV50Floor = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe2.json' }); // V50 flat rooms do not need a levelByCell map.
-assert.equal(xray.classify(flatV50Floor).ground, true, 'flat V50 ruin floor also x-rays held weapons');
+const flatV50Floor = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe2.json', hobunjiRuinFloorSurface: true }); // registerFloor tags the real V50 floor without needing a levelByCell map.
+assert.equal(xray.classify(flatV50Floor).ground, true, 'registered flat V50 ruin floor x-rays held weapons');
+const untaggedV50Part = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe2.json' });
+assert.equal(xray.classify(untaggedV50Part).ground, false, 'untagged recipe-2 geometry remains solid when it has no plateau data');
 const wallBuilderProp = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe1.json' }); // Only the floor recipe receives this exception.
 assert.equal(xray.classify(wallBuilderProp).ground, false, 'other WallBuilder recipes remain solid obstacles');
 const stoneFloor = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'floor' }); // Procedural rooted/stone-age floors use an instanced rock mesh.
