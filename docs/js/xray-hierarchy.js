@@ -28,8 +28,8 @@
       help: 'on: an actor\'s pants draw right after that actor\'s portrait. off: pants draw after every portrait and rely on depth alone.',
     },
     'weapon.frontPlaneMask': {
-      order: 3, label: 'Held weapons hidden by owner front art', default: 'on', options: ['on', 'off'],
-      help: 'on: a weapon pixel is hidden wherever its own holder\'s front portrait art is drawn (stencil mask).',
+      order: 3, label: 'Held weapons hidden by owner front art', default: 'off', options: ['on', 'off'],
+      help: 'off (default): the owner front-portrait stencil does not hide weapon pixels. on: overlap with opaque owner front art hides weapon pixels, regardless of their depth relative to the portrait.',
     },
     'hand.frontPlaneMask': {
       order: 4, label: 'Hands and their outlines vs the front plane', default: 'off', options: ['behind', 'always', 'off'],
@@ -196,11 +196,11 @@
       unchanged: 'If it persists, the problem occurs with shipped X-ray defaults.',
     },
     {
-      id: 'front-mask-off', label: '1 · Turn off owner front masks',
-      rules: { 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off' },
-      hypothesis: 'The late held overlay may not be receiving its owner-front portrait stencil.',
-      changed: 'More gear visible through your own body means the stencil was hiding at least some pixels.',
-      unchanged: 'If overlapping gear does not change, inspect stencil bits and masked gear counts; an owner/material may be missing.',
+      id: 'front-mask-off', label: '1 · Enable owner front masks', // Preserve the historical ID so saved diagnostic sessions can still be restored.
+      rules: { 'weapon.frontPlaneMask': 'on', 'hand.frontPlaneMask': 'off' },
+      hypothesis: 'The optional owner-front portrait stencil may hide legitimate foreground weapon pixels.',
+      changed: 'If weapon pixels disappear after enabling the stencil, the owner front-art mask is responsible.',
+      unchanged: 'If weapon pixels remain unchanged, inspect stencil bits and masked gear counts or look for another occlusion source.',
     },
     {
       id: 'hands-always-masked', label: '2 · Force hands behind front art',
@@ -546,7 +546,7 @@
           : masked + ' / ' + intended + ' gear parts assigned owner masks (not a pixel count)';
         const frontPriority = state['weapon.frontPlaneMask'] === 'on'
           ? 'Mask enabled: holder front art covers gear'
-          : 'Mask disabled: gear may show through front art';
+          : 'Mask disabled (default): owner front art does not stencil gear';
         return {
           summary: (activePreset ? 'experiment · ' : '') +
             (changes ? changes + ' override' + (changes === 1 ? '' : 's') : 'repository defaults'),
