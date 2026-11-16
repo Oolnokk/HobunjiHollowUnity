@@ -161,6 +161,16 @@ async function runTest() {
   await failure.setPose('perched');
   assert.match(failure.status().error, /network artwork missing/, 'load failures are visible via status');
   assert.equal(failureSource.frontPlane.visible, true, 'failure never hides the existing creature');
+  let attempts = 0; // Verifies the user can retry a transient sprite-loading failure without reopening the editor.
+  failingWindow.CreatureGeneticsRender.composeFrame = async (kind, frame) => {
+    attempts++;
+    return makeCanvas(kind + '/' + frame);
+  };
+  await failure.setPose('source');
+  await failure.setPose('perched');
+  assert.equal(attempts, 1, 'returning to Source and choosing Perched retries the real artwork loader');
+  assert.equal(failure.status().error, null, 'a successful retry clears the mobile-visible error');
+  assert.equal(failureSource.frontPlane.visible, false, 'the recovered posed art becomes visible');
   failure.dispose();
 }
 
