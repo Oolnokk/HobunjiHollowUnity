@@ -619,6 +619,7 @@
     window.GroundObstacleAvoidance?.reset('mounted');
     window.WorldActionInputClaims?.clearClaims?.('mount-riding');
     mountActionsClaimed = false;
+    window.Combat?.input?.abortAllPresses?.(); // Dismount cancels any mounted hold/queued swing before the carrier begins leaving.
     refreshMountWheatHud(); // Dismount immediately discards stored obstacle waypoints.
     if (!mountRideEntity) { mountRideState = 'none'; return; }
     // Dismounting while a low-rock jump is still active must not leave the mount
@@ -987,7 +988,7 @@
   // Ranged auto-aim steers the mount around the currently aimed enemy, retaining the
   // acquired distance or closing just enough to get within projectile range.
   // No steering input is stolen when the rider is actively using reins.
-  function mountedRangedOrbit(m, dt, topSpeed) {
+  function mountedRangedOrbit(m, dt) {
     const key = window.RangedWeapons?.equippedRangedKey?.();
     const activeTool = window.Combat?.deps?.getActiveTool?.(); // A slotted bow does not count as drawn when melee, tools, or an item is held.
     const heldMode = window.Combat?.deps?.getHeldMode?.(); // Ranged encircling is a fired-weapon stance, not a passive mount autopilot.
@@ -1012,7 +1013,7 @@
         mountedOrbitTarget = target;
         const distance = target ? Math.hypot(target.x - m.x, target.y - m.y) : 0;
         const range = window.RangedWeapons?.playerLockRangePx?.(key) || deps.TILE * 7;
-        mountedOrbitRadiusPx = Math.max(deps.TILE * 1.1, Math.min(distance, range * 0.85));
+        mountedOrbitRadiusPx = Math.max(0, Math.min(distance, range * 0.85)); // Do not enlarge close-range orbit beyond the distance at lock-on.
         const toTarget = Math.atan2((target?.y || 0) - m.y, (target?.x || 0) - m.x);
         mountedOrbitClockwise = Math.sin(mountAngle - toTarget) <= 0; // Follow whichever tangent requires the smaller heading change.
       }
@@ -1069,6 +1070,7 @@
 
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Training perks still wrap the authored mount speed and acceleration.
     const stepStartX = m.x, stepStartY = m.y;
+    ridingDebug.orbitActive = false; // Reset the frame's steering diagnostic even when manual braking bypasses target pursuit.
     const boosting = mountBoostS > 0;
     const desiredSpeed = topSpeed * Math.max(boosting ? BOOST_SPEED_RATIO : CRUISE_SPEED_RATIO,
       mountedCombatBoostS > 0 ? mountedCombatBoostMultiplier : 0); // Combat bursts replace lunge displacement with real, collision-tested mount velocity.
@@ -1092,7 +1094,8 @@
       if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
       const rockPlan = scanRocks ? planMountHop(m, currentArea) : null;
       const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
-      const orbit = inputStrength <= 0.01 ? mountedRangedOrbit(m, dt, topSpeed) : null; // User steering always wins; auto orbit only uses free-cruise heading.
+      const orbit = inputStrength <= 0.01 ? mountedRangedOrbit(m, dt) : null; // User steering always wins; auto orbit only uses free-cruise heading.
+      ridingDebug.orbitActive = !!orbit; // Cached target existence alone does not mean the mount is currently auto-steering.
       const steerX = inputStrength > 0.01 ? ix : (orbit?.x ?? Math.cos(mountAngle));
       const steerY = inputStrength > 0.01 ? iy : (orbit?.y ?? Math.sin(mountAngle));
       if (!m._mountHop?.overRock) {
@@ -1166,7 +1169,7 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!mountedOrbitTarget, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
