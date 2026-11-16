@@ -26,4 +26,25 @@ assert.ok(indexSource.indexOf('js/png-plane-avatar.js') < indexSource.indexOf('j
   'the head-rig runtime loads before the species bridge and game startup');
 assert.match(gameSource, /creatureId: creatureKey[\s\S]{0,180}headRig: window\.CreatureGeneticsRender\?\.headRigForKind/, 'game passes each creature kind\'s authored head rig explicitly so shoulder pets cannot fall back to whole-body turns');
 
+// Execute the real head-rig swap: downstream portrait occlusion must receive
+// the visible SkinnedMesh refs, not the rigid cards removed from the scene.
+const replaceStart = avatarSource.indexOf('    group.remove(frontPlane);');
+const replaceEnd = avatarSource.indexOf('    const legacyDispose =', replaceStart);
+assert.ok(replaceStart >= 0 && replaceEnd > replaceStart, 'find live head-rig replacement body');
+const legacyFront = { name: 'rigid-front' }, legacyBack = { name: 'rigid-back' };
+const liveFront = { name: 'skinned-front', isSkinnedMesh:true };
+const liveBack = { name: 'skinned-back', isSkinnedMesh:true };
+const group = {
+  children: [legacyFront, legacyBack],
+  remove(mesh) { const i = this.children.indexOf(mesh); if (i >= 0) this.children.splice(i, 1); },
+  add(mesh) { this.children.push(mesh); mesh.parent = this; },
+};
+const avatarRef = { frontPlane: legacyFront, backPlane: legacyBack, group };
+new Function('group', 'frontPlane', 'backPlane', 'front', 'back', 'avatarRef',
+  avatarSource.slice(replaceStart, replaceEnd))(
+    group, legacyFront, legacyBack, { mesh: liveFront }, { mesh: liveBack }, avatarRef);
+assert.strictEqual(avatarRef.frontPlane, liveFront, 'front reference follows the visible skinned mesh');
+assert.strictEqual(avatarRef.backPlane, liveBack, 'back reference follows the visible skinned mesh');
+assert.deepStrictEqual(group.children, [liveFront, liveBack], 'old cards are detached from rendered group');
+
 console.log('Animal head-rig runtime regression checks passed.');
