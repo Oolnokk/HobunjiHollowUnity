@@ -177,11 +177,16 @@ use(pet, true);
 // let manual ranking or an owner hat overlay silently reverse the pet x-ray.
 const sorterStart = render.indexOf('  function withVisualSort(');
 const sorterEnd = render.indexOf('  function nearbyPortraitOrder(', sorterStart);
+const rankedSortStart = render.indexOf('  function comparePortraitDraws('); // Actual camera-depth comparator, needed when another NPC activates actor sorting.
+const rankedSortEnd = render.indexOf('  function withPortraitDrawOrder(', rankedSortStart);
+assert(rankedSortStart > 0 && rankedSortEnd > rankedSortStart, 'production actor-depth sorter is available');
+const rankedPortraitCompare = new Function('PORTRAIT_SORT_ORDER',
+  render.slice(rankedSortStart, rankedSortEnd) + '\nreturn comparePortraitDraws;')(2);
 const faceRankStart = render.indexOf('  function shoulderPetFaceSortRank(');
 const faceRankEnd = render.indexOf('  function compareShoulderPetDrawFaces(', faceRankStart);
 assert(faceRankStart > 0 && faceRankEnd > faceRankStart, 'production face-rank helper is available for the real transparent sorter');
 assert(sorterStart > 0 && sorterEnd > sorterStart);
-const stateRef = { get pet() { return api.state.active ? pet : null; }, frontMesh: front, backMesh: back }; // Mirrors the compositor's real owner references for transparent sorting. // Reuses active pet state from the actual source harness.
+const stateRef = { get pet() { return api.state.active ? pet : null; }, frontMesh: front, backMesh: back }; // Reuses the active pet and its owner's portrait meshes in the production comparator.
 const overrideRank = category => category === 'garment.headwear' ? 8 : 1; // Manual sorter deliberately prefers owner hat over pet front art.
 windowStub.XrayHierarchy = { layerRank: overrideRank };
 let useManual = false;
@@ -191,7 +196,7 @@ const productionSort = new Function('window', 'xrayRule', 'visualLayerFor', 'pro
   windowStub, key => key === 'layers.manualOrder' && useManual ? 'on' : 'off',
   item => item.object === ownerHatFront ? 'garment.headwear' : 'actor.front',
   () => 0,
-  () => 0, stateRef, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders);
+  rankedPortraitCompare, stateRef, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders);
 const sorterRenderer = {
   sort: null, setTransparentSort(value) { this.sort = value; },
   setOpaqueSort() {},
@@ -266,6 +271,52 @@ for (const inward of [false, true]) {
     assert.equal(position(petFrontItem) > position(hatFrontItem), inward, 'skinned owner hat front respects pet pose');
     assert.equal(position(petBackItem) > position(ownerBackItem), !inward, 'skinned owner back flips relative to pet');
     assert.equal(position(petBackItem) > position(hatBackItem), !inward, 'skinned owner hat back respects pet pose');
+  });
+}
+// A second visible actor activates the game's ranked-portrait draw path.
+// The pet's face sprites and the owner's hat must keep exactly the same
+// relative ordering whether the pet itself was registered as an actor
+// portrait or inherited its holder's player rank through the compositor.
+const nearbyNpcPortrait = makeMesh('npc_avatar_front_plane'); // Represents another visible actor whose depth ranking enables the ranked sorter.
+for (const inward of [false, true]) for (const manual of [false, true]) for (const petDirectlyRanked of [false, true]) {
+  pet.__hobunjiShoulderFacingInward = inward;
+  use(pet, true);
+  useManual = manual;
+  const ownerRank = { owner: { id: 1 }, depth: 0.3 }; // The active player's rank, reused by the pet's two face stages.
+  const npcRank = { owner: { id: 2 }, depth: 0.6 }; // A farther NPC activates actor-aware sorting in this frame.
+  const ranks = new Map([[front, ownerRank], [back, ownerRank], [nearbyNpcPortrait, npcRank]]);
+  if (petDirectlyRanked) { ranks.set(pet.avatarRef.frontPlane, ownerRank); ranks.set(pet.avatarRef.backPlane, ownerRank); }
+  const nearbyActorOrder = { ranks, extras: new Map() };
+  const items = [
+    drawItem(pet.avatarRef.frontPlane), drawItem(front), drawItem(pet.avatarRef.backPlane),
+    drawItem(back), drawItem(ownerHatFront), drawItem(ownerHatBack),
+    drawItem(pet.avatarRef.splitFront), drawItem(pet.avatarRef.splitBack),
+    drawItem(nearbyNpcPortrait), drawItem(unrelatedTransparent),
+  ]; // Uses the exact portrait/split/hat/effect combination that previously produced non-transitive comparisons.
+  productionSort(sorterRenderer, nearbyActorOrder, () => {
+    const compare = sorterRenderer.sort; // Real production comparator; inspect its complete sorted arrays and transitivity.
+    for (let shift = 0; shift < items.length; shift++) for (const reverse of [false, true]) {
+      const ordered = items.slice(shift).concat(items.slice(0, shift));
+      if (reverse) ordered.reverse();
+      ordered.sort(compare);
+      const indexOf = mesh => ordered.findIndex(item => item.object === mesh);
+      assert.equal(indexOf(pet.avatarRef.frontPlane) > indexOf(ownerHatFront), inward,
+        'nearby NPC and manual ranks must not prevent the front observation face swap');
+      assert.equal(indexOf(pet.avatarRef.backPlane) > indexOf(ownerHatBack), !inward,
+        'nearby NPC and manual ranks must not prevent the rear observation face swap');
+      assert.ok(indexOf(pet.avatarRef.splitFront) > indexOf(pet.avatarRef.frontPlane),
+        'front split overlays follow the observed orientation under ranked-actor sorting');
+      assert.ok(indexOf(pet.avatarRef.splitBack) > indexOf(pet.avatarRef.backPlane),
+        'back split overlays follow the observed orientation under ranked-actor sorting');
+    }
+    // A cyclic comparator can pass a few handpicked arrays but produce a
+    // different output when Three.js submits the same objects in another order.
+    // Exhaust all triples of these ten items, not just matching pet/owner pairs.
+    for (const a of items) for (const b of items) for (const c of items) {
+      if (a === b || b === c || a === c) continue;
+      assert.ok(!(compare(a, b) < 0 && compare(b, c) < 0 && compare(c, a) < 0),
+        'ranked transparent-list comparisons must remain transitive across nearby actors and effects');
+    }
   });
 }
 use(pet, true); // Restore the original rigid owner for detachment assertions.
