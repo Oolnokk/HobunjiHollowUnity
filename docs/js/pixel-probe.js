@@ -685,7 +685,7 @@
     if (debug.frameDriverLastError) lines.push(`Gameplay error trace: ${String(debug.frameDriverLastError).split('\n').slice(0, 6).join(' | ')}`);
     const portraitLife = window.WorldPortraitLife?.snapshot?.(); // On-demand mobile report verifies the nearby expression radius, live uploads and stale async guards.
     if (portraitLife) {
-      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tiles (full speed to ${portraitLife.config.nearTiles}); NPC composites=${portraitLife.npcRefreshes} uploads=${portraitLife.npcUploads} stale skips=${portraitLife.npcStaleSkips} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} pending=${portraitLife.npcLifePending ? 1 : 0}`);
+      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tiles (full speed to ${portraitLife.config.nearTiles}); NPC composites=${portraitLife.npcRefreshes} uploads=${portraitLife.npcUploads} stale skips=${portraitLife.npcStaleSkips} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} queued=${portraitLife.npcQueueLength} pending=${portraitLife.npcLifePending ? 1 : 0}`);
       lines.push('Latest breathing change: nearby NPC expression sprites update their own live portrait plane; farther NPCs use a slower cadence, and only one NPC composite runs at once.');
     }
     for (const walker of window._npcWalkers || []) {
