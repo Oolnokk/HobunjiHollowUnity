@@ -428,6 +428,7 @@
     let state = states.get(scene);
     if (state && !state.disposed) {
       if (state.status !== 'no-baked-roots') return state;
+      if (root.TreeAssetLibrary?.getMode?.() === 'procedural') return null; // No repeated scene scans in the game's default procedural mode.
       const now = performance.now(); // Used to retry a scene that was first visited before its baked trees were attached.
       if (now - state.lastRootProbeMs < ROOT_RETRY_MS) return state;
     }
@@ -440,7 +441,11 @@
     if (!scene || !Number.isFinite(Number(playerX)) || !Number.isFinite(Number(playerZ))) return false;
     const radius = Number.isFinite(Number(cullRadiusTiles)) ? Math.max(0, Number(cullRadiusTiles)) : 34;
     const state = ensureState(scene);
-    if (!state) return false;
+    if (!state) {
+      activeState = null;
+      updateDevPanelStatus(null);
+      return false;
+    }
     activeState = state;
     refreshState(state, Number(playerX), Number(playerZ), radius);
     const camera = fogDeps?.getActiveCamera?.()
@@ -556,7 +561,10 @@
       else panel.appendChild(line);
     }
     if (!state) {
-      if (line.textContent !== 'Tree batching: inactive') line.textContent = 'Tree batching: inactive';
+      const message = root.TreeAssetLibrary?.getMode?.() === 'procedural'
+        ? 'Tree batching: procedural mode (baked-tree optimization inactive)'
+        : 'Tree batching: inactive';
+      if (line.textContent !== message) line.textContent = message;
       return;
     }
     if (state.status !== 'ready') {
@@ -574,7 +582,8 @@
     const state = activeState;
     return {
       enabled: !!state && state.status === 'ready',
-      status: state?.status || 'inactive',
+      status: state?.status || (root.TreeAssetLibrary?.getMode?.() === 'procedural' ? 'procedural-mode' : 'inactive'),
+      treeSourceMode: root.TreeAssetLibrary?.getMode?.() || 'unknown', // Identifies whether this optimization can affect the current game.
       chunkSizeTiles: CHUNK_SIZE_TILES,
       nearRadiusTiles,
       treeCount: state?.treeCount || 0,
