@@ -1585,8 +1585,8 @@
   }
   function _addToOwnStable(stabledEntry) {
     deps.getStable().push(stabledEntry);
-    const isBaby = stabledEntry.lifeStage === 'baby'; // Transferred baby companions cannot be equipped until grown.
-    if (!isBaby) deps._autoAssignStableRole(stabledEntry);
+    const isBaby = stabledEntry.lifeStage === 'baby'; // Babies still receive their naming prompt.
+    // Adult transfers also remain unequipped until selected in the Stable.
     deps.saveStable();
     if (isBaby) window.AnimalBabyArrival?.requestName?.(stabledEntry, {
       scope: 'stable',
