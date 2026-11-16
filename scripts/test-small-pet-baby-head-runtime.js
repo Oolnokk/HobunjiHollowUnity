@@ -87,6 +87,8 @@ assert(providers.shoulderPets, 'the real gameplay compositor provider must regis
   assert(after.some((pixel, i) => pixel !== original[i]), 'raw source has actual enlarged head pixels, not merely a new data URL');
   assert.equal(windowStub.BabyAnimalHeadWarp.maskForKind('bulky').opaquePixels > 0, true,
     'the fallback generates a mask from the true idle sprite, not a moving pose');
+  assert.equal(windowStub.BabyAnimalHeadWarp.maskForKind('bulky').sourceLabel, 'provided-idle-fallback',
+    'unregistered pet species report that their own raw idle art supplied the cached mask');
   assert(imageRequests.every(req => req.mode === 'anonymous'), 'all image sources request CORS-readable pixels');
 
   const naturalSmall = animal('tiny');
