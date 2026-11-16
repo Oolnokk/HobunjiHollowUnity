@@ -518,11 +518,11 @@
   }
 
   function debugSnapshot() {
-    const snapshot = { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } };
+    const snapshot = { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } }; // Public on-demand metrics; never sampled by the frame refresh.
     if (snapshot.gearActive) {
-      const summary = observedSection?.querySelector?.('.gear-summary-panel');
-      const owned = observedSection?.querySelector?.('.gear-middle-inventory');
-      const info = observedInfo;
+      const summary = observedSection?.querySelector?.('.gear-summary-panel'); // Summary height for the mobile diagnostic readout.
+      const owned = observedSection?.querySelector?.('.gear-middle-inventory'); // Middle inventory height for the same readout.
+      const info = observedInfo; // Only this explicit debug call reads the right panel's bounding rectangle.
       snapshot.summaryScrollHeight = Number((summary?.scrollHeight || 0).toFixed?.(2) || 0);
       snapshot.summaryClientHeight = Number((summary?.clientHeight || 0).toFixed?.(2) || 0);
       snapshot.ownedClientHeight = Number((owned?.clientHeight || 0).toFixed?.(2) || 0);
