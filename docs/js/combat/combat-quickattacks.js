@@ -283,7 +283,10 @@
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      if (mounted) window.Mounts?.beginMountedCombatBurst?.(1.95, Math.max(1.05, windupS + strikeS + 0.45)); // Speed follows real mount steering, rock collision and inertia.
+      if (mounted) {
+        const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Converts Quick Attack lunge mastery/enchantment bonuses into the mount's replacement speed surge.
+        window.Mounts?.beginMountedCombatBurst?.(1.95 * burstScale, Math.max(1.05, windupS + strikeS + 0.45));
+      } // Speed follows real mount steering, rock collision and inertia.
       else deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
