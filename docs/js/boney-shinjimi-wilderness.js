@@ -485,8 +485,7 @@
   function finishEncounter() {
     if(state.phase!=='leaving'||!state.home)return;
     const p=playerTile();
-    if(area()===state.zone&&insideHome(p,-0.4))return;
-    if(area()===state.zone&&p&&dist(p,homeCenter())<3.5)return;
+    if(area()===state.zone&&insideHome(p,-0.20))return; // Vanish just beyond the house threshold, not several tiles down the trail.
     state.completedCycle=state.cycle;
     state.phase='complete';
     clearHouse();releaseWalker();
