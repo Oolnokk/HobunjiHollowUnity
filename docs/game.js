@@ -31048,7 +31048,6 @@
         getPaused: () => paused,
         getHeldObjectDebug,
         getItemSpriteIconDebug,
-        SHOULDER_PET_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
         creatureAttachmentAnchor,
         openMenu,
