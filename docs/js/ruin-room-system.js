@@ -231,7 +231,8 @@
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false; // Room ownership is reused by lighting and encounter suspension without projecting room boxes.
-    let localLightClipPasses=0; // On-demand mobile diagnostics: one physical room-footprint clip around each lighting redraw, not per source.
+    let localLightClipPasses=0; // On-demand mobile diagnostics: Hronal still projects one room-footprint clip per lighting redraw.
+    const unmaskedRegion=room=>room?.theme==='kanthic'||room?.theme==='tothal'; // Both traditions now use viewport-stable lighting rather than a 3D projected hull.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -311,7 +312,7 @@
       prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
       withLightRegion(ctx,project,draw){
         if(typeof draw!=='function')return false;
-        if(active?.theme==='tothal'){draw();return true;} // Broad blue ceiling/wall washes must not intersect a hard projected room hull; source-room filtering still applies.
+        if(unmaskedRegion(active)){draw();return true;} // Tothal and Kanthic must not create a camera-dependent room frame; source filtering remains.
         if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
         const footprint=roomLightFootprint(active,project); // One eight-corner wall-volume projection per lighting redraw, not one mask per light.
         if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
@@ -369,7 +370,7 @@
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
         lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
-        localLightBoundary:{mode:active?.theme==='tothal'?'unclipped-tothal-overcast':'room-volume-light-clip',active:!!active?.wingId&&active?.theme!=='tothal',canvasPasses:localLightClipPasses}};},
+        localLightBoundary:{mode:active?.theme==='kanthic'?'unclipped-kanthic-screen-overlay':active?.theme==='tothal'?'unclipped-tothal-overcast':'room-volume-light-clip',active:!!active?.wingId&&!unmaskedRegion(active),canvasPasses:localLightClipPasses}};},
     };
     live=session;
     return session;
