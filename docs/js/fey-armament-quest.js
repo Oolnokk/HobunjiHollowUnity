@@ -65,11 +65,13 @@
     if (profile() && questStore()) profile().questProgress = questStore();
     inventoryDeps?.saveMemberWorldData?.(); // Reuses the member-scoped save already used by relic acquisition.
   }
-  function maybeStart() {
+  function maybeStart(options = {}) {
     const store = questStore();
     if (!store || store[QUEST_ID] || !hasWeapon()) return false;
     store[QUEST_ID] = { status: 'active', stage: 0, progress: descriptor(0) };
-    persist();
+    if (options.deferSave === true) {
+      if (profile()) profile().questProgress = store; // The acquisition path saves the weapon and quest in one member write.
+    } else persist();
     inventoryDeps?.showToast?.('Quest started: ' + TITLE, true);
     return true;
   }
