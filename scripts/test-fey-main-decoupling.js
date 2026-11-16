@@ -62,6 +62,32 @@ async function main() {
   assert.equal(context.QuestProgressStore.setStatus('task-one', 'completed'), true);
   assert.equal(typeof context.QuestProgressStore.getState('task-one').completedAt, 'number');
   assert.equal(saveMemberCalls, 2);
+  const stableRecord = context.QuestProgressStore.getState('task-one'); // Keep the same live record and progress references across a failed save.
+  const stableProgress = stableRecord.progress; // A failed status write must undo added progress fields without replacing this object.
+  const savedStatus = stableRecord.status; // Existing completion state is durable even when the next save is rejected.
+  context.QuestProgressStore.init({
+    canAccessContent: visibility => visibility !== 'owner',
+    saveMemberWorldData() { saveMemberCalls++; return false; },
+  });
+  assert.equal(context.QuestProgressStore.setStatus('task-one', 'active', { ghost: true }), false);
+  assert.equal(context.QuestProgressStore.getState('task-one'), stableRecord);
+  assert.equal(stableRecord.progress, stableProgress);
+  assert.equal(stableRecord.status, savedStatus);
+  assert.equal(stableRecord.progress.ghost, undefined);
+  assert.equal(context.QuestProgressStore.setStatus('phantom', 'active'), false);
+  assert.equal(context.QuestProgressStore.snapshot().phantom, undefined);
+  context.QuestProgressStore.init({
+    canAccessContent: visibility => visibility !== 'owner',
+    saveMemberWorldData() { saveMemberCalls++; throw new Error('Simulated quest save failure'); },
+  });
+  assert.equal(context.QuestProgressStore.setStatus('task-one', 'active'), false);
+  assert.equal(stableRecord.status, savedStatus);
+  assert.match(context.QuestProgressStore.debugSnapshot().lastSaveError, /Simulated quest save failure/);
+  assert.equal(context.QuestProgressStore.debugSnapshot().rejectedChanges, 3);
+  context.QuestProgressStore.init({
+    canAccessContent: visibility => visibility !== 'owner',
+    saveMemberWorldData() { saveMemberCalls++; return true; },
+  });
   context.QuestProgressStore.restore({ 'task-two': { status: 'active', progress: { kind: 'story' } } });
   assert.equal(context.QuestProgressStore.getState('task-one').status, 'not_started', 'world/character swap clears old quest progress');
   assert.equal(context.QuestProgressStore.getState('task-two').status, 'active');
@@ -90,11 +116,11 @@ async function main() {
   });
   context.NpcDialogueEntryRouter.registerPriorityProvider('feyArmament', rec => rec?.id === 'jubmir' && rec?.needsFeyTalk === true);
   const trader = { id: 'jubmir', needsFeyTalk: true }; // Named trader with active authored quest priority.
-  await context.NpcDialogueEntryRouter.route(trader, {});
+  assert.equal(await context.NpcDialogueEntryRouter.route(trader, {}), true);
   assert.equal(dialogue.at(-1), 'conversation:jubmir', 'urgent Fey story bypasses Wares/Chat');
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'priority:feyArmament');
   queued = true;
-  await context.NpcDialogueEntryRouter.route(trader, {});
+  assert.equal(await context.NpcDialogueEntryRouter.route(trader, {}), true);
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'queued', 'queued cutscene outranks story');
   queued = false;
   trader.needsFeyTalk = false;
@@ -102,14 +128,14 @@ async function main() {
   assert(dialogue.some(d => typeof d === 'object' && d.choices?.some(c => c.label === 'See Wares')), 'normal Jubmir trading remains accessible');
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'jubmir-trade');
   turnIn = { id: 'test-favor', items: [{ itemKey: 'milk', qty: 1 }] };
-  await context.NpcDialogueEntryRouter.route({ id: 'villager' }, {});
+  assert.equal(await context.NpcDialogueEntryRouter.route({ id: 'villager' }, {}), true);
   assert(dialogue.some(d => typeof d === 'object' && d.choices?.some(choice => choice.label.includes('Milk'))), 'existing task turn-ins still precede generic conversation');
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'task-turn-in');
   turnIn = null;
-  await context.NpcDialogueEntryRouter.route({ id: 'shopkeeper' }, { onDuty: true });
+  assert.equal(await context.NpcDialogueEntryRouter.route({ id: 'shopkeeper' }, { onDuty: true }), true);
   assert(dialogue.some(d => typeof d === 'object' && d.text === 'Welcome to the shop.'), 'ordinary merchant greeting still works');
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'general-store');
-  await context.NpcDialogueEntryRouter.route({ id: 'stranger' }, {});
+  assert.equal(await context.NpcDialogueEntryRouter.route({ id: 'stranger' }, {}), true);
   assert.equal(dialogue.at(-1), 'conversation:stranger', 'unknown NPC uses ordinary dialogue');
   assert.equal(context.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'ordinary');
 
