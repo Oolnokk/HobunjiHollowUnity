@@ -29,7 +29,7 @@ for (const [id, size] of Object.entries(donorPerches)) {
 }
 const donorSnapshot = JSON.stringify(host.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters); // Regression guard for donated anchors.
 const context = vm.createContext({ window: host, console, location: { pathname: '/game' },
-  document: { getElementById() { return null; }, body: { dataset: {} } } }); // Supplies the existing browser-oriented installers' optional globals.
+  document: { getElementById() { return null; }, addEventListener() {}, body: { dataset: {} } } }); // Supplies the existing browser-oriented installers' optional globals.
 const run = path => vm.runInContext(read(path), context, { filename: path }); // Applies real species registration modules exactly once.
 run('docs/config/character-rig-scale-defaults.js');
 for (const path of ['docs/js/nuhongan-species-runtime.js', 'docs/js/longoran-species-runtime.js',
