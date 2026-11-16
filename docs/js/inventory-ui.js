@@ -141,6 +141,11 @@
       #mpInventory .gear-owned-section .inv-equip-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--inv-gap); min-height:0; }
       #mpInventory .gear-owned-section .inv-equip-slot { min-height:calc(3.1 * var(--inv-row)); }
       #mpInventory .gear-owned-section .inv-equip-empty { padding:6px; border:1px dashed #ffffff18; border-radius:var(--inv-radius); color:var(--muted); font-size:var(--inv-font-xs); }
+      #mpInventory .gear-archive-section { border-top:1px solid #ffffff1d; margin-top:calc(1.1 * var(--inv-gap)); padding-top:calc(.75 * var(--inv-gap)); }
+      #mpInventory .gear-archive-toggle { display:block; width:100%; text-align:left; min-height:30px; margin-bottom:calc(.45 * var(--inv-gap)); }
+      #mpInventory .gear-owned-section .gear-archive-section .inv-equip-row { margin-top:calc(.5 * var(--inv-gap)); }
+      #mpInventory .gear-owned-section .gear-archiveable-cell { min-height:calc(3.7 * var(--inv-row)); }
+      #mpInventory .gear-archive-action { position:relative; z-index:1; flex:0 0 auto; max-width:95%; padding:2px 4px; font-size:var(--inv-font-xs); line-height:1.1; white-space:nowrap; }
       /* Attunement cards belong to the owned-gear scroller, not extra rows of the outer two-column workspace. */
       #mpInventory .gear-owned-trinkets .trinket-inventory-list { display:flex; flex-direction:column; min-width:0; gap:var(--inv-gap); }
       #mpInventory .gear-owned-trinkets .trinket-inventory-row { flex:0 0 auto; width:100%; height:auto; box-sizing:border-box; flex-wrap:wrap; }
@@ -474,11 +479,15 @@
     const ownedToolRow = ownedToolHeader.nextElementSibling;
     const clothingRow = clothingHeader.nextElementSibling;
     const ownedClothingRow = ownedClothingHeader.nextElementSibling;
+    const toolsArchive = directChild(section, 'gear-tools-archive'); // Keeps optional tool storage in its own Gear collection after layout reparenting.
+    const clothingArchive = directChild(section, 'gear-clothing-archive'); // Keeps stored garments alongside Owned Clothing, not at the bottom of the pane.
     const trinketGroup = directChild(section, 'gear-owned-trinkets'); // Moves the existing trinket renderer into the same scrollable owned-gear inventory.
     if (!toolRow || !ownedToolRow || !clothingRow || !ownedClothingRow) return;
 
     const used = new Set([toolHeader, toolRow, ownedToolHeader, ownedToolRow, clothingHeader, clothingRow, ownedClothingHeader, ownedClothingRow]);
     if (trinketGroup) used.add(trinketGroup);
+    if (toolsArchive) used.add(toolsArchive);
+    if (clothingArchive) used.add(clothingArchive);
     const leftovers = children.filter((node) => !used.has(node)); // Preserves any future/third-party gear rows instead of dropping them.
 
     const loadout = document.createElement('div'); // Four-column current-loadout block requested by the UI design.
@@ -510,10 +519,12 @@
     ownedToolsGroup.className = 'gear-owned-group gear-owned-tools';
     ownedToolHeader.textContent = 'Owned Tools & Weapons';
     ownedToolsGroup.append(ownedToolHeader, ownedToolRow);
+    if (toolsArchive) ownedToolsGroup.appendChild(toolsArchive);
     const ownedClothingGroup = document.createElement('div');
     ownedClothingGroup.className = 'gear-owned-group gear-owned-clothing';
     ownedClothingHeader.textContent = 'Owned Clothing';
     ownedClothingGroup.append(ownedClothingHeader, ownedClothingRow);
+    if (clothingArchive) ownedClothingGroup.appendChild(clothingArchive);
     ownedSection.append(ownedToolsGroup, ownedClothingGroup);
     if (trinketGroup) ownedSection.appendChild(trinketGroup);
 
@@ -845,17 +856,14 @@
       if (equippedKey) return equippedKey;
     }
 
-    // For an owned but currently unequipped tool, EquipmentPanel renders cells in the same Object.keys(gearInventory.tools) order. Match the visible cell, then recover its canonical key from that live collection.
+    // Storage reorders the available/stowed groups; never infer tool identity from a position in the owned list.
     const ownedCells = [...document.querySelectorAll('#mpInventory .gear-owned-tools .inv-equip-slot[title]')];
-    const ownedIndex = ownedCells.findIndex((cell) => {
-      const match = cell.title.match(/^(.*?) \(Mastery \d+\/5\)/);
+    const matchedCell = ownedCells.find(cell => {
+      const match = cell.title.match(/^(.*?) \(Mastery \d+\/5\)/); // Existing owned-tool titles preserve readable labels.
       return match?.[1]?.trim() === cleanedName;
     });
-    if (ownedIndex >= 0) {
-      const ownedKeys = Object.keys(gearInventory?.tools || {}).filter((key) => gearInventory.tools[key] && (!defs || defs[key]));
-      if (ownedKeys[ownedIndex]) return ownedKeys[ownedIndex];
-    }
-    return null;
+    const ownedKey = matchedCell?.dataset?.itemKey || matchedCell?.getAttribute?.('data-item-key'); // Per-cell canonical key survives visual archive reordering.
+    return ownedKey && gearInventory?.tools?.[ownedKey] ? ownedKey : null;
   }
 
   function runtimeToolMasteryThresholds(combatDeps) {

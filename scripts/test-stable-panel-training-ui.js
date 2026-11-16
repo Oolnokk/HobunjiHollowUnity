@@ -417,12 +417,12 @@ assert.equal(stable.find(entry => entry.id === 'hound1').lifeStage, 'adult', 'de
 assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 0, 'native age groups refresh after a baby grows up');
 assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 3, 'grown Stable baby immediately appears in the adult count');
 
-for (let index = 0; index < 6; index++) context.FarmAnimals.addToStable(`animal_${index}`); // Fills eight accessible places, then checks automatic stowage for the ninth.
+for (let index = 0; index < 6; index++) context.FarmAnimals.addToStable(`animal_${index}`); // Checks that a nine-animal roster remains accessible without forced storage.
 context.FarmPanel.renderStablePanel();
-assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageLimit, 8, 'Stable debug reports the requested eight-animal limit');
-assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'Stable never exposes more than eight animals outside storage');
-assert.equal(context.FarmPanel.stableTrainingDebug().stowedCount, 1, 'the ninth acquired animal is retained in indefinite stowage');
-assert.equal(stable.at(-1).stowed, true, 'a new animal is immediately saved as stowed when the accessible roster is full');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageLimit, null, 'Stable debug reports no accessible-animal limit');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 9, 'Stable keeps all nine acquired animals accessible by default');
+assert.equal(context.FarmPanel.stableTrainingDebug().stowedCount, 0, 'newly acquired animals are not forced into storage');
+assert.equal(stable.at(-1).stowed, false, 'a new animal remains available even when there are already eight');
 for (const id of ['mount1', 'incoming_3', 'incoming_4']) { // Exercise real favorite-button handlers on three Mounts.
   const row = stableRowById(stableList, id);
   assert.ok(row, id + ' has a Stable role row');
@@ -436,23 +436,23 @@ assert.equal(saveCount, beforeOverLimit, 'rejected favorite does not dirty the s
 assert.equal(stable.find(entry => entry.id === 'mount1').stableFavorite, true, 'pin uses the existing Stable animal record');
 const orderedMounts = descendantsByClass(stableList, 'stable-training-row').filter(row => row.dataset.stableRole === 'mount' && row.dataset.stableLifeStage === 'adult');
 assert.deepEqual(orderedMounts.slice(0, 3).map(row => row.dataset.stableTrainingId), ['mount1', 'incoming_3', 'incoming_4'], 'pinned Mounts sort first, then other Mounts by level');
-assert.match(source, /function installStableStorageAcquisitionGuard\(/, 'the item-to-Stable intake path applies the cap before another menu render');
+assert.doesNotMatch(source, /MAX_OUT_OF_STORAGE_STABLE_ANIMALS|installStableStorageAcquisitionGuard/, 'old capacity and auto-stow intake guard are fully removed');
 
 let mountRowForStowing = stableRowById(stableList, 'mount1'); // Used to prove the user can stow and later withdraw an existing animal.
 descendantsByClass(mountRowForStowing, 'stable-stow-btn')[0].listeners.click({ stopPropagation() {} });
 assert.equal(stable.find(entry => entry.id === 'mount1').stowed, true, 'the Stable action moves an animal into stowage');
-assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 7, 'stowing one animal opens one out-of-storage place');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'stowing one animal only changes its availability');
 let stowageToggle = descendantsByClass(stableList, 'stable-inventory-toggle').find(button => String(button.textContent).includes('Stowed Animals'));
 stowageToggle.listeners.click();
 let stowedMountRow = stableRowById(stableList, 'mount1');
 descendantsByClass(stowedMountRow, 'stable-stow-btn')[0].listeners.click({ stopPropagation() {} });
 assert.equal(stable.find(entry => entry.id === 'mount1').stowed, false, 'a stowed animal can be withdrawn again');
-assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'withdrawing respects the eight-animal accessible limit');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 9, 'stowed animals can be withdrawn regardless of roster size');
 activeMountId = 'mount1'; // Simulates an older/corrupt save that marks a currently deployed animal as stowed.
 stable.find(entry => entry.id === 'mount1').stowed = true;
 context.FarmPanel.renderStablePanel();
 assert.equal(stable.find(entry => entry.id === 'mount1').stowed, false, 'normalization keeps a deployed animal outside storage');
-assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'preserving a deployed animal still respects the cap');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 9, 'preserving a deployed animal does not enforce a cap');
 
 assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself contains no obsolete leveling placeholder');
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
@@ -475,4 +475,4 @@ context.FarmPanel.renderStablePanel();
 const visibleRole = context.FarmPanel.stableTrainingDebug().selectedRole;
 assert.equal(portraitCalls.length, stable.filter(entry => entry.role === visibleRole).length, 'only the selected Stable role composes animal portraits');
 
-console.log('Native Stable panel training, stowage, cap, and collapsible baby-inventory regression tests passed.');
+console.log('Native Stable panel training, unlimited roster, optional stowage, and collapsible baby-inventory regression tests passed.');
