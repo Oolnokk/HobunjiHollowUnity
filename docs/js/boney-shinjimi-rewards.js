@@ -1,5 +1,5 @@
 // Boney Shinjimi's repeatable moonlit encounter rewards.
-// Uses the museum, Harlyao bound-relic and gear-trinket owners; no parallel item/gear model.
+// Uses museum artifacts, Fey-origin bound weapons through the existing relic/unbinding owner, and gear trinkets.
 (() => {
   'use strict';
   const HAT_COSMETIC = 'appearance::hat::old_highlands_kasa'; // Newly authored front/back kasa sprites, registered in cosmetics index.
@@ -25,7 +25,7 @@
 
   function lockedEnchantments() {
     const es = window.EnchantmentSystem;
-    const defs = Object.values(es?.DEFINITIONS || {});
+    const defs = Object.values(es?.DEFINITIONS || {}).filter(def => def.alignment === 'Fey'); // Boney teaches only Fey illusions, never Harlyao ruin enchantments.
     const slots = window.Combat?.loadout?.SLOT_IDS || SLOT_IDS;
     const missing = [];
     for (const def of defs) {
@@ -41,8 +41,8 @@
 
   function relicWithUnlearnedEnchantment(rng = random) {
     const candidates = lockedEnchantments();
-    if (!candidates.length || !window.HarlyaoRelics?.makeRelic) return null;
-    const relic = window.HarlyaoRelics.makeRelic(); // Reuses real bound weapon shapes, uid codec, and rarity balance.
+    if (!candidates.length || !window.HarlyaoRelics?.makeFeyRelic) return null;
+    const relic = window.HarlyaoRelics.makeFeyRelic(); // Dagger, dagger-sword, fishing spear or hatchet; all random Fey-origin enchantments.
     if (!relic?.enchantments) return null;
     const missing = pick(candidates, rng);
     if (missing.kind === 'base') {
@@ -52,7 +52,7 @@
       relic.enchantments.flourishes ||= {};
       relic.enchantments.flourishes[missing.slotId] = missing.id;
     }
-    return relic; // Guaranteed to contain >=1 enchantment/permutation Garanki has not learned yet.
+    return relic; // Every enchantment belongs to Fey; >=1 random slot teaches a still-unlearned Fey enchantment or flourish permutation.
   }
 
   function chooseTrinket(rng = random) {
@@ -100,12 +100,12 @@
     if (relic) {
       const key = window.HarlyaoRelics?.grantBoundRelic?.(relic); // Bound and unusable until Garanki unbinds it; unlocks remain untouched.
       if (key) {
-        deps.showToast?.('Boney Shinjimi gave you an enchanted bound weapon.', true);
-        return { kind: 'boundRelic', key, label: 'Enchanted bound weapon', enchantments: relic.enchantments };
+        deps.showToast?.('Boney Shinjimi gave you a Fey-touched bound weapon, full of illusions.', true);
+        return { kind: 'boundRelic', origin: 'Fey', shape: relic.shape, key, label: 'Fey-touched bound weapon', enchantments: relic.enchantments };
       }
       return null; // Never swap an ungrantable weapon for some accidental second prize.
     }
-    const id = chooseTrinket(rng); // All enchantments learned: unowned trinket, or any trinket when all are owned.
+    const id = chooseTrinket(rng); // All Fey enchantments learned: unowned trinket, or any trinket when all are owned.
     const uid = id && window.TrinketSystem?.grant?.(id, 'boney-shinjimi');
     if (!uid) return null;
     const label = window.TrinketSystem?.DEFINITIONS?.[id]?.displayName || id;
