@@ -28,15 +28,24 @@
     return scale;
   }
 
-  const RIG_PREVIEW_STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // The head-rigger's same-origin Save Preview store; read only when composing new baby art.
+  const RIG_PREVIEW_STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // Same browser preview store used by the painted head-rig editor.
+  let cachedPreviewRaw = null; // Avoid reparsing possibly large painted RLE maps every frame while a small pet is equipped.
+  let cachedPreviewRigs = {}; // Parsed per-species preview map shared by scale and head-frame lookup.
+  function readPreviewRigs() {
+    try {
+      const raw = window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '';
+      if (raw === cachedPreviewRaw) return cachedPreviewRigs;
+      const data = raw ? JSON.parse(raw) : {};
+      cachedPreviewRaw = raw;
+      cachedPreviewRigs = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+      return cachedPreviewRigs;
+    } catch (_) { cachedPreviewRaw = null; cachedPreviewRigs = {}; return cachedPreviewRigs; }
+  }
   function scaleForKind(kind) {
     const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Resolves the same species IDs used by the head-rigger export.
     const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Variants inherit the underlying authored head setting.
-    let previewRig = null; // A saved browser preview overrides the committed rig for this species, without changing game save data.
-    try {
-      const saved = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}');
-      previewRig = saved?.[normalized] || saved?.[base] || null;
-    } catch (_) {}
+    const saved = readPreviewRigs(); // Parsed only when storage actually changes; safe in repeated small-pet render frames.
+    const previewRig = saved?.[normalized] || saved?.[base] || null;
     const authoredRig = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
       || window.CreatureGeneticsRender?.headRigForKind?.(base)
       || null; // Full exported head rigs can independently author baby proportions.
@@ -101,8 +110,7 @@
   function frameForKind(kind) {
     const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for head-rig and chathead profiles.
     const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Species variants share the actual authored head paint.
-    let previews = null; // Browser-local preview overrides must be able to demonstrate the artist's latest Head paint without a merge.
-    try { previews = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}'); } catch (_) {}
+    const previews = readPreviewRigs(); // Same cached object as scaleForKind to avoid duplicate JSON parses.
     const savedRig = previews?.[normalized] || previews?.[base];
     const committed = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
       || window.CreatureGeneticsRender?.headRigForKind?.(base);
