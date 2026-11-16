@@ -66,10 +66,27 @@ const desktopListeners = new Map(); // Captures the actual mounted keyboard capt
 const pointerListeners = new Map(); // Captures mounted touch down/click listeners for press deduplication checks.
 let menuOpen = false; // Simulates the real menu's gameplay-input exclusion gate.
 let controllerCallback = null; // One subscriber to the shared ControllerInput frame, never a new gamepad loop.
+const mountHudClasses = new Set(); // Observes the wheat visibility override when all player vitals rows are intentionally hidden.
+function fakeHudNode() {
+  const node = { style: {}, children: [], attrs: {}, id: '' }; // Minimal DOM surface for mount HUD creation and class toggling.
+  node.classList = {
+    toggle(name, enabled) { if (enabled) mountHudClasses.add(name); else mountHudClasses.delete(name); },
+    contains: name => mountHudClasses.has(name),
+  };
+  node.appendChild = child => { node.children.push(child); return child; };
+  node.setAttribute = (name, value) => { node.attrs[name] = value; };
+  return node;
+}
+const vitalHud = fakeHudNode(); // The resource-bar container can be hidden while wheat remains visible above it.
+const fakeBody = fakeHudNode(); // Actual DOM installation is tested instead of disabling the mount HUD.
 const document = {
   addEventListener: (type, fn) => { pointerListeners.set(type, fn); },
-  getElementById: id => id === 'menuPanel' ? { classList: { contains: name => name === 'open' && menuOpen } } : null,
-}; // No body intentionally: the HUD view has no effect on the movement/audio test fixture.
+  createElement: () => fakeHudNode(),
+  body: fakeBody, head: fakeHudNode(),
+  getElementById: id => id === 'menuPanel'
+    ? { classList: { contains: name => name === 'open' && menuOpen } }
+    : id === 'vitalsBar' ? vitalHud : null,
+};
 function canOccupy(x, y) {
   if (x < T || y < T || x > 79 * T || y > 15 * T) return false;
   const radius = 11;
@@ -142,6 +159,10 @@ win.Mounts.updateMountRide(.1);
 win.Mounts.updateMountRide(1);
 win.Mounts.updateMountRide(0);
 assert.equal(win.Mounts.rideState, 'mounted');
+assert(mountHudClasses.has('with-mounted-wheat'), 'wheat remains visible even when player vitals rows are hidden');
+assert.equal(vitalHud.children.length, 1, 'wheat HUD is anchored to the player vitals container');
+assert.equal(vitalHud.children[0].style.display, 'flex', 'all six wheat charges are displayed while riding');
+assert.equal(vitalHud.children[0].children.length, 6, 'mounted display preserves all six charge icons');
 assert.deepEqual(Array.from(claims['mount-riding'].map(x => x.actionId)), ['dodge', 'jump']);
 const mount = win.Mounts.rideEntity;
 mount.x = player.x; mount.y = player.y;
@@ -342,6 +363,8 @@ assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
 assert.equal(win.Mounts.ridingDebug.jumping, true);
 win.Mounts.toggleMount();
 assert.equal(win.Mounts.rideState, 'dismountingDown');
+win.Mounts.updateMountRide(0);
+assert.equal(mountHudClasses.has('with-mounted-wheat'), false, 'dismount removes the wheat-only player-vitals visibility override');
 assert.equal(mount._mountHop, null, 'dismount cancels an in-progress rock hop');
 assert.equal(mount._banditLungeHopCurrent, 0, 'dismount clears airborne visual offset');
 
