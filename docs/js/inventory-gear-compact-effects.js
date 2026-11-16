@@ -9,12 +9,18 @@
   const INFO_MIN_FONT_PX = 2.75; // Emergency floor used only when a very dense item detail must remain non-scrolling.
 
   let observedSection = null; // Tracks the current Gear equipment root; EquipmentPanel may rebuild it at runtime.
+  let observedSummary = null; // Tracks replacement of the left summary even while the enclosing section stays mounted.
+  let observedOwned = null; // Tracks replacement of the middle inventory region for ResizeObserver reattachment.
   let observedInfo = null; // Tracks the item-detail panel so resize fitting follows menu/orientation changes.
-  let resizeObserver = null; // Re-fits only when one of the three Gear regions actually changes size.
+  let resizeObserver = null; // Watches Gear region dimensions without treating independent left-side resizing as a detail-font change.
+  let resizeTargetSizes = new WeakMap(); // Last ResizeObserver content-box size per node; first notifications are baselines, not changes.
   let inventoryMutationObserver = null; // Watches Gear rebuilds, item-detail changes, and readability-floor annotations.
   let fitQueued = false; // Coalesces rebuild/resize/orientation bursts into one presentation pass.
   let lastDebug = null; // Mobile-friendly snapshot of the latest workspace + item-detail fit.
-  const fitStats = { passes: 0, inactiveSkips: 0, ignoredMutations: 0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
+  let detailFitInvalidated = true; // Item-detail mutations, visibility changes, or resizes require a new measured font fit.
+  let lastFittedInfo = null; // The specific detail node whose most recent fit can be reused during left-rail updates.
+  let lastDetailFit = null; // Result reused when only the independent Gear summary/inventory changes.
+  const fitStats = { passes: 0, detailFits: 0, reusedDetailFits: 0, inactiveSkips: 0, ignoredMutations: 0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
 
   function installStyles() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -399,12 +405,39 @@
   }
 
   function hookResizeTargets(workspace, info) {
-    if (workspace?.section === observedSection && info === observedInfo) return;
+    const section = workspace?.section || null; // Stable workspace identity, including the no-section case while Gear is rebuilding.
+    const summary = workspace?.summary || null; // New inner rail nodes must replace stale ResizeObserver targets.
+    const owned = workspace?.owned || null; // Middle gear inventory can be rebuilt separately from its parent.
+    const detail = info || null; // Actual detail node; replacement always needs a newly measured font fit.
+    if (section === observedSection && summary === observedSummary && owned === observedOwned && detail === observedInfo) return;
     resizeObserver?.disconnect?.();
-    observedSection = workspace?.section || null;
-    observedInfo = info || null;
-    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleFit) : null;
-    [workspace?.section, workspace?.summary, workspace?.owned, info].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
+    observedSection = section;
+    observedSummary = summary;
+    observedOwned = owned;
+    observedInfo = detail;
+    resizeTargetSizes = new WeakMap(); // Old observed targets must not influence the new workspace's first size notifications.
+    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
+      let workspaceResized = false; // Non-detail region changes need only to refresh the presentation workspace.
+      let detailResized = false; // Only the detail or its overall section can invalidate the fitted font.
+      for (const entry of entries) {
+        const target = entry?.target;
+        const width = entry?.contentRect?.width;
+        const height = entry?.contentRect?.height;
+        if (!target) continue;
+        if (!Number.isFinite(width) || !Number.isFinite(height)) {
+          detailResized = true; // Missing dimensions: preserve old fail-safe resize behavior.
+          break;
+        }
+        const previous = resizeTargetSizes.get(target);
+        resizeTargetSizes.set(target, { width, height });
+        if (!previous || (previous.width === width && previous.height === height)) continue;
+        workspaceResized = true;
+        if (target === observedInfo || target === observedSection) detailResized = true;
+      }
+      if (detailResized) invalidateDetailFit();
+      else if (workspaceResized) scheduleFit();
+    }) : null;
+    [section, summary, owned, detail].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
   }
 
   function gearActuallyVisible(pane) {
@@ -423,6 +456,9 @@
       // attached; the pane's Gear-mode class change schedules the next fit.
       fitStats.inactiveSkips++;
       hookResizeTargets(null, null);
+      lastFittedInfo = null;
+      lastDetailFit = null;
+      detailFitInvalidated = true; // Hidden Gear can change without tracked item-detail mutations; always fit on the next open.
       lastDebug = { version:VERSION, gearActive:false, workspaceReady:false };
       return lastDebug;
     }
@@ -430,20 +466,30 @@
     const workspace = ensureGearWorkspace();
     const info = document.getElementById('invInfo');
     hookResizeTargets(workspace, info);
-    const detailFit = fitInfoPanel(info);
+    if (detailFitInvalidated || info !== lastFittedInfo) {
+      lastDetailFit = fitInfoPanel(info);
+      lastFittedInfo = info;
+      detailFitInvalidated = false;
+      fitStats.detailFits++;
+    } else {
+      fitStats.reusedDetailFits++; // Rebuilding the left summary cannot change the independent right-panel font fit.
+    }
 
+    // Debug-only geometry measurements used to force a synchronous layout after
+    // every refresh. The on-demand snapshot reads them only when requested.
     lastDebug = {
       version:VERSION,
       gearActive:true,
       workspaceReady:!!workspace,
-      summaryScrollHeight:Number((workspace?.summary?.scrollHeight || 0).toFixed?.(2) || 0),
-      summaryClientHeight:Number((workspace?.summary?.clientHeight || 0).toFixed?.(2) || 0),
-      ownedClientHeight:Number((workspace?.owned?.clientHeight || 0).toFixed?.(2) || 0),
-      detailWidth:Number((info?.getBoundingClientRect?.().width || 0).toFixed?.(2) || 0),
-      detailFit,
+      detailFit:lastDetailFit,
       viewport:[window.innerWidth || 0, window.innerHeight || 0],
     };
     return lastDebug;
+  }
+
+  function invalidateDetailFit() {
+    detailFitInvalidated = true;
+    scheduleFit();
   }
 
   function scheduleFit() {
@@ -475,8 +521,17 @@
         // child change is relevant because it can replace either region.
         return target === pane || !!target?.closest?.('#invEquipSection, #invInfo');
       }));
-      if (relevant) scheduleFit();
-      else fitStats.ignoredMutations += records.length;
+      if (relevant) {
+        if (visibilityChanged || records.some((record) => {
+          const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+          // Direct pane replacements can swap the info node; other left-rail
+          // mutations only need workspace maintenance, not font measurement.
+          return (record.type === 'childList' && target === pane)
+            || target === document.getElementById('invInfo')
+            || !!target?.closest?.('#invInfo');
+        })) detailFitInvalidated = true;
+        scheduleFit();
+      } else fitStats.ignoredMutations += records.length;
     });
     const menu = document.getElementById('menuPanel'); // Closing/reopening the opacity-hidden menu must also release/restart Gear fitting.
     menu && inventoryMutationObserver.observe(menu, { attributes:true, attributeFilter:['class'] });
@@ -487,16 +542,31 @@
       attributes:true,
       attributeFilter:['class','data-menu-font-floor'],
     });
-    window.addEventListener?.('resize', scheduleFit, { passive:true });
-    window.addEventListener?.('orientationchange', scheduleFit, { passive:true });
+    window.addEventListener?.('resize', invalidateDetailFit, { passive:true });
+    window.addEventListener?.('orientationchange', invalidateDetailFit, { passive:true });
     scheduleFit();
   }
 
   function debugSnapshot() {
-    return { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } };
+    const snapshot = { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } }; // Public on-demand metrics; never sampled by the frame refresh.
+    if (snapshot.gearActive) {
+      const summary = observedSection?.querySelector?.('.gear-summary-panel'); // Summary height for the mobile diagnostic readout.
+      const owned = observedSection?.querySelector?.('.gear-middle-inventory'); // Middle inventory height for the same readout.
+      const info = observedInfo; // Only this explicit debug call reads the right panel's bounding rectangle.
+      snapshot.summaryScrollHeight = Number((summary?.scrollHeight || 0).toFixed?.(2) || 0);
+      snapshot.summaryClientHeight = Number((summary?.clientHeight || 0).toFixed?.(2) || 0);
+      snapshot.ownedClientHeight = Number((owned?.clientHeight || 0).toFixed?.(2) || 0);
+      snapshot.detailWidth = Number((info?.getBoundingClientRect?.().width || 0).toFixed?.(2) || 0);
+    }
+    return snapshot;
   }
 
-  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh:refreshPresentation, debugSnapshot });
+  function refresh() {
+    refreshPresentation();
+    return debugSnapshot(); // Explicit developer refresh retains the old measured diagnostics.
+  }
+
+  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh, debugSnapshot });
   window.__inventoryGearCompactEffectsDebug = debugSnapshot;
 
   if (typeof document !== 'undefined') {
