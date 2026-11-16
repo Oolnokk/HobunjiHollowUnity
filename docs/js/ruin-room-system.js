@@ -231,7 +231,8 @@
     const rooms=[...(layout?.rooms||[])],ownership=new Map(); // Tracks each spawned hostile's original map, room and spawn tile.
     const walkersOwnership=new Map(); // Holds only actual ruin NPC walkers, independent of wilderness/town scheduling.
     let active=null,clock=PROBE_PERIOD,transitions=0,resets=0,disposed=false; // Room ownership is reused by lighting and encounter suspension without projecting room boxes.
-    let localLightClipPasses=0; // On-demand mobile diagnostics: one physical room-footprint clip around each lighting redraw, not per source.
+    // All traditions use source-to-room ownership and a steady viewport overlay; a projected room hull
+    // was the camera-moving coloured tunnel frame, not a necessary part of room light isolation.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
     const sleepingArea=SLEEP_AREA+mapId;
@@ -306,22 +307,28 @@
       }, // Native V50 upper stories are registered after their meshes are mounted in the same scene.
       get activeRoomId(){return active?.id||null;},
       isRoomActive(id){return !!active&&active.id===id;},
-      ambient(){return active?.ambient||null;}, // Read by the unified overlay, preserving its accessibility-adjusted base darkness.
+      ambient(){
+        if(!active?.ambient)return null;
+        let illumination=0; // Stable per-room illumination lift used only by the full-viewport darkness pass.
+        for(const sources of [
+          root.DevRandomRuinLichThemes?.lightSources?.()||[],
+          root.RuinLayerPlayable?.roomLights?.()||[],
+          root.RuinMultifloorV50Style?.lightSources?.()||[],
+        ])for(const source of sources){
+          if(source?.active===false||!Number.isFinite(source?.x)||!Number.isFinite(source?.z)
+            ||!Number.isFinite(source?.y)||!inside(active,source.x,source.z))continue;
+          if(source.y<active.y-.65||source.y>active.y+WALL_HEIGHT+1)continue;
+          illumination=Math.max(illumination,Math.min(1,Math.max(0,Number(source.strength)||0)));
+        }
+        return {...active.ambient,
+          darknessOffset:(active.ambient.darknessOffset||0)-illumination*.13,
+          illumination,roomId:active.id}; // Only lit sources in the occupied room reduce its darkness uniformly.
+      },
       roomAt:lookup,
       prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
-      withLightRegion(ctx,project,draw){
+      withLightRegion(_ctx,_project,draw){
         if(typeof draw!=='function')return false;
-        if(active?.theme==='tothal'){draw();return true;} // Broad blue ceiling/wall washes must not intersect a hard projected room hull; source-room filtering still applies.
-        if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
-        const footprint=roomLightFootprint(active,project); // One eight-corner wall-volume projection per lighting redraw, not one mask per light.
-        if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
-        ctx.save();
-        try{
-          ctx.beginPath();ctx.moveTo(footprint[0].x,footprint[0].y);
-          for(let i=1;i<footprint.length;i++)ctx.lineTo(footprint[i].x,footprint[i].y); // Every projected wall-height extreme belongs inside the mask.
-          ctx.closePath();ctx.clip();localLightClipPasses++;
-          draw(); // Only local light holes and glows are contained; the low-opacity room tint is painted afterward over the whole screen.
-        }finally{ctx.restore();}
+        draw(); // No projected room-volume polygon in Hronal, Tothal OR Kanthic; sources are still room-owned.
         return true;
       },
       roomGlowRadius(light,radius){
@@ -369,7 +376,8 @@
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
         lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
-        localLightBoundary:{mode:active?.theme==='tothal'?'unclipped-tothal-overcast':'room-volume-light-clip',active:!!active?.wingId&&active?.theme!=='tothal',canvasPasses:localLightClipPasses}};},
+        localLightBoundary:{mode:active?.theme==='kanthic'?'unclipped-kanthic-screen-overlay':active?.theme==='tothal'?'unclipped-tothal-overcast':'unclipped-hronal-screen-overlay',
+          active:false,roomIsolated:!!active,canvasPasses:0,illumination:session.ambient()?.illumination||0}};},
     };
     live=session;
     return session;

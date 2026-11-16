@@ -2881,8 +2881,25 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   // hiding one would also hide a required descendant.
   let ordinaryDepthLeavesSkipped = 0; // Pixel Probe reports redundant leaves excluded from ordinary-depth supplements.
   let ordinaryDepthClearsAvoided = 0; // Counts groups that retain the base depth instead of reconstructing the world.
-  function hideOrdinaryDepthRedraws(scene, cutouts, covers) {
-    const required = new Set([...cutouts, ...covers]); // Only these materials gain depth writes in the supplement.
+  let lastForcedGroundDepthMaterials = 0; // Mobile diagnostic: temporary ground depth writers in the latest held replay.
+
+  function forceGroundDepthForHeldReplay(materials, savedStates) {
+    // Ground selected by either the elevation or ordinary held-replay path
+    // may be drawn without depth writes in the world pass. The caller gives
+    // only registered ground materials; any missing depth gets reconstructed.
+    // When the elevation shader is unavailable, ordinary physical occlusion
+    // is the conservative fallback (even within the circle).
+    let forced = 0; // Count material overrides within this colorless replay only.
+    for (const material of materials || []) {
+      if (material?.depthWrite !== false) continue;
+      saveMaterialState(savedStates, material); // Use the existing material transaction to restore base-render state.
+      material.depthWrite = true; // Mode 1 drops the near floor when supported; otherwise use real physical depth.
+      forced++;
+    }
+    return forced;
+  }
+  function hideOrdinaryDepthRedraws(scene, cutouts, covers, missingGround = []) {
+    const required = new Set([...cutouts, ...covers, ...missingGround]); // Also keep ground which failed to write depth in the base world pass.
     const redundant = []; // Restored before source color and every elevation replay.
     scene.traverseVisible(object => {
       if ((!object.isMesh && !object.isSprite) || object.children?.length || required.has(object)) return;
@@ -3015,6 +3032,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   }
 
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint = null, portraitOrder = null) {
+    lastForcedGroundDepthMaterials = 0; // Clear the mobile counter even when this pass has no active gear.
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
     if (!held.length && !feet.length && !bodyTint?.portraits.length) {
@@ -3078,6 +3096,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let waterReplayClipStates = null; // Restores clipped water shader uniforms even after a failed render.
     const colorBuffer = renderer.state?.buffers?.color;
     const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
+    const ordinaryGroundMeshes = ordinary.length ? groundMeshes.filter(mesh => {
+      if (!mesh?.visible) return false;
+      let missingDepth = false; // Registered ground leaves needed by the ordinary held depth supplement.
+      forEachMaterial(mesh.material, material => { if (material?.depthWrite === false) missingDepth = true; });
+      return missingDepth;
+    }) : []; // No scan when all equipment already uses actual elevation-filtered groups.
+    const ordinaryGroundMaterials = new Set(); // Reuse the ground material transaction without instantiating an elevation shader for ordinary tools.
+    for (const mesh of ordinaryGroundMeshes) forEachMaterial(mesh.material, material => { if (material) ordinaryGroundMaterials.add(material); });
     const nearReplay = groups.some(group => group.regions.length) ? nearReplaySupport(canLockColorMask) : null; // Only depth-clearing x-ray groups benefit.
     const allowFarOnly = !!nearReplay; // Far-plane-only objects may leave only when replay depth comes back by copy (ScissorDepthSnapshot).
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
@@ -3168,6 +3194,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const depthMaterialStates = canLockColorMask
           ? prepareCutoutDepthMaterials(cutoutDepthMeshes, protectedDepthMeshes)
           : prepareNonGroundDepthMaterials(scene);
+        if (group.regions.length) lastForcedGroundDepthMaterials += forceGroundDepthForHeldReplay(groundMaterials, depthMaterialStates);
+        else if (ordinaryGroundMaterials.size) lastForcedGroundDepthMaterials += forceGroundDepthForHeldReplay(ordinaryGroundMaterials, depthMaterialStates);
+        // The ordinary supplement previously skipped ALL terrain: ground with depthWrite:false could never block gear outside the circle.
         if (canLockColorMask) {
           colorBuffer.setMask(false);
           colorBuffer.setLocked(true);
@@ -3177,7 +3206,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let farCulled = null; // Objects wholly behind this group's held parts; the saved depth brings them back.
         let patchCulled = null; // After a floor punch, only objects touching the holder's patch are redrawn.
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
-        const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
+        const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes) : null; // Retain only depth-relevant sprites, cover, and missing-ground leaves.
         let backgroundHidden = null; // Only the colorless depth submission drops the visual horizon; the world and final depth restore retain it.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
@@ -3813,6 +3842,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       shellXrayMeshes: shellXrayMeshDrawCount,
       elevationReplayGroups: lastElevationReplayGroups,
       xrayTileRegions: lastXrayTileRegions,
+      forcedGroundDepthMaterials: lastForcedGroundDepthMaterials, // Ground depth repaired for gear without changing the world pass.
       xrayOrdinaryMeshes: lastXrayOrdinaryMeshes,
       unknownElevationMeshes: lastUnknownElevationMeshes,
       elevationShaderMaterials: lastElevationShaderMaterials,

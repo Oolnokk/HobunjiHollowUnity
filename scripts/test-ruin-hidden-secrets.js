@@ -29,8 +29,38 @@ class Group{
 class Mesh extends Group{constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
 class Geometry{dispose(){}}
 class Material{constructor(opts){Object.assign(this,opts);}dispose(){}}
-global.THREE={Group,Mesh,BoxGeometry:Geometry,MeshBasicMaterial:Material};
-global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},ids:new Set()};
+global.THREE={Group,Mesh,BoxGeometry:Geometry,CylinderGeometry:Geometry,MeshBasicMaterial:Material};
+const materialSpecs=[]; // Verify actual authored stone texture/color-fill settings, not only color literals.
+global.ProceduralFurniture={makePartMaterial:spec=>{
+  materialSpecs.push(spec);
+  return new Material({sourceTexture:spec.materialTexture,fillMode:spec.materialFillMode,
+    fillColor:spec.materialFillColor,opacity:spec.surfaceOpacity??1});
+}};
+global.HobunjiSurfaceStretchUV={mapMesh(mesh,settings){
+  assert.equal(settings.label,'ruin-side-treasure-stone');
+  mesh.userData.uvMapped=true;return {ok:true};
+}}; // Each generated box must use the main puzzle's connected-surface UV mapping.
+let authoredIceCount=0,ropeNetCount=0; // Confirm secret covers reuse existing ice growth and rope_long atlas modules.
+global.DungeonDoorIceCoverage={create({parent,groundY,seed}){
+  authoredIceCount++;
+  assert.equal(groundY,room.y);assert(seed.includes('ice-cover'));
+  const authoredLayer=new Mesh(new Geometry(),new Material({artSource:'IceStalagmiteCoverage'}));
+  parent.add(authoredLayer);return {iceLayer:authoredLayer,ownsLayer:true};
+}};
+global.DungeonRopeArt={createNetFrustum(w,d,drop,bottomScale){
+  ropeNetCount++;
+  assert(w>1&&d>1&&Math.abs(drop-1.75)<1e-8);
+  assert.equal(bottomScale,1,'a floor-standing net must not taper through its treasure chest');
+  const net=new Mesh(new Geometry(),new Material({artSource:'assets/objectsprites/rope_long.png'}));
+  net.userData.dungeonNetAtlas='assets/objectsprites/rope_long.png';
+  net.userData.dungeonNetBottomScale=bottomScale;
+  return net;
+}};
+global.DynamicSurfaces={
+ registerBlocker(x){this.ids.add(x.id);this.blockers.set(x.id,x);},
+ remove(id){this.ids.delete(id);this.blockers.delete(id);},
+ sampleSupport:()=>({y:room.y}),ids:new Set(),blockers:new Map(),
+}; // The real walkable floor and scoped blockers share one placement authority.
 global.DevRandomRuinDungeonChests={create(o){
  const group=new Group();group.position.set(o.x,o.y,o.z);o.parent.add(group);
  return {group,opened:false,control:{kind:'dungeonChest'}};}};
@@ -46,20 +76,55 @@ let notesReceived=0,melodyListener=null; // Confirms one secret score cannot rec
 global.PuzzleCaveMelody={ruinDifficulty:()=>3,generate:()=>({notes:[{index:1}],bpm:90}),
  createSession:(_song,cbs)=>({step(){},note(){notesReceived++;},stop(){},solve:()=>cbs.onSolved()})};
 global.RuinMelodyGlyphDecal={create:()=>({dispose(){}})};
+global.PuzzleCavePlateArt={decorate:(_THREE,plate,settings)=>{
+  assert.equal(plate.material.sourceTexture,'carved_smooth.png','Hao\'uun stone plate uses the real ruin texture');
+  assert.equal(settings.radius,.46);
+  return {dispose(){}};
+}};
 global.addEventListener=(_type,callback)=>{melodyListener=callback;};
 global.removeEventListener=(_type,callback)=>{if(melodyListener===callback)melodyListener=null;};
 const rigUpdates=[]; // Each baby must receive the actual rig's folded-wing hatchling pose, not render as an adult flyer.
 global.DevRandomRuinInteractions={activeCamera:()=>({getWorldPosition(){}})};
 global.SkeeriRuins={paletteFor:theme=>({theme}),createRig:async()=>({root:new Group(),update:(_camera,pose)=>rigUpdates.push(pose),dispose(){this.disposed=true;}})};
 const controls=new Set();
+const noFloorSeed=found['closet:melody']; // A moving/raised, unreachable plate must be rejected, never painted into the air.
+global.DynamicSurfaces.sampleSupport=()=>({y:room.y+2});
+assert.equal(api.create({room,seed:noFloorSeed,theme:'kanthic',parent:new Group(),THREE}),null,
+  'optional melody puzzles never spawn on a platform raised above the advertised floor');
+global.DynamicSurfaces.sampleSupport=()=>({y:room.y});
 for(const [key,seed] of Object.entries(found)){
  feetY=12;groundOn=false;player={x:43,z:53};
  const owner=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
   getPlayerY:()=>feetY,getPlayerPosition:()=>player,
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
  assert(owner);
+ const secretStone=[];
+ owner.group.traverse(node=>{
+   if(node.userData?.ruinSecretTexturedStone){
+     secretStone.push(node);
+     assert.equal(node.material?.sourceTexture,'carved_smooth.png',
+       'every secondary mechanism, seal, pillar and nest column uses the authored stone PNG');
+     assert.equal(node.userData.uvMapped,true,'every authored stone has its connected-surface UV mapping');
+   }
+ });
+ assert(secretStone.length>=1,'every optional secret has visible textured masonry');
+ if(key.startsWith('suspended:')){
+   const cover=[...global.DynamicSurfaces.blockers.values()].find(b=>b.id.endsWith(':cache-cover'));
+   assert(cover?.enabled(),'the visible loot cover must physically block the unopened cache');
+ }
+ if(key==='suspended:ice'){
+   assert(owner.icePlacement?.iceLayer,'ice reward cover uses authored Tothal ice growth');
+   assert.equal(owner.cover.children.find(child=>child.name?.includes('secret-ice-growth-seed'))?.visible,false,
+     'authored faceted ice replaces the placeholder ice box instead of rendering both');
+ }
+ if(key==='suspended:net'){
+   assert(owner.cover.children.some(node=>node.userData?.dungeonNetAtlas==='assets/objectsprites/rope_long.png'),
+     'net reward cover uses the same original rope_long atlas as the main dungeon ropes');
+   assert.equal(owner.cover.children.filter(node=>node.name?.includes('grounded-column')).length,4,
+     'four stone columns actually support the rope net rather than leaving floating strands');
+ }
  owner.tick(.05);
- if(key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
+ if(key==='pillar'||key==='closet:projectile'||key==='suspended:net'||key==='suspended:ice'){
    assert.equal(owner.targets.length,1);owner.targets[0].onHit();assert(owner.unlocked);
  }
  if(key==='closet:fire'){
@@ -77,28 +142,47 @@ for(const [key,seed] of Object.entries(found)){
    feetY=12;melodyListener(noteEvent);assert.equal(notesReceived,1,'notes at the correct plate reach the judge');
    owner.melody.solve();assert(owner.unlocked);
  }
- if(key==='suspended:net')assert(owner.cover.position.y>room.y+2,'net not at world origin');
+ if(key==='suspended:net')assert.equal(owner.cover.position.y,room.y+1.75,
+   'net spans from its four grounded supporting columns down to the floor');
  if(key.startsWith('suspended:')){
-   for(let i=0;i<30;i++)owner.tick(.05);
-   assert.equal(owner.chest.group.position.y,room.y,'chest dropped to floor');
+   const cover=[...global.DynamicSurfaces.blockers.values()].find(b=>b.id.endsWith(':cache-cover'));
+   assert.equal(cover?.enabled(),false,'solving a cache unregisters its effective ice/net collision immediately');
+   assert.equal(owner.chest.group.position.y,room.y,'an optional prize chest starts on the physical room floor');
+   assert.equal(owner.cover.visible,false,'the struck ice/net cover gives way without any floating reward animation');
    assert(Math.abs(owner.targets[0].object.position.x-owner.chest.group.position.x)>.6,
-     'projectile clasp must be outside the ice/net cover rather than embedded inside');
+     'projectile clasp must be outside the grounded ice/net cover rather than embedded inside');
  }
+ if(owner.chest&&key!=='nest'&&key!=='babies')assert.equal(owner.chest.control.available(),owner.unlocked&&owner.gateProgress>=.98,
+   'optional chest cannot be opened until its real switch is solved and its gate has opened');
+ if(owner.plate)assert.equal(owner.plate.position.y,room.y+.07,'melody trigger is flush on the room floor');
+ assert.equal(owner.snapshot().art.stone,'carved_smooth.png','mobile debug identifies the shared authored masonry texture');
+ if(key==='suspended:ice')assert.equal(owner.snapshot().art.cover,'authored-ice-growth');
+ if(key==='suspended:net')assert.equal(owner.snapshot().art.cover,'assets/objectsprites/rope_long.png');
  assert.equal(owner.snapshot().babies,owner.babies);
  assert([...controls].filter(c=>c.kind==='ruinSkeeriNest').every(c=>c.claimAction1!==true),
    'inspecting the hidden brood must not steal weapon Action 1');
  owner.dispose();
  assert.equal(global.DynamicSurfaces.ids.size,0);
+ assert.equal(global.DynamicSurfaces.blockers.size,0,'no hidden cache leaves collision behind after unloading');
  assert.equal(projectiles.size,0);
  assert.equal(fire.size,0);
  assert.equal(controls.size,0);
 }
+assert(authoredIceCount>0,'optional Tothal secrets invoke the real ice growth adapter');
+assert(ropeNetCount>0,'optional net secrets invoke the shared sprite atlas');
+assert(materialSpecs.every(spec=>spec.materialTexture==='carved_smooth.png'),
+  'all per-secret authored material instances use the same ruin texture');
+assert(materialSpecs.some(spec=>spec.materialFillMode==='always'&&spec.materialFillColor==='#b08d57'),
+  'accent fittings recolor the PNG itself rather than being flat bronze rectangles');
+assert(materialSpecs.some(spec=>spec.materialFillMode==='never'),
+  'structural masonry retains the original unfilled carved stone texture');
 // Wait for the same asynchronous flying-rig creation used by real game assets before inspecting its pose.
 const seed=found.babies,brood=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
   getPlayerY:()=>12,getPlayerPosition:()=>({x:43,z:53}),
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
 Promise.resolve().then(()=>Promise.resolve()).then(()=>{
-  assert.equal(brood.nest.loaded,brood.babies,'all hatchling rigs resolve into the intended shelf');
+  assert.equal(brood.nest.loaded,brood.babies,'all hatchling rigs resolve into their grounded plinth');
+  assert.equal(brood.nest.shelf.position.y,room.y+1.1,'the physical nest pedestal is built up from ground level');
   brood.tick(.05);
   assert(rigUpdates.length>=brood.babies&&rigUpdates.every(pose=>pose==='hatchling'),
     'every flying animal rig must explicitly enter hatchling pose with the actual camera');

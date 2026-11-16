@@ -207,6 +207,36 @@ squared distance of each eligible ground fragment to the actor's world X/Z,
 after applying the existing standing-elevation and upward-floor-face tests.
 Actual 3D geometry, walls, raised floors, water, snow and grass billboards
 continue to follow their own physical depth rules.
+**Ground depth outside the circle:** Some wilderness ground materials
+intentionally use `depthWrite: false` in the regular world color pass.
+Previously, the held-gear depth replay preserved that setting, allowing
+weapons to show through the ground *outside* the local exception even when
+the floor should obscure them. The depth-only held replay now temporarily
+enables depth writing for registered ground materials, including when
+their elevation shader is not yet compiled or is unsupported. When supported,
+mode 1 still discards standing-level ground *inside* the circle; other
+fragments write actual ground depth. Unsupported shader variants fail closed,
+so the floor remains a physical occluder even inside the circle instead of
+accidentally allowing x-ray outside it. The material's original `depthWrite`
+value is restored through the existing transaction after that replay.
+Normal world drawing, walls, raised surfaces and water rules do not change.
+
+**Ordinary held parts:** Equipment fully above the standing floor skips the
+local circle filter and normally uses a cheap depth supplement. This path
+previously skipped all terrain, including ground whose visible world material
+had never written depth. The supplement now keeps only registered ground
+leaves missing depth, temporarily enables their depth writes, and restores
+their materials before the held color draw. It still skips unrelated world
+geometry and does not clear the base depth.
+
+The mobile X-ray panel displays **Ground depth writers repaired (last replay)**,
+**Ground shader fallbacks**, and a **Use stencil floor punch (A/B test)**
+checkbox. It additionally reports ordinary held parts and actual floor-punch
+call/fallback counts, to distinguish permission to punch from an actual
+stencil reset. The checkbox switches between the fast stencil floor reset
+and full-depth rebuild when a depth snapshot is supported, helping isolate
+remaining *inside-circle* obstruction. The copied diagnostic report includes
+these counters. This does not alter the authored 1.5-world-unit radius.
 
 The existing per-tile lookup remains only a CPU batching index: characters
 standing at different coordinates inside one tile have separate circle centers.

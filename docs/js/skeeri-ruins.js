@@ -242,13 +242,17 @@
   }
   function actorLocation(actor,session) {
     const unit=Number(deps?.TILE)||64;
-    return {x:actor.x/unit,z:actor.y/unit,y:Number(actor.branchSurfaceY) || session.nest.y};
+    const flightY=actor.branchSurfaceY; // A legitimate Y=0 flight is ground-level; only an absent height falls back to the nest.
+    return {x:actor.x/unit,z:actor.y/unit,y:flightY!=null&&Number.isFinite(Number(flightY))?Number(flightY):session.nest.y};
   }
   function point(session,location) {
     const unit=Number(deps?.TILE)||64;
     return {x:location.x*unit,y:location.z*unit,worldY:location.y};
   }
-  function lineClear(a,b){return window.DevRandomRuin?.flightClear?.(a.x,a.y,a.z,b.x,b.y,b.z)!==false;}
+  function lineClear(a,b){
+    const clear=window.DevRandomRuin?.flightClear; // Missing/unready voxel collision must not authorize a Skeeri wall-crossing flight.
+    return typeof clear==='function'&&clear(a.x,a.y,a.z,b.x,b.y,b.z)===true;
+  }
   function flightTo(session,state,to,phase,speed) {
     const actor=state.actor,start=actorLocation(actor,session);
     if(!lineClear(start,to)){ // Never fly through stone: attacks wait for a clear line; a retreat backtracks along the line the bird came by.

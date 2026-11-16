@@ -613,7 +613,9 @@
     FootprintBlockers?.register(BLOCKER_ID, {
       area:model.mapId,
       enabled:() => activeModel === model,
-      blocksBox:(x, z, half, worldY) => !!model.footprints.blocksBox(x, z, half, worldY) || pushBlocksBox(model, x, z, half, worldY),
+      blocksBox:(x, z, half, worldY) => !!model.footprints.blocksBox(x, z, half, worldY)
+        || pushBlocksBox(model, x, z, half, worldY)
+        || window.DevRandomRuin?.shaftBodyBlocksAt?.(x, z, half, worldY) === true, // One shared collision authority for walking, dodging, lunging and AI: live voxel solids at the actor's story.
     });
     return model;
   }

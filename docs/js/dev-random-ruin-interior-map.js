@@ -1768,17 +1768,51 @@
     return floor<0?null:grid.levelToY(floor);
   }
 
-  // Flying creatures (ruin Skeeri): true when the straight segment between two world points (x/z in tiles, y in world
-  // units) stays out of every solid voxel of the shaft hub and the wing grids. Flight used to ignore walls entirely.
+  const SHAFT_BODY_HEIGHT = 1.25; // Used by the shared area-footprint movement check for rolls, lunges and ordinary walking.
+  const SHAFT_FLIGHT_RADIUS = 0.16; // Used by Skeeri flight sweeps so their wings cannot skim through masonry at voxel edges.
+  function shaftVoxelBlocksAt(x,z,half,minY,maxY){
+    if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return false;
+    if(![x,z,half,minY,maxY].every(Number.isFinite)||minY>maxY)return false;
+    const h=Math.max(.005,half); // Tested horizontal body extent, not a center-point-only wall probe.
+    const owner=window.RuinLayerPlayable?.selectGrid?.(ruin.shaftGrids,x,z,(minY+maxY)*.5)||null;
+    // Two independently mounted grids overlap at the shaft/wing portal. Only the selected
+    // physical owner may block that shared aperture; the other grid's unopened border
+    // would otherwise create an invisible F2 wall despite a genuinely carved corridor.
+    // At coordinates with NO walkable owner, inspect all stone grids, including border
+    // voxels outside their contains() masks: a solid side wall must still stop lunges.
+    for(const {grid:g} of ruin.shaftGrids.values()){
+      if(!g||(owner&&g!==owner))continue;
+      const c0=Math.max(0,g.xToCol(x-h+.00001)),c1=Math.min(g.cols-1,g.xToCol(x+h-.00001));
+      const r0=Math.max(0,g.zToRow(z-h+.00001)),r1=Math.min(g.rows-1,g.zToRow(z+h-.00001));
+      const l0=Math.max(0,g.yToLevel(minY+.00001)),l1=Math.min(g.levels-1,g.yToLevel(maxY-.00001));
+      if(c0>c1||r0>r1||l0>l1)continue; // Do not mistake an overhead wing's implicit bedrock for a wall below it.
+      for(let c=c0;c<=c1;c++)for(let r=r0;r<=r1;r++){
+        // Wall-border voxels lie outside the walkable contains() mask: collision must test the actual stone cells.
+        // Other floor allocations default to AIR, and the Y band keeps stacked stories independent.
+        for(let l=l0;l<=l1;l++)if(g.isSolid(c,r,l))return true;
+      }
+    }
+    return false;
+  }
+  function shaftBodyBlocksAt(x,z,half=.2,worldY=null){
+    const radius=Math.max(.025,Number(half)||0); // A shared occupancy caller supplies this horizontal radius in world tiles.
+    const explicitY=worldY!=null?Number(worldY):NaN; // Only projectiles and other height-aware probes pass a world height.
+    if(Number.isFinite(explicitY))return shaftVoxelBlocksAt(x,z,radius,explicitY-radius,explicitY+radius); // Test the actual shot/point volume, not a phantom full-height player.
+    const playerFeet=ruin?.supportY; // Heightless movement (walk, dodge, lunge) uses the current shaft support story.
+    const airborneFeet=deps.player?._freeJump ? Number(deps.player.physicalFeetY) : NaN; // Heightless jump motion still uses the airborne player's real feet.
+    const feet=Number.isFinite(airborneFeet)?airborneFeet:Number.isFinite(playerFeet)?playerFeet:0;
+    return shaftVoxelBlocksAt(x,z,radius,feet+.055,feet+SHAFT_BODY_HEIGHT);
+  }
+  // Skeeri flight is a volume sweep through the SAME live shaft/wing voxels that stop the player's
+  // forced movement. Thin wall edges and solid 3D props must block the path as well as voxel centers.
   function flightClear(ax,ay,az,bx,by,bz){
-    if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return true;
-    const steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay,bz-az)/.35));
+    if(!ruin||deps.getCurrentArea?.()!==MAP_ID)return true;
+    const steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay,bz-az)/.25));
     for(let i=1;i<=steps;i++){
       const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t,z=az+(bz-az)*t;
-      for(const entry of ruin.shaftGrids.values()){
-        const g=entry.grid,c=g.xToCol(x),r=g.zToRow(z),l=g.yToLevel(y);
-        if(g.inBounds(c,r,l)&&g.isSolid(c,r,l))return false;
-      }
+      if(shaftVoxelBlocksAt(x,z,SHAFT_FLIGHT_RADIUS,y-SHAFT_FLIGHT_RADIUS,y+SHAFT_FLIGHT_RADIUS)
+        ||window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,SHAFT_FLIGHT_RADIUS,y)
+        ||window.RuinJumpShaft?.flightBlockedAt?.(x,z,SHAFT_FLIGHT_RADIUS,y))return false; // Flying Skeeri cannot pass through elevated jump slabs either.
     }
     return true;
   }
@@ -2399,7 +2433,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,shaftBodyBlocksAt,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     checkpointTravel:ruin.checkpointRuntime?.getState?.()||null,
     floorShellRepair:ruin.floorShellRepair?.count||0, // Visible supported cells after intentionally floorless puzzle areas have been cut out.
