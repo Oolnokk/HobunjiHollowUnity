@@ -177,7 +177,7 @@
     if (!needsSmallPetHead(companion, combatDeps)) return false;
     const kind = genotypeKindFor(companion, combatDeps);
     const renderer = window.CreatureGeneticsRender;
-    if (typeof renderer?.composeFrame !== 'function' || typeof combatDeps?.setCreatureFrame !== 'function') return false;
+    if (typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false; // Raw-asset fallback supports eligible species without a genotype compositor.
     const key = smallPetVisualKey(companion, combatDeps, frameName);
     const existing = smallPetHeadFrameCache.get(companion);
     if (existing?.key === key) {
@@ -197,10 +197,19 @@
     const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
     smallPetHeadFrameCache.set(companion, entry);
     Promise.resolve().then(async () => {
-      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind); // Always read the authored base idle sprite, never run or shoulder animation art.
-      return renderer.composeFrame(kind, frameName, companion.genotype, false);
+      const warp = window.BabyAnimalHeadWarp;
+      let mask = await warp?.ensureIdleMask?.(kind); // Prefer the original idle art, not genotype-specific run/eye overlays.
+      if (!mask && !renderer?.SPECIES?.[kind]?.base?.idle) {
+        const idleUrl = shoulderIdleFrame(companion, combatDeps).url; // Rare species without a genotype compositor still own an idle sprite.
+        if (idleUrl) mask = await warp?.ensureIdleMask?.(kind, await loadFrameImage(idleUrl));
+      }
+      if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
+      const composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false);
+      if (composed) return composed; // Final compositor includes eyes, recolors and coat patterns whenever supported.
+      const rawUrl = (frameName === 'run1' ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps)).url;
+      return loadFrameImage(rawUrl); // Unsupported species still get head growth on their uncomposited source PNG.
     }).then(composed => {
-      if (!composed) throw new Error('Genotype frame unavailable');
+      if (!composed) throw new Error('Neither genotype compositor nor raw sprite supplied this pose');
       const enlarged = warpSmallPetSource(composed, kind);
       if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
       const url = enlarged.toDataURL('image/png');
@@ -253,9 +262,13 @@
     }
 
     if (needsSmallPetHead(companion, combatDeps)) {
-      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource); // Reuse the left IDLE silhouette across both pre-split composed layers.
-      const left = warpSmallPetSource(idleSource, kind); // All genotype pattern and eye pixels already exist; warp before seam clipping.
-      const right = rightUsesIdle ? left : warpSmallPetSource(rightSource, kind);
+      const mask = await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource); // Authoritative raw idle if registered, otherwise the left idle image.
+      if (!mask) {
+        smallPetHeadDebug.failed++;
+        smallPetHeadDebug.lastError = String(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastMaskError || 'No readable idle-head opacity mask for shoulder split');
+      }
+      const left = mask ? warpSmallPetSource(idleSource, kind) : idleSource; // All genotype pattern and eye pixels already exist; warp before seam clipping.
+      const right = rightUsesIdle ? left : mask ? warpSmallPetSource(rightSource, kind) : rightSource;
       idleSource = left;
       rightSource = right;
     }
