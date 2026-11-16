@@ -139,7 +139,13 @@
       window.CharacterMetaSave?.capturePending?.(snapshot.meta);
       snapshot.farmLayouts[worldId] = window.FarmEditor.captureFarmLayout();
       window.HobunjiSaveSnapshot.validate(snapshot);
-      const captured = JSON.parse(JSON.stringify(snapshot)); // Detach runtime arrays/objects before asynchronous disk writes begin.
+      // Browser capture already JSON-parses every inactive layout into private objects.
+      // Only the live member data and active layout may still reference mutable
+      // gameplay arrays. Detach those two rather than cloning every saved world
+      // and all inactive farm layouts a second time.
+      snapshot.meta = JSON.parse(JSON.stringify(snapshot.meta));
+      snapshot.farmLayouts[worldId] = JSON.parse(JSON.stringify(snapshot.farmLayouts[worldId]));
+      const captured = snapshot; // Complete, detached snapshot for asynchronous disk writes.
       Object.defineProperty(captured, 'browserBaselineParts', { value: browserBaselineParts, configurable: true }); // Non-serializable transient guard for the asynchronous browser mirror.
       if (!browserBaselineParts) Object.defineProperty(captured, 'browserBaselineFingerprint', { value: browserBaseline, configurable: true }); // Legacy adapter fallback.
       captureCount++;

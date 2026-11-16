@@ -733,6 +733,15 @@
       row.onPress();
       return true;
     },
+    invokeAction(action) {
+      if (!inRuin() || !String(action || '').startsWith('dev_ruin_world_')) return false;
+      const offered = lastRows.find(row => row.action === action); // Cached visible owner of the tapped action-arch button.
+      if (!offered || typeof offered.onPress !== 'function') return false;
+      const current = refreshRows(false).find(row => row.action === action && row.key === offered.key); // Reject vanished or reassigned inputs without firing another nearby control.
+      if (!current || typeof current.onPress !== 'function') return false;
+      current.onPress();
+      return true; // Dispatched a real interaction, even if its own lock/menu reports unavailable.
+    },
     invoke(index = 0) {
       const row = lastRows[index];
       if (!row) return false;

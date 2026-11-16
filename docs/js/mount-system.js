@@ -905,6 +905,7 @@
       x: m.x, y: m.y, endX: plan.endX, endY: plan.endY,
       elapsed: 0, duration: Math.max(0.47, Math.min(1.05, plan.distanceTiles / 4.4)),
       height: plan.overRock ? Math.max(0.86, Math.min(1.07, plan.distanceTiles * 0.27)) : 0.61,
+      overRock: !!plan.overRock, // Only a rock crossing owns horizontal travel; normal jumps own the height arc.
     }; // One flight record owns the entire horizontal crossing and visual hop arc.
     mountBreathClockS = 0;
     if (automatic) ridingDebug.autoRockJumps++; else ridingDebug.manualJumps++;
@@ -926,8 +927,10 @@
     hop.elapsed = Math.min(hop.duration, hop.elapsed + dt);
     const t = hop.elapsed / hop.duration;
     const eased = t * t * (3 - 2 * t);
-    m.x = hop.x + (hop.endX - hop.x) * eased;
-    m.y = hop.y + (hop.endY - hop.y) * eased;
+    if (hop.overRock) {
+      m.x = hop.x + (hop.endX - hop.x) * eased;
+      m.y = hop.y + (hop.endY - hop.y) * eased;
+    } // Ordinary jumps leave horizontal travel to the normal riding movement and collision path.
     m._banditLungeHopCurrent = hop.height * Math.sin(Math.PI * t); // Shared creature-renderer elevation used by Pounce and cliff leaps.
     if (t >= 1) { m._banditLungeHopCurrent = 0; m._mountHop = null; }
     return true;
@@ -973,7 +976,7 @@
     // Backward reins brake only when substantially opposed to the current heading.
     // Releasing controls does not stop the mount: it continues along its heading.
     const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
-    if (braking && !m._mountHop) {
+    if (braking && !m._mountHop?.overRock) {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
       window.GroundObstacleAvoidance?.reset('mounted');
       if (mountCurrentSpeedPxS < 1) {
@@ -992,7 +995,7 @@
       const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
       const steerX = inputStrength > 0.01 ? ix : Math.cos(mountAngle);
       const steerY = inputStrength > 0.01 ? iy : Math.sin(mountAngle);
-      if (!m._mountHop) {
+      if (!m._mountHop?.overRock) {
         const assisted = autoHopped ? null : window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, steerX, steerY, deps.TILE, deps.canPlayerOccupy, dt);
         const desiredAngle = Math.atan2(assisted?.y ?? steerY, assisted?.x ?? steerX);
         const speedRatio = topSpeed > 0 ? deps.clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
@@ -1002,7 +1005,9 @@
       }
     }
 
-    if (!updateMountHop(m, dt) && mountCurrentSpeedPxS > 0.01) {
+    const crossingRocks = !!m._mountHop?.overRock; // Capture before the hop is cleared at landing; don't move twice on that frame.
+    updateMountHop(m, dt);
+    if (!crossingRocks && mountCurrentSpeedPxS > 0.01) {
       const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
       const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
       const minX = deps.PLAYER_RADIUS, maxX = deps.getActiveCols() * deps.TILE - deps.PLAYER_RADIUS;
