@@ -182,6 +182,16 @@ assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskAudit3
   'game parser must invalidate its cached combat bootstrap when shoulder-pet integration changes');
 assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMask132b'),
   'game combat bootstrap must load the audited shoulder-pet bridge, not its prior cached implementation');
+const farmManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/farm-buildings.js', 'utf8');
+const troughs = fs.readFileSync('docs/js/farm-troughs.js', 'utf8');
+const nurseryBridge = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
+assert(farmManifest.includes('farm-troughs.js?v=20261116idleMaskCoverage3'),
+  'the farm bootstrap must invalidate cached nursery and incubator launchers');
+assert(troughs.includes('livestock-nursery.js?v=20261116idleMaskCoverage3')
+  && troughs.includes('livestock-nursery-install-bridge.js?v=20261116idleMaskCoverage3'),
+  'the nursery and its installer must both load new raw-baby fallbacks');
+assert(nurseryBridge.includes('barn-incubator.js?v=20261116idleMaskCoverage3'),
+  'the installer must load the latest incubator idle-art fallback');
 assert(nursery.includes('Baby head size (experiment)'), 'touch-accessible Nursery tuning is visible');
 assert(nursery.includes('headWarp.setScale(slider.value)') && nursery.includes('rerollSwarm()'), 'size changes refresh active babies');
 assert(incubator.includes('BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind)'), 'incubator baby renders are warped AFTER the sleep composer');
