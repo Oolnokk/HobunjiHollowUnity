@@ -99,7 +99,7 @@
     ['js/fur-hood-leatherworking.js?v=20261107furPreview1', () => !!window.FurHoodLeatherworking],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20261114activeBuffMenu1', () => Number(window.InventoryCharacterEffects?.version) >= 1],
-    ['js/inventory-gear-compact-effects.js?v=20261114activeBuffMenu3', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
+    ['js/inventory-gear-compact-effects.js?v=20261116gearFitCache1', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20261114packbooks1', () => !!window.TechniqueScrolls],
     ['js/combat/combat-vocalizations.js?v=20261115coffinVoice3', () => Number(window.CombatVocalizations?.version) >= 5],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
