@@ -11,6 +11,8 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const ruinEntryRuntime = read('docs/js/dev-random-ruin-interior-map.js'); // Checks the floor-zero V50 x-ray registration owner.
+const ruinNativeStories = read('docs/js/ruin-v50-native-floors.js'); // Checks the separate upper-story V50 floor registration owner.
 const surfaceComposerSource = read('docs/js/surface-occlusion-composer.js');
 const expandedStartup = expandClassicScriptGroups(read('docs/index.html')); // Surface compositor and held-overlay now load from the pre-game services manifest.
 const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
@@ -513,6 +515,10 @@ assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'w
 assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json' })), null, 'a V50 non-floor WallBuilder mesh cannot be removed');
 assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json', hobunjiRuinFloorSurface: true })), 'interior-floor',
   'the V50 flat floor explicitly registered by the ruin runtime x-rays the held weapon');
+assert.match(ruinEntryRuntime,/floorMesh\.userData\.hobunjiRuinFloorSurface\s*=\s*true/,
+  'the actual V50 entrance floor is tagged when its collision support is registered');
+assert.match(ruinNativeStories,/nativeFloorMesh\.userData\.hobunjiRuinFloorSurface\s*=\s*true/,
+  'the actual V50 upper-story floors receive the same x-ray registration');
 assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true })), null, 'an unqualified outdoor/raised mesh is never removed based only on generic ground tags');
 const classifyTintCover = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
   heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3, surfaceComposer,
