@@ -7,7 +7,6 @@
   // parsing this keeps the core synchronous, just like the former single file.
   const CORE_SRC = 'js/farm-panel-core.js?v=20261114potionAudit1';
 
-  const MAX_OUT_OF_STORAGE_STABLE_ANIMALS = 8; // Caps the Stable roster kept accessible outside indefinite stowage.
   let stableDeps = null; // Holds the live Stable save and UI dependencies.
   let expandedStableId = null; // Tracks the animal training row expanded in the Stable panel.
   let stableBabyInventoryCollapsed = true; // Keeps the dedicated baby inventory closed by default.
@@ -381,7 +380,7 @@
 
   function normalizeStableStorage(stable) {
     let changed = false; // Reports whether normalization should be persisted by the Stable panel.
-    const activeIds = activeStableIds(); // Keeps existing deployed animals out when migrating oversized legacy rosters.
+    const activeIds = activeStableIds(); // Deployed animals cannot remain stowed in legacy saves.
     stable.forEach(entry => {
       if (typeof entry.stowed !== 'boolean') {
         entry.stowed = false;
@@ -393,19 +392,6 @@
       }
     });
 
-    const accessible = stable.filter(entry => !entry.stowed);
-    if (accessible.length > MAX_OUT_OF_STORAGE_STABLE_ANIMALS) {
-      const keep = new Set(accessible.filter(entry => activeIds.has(entry.id)).slice(0, MAX_OUT_OF_STORAGE_STABLE_ANIMALS).map(entry => entry.id));
-      for (const entry of accessible) {
-        if (keep.size >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS) break;
-        keep.add(entry.id);
-      }
-      for (const entry of accessible) {
-        if (keep.has(entry.id)) continue;
-        entry.stowed = true;
-        changed = true;
-      }
-    }
     return changed;
   }
 
@@ -413,11 +399,6 @@
     const stable = stableDeps?.getStable?.() || []; // Uses the canonical Stable array so storage state follows existing save/load.
     if (!stable.includes(entry)) return;
     if (entry.stowed) {
-      const outCount = stable.filter(candidate => !candidate.stowed).length;
-      if (outCount >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS) {
-        stableDeps?.showToast?.(`Your Stable is full outside storage (${MAX_OUT_OF_STORAGE_STABLE_ANIMALS}). Stow an animal first.`, false);
-        return;
-      }
       entry.stowed = false;
     } else {
       const role = stableRole(entry);
@@ -426,30 +407,6 @@
     }
     stableDeps?.saveStable?.();
     renderStablePanelNative();
-  }
-
-  function installStableStorageAcquisitionGuard() {
-    const farmAnimals = window.FarmAnimals; // Wraps the canonical item-to-Stable action so a full accessible roster sends new animals straight to stowage.
-    if (!farmAnimals || typeof farmAnimals.addToStable !== 'function' || farmAnimals.__stableStorageAcquisitionGuard) return;
-    const originalAddToStable = farmAnimals.addToStable;
-    const guardedAddToStable = function stableStorageGuardedAdd(...args) {
-      const result = originalAddToStable.apply(this, args);
-      if (!result?.ok || !result.entry) return result;
-      const stable = stableDeps?.getStable?.() || [];
-      const otherOutCount = stable.filter(candidate => candidate !== result.entry && !candidate.stowed).length;
-      result.entry.stowed = otherOutCount >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS;
-      if (result.entry.stowed) {
-        const role = stableRole(result.entry);
-        if (activeStableIdForRole(role) === result.entry.id) setActiveStableIdForRole(role, null);
-      }
-      stableDeps?.saveStable?.();
-      return result.entry.stowed
-        ? { ...result, message: `${result.message} All ${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} accessible Stable places were occupied, so this animal was stowed.` }
-        : result;
-    };
-    guardedAddToStable.__stableStorageAcquisitionGuard = true;
-    farmAnimals.addToStable = guardedAddToStable;
-    farmAnimals.__stableStorageAcquisitionGuard = true;
   }
 
   function buildStablePerkTree(entry) {
@@ -506,7 +463,7 @@
     if (!list || !stableDeps) return;
     growth()?.normalizeStableLifeStages?.();
     const stable = stableDeps.getStable?.() || [];
-    if (normalizeStableStorage(stable)) stableDeps.saveStable?.(); // Migrates old saves and enforces the eight-animal accessible-roster limit.
+    if (normalizeStableStorage(stable)) stableDeps.saveStable?.(); // Migrates the optional stowed flag without imposing any accessible-roster limit.
     const outCount = stable.filter(entry => !entry.stowed).length;
     if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId && stableRole(entry) === selectedStableRole)) expandedStableId = null;
     list.innerHTML = '';
@@ -520,8 +477,8 @@
 
     const tonicLabel = growth()?.CONFIG?.item?.label || 'Growth Tonic'; // Used in baby-section guidance and growth controls.
     const tonicIcon = growth()?.CONFIG?.item?.icon || '🧪'; // Used to keep the native grow button consistent with AnimalGrowth.
-    const roleCount = stable.filter(entry => stableRole(entry) === selectedStableRole).length; // Summarizes only the selected role while retaining the global accessible-roster limit.
-    const roleSummary = makeText('div', `${roleCount} in this category · Outside storage: ${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} · Up to ${MAX_FAVORITES_PER_ROLE} favorites per category.`);
+    const roleCount = stable.filter(entry => stableRole(entry) === selectedStableRole).length; // Summarizes the selected role including stored animals.
+    const roleSummary = makeText('div', `${roleCount} in this category · Available: ${outCount} · Optional storage: ${stable.filter(entry => entry.stowed && stableRole(entry) === selectedStableRole).length} · Up to ${MAX_FAVORITES_PER_ROLE} favorites per category.`);
     roleSummary.className = 'stable-role-summary';
     list.appendChild(roleSummary);
     const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`, {
@@ -605,7 +562,7 @@
       const stowButton = document.createElement('button'); // Moves this animal between the accessible roster and indefinite Stable storage.
       stowButton.className = 'settings-small-btn stable-stow-btn';
       stowButton.textContent = entry.stowed ? 'Take Out' : 'Stow';
-      stowButton.title = entry.stowed ? `Take this animal out of storage (${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} currently out).` : 'Keep this animal in Stable storage indefinitely.';
+      stowButton.title = entry.stowed ? 'Return this animal to the available roster (no limit).' : 'Keep this animal in optional Stable storage indefinitely.';
       stowButton.addEventListener('click', event => { event.stopPropagation(); setStableStowed(entry); });
       row.appendChild(stowButton);
       if (baby) {
@@ -665,7 +622,6 @@
     panel.init = function nativeStablePanelInit(injectedDeps) {
       stableDeps = injectedDeps;
       const result = originalInit?.(injectedDeps);
-      installStableStorageAcquisitionGuard();
       progression()?.install?.();
       petRapport()?.install?.();
       refinements()?.install?.();
@@ -677,7 +633,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'The role selector and animal entries share one Stable pane scrollbar. Changing roles returns to the top.',
+        mostRecentChange: 'Accessible animals are unlimited; stowing is now solely optional organization.',
         expandedStableId,
         selectedRole: selectedStableRole,
         favoritesPerRole: Object.fromEntries(STABLE_PAGE_ORDER.map(role => [role, stable.filter(entry => stableRole(entry) === role && entry.stableFavorite).length])),
@@ -687,7 +643,7 @@
         adultCount: stable.filter(entry => !stableIsBaby(entry)).length,
         stowedCount: stable.filter(entry => entry.stowed).length,
         outsideStorageCount: stable.filter(entry => !entry.stowed).length,
-        outsideStorageLimit: MAX_OUT_OF_STORAGE_STABLE_ANIMALS,
+        outsideStorageLimit: null, // Null denotes no accessible-animal cap for mobile diagnostics.
         animals: stable.map(stableDebugEntry),
       };
     };
