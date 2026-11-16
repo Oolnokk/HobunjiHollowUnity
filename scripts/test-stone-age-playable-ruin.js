@@ -105,6 +105,8 @@ assert(runtime.includes("pieceSet:'stoneAge',floorProps:'pillarsOnly'"),'Stone A
 assert(!runtime.includes("singleRoom:true,roomPreset:'veryLarge'"),'Stone Age mode must not force the author preview single-room layout');
 assert(/buildRoom\(\{[^}]*floorHeights[,}]/.test(runtime),'Stone Age runtime must pass registered multi-level floor heights to scenery');
 assert(runtime.includes('await prepareStoneAgeScenery(ruin)'),'Stone Age environment must be built before entering gameplay');
+assert.match(runtime,/floorMesh\.userData\.hobunjiRuinFloorSurface\s*=\s*true/,
+  'the V50 runtime marks the authoritative floor rather than every WallBuilder recipe-2 object');
 assert(runtime.includes('await ensureStoneAgeSceneryDependencies()'),'Rock authoring dependencies must load in playable mode');
 assert(runtime.includes('js/natural-surface-materials.js?v=') && runtime.includes('js/surface-stretch-uv-furniture.js?v='),'The playable page must lazy-load the preview stone material and UV mapper');
 assert(!read('docs/index.html').includes('src="js/natural-surface-materials.js'),'Harlyao worlds should not eagerly install additional natural-surface hooks');
