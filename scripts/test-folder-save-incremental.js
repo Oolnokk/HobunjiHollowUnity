@@ -65,6 +65,16 @@ function directory(name, counters) {
 async function main() {
   const counters = { clock: 0, writes: [], reads: [], fail: false }; // Records real canonical/manifest writes for assertions.
   const folder = directory('primary', counters);
+  let deviceId = 'incremental-test-device'; // Simulated current installation; switched to test a second device's save.
+  const jsonVisits = { character: 0, world: 0 }; // Count production-core entity serialization passes during no-op saves.
+  const trackedJSON = {
+    parse: JSON.parse,
+    stringify(value, ...options) {
+      if (value?.id === 'char') jsonVisits.character++;
+      if (value?.id === 'world') jsonVisits.world++;
+      return JSON.stringify(value, ...options);
+    },
+  }; // Instrument only the isolated production core, never the test's own setup and assertions.
   const native = new Map(); // Browser cache that survives each simulated save.
   const localStorage = {
     getItem: key => native.get(key) ?? null,
@@ -100,6 +110,7 @@ async function main() {
     addEventListener() {},
     __hobunjiPlayerProfile: { characterId: 'char', worldId: 'world' },
     showDirectoryPicker: async () => folder,
+    FolderSaveDeviceProvenance: { getDeviceId: () => deviceId }, // The core stamps only the changed portable entities.
     HobunjiSaveSnapshot: {
       browserCacheParts: () => [localStorage.getItem('hobunjiSaveMeta'), 'world', localStorage.getItem('hobunji_farm_layout_v3:world')],
       apply() {}, // The fake browser already contains the generated snapshot's own source data.
@@ -108,7 +119,7 @@ async function main() {
   const source = fs.readFileSync('docs/js/local-save-folder-core.js', 'utf8');
   new Function(source); // Syntax must be valid even before a save folder is connected.
   const context = vm.createContext({
-    window, localStorage, indexedDB, console,
+    window, localStorage, indexedDB, console, JSON: trackedJSON,
     setInterval: () => 1, clearInterval() {},
     setTimeout: () => 1, clearTimeout() {},
   });
@@ -129,11 +140,34 @@ async function main() {
   const initial = await window.LocalSaveFolder.syncNow({ automatic: false });
   assert.equal(initial.lastError, null, 'first folder commit succeeds');
   assert.equal(initial.saveFileWork.written, 3, 'first save writes character, world and layout files');
+  const firstStamp = JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance;
+  assert.equal(firstStamp.lastWriterDeviceId, 'incremental-test-device', 'portable manifest records last-writer identity');
+  const characterBytes = await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text();
+  assert.equal(JSON.parse(characterBytes).folderSaveProvenance.lastWriterDeviceId, 'incremental-test-device');
+  const repeatExplicit = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(repeatExplicit.lastError, null);
+  assert.equal(repeatExplicit.saveFileWork.written, 0, 'explicit save no longer rewrites unchanged character/world files to timestamp them');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'an explicit save preserves exact character bytes when no character data changed');
+  assert.equal(JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance.lastWriterDeviceId,
+    'incremental-test-device', 'manifest alone advances the last-writer provenance');
+  deviceId = 'second-device';
+  const newDeviceSave = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(newDeviceSave.lastError, null);
+  assert.equal(newDeviceSave.saveFileWork.written, 0, 'changing only the writing device never rewrites character/world entities');
+  assert.equal(JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance.lastWriterDeviceId,
+    'second-device', 'manifest records the new writer even though entity bytes were unchanged');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'the first device remains recorded on its unchanged character entity');
+  deviceId = 'incremental-test-device';
 
   const writesBeforeIdle = counters.writes.length;
+  jsonVisits.character = 0; jsonVisits.world = 0;
   const idle = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(idle.lastAction, 'autosync-skipped-unchanged');
   assert.equal(counters.writes.length, writesBeforeIdle, 'identical autosave does not rewrite files or manifest');
+  assert.deepEqual(jsonVisits, { character: 1, world: 1 },
+    'unchanged autosave serializes each entity once, not once for provenance and again for the folder digest');
 
   folder.files.delete('manifest.json');
   const repairedManifest = await window.LocalSaveFolder.syncNow({ automatic: true });
@@ -156,11 +190,15 @@ async function main() {
   assert.equal(worldUpdate.lastError, null);
   assert.equal(worldUpdate.saveFileWork.written, 1, 'one edited world writes only its own canonical file');
   assert.equal(worldUpdate.saveFileWork.unchanged, 2, 'unchanged character and layout keep their original files');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'editing a world does not churn the unchanged character provenance');
 
   layout.tiles.push({ c: 4, r: 6 });
   saveLayout();
   const farmUpdate = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(farmUpdate.lastError, null);
+  const farmOnlyWriter = JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance;
+  assert.equal(farmOnlyWriter.lastWriterDeviceId, 'incremental-test-device', 'farm-only saves still update portable manifest writer');
   assert.equal(farmUpdate.saveFileWork.written, 1, 'editing a farm writes its layout file without rewriting world and character');
 
   const canonicalFarm = folder.folders.get('farm-layouts').files.get('world.json');
@@ -338,7 +376,41 @@ async function main() {
   assert.match(rejected.lastError, /changed outside this session/i);
   assert.equal(await (await largeCharacterFile.getFile()).text(), externallyEditedCharacter, 'outside edits are preserved');
 
-  console.log('OK  incremental saves, lock-progress fast commits, quota rollback protection, no-op autosaves, protected farm layouts, external edits, recovery transitions, retries and large-farm stress');
+  // A pre-manifest-provenance folder must use the writers recorded in its
+  // canonical disk entities, not a different device's stale browser metadata.
+  const legacyFolder = directory('older-folder', counters); // Independent simulated folder with only legacy per-entity provenance.
+  async function seedLegacy(dir, filename, value) {
+    const handle = await dir.getFileHandle(filename, { create: true });
+    const stream = await handle.createWritable();
+    await stream.write(JSON.stringify(value));
+    await stream.close();
+  }
+  const legacyCharacters = await legacyFolder.getDirectoryHandle('characters', { create: true });
+  const legacyWorlds = await legacyFolder.getDirectoryHandle('worlds', { create: true });
+  await seedLegacy(legacyCharacters, 'farmer-legacy-char.json', {
+    id: 'legacy-char', nickname: 'Farmer',
+    folderSaveProvenance: { version: 1, lastWriterDeviceId: 'legacy-world-device', writtenAt: 1200 },
+  });
+  await seedLegacy(legacyWorlds, 'legacy-world.json', {
+    id: 'legacy-world', label: 'Legacy',
+    folderSaveProvenance: { version: 1, lastWriterDeviceId: 'legacy-older-device', writtenAt: 1000 },
+  });
+  const legacyManifest = { version: 1, portableSaveVersion: 1, savedAt: 1300, characterCount: 1, worldCount: 1 };
+  await seedLegacy(legacyFolder, 'manifest.json', legacyManifest);
+  window.showDirectoryPicker = async () => legacyFolder;
+  const olderStatus = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(olderStatus.state, 'ready', 'older save folder can be selected safely');
+  assert.equal(olderStatus.lastWriterProvenance.lastWriterDeviceId, 'legacy-world-device',
+    'old-folder Resume provenance uses the newest on-disk entity writer, not the stale browser mirror');
+
+  await seedLegacy(legacyFolder, 'manifest.json', {
+    ...legacyManifest, writerProvenance: { version: 1, lastWriterDeviceId: 'manifest-writer', writtenAt: 1400 },
+  });
+  const newFormatStatus = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(newFormatStatus.lastWriterProvenance.lastWriterDeviceId, 'manifest-writer',
+    'the manifest writer wins over legacy entity stamps when both exist');
+
+  console.log('OK  incremental saves, cross-device provenance, legacy disk fallback, lock-progress fast commits, quota rollback, single-pass no-op serialization, guarded layouts, external edits, recovery and large-farm stress');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
