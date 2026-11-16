@@ -28,7 +28,8 @@ assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
 assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');
 assert.strictEqual(X.get('weapon.followHandLayer'), 'on', 'weapons inherit their gripping hand priority by default');
-assert.strictEqual(X.get('shoulderPet.presentation'), 'authored', 'pet player-body compositing uses authored pose by default');
+assert.strictEqual(X.get('shoulderPet.presentation'), undefined, 'shoulder pet occlusion is fixed, not a configurable x-ray mode');
+assert.strictEqual(X.set('shoulderPet.presentation', 'world-depth'), false, 'old pet presets cannot override owner portrait stages');
 let heard = null;
 X.onChange((k, v, prev) => { heard = [k, v, prev]; });
 assert.strictEqual(X.set('hand.frontPlaneMask', 'bogus'), false, 'rejects values outside the rule options');
@@ -124,9 +125,9 @@ assert.ok(view.actions.some(action => action.group === 'World depth and airborne
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
 assert.ok(view.rows.some(r => r[0] === 'Shoulder pet compositor'), 'the same panel reports the shoulder-pet compositor');
-assert.ok(X.DIAGNOSTIC_PRESETS.some(p => p.id === 'shoulder-player-over'), 'pet/player priority is a reproducible preset');
+assert.ok(!X.DIAGNOSTIC_PRESETS.some(p => /^shoulder-/.test(p.id)), 'retired pet/global-depth experiments cannot override face-stage pairing');
 assert.ok(!view.actions.some(a => a.id === 'set' && a.args?.key === 'shoulderPet.presentation'),
-  'shoulder-pet presentation is selected through presets, not a competing independent control');
+  'shoulder-pet occlusion is a fixed owner portrait rule, not an editable setting');
 assert.ok(X.moveLayerInStage('item.weapons', 'terrain') === false, 'cross-pass reordering is rejected in the stage API');
 assert.ok(X.moveLayerInStage('item.weapons', 'actor.feet') === true, 'linked weapons can move within the held stage');
 X.reset();
@@ -160,7 +161,7 @@ assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-st
   'full reset restores stage selection');
 
 // Diagnostic hypothesis presets: each experiment is a fresh, reversible config, not a stack of overrides.
-assert.equal(X.DIAGNOSTIC_PRESETS.length, 13, '13 A/B diagnostic setups include three shoulder-pet presentations');
+assert.equal(X.DIAGNOSTIC_PRESETS.length, 10, 'ten diagnostics remain after retiring three competing shoulder-pet modes');
 const presetPicker = panel.render().actions.find(action => action.id === 'focus-preset');
 assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all experiments appear in one mobile dropdown');
 assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
@@ -208,7 +209,8 @@ assert.ok(panel.render().actions.some(action => action.id === 'restore-original'
 const savedOriginal = JSON.parse(store['hobunji.xrayHierarchy.diagnostics.v1']);
 assert.deepStrictEqual(savedOriginal.original.rules, pretestRules, 'presets retain the original rules, not the previous preset');
 assert.deepStrictEqual(savedOriginal.original.drawOrder, pretestOrder, 'presets retain the original layer positions');
-assert.equal(savedOriginal.active, 'shoulder-world-depth', 'last applied experiment survives browser reload');
+assert.equal(savedOriginal.active, X.DIAGNOSTIC_PRESETS[X.DIAGNOSTIC_PRESETS.length - 1].id,
+  'last remaining experiment survives browser reload');
 X.set('hand.frontPlaneMask', 'behind');
 assert.ok(panel.render().rows.some(row => row[0] === 'Active experiment' && row[1].includes('(modified manually)')),
   'editing one rule after applying a preset is reported, not silently treated as the preset');
@@ -237,10 +239,9 @@ assert.deepStrictEqual(Y.describeLayers().map(layer => layer.id), pretestOrder,
   'restore brings back the exact pre-experiment draw order');
 assert.equal(store['hobunji.xrayHierarchy.diagnostics.v1'], undefined, 'restoring clears the backup record');
 assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup twice');
-// A user's saved diagnostic backup from before the new debug toggle/shoulder
-// preset existed must remain recoverable rather than silently being discarded.
+// Saved older diagnostic backups, including retired pet settings, remain recoverable.
 const oldRules = { ...pretestRules };
-delete oldRules['shoulderPet.presentation'];
+oldRules['shoulderPet.presentation'] = 'world-depth'; // Legacy, now ignored, must not invalidate saved backups.
 delete oldRules['ground.showZone'];
 store['hobunji.xrayHierarchy.diagnostics.v1'] = JSON.stringify({
   version: 1, active: 'baseline',
@@ -253,7 +254,7 @@ new Function(cfgSource)();
 assert.strictEqual(oldPanels.length, 1, 'legacy backup still shows the X-ray companion');
 assert.ok(oldPanels[0].render().actions.some(action => action.id === 'restore-original'), 'legacy backup keeps its restore action');
 assert.strictEqual(oldWin.XrayHierarchy.restoreBeforePresets(), true, 'legacy backup restores despite missing new debug-only rules');
-assert.strictEqual(oldWin.XrayHierarchy.get('shoulderPet.presentation'), 'authored');
+assert.strictEqual(oldWin.XrayHierarchy.get('shoulderPet.presentation'), undefined);
 assert.strictEqual(oldWin.XrayHierarchy.get('ground.showZone'), 'off');
 global.window = win;
 panel.onAction('reset', {});
