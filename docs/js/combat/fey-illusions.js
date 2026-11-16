@@ -41,6 +41,14 @@
   let lastEffect = null; // Mobile diagnostics keep the most recent applied illusion.
   let registered = false; // Avoids installing multiple providers if this script is reinitialized in a tool preview.
 
+  function ensureBuffProvider() {
+    if (registered) return true;
+    const register = window.EffectBuffBar?.registerProvider; // Combat's Fey script loads before EffectBuffBar in docs/index.html.
+    if (typeof register !== 'function') return false; // Defer until the existing HUD owner becomes available; never install a second bar.
+    registered = register('fey-illusions', playerSymptoms) === true;
+    return registered;
+  }
+
   function random() { return window.GameRandom?.random?.() ?? Math.random(); }
 
   function potency(weaponKey) {
@@ -54,6 +62,7 @@
     const effect = EFFECTS[id];
     const rs = window.ResourceSystem;
     if (!effect || !target || !(Number(target.health) > 0) || !rs || !potency(options.weaponKey)) return false;
+    ensureBuffProvider(); // Lazy registration fixes parser order: combat-main precedes effect-buff-bar.js.
     let didApply = false; // Real effects require a living actual target; none of these calls touch Health or Footing totals.
     if (effect.affliction && typeof rs.addAffliction === 'function') {
       const before = rs.getAffliction?.(target, effect.affliction) || 0;
@@ -124,11 +133,10 @@
     tick();
   }
 
-  if (window.EffectBuffBar?.registerProvider) {
-    registered = window.EffectBuffBar.registerProvider('fey-illusions', playerSymptoms);
-  }
+  ensureBuffProvider(); // Works in standalone previews whose HUD owner was loaded earlier, too.
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms,
+    ensureBuffProvider,
     debugSnapshot: () => ({ registered, lastEffect, visible: !!visualElement && visualElement.style.opacity !== '0' }),
   });
 })();
