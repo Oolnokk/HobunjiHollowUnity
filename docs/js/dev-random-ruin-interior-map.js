@@ -846,6 +846,7 @@
 
     let stoneMeshes=0,convertedMaterials=0,totalMeshes=0;
     const materialAliases=new WeakMap(); // Maps each V50 mesh's original decal materials to its final render materials, including stone and mixed-material walls.
+    const wholeStoneConverted=new WeakSet(); // Tracks only conversions performed in THIS pass; V50 preview roots retain userData across rerolls.
     const rememberMaterial=(mesh,source,target)=>{
       if(!source||!target||source===target)return;
       let aliases=materialAliases.get(mesh);
@@ -858,7 +859,7 @@
         const materials=Array.isArray(object.material)?object.material:[object.material];
         if(!materials.length||!materials.every(material=>isLegacyV50StoneMaterial(material,sourceStoneMaterial)))return;
         const stone=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
-        object.material=stone;
+        object.material=stone;wholeStoneConverted.add(object);
         for(const original of materials)rememberMaterial(object,original,stone); // The decoration pass still names the original V50 surface material.
         window.HobunjiSurfaceStretchUV?.mapMesh?.(object,{label:'ruin-stone',maxPatchWorldSize:6});
         object.userData=Object.assign({},object.userData,{devRandomRuinDenMaterial:true,devRandomRuinStoneMaterial:true,devRandomRuinUnlitMaterial:true});
@@ -872,7 +873,7 @@
       totalMeshes++;
       const list=Array.isArray(object.material)?object.material:[object.material];
       const next=list.map((material,index)=>{
-        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function' && !object.userData?.devRandomRuinStoneMaterial) {
+        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function' && !wholeStoneConverted.has(object)) {
           object.userData.devRandomRuinStoneMaterial=true;
           return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
         }
