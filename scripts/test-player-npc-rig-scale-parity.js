@@ -111,7 +111,8 @@ assert(/syncPreviewBodyScale\(\);\s*resetProceduralMovement/.test(editor), 'pres
   assert.deepEqual([group.scale.x, group.scale.y, group.scale.z], [1, 0.8, 1.2], 'animals (no depth axis) are unchanged');
 }
 assert.match(bandit, /visualScaleX: avatarRef\.rigScale\?\.x \?\? 1, visualScaleY: avatarRef\.rigScale\?\.y \?\? 1, visualScaleZ: avatarRef\.rigScale\?\.x \?\? 1/, 'hostile entities carry the species body scale as their visual scale');
-assert.match(game, /applyCreatureBillboardScale\(grp, \{ x: c\.visualScaleX, y: c\.visualScaleY, z: c\.visualScaleZ \}/, 'the per-frame update passes the depth axis');
+assert.match(game, /const authoredPetPerchScale = c\.stableRole === 'shoulderPet'/, 'only the player shoulder pet gets a statically authored perch multiplier');
+assert.match(game, /x: c\.visualScaleX \* petScaleX, y: c\.visualScaleY \* petScaleY,[\s\S]{0,100}z: \(c\.visualScaleZ \|\| 1\) \* petScaleZ/, 'the per-frame update preserves animal and hostile body axes while applying authored pet scale');
 
 // The hostile weapon's height-scaled size/grip offset depends on asynchronously measured species heights; it must
 // not cache the unmeasured fallback (0.55, no offset), which the player and editor never show.
