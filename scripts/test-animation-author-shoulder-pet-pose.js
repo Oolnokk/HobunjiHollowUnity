@@ -46,14 +46,23 @@ function fakeAvatar() {
     visible: true, parent: null, children: [],
     add(child) { this.children.push(child); child.parent = this; },
     remove(child) { this.children = this.children.filter(x => x !== child); child.parent = null; },
-  }; // Preserves the actual source root hierarchy while testing art swapping.
+    traverse(callback) { for (const overlay of this.overlays || []) callback(overlay); },
+  }; // Preserves the source root hierarchy and traverses the gameplay split-overlay meshes.
   return {
     group,
     frontPlane: { visible: true, rotation: { y: Math.PI / 2 } },
     backPlane: { visible: true, rotation: { y: -Math.PI / 2 } },
     dispose() { this.didDispose = true; },
     setShoulderRestEnabled(value) { this.deformed = value; return value; },
-    setShoulderSplitOverlayCanvas(canvas, visible) { this.overlay = canvas; this.overlayVisible = visible; return true; },
+    setShoulderSplitOverlayCanvas(canvas, visible) {
+      this.overlay = canvas;
+      this.overlayVisible = visible;
+      this.group.overlays = [
+        { userData: { hobunjiShoulderSplitOverlay: true }, rotation: { y: Math.PI / 2 } },
+        { userData: { hobunjiShoulderSplitOverlay: true }, rotation: { y: -Math.PI / 2 } },
+      ]; // The actual gameplay decorator makes a dedicated skinned foreground for each face.
+      return true;
+    },
   };
 }
 
@@ -126,18 +135,22 @@ async function runTest() {
   controller.dispose();
   assert.equal(builds[0].avatar.didDispose, true, 'extra skinned pose resources are disposed');
   assert.equal(source.group.children.length, 0, 'disposed posed mesh cannot remain attached');
+  assert.equal(viewport.length, 0, 'old skinned plane camera-yaw entries are removed with the pose');
   assert.equal(source.frontPlane.visible, true, 'normal art becomes visible after the editor clears actors');
 
-  const splitSource = fakeAvatar(), before = calls.length;
+  const splitSource = fakeAvatar(), before = calls.length, splitViewport = []; // Verify split foreground planes participate in viewport deadzone rotation.
   const split = moduleApi.create({ kind: 'grehlr', genotype: {}, THREE: {},
-    sourceAvatar: splitSource, modelWidth: 2, modelHeight: 1, actorName: 'Grehlr' });
+    sourceAvatar: splitSource, modelWidth: 2, modelHeight: 1, actorName: 'Grehlr',
+    viewportCreaturePlanes: splitViewport });
   await split.setPose('perched');
   assert.deepEqual(calls.slice(before), [['grehlr', 'idle'], ['grehlr', 'run1']],
     'split artwork uses the same idle left and run1 right sources as gameplay');
   assert.deepEqual(separatorCalls, [true, false], 'foreground and background use authored split-side polygon');
   assert.equal(builds.at(-1).avatar.overlayVisible, true, 'the split foreground uses the actual overlay mesh');
   assert.equal(builds.at(-1).avatar.overlay.drawn[0], 'grehlr/idle', 'left foreground retains idle pixels');
+  assert.equal(splitViewport.length, 4, 'both skinned foreground overlays rotate with Grehlr background cards');
   split.dispose();
+  assert.equal(splitViewport.length, 0, 'split foreground camera-yaw entries release on disposal');
 
   let isCurrent = true;
   const slowSource = fakeAvatar();
