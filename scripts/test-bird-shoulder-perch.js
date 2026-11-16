@@ -47,6 +47,8 @@ for (const kind of ['pingdort', 'skeeri']) {
   assert.equal(small.x, 0);
   assert.equal(small.z, 0);
   assert.equal(small.y, -nativeHeight / 2, kind + ' feet align at the bottom of its unscaled native plane');
+  assert.equal(small.localPosition.y, -nativeHeight / 2, kind + ' keeps a native foot position for rendered THREE scale');
+  assert.equal(large.localPosition.y, -nativeHeight / 2, kind + ' raw socket does not double-apply genotype size');
   assert.equal(large.y, -nativeHeight, kind + ' feet respect the genotype size class');
   assert.strictEqual(get(kind, 'shoulderGrip', { sizeClass: 'small' }), small,
     kind + ' grip is cached per species/size, not recalculated each frame');
@@ -58,6 +60,8 @@ const get = resolver();
 const wolf = get('gar-wolf', 'shoulderGrip', { sizeClass: 'small' });
 assert.deepEqual([wolf.x, wolf.y, wolf.z], [0.03, -0.22, 0.07], 'authored grip stays authoritative');
 assert.equal(wolf.rotationDeg.y, -61, 'authored grip rotation stays authoritative');
+assert.deepEqual([wolf.localPosition.x, wolf.localPosition.y, wolf.localPosition.z], [0.03, -0.22, 0.07],
+  'authored native grip is retained separately from legacy genotype-scaled coordinate fields');
 assert.equal(wolf.source, undefined, 'authored profiles retain their original structure');
 assert.equal(get('unknown', 'shoulderGrip', { sizeClass: 'small' }), null,
   'ground and unknown species do not gain fake bird grips');
