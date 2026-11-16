@@ -1472,7 +1472,13 @@ async function fetchRepoJson(path) {
 function prepareRepositoryScript(code, relativePath, settings) {
   // The animation author exposes the repository's lexical emote table for the single-avatar catalog.
   if (relativePath === 'js/portrait-breathing.js') {
-    return `${code}\n;window.HobunjiPortraitEmoteAnimations = JSON.parse(JSON.stringify(EMOTE_ANIMATIONS));`;
+    const configBase = rawUrl(settings.docsRoot + 'config/'); // This page loads the runtime from a blob, so its relative ./docs/config/ would resolve under tools/animation-author/.
+    const candidates = "const candidates = ['./docs/config/', './config/'];";
+    const configured = 'if (cfgBase) candidates.unshift(cfgBase);';
+    if (!code.includes(candidates) || !code.includes(configured)) throw new Error('Portrait breathing config-base bootstrap changed; cannot guarantee correct repository URL.');
+    const fixed = code.replace(candidates, 'const candidates = [' + JSON.stringify(configBase) + '];')
+      .replace(configured, '/* Editor preview uses the exact selected repository config, not an unrelated local path. */');
+    return `${fixed}\n;window.HobunjiPortraitEmoteAnimations = JSON.parse(JSON.stringify(EMOTE_ANIMATIONS));`;
   }
   if (relativePath === 'js/held-action-animations.js') {
     const docsBase = new URL('../../', location.href).href; // Resolves hand scripts and GLBs beside the author page that implements their preview contract.
@@ -1483,7 +1489,7 @@ function prepareRepositoryScript(code, relativePath, settings) {
     return `window.__HobunjiProceduralFeetDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiProceduralFeetDocsBase;`;
   }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
-  const docsBase = cdnUrl(settings.docsRoot);
+  const docsBase = rawUrl(settings.docsRoot); // Raw GitHub resolves fresh commit-pinned assets before jsDelivr has indexed that revision.
   let prepared = code
     .replaceAll('assets/creaturesprites/', `${docsBase}assets/creaturesprites/`)
     .replaceAll("fetch('config/creature-base-masks.json')", `fetch('${docsBase}config/creature-base-masks.json')`)
@@ -1547,13 +1553,13 @@ async function loadRepositoryRuntime(settings) {
   if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
   const newRigSpeciesCount = window.HobunjiRigPreviewSpecies?.install(window.CreatureGeneticsRender.SPECIES,
-    path => cdnUrl(settings.docsRoot + path)) || 0; // Adds tool-only species with images pinned to the selected repository revision.
+    path => rawUrl(settings.docsRoot + path)) || 0; // Adds tool-only species from the exact commit without CDN indexing delays.
   log('Rig preview species registry added ' + newRigSpeciesCount + ' newer animals and variants.');
   $('creatureModeBtn').disabled = false;
   if (!window.renderProfile || !window.loadPortraitCosmetics) throw new Error('portrait-utils.js did not expose the expected renderer functions.');
 
-  const assetBase = cdnUrl(settings.docsRoot + 'assets/');
-  const configBase = cdnUrl(settings.docsRoot + 'config/');
+  const assetBase = rawUrl(settings.docsRoot + 'assets/'); // The files exist at this SHA, but jsDelivr can 404 while indexing new commits.
+  const configBase = rawUrl(settings.docsRoot + 'config/'); // Keep asset and cosmetics JSON on the same immutable revision.
   state.cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase, configBase });
   if (!state.cosmetics) throw new Error('Portrait cosmetics configuration did not load.');
   try {
@@ -2278,7 +2284,7 @@ function setKurrayaUiEnabled(enabled) {
 
 async function loadTextureFromRepository(path) {
   const THREE = state.three.THREE;
-  const candidates = [cdnUrl(path), rawUrl(path)];
+  const candidates = [rawUrl(path), cdnUrl(path)]; // Try the authoritative commit first; the CDN is only an emergency fallback.
   let lastError = null;
   for (const url of candidates) {
     try {
