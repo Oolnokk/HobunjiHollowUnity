@@ -142,6 +142,18 @@ assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPort
 testFacing(false);
 testFacing(true);
 
+// Exercise the common skinned owner, where one mesh has two material-group
+// render items. The compositor must classify by each group's real material.
+const sharedSkinnedOwner = makeMesh('player_avatar_skinned_plane');
+const skinnedFrontMaterial = {name:'npc_avatar_skinned_front_material',depthWrite:true};
+const skinnedBackMaterial = {name:'npc_avatar_skinned_back_material',depthWrite:true};
+api.setShoulderPetLayering(pet,sharedSkinnedOwner,sharedSkinnedOwner,skinnedFrontMaterial,skinnedBackMaterial);
+assert.equal(api.shoulderPetDrawFace({object:sharedSkinnedOwner,material:skinnedFrontMaterial}), 'owner-front',
+  'one skinned owner mesh still exposes its front material stage');
+assert.equal(api.shoulderPetDrawFace({object:sharedSkinnedOwner,material:skinnedBackMaterial}), 'owner-back',
+  'one skinned owner mesh still exposes its back material stage');
+use(pet, true);
+
 // Execute the production transparent-sort transaction for BOTH normal and
 // manual categories; the previous compositor checked renderOrder only, which
 // let manual ranking or an owner hat overlay silently reverse the pet x-ray.
@@ -149,7 +161,7 @@ const sorterStart = render.indexOf('  function withVisualSort(');
 const sorterEnd = render.indexOf('  function nearbyPortraitOrder(', sorterStart);
 assert(sorterStart > 0 && sorterEnd > sorterStart);
 const stateRef = { get pet() { return api.state.active ? pet : null; } }; // Reuses active pet state from the actual source harness.
-const overrideRank = item => item.object === ownerHatFront || item.object === ownerHatBack ? 8 : 1; // Manual sort deliberately prefers owner art.
+const overrideRank = category => category === 'garment.headwear' ? 8 : 1; // Manual sorter deliberately prefers owner hat over pet front art.
 windowStub.XrayHierarchy = { layerRank: overrideRank };
 let useManual = false;
 const productionSort = new Function('window', 'xrayRule', 'visualLayerFor', 'protectedDrawPhase',
