@@ -98,6 +98,7 @@
   window.Combat.buildQuickAttack = buildTechnique;
 
   let WINDUP_S = 0.1125;
+  const MOUNTED_QUICK_WINDUP_SCALE = 3.5; // Allows a real mount to build speed before impact without slowing ordinary on-foot jabs.
   let STRIKE_S = 0.105;
   let COST_COMMIT = 60; // Up-front quick-attack commitment; configured by attack-values.json and spent in onTap().
   let CONDITIONAL_REFUND_FRACTION = 0.5; // Fraction of the actual post-modifier spend restored after at least one cooldown-ready conditional proc.
@@ -250,7 +251,7 @@
       const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label, { actionKind: 'combatQuickAttack', abilityId: id }) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
-      const windupS = WINDUP_S * timeScale;
+      const windupS = WINDUP_S * timeScale * (mounted ? MOUNTED_QUICK_WINDUP_SCALE : 1); // Mounted windup lasts ~0.39s at normal attack speed, enough time for gradual physical acceleration.
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const { rangePx, halfConeRad, baseLungePx } = getReachProfile(deps, id, effects, shapeStats, baseAbil, { weaponKey, includeEnchantments: false }); // The real strike's prepare listener handles enchantment modifiers exactly once.

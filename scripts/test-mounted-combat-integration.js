@@ -178,6 +178,7 @@ lungeMasteryBonus = 0.4; // Preserve ordinary mastery as a higher mounted speed 
 quick.onTap();
 assert.equal(strikes.length, quickStagesBefore + 1, 'mounted quick schedules a real staged attack');
 const quickAction = strikes[quickStagesBefore];
+assert(quickAction.windupS > Combat.quickAttackData.WINDUP_S * 3, 'mounted jab windup allows meaningful time for mount acceleration');
 assert.equal(windupBoosts.at(-1).owner, 'mountedQuickAttack');
 assert.equal(windupBoosts.at(-1).spentFraction, 0, 'quick press starts with zero extra speed');
 assert(Math.abs(windupBoosts.at(-1).multiplier - 1.95 * 1.4) < 1e-9, 'quick mastery enhances peak windup acceleration');
