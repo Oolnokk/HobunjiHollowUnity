@@ -189,6 +189,7 @@ async function testRealEncounterFlow() {
   npc.root.position.x=center.c+1.5;npc.root.position.z=center.r+1.5;
   C.update(.1);
   assert.equal(C.debugSnapshot().phase,'home','Boney reaches his hiding place');
+  game.player.x=(center.c+1.5)*64; // Walk through the south opening into the house after Boney gets home.
   game.player.y=(center.r+1.5)*64;
   C.update(.1);
   await Promise.resolve();await Promise.resolve();
