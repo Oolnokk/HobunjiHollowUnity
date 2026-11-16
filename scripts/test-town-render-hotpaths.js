@@ -547,10 +547,15 @@ assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 
 const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
   '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_CIRCLE_RADIUS = 1.5, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
-  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
+  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2, lastPlayerXrayRadius = 1.5;
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
   const xrayGroundBox = { min: point(), max: point() };
+  const XRAY_HELD_FOOTPRINT_MARGIN = 0.12, window = {};
+  const xrayHeldFootprintBox = {
+    copy(bounds) { this.min = { ...bounds.min }; this.max = { ...bounds.max }; return this; },
+    applyMatrix4(matrix) { for (const axis of ['x', 'z']) { const offset = matrix.elements[axis === 'x' ? 12 : 14] || 0; this.min[axis] += offset; this.max[axis] += offset; } return this; },
+  };
   function rectsOverlap`
 ) + elevationNewline + 'return buildXrayGroups;')(
   mesh => mesh.scope,
@@ -570,6 +575,14 @@ assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far],
   'only screen-separated same-height holder neighborhoods share a depth rebuild');
 assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
 assert.deepEqual([...grouped.groups[0].centers.slice(0, 4)], [0.5, 0.5, 10.5, 0.5], 'one batch carries both world-space circle centers to the shader');
+assert.equal(grouped.groups[0].radiiSq[0], 2.25, 'short held art retains the authored 1.5-unit circle');
+const extendedWeapon = { ...part(0, 0), x: 3, z: 0.5,
+  geometry: { boundingBox: { min: { x: -0.1, y: 0, z: -0.1 }, max: { x: 0.1, y: 0.1, z: 0.1 } } },
+  matrixWorld: { elements: { 12: 3, 14: 0.5 } } };
+const swungGroup = groupMeshes({}, actorScene, {}, [extendedWeapon]);
+assert.equal(swungGroup.groups.length, 1, 'held weapon remains eligible after leaving the actor-centered base circle');
+assert.ok(swungGroup.groups[0].radiiSq[0] > 2.25 && swungGroup.groups[0].regions[0].radius > 2.5,
+  'world-space held sprite bounds extend the floor exception beyond the old hard circle edge');
 assert.match(heldRender, /const regionsByTile = new Map\(\)/,
   'held x-ray scopes are bucketed by tile while preserving per-actor positions');
 const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
@@ -624,6 +637,10 @@ assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && stan
 assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+assert.equal(standardGroundShader.uniforms.uHobunjiXrayRadiiSq, groundShaderState.uniforms.radiiSq,
+  'per-actor extended radii are bound to the actual ground fragment shader');
+assert.ok(standardGroundShader.fragmentShader.includes('dot(offsetFromActor, offsetFromActor) <= uHobunjiXrayRadiiSq[i]'),
+  'ground discard uses the current held footprint rather than a compiled constant');
 const copiedGroundMaterial = {
   userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.
   onBeforeCompile: groundMaterial.onBeforeCompile,
@@ -717,7 +734,7 @@ assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs on
 assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
 assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
   'the selective depth shader still binds the clone-specific elevation after running the prior hook');
-assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v6',
+assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v7',
   'custom terrain program-cache settings survive elevation shader replacement');
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
