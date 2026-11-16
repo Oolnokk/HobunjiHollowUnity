@@ -58,6 +58,7 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
   for (const npc of neighbors) life.tickNpc(npc, 1);
   assert.equal(renders.length, 1, 'only one NPC composite can be in flight');
   assert.equal(life.snapshot().npcBudgetSkips, 30);
+  assert.equal(life.snapshot().npcQueueLength, 30, 'each crowded NPC queues only once while another portrait renders');
   life.tickPlayer(1);
   assert(renders.includes('player'), 'player keeps breathing while NPC rendering is busy');
   finishNpc(); await flush();
@@ -70,6 +71,12 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
   assert.equal(life.snapshot().npcLifePending, false, 'failed render releases the crowd slot');
   life.tickNpc(neighbors[1], 0);
   finishNpc(); await flush();
+  for (let index = 2; index < neighbors.length; index++) {
+    life.tickNpc(neighbors[index], 0);
+    assert.equal(renders.at(-1), `npc-crowd-${index}`, 'FIFO advances to the next NPC instead of redrawing the first NPC');
+    finishNpc(); await flush();
+  }
+  assert.equal(life.snapshot().npcQueueLength, 0, 'the nearby NPC crowd drains without starving later walkers');
   const peripheral = walker('npc-peripheral', 3); // Beyond two tiles, still nearby but animated more slowly.
   life.tickNpc(peripheral, 0.2);
   assert.equal(renders.at(-1), 'npc-crowd-1', 'peripheral refresh is throttled');
