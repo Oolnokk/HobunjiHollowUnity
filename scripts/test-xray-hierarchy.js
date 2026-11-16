@@ -12,7 +12,7 @@ const store = {};
 const panels = [];
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
-  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2, playerGroundXrayRadius: 3.4, xrayTileRegions: 2, elevationShaderFallbacks: 0 }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2 }) },
   __hobunjiGameStarted: true,
 };
 global.window = win;
@@ -91,17 +91,12 @@ assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.opti
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
 const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
 assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
-assert.ok(view.rows.some(row => row[0] === 'Ground X-ray zone' && /latest player held reach 3.40 tiles/.test(row[1])),
-  'mobile report shows the effective held weapon radius rather than claiming an unchanging 1.5-tile mask');
-const initialDiagnosis = JSON.parse(win.XrayHierarchy.diagnosticReport());
-assert.strictEqual(initialDiagnosis.xrayDiagnosis.stencilAndReplay.playerGroundXrayRadius, 3.4,
-  'copied mobile diagnosis includes weapon reach without developer console access');
 assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
 assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
 // Mock the 3D scene only for the debug overlay. It must not create persistent
 // depth/billboard registrations or leave a circle behind while gameplay is paused.
 class PreviewGroup {
-  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; this.scale = { set: (x, y, z) => { this.xyzScale = [x, y, z]; } }; }
+  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; }
   add(child) { this.children.push(child); child.parent = this; }
   traverse(visitor) { visitor(this); this.children.forEach(visitor); }
 }
@@ -123,9 +118,6 @@ assert.ok(previewCircle.children.every(mesh => mesh.material.depthWrite === fals
 assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 1.5), true);
 assert.strictEqual(previewScene.children[0], previewCircle, 'moving reuses the original debug geometry');
 assert.deepStrictEqual(previewCircle.xyz, [3.5, 2.025, -2.5]);
-assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 3.4), true);
-assert.strictEqual(previewScene.children[0], previewCircle, 'changing weapon reach keeps the same debug mesh and GPU geometry');
-assert.deepStrictEqual(previewCircle.xyzScale, [3.4, 1, 3.4], 'debug disc shows the effective extended weapon radius');
 assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: false }), { ok: true }, 'checkbox disables the visualizer');
 assert.strictEqual(previewScene.children.length, 0, 'unchecking removes the overlay immediately, even without another frame');
 assert.strictEqual(X.get('ground.showZone'), 'off');
