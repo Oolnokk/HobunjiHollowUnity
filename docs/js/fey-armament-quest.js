@@ -51,6 +51,20 @@
     return [...keys];
   }
   function hasWeapon() { return ownedFeyWeaponKeys().length > 0; }
+  function menuStatus() {
+    const current = state(); // The Quest Log checks actual ownership rather than a readiness snapshot from the last save.
+    const active = current?.status === 'active';
+    const ready = active && hasWeapon(); // Selling, losing, or reacquiring the weapon changes readiness immediately.
+    return {
+      active, ready,
+      objective: active && !ready
+        ? 'Obtain another Fey-knotworked weapon, then continue your investigation.'
+        : current?.progress?.objective || null,
+      statusText: active && !ready
+        ? 'Weapon missing — find another Fey-knotworked weapon before returning.'
+        : null,
+    };
+  }
 
   function descriptor(stage) {
     return {
@@ -188,7 +202,7 @@
 
   window.FeyArmamentQuest = Object.freeze({
     QUEST_ID, TITLE, OBJECTIVES, bindInventoryDeps, bindQuestDeps, maybeStart, syncFromInventory,
-    completed, hasWeapon, ownedFeyWeaponKeys, dialogueTreeFor, onDialogueNode, debugSnapshot,
+    completed, hasWeapon, menuStatus, ownedFeyWeaponKeys, dialogueTreeFor, onDialogueNode, debugSnapshot,
   });
   document.addEventListener('hobunjiPlayerReady', () => {
     window.setTimeout(() => { syncFromInventory(); }, 0); // Wait for member inventory + equipment restoration before legacy detection.
