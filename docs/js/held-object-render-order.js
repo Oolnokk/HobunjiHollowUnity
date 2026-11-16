@@ -3208,11 +3208,15 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         }
 
         // This depth must be reintroduced after every clearDepth()/rebuild,
-        // not just once during the original base portrait draw.
-        if (!portraitGearIds && portraitMask?.portraits.length
+        // not just once during the original base portrait draw. A shoulder pet
+        // strips the owner's front card of its ordinary depth writes (see
+        // syncShoulderPetLayering), so even with a private stencil the owner
+        // front must be restored into depth here; the stencil alone left weapons
+        // behind the front plane visible whenever a pet was equipped.
+        if (portraitMask?.portraits.length && (!portraitGearIds || shoulderPetPresentation?.pet?.avatarRef)
           && stampFrontPortraitDepthFallback(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
           lastFrontPortraitMaskedGear = portraitMask.gearIds.size;
-          lastFrontPortraitMaskReason = 'depth-fallback-no-stencil';
+          if (!portraitGearIds) lastFrontPortraitMaskReason = 'depth-fallback-no-stencil';
         }
         for (const mesh of group.meshes) mesh.layers.mask = HELD_OVERLAY_MASK;
         // Keep this group's scissor for the held color/stencil draw. Drawing outside
