@@ -81,6 +81,18 @@ assert.match(html,/camera: state\.three\.camera/,'editor passes live orbit camer
 assert.match(html,/NPC portrait front \(\+Z\) faces camera/,'mobile status reports actual NPC plane orientation');
 assert.match(avatarSource,/function createSinglePlaneAssembly[\s\S]*?frontMesh\.position\.z = config\.anchorZ;[\s\S]*?backMesh\.rotation\.y = Math\.PI;/,'the normal NPC front plane looks toward +Z; only the back is 180° rotated');
 assert.match(avatarSource,/frontMesh\.rotation\.y = Math\.PI \/ 2;/,'animal face plane uses a different +X orientation, not the NPC orientation');
+assert.match(avatarSource,/let portraitsFlipped = true/,'the base PNGPlaneAvatar begins horizontally mirrored by default; it cannot substitute for a normal author NPC');
+assert.match(html,/async function buildNpcNeckRig\(model, avatar, npc\)/,'standard NPC actor skinned compositor is available');
+assert.match(html,/await buildNpcNeckRig\(model, avatar, npc\);[\s\S]{0,400}catch \(rigError\)/,'normal selectable NPCs use skinned portrait rendering');
+const carrierStart=html.indexOf('async function buildShoulderCarrierV1553('); // Restrict the parity check to the temporary shoulder carrier, not another NPC builder.
+const carrierEnd=html.indexOf('\nfunction syncRigWorldAxesV1553()',carrierStart);
+assert(carrierStart>=0 && carrierEnd>carrierStart,'carrier builder is present in Animation Author');
+const carrierSource=html.slice(carrierStart,carrierEnd);
+assert.match(carrierSource,/const model = window\.PNGPlaneAvatar\.buildSinglePlaneAvatarModel[\s\S]*?await buildNpcNeckRig\(model, avatar, npc\)/,'carrier must upgrade its original mirrored planes with the standard unflipped skinned portrait');
+assert.match(carrierSource,/await buildNpcNeckRig\(model, avatar, npc\);[\s\S]*?model\.userData\.proceduralHandParent/,'the face must be upgraded before attaching hands and moving the shoulder');
+assert.match(carrierSource,/Could not create the normal NPC portrait face/,'failed portrait parity cannot silently fall back to mirrored art');
+assert.match(carrierSource,/generation !== shoulderCarrierGenerationV1553[\s\S]{0,210}window\.PNGPlaneAvatar\?\.disposeAvatarModel\?\.\(model\)/,'a stale asynchronous portrait bake is disposed before joining the scene');
+assert.match(html,/const frontSource = canvasVariant\(avatar\.front\);[\s\S]{0,480}const frontTexture = makeRigTexture/,'the normal skinned portrait uses front art without the base texture flip state');
 assert.match(html,/setAnimationAuthorMode = async function\(mode, \.\.\.args\)/,'mode exit clears temporary preview');
 assert.doesNotMatch(html.slice(html.indexOf('// V15.53')),/animationAuthor\.actors\.push\(/,'carrier does not join selectable actors');
 console.log('Animation Author inverse grip carrier regression passed');
