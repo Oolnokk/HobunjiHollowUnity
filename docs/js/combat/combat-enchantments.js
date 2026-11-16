@@ -7,7 +7,7 @@
 (() => {
   'use strict';
 
-  const PLANES = Object.freeze(['Tothal', 'Hronal', 'Kanthic', 'Ohthic']);
+  const PLANES = Object.freeze(['Tothal', 'Hronal', 'Kanthic', 'Ohthic', 'Fey']); // VFX/selection origins: Fey is neutral and is excluded from the two Immundanity opposition pairs.
   const BASE_LIMIT = 2; // Used by equipBase() and the loadout UI; weapons never receive a third active Base enchantment.
   const FLURRY_FLOURISH_NUMERIC_MULTIPLIER = 0.25; // Scales numerical per-hit Flourishes on Flurry.
   const FLURRY_FLOURISH_PROC_CHANCE = 0.25; // Proc chance for instantaneous/duration Flourishes on each successful Flurry hit.
@@ -98,6 +98,26 @@
       id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Ohthic',
       icon: '〰', scalable: Object.freeze({ selfFootingCost: true }),
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
+    }),
+    feyPhantomWound: Object.freeze({
+      id: 'feyPhantomWound', displayName: 'Phantom Wound', type: 'Base', alignment: 'Fey',
+      icon: '✧', description: 'Illusory gashes fill the target with pain and imagined injury. Phantom Wounds afflict Health rings and disorient without dealing damage.',
+    }),
+    feyFalseBleeding: Object.freeze({
+      id: 'feyFalseBleeding', displayName: 'False Bleeding', type: 'Base', alignment: 'Fey',
+      icon: '◈', description: 'Makes the target see blood and feel it leaving their body; applies False Bleeding and Sapped, but never actual blood loss.',
+    }),
+    feyNeedlePain: Object.freeze({
+      id: 'feyNeedlePain', displayName: 'Needle Pain', type: 'Base', alignment: 'Fey',
+      icon: '❧', description: 'Causes convincing phantom stabs and trembling without causing Footing loss or real wounds.',
+    }),
+    feyMazeStep: Object.freeze({
+      id: 'feyMazeStep', displayName: 'Maze-Step', type: 'Flourish', alignment: 'Fey',
+      icon: '✦', flurryBehavior: 'proc', description: 'A qualifying strike makes the world seem tilted; applies Disoriented, reducing movement and dodge reach.',
+    }),
+    feyEchoDread: Object.freeze({
+      id: 'feyEchoDread', displayName: 'Echo Dread', type: 'Flourish', alignment: 'Fey',
+      icon: '☾', flurryBehavior: 'proc', description: 'A qualifying strike evokes a terrifying unreal injury, making the target Startled and Enfeebled.',
     }),
   });
 
@@ -283,12 +303,12 @@
   function getWeaponImmundanity(input = weaponKey()) {
     const key = typeof input === 'string' ? input : input?.key || input?.id || weaponKey();
     const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0 };
-    for (const def of activeDefinitions(key)) if (counts[def.alignment] != null) counts[def.alignment]++;
+    for (const def of activeDefinitions(key)) if (counts[def.alignment] != null) counts[def.alignment]++; // Fey does not have an opposed Immundanity count.
     return Math.abs(counts.Tothal - counts.Hronal) + Math.abs(counts.Kanthic - counts.Ohthic);
   }
 
   function planarCounts(key = weaponKey()) {
-    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0 };
+    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0, Fey: 0 }; // Tracks the neutral origin for effects/presentation without adding it to opposed planar totals.
     for (const def of activeDefinitions(key)) if (counts[def.alignment] != null) counts[def.alignment]++;
     return counts;
   }
@@ -387,7 +407,12 @@
     logEvent(`Resolve granted ${Math.round(footing * 10) / 10} Resolute Footing + ${Math.round(health * 10) / 10} Resolute Health`);
   }
 
-  const FLOURISH_HANDLERS = { sicced: applySicced, fury: applyFury, moralized: applyMoralized, resolve: applyResolve };
+  function applyFeyFlourish(event, def) {
+    // Fey deliberately ignores ordinary positive Immundanity boosts. At a hard zero enchantment-power gate, illusions also fail.
+    window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker });
+  }
+  const FLOURISH_HANDLERS = { sicced: applySicced, fury: applyFury, moralized: applyMoralized, resolve: applyResolve,
+    feyMazeStep: applyFeyFlourish, feyEchoDread: applyFeyFlourish };
 
   function applyFlourish(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
@@ -474,6 +499,9 @@
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
+    for (const id of ['feyPhantomWound', 'feyFalseBleeding', 'feyNeedlePain']) {
+      if (hasBase(id, key)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
+    }
     applyFlourish(event);
   }
 
@@ -482,7 +510,7 @@
     const def = DEFINITIONS[id];
     if (!def || def.type !== 'Flourish') return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
-    FLOURISH_HANDLERS[id]?.(event, def, power);
+    if (def.alignment !== 'Fey') FLOURISH_HANDLERS[id]?.(event, def, power); // Offensive-only illusion Flourishes have no defensive counterattack without a real hit.
     logEvent(event.defensiveResult === 'block' ? 'Defensive Flourish triggered on block' : 'Defensive Flourish triggered on near-hit dodge');
     return true;
   }
@@ -605,7 +633,7 @@
       `Weapon: ${key}`,
       `Base: ${state.base.map(id => `${id} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
       ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
-      `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic}`,
+      `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic} · Fey ${counts.Fey} (neutral)`,
       `Immundanity: ${getWeaponImmundanity(key)}`,
       `Enchantment power: ×${getEnchantmentPowerMultiplier(key).toFixed(2)}`,
       `Mastery effects: ×${getMasteryPowerMultiplier(key).toFixed(2)}`,
