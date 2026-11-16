@@ -104,17 +104,16 @@ const exportRigBeforeBabyHead = normalizedRig;
 normalizedRig = function normalizedRigWithBabyHeadScale() {
   const rig = exportRigBeforeBabyHead();
   if (!rig) return rig;
-  if (authoredBabyHeadScale != null) {
-    rig.babyHeadScale = authoredBabyHeadScale; // A per-species value is included in normal exports and Save rig for game preview.
-    const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
-    const paintedFrame = paintedBabyHeadFrame(); // Preserve the live painted head crop for baby size even when an older dialogue crop exists.
-    const savedFrame = state.baseRecord?.headRig?.babyHeadFrame;
-    const frame = paintedFrame || babyHeadWarp?.validateFrame?.(savedFrame);
-    if (frame) rig.babyHeadFrame = frame;
-  } else {
-    delete rig.babyHeadScale;
-    delete rig.babyHeadFrame; // Unedited species inherit the game's existing authored chathead frame.
-  }
+  if (authoredBabyHeadScale != null) rig.babyHeadScale = authoredBabyHeadScale; // Percent and source region are independent authoring settings.
+  else delete rig.babyHeadScale; // Inherit 132% without discarding the actual authored head mask source.
+  const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
+  const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
+  const frame = babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
+    || babyHeadWarp?.validateFrame?.(state.baseRecord?.headRig?.babyHeadFrame)
+    || babyHeadWarp?.validateFrame?.(window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)?.babyHeadFrame)
+    || paintedBabyHeadFrame(); // Preserve Moot/custom source frames even while the numeric scale inherits.
+  if (frame) rig.babyHeadFrame = frame;
+  else delete rig.babyHeadFrame;
   return rig;
 };
 
