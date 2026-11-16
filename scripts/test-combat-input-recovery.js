@@ -179,7 +179,7 @@ let mountActive = true; // Simulates the mount-owned input context independently
 let legacySwingCount = 0; // Detects whether an unslotted mounted Action 2 accidentally falls through to ordinary melee.
 const originalSlotGetter = context.window.Combat.loadout.getSlot;
 context.window.Combat.loadout.isMounted = () => mountActive;
-context.window.Combat.loadout.getSlot = slot => mountActive && slot === 'tap2' ? null : originalSlotGetter(slot);
+context.window.Combat.loadout.getSlot = slot => slot === 'tap2' ? null : originalSlotGetter(slot); // Action 2 is empty in both contexts; only on-foot input may use its legacy fallback.
 context.window.Combat.deps.fireLegacyWeaponAction = () => { legacySwingCount++; };
 input.setAutoTargetEnabled(true, { persist: false });
 alignment = null;
