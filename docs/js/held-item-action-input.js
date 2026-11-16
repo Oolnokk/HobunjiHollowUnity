@@ -57,7 +57,7 @@
     if (!active) return;
     if (deps?.isBlocked?.()) { abort(); return; }
     if (active.armed) return;
-    if (now() - active.downAt >= holdThresholdS()) {
+    if (now() - active.downAt + 1e-9 >= holdThresholdS()) { // Ignore sub-nanosecond float error at the exact millisecond boundary.
       active.armed = true;
       active.descriptor.onArm?.();
     }
