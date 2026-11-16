@@ -201,11 +201,11 @@ function checkNoStencilPetDepth(expectedForeground) {
   assert.equal(ownerFront.materials[0].alphaTest,.35,'front uses opaque PNG coverage, not its rectangle');
   assert.equal(ownerFront.materials[1].depthWrite,false,'rear half of skinned owner stays excluded');
   const foreground=petMesh(expectedForeground);
-  assert.equal(foreground.materials[0].depthWrite,true,'foreground pet face adds depth to owner's silhouette');
+  assert.equal(foreground.materials[0].depthWrite,true,"foreground pet face adds depth to owner's silhouette");
   assert.equal(foreground.materials[0].stencilWrite,false,'foreground pet never requires a stencil for depth');
   const other=expectedForeground==='npc_avatar_front_plane'?'npc_avatar_back_plane':'npc_avatar_front_plane';
   assert.equal(petMesh(other).materials[0].depthWrite,false,'background pet face is excluded');
-  assert.equal(draw.unarmedPrivateVisible,false,'other NPCs cannot contaminate owner's silhouette');
+  assert.equal(draw.unarmedPrivateVisible,false,"other NPCs cannot contaminate owner's silhouette");
   assert.equal(playerFront.depthWrite,false,'owner front regains depth-write-free presentation');
   assert.equal(playerFront.colorWrite,true,'owner color material flags restored');
   assert.equal(camera.layers.mask,1,'fallback restores private layer state');
