@@ -121,6 +121,9 @@ function allElements(root) {
 }
 
 assert.equal(quest.maybeStart(), false, 'no quest from ordinary weapons');
+assert.equal(relics.grantBoundRelic({ shape: 'longsword', origin: 'Fey', uid: 'wrong1', enchantments: { base: ['feyMist'], flourishes: {} } }), null, 'mismatched Fey origin and Harlyao shape is invalid');
+assert.equal(relics.grantBoundRelic({ shape: 'dagger', origin: 'Harlyao', uid: 'wrong2', enchantments: { base: ['hroFlame'], flourishes: {} } }), null, 'mismatched Harlyao origin and Fey shape is invalid');
+assert.equal(saves, 0, 'invalid relic payloads must not touch member saves');
 const failedRelic = { shape: 'dagger', origin: 'Fey', uid: 'failed1', enchantments: { base: ['feyMist'], flourishes: {} } }; // Exercises an attempted first acquisition that cannot be saved.
 const failedKey = relics.encodeBoundKey(failedRelic);
 failSave = true;
