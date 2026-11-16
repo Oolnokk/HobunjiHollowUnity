@@ -47,9 +47,11 @@
   }
 
   function latestProvenance(meta = null) {
-    const status = save.getStatus?.(); // The durable manifest is authoritative even when the optional browser mirror is unavailable.
-    if (status?.state === 'ready' && status.lastWriterProvenance?.lastWriterDeviceId) return { ...status.lastWriterProvenance };
-    meta ??= readMeta(); // Avoid parsing a multi-megabyte browser save when the manifest already supplies the writer.
+    const status = save.getStatus?.(); // The connected folder's disk writer is authoritative, even when its provenance is unknown.
+    if (status?.state === 'ready') {
+      return status.lastWriterProvenance?.lastWriterDeviceId ? { ...status.lastWriterProvenance } : null;
+    } // Never identify an empty/legacy folder using an unrelated browser save.
+    meta ??= readMeta(); // Only the browser-fallback path needs the potentially large metadata blob.
     let latest = null; // Most recent portable overwrite stamp found among entities in the currently loaded save.
     const consider = value => {
       const stamp = value?.[PROVENANCE_KEY];
