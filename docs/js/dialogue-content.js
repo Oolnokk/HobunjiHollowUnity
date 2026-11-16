@@ -732,6 +732,10 @@
     return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
   }
 
+  function ownsWorldPortrait(walker) {
+    return !!walker && !!deps?.getDialogueOpen?.() && deps.getDialogueWalker?.() === walker; // Dialogue paints this same NPC's world-space canvas; suspend passive updates while it owns the face.
+  }
+
   function _npcRestingExpression(rec = deps.getDialogueWalker()?.rec || _dlgNpcRec) {
     if (window.NpcAvatarPreview?.restingExpressionForRecord) return window.NpcAvatarPreview.restingExpressionForRecord(rec);
     const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
@@ -1209,6 +1213,7 @@
     stopNpcDialogueTypewriter,
     hideChoiceButtons,
     dialogueSeatId,
+    ownsWorldPortrait,
     npcRestingExpression: _npcRestingExpression,
     getNpcDlgState,
     resetDialogueState,

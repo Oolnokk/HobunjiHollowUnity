@@ -11,8 +11,9 @@
 // screen at once -- and only the player's current area's walkers pay it.
 //
 // Each recompose is a full portrait composite plus a texture upload, so NPC
-// refreshes stop beyond one tile, and at most one NPC composite may be in
-// flight at once. The player's refresh has its own independent slot.
+// refreshes are limited to nearby walkers (a five-tile radius), with slower
+// updates outside conversational distance and one NPC composite in flight.
+// The player's refresh has its own independent slot.
 //
 // game.js calls init(deps) once and tickNpc/tickPlayer from its frame loop.
 (() => {
@@ -24,6 +25,8 @@
   let playerLifeT = 0;
   let playerLifePending = false;
   let npcLifePending = false; // Serializes nearby NPC composites so crowded festival stations cannot launch a batch together.
+  const readyNpcQueue = []; // FIFO makes a crowd take turns instead of letting the first walker in the update loop monopolize expression rendering.
+  const MAX_QUEUED_NPCS = 64; // Bounds transient walker references if a festival fills the visible radius faster than expressions can composite.
   let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
   let playerCombatExpressionVersion = 0; // Incremented whenever combat expression intent changes so an older async breathing render cannot upload over the new face.
   let playerCombatExpressionApplied = false; // True only after the current player avatar's live texture actually contains the combat frown.
@@ -37,26 +40,28 @@
     getOverlayOnlyPoints: () => null,
     getAnimData: () => null,
   });
-  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, npcBudgetSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0, playerCombatCacheBuilds: 0, playerCombatCacheApplies: 0 }; // Existing on-demand snapshot includes crowd throttling without per-frame logging.
+  const stats = { npcRefreshes: 0, npcUploads: 0, npcStaleSkips: 0, npcDistanceSkips: 0, npcBudgetSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0, playerCombatCacheBuilds: 0, playerCombatCacheApplies: 0 }; // Existing on-demand snapshot includes crowd throttling without per-frame logging.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
   function config() {
     const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
     const num = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+    const farTiles = Math.min(5, Math.max(0, num(cfg.farTiles, 5))); // Nearby faces are visible while walking; cap old 12/24-tile overrides to avoid remote NPC recomposition.
     return {
       enabled: cfg.enabled !== false,
       intervalS: Math.max(0.016, num(cfg.intervalS, 0.16)),
-      nearTiles: Math.min(1, Math.max(0, num(cfg.nearTiles, 1))), // Legacy overrides may reduce the radius, but never animate a crowd beyond one tile.
-      farTiles: Math.min(1, Math.max(0, num(cfg.farTiles, 1))), // Hard one-tile cap also applies to old 12/24-tile overrides.
-      midIntervalMul: num(cfg.midIntervalMul, 3), // Interval multiplier between nearTiles and farTiles.
+      nearTiles: Math.min(farTiles, Math.max(0, num(cfg.nearTiles, 2))), // Conversational-distance NPCs blink at the ordinary cadence.
+      farTiles,
+      midIntervalMul: Math.max(1, num(cfg.midIntervalMul, 4)), // Peripheral NPCs use a quarter the refresh frequency.
     };
   }
 
   function tickNpc(walker, dt) {
     const cfg = config();
-    if (!deps || !cfg.enabled || walker.area !== deps.getCurrentArea()) return; // Only the player's current scene pays this cost.
-    if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
+    if (!deps || !cfg.enabled || !walker || walker.area !== deps.getCurrentArea()) return; // No work for walkers outside the player's scene.
+    if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture || walker.avatarGroup.userData.namedAnimalNpc
+        || !walker.avatarFrontCanvas || !walker.profile) return; // Named animals animate a different visible creature plane; their hidden NPC portrait must not use the nearby face budget.
     walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
 
     let interval = cfg.intervalS;
@@ -64,33 +69,75 @@
     const playerTile = deps.getPlayerTile();
     if (!pos || !playerTile || !Number.isFinite(pos.x) || !Number.isFinite(pos.z)
         || !Number.isFinite(playerTile.x) || !Number.isFinite(playerTile.y)) return;
-    const distanceSquared = (pos.x - playerTile.x) ** 2 + (pos.z - playerTile.y) ** 2; // Radius check avoids a square root for every distant walker every frame.
+    const distanceSquared = (pos.x - playerTile.x) ** 2 + (pos.z - playerTile.y) ** 2; // No square root or geometry rebuild for the proximity check.
     if (distanceSquared > cfg.farTiles ** 2) { stats.npcDistanceSkips++; return; }
+    if (window.DialogueContent?.ownsWorldPortrait?.(walker)) return; // The dialogue compositor already animates the same real portrait.
     if (distanceSquared > cfg.nearTiles ** 2) interval *= cfg.midIntervalMul;
     if (walker._portraitLifeT < interval) return;
+    if (!walker._portraitLifeQueued && readyNpcQueue.length < MAX_QUEUED_NPCS) {
+      walker._portraitLifeQueued = true;
+      readyNpcQueue.push(walker);
+    }
     if (npcLifePending) { stats.npcBudgetSkips++; return; }
-    walker._portraitLifeT = 0;
-
+    let nextWalker = null; // Only launch an eligible queued walker; old area/outfit/visibility entries cannot block the queue.
+    while (readyNpcQueue.length) {
+      const candidate = readyNpcQueue.shift();
+      candidate._portraitLifeQueued = false;
+      const candidatePos = candidate.root?.position;
+      const candidatePlayer = deps.getPlayerTile();
+      if (candidate.area === deps.getCurrentArea() && !candidate._portraitLifePending
+          && candidate.avatarGroup?.userData?.frontTexture && !candidate.avatarGroup.userData.namedAnimalNpc
+          && !window.DialogueContent?.ownsWorldPortrait?.(candidate) && candidate.avatarFrontCanvas && candidate.profile
+          && candidatePos && candidatePlayer
+          && Number.isFinite(candidatePos.x) && Number.isFinite(candidatePos.z)
+          && Number.isFinite(candidatePlayer.x) && Number.isFinite(candidatePlayer.y)
+          && (candidatePos.x - candidatePlayer.x) ** 2 + (candidatePos.z - candidatePlayer.y) ** 2 <= cfg.farTiles ** 2) {
+        nextWalker = candidate;
+        break;
+      }
+    }
+    if (!nextWalker) return;
+    walker = nextWalker;
     const composer = window.portraitBreathingComposer;
     if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
     if (!walker._portraitLifeExpressionSet) {
-      // The NPC's own authored default expression (dialogue-content.js's
-      // npcRestingExpression) applies here too, so a walking NPC shows the
-      // same resting face dialogue gives them. Set once per walker (this
-      // seatId is stable for its whole lifetime) rather than every tick.
-      composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
+      composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || walker.profile.restingExpression || null);
       walker._portraitLifeExpressionSet = true;
     }
-    if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = deps.rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
+    if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = deps.rnd() * 4000; // Different NPCs blink out of phase.
+
+    const liveCanvas = walker.avatarFrontCanvas; // The actual in-world portrait source, not the dialogue UI or a second mesh.
+    const liveGroup = walker.avatarGroup; // Reject async results if the NPC avatar is rebuilt or unloaded before completion.
+    const liveProfile = walker.profile; // Outfit changes create a new profile; never restore an older face/clothing composite.
+    const startingExpression = composer.getExpression?.(seatId); // A newer dialogue/emote expression must win over this in-flight render.
+    walker._portraitLifeT = 0;
     walker._portraitLifePending = true;
     npcLifePending = true;
     stats.npcRefreshes++;
     try {
-      window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+      const scratch = document.createElement('canvas'); // Render offscreen so an async asset load cannot partly overwrite the live portrait.
+      scratch.width = liveCanvas.width;
+      scratch.height = liveCanvas.height;
+      Promise.resolve(window.NpcAvatarPreview.renderProfileToCanvas(scratch, liveProfile, {
         breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-      }).then(() => {
-        window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+      })).then(rendered => {
+        const currentPos = walker.root?.position;
+        const currentPlayer = deps.getPlayerTile();
+        const currentRadius = config().farTiles;
+        if (rendered === false || walker.avatarGroup !== liveGroup || walker.avatarFrontCanvas !== liveCanvas
+            || walker.profile !== liveProfile || walker.area !== deps.getCurrentArea()
+            || liveGroup.userData.namedAnimalNpc || window.DialogueContent?.ownsWorldPortrait?.(walker)
+            || !liveGroup?.userData?.frontTexture || !currentPos || !currentPlayer
+            || !Number.isFinite(currentPos.x) || !Number.isFinite(currentPos.z)
+            || !Number.isFinite(currentPlayer.x) || !Number.isFinite(currentPlayer.y)
+            || (currentPos.x - currentPlayer.x) ** 2 + (currentPos.z - currentPlayer.y) ** 2 > currentRadius ** 2
+            || composer.getExpression?.(seatId) !== startingExpression) {
+          stats.npcStaleSkips++;
+          return;
+        }
+        if (copyPortraitCanvas(liveCanvas, scratch)
+            && window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(liveGroup, liveCanvas)) stats.npcUploads++;
       }).catch(() => {}).finally(() => { walker._portraitLifePending = false; npcLifePending = false; });
     } catch (_) { walker._portraitLifePending = false; npcLifePending = false; }
   }
@@ -224,6 +271,6 @@
     setPlayerCombatExpression,
     getPlayerAvatar: () => deps?.getPlayerAvatar?.() || null, // Canonical live player portrait/profile for composite grapples; no clone of game.js state.
     isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
-    snapshot: () => ({ ...stats, npcLifePending, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
+    snapshot: () => ({ ...stats, npcLifePending, npcQueueLength: readyNpcQueue.length, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };
 })();
