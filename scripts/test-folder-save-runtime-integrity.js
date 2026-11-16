@@ -143,7 +143,11 @@ async function main() {
     };
     const localSave = {
       getStatus() { return { ...folderStatus }; },
-      async syncNow() { return { ...folderStatus }; },
+      async syncNow() {
+        folderStatus.lastAction = 'saved-browser-to-folder';
+        folderStatus.lastWriterProvenance = { version: 1, lastWriterDeviceId: 'device-this-installation', writtenAt: 123456 };
+        return { ...folderStatus };
+      },
       async loadFromFolder() { return { ok: true, changed: true }; },
     };
     const context = vm.createContext({
@@ -159,17 +163,12 @@ async function main() {
     });
     vm.runInContext(source, context, { filename: 'folder-save-device-provenance.js' });
 
+    const rawBefore = localStorage.getItem('hobunjiSaveMeta'); // A mere explicit save must not rewrite a huge browser save blob.
     await localSave.syncNow();
-    const stamped = JSON.parse(localStorage.getItem('hobunjiSaveMeta'));
-    assert.equal(stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'world save should remember anonymous last writer');
-    assert.equal(stamped.characters[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'character save should remember anonymous last writer');
-    assert.ok(Number(stamped.worlds[0].folderSaveProvenance.writtenAt) > 0, 'save provenance should remember overwrite time');
+    assert.equal(localStorage.getItem('hobunjiSaveMeta'), rawBefore, 'provenance wrapper does not reserialize browser metadata');
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /From “Hobunji Save”/);
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on this device/);
-
-    stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId = 'device-other-installation';
-    stamped.worlds[0].folderSaveProvenance.writtenAt += 1000;
-    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(stamped));
+    folderStatus.lastWriterProvenance = { version: 1, lastWriterDeviceId: 'device-other-installation', writtenAt: 123457 };
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on a different device/);
     assert.ok(!context.window.FolderSaveDeviceProvenance.sourceLine().includes('device-other-installation'), 'UI must not expose the anonymous device id itself');
     console.log('OK  Resume provenance shows folder source and same/different-device status without naming devices');
