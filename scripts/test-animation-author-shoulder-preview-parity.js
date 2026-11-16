@@ -118,8 +118,38 @@ const normalized=api.normalizedRigProfileLibrary(edited);
 assert.equal(normalized.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y,17,'custom Drenkirra yaw survives');
 assert.equal(normalized.creatures.drenkirra.anchors.shoulderGrip.position.x,.03,'custom grip X survives old editor defaults');
 assert.equal(normalized.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y,24,'custom Puktuk yaw survives');
-assert.match(html, /if \(actor\.source\?\.type === 'creature' && shoulderPetCarrierV1521\(actor\)\) \{[\s\S]*?plane\.object\.rotation\.y = plane\.baseRotationY;[\s\S]*?continue;/,
-  'attached pets skip the editor creature PNG deadzone, matching gameplay');
+const activeDeadzoneStart = html.indexOf('applyViewportRotationDeadzones = function(dt = 0) {'); // Only the later V15.12 override owns actual viewport rotation.
+const activeDeadzoneEnd = html.indexOf('\n};\n\nconst baseSerializeAnimationProjectV1511', activeDeadzoneStart);
+assert(activeDeadzoneStart > 0 && activeDeadzoneEnd > activeDeadzoneStart, 'active V15.12 deadzone implementation is available for execution');
+const activeDeadzoneSource = html.slice(activeDeadzoneStart, activeDeadzoneEnd + 3);
+let petRootRefreshes = 0;
+const petFacingRoot = {rotation:{y:1.6},updateMatrixWorld(){petRootRefreshes++;}}; // Stale camera correction must reset to this pet's authored resting facing.
+const previewPet = {source:{type:'creature'},viewportFacingRoot:petFacingRoot,viewportVisual:{facingRootBaseRotationY:.12}};
+const legacyPlane = {rotation:{y:.8}};
+const previewLegacyPet = {source:{type:'creature'},viewportVisual:{creaturePlanes:[{object:legacyPlane,baseRotationY:.15}]}};
+const ownerFacingRoot = {rotation:{y:0},updateMatrixWorld(){}};
+const previewOwner = {source:{type:'npc'},viewportFacingRoot:ownerFacingRoot,viewportVisual:{facingRootBaseRotationY:0}};
+let nonPetDeadzoneChecks = 0;
+const deadzoneArgs = {
+  state:{three:{ready:true}},
+  animationAuthor:{actors:[previewOwner,previewPet,previewLegacyPet],viewportFacing:{hysteresisDeg:1,characterDeg:40,creatureDeg:30}},
+  shoulderPetCarrierV1521:actor=>actor===previewPet||actor===previewLegacyPet?previewOwner:null,
+  viewportActorsParentFirst:()=>[previewOwner,previewPet,previewLegacyPet],
+  viewportCameraAzimuthRad:()=>0,degToRad:d=>d*Math.PI/180,
+  viewportActorWorldYaw:()=>.1,
+  viewportPerpClamp:()=>{nonPetDeadzoneChecks++;return {effectiveTarget:.4,snapTo:null};},
+  viewportCreatureDeadzoneTarget:()=>{throw Error('shoulder pet must never get creature camera correction');},
+  viewportCharacterPerps:()=>[0],viewportCreaturePerps:()=>[0],
+  viewportAngleDiff:(a,b)=>a-b,finiteNumber:(n,fallback)=>Number.isFinite(n)?n:fallback,
+};
+const deadzone = new Function(...Object.keys(deadzoneArgs),
+  'let applyViewportRotationDeadzones;\n' + activeDeadzoneSource + '\nreturn applyViewportRotationDeadzones;'
+)(...Object.values(deadzoneArgs)); // Executes the same function the real editor uses after all overrides are installed.
+deadzone(.1);
+near(petFacingRoot.rotation.y,.12,'current shoulder pet root skips camera deadzone');
+near(legacyPlane.rotation.y,.15,'rigid/legacy shoulder pet plane skips camera deadzone');
+assert.equal(petRootRefreshes,1,'pet root matrix is updated after removing the stale camera correction');
+assert.equal(nonPetDeadzoneChecks,1,'non-shoulder actor still gets its ordinary character camera deadzone');
 const worldYaw = () => angle(yaw(8).multiply(socket.quaternion).multiply(pet.attachmentAlignment.quaternion));
 api.updateAnimationRelationLines();
 near(worldYaw(),-29,'outward Y matches head 27 + perch 5 - grip 61');
