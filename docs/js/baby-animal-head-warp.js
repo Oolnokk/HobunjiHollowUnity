@@ -119,15 +119,16 @@
     const explicitlyPainted = validateFrame(savedRig?.babyHeadFrame) || validateFrame(committed?.babyHeadFrame);
     if (explicitlyPainted) return explicitlyPainted; // Moot/custom species without a chathead profile keep their explicitly exported baby source box.
     const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
-    if (dialogue && (savedRig || committed || window.CreatureGeneticsRender?.SPECIES?.[base])) return dialogue;
+    if (dialogue && (savedRig || committed || window.CreatureGeneticsRender?.SPECIES?.[base] || admittedIdleKinds.has(base))) return dialogue;
     // The dialogue solver has a generic fallback even for unknown species. Only registered creatures can inherit that frame.
     const painted = frameFromRig(savedRig) || frameFromRig(committed);
     if (painted) return painted; // Preserve custom species without any authored chathead frame.
     const knownSpecies = window.CreatureGeneticsRender?.SPECIES?.[base];
-    return knownSpecies ? { x: 0.32, y: 0.17, width: 0.36, height: 0.36,
+    return (knownSpecies || admittedIdleKinds.has(base)) ? { x: 0.32, y: 0.17, width: 0.36, height: 0.36,
       coordinateSpace: 'sprite-normalized-top-left' } : null; // Only known sprite species get a conservative fallback; unknown IDs still skip.
   }
 
+  const admittedIdleKinds = new Set(); // The real idle PNG is proof of a species even if its genotype renderer has no entry (birds, Moot, etc.).
   const idleMasks = new Map(); // One native-pixel idle silhouette per species; never regenerated from run/sleep/shoulder poses.
   const pendingIdleMasks = new Map(); // Deduplicates concurrent requests across nursery, nests, incubators and equipped pets.
   const maskSourceIds = new WeakMap(); // Editor replaces the mask when it imports a different idle PNG for the same species.
@@ -211,8 +212,11 @@
   }
 
   function primeIdleMask(kind, image, frameOverride = null, sourceLabel = 'caller-idle-pose') {
-    const key = baseKind(kind), frame = validateFrame(frameOverride) || frameForKind(key);
-    if (!key || !frame || !image) return null;
+    const key = baseKind(kind);
+    if (!key || !image) return null;
+    if (!frameForKind(key)) admittedIdleKinds.add(key); // A real uploaded/decoded idle image enables the dialogue solver fallback.
+    const frame = validateFrame(frameOverride) || frameForKind(key);
+    if (!frame) return null;
     const sourceId = image && typeof image === 'object' ? (maskSourceIds.get(image) || nextSourceId++) : 0;
     if (sourceId && !maskSourceIds.has(image)) maskSourceIds.set(image, sourceId);
     const id = sourceId + '|' + frameKey(frame);
@@ -238,6 +242,7 @@
 
   async function ensureIdleMask(kind, idleSource = null, frameOverride = null) {
     const key = baseKind(kind);
+    if (key && idleSource && !frameForKind(key)) admittedIdleKinds.add(key); // Never invent a species until a real idle sprite is supplied.
     const frame = validateFrame(frameOverride) || frameForKind(key); // One authored source crop shared across every genotype and pose.
     if (!key || !frame) return null;
     const current = maskForKind(key, frame);
@@ -337,6 +342,6 @@
   window.BabyAnimalHeadWarp = Object.freeze({
     DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
     frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, buildIdleMask, maskForKind, primeIdleMask, ensureIdleMask, warpPixels, applyToCanvas,
-    debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS, masksCached: idleMasks.size, masksPending: pendingIdleMasks.size }),
+    debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS, masksCached: idleMasks.size, masksPending: pendingIdleMasks.size, rawOnlyKinds: admittedIdleKinds.size }),
   });
 })();
