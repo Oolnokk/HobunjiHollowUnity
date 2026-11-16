@@ -9,6 +9,7 @@ const rigSource = fs.readFileSync('docs/js/animal-head-rig-authored.js', 'utf8')
 const hooks = {};
 const composited = [];
 const warped = [];
+const maskRequests = []; // Tracks the once-per-species idle mask prerequisite before final pose enlargement.
 const frameSwaps = [];
 const overlays = [];
 let canvasSerial = 0; // Gives each composited/warped frame a distinct URL in the assertions.
@@ -67,7 +68,11 @@ const warp = {
     return role === 'shoulderPet' && genes?.sizeClass === 'small' && kind !== 'pingdort';
   },
   frameForKind: () => headBox,
-  scaleForKind: () => 1.23,
+  scaleForKind: () => 1.32,
+  async ensureIdleMask(kind, idleCanvas = null) {
+    maskRequests.push({ kind, sourcePose: idleCanvas?.frame || null });
+    return { kind, opaquePixels: 20 }; // Represents a cached idle alpha silhouette supplied by the actual warp module.
+  },
   applyToCanvas(input, kind) {
     assert.equal(input.eyes, 'painted-after-patterns', 'head warp receives the already composed eye overlay');
     assert.equal(input.pattern, 'spectacles', 'head warp receives the existing expressed pattern');
@@ -108,6 +113,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   assert.equal(warped.length, 1);
   assert.equal(composited.length, 1);
+  assert.equal(maskRequests[0]?.kind, 'grehlr', 'small pet first requests its idle opacity mask before pose composition');
   assert(frameSwaps.at(-1).url.startsWith('data:image/png'), 'small pet displays its final enlarged canvas');
   assert.equal(frameSwaps.at(-1).genotypeKind, null, 'already composed frame cannot be recolored or have eyes re-applied');
   provider();
@@ -132,6 +138,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   await flush();
   assert.equal(warped.length, 3, 'split needs exactly two enlarged final genotype frames');
+  assert(maskRequests.some(request => request.sourcePose === 'idle'),
+    'split shoulder pet uses an actual idle frame to seed its shared head mask');
   assert.deepEqual(warped.slice(-2).map(x => x.input.frame), ['idle', 'run1']);
   assert(overlays.some(x => x.visible === true && x.image), 'split foreground receives enlarged left layer');
   assert(frameSwaps.at(-1).url.startsWith('data:image/png'), 'split back face gets the enlarged right layer');
@@ -168,7 +176,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moot.weightMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.compressibilityMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.pivot.x, 0.37400034701593793);
-  assert.equal(moot.babyHeadScale, 1.23);
+  assert.equal(moot.babyHeadScale, undefined, 'Moot must inherit 132% instead of freezing its earlier 123% setting');
   assert.equal(moot.babyHeadFrame.width, 0.46468750000000003);
   assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2729887486531961);
   console.log('Rare Small pet final textures, naturally Small exemption, split patterns and eyes, and Moot paint pass.');
