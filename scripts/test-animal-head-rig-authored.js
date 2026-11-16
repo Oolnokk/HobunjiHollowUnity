@@ -44,7 +44,7 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-15-uploads6-moot-voorg-shoulder');
+assert.equal(api.version, '2026-11-15-uploads7-moot-voorg-neck');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
 const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six original Puktuk shoulder copies; Moot has an independently editable Voorg-Ass copy.
 const puktuk = api.get('puktuk');
@@ -82,7 +82,7 @@ assert.deepEqual(plain(api.get('nazgraku').pivot), nazgrakuOriginal.pivot, 'Nazg
 assert.deepEqual(plain(api.get('nazgraku').weightMap), nazgrakuOriginal.weightMap, 'Nazgraku head paint preserved');
 assert.deepEqual(plain(api.get('uumkaoii').pivot), { x: .3921486852536997, y: .4735364861361454 }, 'Uumkao\'ii head pivot preserved');
 assert.equal(api.get('uumkaoii').weightMap.width, 128, 'Uumkao\'ii keeps its painted head map');
-assert.equal(api.get('moot').weightMap.width, 2, 'Moot gets a body-only rig until neck paint is authored');
+assert.equal(api.get('moot').weightMap.width, 128, 'Moot receives Voorg-Ass detailed neck paint, not a body-only placeholder');
 assert.equal(api.get('gar-wolf').shoulderRest.weightMap, undefined, 'new Puktuk shoulder does not inherit old Gar-wolf shoulder paint');
 
 assert.equal(api.get('grehlr').shoulderRest.frameShiftX, .54, 'Grehlr unchanged');
@@ -119,6 +119,20 @@ assert.notStrictEqual(mootShoulder.beforePoints, voorgShoulder.beforePoints, 'Mo
 assert.notStrictEqual(mootShoulder.afterPoints, voorgShoulder.afterPoints, 'Moot has separate AFTER points');
 assert.notStrictEqual(mootShoulder.afterPoints[0], voorgShoulder.afterPoints[0], 'Moot has separate control point objects');
 assert.notStrictEqual(api.get('moot'), api.get('voorg-ass'), 'Moot retains its own head carrier');
+const mootRig = api.get('moot'); // Verify and mutate the independent Moot neck rig.
+const voorgRig = api.get('voorg-ass'); // Compare to the original Voorg-Ass neck rig.
+const mootNeck = plain(mootRig); // Snapshot all Moot deformation settings, excluding shoulder pose.
+const voorgNeck = plain(voorgRig); // Snapshot all Voorg-Ass deformation settings, excluding shoulder pose.
+delete mootNeck.shoulderRest;
+delete voorgNeck.shoulderRest;
+assert.deepEqual(mootNeck, voorgNeck, 'Moot copies the complete Voorg-Ass neck/head rig, including paint, pivot and deformation maps');
+assert.notStrictEqual(mootRig.pivot, voorgRig.pivot, 'Moot neck pivot is independently editable');
+assert.notStrictEqual(mootRig.weightMap, voorgRig.weightMap, 'Moot neck weight map is independently editable');
+assert.notStrictEqual(mootRig.weightMap.data, voorgRig.weightMap.data, 'Moot neck paint bytes are independently editable');
+assert.notStrictEqual(mootRig.compressibilityMap.data, voorgRig.compressibilityMap.data, 'Moot compressibility paint is independently editable');
+const originalVoorgNeckValue = voorgRig.weightMap.data[0]; // Guard Voorg-Ass against Moot neck edits.
+mootRig.weightMap.data[0] += 1;
+assert.equal(voorgRig.weightMap.data[0], originalVoorgNeckValue, 'editing Moot neck paint does not alter Voorg-Ass');
 assert.equal(api.get('voorg-ass').pivot.x, .37400034701593793, 'Voorg-Ass original head paint and pivot retained');
 assert.equal(api.get('voorg-ass').weightMap.width, 128, 'Voorg-Ass original head map retained');
 assert.notStrictEqual(uumkaoiiShoulder.beforePoints, voorgShoulder.beforePoints, 'uploaded species have independent point arrays');
@@ -133,4 +147,4 @@ mootShoulder.afterPoints[6].y += .1;
 assert.equal(voorgShoulder.afterPoints[6].y, voorgEnd, 'editing Moot does not alter Voorg-Ass');
 voorgShoulder.beforePoints[0].x += .1;
 assert.notEqual(mootShoulder.beforePoints[0].x, voorgShoulder.beforePoints[0].x, 'editing Voorg-Ass does not alter Moot');
-console.log('animal-head-rig-authored: Moot duplicates latest Voorg-Ass independently; nine head carriers preserve original paint');
+console.log('animal-head-rig-authored: Moot deep-copies Voorg-Ass neck and shoulder independently; other species preserve their head paint');
