@@ -107,7 +107,9 @@
     if (rawLoadoutLoad) {
       const source = hasUnlockSave && data?.combatLoadout && typeof data.combatLoadout === 'object' ? data.combatLoadout : {}; // Used to discard legacy implicit defaults while preserving explicit learned choices from new-format saves.
       const clean = {}; // Used to keep only saved slots whose techniques are currently learned.
+      const mountedKey = window.Combat?.loadout?.MOUNTED_STORAGE_KEY || '__mountedCombatLoadouts'; // Separate mount selections are migrated without treating the section as a weapon.
       Object.entries(source).forEach(([weapon, slots]) => {
+        if (weapon === mountedKey) return;
         const kept = {};
         ['tap2', 'hold1', 'hold2'].forEach(slot => {
           const savedId = slots?.[slot]; // Saved technique used to migrate disabled Jab slots.
@@ -116,6 +118,15 @@
         });
         if (Object.keys(kept).length) clean[weapon] = kept;
       });
+      const savedMounted = source[mountedKey]; // Keep unlocked mounted Quick Attacks during migration from older character saves.
+      if (savedMounted && typeof savedMounted === 'object') {
+        const mounted = {};
+        for (const [weapon, slots] of Object.entries(savedMounted)) {
+          const id = slots?.tap2 === 'opportunistJab' ? 'exhaustCutter' : slots?.tap2;
+          if (typeof id === 'string' && isUnlocked(id)) mounted[weapon] = { tap2: id };
+        }
+        clean[mountedKey] = mounted;
+      }
       rawLoadoutLoad(clean);
       if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.combatLoadout = JSON.parse(JSON.stringify(clean));
       try {
@@ -150,26 +161,35 @@
     const load = combat.loadout.load.bind(combat.loadout); // Used to remove defaults that original setSlot injects when a weapon gets its first explicit choice.
     rawLoadoutSerialize = serialize; rawLoadoutLoad = load;
     combat.abilities.listForCategories = cats => rawList(cats).filter(def => !isTechnique(def) || unlocked.has(def.id));
-    combat.loadout.getSlot = slot => {
-      const training = window.CombatTutorial?.slotOverride?.(slot); // Runtime-only loan; excluded from unlocks, loadout serialization, and manuals.
-      if (training !== undefined) return training;
-      const id = getSlot(slot); // Used as the underlying stored/default candidate.
-      if (slot === 'tap1') return id;
-      const key = combat.deps?.currentWeaponKey?.() || 'none'; // Used to inspect this exact weapon's explicit persisted slot choices.
-      if (!Object.prototype.hasOwnProperty.call(serialize()?.[key] || {}, slot)) return null;
+    combat.loadout.getSlot = (slot, mode = 'auto') => {
+      const mounted = mode === 'mounted' || (mode === 'auto' && combat.loadout.isMounted?.()); // Active gameplay context, or the context explicitly selected in the menu.
+      if (mounted && slot !== 'tap2') return getSlot(slot, mode); // Locked mount attacks never depend on technique-scroll unlock state.
+      if (!mounted) {
+        const training = window.CombatTutorial?.slotOverride?.(slot); // Temporary tutorials override only ordinary on-foot loadout slots.
+        if (training !== undefined) return training;
+      }
+      const id = getSlot(slot, mode); // Underlying per-weapon mount/foot choice before unlocking.
+      if (!mounted && slot === 'tap1') return id;
+      const key = combat.deps?.currentWeaponKey?.() || 'none'; // Used to inspect exact weapon's explicit persisted slot choices.
+      const saved = serialize();
+      const slots = mounted ? saved?.[combat.loadout.MOUNTED_STORAGE_KEY]?.[key] : saved?.[key];
+      if (!Object.prototype.hasOwnProperty.call(slots || {}, slot)) return null;
       return isUnlocked(id) ? id : null;
     };
-    combat.loadout.get = () => ({ ...getLoadout(), tap1: combat.loadout.getSlot('tap1'), tap2: combat.loadout.getSlot('tap2'), hold1: combat.loadout.getSlot('hold1'), hold2: combat.loadout.getSlot('hold2') });
-    combat.loadout.setSlot = (slot, id) => {
+    combat.loadout.get = (mode = 'auto') => ({ ...getLoadout(mode), tap1: combat.loadout.getSlot('tap1', mode), tap2: combat.loadout.getSlot('tap2', mode), hold1: combat.loadout.getSlot('hold1', mode), hold2: combat.loadout.getSlot('hold2', mode) });
+    combat.loadout.setSlot = (slot, id, mode = 'auto') => {
+      const mounted = mode === 'mounted' || (mode === 'auto' && combat.loadout.isMounted?.()); // Keeps the current action routing distinct from an inspected loadout.
+      if (mounted && slot !== 'tap2') return false;
       if (slot !== 'tap1' && id && !isUnlocked(id)) return false;
+      if (mounted) return setSlot(slot, id, mode); // Mounted tap2 writes only its own slot and does not seed default on-foot abilities.
       const key = combat.deps?.currentWeaponKey?.() || 'none'; // Used to preserve only choices that existed before this one explicit slot change.
       const beforeAll = rawLoadoutSerialize(); // Used as the clean explicit record before original setSlot potentially seeds legacy defaults.
       const before = { ...(beforeAll?.[key] || {}) };
-      if (!setSlot(slot, id)) return false;
+      if (!setSlot(slot, id, mode)) return false;
       const clean = rawLoadoutSerialize(); // Used to replace the just-created default-filled record with explicit choices only.
       clean[key] = { ...before, [slot]: id };
       rawLoadoutLoad(clean);
-      setSlot(slot, id); // Persists the now-clean record; the weapon already exists so no defaults are reintroduced.
+      setSlot(slot, id, mode); // Persists the now-clean record; the weapon already exists so no defaults are reintroduced.
       return true;
     };
     combat.loadout.isTechniqueUnlocked = isUnlocked;
@@ -415,7 +435,7 @@
     if (status.textContent !== statusText) status.textContent = statusText;
     ['tap2', 'hold1', 'hold2'].forEach(slot => {
       const select = document.getElementById(`combatLoadout_${slot}`); // Used to stop the browser visually auto-selecting an unlocked attack while the actual slot is still empty.
-      if (!select || window.Combat.loadout.getSlot(slot)) return;
+      if (!select || window.Combat.loadout.getSlot(slot, window.CombatLoadoutUI?.getMode?.() || 'auto')) return;
       let option = [...select.options].find(o => o.dataset?.techniquePlaceholder);
       if (!option) { option = document.createElement('option'); option.value = ''; option.textContent = 'No technique equipped'; option.disabled = true; option.dataset.techniquePlaceholder = '1'; select.prepend(option); }
       option.selected = true;

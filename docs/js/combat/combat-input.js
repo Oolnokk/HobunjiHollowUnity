@@ -175,7 +175,7 @@
   // point, since a hold ability like Charged Breaker can still be staggered
   // AFTER startHold already passed this check but before it releases).
   function blockedByActionLock() {
-    return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools') || window.PlayerDowned?.isDowned?.()); // A downed player cannot start melee abilities (js/player-downed.js); the ranged weapon bypasses Combat.input.
+    return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools') || window.PlayerDowned?.isDowned?.() || window.Mounts?.rideState === 'climbLeap'); // Scripted cliff-crossing must not run a foot lunge through the mounted loadout. // A downed player cannot start melee abilities (js/player-downed.js); the ranged weapon bypasses Combat.input.
   }
 
   function blockedByStagger() {
@@ -204,6 +204,12 @@
     if (!isAutoTargetEnabled()) {
       const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
       lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
+      callback();
+      return null;
+    }
+    if (window.Combat.loadout?.isMounted?.()) {
+      const bypassedAtMs = performance.now(); // Mounted strikes retain direct rider steering, with no on-foot alignment requests.
+      lastAlignmentHandoff = { phase: 'mounted-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
       callback();
       return null;
     }
@@ -250,7 +256,7 @@
     runAfterAttackAlignment(() => {
       if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || window.GameplayInputRouter?.isAttackBlocked?.()) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
-      else legacyTapFallback(slotIndex);
+      else if (!window.Combat.loadout?.isMounted?.()) legacyTapFallback(slotIndex); // An empty mounted slot never triggers an ordinary cut/slash as a fallback.
     }, slotIndex);
   }
 

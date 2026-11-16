@@ -148,6 +148,7 @@
 
   function register() {
     let startedAt = -1;
+    let startedMounted = false; // Tracks whether this hold began on a mount so dismounts cannot turn its release into an on-foot lunge.
     let paidChargeCost = 0; // Actual ordinary/enhanced/debt Stamina consumed, used for diagnostics only.
     let paidChargeBaseline = 0; // Cumulative pre-ResourceSystem cost committed, independent of perk and trinket multipliers.
     let staminaRegenBlocked = false; // Tracks ownership of this hold's composable regeneration blocker.
@@ -171,7 +172,9 @@
       const shape = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Reuses the active weapon's authored efficiency at every payment.
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
-      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency; // Cumulative pre-tax price for the visible pose.
+      const mounted = window.Mounts?.rideState === 'mounted'; // Mounted Charged Breaker reuses the same heavy mastery, with riding-specific stamina training.
+      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency
+        * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Cumulative pre-tax price for the visible pose.
       debugState.staminaCostTarget = target;
       const delta = Math.max(0, target - paidChargeBaseline); // Never compare a pre-tax target against an already-discounted actual payment.
       if (!(delta > 1e-6)) return null;
@@ -190,6 +193,7 @@
 
     function onHoldStart() {
       startedAt = now();
+      startedMounted = window.Mounts?.rideState === 'mounted';
       paidChargeCost = 0;
       paidChargeBaseline = 0;
       furiousRawProgressBonus = 0;
@@ -229,7 +233,12 @@
     }
 
     function releaseNow(heldSeconds, forced) {
+      if (startedMounted && window.Mounts?.rideState !== 'mounted') {
+        onHoldCancel(); // The mount disappeared during the hold: release no weapon strike or on-foot lunge.
+        return;
+      }
       startedAt = -1;
+      startedMounted = false;
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Release keeps the same weapon profile as the live pose.
@@ -256,6 +265,7 @@
       }
 
       const effects = currentEffects();
+      const mounted = window.Mounts?.rideState === 'mounted'; // This release's movement is either a mount burst or the normal player lunge, never both.
       if (!forced) commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker'); // Settle only a final unprocessed pose slice, without surcharge.
 
       // This slices the live authored pose at poseCharge and starts Strike
@@ -288,14 +298,14 @@
         knockbackPxS: baseKnockbackPxS,
         rangePx,
         halfConeRad,
-        lungePx: baseLungePx,
+        lungePx: mounted ? 0 : baseLungePx,
         chargePercentage: poseCharge,
         fullCharge: isFullChargePose(poseCharge),
-        metadata: { attackAngle: deps.player.angle, paidChargeCost },
+        metadata: { attackAngle: deps.player.angle, paidChargeCost, mounted },
       }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
       const damage = Math.round((attackContext.damage ?? baseDamage) * (attackContext.modifiers?.damage || 1));
       const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
-      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const lungePx = mounted ? 0 : baseLungePx * (attackContext.modifiers?.lunge || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
       const pitchDistanceResistance = lerp(
@@ -312,12 +322,15 @@
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
-      deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
-        rangePx,
-        halfConeRad,
-        pitchDistanceResistance,
-        directFlightStrength,
-      });
+      if (mounted) {
+        const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Preserves Charged Breaker's existing lunge mastery as extra mounted acceleration instead of discarding it.
+        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Mastery remains useful beyond the mounted speed cap by lengthening the gallop.
+        window.Mounts?.beginMountedCombatBurst?.((2.4 + poseCharge * 0.8) * burstScale, (2.1 + poseCharge * 0.5) * durationScale); // Charged heavy strike becomes a sustained gallop; collision and reins still apply.
+      } else {
+        deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
+          rangePx, halfConeRad, pitchDistanceResistance, directFlightStrength,
+        });
+      }
 
       debugState.lastRelease = {
         at: Date.now(),
@@ -358,7 +371,8 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health for post-mitigation damage only.
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Impact resolves from actual collision-tested speed, not charge pose alone.
+            deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
               abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
@@ -407,6 +421,10 @@
 
     function onHoldUpdate(_slot, dt) {
       if (startedAt < 0) return;
+      if (startedMounted && window.Mounts?.rideState !== 'mounted') {
+        onHoldCancel(); // Removes visual stance and stamina regeneration block when dismounted mid-charge.
+        return;
+      }
       const deps = window.Combat.deps;
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // This update funds the same charge percentage visible to the player.
       const heldSeconds = now() - startedAt;
@@ -427,6 +445,7 @@
     function onHoldCancel() {
       if (startedAt < 0) return;
       startedAt = -1;
+      startedMounted = false;
       debugState.active = false;
       setHoldStaminaRegenBlocked(false); // Cancellation releases only this action's blocker.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);

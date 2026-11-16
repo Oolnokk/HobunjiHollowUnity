@@ -66,10 +66,27 @@ const desktopListeners = new Map(); // Captures the actual mounted keyboard capt
 const pointerListeners = new Map(); // Captures mounted touch down/click listeners for press deduplication checks.
 let menuOpen = false; // Simulates the real menu's gameplay-input exclusion gate.
 let controllerCallback = null; // One subscriber to the shared ControllerInput frame, never a new gamepad loop.
+const mountHudClasses = new Set(); // Observes the wheat visibility override when all player vitals rows are intentionally hidden.
+function fakeHudNode() {
+  const node = { style: {}, children: [], attrs: {}, id: '' }; // Minimal DOM surface for mount HUD creation and class toggling.
+  node.classList = {
+    toggle(name, enabled) { if (enabled) mountHudClasses.add(name); else mountHudClasses.delete(name); },
+    contains: name => mountHudClasses.has(name),
+  };
+  node.appendChild = child => { node.children.push(child); return child; };
+  node.setAttribute = (name, value) => { node.attrs[name] = value; };
+  return node;
+}
+const vitalHud = fakeHudNode(); // The resource-bar container can be hidden while wheat remains visible above it.
+const fakeBody = fakeHudNode(); // Actual DOM installation is tested instead of disabling the mount HUD.
 const document = {
   addEventListener: (type, fn) => { pointerListeners.set(type, fn); },
-  getElementById: id => id === 'menuPanel' ? { classList: { contains: name => name === 'open' && menuOpen } } : null,
-}; // No body intentionally: the HUD view has no effect on the movement/audio test fixture.
+  createElement: () => fakeHudNode(),
+  body: fakeBody, head: fakeHudNode(),
+  getElementById: id => id === 'menuPanel'
+    ? { classList: { contains: name => name === 'open' && menuOpen } }
+    : id === 'vitalsBar' ? vitalHud : null,
+};
 function canOccupy(x, y) {
   if (x < T || y < T || x > 79 * T || y > 15 * T) return false;
   const radius = 11;
@@ -142,6 +159,10 @@ win.Mounts.updateMountRide(.1);
 win.Mounts.updateMountRide(1);
 win.Mounts.updateMountRide(0);
 assert.equal(win.Mounts.rideState, 'mounted');
+assert(mountHudClasses.has('with-mounted-wheat'), 'wheat remains visible even when player vitals rows are hidden');
+assert.equal(vitalHud.children.length, 1, 'wheat HUD is anchored to the player vitals container');
+assert.equal(vitalHud.children[0].style.display, 'flex', 'all six wheat charges are displayed while riding');
+assert.equal(vitalHud.children[0].children.length, 6, 'mounted display preserves all six charge icons');
 assert.deepEqual(Array.from(claims['mount-riding'].map(x => x.actionId)), ['dodge', 'jump']);
 const mount = win.Mounts.rideEntity;
 mount.x = player.x; mount.y = player.y;
@@ -290,11 +311,60 @@ for (let i = 0; i < 29; i++) {
 assert(mount.x < 20 * T, 'a manual hop cannot leap through the tall boulder');
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'collision-limited jump still lands cleanly');
 
+// Mounted melee uses measured carrier velocity rather than target speed or a player lunge.
+mount.vx = 0; mount.vy = 0;
+assert.equal(win.Mounts.mountedMeleeDamageMultiplier(), 1, 'a stopped mount has no artificial momentum damage');
+mount.vx = 340; mount.vy = 0;
+assert(Math.abs(win.Mounts.mountedMeleeDamageMultiplier() - 1.65) < 1e-8,
+  'normal gallop increases melee impact based on actual carrier speed');
+mount.vx = 0; mount.vy = 0;
+const beforeCombatWheat = win.Mounts.ridingDebug.wheatRemaining; // Combat bursts must never spend OoT-style acceleration charges.
+assert.equal(win.Mounts.beginMountedCombatBurst(3, 2.2), true, 'heavy melee grants a timed speed multiplier while seated');
+assert.equal(win.Mounts.ridingDebug.combatBoostMultiplier, 3, 'mounted attack boost retains its requested speed factor');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeCombatWheat, 'combat burst does not consume dodge wheat');
+mount.x = 24 * T; mount.y = 9 * T;
+input.x = 1; input.y = 0;
+for (let i = 0; i < 60; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(win.Mounts.ridingDebug.speedPxS > 340 * 1.5, 'attack speed multiplies the actual carrier speed, not just the rendering');
+assert(win.Mounts.ridingDebug.combatBoostSeconds > 0, 'charged gallop persists beyond its first frame');
+for (let i = 0; i < 100; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'combat burst ends and restores ordinary speed settings');
+
+// Mobile auto-target must change the mount's path into a circle, not alter
+// projectile aiming or override explicit manual reins.
+const orbitEnemy = { id: 'orbited-enemy', health: 100, areaId: 'wild', x: 32 * T, y: 9 * T };
+win.Combat = {
+  input: { isAutoTargetEnabled: () => true },
+  deps: { getActiveTool: () => 'ranged', getHeldMode: () => 'tool' },
+};
+win.RangedWeapons = {
+  equippedRangedKey: () => 'bow',
+  playerAimSolution: () => ({ reticleTarget: orbitEnemy }),
+  playerLockRangePx: () => 7 * T,
+};
+mount.x = 28 * T; mount.y = 9 * T;
+input.x = 0; input.y = 0;
+const orbitStartY = mount.y;
+const orbitStartDistance = Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y);
+for (let i = 0; i < 45; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.orbitTarget, 'orbited-enemy', 'orbit only follows the ranged system\'s selected auto-target');
+assert(Math.abs(mount.y - orbitStartY) > T * 0.25, 'ranged auto-target bends travel into a real encircling path');
+assert(Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y) < orbitStartDistance + T * 0.5,
+  'orbit does not drift substantially farther from the chosen enemy than its acquired distance');
+win.Combat.deps.getActiveTool = () => 'weapon';
+mount.x = 28 * T; mount.y = 9 * T;
+for (let i = 0; i < 12; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.orbitActive, false, 'switching from a ranged weapon to melee cancels mount auto-orbit');
+win.Combat.input.isAutoTargetEnabled = () => false;
+input.x = 0; input.y = 0;
+
 // Dismounting mid-jump releases visual hop state immediately, without losing the rider/mount transition.
 assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
 assert.equal(win.Mounts.ridingDebug.jumping, true);
 win.Mounts.toggleMount();
 assert.equal(win.Mounts.rideState, 'dismountingDown');
+win.Mounts.updateMountRide(0);
+assert.equal(mountHudClasses.has('with-mounted-wheat'), false, 'dismount removes the wheat-only player-vitals visibility override');
 assert.equal(mount._mountHop, null, 'dismount cancels an in-progress rock hop');
 assert.equal(mount._banditLungeHopCurrent, 0, 'dismount clears airborne visual offset');
 

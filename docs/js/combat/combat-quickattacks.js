@@ -239,7 +239,9 @@
       // plain damage with no afflictions at all.
       const weaponKey = deps.currentWeaponKey(); // One equipped-weapon identity reused by mastery, reach and combat-event preparation.
       const effects = window.CombatProgression?.getEffects(weaponKey, id) || { afflictions: {}, stats: {} };
-      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const mounted = window.Mounts?.rideState === 'mounted'; // Mounted jabs retain ordinary quick-attack mastery, but exchange their forward lunge for a carrier burst.
+      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency)
+        * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -261,10 +263,10 @@
         knockbackPxS: baseAbil.knockbackPxS,
         rangePx,
         halfConeRad,
-        lungePx: baseLungePx,
-        metadata: { attackAngle: deps.player.angle },
+        lungePx: mounted ? 0 : baseLungePx,
+        metadata: { attackAngle: deps.player.angle, mounted },
       }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
-      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const lungePx = mounted ? 0 : baseLungePx * (attackContext.modifiers?.lunge || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
 
@@ -281,13 +283,19 @@
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
+      if (mounted) {
+        const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Converts Quick Attack lunge mastery/enchantment bonuses into the mount's replacement speed surge.
+        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Higher-ranked lunge mastery still extends speed when the burst hits the mount speed cap.
+        window.Mounts?.beginMountedCombatBurst?.(1.95 * burstScale, Math.max(1.05, windupS + strikeS + 0.45) * durationScale);
+      } // Speed follows real mount steering, rock collision and inertia.
+      else deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
         strikeS,
         recoverS: 0,
         onStrike: () => {
+          if (mounted && window.Mounts?.rideState !== 'mounted') return; // A dismount mid-windup cannot turn the scheduled mounted jab into a foot strike.
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '', conditionalHits = 0, bonusEffectProcs = 0, conditionalText = '';
           const ordinaryHitTargets = new Set(); // Used by Living Gust after real Quick Attack hit validity has already been resolved.
@@ -333,7 +341,8 @@
             }
 
             const hitAfflictions = conditionBonusUsed ? mergeEffectMaps(attackAfflictions, quickBonusAfflictions) : attackAfflictions;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Strike-frame carrier velocity, never desired speed.
+            deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
               abilityId: id, conditionBonusUsed, // Identifies the committed cooldown-ready bonus hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',
