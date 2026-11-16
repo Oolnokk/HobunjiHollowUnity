@@ -165,6 +165,13 @@ function buildContext({ search = '' } = {}) {
   assert(debugLine, 'the water-debug callback still creates/updates the water-check line');
   assert.equal(debugLine.textContent, 'WATER CHECK: YES | shallow @ 3,4', 'debug line reflects the live amphibious water-check state');
 
+  context.FishCatalog.getPresentationStyleDebug = () => ({ writes: 3, skips: 360, running: true });
+  updateWaterDebug();
+  const fishStyleLine = debugPanel.children.find(c => c.attrs['data-fish-style-debug']);
+  assert(fishStyleLine, 'fishing SVG mutation counts must appear in the mobile fishing-debug panel');
+  assert.equal(fishStyleLine.textContent, 'FISH SVG: 3 writes, 360 skipped | running');
+  assert.equal(context.FishingPresentationDebug.fishStyle().skips, 360, 'diagnostics expose the exact catalog counters');
+
   gulletRoot.setAttribute('transform', 'translate(40 20)');
   syncGulletVisual();
   assert.equal(gulletRoot.getAttribute('transform'), 'translate(40.00 20.00) rotate(0.00)', 'moving purely along +X yields a 0 degree heading, matching atan2(0, dx)');
