@@ -44,3 +44,137 @@ assert.doesNotMatch(curiositySource, /frontPlane\.rotation\.z|backPlane\.rotatio
 assert.match(gameSource, /shoulderLeanDeg: Number\(finalTransform\.shoulderLeanDeg\) \|\| 0/,
   'mobile attachment debug reports the lean included in the grip pin');
 console.log('shoulder pet direction-signed rotation tests passed');
+
+
+// Production shoulder-surface solver regression: exercise the real function with
+// a non-central grip, rather than simply checking that an algebraic formula exists.
+const pivotStart = gameSource.indexOf('      const SHOULDER_PET_BODY_NECK_BLEND ='); // Start of the actual attachment solver and its rotation constants.
+const pivotEnd = gameSource.indexOf('\n      // Guessed fallbacks', pivotStart); // End immediately after the production solver declaration.
+assert.ok(pivotStart >= 0 && pivotEnd > pivotStart, 'production grip-pivot solver can be isolated for direct execution');
+const pivotSource = gameSource.slice(pivotStart, pivotEnd); // Used by the direct test harness; not a duplicated implementation.
+
+class TestVector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  clone() { return new TestVector3(this.x, this.y, this.z); }
+  add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
+  sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
+  distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
+  applyQuaternion(q) {
+    const { x, y, z } = this;
+    const ix = q.w * x + q.y * z - q.z * y;
+    const iy = q.w * y + q.z * x - q.x * z;
+    const iz = q.w * z + q.x * y - q.y * x;
+    const iw = -q.x * x - q.y * y - q.z * z;
+    this.x = ix * q.w - iw * q.x - iy * q.z + iz * q.y;
+    this.y = iy * q.w - iw * q.y - iz * q.x + ix * q.z;
+    this.z = iz * q.w - iw * q.z - ix * q.y + iy * q.x;
+    return this;
+  }
+}
+class TestQuaternion {
+  constructor(x = 0, y = 0, z = 0, w = 1) { Object.assign(this, { x, y, z, w }); }
+  clone() { return new TestQuaternion(this.x, this.y, this.z, this.w); }
+  setFromAxisAngle(a, radians) {
+    const s = Math.sin(radians / 2);
+    Object.assign(this, { x: a.x * s, y: a.y * s, z: a.z * s, w: Math.cos(radians / 2) });
+    return this;
+  }
+  setFromEuler(e) {
+    assert.equal(e.order, 'YXZ', 'authoring rotation order remains explicit');
+    const q = new TestQuaternion().setFromAxisAngle({ x: 0, y: 1, z: 0 }, e.y)
+      .multiply(new TestQuaternion().setFromAxisAngle({ x: 1, y: 0, z: 0 }, e.x))
+      .multiply(new TestQuaternion().setFromAxisAngle({ x: 0, y: 0, z: 1 }, e.z));
+    Object.assign(this, q);
+    return this;
+  }
+  multiply(b) {
+    const a = this.clone();
+    this.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+    this.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+    this.z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w;
+    this.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+    return this;
+  }
+  invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
+  normalize() {
+    const size = Math.hypot(this.x, this.y, this.z, this.w) || 1;
+    this.x /= size; this.y /= size; this.z /= size; this.w /= size;
+    return this;
+  }
+}
+class TestEuler {
+  constructor(x, y, z, order) { Object.assign(this, { x, y, z, order }); }
+}
+const degrees = value => value * Math.PI / 180; // Used by the stub THREE provider and independent fixture orientations.
+const yaw = angle => new TestQuaternion().setFromAxisAngle({ x: 0, y: 1, z: 0 }, degrees(angle)); // Stable player/neck fixture.
+const THREE = { Vector3: TestVector3, Quaternion: TestQuaternion, Euler: TestEuler,
+  MathUtils: { degToRad: degrees } }; // Only production THREE APIs actually needed by the extracted solver.
+const playerPosition = new TestVector3(4, 8, -3); // Off-origin body translation checks fallback world anchoring.
+const playerQuaternion = yaw(17); // Owner body rotation differs from neck rotation.
+const playerMesh = {
+  updateWorldMatrix() {},
+  getWorldQuaternion() { return playerQuaternion.clone(); },
+  localToWorld(point) { return point.applyQuaternion(playerQuaternion).add(playerPosition); },
+}; // Production solver sees a rotated body, but must use the head follow frame for orientation.
+const playerNeckJoint = {
+  isObject3D: true,
+  updateWorldMatrix() {},
+  getWorldQuaternion() { return yaw(31); },
+}; // Different from the body frame to catch mistaken head/body orientation coupling.
+const skinnedPerchPosition = new TestVector3(5.3, 8.7, -2.6); // Actual live-animated shoulder target, deliberately not the static local-coordinate fallback.
+const solverFactory = new Function('THREE', 'playerMesh', 'playerNeckJoint', 'window',
+  's_shoulderPetRotationSource', 's_invertShoulderPetRotationSource',
+  's_cancelShoulderPetRotationalOffset',
+  pivotSource + '\nreturn _shoulderPetSurfaceTransform;'); // Uses the production source verbatim.
+const closeness = (actual, expected, description) =>
+  assert.ok(actual.distanceTo(expected) < 1e-9, description + ': ' + actual.distanceTo(expected)); // Grip error tolerance in world units.
+
+for (const skinned of [true, false]) {
+  const windowFixture = {
+    PNGPlaneAvatar: {
+      resolveSkinnedPixelWorldFrame() {
+        return skinned ? { position: skinnedPerchPosition.clone(), quaternion: yaw(24) } : null;
+      },
+    },
+  }; // Checks live-skinned shoulder placement and its static owner-body fallback.
+  const solve = solverFactory(THREE, playerMesh, playerNeckJoint, windowFixture,
+    'head', false, false); // All supplied configuration values match production defaults.
+  for (const facingInward of [false, true]) {
+    for (const multiplier of [0.7, 1, 1.9]) {
+      const perch = {
+        x: -0.32, y: 0.48, z: 0.14,
+        sourcePixel: { x: 123, y: 42 },
+        rotationDeg: { x: 4, y: -12, z: 7 },
+        scale: { x: multiplier, y: multiplier, z: multiplier },
+      }; // Off-center authored shoulder surface with a nontrivial 3D orientation.
+      const grip = {
+        x: 0.19, y: -0.36, z: 0.08,
+        rotationDeg: { x: -9, y: 61, z: 3 },
+      }; // Deliberately off-center foot grip, so center-based rotation fails by a visible amount.
+      const perchWorld = skinned
+        ? skinnedPerchPosition.clone()
+        : playerMesh.localToWorld(new TestVector3(perch.x, perch.y, perch.z));
+      const pinAt = lean => solve(perch, grip, {
+        __hobunjiShoulderFacingInward: facingInward,
+        shoulderCuriosity: { currentLeanDeg: lean },
+      }); // Samples the actual runtime function with both facing stages and a changing lean.
+      const neutral = pinAt(0);
+      for (const lean of [-7, -3, 0, 3, 7]) {
+        const pose = pinAt(lean);
+        const localGrip = new TestVector3(grip.x * multiplier, grip.y * multiplier, grip.z * multiplier);
+        const worldGrip = localGrip.applyQuaternion(pose.worldQuaternion).add(pose.worldPosition);
+        closeness(worldGrip, perchWorld, 'shoulderGrip stays on shoulderPerch throughout a body lean');
+        assert.equal(pose.shoulderFacingTurnDeg, facingInward ? 180 : 0, 'facing state remains unchanged by lean');
+        assert.equal(pose.shoulderLeanDeg, lean, 'runtime exposes the exact applied lean');
+        if (lean !== 0) {
+          assert.ok(pose.worldPosition.distanceTo(neutral.worldPosition) > 1e-5,
+            'the root translates around an off-center grip rather than pivoting about its image center');
+        }
+      }
+      const withoutCuriosity = solve(perch, grip, { __hobunjiShoulderFacingInward: facingInward });
+      assert.equal(withoutCuriosity.shoulderLeanDeg, 0, 'missing curiosity state is neutral, not NaN');
+      closeness(withoutCuriosity.worldPosition, neutral.worldPosition, 'neutral lean leaves the authored facing pose unchanged');
+    }
+  }
+}
+console.log('production shoulder grip-pivot solver numerical cases passed');
