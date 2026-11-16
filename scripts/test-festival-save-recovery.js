@@ -67,6 +67,8 @@ const captureContext = vm.createContext({window:W,localStorage:{getItem:key=>sto
   _tothalWorldId:()=>world.id,_playerData:playerData,defaultWorldMemberState:emptyObject,inventory:{},packClothing:[],questProgress:{},
   serializeWildernessChunkState:emptyObject,serializeZoneFelledTreeState:emptyObject,serializeZoneMinedRockState:emptyObject,
   currentArea:'interior',player:{x:1,y:1,angle:0}});
+vm.runInContext(fs.readFileSync('docs/js/quest-progress-store.js','utf8'),captureContext,{filename:'quest-progress-store.js'});
+captureContext.window.QuestProgressStore.restore(playerData.questProgress); // The live quest store now owns the member field captured by game.js.
 for (const name of ['captureMemberWorldData','saveMemberWorldData'])
   vm.runInContext(functionSource(game,name,'      '),captureContext);
 captureContext.saveMemberWorldData();
