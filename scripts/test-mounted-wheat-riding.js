@@ -290,6 +290,46 @@ for (let i = 0; i < 29; i++) {
 assert(mount.x < 20 * T, 'a manual hop cannot leap through the tall boulder');
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'collision-limited jump still lands cleanly');
 
+// Mounted melee uses measured carrier velocity rather than target speed or a player lunge.
+mount.vx = 0; mount.vy = 0;
+assert.equal(win.Mounts.mountedMeleeDamageMultiplier(), 1, 'a stopped mount has no artificial momentum damage');
+mount.vx = 340; mount.vy = 0;
+assert(Math.abs(win.Mounts.mountedMeleeDamageMultiplier() - 1.65) < 1e-8,
+  'normal gallop increases melee impact based on actual carrier speed');
+mount.vx = 0; mount.vy = 0;
+const beforeCombatWheat = win.Mounts.ridingDebug.wheatRemaining; // Combat bursts must never spend OoT-style acceleration charges.
+assert.equal(win.Mounts.beginMountedCombatBurst(3, 2.2), true, 'heavy melee grants a timed speed multiplier while seated');
+assert.equal(win.Mounts.ridingDebug.combatBoostMultiplier, 3, 'mounted attack boost retains its requested speed factor');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeCombatWheat, 'combat burst does not consume dodge wheat');
+mount.x = 24 * T; mount.y = 9 * T;
+input.x = 1; input.y = 0;
+for (let i = 0; i < 60; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(win.Mounts.ridingDebug.speedPxS > 340 * 1.5, 'attack speed multiplies the actual carrier speed, not just the rendering');
+assert(win.Mounts.ridingDebug.combatBoostSeconds > 0, 'charged gallop persists beyond its first frame');
+for (let i = 0; i < 100; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'combat burst ends and restores ordinary speed settings');
+
+// Mobile auto-target must change the mount's path into a circle, not alter
+// projectile aiming or override explicit manual reins.
+const orbitEnemy = { id: 'orbited-enemy', health: 100, areaId: 'wild', x: 32 * T, y: 9 * T };
+win.Combat = { input: { isAutoTargetEnabled: () => true } };
+win.RangedWeapons = {
+  equippedRangedKey: () => 'bow',
+  playerAimSolution: () => ({ reticleTarget: orbitEnemy }),
+  playerLockRangePx: () => 7 * T,
+};
+mount.x = 28 * T; mount.y = 9 * T;
+input.x = 0; input.y = 0;
+const orbitStartY = mount.y;
+const orbitStartDistance = Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y);
+for (let i = 0; i < 45; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.orbitTarget, 'orbited-enemy', 'orbit only follows the ranged system\'s selected auto-target');
+assert(Math.abs(mount.y - orbitStartY) > T * 0.25, 'ranged auto-target bends travel into a real encircling path');
+assert(Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y) < orbitStartDistance + T * 0.5,
+  'orbit does not drift substantially farther from the chosen enemy than its acquired distance');
+win.Combat.input.isAutoTargetEnabled = () => false;
+input.x = 0; input.y = 0;
+
 // Dismounting mid-jump releases visual hop state immediately, without losing the rider/mount transition.
 assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
 assert.equal(win.Mounts.ridingDebug.jumping, true);
