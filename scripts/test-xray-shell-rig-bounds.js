@@ -57,10 +57,12 @@ assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treat
 const groupingCode=section('  function rectsOverlap(', '  const gearWaterBounds = ');
 const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCullable','objectProto',[
   'const XRAY_TILE_RADIUS=1,XRAY_CIRCLE_RADIUS=XRAY_TILE_RADIUS+.5,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
-  'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0;',
+  'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0,lastPlayerXrayRadius=1.5;',
   'const xrayGearRect={},xrayGroundRect={};',
   'const pt=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;}});',
   'const xrayGroundBox={min:pt(),max:pt()};',
+  'const XRAY_HELD_FOOTPRINT_MARGIN=.12,window={};',
+  'const xrayHeldFootprintBox={copy(b){this.min={...b.min};this.max={...b.max};return this;},applyMatrix4(m){this.min.x+=(m.elements[12]||0);this.max.x+=(m.elements[12]||0);this.min.z+=(m.elements[14]||0);this.max.z+=(m.elements[14]||0);return this;}};',
   groupingCode,'return buildXrayGroups;'
 ].join('\n'))(
   mesh=>mesh.scope,
@@ -81,6 +83,8 @@ const isolated=Array.from({length:24},(_,i)=>{
 const batch=groupActors({},null,{},isolated);
 assert.equal(batch.groups.length,3,'24 spaced trusted rigs share three eight-tile depth builds instead of 24');
 assert(batch.groups.every(x=>x.regions.length===8),'shader circle-center uniform budget remains capped at eight');
+assert(batch.groups.every(x=>x.radiiSq.length===8 && x.radiiSq.every(r=>r===2.25)),
+  'paired radius uniforms keep their original fixed batch budget for short hand/foot rigs');
 const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
 assert.match(leg,/mesh\.onBeforeRender = function footDepthPushBefore\(/,
