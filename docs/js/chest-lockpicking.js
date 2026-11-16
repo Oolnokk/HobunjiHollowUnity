@@ -40,6 +40,8 @@
   let lastOutcome = null; // Last completed/cancelled chest, visible in the debug snapshot.
   let mounted = false; // Prevents duplicate event handlers when a chest is reopened.
   let lastSaveStatus = 'not attempted'; // Shown in mobile diagnostics when storage or a character profile is unavailable.
+  let lastFolderSaveDurationMs = null; // Actual time spent waiting for the most recent first-failure folder commit, visible on mobile.
+  let lastFolderSaveAction = null; // Shows whether the character-only or full-snapshot fallback was used.
   let retrySaveButton = null; // Touch-accessible retry when a primary-folder write was rejected or failed.
   const folderOnlyProgress = new Map(); // Per-character/world lock state staged in CharacterMetaSave when browser storage is full; used on same-session reentry.
 
@@ -156,9 +158,10 @@
       return;
     }
     const previousSync = Number(status.lastSyncedAt) || 0; // Detect a folder operation that was skipped instead of committed.
+    const saveStartedAt = Date.now(); // Time from lock freeze to canonical acknowledgement, including any queued older save.
     Promise.resolve().then(() => {
       const scope = profileScope();
-      if (folder.canSaveLockProgress?.(scope?.characterId)) {
+      if (folder.canSaveLockProgress?.(scope?.characterId) && typeof folder.saveLockProgress === 'function') {
         return folder.saveLockProgress({ characterId:scope.characterId, worldId:scope.worldId, lockId:state.id, record:progressRecord(state) }); // Only the failed lock's canonical character data needs an immediate durable write.
       }
       const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Without a verified incremental baseline, retain the full guarded save path.
@@ -169,6 +172,8 @@
       } // A folder-only save may have pending metadata even when the browser copy is full.
       return folder.syncNow({ automatic:true, reason:'lockpicking-first-failure', snapshot:captured.snapshot }); // A pinned snapshot queues AFTER an in-flight autosave instead of reusing its stale Promise.
     }).then(saved => {
+      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
+      lastFolderSaveAction = saved?.lastAction || 'unknown';
       const committed = saved?.state === 'ready'
         && (saved.lastAction === 'autosaved-browser-to-folder' || saved.lastAction === 'autosaved-primary-recovery-error' || saved.lastAction === 'autosaved-lock-progress')
         && Number(saved.lastSyncedAt) > previousSync
@@ -190,6 +195,8 @@
       announce(state.phase === 'playing' ? 'Failure saved. Continue from the secured sets.' : 'Primary folder save failed. Retry the save before picking further.');
       render();
     }).catch(error => {
+      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
+      lastFolderSaveAction = 'save-error';
       describeError(error);
       state.savePending = false;
       state.saveFailed = true;
@@ -535,6 +542,7 @@
       streak:session?.streak||0, bestStreak:session?.bestStreak||0, bestScore:session?.bestScore||0,
       bonusDrops:session?bonusDrops(session):0, failedStage:session?.failedStage||false,
       stutters:session?.stutters||0, lastStallMs:session?.lastStallMs||0, lastSaveStatus,
+      lastFolderSaveDurationMs, lastFolderSaveAction, // Copyable on-device timing and path diagnostics.
       savePending:session?.savePending||false, saveFailed:session?.saveFailed||false,
       pendingStageSave:session?.pendingStageSave||false,
       pendingStageFolderSync:session?.pendingStageFolderSync||false, folderFallback:session?.folderFallback||false,
