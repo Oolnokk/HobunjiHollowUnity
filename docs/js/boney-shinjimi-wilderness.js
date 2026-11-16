@@ -29,6 +29,7 @@
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
   let debugElement = null; // Only created when ?boneyDebug=1 is requested.
   let lastWeaponColliderAt = 0; // Prevents a single held melee hitbox from repeatedly triggering escape boosts.
+  const sightProxies = new WeakMap(); // Stable walker-to-actor proxies retain RangedWeapons' LOS/hitbox caches instead of forcing a fresh raycast on every throttled Boney scan.
   let sceneRunning = false; // Prevents overlapping choice cutscenes.
   const state = initialState(); // Saved moon cycle, location, phase, rewards and chase/chores counters.
 
@@ -271,8 +272,15 @@
     finally{walkerBuilding=false;}
   }
   function sightProxy(w) {
-    return {x:w.root.position.x*tileSize(),y:w.root.position.z*tileSize(),
-      root:w.root,avatarGroup:w.avatarGroup,health:1,areaId:state.zone,walker:w};
+    let proxy=sightProxies.get(w); // Stable actor identity lets RangedWeapons reuse its existing 80 ms LOS and one-frame portrait-hitbox caches.
+    if(!proxy) {
+      proxy={x:0,y:0,root:w.root,avatarGroup:w.avatarGroup,health:1,areaId:state.zone,walker:w};
+      sightProxies.set(w,proxy);
+    }
+    proxy.x=w.root.position.x*tileSize();
+    proxy.y=w.root.position.z*tileSize();
+    proxy.areaId=w.area||state.zone;
+    return proxy;
   }
   function sees(observer,target) {
     const los=window.RangedWeapons?.hasLineOfSight;
