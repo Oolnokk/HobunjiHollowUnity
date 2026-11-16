@@ -1211,7 +1211,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 <script src="rig-preview-species.js?v=20261109rig2"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script>
-<script src="../../js/animation-author-rig-carrier-preview.js?v=20261116carrier2"></script> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
+<script src="../../js/animation-author-rig-carrier-preview.js?v=20261116carrier3"></script> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
 
 <script>
 (() => {
@@ -15075,8 +15075,8 @@ clearAnimationActors = function(...args) {
 
 // V15.53 — A shoulder-grip edit is previewed against a real, swappable NPC.
 // Only the temporary NPC's position and scale are solved around the animal's
-// already-Small grip. Its facing stays fixed (the portrait front faces +X),
-// independent of the pet's own grip yaw and the camera orbit.
+// already-Small grip. Its actual portrait front faces local +Z and follows
+// camera orbit like an NPC portrait, independent of the pet's own grip yaw.
 let shoulderCarrierPreviewV1553 = null; // Owns the unselectable NPC and its disposable rendering resources.
 let shoulderCarrierTaskV1553 = null; // One in-flight portrait build; inspector redraws do not duplicate it.
 let shoulderCarrierRequestedV1553 = null; // In-flight actor/NPC choice used to reject stale portraits after quick selections.
@@ -15140,6 +15140,7 @@ function syncShoulderCarrierV1553() {
   preview.root.visible = window.AnimationAuthorRigCarrierPreview?.placeNpcAtGrip?.({
     THREE: state.three.THREE, root: preview.root, visualOffset: preview.visualOffset,
     shoulderPerch: preview.perch, creatureGrip: actor.rigAnchors?.shoulderGrip,
+    camera: state.three.camera, // The normal NPC builder's front face points +Z, so viewport orbit determines the preview portrait yaw.
   }) === true;
 }
 
@@ -15215,7 +15216,7 @@ async function buildShoulderCarrierV1553(actor, npcId) {
       return;
     }
     syncShoulderCarrierV1553();
-    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · NPC front facing: world +X · shoulder position pinned · animal fixed at Small.');
+    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · NPC portrait front (+Z) faces camera · shoulder position pinned · animal fixed at Small.');
     frameAllAnimationActors('angle');
   })();
   shoulderCarrierTaskV1553 = task;
@@ -15306,7 +15307,7 @@ renderAttachmentRigInspector = function(...args) {
     + '<select id="maaShoulderCarrierNpcV1553">' + choices.map(choice =>
       '<option value="' + escapeHtml(choice.npcId) + '">' + escapeHtml(choice.key + ' · ' + choice.label) + '</option>').join('') + '</select></div>'
     + '<div class="maaSmall maaMuted" id="maaShoulderCarrierStatusV1553">Comparing Small creature with its owner’s authored shoulder perch…</div>'
-    + '<div class="maaSmall maaMuted">The animal remains fixed. The NPC keeps its normal front-facing orientation (world +X) while its shoulder position is pinned to the grip. Only the NPC position and inverse perch scale change. Rotating the animal grip will never flip the NPC. Switch NPCs to compare fits.</div>';
+    + '<div class="maaSmall maaMuted">The animal remains fixed. The NPC uses the normal character portrait (front +Z, unlike animal +X) and turns to face the orbit camera, so you never see its reversed back plane. Its shoulder remains pinned to the grip as the view changes. Rotating the animal grip will not flip the NPC. Switch NPCs to compare fits.</div>';
   $('maaInspector')?.appendChild(section);
   const select = section.querySelector('#maaShoulderCarrierNpcV1553');
   select.value = shoulderCarrierNpcIdV1553;
@@ -15318,7 +15319,7 @@ renderAttachmentRigInspector = function(...args) {
       && shoulderCarrierPreviewV1553.npcId === shoulderCarrierNpcIdV1553) {
     syncShoulderCarrierV1553();
     shoulderCarrierStatusV1553('Carrier: ' + shoulderCarrierPreviewV1553.profileKey
-      + ' · NPC front facing: world +X · shoulder position pinned · animal fixed at Small.');
+      + ' · NPC portrait front (+Z) faces camera · shoulder position pinned · animal fixed at Small.');
   } else if (!shoulderCarrierTaskV1553
       || shoulderCarrierRequestedV1553?.creatureId !== actor.id
       || shoulderCarrierRequestedV1553?.npcId !== shoulderCarrierNpcIdV1553) {
