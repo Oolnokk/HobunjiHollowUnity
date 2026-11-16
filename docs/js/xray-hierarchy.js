@@ -366,7 +366,8 @@
       'baseOffscreenFiltered', 'registeredBackgroundDepthMeshes', 'airborneDepthRebuilds',
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
       'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
-      'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor']) {
+      'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor',
+      'playerGroundXrayRadius', 'xrayOrdinaryMeshes', 'elevationShaderFallbacks', 'xrayTileRegions']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -566,7 +567,9 @@
             ...(selectedPresetId !== activePresetId && selectedPreset
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
-            ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
+            ['Ground X-ray zone', 'Minimum 1.5 tiles; latest player held reach ' +
+               (Number.isFinite(live.playerGroundXrayRadius) ? live.playerGroundXrayRadius.toFixed(2) : '-') +
+               ' tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
             ['Last held order override', live.lastHeldOrderNormalization
