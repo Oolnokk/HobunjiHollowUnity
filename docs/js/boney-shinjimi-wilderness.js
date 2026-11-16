@@ -28,13 +28,14 @@
   let planTimer = 0; // Chore route choices are throttled separately from body updates.
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
   let debugElement = null; // Only created when ?boneyDebug=1 is requested.
+  let lastWeaponColliderAt = 0; // Prevents a single held melee hitbox from repeatedly triggering escape boosts.
   let sceneRunning = false; // Prevents overlapping choice cutscenes.
   const state = initialState(); // Saved moon cycle, location, phase, rewards and chase/chores counters.
 
   function initialState() {
     return { phase:'waiting', cycle:-1, completedCycle:-1, zone:null, home:null, target:null,
       activity:'wander', resourceTarget:null, workLeft:0, fleeTime:0, boostedFor:0, boostCooldown:0,
-      catches:0, escaped:0, chores:0, lastSight:'unobserved', lastEvent:'awaiting full moon',
+      catches:0, weaponContacts:0, escaped:0, chores:0, lastSight:'unobserved', lastEvent:'awaiting full moon',
       reward:null, hatTaken:false };
   }
   function rnd() { return window.GameRandom?.random?.() ?? Math.random(); }
@@ -382,16 +383,41 @@
       state.phase='home';setTarget(state.home.c+1,state.home.r+1,'hide');
     }
   }
+  function weaponHitboxTouches(w) {
+    const colliders=window.Combat?.debugMeleeColliders?.()||[]; // Real active swing pie-prisms; never infer an attack from movement input.
+    const now=Date.now();
+    if(!colliders.length)return false;
+    const target=window.RangedWeapons?.actorHitbox?.(sightProxy(walker))?.center
+      ||{x:w.x,y:w.y+0.5,z:w.z};
+    for(const hit of colliders) {
+      if(hit.actor!==deps?.player||hit.recordedAt<=lastWeaponColliderAt||now-hit.recordedAt>260)continue;
+      const dx=target.x-hit.origin?.x,dz=target.z-hit.origin?.z;
+      const horizontal=Math.hypot(dx,dz);
+      if(horizontal>finite(hit.horizontalRangeWorld)+0.34)continue;
+      const yaw=Math.atan2(dz,dx);
+      const delta=Math.abs(Math.atan2(Math.sin(yaw-hit.yaw),Math.cos(yaw-hit.yaw)));
+      const reachAngle=finite(hit.halfConeRad)+Math.atan2(0.34,Math.max(0.1,horizontal));
+      if(delta>reachAngle)continue;
+      const rise=horizontal/Math.max(0.01,finite(hit.horizontalRangeWorld))*finite(hit.verticalRiseWorld);
+      if(Math.abs(target.y-(hit.origin.y+rise))>finite(hit.halfHeightWorld,0.4)+0.5)continue;
+      lastWeaponColliderAt=hit.recordedAt;
+      return true;
+    }
+    return false;
+  }
   function contactBoost(dt) {
     const p=playerTile(),w=position();
     state.boostedFor=Math.max(0,state.boostedFor-dt);
     state.boostCooldown=Math.max(0,state.boostCooldown-dt);
     if(!p||!w||state.boostCooldown>0||state.phase==='scene'||state.phase==='leaving')return;
-    if(dist(p,{x:w.x,z:w.z})>0.80)return; // Player body hitbox overlap, including when the fleeing NPC runs past.
+    const bodyHit=dist(p,{x:w.x,z:w.z})<=0.80;
+    const weaponHit=!bodyHit&&dist(p,{x:w.x,z:w.z})<4.5&&weaponHitboxTouches(w);
+    if(!bodyHit&&!weaponHit)return;
     state.boostedFor=FLEE_BOOST_SECONDS;state.boostCooldown=0.9;
     state.catches++;
+    if(weaponHit)state.weaponContacts++;
     if(state.phase==='roam')beginFlight();
-    bumpEvent('Contact: Boney lunged away with a momentary speed boost');
+    bumpEvent((weaponHit?'Weapon contact':'Body contact')+': Boney lunged away with a momentary speed boost');
   }
   function sceneDefinition() {
     const h=state.home,profile=window.__hobunjiPlayerProfile;
@@ -531,7 +557,8 @@
       cycle:state.cycle,completedCycle:state.completedCycle,zone:state.zone,
       home:state.home&&{...state.home},target:state.target&&{...state.target},
       activity:state.activity,resourceTarget:state.resourceTarget,workLeft:state.workLeft,chores:state.chores,
-      escaped:state.escaped,catches:state.catches,reward:state.reward,hatTaken:state.hatTaken};
+      escaped:state.escaped,catches:state.catches,weaponContacts:state.weaponContacts,
+      reward:state.reward,hatTaken:state.hatTaken};
   }
   function restore(raw) {
     clearHouse();releaseWalker();
@@ -553,6 +580,7 @@
     state.chores=Math.max(0,Math.floor(finite(raw.chores)));
     state.escaped=Math.max(0,Math.floor(finite(raw.escaped)));
     state.catches=Math.max(0,Math.floor(finite(raw.catches)));
+    state.weaponContacts=Math.max(0,Math.floor(finite(raw.weaponContacts)));
     state.reward=raw.reward||null;state.hatTaken=raw.hatTaken===true;
     if(state.phase==='flee') {
       state.target={c:state.home.c+1,r:state.home.r+3}; // Interrupted chase resumes toward the real house.
@@ -564,7 +592,8 @@
     return {phase:state.phase,cycle:state.cycle,completedCycle:state.completedCycle,
       zone:state.zone,home:state.home,target:state.target,activity:state.activity,
       lastSight:state.lastSight,lastEvent:state.lastEvent,houseVisible:!!houseMesh?.visible,
-      collision:!!houseUnregister,walker:!!walker,catches:state.catches,escaped:state.escaped,
+      collision:!!houseUnregister,walker:!!walker,catches:state.catches,
+      weaponContacts:state.weaponContacts,escaped:state.escaped,
       chores:state.chores,reward:state.reward,hatTaken:state.hatTaken};
   }
   function init(injectedDeps) {
