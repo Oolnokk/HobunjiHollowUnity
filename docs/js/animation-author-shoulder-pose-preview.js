@@ -37,6 +37,7 @@
     let buildError = null; // Displayed in the existing editor inspector for mobile debugging.
     let disposed = false; // Prevents asynchronous builders from attaching to a removed actor.
     const addedViewportPlanes = []; // Tracks posed front/back and split-overlay cards so cleanup removes references from the existing camera-yaw list.
+    const posedPlaneScaleLinks = []; // Links posed meshes to the existing source meshes, whose direct scales are the editor's true size-class authority.
 
     const status = () => ({
       requestedPose,
@@ -50,7 +51,19 @@
       splitFrame: !!rest.splitFrame,
     }); // Used by the Rig Coordinates status label without needing console access.
 
+    function syncPlaneScale() {
+      if (!posedAvatar || disposed) return;
+      for (const { plane, source } of posedPlaneScaleLinks) {
+        if (!plane?.scale || !source?.scale) continue;
+        if (plane.scale.x === source.scale.x && plane.scale.y === source.scale.y
+            && plane.scale.z === source.scale.z) continue; // No per-frame matrix churn when the size class is unchanged.
+        plane.scale.copy(source.scale); // Rig Coordinates scales each actual creature card directly (V15.14), not its group.
+        plane.updateMatrix?.(); // Match the editor's existing direct-plane update method after the user edits a size class.
+      }
+    }
+
     function syncVisibility() {
+      syncPlaneScale(); // Keep the authored pose aligned with the CURRENT grip size, even after a live Small/Medium/Large edit.
       const showPose = !disposed && requestedPose === 'perched' && !!posedAvatar; // No unposed/perched double drawing.
       if (sourceAvatar.frontPlane) sourceAvatar.frontPlane.visible = !showPose;
       if (sourceAvatar.backPlane) sourceAvatar.backPlane.visible = !showPose;
@@ -105,9 +118,17 @@
       } // Match the exact existing source-root transform while keeping posed art OUT of actor.model's bounds.
       renderParent.add(avatar.group); // Inherit the same creature scale and carrier motion without changing the anchor's parent or exported coordinates.
       const posedPlanes = [avatar.frontPlane, avatar.backPlane]; // Both rendered PNG faces must share the editor's viewport-facing behavior.
+      posedPlaneScaleLinks.push({ plane: avatar.frontPlane, source: sourceAvatar.frontPlane },
+        { plane: avatar.backPlane, source: sourceAvatar.backPlane }); // Reuse the original front/back size transforms, not an approximation.
       avatar.group.traverse?.(object => {
-        if (object?.userData?.hobunjiShoulderSplitOverlay) posedPlanes.push(object); // Grehlr's left foreground must rotate exactly with the deformed right background.
+        if (!object?.userData?.hobunjiShoulderSplitOverlay) return;
+        posedPlanes.push(object); // Grehlr's left foreground must rotate exactly with the deformed right background.
+        posedPlaneScaleLinks.push({
+          plane: object,
+          source: object.userData.hobunjiPlaneFace === 'back' ? sourceAvatar.backPlane : sourceAvatar.frontPlane,
+        }); // The split foreground follows the same size-class scaling as its corresponding background card.
       });
+      syncPlaneScale();
       if (Array.isArray(viewportCreaturePlanes)) {
         for (const plane of posedPlanes) {
           if (!plane || viewportCreaturePlanes.some(entry => entry.object === plane)) continue;
@@ -153,6 +174,7 @@
         }
       }
       addedViewportPlanes.length = 0;
+      posedPlaneScaleLinks.length = 0;
       sourceAvatar.frontPlane && (sourceAvatar.frontPlane.visible = true);
       sourceAvatar.backPlane && (sourceAvatar.backPlane.visible = true);
       if (posedAvatar) {
@@ -162,7 +184,7 @@
       }
     }
 
-    return { setPose, status, dispose, rest };
+    return { setPose, status, dispose, rest, syncPlaneScale }; // Rig Coordinates uses syncPlaneScale after live size-class edits without rebuilding art.
   }
 
   window.AnimationAuthorShoulderPosePreview = {
