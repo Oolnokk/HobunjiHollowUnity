@@ -132,7 +132,11 @@ area = 'map_i_town_mine_f_005';
 camp.updateVfx(0.016);
 player.x = savedMineCamp.x * 16;
 player.y = savedMineCamp.z * 16;
-assert.equal(camp.getNearbyActions().length, 3, 'mine camp exposes normal Save/Cook/Brew actions');
+const mineCampActions = camp.getNearbyActions(); // One held Action 2 prompt keeps equipped tools usable at mine campfires.
+assert.equal(mineCampActions.length, 1, 'mine camp offers the held campfire menu, not three instant actions');
+assert.equal(mineCampActions[0].action, 'campfire_menu');
+assert.equal(mineCampActions[0].inputAction, 'action2');
+assert.equal(mineCampActions[0].requiresHold, true);
 
 assert.equal(camp.relocateForGeneratedMineFloor(area, [[1, 1], [8, 8]]), true, 'regenerated floor can relocate a persisted camp to safe geometry');
 assert.equal(camp.serialize().x, 8.5, 'mine camp chooses nearest safe floor tile');

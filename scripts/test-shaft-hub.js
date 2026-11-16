@@ -463,20 +463,21 @@ const Defense={create:options=>({
     onSolved:()=>solved++});
   challenge.tick(.05);
   assert(challenge.fireLinked&&targets.has('layer-fire-target-ice-test'));
-  assert.equal(controls[0].kind,'dungeonFireSource');
+  assert.equal(controls.length,0,'short fire-source braziers must not claim an action input');
+  assert.equal(challenge.fireSource.userData.fireHazard,true,
+    'the regular low brazier lets a torch acquire fire through physical contact');
   currentY=0;
-  controls[0].onPress();
   assert.equal(targets.get('layer-fire-target-ice-test').isActive(),false,
-    'ignition sources and heat targets belong to a particular story elevation');
+    'the heat target only accepts real DungeonFire contact from its own story elevation');
   assert.equal(challenge.fireRecord.onBurn(),false);
-  currentY=4;controls[0].onPress();
+  currentY=4;
   assert.equal(challenge.fireRecord.onBurn(),true,'native fire collision burns the seal');
   assert(challenge.solved&&solved===1);
   for(let i=0;i<18;i++)challenge.animate(.05);
   assert(challenge.meltProgress===1&&!challenge.fireSeal.visible,
     'the DungeonFire ice target reverses its growth to fully disappear after contact');
   challenge.dispose();assert.equal(targets.size,0,'fire contact target must unregister on reroll');
-  assert.equal(controls.length,0,'fire source control must unregister on challenge disposal');
+  assert.equal(controls.length,0,'no projectile ignition controls may be added during teardown');
 }
 
 // Timed Scratchbone scores reject wrong maps, other floors and off-plate notes.
