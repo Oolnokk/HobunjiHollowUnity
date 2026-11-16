@@ -76,7 +76,7 @@ class InstancedMesh extends Group {
 const THREE = { Vector3: Vec3, Matrix4: Mat4, Sphere, Box3, Frustum, Group, InstancedMesh, DynamicDrawUsage: 1 };
 const scene = new Group(); // Authored tree roots and generated instanced groups share this scene.
 const sharedMaterial = {}; // The simulated baked meshes share a material for instancing.
-function tree(x, knownBounds = true) {
+function tree(x, knownBounds = true, hasLod = false, destination = scene) {
   const root = new Group();
   root.userData = { bakedTreeAsset: true, treeSpecies: 'shadewood', treeVariant: 1 };
   root.matrixWorld = new Mat4();
@@ -88,12 +88,35 @@ function tree(x, knownBounds = true) {
     : { computeBoundingBox() {} };
   mesh.material = sharedMaterial;
   mesh.matrixWorld = root.matrixWorld;
-  root.add(mesh);
-  scene.add(root);
-  return { root, mesh };
+  let farMesh = null; // Tracks the lower-detail GLB selected for instanced rendering.
+  if (hasLod) {
+    const lod = new Group();
+    lod.isLOD = true;
+    lod.userData.treeLodController = true;
+    const nearRoot = new Group();
+    nearRoot.userData = { ...root.userData }; // Actual loaded GLBs repeat these tags inside the parent tree.
+    const farRoot = new Group();
+    farRoot.userData = { ...root.userData };
+    farRoot.visible = false; // THREE.LOD starts with its farther level hidden.
+    farMesh = new Group();
+    farMesh.isMesh = true;
+    farMesh.geometry = { boundingBox: new Box3(new Vec3(-1, 0, -1), new Vec3(1, 7, 1)) };
+    farMesh.material = sharedMaterial;
+    farMesh.matrixWorld = root.matrixWorld;
+    nearRoot.add(mesh);
+    farRoot.add(farMesh);
+    lod.add(nearRoot);
+    lod.add(farRoot);
+    lod.levels = [{ object: nearRoot, distance: 0 }, { object: farRoot, distance: 10 }];
+    root.add(lod);
+  } else {
+    root.add(mesh);
+  }
+  destination.add(root);
+  return { root, mesh, farMesh };
 }
 const left = tree(-19); // Initially behind the simulated camera.
-const right = tree(19); // Initially inside the simulated camera view.
+const right = tree(19, true, true); // Matches TreeAssetLibrary's tagged outer group + nested two-GLB LOD hierarchy.
 tree(-12, false); // A missing geometry bounding box must not hide the batch.
 const camera = {
   isCamera: true, matrixWorld: new Mat4(), matrixWorldInverse: new Mat4(),
@@ -105,6 +128,7 @@ let domLookups = 0; // Ensures the dev panel isn't queried every frame.
 const fog = { init() {}, update() {} };
 const root = { THREE, CloudForestFog: fog, TreeAssetLibrary: { getMode: () => 'baked' },
   Combat: { deps: { getActiveCamera: () => activeCamera } } };
+let currentScene = scene; // Switches zones to verify late arrival of baked trees after initial empty-scene caching.
 const script = fs.readFileSync(path.join(__dirname, '../docs/js/cloud-forest-tree-batcher.js'), 'utf8');
 vm.runInNewContext(script, {
   window: root, performance: { now: () => now },
@@ -114,7 +138,7 @@ root.CloudForestFog.init({
   THREE, player: { x: 0, y: 0 }, TILE: 1,
   getCurrentArea: () => 'map_southern_cloud_forest',
   isCloudForestArea: () => true,
-  getActiveScene: () => scene,
+  getActiveScene: () => currentScene,
   getCloudForestFogRadiusTiles: () => 34,
 });
 const api = root.CloudForestTreeBatcher; // Existing mobile-visible batching diagnostics.
@@ -126,6 +150,10 @@ let stats = api.getDebugState();
 assert.equal(stats.frustumActive, true);
 assert.equal(stats.treeCount, 3);
 assert.equal(stats.batchedTreeCount, 3);
+assert.equal(stats.sourceMeshCount, 4, 'near and far LOD originals remain available for toggling');
+assert.equal(stats.instancedMeshCount, 3, 'LOD must contribute only one chosen far mesh, not near+far');
+assert.equal(batchAt(19).children.length, 1, 'tagged GLB descendants must not become separate batch roots');
+assert.equal(right.farMesh.visible, false, 'far GLB original should be hidden while batched');
 assert.equal(stats.frustumCulledChunkCount, 1);
 assert.equal(left.mesh.visible, false);
 assert.equal(right.mesh.visible, false);
@@ -135,8 +163,14 @@ assert.equal(batchAt(-12).visible, true, 'unknown mesh bounds need radial-only f
 assert.ok(observedSpheres.some(sphere => sphere.radius >= 10), '3D bounds must include canopy height');
 
 const initialLookups = domLookups;
+batchAt(-19).visible = true; // Simulate another wilderness-culling pass overwriting group visibility.
 root.CloudForestFog.update(0.016);
+assert.equal(batchAt(-19).visible, false, 'unchanged camera should restore the batching visibility decision');
 assert.equal(domLookups, initialLookups, 'idle frame should not update the developer panel');
+api.setNearRadiusTiles(24);
+assert.equal(right.mesh.visible, true, 'near high-detail GLB must be restored');
+assert.equal(right.farMesh.visible, true, 'LOD can still switch its original low-detail leaf');
+api.setNearRadiusTiles(10);
 camera.matrixWorld.direction = -1;
 camera.matrixWorldInverse.direction = -1;
 root.CloudForestFog.update(0.016);
@@ -157,4 +191,19 @@ root.CloudForestFog.update(0.016);
 stats = api.getDebugState();
 assert.equal(stats.batchedTreeCount, 2, 'removed trees should disappear on idle validation');
 assert.ok(stats.culledChunkCount <= stats.chunkCount);
-console.log('Cloud Forest tree batch frustum and fallback checks passed');
+
+// A first, empty scene scan must not permanently disable batching for trees that stream in later.
+const lateScene = new Group(); // Simulates a Cloud Forest zone before async baked GLBs are attached.
+currentScene = lateScene;
+now += 100;
+root.CloudForestFog.update(0.016);
+assert.equal(api.getDebugState().status, 'no-baked-roots');
+tree(5, true, false, lateScene);
+now += 1500;
+root.CloudForestFog.update(0.016);
+assert.equal(api.getDebugState().status, 'no-baked-roots', 'retry must be throttled');
+now += 1600;
+root.CloudForestFog.update(0.016);
+assert.equal(api.getDebugState().status, 'ready', 'batching must recover when tree roots are attached');
+assert.equal(api.getDebugState().treeCount, 1);
+console.log('Cloud Forest tree batching: LOD deduplication, camera, visibility ownership, late roots, and fallback passed');
