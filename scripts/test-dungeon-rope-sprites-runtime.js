@@ -137,6 +137,20 @@ vm.runInContext(read('docs/js/furniture-surface-png-runtime.js'),context);
   const net=art.createNetFrustum();
   assert.equal(net.geometry.getAttribute('position').count,24,'four faces, two triangles each');
   assert.equal(net.geometry.getAttribute('uv').count,24);
+  assert.equal(net.userData.dungeonNetBottomScale,.28,'hanging nets retain their tapered payload cradle');
+  const prizeNet=art.createNetFrustum(1.36,1.36,1.75,1);
+  const prizeVerts=prizeNet.geometry.getAttribute('position');
+  const topX=[],bottomX=[],topZ=[],bottomZ=[];
+  for(let i=0;i<prizeVerts.count;i++){
+    if(Math.abs(prizeVerts.getY(i))<1e-6){topX.push(prizeVerts.getX(i));topZ.push(prizeVerts.getZ(i));}
+    if(Math.abs(prizeVerts.getY(i)+1.75)<1e-6){bottomX.push(prizeVerts.getX(i));bottomZ.push(prizeVerts.getZ(i));}
+  }
+  assert.equal(prizeNet.userData.dungeonNetBottomScale,1,'the optional treasure uses a vertical enclosure');
+  assert(Math.abs(Math.max(...topX)-Math.min(...topX)-(Math.max(...bottomX)-Math.min(...bottomX)))<1e-5,
+    'rope art holds full width at the physical room floor, preventing chest clipping');
+  assert(Math.abs(Math.max(...topZ)-Math.min(...topZ)-(Math.max(...bottomZ)-Math.min(...bottomZ)))<1e-5,
+    'rope art also holds full depth at the physical room floor');
+  assert.equal(prizeNet.material.map,net.material.map,'standing and hanging net panels share the original rope atlas');
   assert.equal(net.material.map.wrapS,THREE.ClampToEdgeWrapping);
   assert.equal(net.material.map.wrapT,THREE.ClampToEdgeWrapping);
   assert.equal(drawCalls.length,8,'five lengthwise and three cross-rope sprite draws');
