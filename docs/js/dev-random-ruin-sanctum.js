@@ -1097,6 +1097,7 @@
       window.HarlyaoLichCombat?.clearBossEffects?.(boss);
       window.DevRandomRuinLichThemes?.resetBossHazards?.(boss);
       window.SpecialHarlyaoLiches?.applyPlasmSkin?.(boss,false);
+      window.SpecialHarlyaoLiches?.releaseWarhammer?.(boss); // The per-boss patterned weapon texture belongs to the departing guardian.
       window.SpecialHarlyaoLiches?.clear?.();
       for (const minion of boss._lichSummons || []) { deps?.corpseObjects?.delete?.(minion); disposeActor(minion); }
       deps?.corpseObjects?.delete?.(boss);
@@ -1183,11 +1184,15 @@
   function disposeActor(entity) {
     if (!entity) return;
     deps?.hostileObjects?.delete?.(entity);
+    deps?.corpseObjects?.delete?.(entity);
+    if (typeof window.BanditCombat?.discardEntity === 'function') {
+      window.BanditCombat.discardEntity(entity); // Canonical hostile teardown covers every weapon socket, trail, texture, HUD and late avatar.
+      return;
+    }
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
     entity.groundShadow?.parent?.remove?.(entity.groundShadow);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
-    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
-    entity.avatarRef?.dispose?.();
+    for (const holder of [entity._banditToolHolder,entity._banditRangedToolHolder,entity._banditFlaskToolHolder,entity._banditTrailMesh]) holder?.parent?.remove?.(holder);
+    entity.avatarRef?.dispose?.(); // Isolated authoring/test tools may not load the complete bandit module.
   }
 
   function removeLichHeart(owner = s) {
