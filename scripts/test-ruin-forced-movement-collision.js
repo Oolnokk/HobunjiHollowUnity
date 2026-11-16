@@ -28,10 +28,16 @@ assert(collision.shaftBodyBlocksAt(5.5,2.5,.2,1),'border stone outside the walka
 assert(!collision.shaftBodyBlocksAt(4.3,2.5,.2,1),'adjacent clear floor stays available');
 assert(!collision.shaftBodyBlocksAt(5.5,2.5,.2,7),'lower masonry cannot obstruct an upper story');
 assert(collision.shaftBodyBlocksAt(5.5,2.5,.2,5),'upper masonry blocks only at its own height');
+assert(collision.shaftBodyBlocksAt(5.5,2.5,.1,null),'heightless player bodies collide with stone above their feet');
+assert(!collision.shaftBodyBlocksAt(5.5,2.5,.1,4.4),'a point-sized shot below the upper wall clears the stone');
+assert(collision.shaftBodyBlocksAt(5.5,2.5,.1,5.05),'a shot actually inside the upper wall is stopped');
 assert(!collision.flightClear(4,1.5,2.5,6,1.5,2.5),'Skeeri cannot cross a solid wall');
 assert(collision.flightClear(4,7,2.5,6,7,2.5),'Skeeri can cross clear air above the wall');
 blocks.clear();
 assert(collision.flightClear(4,1.5,2.5,6,1.5,2.5),'opened stone permits flight immediately');
+scope.RuinJumpShaft={flightBlockedAt:(x,z,radius,y)=>x>=5&&x<=5.5&&z===2.5&&y>=2.5&&y<=3}; // A solid raised slab crossed by this bird.
+assert(!collision.flightClear(4,2.7,2.5,6,2.7,2.5),'Skeeri cannot fly through a jump-shaft slab');
+delete scope.RuinJumpShaft;
 assert(!collision.shaftBodyBlocksAt(5.5,2.5,.2,1),'opened stone permits player motion immediately');
 blocks.add('5,2,1');
 const movementContext={window:{}};
@@ -50,11 +56,14 @@ assert(jump.platformSlabBlocksAt([p],3,4,.2,2.7),'rolling into the raised slab s
 assert(jump.platformSlabBlocksAt([p],4,4,.2,2.7),'a body in slab masonry cannot pass');
 assert(!jump.platformSlabBlocksAt([p],3,4,.2,3),'standing on the top does not block walking');
 assert(!jump.platformSlabBlocksAt([p],4,4,.2,1),'walking below a floating slab is allowed');
+assert(!jump.platformSlabBlocksAt([p],4,4,.1,2.1,.1),'a height-aware shot clears the underside of the slab');
+assert(jump.platformSlabBlocksAt([p],4,4,.1,2.7,.1),'a shot inside the slab itself is blocked');
 assert(!jump.platformSlabBlocksAt([p],8,4,.2,2.7),'faraway slab does not block');
 assert(!jump.platformSlabBlocksAt([p],4,4,.2,NaN),'undefined height never causes false collision');
 const jumpSource=read('docs/js/ruin-jump-shaft.js');
 const connector=read('docs/js/ruin-shaft-connector.js');
 assert(jumpSource.includes('footprintBlockers?.register?.(slabBlockerId,'),'shaft sides are wired into shared collision');
+assert.equal(typeof jump.flightBlockedAt,'function','Skeeri slab collision uses the actual mounted jump shaft');
 assert(jumpSource.includes('footprintBlockers?.remove?.(slabBlockerId)'),'shaft side colliders are cleaned up on exit');
 assert(connector.includes('tradition:ruin.theme,getPlayerY'),'shaft side collision receives the actual player story height');
 const skeeri=read('docs/js/skeeri-ruins.js');
