@@ -185,7 +185,7 @@ assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMas
 const farmManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/farm-buildings.js', 'utf8');
 const troughs = fs.readFileSync('docs/js/farm-troughs.js', 'utf8');
 const nurseryBridge = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
-assert(farmManifest.includes('farm-troughs.js?v=20261116idleMaskCoverage3'),
+assert(farmManifest.includes('farm-troughs.js?v=20261116idleMaskCoverage4'),
   'the farm bootstrap must invalidate cached nursery and incubator launchers');
 assert(troughs.includes('livestock-nursery.js?v=20261116idleMaskCoverage3')
   && troughs.includes('livestock-nursery-install-bridge.js?v=20261116idleMaskCoverage3'),
