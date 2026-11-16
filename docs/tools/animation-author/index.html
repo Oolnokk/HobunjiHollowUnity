@@ -1479,6 +1479,42 @@ async function fetchRepoJson(path) {
 }
 
 function prepareRepositoryScript(code, relativePath, settings) {
+  if (relativePath === 'js/portrait-utils.js') {
+    // The game keeps its shared image loader unchanged. Only the editor's blob-loaded copy gets a deadline for a browser image request that never fires load/error.
+    const source = `  const tryLoadUrl = (url) => new Promise((resolve, reject) => {
+    portraitImageLoadDebug.requests++; // Includes any necessary alternate host requests.
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(url);
+    img.src = url;
+  });`;
+    if (!code.includes(source)) throw new Error('Portrait image loader changed; cannot install bounded authoring fallback.');
+    const replacement = `  const tryLoadUrl = (url) => new Promise((resolve, reject) => {
+    portraitImageLoadDebug.requests++; // Includes any necessary alternate host requests.
+    const img = new Image();
+    let finished = false; // Timeout, success, and error must settle this image only once.
+    const complete = (error = null) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
+      if (error) reject(error);
+      else resolve(img);
+    };
+    const timeout = setTimeout(() => {
+      portraitImageLoadDebug.timeouts = (portraitImageLoadDebug.timeouts || 0) + 1; // Visible to the existing mobile pixel-cache diagnostics.
+      complete(new Error('Portrait image timeout (15s): ' + url));
+      img.src = 'data:,'; // Cancel a stalled remote request; the loader will try the next matching commit mirror.
+    }, 15000);
+    img.crossOrigin = 'anonymous';
+    img.onload = () => complete();
+    img.onerror = () => complete(new Error('Portrait image unavailable: ' + url));
+    try { img.src = url; } catch (error) { complete(error); }
+  });`;
+    return code.replace(source, replacement);
+  }
   // The animation author exposes the repository's lexical emote table for the single-avatar catalog.
   if (relativePath === 'js/portrait-breathing.js') {
     const configBase = rawUrl(settings.docsRoot + 'config/'); // This page loads the runtime from a blob, so its relative ./docs/config/ would resolve under tools/animation-author/.
