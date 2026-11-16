@@ -249,6 +249,12 @@
       }
     }
 
+    if (needsSmallPetHead(companion, combatDeps)) {
+      const left = warpSmallPetSource(idleSource, kind); // All genotype pattern and eye pixels already exist; warp before seam clipping.
+      const right = rightUsesIdle ? left : warpSmallPetSource(rightSource, kind);
+      idleSource = left;
+      rightSource = right;
+    }
     const width = Number(idleSource.width || idleSource.naturalWidth) || Number(rightSource.width || rightSource.naturalWidth) || 1;
     const height = Number(idleSource.height || idleSource.naturalHeight) || Number(rightSource.height || rightSource.naturalHeight) || 1;
     const leftCanvas = document.createElement('canvas');
@@ -291,7 +297,8 @@
     const authoredSplit = Number(rest?.frameShiftX);
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
     const rotation = Math.round((Number(rest?.separatorRotationDeg) || 0) * 10);
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}`;
+    const smallHead = needsSmallPetHead(companion, combatDeps) ? smallPetVisualKey(companion, combatDeps, 'split') : 'normal-head';
+    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}|${smallHead}`;
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
@@ -360,6 +367,10 @@
     }
     const frameUrl = selected.url;
     if (!frameUrl || typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false;
+    if (needsSmallPetHead(companion, combatDeps)) {
+      // A rare genetically Small pet gets the same head pixels as a baby. Naturally Small adults skip this entire branch.
+      return ensureSmallPetHeadFrame(companion, combatDeps, frameName);
+    }
     companion.__hobunjiShoulderFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? frameUrl : null;
     companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? frameUrl : null;
@@ -381,6 +392,7 @@
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     companion.__hobunjiShoulderSplitFrame = null;
+    smallPetHeadFrameCache.delete(companion); // Invalidate callbacks when an animal leaves the shoulder.
   }
 
   if (window.DevSpawner) patchDevSpawner(window.DevSpawner);
@@ -453,6 +465,7 @@
         shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!effectiveShoulderRest(companion, window.Combat?.deps)?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
         shoulderDiagonalSeparators: activeShoulderPets.filter(companion => Math.abs(Number(effectiveShoulderRest(companion, window.Combat?.deps)?.separatorRotationDeg) || 0) > 0.001).length,
+        smallPetHead: { ...smallPetHeadDebug, active: activeShoulderPets.filter(companion => needsSmallPetHead(companion, window.Combat?.deps)).length }, // Debug overlay distinguishes eligibility from texture-read failures.
       };
     },
   };
