@@ -37,6 +37,19 @@
     return Object.freeze(ids.concat(neutrals));
   }
 
+  function feySaturatedDyeIds(catalog = window.DyeSystem?.getCatalog?.()
+    || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []) {
+    // The live SCRATCHBONES_CONFIG dye catalog defines "Bright" at 60% HSV
+    // saturation. Read that actual threshold instead of hardcoding HSL or
+    // fitting parameters from the offline color-authoring tool.
+    const bright = catalog.filter(dye => !dye.neutral && dye.variantId === 'bright'
+      && Number.isFinite(Number(dye.saturationPercent))); // Authoritative Bright reference swatches.
+    const minimum = bright.length ? Math.min(...bright.map(dye => Number(dye.saturationPercent))) : 60; // Fallback only for isolated tools without the live catalog.
+    return Object.freeze(catalog.filter(dye => !dye.neutral && typeof dye.id === 'string'
+      && Number.isFinite(Number(dye.saturationPercent))
+      && Number(dye.saturationPercent) >= minimum).map(dye => dye.id));
+  }
+
   const ALIGNMENTS = Object.freeze({
     Tothal: Object.freeze({
       id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.9,
@@ -87,10 +100,7 @@
     }),
     Fey: Object.freeze({
       id: 'Fey', label: 'Fey · Illusion / Perception', opacity: 0.72,
-      dyeIds: Object.freeze([
-        'dye:CLOTH:muted_green', 'dye:CLOTH:pure_green', 'dye:CLOTH:muted_green_blue',
-        'dye:CLOTH:muted_violet', 'dye:CLOTH:pure_violet', 'dye:CLOTH:white',
-      ]),
+      dyeIds: feySaturatedDyeIds(), // Any chromatic hue whose runtime HSV saturation meets the Bright-family minimum; neutrals never qualify.
       effects: Object.freeze([
         Object.freeze({ id: 'fey-mirage', label: 'Mirage Wisps', motion: 'wisp', shape: 'veil', blend: 'normal', size: 0.058, life: 1.30, speed: 0.023 }),
         Object.freeze({ id: 'fey-afterimage', label: 'Afterimage Flecks', motion: 'orbit', shape: 'ring', blend: 'additive', size: 0.052, life: 1.02, speed: 0.031 }),
