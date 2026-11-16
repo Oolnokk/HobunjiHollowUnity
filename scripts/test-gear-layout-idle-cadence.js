@@ -14,6 +14,8 @@ const resizers = []; // Captures resize observers so the test can verify invalid
 let layoutReads = 0; // Counts expensive item-info width measurements made by refreshPresentation.
 let styleWrites = 0; // Detects the binary font-fit pipeline running while Gear is hidden.
 let disconnects = 0; // Verifies hidden Gear stops observing resize changes.
+let currentInfoFontPx = 10.5; // Mirrors the CSS variable used by the real detail overflow measurements.
+let maxFittingFontPx = 10.5; // Simulates longer descriptions and narrower panels needing smaller fonts.
 
 const pane = {
   nodeType: 1,
@@ -26,10 +28,16 @@ const menu = { // CSS-opacity-hidden menu retains layout geometry even after clo
   open: true,
   classList: { contains(name) { return name === 'open' && menu.open; } },
 };
+const detail = {
+  offsetParent: {}, clientHeight: 50, clientWidth: 200,
+  get scrollHeight() { return currentInfoFontPx > maxFittingFontPx ? 65 : 50; },
+  get scrollWidth() { return 200; },
+  querySelectorAll() { return []; },
+}; // Geometry fixture exercises the real overflow branch and nine-step binary fit.
 const info = {
   nodeType: 1,
-  style: { setProperty() { styleWrites++; } },
-  querySelector() { return null; },
+  style: { setProperty(name, value) { styleWrites++; if (name === '--gear-info-font') currentInfoFontPx = parseFloat(value); } },
+  querySelector(selector) { return selector === '.ii-detail' ? detail : null; },
   querySelectorAll() { return []; },
   getBoundingClientRect() { layoutReads++; return { width: 100 }; },
   closest(selector) { return selector.includes('#invInfo') ? this : null; },
@@ -79,6 +87,7 @@ const firstFitWrites = styleWrites; // A real content update must still rerun th
 
 observer.notify([mutation(pane), mutation(irrelevant)]);
 assert.equal(queued.length, 0, 'changing unrelated classes while Gear stays open does not refit');
+maxFittingFontPx = 6; // Longer selected-item text should shrink to a fitting font on the next content mutation.
 observer.notify([mutation(info, 'characterData')]);
 assert.equal(queued.length, 1, 'item-detail content changes still refit');
 observer.notify([mutation(info, 'childList')]);
@@ -86,6 +95,7 @@ assert.equal(queued.length, 1, 'multiple relevant mutations coalesce into one fr
 flushFrames();
 assert.equal(layoutReads, 0, 'content changes do not request unrelated diagnostic geometry');
 assert(styleWrites > firstFitWrites, 'item-detail content changes trigger a fresh measured font fit');
+assert(currentInfoFontPx <= 6 && currentInfoFontPx > 5.9, 'the live binary fitter finds the largest font that fits longer text');
 const afterDetailWrites = styleWrites; // Summary changes must not resize the independent right-hand text.
 
 const liveBuffNode = {
@@ -144,10 +154,12 @@ assert(debug.fitStats.ignoredMutations >= 2);
 assert(debug.fitStats.inactiveSkips >= 3);
 
 const preResizeWrites = styleWrites; // Resize invalidates even when the item-detail text itself is unchanged.
+maxFittingFontPx = 4; // A narrower right-hand panel requires another real fit even without a text mutation.
 resizers.at(-1).callback([]);
 flushFrames();
 const afterResize = window.InventoryGearCompactEffects.debugSnapshot();
 assert(styleWrites > preResizeWrites, 'Gear resize reruns the fit');
+assert(currentInfoFontPx <= 4 && currentInfoFontPx > 3.9, 'resize recomputes the fitting font for new geometry');
 assert.equal(afterResize.fitStats.detailFits, 5, 'resizing forces fresh content measurements');
 assert.equal(afterResize.fitStats.passes, 6);
 assert.equal(layoutReads, 3, 'only explicit diagnostics produce layout width reads');
