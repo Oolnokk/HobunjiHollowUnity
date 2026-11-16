@@ -40,7 +40,7 @@
     const baseDamage = base.damage * firstStep.damageMul * (1 + (bonuses.damageMul || 0));
     const knockbackPxS = base.knockbackPxS * firstStep.knockbackMul * (1 + (bonuses.knockbackMul || 0));
     const attackContext = window.CombatAttackEvents?.prepare?.({
-      attacker: deps.player, weaponKey, abilityId: comboId, damage: baseDamage,
+      attacker: deps.player, weaponKey, abilityId: comboId, slotId: 'tap1', attackCategory: 'combo', damage: baseDamage, // Retain combo mastery identity while routing enchantment flourishes through mounted Action 1.
       afflictionBonuses: effects.afflictions, knockbackPxS, rangePx, halfConeRad,
       lungePx: 0, comboStep: 1, comboFinisher: false,
       metadata: { attackAngle: deps.player.angle, mounted: true },
