@@ -10,6 +10,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/inventory-gear-compact-effects.js', 'utf8'); // Execute the real shipped module against a minimal mobile-menu DOM.
 const queued = []; // Deterministic rAF callbacks; tests drain them explicitly instead of relying on the browser clock.
 const observers = []; // Captures the one inventory MutationObserver for synthetic update bursts.
+const resizers = []; // Captures resize observers so the test can verify invalidation after a real layout change.
 let layoutReads = 0; // Counts expensive item-info width measurements made by refreshPresentation.
 let styleWrites = 0; // Detects the binary font-fit pipeline running while Gear is hidden.
 let disconnects = 0; // Verifies hidden Gear stops observing resize changes.
@@ -46,7 +47,7 @@ class MutationObserver {
   notify(records) { this.callback(records); }
 }
 class ResizeObserver {
-  constructor(callback) { this.callback = callback; }
+  constructor(callback) { this.callback = callback; resizers.push(this); }
   observe() {}
   disconnect() { disconnects++; }
 }
@@ -72,8 +73,9 @@ pane.gear = true;
 observer.notify([mutation(pane)]);
 assert.equal(queued.length, 1, 'entering Gear schedules a fit');
 flushFrames();
-assert.equal(layoutReads, 1, 'first Gear open measures detail exactly once');
+assert.equal(layoutReads, 0, 'normal Gear refresh does not run diagnostics-only layout measurements');
 assert(styleWrites > 0, 'Gear open applies its own adaptive font metrics');
+const firstFitWrites = styleWrites; // A real content update must still rerun the font metrics.
 
 observer.notify([mutation(pane), mutation(irrelevant)]);
 assert.equal(queued.length, 0, 'changing unrelated classes while Gear stays open does not refit');
@@ -82,7 +84,9 @@ assert.equal(queued.length, 1, 'item-detail content changes still refit');
 observer.notify([mutation(info, 'childList')]);
 assert.equal(queued.length, 1, 'multiple relevant mutations coalesce into one frame');
 flushFrames();
-assert.equal(layoutReads, 2, 'coalesced mutations cause a single additional layout pass');
+assert.equal(layoutReads, 0, 'content changes do not request unrelated diagnostic geometry');
+assert(styleWrites > firstFitWrites, 'item-detail content changes trigger a fresh measured font fit');
+const afterDetailWrites = styleWrites; // Summary changes must not resize the independent right-hand text.
 
 const liveBuffNode = {
   nodeType: 1,
@@ -97,14 +101,16 @@ const effectCard = {
 observer.notify([mutation(effectCard, 'childList')]);
 assert.equal(queued.length, 1, 'real effect-section rebuilds still schedule a layout pass');
 flushFrames();
-assert.equal(layoutReads, 3, 'effects-card replacement triggers exactly one real layout pass');
+assert.equal(styleWrites, afterDetailWrites, 'rebuilding the left effects card reuses the existing item-detail fit');
+assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.reusedDetailFits, 1);
+assert.equal(layoutReads, 1, 'explicit mobile diagnostics still read the actual detail-panel width');
 
 
 // The menu panel remains mounted and measurable while it is opacity-hidden.
 menu.open = false;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 3, 'closing the main menu never measures still-selected Gear');
+assert.equal(layoutReads, 1, 'closing the main menu never reads hidden Gear geometry');
 const closedMenuWrites = styleWrites; // Tracks CSS work while Gear is selected but no longer visible.
 observer.notify([mutation(info, 'characterData')]);
 flushFrames();
@@ -112,12 +118,12 @@ assert.equal(styleWrites, closedMenuWrites, 'Gear remains idle while its parent 
 menu.open = true;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 4, 'reopening the menu refits the still-selected Gear tab');
+assert.equal(layoutReads, 1, 'reopening the menu does not run diagnostics-only geometry');
 
 pane.gear = false;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 4, 'leaving Gear does not read the hidden detail panel');
+assert.equal(layoutReads, 1, 'leaving Gear does not read the hidden detail panel');
 assert(disconnects >= 1, 'leaving Gear disconnects layout resize targets');
 const hiddenWrites = styleWrites; // Compares real mutation bursts with hidden Gear to the no-work baseline.
 observer.notify([mutation(info, 'characterData'), mutation(irrelevant)]);
@@ -127,10 +133,22 @@ assert.equal(styleWrites, hiddenWrites, 'hidden Gear changes never run CSS font 
 pane.gear = true;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 5, 'reopening Gear refits, including changes made while hidden');
+assert.equal(layoutReads, 1, 'reopening Gear fits without diagnostics-only geometry');
 const debug = window.InventoryGearCompactEffects.debugSnapshot();
 assert.equal(debug.gearActive, true);
 assert.equal(debug.fitStats.passes, 5);
+assert.equal(debug.fitStats.detailFits, 4, 'first open, detail change, and both reopens require a real fit');
+assert.equal(debug.fitStats.reusedDetailFits, 1, 'unrelated left-rail update skips the real fit');
+assert.equal(layoutReads, 2, 'on-demand diagnostics retain the measured item-detail width');
 assert(debug.fitStats.ignoredMutations >= 2);
 assert(debug.fitStats.inactiveSkips >= 3);
+
+const preResizeWrites = styleWrites; // Resize invalidates even when the item-detail text itself is unchanged.
+resizers.at(-1).callback([]);
+flushFrames();
+const afterResize = window.InventoryGearCompactEffects.debugSnapshot();
+assert(styleWrites > preResizeWrites, 'Gear resize reruns the fit');
+assert.equal(afterResize.fitStats.detailFits, 5, 'resizing forces fresh content measurements');
+assert.equal(afterResize.fitStats.passes, 6);
+assert.equal(layoutReads, 3, 'only explicit diagnostics produce layout width reads');
 console.log('Gear layout idle-cadence tests passed');
