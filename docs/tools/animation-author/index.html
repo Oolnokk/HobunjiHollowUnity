@@ -15002,9 +15002,15 @@ updateAnimationRelationLines = function(...args) {
   return baseUpdateAnimationRelationLinesV1549(...args);
 };
 
+const baseRemoveAnimationActorV1549 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  actorById(id)?.shoulderGripPosePreviewControllerV1549?.dispose?.(); // Individual actor deletion must release the posed skinned mesh, too.
+  return baseRemoveAnimationActorV1549(id);
+};
+
 const baseClearAnimationActorsV1549 = clearAnimationActors;
 clearAnimationActors = function(...args) {
-  for (const actor of animationAuthor.actors) actor.shoulderGripPosePreviewControllerV1549?.dispose?.(); // Dispose the added skinned mesh when the actor is replaced.
+  for (const actor of animationAuthor.actors) actor.shoulderGripPosePreviewControllerV1549?.dispose?.(); // Dispose the extra posed geometry before the editor clears an entire scene.
   return baseClearAnimationActorsV1549(...args);
 };
 
