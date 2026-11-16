@@ -18,6 +18,12 @@ let authoredBabyHeadScale = null; // Null inherits the Nursery's experimental gl
 let babyPreviewFrame = null; // Frame resolved once per editor draw, not once per mesh triangle.
 let babyPreviewFrameSource = 'none'; // Helps distinguish authored chathead boxes from painted-head fallbacks.
 let comparingBabyOriginal = false; // Temporary visual toggle; never enters exported rig data.
+function readableBabyError(error) {
+  const reason = String(error?.message || error || 'unknown pixel-read failure'); // Diagnostic from either local preview or swallowed runtime warp errors.
+  return /taint|cross.origin|securityerror/i.test(reason)
+    ? 'Sprite pixels are blocked by cross-origin image loading. Reload this updated rigger; if the image host denies CORS, use Choose image to import its PNG locally. (' + reason + ')'
+    : reason;
+}
 
 function syncBabyHeadScaleControl() {
   const inherited = babyHeadWarp?.getScale?.() || 1.22; // Current Nursery default when the animal has no explicit scale.
@@ -145,13 +151,14 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
     source.height = height;
     source.getContext('2d').drawImage(image, 0, 0, width, height);
     const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame);
+    if (warped === source) throw new Error(babyHeadWarp.debugSnapshot?.()?.lastError || 'Baby head warp returned the original pixels.');
     babyPreviewTextureCache.set(image, { key: cacheKey, image: warped });
     babyHeadDebug.misses++;
     babyHeadDebug.lastSpecies = species;
     babyHeadDebug.lastError = null;
     return warped;
   } catch (error) {
-    babyHeadDebug.lastError = String(error?.message || error); // Mobile users can read this in the status panel.
+    babyHeadDebug.lastError = readableBabyError(error); // Do not cache failed/tainted textures as if enlargement succeeded.
     return image;
   }
 };
@@ -222,6 +229,11 @@ function drawBabyHeadTextureComparison() {
   ctx.fillStyle = '#d6dbde';
   ctx.fillRect(half - 1, 0, 2, height);
   let count = 0; // Number of actually changed visible RGBA pixels in the exact shown head crop, not theoretical geometry.
+  if (babyHeadDebug.lastError && enlarged === source && Number(babyHeadScaleSlider.value) > 100) {
+    babyHeadDebug.comparisonPixelChanges = 0;
+    babyHeadPixelDelta.textContent = babyHeadDebug.lastError; // The runtime compositor swallowed a security error; never report false "0 pixels".
+    return;
+  }
   try {
     if (enlarged !== source) {
       const cached = babyPixelDeltaCache.get(enlarged);
@@ -247,8 +259,9 @@ function drawBabyHeadTextureComparison() {
       ? count.toLocaleString() + ' head-region pixels actually changed. Right preview is the enlarged source, before either rig can deform it.'
       : '0 visible pixels changed. Check that the frame encloses the actual head, or increase the slider toward 145%.';
   } catch (error) {
-    babyHeadDebug.lastError = 'Pixel comparison: ' + String(error?.message || error);
-    babyHeadPixelDelta.textContent = 'Texture comparison is visible; pixel count unavailable: ' + babyHeadDebug.lastError;
+    babyHeadDebug.comparisonPixelChanges = 0;
+    babyHeadDebug.lastError = 'Pixel comparison: ' + readableBabyError(error);
+    babyHeadPixelDelta.textContent = babyHeadDebug.lastError; // An inaccessible source is a loading problem, not a zero-pixel enlargement.
   }
 }
 
