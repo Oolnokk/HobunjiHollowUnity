@@ -132,17 +132,17 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 
   area = 'farm';
   life.tickNpc(boundary, 1);
-  assert.equal(renders.at(-1), 'npc-rebuilt', 'off-area NPCs never composite');
+  assert.equal(renders.at(-1), 'npc-speaking', 'off-area NPCs never composite');
   area = 'town';
   window.SCRATCHBONES_CONFIG = { game: { portrait: { worldLife: { nearTiles: 12, farTiles: 24 } } } };
   life.tickNpc(outside, 1);
-  assert.equal(renders.at(-1), 'npc-rebuilt', 'old overrides cannot restore distant breathing');
+  assert.equal(renders.at(-1), 'npc-speaking', 'old overrides cannot restore distant breathing');
   assert.equal(life.config().farTiles, 5, 'legacy radius overrides are capped to nearby NPCs');
   assert.equal(life.config().nearTiles, 5, 'near radius may not exceed the hard far radius');
   const missingPosition = walker('npc-invalid', 0); // Invalid transforms cannot bypass the distance gate.
   missingPosition.root.position.x = NaN;
   life.tickNpc(missingPosition, 1);
-  assert.equal(renders.at(-1), 'npc-rebuilt');
+  assert.equal(renders.at(-1), 'npc-speaking');
   finishNpc(); await flush();
   const render=window.NpcAvatarPreview.renderProfileToCanvas; // Force setup failure before a Promise exists.
   window.NpcAvatarPreview.renderProfileToCanvas=()=>{throw new Error('setup failed');};
