@@ -44,7 +44,7 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-15-uploads7-moot-voorg-neck');
+assert.equal(api.version, '2026-11-16-moot-painted-baby-pets1');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
 const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six original Puktuk shoulder copies; Moot has an independently editable Voorg-Ass copy.
 const puktuk = api.get('puktuk');
@@ -112,8 +112,9 @@ assert.equal(voorgShoulder.beforePoints.length, 7);
 assert.equal(voorgShoulder.afterPoints.length, 7);
 assert.deepEqual(plain(voorgShoulder.beforePoints[6]), { x: .9599996666666666, y: .572691993389205 });
 assert.deepEqual(plain(voorgShoulder.afterPoints[6]), { x: .6976709902869936, y: 1.2729887486531961 });
-const mootShoulder = api.get('moot').shoulderRest; // Moot starts from the latest Voorg-Ass pose, but remains separately editable.
-assert.deepEqual(plain(mootShoulder), plain(voorgShoulder), 'Moot copies every setting and spline point from Voorg-Ass');
+const mootShoulder = api.get('moot').shoulderRest; // Uploaded Moot shoulder is distinct from its historical Voorg-Ass starting pose.
+assert.notDeepEqual(plain(mootShoulder), plain(voorgShoulder), 'Moot preserves its newly authored shoulder pose rather than copying an older source');
+assert.equal(mootShoulder.separatorAspect, 1.617, 'Moot retains the uploaded separator aspect');
 assert.notStrictEqual(mootShoulder, voorgShoulder, 'Moot has a separate shoulder settings object');
 assert.notStrictEqual(mootShoulder.beforePoints, voorgShoulder.beforePoints, 'Moot has separate BEFORE points');
 assert.notStrictEqual(mootShoulder.afterPoints, voorgShoulder.afterPoints, 'Moot has separate AFTER points');
@@ -125,7 +126,10 @@ const mootNeck = plain(mootRig); // Snapshot all Moot deformation settings, excl
 const voorgNeck = plain(voorgRig); // Snapshot all Voorg-Ass deformation settings, excluding shoulder pose.
 delete mootNeck.shoulderRest;
 delete voorgNeck.shoulderRest;
-assert.deepEqual(mootNeck, voorgNeck, 'Moot copies the complete Voorg-Ass neck/head rig, including paint, pivot and deformation maps');
+assert.notDeepEqual(mootNeck, voorgNeck, 'Moot retains its independently uploaded painted Head influence and native frame');
+assert.equal(mootRig.pivot.x, .37400034701593793, 'Moot keeps the uploaded head pivot');
+assert.equal(mootRig.babyHeadScale, undefined, 'Moot inherits the new universal baby-head percent rather than freezing the old 123%');
+assert.equal(mootRig.babyHeadFrame.width, .46468750000000003, 'Moot keeps its authored baby head-frame fallback');
 assert.notStrictEqual(mootRig.pivot, voorgRig.pivot, 'Moot neck pivot is independently editable');
 assert.notStrictEqual(mootRig.weightMap, voorgRig.weightMap, 'Moot neck weight map is independently editable');
 assert.notStrictEqual(mootRig.weightMap.data, voorgRig.weightMap.data, 'Moot neck paint bytes are independently editable');
@@ -147,4 +151,4 @@ mootShoulder.afterPoints[6].y += .1;
 assert.equal(voorgShoulder.afterPoints[6].y, voorgEnd, 'editing Moot does not alter Voorg-Ass');
 voorgShoulder.beforePoints[0].x += .1;
 assert.notEqual(mootShoulder.beforePoints[0].x, voorgShoulder.beforePoints[0].x, 'editing Voorg-Ass does not alter Moot');
-console.log('animal-head-rig-authored: Moot deep-copies Voorg-Ass neck and shoulder independently; other species preserve their head paint');
+console.log('animal-head-rig-authored: Moot preserves uploaded independent neck/shoulder painting and inherits universal baby head scale');

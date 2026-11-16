@@ -8,6 +8,12 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'); // Serve actual committed modules/assets from one origin.
 const mime = { '.js': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
+let externalSpritePng = null; // Real PNG bytes served from a different origin to reproduce tainted-canvas failures.
+const corsSpriteServer = http.createServer((_req, res) => {
+  if (!externalSpritePng) { res.writeHead(404); res.end('Sprite not ready'); return; }
+  res.writeHead(200, { 'Content-Type': 'image/png', 'Access-Control-Allow-Origin': '*' }); // Explicit CORS opt-in required for pixel reads.
+  res.end(externalSpritePng);
+});
 const server = http.createServer((req, res) => {
   const route = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
   const file = path.resolve(root, route);
@@ -31,6 +37,7 @@ async function spritePng(page, animal) {
 }
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await new Promise(resolve => corsSpriteServer.listen(0, '127.0.0.1', resolve));
   let browser;
   const errors = []; // Real page exceptions are printed without needing the phone's browser console.
   try {
@@ -124,13 +131,104 @@ async function spritePng(page, animal) {
     assert.equal(Object.hasOwn(cleared, 'hat-browser-smoke'), false);
     await page.locator('#riggerNeckTab').click();
     assert.equal(await page.locator('#paintCanvas').isVisible(), true);
-    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat editing');
+    // Exercise the actual mobile browser canvas, not a mocked renderer.
+    await page.locator('#animalId').evaluate(input => {
+      input.value = 'grehlr'; // Real authored head box, with the generated 64x64 test sprite.
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.locator('#imageFile').setInputFiles({
+      name: 'grehlr-baby-fixture.png', mimeType: 'image/png', buffer: await spritePng(page, true),
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame?.width > 0);
+    await page.locator('#babyHeadScale').evaluate(input => {
+      input.value = '145'; // Highest setting makes invisible overrides easy to diagnose.
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.comparisonPixelChanges > 0);
+    const headDebug = await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot());
+    assert.equal(headDebug.scale, 1.45);
+    assert(headDebug.comparisonPixelChanges > 0, 'original and enlarged source pixels must actually differ');
+    assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/);
+
+    // A second localhost port is genuinely cross-origin. Image.onload alone cannot prove the pixels are readable.
+    externalSpritePng = await spritePng(page, true);
+    const externalSpriteUrl = 'http://127.0.0.1:' + corsSpriteServer.address().port + '/animal-fixture.png';
+    await page.evaluate(src => loadImageUrl(src, 'cors-fixture.png'), externalSpriteUrl);
+    await page.waitForFunction(src => state.image?.src === src, externalSpriteUrl);
+    const externalRead = await page.evaluate(() => {
+      const image = state.image, test = document.createElement('canvas');
+      test.width = test.height = 8;
+      test.getContext('2d').drawImage(image, 0, 0, 8, 8);
+      const alpha = test.getContext('2d').getImageData(0, 0, 8, 8).data[3];
+      return { corsMode: image.crossOrigin, alpha, source: image.src };
+    });
+    assert.equal(externalRead.corsMode, 'anonymous', 'rigger requests CORS access before loading sprite');
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.comparisonPixelChanges > 0);
+    assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/,
+      'even a cross-origin loaded sprite must have readable image data for actual enlargement');
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).lastError, null,
+      'successful cross-origin pixel read must clear any earlier tainted-canvas error');
+    const poseMaskCheck = await page.evaluate(() => {
+      const warp = window.BabyAnimalHeadWarp, mask = warp.maskForKind('grehlr');
+      if (!mask) return { error: warp.debugSnapshot().lastMaskError || 'missing idle head mask' };
+      const originalMask = mask;
+      const pose = document.createElement('canvas');
+      pose.width = pose.height = 64;
+      const ctx = pose.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(state.image, 0, 0, 64, 64); // IDLE establishes the mask; the following colors represent a different final pose.
+      ctx.fillStyle = '#ff006b'; ctx.fillRect(Math.floor(mask.centerX) - 6, Math.floor(mask.centerY) - 2, 5, 5); // Eye overlay.
+      ctx.fillStyle = '#03e1cc'; ctx.fillRect(Math.floor(mask.centerX) + 2, Math.floor(mask.centerY) - 2, 5, 5); // Coat pattern.
+      const before = ctx.getImageData(0, 0, 64, 64).data;
+      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45);
+      const after = enlarged.getContext('2d').getImageData(0, 0, 64, 64).data;
+      const colors = (bytes, r, g, b) => {
+        let count = 0;
+        for (let i = 0; i < bytes.length; i += 4)
+          if (bytes[i] === r && bytes[i+1] === g && bytes[i+2] === b && bytes[i+3] > 0) count++;
+        return count;
+      };
+      let changed = 0;
+      for (let i = 0; i < before.length; i++) if (before[i] !== after[i]) changed++;
+      const frame = { x: .125, y: .125, width: .75, height: .75,
+        coordinateSpace: 'sprite-normalized-top-left' };
+      const sparse = new Uint8ClampedArray(12 * 12 * 4);
+      for (let y = 5; y < 8; y++) for (let x = 5; x < 8; x++) sparse[(y*12+x)*4+3] = 255;
+      const isolatedMask = warp.buildIdleMask(sparse, 12, 12, frame);
+      warp.primeIdleMask('test-mask-reload', { width: 12, height: 12, data: sparse }, frame);
+      warp.primeIdleMask('test-mask-reload', { width: 12, height: 12,
+        data: new Uint8ClampedArray(sparse.length) }, frame); // Empty replacement must invalidate an earlier opaque mask.
+      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr') === originalMask,
+        changed, beforeEye: colors(before,255,0,107), afterEye: colors(after,255,0,107),
+        beforePattern: colors(before,3,225,204), afterPattern: colors(after,3,225,204),
+        sparsePixels: isolatedMask?.opaquePixels, clearInsideBox: isolatedMask?.coverage[3*12+3] < 1,
+        staleCleared: warp.maskForKind('test-mask-reload', frame) === null };
+    });
+    assert(!poseMaskCheck.error, poseMaskCheck.error || 'idle mask unavailable');
+    assert(poseMaskCheck.opaquePixels > 0 && poseMaskCheck.maskKept, 'every pose reuses the exact same opaque IDLE mask');
+    assert(poseMaskCheck.changed > 0, 'other poses deform under the idle head mask');
+    assert(poseMaskCheck.beforeEye > 0 && poseMaskCheck.afterEye > 0, 'painted eye overlay survives a post-composition warp');
+    assert(poseMaskCheck.beforePattern > 0 && poseMaskCheck.afterPattern > 0, 'coat pattern overlay survives the same warp');
+    assert.equal(poseMaskCheck.sparsePixels, 9, 'only the nine truly opaque pixels inside a frame define the head source');
+    assert(poseMaskCheck.clearInsideBox && poseMaskCheck.staleCleared, 'transparent frame space stays soft, and invalid sprite reload clears stale masks');
+
+    await page.locator('#shoulderRestSplitFrame').check();
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.splitsAfterWarp > 0);
+    await page.locator('#babyHeadCompare').click();
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, true);
+    await page.waitForFunction(() => /Showing original/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    await page.locator('#babyHeadCompare').click();
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
+    await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat and baby-head editing');
     console.log('PASS mobile hat editor: catalog, PNG import, hat-only preview, smudge, undo/redo, export, clear, neck tab');
   } catch (error) {
     console.error('Hat editor browser errors:', errors.join('\n'));
     throw error;
   } finally {
     await browser?.close();
-    await new Promise(resolve => server.close(resolve));
+    await Promise.all([
+      new Promise(resolve => server.close(resolve)),
+      new Promise(resolve => corsSpriteServer.close(resolve)),
+    ]);
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

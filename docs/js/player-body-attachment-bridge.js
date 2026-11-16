@@ -29,9 +29,9 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-15-uploads7-moot-voorg-neck') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-16-moot-painted-baby-pets1') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261116mootPaint132b', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261116mootPaint132b', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -125,6 +125,7 @@
       if (!url) return reject(new Error('missing frame URL'));
       const image = new Image();
       image.decoding = 'async';
+      image.crossOrigin = 'anonymous'; // Remote fallback sprite pixels must be readable before head enlargement.
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error(`could not load ${url}`));
       image.src = url;
@@ -142,6 +143,94 @@
     ctx.clip();
     ctx.drawImage(image, 0, 0, width, height);
     ctx.restore();
+    return true;
+  }
+
+  const smallPetHeadFrameCache = new WeakMap(); // Per-pet async composed sprite, reused across repeated render-provider calls.
+  const smallPetHeadDebug = { applied: 0, failed: 0, lastError: null }; // In-game mobile diagnostic for small-pet head processing.
+  function needsSmallPetHead(companion, combatDeps) {
+    const kind = genotypeKindFor(companion, combatDeps); // Actual genotype species, never a visual-size guess.
+    return !!window.BabyAnimalHeadWarp?.isSmallSizeVariantPet?.(kind, companion?.genotype, companion?.stableRole);
+  }
+  function warpSmallPetSource(source, kind) {
+    const warp = window.BabyAnimalHeadWarp; // The final genotype image already contains base color, patterns and eyes.
+    if (!warp || !source) return source;
+    const width = Number(source.naturalWidth || source.width), height = Number(source.naturalHeight || source.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return source;
+    const canvas = typeof source.getContext === 'function' ? source : document.createElement('canvas');
+    if (canvas !== source) {
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(source, 0, 0, width, height);
+    }
+    return warp.applyToCanvas(canvas, kind); // Produces independent texture; the genotype cache remains unchanged.
+  }
+  function smallPetVisualKey(companion, combatDeps, frameName) {
+    const kind = genotypeKindFor(companion, combatDeps);
+    const renderer = window.CreatureGeneticsRender, warp = window.BabyAnimalHeadWarp;
+    const signature = renderer?.genotypeSignature?.(kind, companion?.genotype) || JSON.stringify(companion?.genotype || {});
+    const frame = warp?.frameForKind?.(kind);
+    return [kind, frameName, signature, warp?.scaleForKind?.(kind) || 1,
+      frame ? [frame.x, frame.y, frame.width, frame.height].join(',') : 'no-frame'].join('|'); // Cache invalidates when genotype, frame, head box or percent changes.
+  }
+  function ensureSmallPetHeadFrame(companion, combatDeps, frameName) {
+    if (!needsSmallPetHead(companion, combatDeps)) return false;
+    const kind = genotypeKindFor(companion, combatDeps);
+    const renderer = window.CreatureGeneticsRender;
+    if (typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false; // Raw-asset fallback supports eligible species without a genotype compositor.
+    const key = smallPetVisualKey(companion, combatDeps, frameName);
+    const existing = smallPetHeadFrameCache.get(companion);
+    if (existing?.key === key) {
+      if (existing.url) {
+        if (companion.currentFrameUrl !== existing.url) {
+          combatDeps.setCreatureFrame(companion.avatarRef, existing.url, null, 'idle', null); // Already carries eyes, coat and recolored patterns.
+          companion.currentFrameUrl = existing.url;
+        }
+        companion.__hobunjiShoulderFrame = existing.url;
+        companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? existing.url : null;
+        companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? existing.url : null;
+        companion.__hobunjiShoulderSplitFrame = null;
+        return true;
+      }
+      return !!existing.pending; // Prevent recompiling on every render tick or repeatedly retrying a missing sprite.
+    }
+    const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
+    smallPetHeadFrameCache.set(companion, entry);
+    Promise.resolve().then(async () => {
+      const warp = window.BabyAnimalHeadWarp;
+      let mask = await warp?.ensureIdleMask?.(kind); // Prefer the original idle art, not genotype-specific run/eye overlays.
+      if (!mask && !renderer?.SPECIES?.[kind]?.base?.idle) {
+        const idleUrl = shoulderIdleFrame(companion, combatDeps).url; // Rare species without a genotype compositor still own an idle sprite.
+        if (idleUrl) mask = await warp?.ensureIdleMask?.(kind, await loadFrameImage(idleUrl));
+      }
+      if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
+      let composed = null;
+      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false); }
+      catch (error) { smallPetHeadDebug.lastError = 'Genotype pose unavailable, using raw sprite: ' + String(error?.message || error); }
+      if (composed) return composed; // Final compositor includes eyes, recolors and coat patterns whenever supported.
+      const rawUrl = (frameName === 'run1' ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps)).url;
+      return loadFrameImage(rawUrl); // Unsupported species still get head growth on their uncomposited source PNG.
+    }).then(composed => {
+      if (!composed) throw new Error('Neither genotype compositor nor raw sprite supplied this pose');
+      const enlarged = warpSmallPetSource(composed, kind);
+      if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
+      const url = enlarged.toDataURL('image/png');
+      if (smallPetHeadFrameCache.get(companion) !== entry) return;
+      entry.url = url;
+      entry.pending = false;
+      smallPetHeadDebug.applied++;
+      const owner = combatDeps?.player;
+      if (companion.health > 0 && companion.stableRole === 'shoulderPet'
+        && (companion.master || owner) === owner && !effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
+        combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
+        companion.currentFrameUrl = url;
+      }
+    }).catch(error => {
+      if (smallPetHeadFrameCache.get(companion) !== entry) return;
+      entry.pending = false;
+      smallPetHeadDebug.failed++;
+      smallPetHeadDebug.lastError = String(error?.message || error); // Visible through PlayerBodyAttachmentBridge.getDebug() on mobile.
+    });
     return true;
   }
 
@@ -174,6 +263,17 @@
       }
     }
 
+    if (needsSmallPetHead(companion, combatDeps)) {
+      const mask = await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource); // Authoritative raw idle if registered, otherwise the left idle image.
+      if (!mask) {
+        smallPetHeadDebug.failed++;
+        smallPetHeadDebug.lastError = String(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastMaskError || 'No readable idle-head opacity mask for shoulder split');
+      }
+      const left = mask ? warpSmallPetSource(idleSource, kind) : idleSource; // All genotype pattern and eye pixels already exist; warp before seam clipping.
+      const right = rightUsesIdle ? left : mask ? warpSmallPetSource(rightSource, kind) : rightSource;
+      idleSource = left;
+      rightSource = right;
+    }
     const width = Number(idleSource.width || idleSource.naturalWidth) || Number(rightSource.width || rightSource.naturalWidth) || 1;
     const height = Number(idleSource.height || idleSource.naturalHeight) || Number(rightSource.height || rightSource.naturalHeight) || 1;
     const leftCanvas = document.createElement('canvas');
@@ -216,7 +316,8 @@
     const authoredSplit = Number(rest?.frameShiftX);
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
     const rotation = Math.round((Number(rest?.separatorRotationDeg) || 0) * 10);
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}`;
+    const smallHead = needsSmallPetHead(companion, combatDeps) ? smallPetVisualKey(companion, combatDeps, 'split') : 'normal-head';
+    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}|${smallHead}`;
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
@@ -273,6 +374,7 @@
     if (authoredRest && rest.splitFrame) {
       ensureSplitShoulderFrame(companion, combatDeps, rest);
       if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
+      if (needsSmallPetHead(companion, combatDeps)) return true; // Pending split owns both head-warped layers; do not compose a redundant single frame.
     } else {
       companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     }
@@ -285,6 +387,10 @@
     }
     const frameUrl = selected.url;
     if (!frameUrl || typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false;
+    if (needsSmallPetHead(companion, combatDeps)) {
+      // A rare genetically Small pet gets the same head pixels as a baby. Naturally Small adults skip this entire branch.
+      return ensureSmallPetHeadFrame(companion, combatDeps, frameName);
+    }
     companion.__hobunjiShoulderFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? frameUrl : null;
     companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? frameUrl : null;
@@ -306,6 +412,7 @@
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     companion.__hobunjiShoulderSplitFrame = null;
+    smallPetHeadFrameCache.delete(companion); // Invalidate callbacks when an animal leaves the shoulder.
   }
 
   if (window.DevSpawner) patchDevSpawner(window.DevSpawner);
@@ -378,6 +485,7 @@
         shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!effectiveShoulderRest(companion, window.Combat?.deps)?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
         shoulderDiagonalSeparators: activeShoulderPets.filter(companion => Math.abs(Number(effectiveShoulderRest(companion, window.Combat?.deps)?.separatorRotationDeg) || 0) > 0.001).length,
+        smallPetHead: { ...smallPetHeadDebug, active: activeShoulderPets.filter(companion => needsSmallPetHead(companion, window.Combat?.deps)).length }, // Debug overlay distinguishes eligibility from texture-read failures.
       };
     },
   };
