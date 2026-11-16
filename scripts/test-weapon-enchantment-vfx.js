@@ -45,8 +45,20 @@ let scheduledVfxUpdate = null; // Captured from RuntimeFrameScheduler so the hel
 let saves = 0; // Used to confirm player visual choices call the normal gear-save seam.
 const heldToolPlane = { isObject3D: true }; // Used by the runtime-shape test to stand in for the real held PNG plane without pulling THREE into this focused VM harness.
 const heldToolVisual = { visible: true, userData: { itemKey: 'dagger_copper', toolPlane: heldToolPlane } }; // Used to reproduce the supported gameplay dependency shape where toolHolder exists but toolMeshMap does not.
+const feyHueFamilies = ['red','red_orange','orange','yellow_orange','yellow','yellow_green',
+  'green','green_blue','blue','blue_indigo','indigo','indigo_violet','violet']; // Every authored chromatic hue must be allowed at Bright's 60% saturation.
+const feyCatalog = [
+  ...feyHueFamilies.map(hue => ({ id: 'dye:CLOTH:bright_' + hue, variantId: 'bright', saturationPercent: 60, neutral: false })),
+  { id: 'dye:CLOTH:pure_red', variantId: 'pure', saturationPercent: 100, neutral: false },
+  { id: 'dye:CLOTH:muted_blue', variantId: 'muted', saturationPercent: 60, neutral: false },
+  { id: 'dye:CLOTH:dark_muted_green', variantId: 'dark_muted', saturationPercent: 60, neutral: false },
+  { id: 'dye:CLOTH:pale_red', variantId: 'pale', saturationPercent: 30, neutral: false },
+  { id: 'dye:CLOTH:dusty_blue', variantId: 'dusty', saturationPercent: 30, neutral: false },
+  { id: 'dye:CLOTH:silver', variantId: 'neutral', saturationPercent: 100, neutral: true },
+]; // Real catalog uses these same variantIds/saturationPercent fields, not approximate HSL swatches.
 const context = {
   window: {
+    SCRATCHBONES_CONFIG: {game:{dyes:{catalog:feyCatalog}}},
     Combat: {
       deps: {
         getGearInventory: () => gear,
@@ -89,6 +101,27 @@ vm.runInContext(vfxSource, context, { filename: 'weapon-enchantment-vfx.js' });
 
 const api = context.window.WeaponEnchantmentVFX; // Used to exercise the public persistence/customization contract without THREE/DOM rendering.
 assert(api, 'WeaponEnchantmentVFX must install its public API.');
+const fey = api.ALIGNMENTS.Fey; // Uses the real current Fey particle vocabulary, tested through its public read-only origin registry.
+assert(fey, 'Fey must be an available enchantment VFX origin');
+for (const hue of feyHueFamilies) {
+  assert(fey.dyeIds.includes('dye:CLOTH:bright_' + hue), 'all Bright hues must qualify: ' + hue);
+}
+for (const id of ['pure_red','muted_blue','dark_muted_green']) {
+  assert(fey.dyeIds.includes('dye:CLOTH:' + id), 'saturated chromatic dye must qualify: ' + id);
+}
+for (const id of ['pale_red','dusty_blue','silver']) {
+  assert(!fey.dyeIds.includes('dye:CLOTH:' + id), 'low-saturation or neutral dye must not qualify: ' + id);
+}
+assert(fey.dyeIds.every(id => feyCatalog.find(dye => dye.id === id)?.saturationPercent >= 60),
+  'Fey palette minimum must match Bright HSV saturation');
+const fireflies = fey.effects.find(effect => effect.id === 'fey-fireflies'); // Non-default selectable fourth option, not a replacement for authored Fey illusions.
+assert(fireflies, 'Tiny Fireflies must be a player-selectable Fey VFX');
+assert(fireflies.size <= 0.022, 'fireflies should remain noticeably smaller than other Fey particles');
+assert.equal(fireflies.blend, 'additive', 'fireflies achieve intense luminance without world lights');
+assert.equal(fireflies.opacity, 1, 'fireflies need fully bright cores');
+assert.equal(fireflies.toneMapped, false, 'world tone mapping must not dim firefly cores');
+assert(vfxSource.includes("shape === 'firefly'"), 'firefly shape must use its own tight-core glow texture');
+assert(vfxSource.includes("particle.motion === 'firefly'"), 'fireflies must have independent drift and tiny scale/twinkle');
 assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 'toolHolder-only runtime dependencies must resolve the live held weapon without scene traversal or toolMeshMap.');
 assert(scheduledVfxUpdate, 'weapon enchantment update must be registered with the existing frame scheduler.');
 const heldDeps = context.window.ProceduralHandAttachments.gameDeps; // The same holder the runtime reads when a melee weapon, ranged weapon or tool is drawn.
@@ -160,3 +193,11 @@ assert.strictEqual(context.window.WeaponEnchantmentVFX.stateFor('dagger_copper')
 context.window.EnchantmentSystem.planarCounts = () => ({ Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 1 });
 assert.strictEqual(api.stateFor('dagger_copper').colorAlignment, 'Ohthic', 'removed origins fall back to an active palette');
 assert.strictEqual(api.stateFor('dagger_copper').alignment, 'Ohthic', 'removed origins fall back to an active form');
+context.window.EnchantmentSystem.PLANES.push('Fey');
+context.window.EnchantmentSystem.planarCounts = () => ({ Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 1, Fey: 1 });
+assert(api.setChoice('dagger_copper', 'alignment', 'Fey'), 'player can choose Fey particle shapes');
+assert(api.setChoice('dagger_copper', 'colorAlignment', 'Fey'), 'player can choose saturated Fey dyes');
+assert(api.setChoice('dagger_copper', 'dyeId', 'dye:CLOTH:bright_violet'), 'Bright Violet is valid');
+assert(api.setChoice('dagger_copper', 'effectId', 'fey-fireflies'), 'Tiny Fireflies are selectable in the live VFX picker');
+assert.equal(api.stateFor('dagger_copper').effectId, 'fey-fireflies', 'Tiny Fireflies selection persists');
+assert.equal(api.setChoice('dagger_copper', 'dyeId', 'dye:CLOTH:pale_red'), false, 'too-muted dyes are rejected');
