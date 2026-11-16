@@ -104,7 +104,7 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 
   area = 'farm';
   life.tickNpc(boundary, 1);
-  assert.equal(renders.at(-1), 'npc-crowd-1', 'off-area NPCs never composite');
+  assert.equal(renders.at(-1), 'npc-rebuilt', 'off-area NPCs never composite');
   area = 'town';
   window.SCRATCHBONES_CONFIG = { game: { portrait: { worldLife: { nearTiles: 12, farTiles: 24 } } } };
   life.tickNpc(outside, 1);
