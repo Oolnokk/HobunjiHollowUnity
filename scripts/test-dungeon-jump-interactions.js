@@ -111,4 +111,49 @@ frame();
 assert.equal(runtimeWindow.DevRandomRuinMotionRuntime.getInteractionControls().length, 0,
   'exiting the ruin clears its block interaction');
 
-console.log('Dungeon Jump is independent of all dungeon world-object controls.');
+// Exercise the actual ClimbSystem action owner, rather than only the input bindings:
+// a nearby authored ledge or climb wall must never replace the dungeon jump.
+let climbArea = 'map_i_dev_random_ruin'; // Mutable map for proving physical ruin Jump and legacy non-ruin climbing have separate priorities.
+let climbMove = { x: 1, y: 0 }; // Forward intent in the test player's facing direction, used by Dodge-driven authored climbing.
+let fighting = false; // Combat state used to keep emergency Dodge available around dungeon walls.
+let freeJumps = 0; // Count ordinary physical launches, even when a ruin ledge offers a climb.
+let worldClimbs = 0; // Count authored climb callbacks that formerly stole the dungeon Jump.
+const climbPlayer = { angle: 0, climbing: false, dodging: false };
+const climbWindow = {
+  PlayerJump: { init() {}, start() { freeJumps++; return true; } },
+  GameplayInputRouter: { isInCombat: () => fighting },
+};
+vm.runInNewContext(read('docs/js/climb-system.js'), {
+  window: climbWindow,
+  performance: { now: () => 100 },
+});
+climbWindow.ClimbSystem.init({
+  player: climbPlayer,
+  getCurrentArea: () => climbArea,
+  _isZoneArea: () => false,
+  getMovementInput: () => climbMove,
+  getMountRideState: () => 'none',
+});
+climbWindow.ClimbSystem.registerWorldClimbProvider(() => ({
+  kind: 'ruinLedge',
+  start() { worldClimbs++; return true; },
+}));
+assert.equal(climbWindow.ClimbSystem.jumpAction(), true, 'Jump starts successfully beside an offered dungeon climb');
+assert.equal(freeJumps, 1, 'physical Jump takes priority over offered dungeon climb targets');
+assert.equal(worldClimbs, 0, 'dungeon Jump cannot activate climbable scenery');
+assert.equal(climbWindow.ClimbSystem.cliffDodge(), true, 'forward Dodge still climbs authored ruin ledges');
+assert.equal(worldClimbs, 1, 'the separate traversal input triggers the authored climb once');
+climbMove = { x: -1, y: 0 };
+assert.equal(climbWindow.ClimbSystem.cliffDodge(), false, 'backward Dodge does not activate an authored climb');
+assert.equal(worldClimbs, 1, 'backward evasive motion leaves the ledge untouched');
+climbMove = { x: 1, y: 0 };
+fighting = true;
+assert.equal(climbWindow.ClimbSystem.cliffDodge(), false, 'combat Dodge is not stolen by an authored climb');
+assert.equal(worldClimbs, 1, 'combat does not activate scenery');
+fighting = false;
+climbArea = 'wilderness';
+assert.equal(climbWindow.ClimbSystem.jumpAction(), true, 'outside ruins, existing world-climb targets retain Jump handling');
+assert.equal(worldClimbs, 2, 'dungeon-specific jump independence does not rewrite exterior traversal');
+assert.equal(freeJumps, 1, 'exterior climb still owns the original world-climb press');
+
+console.log('Dungeon Jump is independent of all dungeon world-object controls, including climb targets.');
