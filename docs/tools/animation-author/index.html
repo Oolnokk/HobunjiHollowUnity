@@ -14955,6 +14955,7 @@ function syncShoulderGripPosePreviewV1549() {
       && selectedRigAnchorName(actor) === 'shoulderGrip'
       && actor.shoulderGripPoseChoiceV1549 !== 'source';
     controller.setPose(showPerched ? 'perched' : 'source'); // The adapter short-circuits unchanged poses.
+    if (showPerched) controller.syncPlaneScale(); // Follow the current size-class meshes after gizmo changes without recomposing sprites.
   }
 }
 
