@@ -147,7 +147,6 @@
     if (!frame || !pixels || w < 1 || h < 1 || pixels.length !== w * h * 4) return null;
     const left = Math.max(0, Math.floor(frame.x * w)), top = Math.max(0, Math.floor(frame.y * h));
     const right = Math.min(w, Math.ceil((frame.x + frame.width) * w)), bottom = Math.min(h, Math.ceil((frame.y + frame.height) * h));
-    const occupied = new Uint8Array(w * h); // Alpha > 0 inside the chathead frame is the ONLY full-strength source domain.
     const distance = new Float32Array(w * h); // Chamfer distance to the nearest opaque idle-head pixel for the soft transition.
     distance.fill(Infinity);
     let pixelsInside = 0, sumX = 0, sumY = 0;
@@ -155,8 +154,7 @@
       for (let x = left; x < right; x++) {
         const i = y * w + x;
         if (pixels[i * 4 + 3] === 0) continue;
-        occupied[i] = 1;
-        distance[i] = 0;
+        distance[i] = 0; // Only alpha>0 idle pixels inside the chathead crop seed the distance field.
         pixelsInside++;
         sumX += x + 0.5;
         sumY += y + 0.5;
