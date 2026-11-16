@@ -45,6 +45,7 @@
           blocked.push([x,z]);
         }
         const room={id:name,floor:floor.floor,y:floor.y,wingId:wing.id,side,
+          theme:plan.options?.theme||null, // Used to keep diffuse Tothal lighting free of a projected room-shaped frame.
           kind:source.kind,challenge:source.challenge,x:source.x,z:source.z,w:source.w,d:source.d,
           pit,blocked,entry:{x:p.x,z:p.z,axis:across==='z'?'x':'z',span:DOOR_SPAN,
             line:across==='z'?p.x+.5:p.z+.5,across,centre,lo,hi},
@@ -69,7 +70,7 @@
       const x=originX+Number(raw.col)*cs,z=originZ+Number(raw.row)*cs;
       const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
       if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
-      return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),
+      return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),theme,
         y,wingId:null,challenge:null,x,z,w,d,
         supportYAt:typeof supportYAt==='function'?supportYAt:null, // V50 uses the floor's exact plateau height when deciding which room is awake.
         ambient:{darknessOffset:0,color}}];
@@ -310,6 +311,7 @@
       prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
       withLightRegion(ctx,project,draw){
         if(typeof draw!=='function')return false;
+        if(active?.theme==='tothal'){draw();return true;} // Broad blue ceiling/wall washes must not intersect a hard projected room hull; source-room filtering still applies.
         if(!active?.wingId||!ctx?.save||!ctx?.clip){draw();return true;}
         const footprint=roomLightFootprint(active,project); // One eight-corner wall-volume projection per lighting redraw, not one mask per light.
         if(!footprint){draw();return true;} // Invalid/edge-on camera transforms cannot make all lights vanish.
@@ -367,7 +369,7 @@
         sleepingNpcWalkers:[...walkersOwnership.values()].filter(r=>r.sleeping).length,
         assignedEnemies:ownership.size,transitions,resets,errors:layout?.errors||[],
         lightClip:{mode:'full-screen-tint',featherPx:0,feathered:false,bands:0,canvasPasses:0,passBudget:0,budgetDowngrades:0},
-        localLightBoundary:{mode:'room-volume-light-clip',active:!!active?.wingId,canvasPasses:localLightClipPasses}};},
+        localLightBoundary:{mode:active?.theme==='tothal'?'unclipped-tothal-overcast':'room-volume-light-clip',active:!!active?.wingId&&active?.theme!=='tothal',canvasPasses:localLightClipPasses}};},
     };
     live=session;
     return session;
