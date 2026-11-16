@@ -30,7 +30,8 @@ class Mesh extends Group{constructor(geometry,material){super();this.geometry=ge
 class Geometry{dispose(){}}
 class Material{constructor(opts){Object.assign(this,opts);}dispose(){}}
 global.THREE={Group,Mesh,BoxGeometry:Geometry,CylinderGeometry:Geometry,MeshBasicMaterial:Material};
-global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},ids:new Set()};
+global.DynamicSurfaces={registerBlocker(x){this.ids.add(x.id)},remove(id){this.ids.delete(id)},
+ sampleSupport:()=>({y:room.y}),ids:new Set()}; // Real side puzzles require the same flat physical support as the main stages.
 global.DevRandomRuinDungeonChests={create(o){
  const group=new Group();group.position.set(o.x,o.y,o.z);o.parent.add(group);
  return {group,opened:false,control:{kind:'dungeonChest'}};}};
@@ -52,6 +53,11 @@ const rigUpdates=[]; // Each baby must receive the actual rig's folded-wing hatc
 global.DevRandomRuinInteractions={activeCamera:()=>({getWorldPosition(){}})};
 global.SkeeriRuins={paletteFor:theme=>({theme}),createRig:async()=>({root:new Group(),update:(_camera,pose)=>rigUpdates.push(pose),dispose(){this.disposed=true;}})};
 const controls=new Set();
+const noFloorSeed=found['closet:melody']; // A moving/raised, unreachable plate must be rejected, never painted into the air.
+global.DynamicSurfaces.sampleSupport=()=>({y:room.y+2});
+assert.equal(api.create({room,seed:noFloorSeed,theme:'kanthic',parent:new Group(),THREE}),null,
+  'optional melody puzzles never spawn on a platform raised above the advertised floor');
+global.DynamicSurfaces.sampleSupport=()=>({y:room.y});
 for(const [key,seed] of Object.entries(found)){
  feetY=12;groundOn=false;player={x:43,z:53};
  const owner=api.create({room,seed,theme:'kanthic',parent:new Group(),THREE,
@@ -102,7 +108,8 @@ const seed=found.babies,brood=api.create({room,seed,theme:'kanthic',parent:new G
   getPlayerY:()=>12,getPlayerPosition:()=>({x:43,z:53}),
   addControl:c=>controls.add(c),removeControl:c=>controls.delete(c)});
 Promise.resolve().then(()=>Promise.resolve()).then(()=>{
-  assert.equal(brood.nest.loaded,brood.babies,'all hatchling rigs resolve into the intended shelf');
+  assert.equal(brood.nest.loaded,brood.babies,'all hatchling rigs resolve into their grounded plinth');
+  assert.equal(brood.nest.shelf.position.y,room.y+1.1,'the physical nest pedestal is built up from ground level');
   brood.tick(.05);
   assert(rigUpdates.length>=brood.babies&&rigUpdates.every(pose=>pose==='hatchling'),
     'every flying animal rig must explicitly enter hatchling pose with the actual camera');
