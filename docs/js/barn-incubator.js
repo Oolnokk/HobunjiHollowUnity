@@ -953,12 +953,12 @@
     if (sleepingBabies.has(key) || !slot.baby || typeof THREE === 'undefined') return;
     const renderer = window.CreatureGeneticsRender; // Existing genotype compositor and species sprite registry.
     const avatarApi = window.PNGPlaneAvatar; // Existing front/back animal billboard builder.
-    const species = renderer?.SPECIES?.[slot.baby.kind]; // Idle sprite metadata for this baby species.
-    const idleUrl = species?.base?.idle; // Texture source for the sleeping billboard.
-    const scene = activeScene(); // Current barn interior scene.
-    const anchor = attachmentLocal(authored, slot.index); // Editable furniture-authored animal location.
+    const species = renderer?.SPECIES?.[slot.baby.kind]; // Registered species have a complete genotype compositor.
+    const speciesDef = animalDeps?.CREATURE_DB?.[slot.baby.kind] || {}; // Also supplies source sprites for other baby species.
+    const idleUrl = species?.base?.idle || speciesDef.sprites?.idle; // Always use an actual IDLE pose to establish the head mask.
+    const scene = activeScene();
+    const anchor = attachmentLocal(authored, slot.index);
     if (!renderer || !avatarApi?.buildAnimalPlaneAvatarModel || !idleUrl || !scene || !anchor) return;
-    const speciesDef = animalDeps?.CREATURE_DB?.[slot.baby.kind] || {}; // Sprite aspect source shared with farm animals.
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {}; // Existing per-species size overrides.
     const adultWidth = slot.baby.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[slot.baby.kind]) || 1.7); // Match corrected standing-adult Uumkao'ii width.
     const aspect = Number(speciesDef.spriteAspect) || (slot.baby.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375); // Preserve native Uumkao'ii aspect even before the species definition loads.
@@ -983,9 +983,28 @@
     sleepingBabies.set(key, { avatarRef, babyId: slot.baby.id });
 
     try {
-      const composed = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); // Sleep wrapper first selects run2 and closed eyes.
-      if (!composed || !sleepingBabies.has(key)) return;
-      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(slot.baby.kind, composed); // This requested 'idle' composite defines the silhouette shared with every other pose.
+      let composed = null;
+      if (species?.base?.idle && typeof renderer.composeFrame === 'function') {
+        try { composed = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); }
+        catch (_) {} // A failed genotype composite can still use the original native idle sprite.
+      }
+      if (!composed) {
+        composed = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.crossOrigin = 'anonymous'; // The fallback PNG must be pixel-readable for the baby head's opacity mask.
+          image.onload = () => {
+            const rawCanvas = document.createElement('canvas'); // No genotype compositor exists for some registered babies.
+            rawCanvas.width = image.naturalWidth;
+            rawCanvas.height = image.naturalHeight;
+            rawCanvas.getContext('2d').drawImage(image, 0, 0);
+            resolve(rawCanvas);
+          };
+          image.onerror = () => reject(new Error('Could not load incubator baby idle sprite: ' + idleUrl));
+          image.src = idleUrl;
+        });
+      }
+      if (!sleepingBabies.has(key)) return;
+      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(slot.baby.kind, composed);
       if (!sleepingBabies.has(key)) return;
       const canvas = window.BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind) || composed; // Baby-only warp preserves the adult genotype canvas.
       const front = new THREE.CanvasTexture(canvas); // Front genotype texture.
