@@ -453,11 +453,16 @@
       const image = new Image();
       image.crossOrigin = 'anonymous'; // The idle-mask generator must be able to read raw PNG alpha.
       image.onload = () => {
-        const canvas = document.createElement('canvas'); // Unmodified sprite at its native pixel resolution.
-        canvas.width = image.naturalWidth;
-        canvas.height = image.naturalHeight;
-        canvas.getContext('2d').drawImage(image, 0, 0);
-        resolve(canvas);
+        try {
+          const canvas = document.createElement('canvas'); // Unmodified sprite at its native pixel resolution.
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          canvas.getContext('2d').drawImage(image, 0, 0);
+          resolve(canvas);
+        } catch (error) {
+          window.__farmLog?.('[nursery] raw baby sprite could not be decoded: ' + String(error?.message || error), 'warn');
+          resolve(null); // Never leave the agent's async texture preparation permanently unresolved.
+        }
       };
       image.onerror = () => resolve(null); // The normal baby remains visible if an optional pose is absent.
       image.src = url;
@@ -476,8 +481,11 @@
       const rawRun = Array.isArray(sprites.run) ? sprites.run : sprites.run ? [sprites.run] : [];
       const rawPaths = { idle: sprites.idle, run1: rawRun[0] || sprites.idle, run2: rawRun[1] || rawRun[0] || sprites.idle };
       const canvases = await Promise.all(names.map(async name => {
-        const composed = species && typeof renderer.composeFrame === 'function'
-          ? await renderer.composeFrame(entry.kind, name, entry.genotype, false) : null;
+        let composed = null;
+        if (species && typeof renderer.composeFrame === 'function') {
+          try { composed = await renderer.composeFrame(entry.kind, name, entry.genotype, false); }
+          catch (error) { window.__farmLog?.('[nursery] genotype baby sprite unavailable: ' + String(error?.message || error), 'warn'); }
+        }
         return composed || rawBabyFrameCanvas(species?.base?.[name] || rawPaths[name]);
       }));
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
