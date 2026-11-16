@@ -14866,42 +14866,36 @@ window.addEventListener('resize', syncAllMaaPanelBodies);
 const baseApprovedRigLibraryCloneV1548 = approvedRigLibraryCloneV1524;
 approvedRigLibraryCloneV1524 = function() {
   const approved = baseApprovedRigLibraryCloneV1548(); // Keeps all other approved species and coordinates intact.
-  const currentDrenkirra = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.drenkirra;
-  if (approved?.creatures && currentDrenkirra?.anchors?.shoulderGrip) {
-    approved.creatures.drenkirra = structuredCloneSafe(currentDrenkirra); // The old embedded V15.24 default also had a stale grip XYZ; reset must use the exact gameplay rig, not just its yaw.
+  const currentCreatures = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures;
+  if (approved?.creatures && currentCreatures) {
+    for (const [kind, current] of Object.entries(currentCreatures)) {
+      approved.creatures[kind] = structuredCloneSafe(current); // Repository defaults must match gameplay for every species, including rigs absent from the older embedded V15.24 library.
+    }
   }
   return approved;
 };
 
-function reconcileShoulderGripPreviewYawV1548(kind, profile, originalGrip) {
+function reconcileShoulderGripPreviewV1548(kind, profile, originalGrip) {
   const target = profile?.anchors?.shoulderGrip;
   if (!target) return;
-  const savedRotation = originalGrip?.rotationDeg; // Explicit editor authoring must survive legacy default loaders for every species.
-  if (savedRotation) target.rotationDeg = { ...target.rotationDeg, ...savedRotation };
-  const canonicalGrip = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[kind]?.anchors?.shoulderGrip;
-  const atPosition = xyz => xyz && ['x', 'y', 'z'].every(axis => Math.abs((Number(target.position?.[axis]) || 0) - xyz[axis]) < 1e-9);
-  const obsoleteDrenkirraGrips = [
-    { x: 0.01, y: -0.1636307385658067, z: 0.0009131708735385657 },
-    { x: 0.01, y: -0.1636307385658067, z: 0.003984738737597559 },
-  ]; // Only the known older Drenkirra defaults, not a hand-adjusted socket, should migrate.
-  const stalePosition = kind === 'drenkirra' && obsoleteDrenkirraGrips.some(atPosition);
-  if (stalePosition && canonicalGrip) target.position = { ...canonicalGrip.position }; // Match the corrected gameplay socket as well as its yaw.
-  if (kind === 'drenkirra' && canonicalGrip && Number(target.rotationDeg?.y) === -61
-      && (stalePosition || atPosition(canonicalGrip.position))) {
-    target.rotationDeg.y = Number(canonicalGrip.rotationDeg.y); // −61° is an obsolete Drenkirra default only at its stock grip.
-  }
+  if (originalGrip?.position) target.position = { ...target.position, ...originalGrip.position }; // The old editor normalizer forced X = .01, even for user-edited sockets.
+  if (originalGrip?.rotationDeg) target.rotationDeg = { ...target.rotationDeg, ...originalGrip.rotationDeg }; // Do not let old V15.21/V15.22 defaults overwrite intentional yaw edits.
+  const guard = window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD; // Reuse the game's exact known-stale grip fingerprints instead of maintaining another editor-only recovery list.
+  const reconciled = guard?.reconcileProfiles?.({ creatures: { [kind]: { anchors: { shoulderGrip: structuredCloneSafe(target) } } } })
+    ?.creatures?.[kind]?.anchors?.shoulderGrip;
+  if (reconciled) profile.anchors.shoulderGrip = normalizeTransformSnapshot(reconciled, 1); // Repairs only recognized obsolete stock grips; preserves custom XYZ, Y and other authored fields.
 }
 const baseNormalizedRigProfileLibraryV1548 = normalizedRigProfileLibrary;
 normalizedRigProfileLibrary = function(value = {}) {
   const output = baseNormalizedRigProfileLibraryV1548(value); // Reuse all existing schema/size migrations.
   for (const [kind, profile] of Object.entries(output.creatures || {})) {
-    reconcileShoulderGripPreviewYawV1548(kind, profile, value?.creatures?.[kind]?.anchors?.shoulderGrip);
+    reconcileShoulderGripPreviewV1548(kind, profile, value?.creatures?.[kind]?.anchors?.shoulderGrip);
   }
   return output;
 };
 for (const library of [animationAuthor.attachmentRigProfiles, DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516]) {
   for (const [kind, profile] of Object.entries(library?.creatures || {})) {
-    reconcileShoulderGripPreviewYawV1548(kind, profile, null);
+    reconcileShoulderGripPreviewV1548(kind, profile, null);
   }
 }
 
