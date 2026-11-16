@@ -105,6 +105,18 @@ const flail = fixture({ bounded: true, nested: true });
 assert(!flail.draws[3].nodes.includes(flail.weapon), 'the haft is suppressed in the head’s replay group');
 assert(flail.draws[3].nodes.includes(flail.hand), 'suppressing the haft must never prune its head from the scene graph');
 fixture({ fail: true });
+const ordinaryWilderness = fixture({ wildernessGround: true }); // Ordinary held parts must also obey physical ground depth outside the x-ray circle.
+assert.equal(ordinaryWilderness.clears, 0, 'ordinary ground restoration reuses the original cheap supplement (no full depth clear)');
+assert(ordinaryWilderness.draws[0].nodes.includes(ordinaryWilderness.opaque),
+  'the selective supplement retains ground that failed to write depth in the normal world pass');
+assert.equal(ordinaryWilderness.draws[0].groundDepthWrite, true,
+  'ordinary held equipment cannot x-ray through non-depth-writing wilderness ground');
+assert.equal(ordinaryWilderness.draws[1].groundDepthWrite, false,
+  'the ordinary held weapon color pass restores the authored ground depth setting');
+assert.equal(ordinaryWilderness.forcedGround, 1, 'the ordinary path contributes its repair to mobile diagnostics');
+const ordinaryLegacy = fixture({ wildernessGround: true, colorLock: false });
+assert.equal(ordinaryLegacy.draws[0].groundDepthWrite, true,
+  'unsupported color-mask renderers still repair ground depth in their full replay');
 const wilderness = fixture({ bounded: true, ordinary: false, wildernessGround: true });
 assert.equal(wilderness.draws[0].groundDepthWrite, true,
   'the actual colorless ground-depth rebuild writes missing wilderness depth outside the actor circle');
@@ -120,4 +132,5 @@ assert.equal(fallbackGround.draws[1].groundDepthWrite, false,
   'fallback ground cannot leak the temporary depth override into the held color pass');
 assert.equal(fallbackGround.forcedGround, 1, 'the phone counter also includes fallback material repairs');
 fixture({ bounded: true, ordinary: false, wildernessGround: true, fail: true }); // Even an interrupted render must restore the material.
+fixture({ wildernessGround: true, fail: true }); // Ordinary supplement exceptions restore ground too.
 console.log('ordinary held replay: 2 passes instead of 3; no opaque terrain depth redraw; mixed/fallback/exception checks passed');
