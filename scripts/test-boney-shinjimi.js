@@ -203,6 +203,15 @@ async function testRealEncounterFlow() {
   for(let i=0;i<8;i++)await Promise.resolve(); // Resolve the independent house-fetch and NPC-building promises without wall-clock timers.
   C.update(.05);
   assert.equal(spawned.length,1,'single NPC materialization');
+  const bystander={area:'map_western_slope',rec:{id:'bystander'},root:{position:{x:npc.root.position.x+1,z:npc.root.position.z}}}; // Ordinary pedestrian must be an avoidance target.
+  game.npcWalkers.push(bystander);
+  assert.equal(C.__test.nearbyOtherNpc().x,bystander.root.position.x,'Boney detects nearby NPC walkers');
+  game.npcWalkers.pop();
+  const bandit={areaId:'map_western_slope',isBandit:true,health:50,
+    x:(npc.root.position.x+2)*64,y:npc.root.position.z*64}; // Hostile humanoids use pixel coordinates and are not NPC walkers.
+  game.hostileObjects=[bandit];
+  assert.equal(C.__test.nearbyOtherNpc().x,bandit.x/64,'Boney also detects nearby bandits and barbarians through the hostile roster');
+  game.hostileObjects=[];
   assert.equal(sceneGroups.length,1,'only one authored house is materialized');
   const jambs=generatedPiece.base.faces.filter(face=>String(face.id).includes('_boneyDoor_'));
   assert.equal(jambs.length,3,'south wall has two physical jambs and a lintel');
