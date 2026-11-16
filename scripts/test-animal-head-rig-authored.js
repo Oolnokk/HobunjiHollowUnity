@@ -128,7 +128,7 @@ delete mootNeck.shoulderRest;
 delete voorgNeck.shoulderRest;
 assert.notDeepEqual(mootNeck, voorgNeck, 'Moot retains its independently uploaded painted Head influence and native frame');
 assert.equal(mootRig.pivot.x, .37400034701593793, 'Moot keeps the uploaded head pivot');
-assert.equal(mootRig.babyHeadScale, undefined, 'Moot inherits the new universal baby-head percent rather than freezing the old 123%');
+assert.equal(mootRig.babyHeadScale, undefined, 'Moot inherits the new universal 123% baby-head percent without an authored species override');
 assert.equal(mootRig.babyHeadFrame.width, .46468750000000003, 'Moot keeps its authored baby head-frame fallback');
 assert.notStrictEqual(mootRig.pivot, voorgRig.pivot, 'Moot neck pivot is independently editable');
 assert.notStrictEqual(mootRig.weightMap, voorgRig.weightMap, 'Moot neck weight map is independently editable');
