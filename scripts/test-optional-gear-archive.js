@@ -68,6 +68,7 @@ const document = {
   addEventListener() {},
   getElementById: id => id === 'invEquipSection' ? root
     : id === 'iiDetail' ? itemDetail : id === 'iiName' ? itemName : id === 'iiActions' ? itemActions : null,
+  querySelectorAll: () => [], // Empty unrelated selections in the inventory mastery resolver.
   createElement: tag => new FakeElement(tag),
   createTextNode: text => Object.assign(new FakeElement('#text'), { textContent: text }),
 };
