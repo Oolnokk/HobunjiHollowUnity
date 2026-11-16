@@ -23,6 +23,7 @@ assert.match(render, /frontPortraitMaskReason: lastFrontPortraitMaskReason/,
   'mobile diagnostics explain zero eligible/masked gear rather than silently reporting 0\/0');
 assert.doesNotMatch(config, /'shoulderPet\\.presentation':\\s*\\{/, 'no independent pet x-ray mode');
 assert.doesNotMatch(game, /_cameraSeesPlayerFrontFace/, 'camera side never decides pet occlusion');
+assert.doesNotMatch(game, /\bSHOULDER_PET_PLANE_RENDER_ORDER\b/, 'no removed shoulder render constant remains in game startup dependencies');
 for (const id of [
   'settingDisableHatXray', 'settingShoulderPetRotationSource',
   'settingInvertShoulderPetRotationSource', 'settingCancelShoulderPetRotationalOffset',
