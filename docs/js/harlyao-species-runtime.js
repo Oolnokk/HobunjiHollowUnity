@@ -11,7 +11,7 @@
 
   const SPECIES_ID = 'harlyao'; // Used as the runtime/config key for every Harlyao-specific override below.
   const BODY_SPECIES_ID = 'engh-sho'; // Used whenever Harlyao must resolve Engh-sho-authored body, wardrobe, extremity, or rig data.
-  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.84, female: 0.78 }); // Fixed body-proportional pet size (1.2× Engh-sho authored dimensions); never calculated at runtime.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.64865, female: 0.633087 }); // Fixed pet scale from world-space portrait-plane width/height, normalized to Tletingan male; no runtime derivation.
   const COLOR_SPECIES_ID = 'mao-ao'; // Used to inherit the live Mao-ao body-color ranges after species configs load.
   const GENDERS = Object.freeze(['male', 'female']); // Used to install both NPC gender variants without duplicating bridge logic.
   const EXPECTED_HEAD_SPRITES = Object.freeze({ // Exposed in mobile diagnostics so missing not-yet-authored head art is obvious.
