@@ -63,7 +63,7 @@ const authoredPerchScales = { // Expected uniform X/Y/Z values for the ten canon
   'mashtzarr::male': 0.894, 'mashtzarr::female': 0.816568,
 };
 const snapshotSource = fs.readFileSync(path.join(root, 'docs/js/attachment-rig-latest-authored-snapshot-core.js'), 'utf8'); // Latest authored portraitScale values override the older master.
-const serializedSnapshot = snapshotSource.match(/const OVERRIDES = (\\{.*?\\});\\s*const ALIASES/s); // Parses only the literal authored JSON, not browser code.
+const serializedSnapshot = snapshotSource.match(/const OVERRIDES = (\{.*?\});\s*const ALIASES/s); // Parses only the literal authored JSON, not browser code.
 assert(serializedSnapshot, 'latest portrait authoring must be readable');
 const latestSnapshot = JSON.parse(serializedSnapshot[1]); // Per-gender production portrait-plane multipliers.
 vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/config/character-rig-scale-defaults.js'), 'utf8'), sandbox); // Loads actual static rig X/Y defaults.
