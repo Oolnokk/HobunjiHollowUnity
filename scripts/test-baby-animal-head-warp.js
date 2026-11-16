@@ -37,11 +37,11 @@ const documentStub = {
 };
 vm.runInNewContext(source, { window: windowStub, document: documentStub, Uint8ClampedArray }, { filename: 'baby-animal-head-warp.js' });
 const warp = windowStub.BabyAnimalHeadWarp;
-assert.equal(warp.getScale(), 1.23, 'every species defaults to the user-approved 123% scale');
+assert.equal(warp.getScale(), 1.32, 'every species defaults to the new 132% scale');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
 assert(warp.frameForKind('pingdort'), 'unpainted registered species retain a conservative baby head frame');
-assert.equal(warp.scaleForKind('pingdort'), 1.23, 'all baby species default to 123%, even naturally small birds');
+assert.equal(warp.scaleForKind('pingdort'), 1.32, 'all baby species default to 132%, including babies of naturally small birds');
 assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'small' }, 'shoulderPet'), true,
   'genetically Small animals of normally Medium species use the juvenile head warp as pets');
 assert.equal(warp.isSmallSizeVariantPet('pingdort', { sizeClass: 'small' }, 'shoulderPet'), false,
@@ -56,8 +56,13 @@ writes.set('hobunji_baby_head_warp_scale_v1', '1.22'); // Prior experiments save
 const migratedWindow = { ...windowStub };
 const migratedCanvas = { ...documentStub };
 vm.runInNewContext(source, { window: migratedWindow, document: migratedCanvas, Uint8ClampedArray });
-assert.equal(migratedWindow.BabyAnimalHeadWarp.getScale(), 1.23,
-  'the deprecated default 122% preference migrates to the approved universal 123%');
+assert.equal(migratedWindow.BabyAnimalHeadWarp.getScale(), 1.32,
+  'the deprecated default 122% preference migrates to the approved universal 132%');
+writes.set('hobunji_baby_head_warp_scale_v1', '1.23');
+const migratedFrom123 = { ...windowStub };
+vm.runInNewContext(source, { window: migratedFrom123, document: documentStub, Uint8ClampedArray });
+assert.equal(migratedFrom123.BabyAnimalHeadWarp.getScale(), 1.32,
+  'previous inherited 123% preference also migrates to the new 132% default');
 writes.delete('hobunji_baby_head_warp_scale_v1');
 const paintedFrame = { x: 0.25, y: 0.18, width: 0.3, height: 0.42, coordinateSpace: 'sprite-normalized-top-left' };
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ 'custom-pet': { babyHeadScale: 1.4, babyHeadFrame: paintedFrame } }));
@@ -74,26 +79,43 @@ for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
   pixels[i] = x * 5; pixels[i + 1] = y * 5; pixels[i + 2] = x ^ y; pixels[i + 3] = (x + y) % 2 ? 255 : 0;
 }
 const at = (array, x, y, channel = 0) => array[(y * width + x) * 4 + channel];
-const warped = warp.warpPixels(pixels, width, height, head, 1.23);
+const idleSource = { width, height, data: Uint8ClampedArray.from(pixels) }; // Synthetic IDLE frame, separate from all run/eye/pattern textures.
+const mask = warp.primeIdleMask('grehlr', idleSource);
+assert(mask && mask.opaquePixels > 0, 'idle opaque pixels inside chathead frame define the first mask');
+assert.equal(warp.maskForKind('grehlr'), mask, 'same cached idle mask is reused for every animated pose');
+const warped = warp.warpPixels(pixels, width, height, head, 1.32, mask);
 assert.notEqual(warped, pixels, 'the warp returns new pixels and never mutates shared adult art');
 assert.equal(at(warped, 0, 0), at(pixels, 0, 0), 'far-away corner is exactly unchanged');
 assert.equal(at(warped, width - 1, height - 1, 3), at(pixels, width - 1, height - 1, 3), 'distant transparency is unchanged');
 assert.equal(at(warped, 20, 20), at(pixels, 20, 20), 'authored head center is stationary');
 assert(at(warped, 26, 20) < at(pixels, 26, 20), 'head expands: right-side destination samples nearer to the center');
 assert.equal(at(warped, 40, 20), at(pixels, 40, 20), 'distant torso/limbs are exactly unchanged');
-assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1)), Array.from(pixels), 'scale 1 is fully reversible');
+assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1, mask)), Array.from(pixels), 'scale 1 is fully reversible');
 assert.equal(warp.warpPixels(null, width, height, head), null, 'invalid input is rejected safely');
+assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1.32)), Array.from(pixels),
+  'without an established idle mask no rectangular fallback is permitted');
 
 const input = { width, height, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
 const output = warp.applyToCanvas(input, 'grehlr');
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
+const blankIdle = new Uint8ClampedArray(width * height * 4);
+assert.equal(warp.buildIdleMask(blankIdle, width, height, head), null, 'an entirely transparent chathead area never becomes a rectangular mask');
+const sparseIdle = new Uint8ClampedArray(width * height * 4);
+for (let y = 18; y <= 22; y++) for (let x = 18; x <= 22; x++) sparseIdle[(y * width + x) * 4 + 3] = 255;
+const sparse = warp.buildIdleMask(sparseIdle, width, height, head);
+assert.equal(sparse.opaquePixels, 25, 'only truly opaque IDLE pixels within the chathead frame define the head');
+assert.equal(sparse.coverage[20 * width + 20], 1, 'opaque idle-head pixels receive full deformation strength');
+assert(sparse.coverage[20 * width + 26] < 1, 'transparent space inside the rectangular frame is no longer treated as full-strength head');
+assert.equal(sparse.coverage[0], 0, 'distant transparent and torso pixels have no effect');
+assert.notEqual(warp.warpPixels(layeredArt, width, height, head, 1.32, mask), layeredArt,
+  'any pose samples the original idle silhouette but warps its own final texture');
 const layeredArt = Uint8ClampedArray.from(pixels);
 const eye = (19 * width + 23) * 4, pattern = (22 * width + 25) * 4; // Distinct final-composite colors: eye and painted coat pattern.
 layeredArt.set([252, 22, 75, 255], eye);
 layeredArt.set([19, 155, 235, 255], pattern);
-const layeredWarp = warp.warpPixels(layeredArt, width, height, head, 1.23);
+const layeredWarp = warp.warpPixels(layeredArt, width, height, head, 1.32, mask);
 const position = (x, y) => (y * width + x) * 4;
 assert(layeredWarp.some((value, i) => value !== layeredArt[i]), 'post-composite head warp moves genuine image pixels');
 const enlargedEye = [25, 19].map((value, i) => value); // Head-local test samples move outward with the same inverse pixel transform.
@@ -104,7 +126,8 @@ assert(layeredWarp.some((_, i) => i % 4 === 0 && layeredWarp[i] === 19 && layere
 assert.equal(warp.applyToCanvas(input, 'missing'), input, 'unsupported baby species retain their original appearance');
 const paintedRig = { width: 4, height: 4, encoding: 'rle-u9', data: [5, 0, 2, 255, 2, 0, 2, 255, 5, 0] };
 windowStub.HobunjiAuthoredAnimalHeadRigs = { get: kind => kind === 'grehlr' ? { babyHeadScale: 1.33, weightMap: paintedRig } : null };
-assert(warp.frameForKind('grehlr').width > head.width, 'runtime uses painted Head influence instead of a mismatched chathead frame');
+assert.equal(warp.frameForKind('grehlr').width, head.width,
+  'chathead bounds, not painted head influence, define the alpha-mask source rectangle');
 assert.equal(warp.frameFromRig({ weightMap: { ...paintedRig, data: [1, 255, -2, 0] } }), null, 'malformed painted-map runs cannot produce a head frame');
 assert.equal(warp.scaleForKind('grehlr'), 1.33, 'a committed species head-rig overrides the global Nursery default');
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: { babyHeadScale: 1.4 } }));
@@ -118,11 +141,20 @@ assert.notEqual(warp.applyToCanvas(input, 'grehlr'), input, 'authored species sc
 windowStub.HobunjiAuthoredAnimalHeadRigs = null;
 assert.equal(warp.applyToCanvas(input, 'grehlr'), input, 'global 100% disables an animal without its own authored scale');
 assert.equal(warp.setScale(7), warp.MAX_SCALE, 'setter safely clamps extreme values');
+assert.equal(warp.debugSnapshot().masksCached >= 1, true, 'mobile diagnostics expose established cached idle masks');
 assert.equal(warp.debugSnapshot().scale, warp.MAX_SCALE, 'diagnostics report current effect strength');
 assert(warp.debugSnapshot().applied > 0, 'diagnostics report actual use');
 
 assert(index.indexOf('baby-animal-head-warp.js') > index.indexOf('creature-genetics-render.js'), 'runtime module loads after genotype renderer');
 assert(nursery.includes('BabyAnimalHeadWarp?.applyToCanvas(canvases[i], entry.kind)'), 'all baby nursery movement frames use the warp');
+assert(nursery.includes('ensureIdleMask?.(entry.kind, canvases[0])'), 'nursery primes the fixed mask from the actual idle frame before run frames');
+assert(incubator.includes('ensureIdleMask?.(slot.baby.kind, composed)'), 'incubator primes from composed idle before sleep presentation');
+assert(nest.includes('ensureIdleMask?.(kind, canvas)'), 'nest babies prime from their idle silhouette before applying their pose');
+const bridge = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8');
+assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind)'),
+  'small shoulder-pet frame pipeline awaits the registered idle sprite');
+assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource)'),
+  'small shoulder-pet split source uses the LEFT idle sprite before clipping run1');
 assert(nursery.includes('Baby head size (experiment)'), 'touch-accessible Nursery tuning is visible');
 assert(nursery.includes('headWarp.setScale(slider.value)') && nursery.includes('rerollSwarm()'), 'size changes refresh active babies');
 assert(incubator.includes('BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind)'), 'incubator baby renders are warped AFTER the sleep composer');
