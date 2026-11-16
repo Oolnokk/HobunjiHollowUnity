@@ -8,6 +8,7 @@ const babyHeadCompareButton = $('babyHeadCompare'); // Before/after comparison w
 const babyHeadPreviewState = $('babyHeadPreviewState'); // Mobile-readable preview state and missing-frame explanation.
 const babyHeadWarp = window.BabyAnimalHeadWarp; // Reuses the baby's exact nearest-neighbor runtime pixel warp.
 const babyPreviewTextureCache = new WeakMap(); // Reuses one warped raster per source, frame and scale across thousands of mesh triangles.
+const MAX_BABY_PREVIEW_PIXELS = 1_250_000; // Limits decoded preview canvas memory for Grehlr's 3000×2250 idle/run artwork without changing authored PNGs.
 const prewarpedSplitLayers = new WeakSet(); // Already resized and then clipped; avoids applying the warp a second time after splitting.
 const babyPreviewSplitCache = new WeakMap(); // Stores the most recent shoulder split per idle image and source/angle.
 const babyPixelDeltaCache = new WeakMap(); // Counts truly modified opaque head pixels once per generated enlarged canvas.
@@ -147,11 +148,21 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
   const cached = babyPreviewTextureCache.get(image);
   const idleMask = babyHeadWarp?.maskForKind?.(species, babyPreviewFrame); // Reimporting idle art changes the silhouette even at the same head percentage.
   if (cached?.key === cacheKey && cached?.mask === idleMask) { babyHeadDebug.hits++; return cached.image; }
+  if (typeof babyHeadWarp.maskForKind === 'function' && !idleMask) {
+    // A missing/blocked idle alpha mask must not allocate a full-resolution canvas once for EVERY mesh triangle.
+    babyHeadDebug.lastError = readableBabyError(babyHeadWarp.debugSnapshot?.()?.lastMaskError || 'Idle head opacity mask unavailable.');
+    return image;
+  }
   try {
+    const ratio = Math.min(1, Math.sqrt(MAX_BABY_PREVIEW_PIXELS / (width * height))); // The game retains native textures; only editor displays are sampled.
+    const previewW = Math.max(1, Math.floor(width * ratio)), previewH = Math.max(1, Math.floor(height * ratio));
     const source = document.createElement('canvas'); // Copies the original image/split layer without touching editable paint pixels.
-    source.width = width;
-    source.height = height;
-    source.getContext('2d').drawImage(image, 0, 0, width, height);
+    source.width = previewW;
+    source.height = previewH;
+    const context = source.getContext('2d');
+    if (!context) throw new Error('No canvas context available for baby-head preview.');
+    context.imageSmoothingEnabled = false;
+    context.drawImage(image, 0, 0, previewW, previewH);
     const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame);
     if (warped === source) throw new Error(babyHeadWarp.debugSnapshot?.()?.lastError || 'Baby head warp returned the original pixels.');
     babyPreviewTextureCache.set(image, { key: cacheKey, mask: idleMask, image: warped });
@@ -226,8 +237,11 @@ function drawBabyHeadTextureComparison() {
   const scale = Math.min((half - 14) / cropW, (height - 14) / cropH);
   const drawW = cropW * scale, drawH = cropH * scale;
   ctx.imageSmoothingEnabled = false; // Exactly the same pixel-art sampling as the source game textures.
+  const previewScaleX = enlarged === source ? 1 : enlarged.width / artW; // Map original crop coordinates into the bounded preview raster.
+  const previewScaleY = enlarged === source ? 1 : enlarged.height / artH;
   ctx.drawImage(source, left, top, cropW, cropH, (half - drawW) / 2, (height - drawH) / 2, drawW, drawH);
-  ctx.drawImage(enlarged, left, top, cropW, cropH, half + (half - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+  ctx.drawImage(enlarged, left * previewScaleX, top * previewScaleY, cropW * previewScaleX, cropH * previewScaleY,
+    half + (half - drawW) / 2, (height - drawH) / 2, drawW, drawH);
   ctx.fillStyle = '#d6dbde';
   ctx.fillRect(half - 1, 0, 2, height);
   let count = 0; // Number of actually changed visible RGBA pixels in the exact shown head crop, not theoretical geometry.
@@ -242,12 +256,21 @@ function drawBabyHeadTextureComparison() {
       if (cached && cached.cropX === left && cached.cropY === top && cached.cropW === cropW && cached.cropH === cropH) {
         count = cached.count;
       } else {
-        const original = document.createElement('canvas');
-        original.width = artW; original.height = artH;
+        const sampleW = Math.max(1, Math.round(cropW * previewScaleX));
+        const sampleH = Math.max(1, Math.round(cropH * previewScaleY));
+        const original = document.createElement('canvas'); // Compare only the displayed crop, not another 27 MB Grehlr-sized copy.
+        original.width = sampleW; original.height = sampleH;
         const octx = original.getContext('2d', { willReadFrequently: true });
-        octx.drawImage(source, 0, 0, artW, artH);
-        const before = octx.getImageData(left, top, cropW, cropH).data;
-        const after = enlarged.getContext('2d', { willReadFrequently: true }).getImageData(left, top, cropW, cropH).data;
+        octx.imageSmoothingEnabled = false;
+        octx.drawImage(source, left, top, cropW, cropH, 0, 0, sampleW, sampleH);
+        const resultCrop = document.createElement('canvas'); // Resample enlarged and original art into the same preview pixel grid.
+        resultCrop.width = sampleW; resultCrop.height = sampleH;
+        const rctx = resultCrop.getContext('2d', { willReadFrequently: true });
+        rctx.imageSmoothingEnabled = false;
+        rctx.drawImage(enlarged, left * previewScaleX, top * previewScaleY,
+          cropW * previewScaleX, cropH * previewScaleY, 0, 0, sampleW, sampleH);
+        const before = octx.getImageData(0, 0, sampleW, sampleH).data;
+        const after = rctx.getImageData(0, 0, sampleW, sampleH).data;
         for (let index = 0; index < before.length; index += 4) {
           if ((before[index + 3] || after[index + 3]) &&
               (before[index] !== after[index] || before[index + 1] !== after[index + 1]
