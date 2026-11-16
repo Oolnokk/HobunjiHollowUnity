@@ -52,6 +52,11 @@ assert(!jump.platformSlabBlocksAt([p],3,4,.2,3),'standing on the top does not bl
 assert(!jump.platformSlabBlocksAt([p],4,4,.2,1),'walking below a floating slab is allowed');
 assert(!jump.platformSlabBlocksAt([p],8,4,.2,2.7),'faraway slab does not block');
 assert(!jump.platformSlabBlocksAt([p],4,4,.2,NaN),'undefined height never causes false collision');
+const jumpSource=read('docs/js/ruin-jump-shaft.js');
+const connector=read('docs/js/ruin-shaft-connector.js');
+assert(jumpSource.includes('footprintBlockers?.register?.(slabBlockerId,'),'shaft sides are wired into shared collision');
+assert(jumpSource.includes('footprintBlockers?.remove?.(slabBlockerId)'),'shaft side colliders are cleaned up on exit');
+assert(connector.includes('tradition:ruin.theme,getPlayerY'),'shaft side collision receives the actual player story height');
 const skeeri=read('docs/js/skeeri-ruins.js');
 const locationStart=skeeri.indexOf('  function actorLocation(');
 const locationEnd=skeeri.indexOf('  function point(',locationStart);
