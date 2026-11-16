@@ -149,10 +149,25 @@
     if (!renderer || !camera || meshCount === 0) return;
 
     const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
+    // Depth-only has to hold for EVERY layer-4 mesh, not just the registered ones whose materials
+    // captureMaterial() silenced: a mesh that inherited the layer without being registered (e.g. a cloned
+    // dual-wield weapon copy) would otherwise paint itself in colour over the finished frame, outside the
+    // owner's portrait stencil and depth, so it showed through a shoulder pet's depth-write-free front card.
+    // Locking the GL colour mask is the same primitive the held-object compositor uses for its depth passes.
+    const colorBuffer = renderer.state?.buffers?.color;
+    const lockColor = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
     try {
+      if (lockColor) {
+        colorBuffer.setMask(false);
+        colorBuffer.setLocked(true);
+      }
       camera.layers.set(LAYER);
       renderer.render(activeScene, camera);
     } finally {
+      if (lockColor) {
+        colorBuffer.setLocked(false);
+        colorBuffer.setMask(true);
+      }
       camera.layers.mask = previousLayerMask;
       for (const [material, state] of materialStates) {
         material.colorWrite = state.colorWrite;
