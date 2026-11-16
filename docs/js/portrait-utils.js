@@ -288,8 +288,9 @@ class PortraitPixelCache extends Map {
 const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
 const PORTRAIT_IMAGE_RETRY_BASE_MS = 1000; // First failed image retries on demand after a one-second cooldown.
 const PORTRAIT_IMAGE_RETRY_MAX_MS = 30000; // Persistent missing optional art backs off instead of retrying every portrait frame.
+const PORTRAIT_IMAGE_REQUEST_TIMEOUT_MS = 15000; // Stops an image that never emits load/error from freezing the whole serialized NPC preview; then tries the other host.
 const portraitImageLoadDebug = { failures: 0, retries: 0, recoveries: 0,
-  cacheHits: 0, pendingHits: 0, requests: 0, slowLoads: 0, longestLoadMs: 0, slowestAsset: null, // Existing mobile pixel-cache panel uses these counters to identify a slow image path.
+  cacheHits: 0, pendingHits: 0, requests: 0, timeouts: 0, slowLoads: 0, longestLoadMs: 0, slowestAsset: null, // Existing mobile pixel-cache panel uses these counters to identify a slow image path.
   latestChange: 'Head-only rendering skips all non-head PNGs; static portraits skip blink assets. Cold image-load timings are tracked.' }; // Included in existing mobile pixel-cache diagnostics.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
@@ -399,10 +400,26 @@ function loadImg(relPath) {
   const tryLoadUrl = (url) => new Promise((resolve, reject) => {
     portraitImageLoadDebug.requests++; // Includes any necessary alternate host requests.
     const img = new Image();
+    let finished = false; // Guards timeout vs late load/error callbacks; a failed URL must settle exactly once.
+    const complete = (error = null) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
+      if (error) reject(error);
+      else resolve(img);
+    };
+    const timeout = setTimeout(() => {
+      portraitImageLoadDebug.timeouts++; // Exposed in mobile pixel-cache diagnostics when a browser silently stalls.
+      complete(new Error('Portrait asset timed out after ' + PORTRAIT_IMAGE_REQUEST_TIMEOUT_MS + 'ms: ' + url));
+      img.src = 'data:,'; // Abort a hung remote request without navigating to the current document.
+    }, PORTRAIT_IMAGE_REQUEST_TIMEOUT_MS);
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(url);
-    img.src = url;
+    img.onload = () => complete();
+    img.onerror = () => complete(new Error('Portrait asset failed: ' + url));
+    try { img.src = url; }
+    catch (error) { complete(error); }
   });
 
   // Try the correctly resolved serving root first. Only probe the alternate
