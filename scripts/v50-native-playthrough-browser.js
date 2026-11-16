@@ -12,6 +12,7 @@ module.exports=async function runNativeV50Playthrough(page){
     if(!owner?.records?.length)throw new Error('No playable native V50 story records after successful game generation');
     const THREE=window.THREE,DS=window.DynamicSurfaces;
     const hit=window.DevRandomRuinHitPuzzles,controls=()=>game.getInteractionControls();
+    const xray=window.HeldObjectRenderOrder; // Browser playthrough checks the real rendered V50 floor against the held-weapon x-ray registry.
     const steps=[],sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)); // Brief yields allow browser input callbacks to settle without assuming a software-WebGL frame rate.
     let activeScoreClock=null; // Gives V50's existing 50 ms simulated stage ticks a matching monotonic note-judgment clock.
     const advance=async(frames=30)=>{
@@ -322,6 +323,22 @@ module.exports=async function runNativeV50Playthrough(page){
       }else fail('unknown fallback puzzle type',record,stage,stage.kind);
     };
     for(const record of owner.records){
+      const floorCandidates=[]; // Source recipe-2 meshes are examined from the real generated story, not a test fixture.
+      record.nativeRoot?.traverse?.(mesh=>{
+        if(mesh.isMesh&&mesh.userData?.wallBuilderRecipe==='wallrecipe2.json')floorCandidates.push(mesh);
+      });
+      const registeredFloors=floorCandidates.filter(mesh=>mesh.userData?.hobunjiRuinFloorSurface===true); // Only the authoritative walkable mesh receives floor replay.
+      if(registeredFloors.length!==1)fail('native upper-story floor x-ray registration is absent or ambiguous',record,null,{
+        recipe2Count:floorCandidates.length,registered:registeredFloors.length});
+      const registeredFloor=registeredFloors[0]; // Used by the same compositor and depth registry that held weapons use during gameplay.
+      if(registeredFloor.userData?.hobunjiHeldGroundReplay!==true||xray?.classify?.(registeredFloor)?.ground!==true)
+        fail('actual V50 story floor was not registered for held-weapon ground depth replay',record,null,{
+          registered:registeredFloor.userData?.hobunjiHeldGroundReplay,
+          classification:xray?.classify?.(registeredFloor)});
+      if(!registeredFloor.geometry?.getAttribute?.('normal'))
+        fail('actual V50 story floor has no vertex normals for the elevation-aware x-ray shader',record,null,{
+          geometry:registeredFloor.geometry?.type||null});
+      steps.push({floor:record.floor,event:'actual-native-floor-xray-registered',recipe2Meshes:floorCandidates.length});
       const walk=layout(record);
       const entry=record.route.tiles[0],floorStart={x:entry?.[0]+.5,z:entry?.[1]+.5};
       const first=record.analysis.stages[0],startRoom=window.RuinV50NativeFloors.nativeRoom(first,record.place);
