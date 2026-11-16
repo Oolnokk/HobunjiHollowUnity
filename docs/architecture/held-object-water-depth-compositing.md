@@ -212,9 +212,12 @@ intentionally use `depthWrite: false` in the regular world color pass.
 Previously, the held-gear depth replay preserved that setting, allowing
 weapons to show through the ground *outside* the local exception even when
 the floor should obscure them. The depth-only held replay now temporarily
-enables depth writing for registered, shader-supported ground materials.
-Mode 1 still discards standing-level ground *inside* the circle; other
-fragments write actual ground depth. The material's original `depthWrite`
+enables depth writing for registered ground materials, including when
+their elevation shader is not yet compiled or is unsupported. When supported,
+mode 1 still discards standing-level ground *inside* the circle; other
+fragments write actual ground depth. Unsupported shader variants fail closed,
+so the floor remains a physical occluder even inside the circle instead of
+accidentally allowing x-ray outside it. The material's original `depthWrite`
 value is restored through the existing transaction after that replay.
 Normal world drawing, walls, raised surfaces and water rules do not change.
 
