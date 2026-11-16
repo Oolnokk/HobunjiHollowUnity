@@ -168,6 +168,48 @@ async function spritePng(page, animal) {
       'even a cross-origin loaded sprite must have readable image data for actual enlargement');
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).lastError, null,
       'successful cross-origin pixel read must clear any earlier tainted-canvas error');
+    const poseMaskCheck = await page.evaluate(() => {
+      const warp = window.BabyAnimalHeadWarp, mask = warp.maskForKind('grehlr');
+      if (!mask) return { error: warp.debugSnapshot().lastMaskError || 'missing idle head mask' };
+      const originalMask = mask;
+      const pose = document.createElement('canvas');
+      pose.width = pose.height = 64;
+      const ctx = pose.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(state.image, 0, 0, 64, 64); // IDLE establishes the mask; the following colors represent a different final pose.
+      ctx.fillStyle = '#ff006b'; ctx.fillRect(Math.floor(mask.centerX) - 6, Math.floor(mask.centerY) - 2, 5, 5); // Eye overlay.
+      ctx.fillStyle = '#03e1cc'; ctx.fillRect(Math.floor(mask.centerX) + 2, Math.floor(mask.centerY) - 2, 5, 5); // Coat pattern.
+      const before = ctx.getImageData(0, 0, 64, 64).data;
+      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45);
+      const after = enlarged.getContext('2d').getImageData(0, 0, 64, 64).data;
+      const colors = (bytes, r, g, b) => {
+        let count = 0;
+        for (let i = 0; i < bytes.length; i += 4)
+          if (bytes[i] === r && bytes[i+1] === g && bytes[i+2] === b && bytes[i+3] > 0) count++;
+        return count;
+      };
+      let changed = 0;
+      for (let i = 0; i < before.length; i++) if (before[i] !== after[i]) changed++;
+      const frame = { x: .125, y: .125, width: .75, height: .75,
+        coordinateSpace: 'sprite-normalized-top-left' };
+      const sparse = new Uint8ClampedArray(12 * 12 * 4);
+      for (let y = 5; y < 8; y++) for (let x = 5; x < 8; x++) sparse[(y*12+x)*4+3] = 255;
+      const isolatedMask = warp.buildIdleMask(sparse, 12, 12, frame);
+      warp.primeIdleMask('test-mask-reload', { width: 12, height: 12, data: sparse }, frame);
+      warp.primeIdleMask('test-mask-reload', { width: 12, height: 12,
+        data: new Uint8ClampedArray(sparse.length) }, frame); // Empty replacement must invalidate an earlier opaque mask.
+      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr') === originalMask,
+        changed, beforeEye: colors(before,255,0,107), afterEye: colors(after,255,0,107),
+        beforePattern: colors(before,3,225,204), afterPattern: colors(after,3,225,204),
+        sparsePixels: isolatedMask?.opaquePixels, clearInsideBox: isolatedMask?.coverage[3*12+3] < 1,
+        staleCleared: warp.maskForKind('test-mask-reload', frame) === null };
+    });
+    assert(!poseMaskCheck.error, poseMaskCheck.error || 'idle mask unavailable');
+    assert(poseMaskCheck.opaquePixels > 0 && poseMaskCheck.maskKept, 'every pose reuses the exact same opaque IDLE mask');
+    assert(poseMaskCheck.changed > 0, 'other poses deform under the idle head mask');
+    assert(poseMaskCheck.beforeEye > 0 && poseMaskCheck.afterEye > 0, 'painted eye overlay survives a post-composition warp');
+    assert(poseMaskCheck.beforePattern > 0 && poseMaskCheck.afterPattern > 0, 'coat pattern overlay survives the same warp');
+    assert.equal(poseMaskCheck.sparsePixels, 9, 'only the nine truly opaque pixels inside a frame define the head source');
+    assert(poseMaskCheck.clearInsideBox && poseMaskCheck.staleCleared, 'transparent frame space stays soft, and invalid sprite reload clears stale masks');
 
     await page.locator('#shoulderRestSplitFrame').check();
     await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.splitsAfterWarp > 0);
