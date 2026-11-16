@@ -11,7 +11,7 @@
     "js/ruin-room-system.js?v=20261116roomLocalNoHull1",
     "js/ruin-layer-playable.js?v=20261115twoSidedRoomLight1",
     "js/ruin-v50-native-mechanisms.js?v=20261115dormantCubeComplete1",
-    "js/ruin-v50-native-floors.js?v=20261115dormantCubeComplete1",
+    "js/ruin-v50-native-floors.js?v=20261116ruinFloorXray2",
     "js/ruin-shaft-connector.js?v=20261116kanthicCollisionReview2",
     "js/ruin-v50-vestibule.js?v=20261108h61ad699",
     "js/ruin-wall-coffins.js?v=20261115coffinWake1",
