@@ -276,6 +276,20 @@
     };
   }
 
+  // Pingdort's native foot grip is at -0.48*(1000/1617)/2 on its unscaled perched plane.
+  // Ground lifts use the opposite sign so the ground meets the grip at every 1x size class.
+  const pingdortGripY = -0.14842300556586271; // Authoritative foot coordinate for Pingdort's grip and floor alignment.
+  masterCreatures.pingdort = {
+    kind: 'pingdort',
+    anchors: { saddle: null, shoulderGrip: identityAnchor([0, pingdortGripY, 0]) },
+    shoulderGripRule: { source: 'native-flying-sprite-foot', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
+    sizeScales: { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } },
+    groundOffsets: { large: -pingdortGripY, medium: -pingdortGripY, small: -pingdortGripY },
+    sizeScalePercentages: { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } },
+    sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds', authoredDefaultVersion: 6, authoredFixed: true },
+    shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 5,
+  };
+
   // One NPC lower half, not a wildlife species: standalone animal-style rig data.
   const isStaleDrenkirraShoulderGripYaw = (kind, grip) => kind === 'drenkirra'
     && sameNumber(grip?.rotationDeg?.y, -61)
