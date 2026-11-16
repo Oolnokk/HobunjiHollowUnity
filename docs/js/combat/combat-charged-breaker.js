@@ -148,6 +148,7 @@
 
   function register() {
     let startedAt = -1;
+    let startedMounted = false; // Tracks whether this hold began on a mount so dismounts cannot turn its release into an on-foot lunge.
     let paidChargeCost = 0; // Actual ordinary/enhanced/debt Stamina consumed, used for diagnostics only.
     let paidChargeBaseline = 0; // Cumulative pre-ResourceSystem cost committed, independent of perk and trinket multipliers.
     let staminaRegenBlocked = false; // Tracks ownership of this hold's composable regeneration blocker.
@@ -192,6 +193,7 @@
 
     function onHoldStart() {
       startedAt = now();
+      startedMounted = window.Mounts?.rideState === 'mounted';
       paidChargeCost = 0;
       paidChargeBaseline = 0;
       furiousRawProgressBonus = 0;
@@ -231,7 +233,12 @@
     }
 
     function releaseNow(heldSeconds, forced) {
+      if (startedMounted && window.Mounts?.rideState !== 'mounted') {
+        onHoldCancel(); // The mount disappeared during the hold: release no weapon strike or on-foot lunge.
+        return;
+      }
       startedAt = -1;
+      startedMounted = false;
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Release keeps the same weapon profile as the live pose.
@@ -412,6 +419,10 @@
 
     function onHoldUpdate(_slot, dt) {
       if (startedAt < 0) return;
+      if (startedMounted && window.Mounts?.rideState !== 'mounted') {
+        onHoldCancel(); // Removes visual stance and stamina regeneration block when dismounted mid-charge.
+        return;
+      }
       const deps = window.Combat.deps;
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // This update funds the same charge percentage visible to the player.
       const heldSeconds = now() - startedAt;
@@ -432,6 +443,7 @@
     function onHoldCancel() {
       if (startedAt < 0) return;
       startedAt = -1;
+      startedMounted = false;
       debugState.active = false;
       setHoldStaminaRegenBlocked(false); // Cancellation releases only this action's blocker.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);
