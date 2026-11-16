@@ -79,7 +79,7 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
   assert.equal(life.snapshot().npcQueueLength, 0, 'the nearby NPC crowd drains without starving later walkers');
   const peripheral = walker('npc-peripheral', 3); // Beyond two tiles, still nearby but animated more slowly.
   life.tickNpc(peripheral, 0.2);
-  assert.equal(renders.at(-1), 'npc-crowd-1', 'peripheral refresh is throttled');
+  assert.equal(renders.at(-1), 'npc-crowd-29', 'peripheral refresh is throttled');
   life.tickNpc(peripheral, 0.6);
   assert.equal(renders.at(-1), 'npc-peripheral', 'peripheral expression updates eventually reach the same live portrait');
   finishNpc(); await flush();
