@@ -2207,10 +2207,7 @@
   const XRAY_MAX_BATCH_TILES = 8; // Fixed shader uniform budget for screen-separated holders.
   const xrayGearRect = new THREE.Vector4(); // Used to compare each holder's gear against projected tile boundaries.
   const xrayGroundRect = new THREE.Vector4(); // Holds the projected floor band used for conservative batching.
-  const xrayGroundBox = new THREE.Box3(); // World-space floor bounds for the holder's current protected patch.
-  const xrayHeldFootprintBox = new THREE.Box3(); // Reused to project the actual swung weapon footprint onto the standing floor.
-  const XRAY_HELD_FOOTPRINT_MARGIN = 0.12; // Pose/outline slack when extending the floor exception past the base circle.
-  let lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; // Dev Companion visualizes the previous frame's effective player floor patch.
+  const xrayGroundBox = new THREE.Box3(); // World-space floor bounds for a holder's 3×3 tile neighborhood.
   const XRAY_GROUND_NORMAL_MIN_Y = 0.55; // Vertical cliff/wall faces remain occluders even when their height crosses the actor's feet.
 
   function isDescendantOf(object, ancestor) {
@@ -2365,58 +2362,7 @@
     return materials.every(material => !material?.isShaderMaterial && !material?.displacementMap);
   }
 
-  function heldXrayFootprintRadius(region) {
-    let radius = XRAY_CIRCLE_RADIUS; // The authored actor-centered circle remains the minimum protected area.
-    for (const mesh of region.meshes) {
-      const geometry = mesh?.geometry;
-      if (geometry && !geometry.boundingBox) geometry.computeBoundingBox?.();
-      const source = geometry?.boundingBox;
-      const parity = mesh?.__hobunjiXrayBoundParity;
-      const posed = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.() ? parity.visibleMatrixWorld : null;
-      const cameraFacing = mesh.userData?.hobunjiGeneratedRope === true
-        || (mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
-          && !(parity && parity.hook === mesh.onBeforeRender)); // Unknown render hooks may rotate a sprite after its CPU bounds were read.
-      if (cameraFacing && geometry) {
-        if (!geometry.boundingSphere) geometry.computeBoundingSphere?.();
-        const sphere = geometry.boundingSphere;
-        const matrix = mesh.matrixWorld;
-        const e = matrix?.elements;
-        if (sphere && e && Number.isFinite(sphere.radius) && Number.isFinite(e[12]) && Number.isFinite(e[14])) {
-          // BoundingBox transformed BEFORE onBeforeRender is unsafe for the camera-facing flail rope.
-          // A sphere around its pivot covers every possible billboard orientation without running that hook.
-          const offset = sphere.center?.length?.() ?? Math.hypot(sphere.center?.x || 0, sphere.center?.y || 0, sphere.center?.z || 0);
-          const scale = typeof matrix.getMaxScaleOnAxis === 'function' ? matrix.getMaxScaleOnAxis() : 1;
-          if (Number.isFinite(offset) && Number.isFinite(scale)) {
-            radius = Math.max(radius, Math.hypot(e[12] - region.x, e[14] - region.z)
-              + (sphere.radius + offset) * Math.abs(scale) + XRAY_HELD_FOOTPRINT_MARGIN);
-            continue;
-          }
-        }
-      }
-      const matrices = posed ? [mesh.matrixWorld, posed] : [mesh.matrixWorld]; // Cover both authored and replay-time poses.
-      for (const matrix of matrices) {
-        if (!matrix?.elements) continue;
-        if (source) {
-          xrayHeldFootprintBox.copy(source).applyMatrix4(matrix);
-          const { min, max } = xrayHeldFootprintBox;
-          if (![min.x, min.z, max.x, max.z].every(Number.isFinite)) continue;
-          const dx = Math.max(Math.abs(min.x - region.x), Math.abs(max.x - region.x));
-          const dz = Math.max(Math.abs(min.z - region.z), Math.abs(max.z - region.z));
-          radius = Math.max(radius, Math.hypot(dx, dz) + XRAY_HELD_FOOTPRINT_MARGIN);
-        } else {
-          // An unbounded part cannot supply a silhouette, but its actual root
-          // position must not lose floor protection merely by leaving the circle.
-          const x = matrix.elements[12], z = matrix.elements[14];
-          if (Number.isFinite(x) && Number.isFinite(z)) radius = Math.max(radius,
-            Math.hypot(x - region.x, z - region.z) + XRAY_HELD_FOOTPRINT_MARGIN);
-        }
-      }
-    }
-    return radius;
-  }
-
   function buildXrayGroups(renderer, scene, camera, meshes, shellPadding = null) {
-    if (shellPadding === null) lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; // Clear stale weapon reach on unequip.
     const actors = new Map(); // Resolve each actor's tile and standing floor only once per pass.
     const regions = []; // Parts on the same tile and standing floor use one projected neighborhood.
     const regionsByTile = new Map(); // Tile-indexed buckets; actors at different positions in one tile keep distinct circles.
@@ -2463,7 +2409,6 @@
     const band = XRAY_ELEVATION_TOLERANCE + XRAY_ELEVATION_GROUP_EPSILON; // Covers any representative elevation chosen for a shared batch.
     for (const region of regions) {
       const { elevation, x, z } = region;
-      region.radius = heldXrayFootprintRadius(region); // One conservative world-space circle covers all actual held-part bounds.
       if (region.meshes.every(canBoundXrayMesh)
           && replayScissorRect(renderer, camera, region.meshes, xrayGearRect, null, shellPadding ?? 0)) {
         if (shellPadding === null && camera.isPerspectiveCamera && cameraY > elevation + band
@@ -2472,8 +2417,8 @@
           continue;
         }
         region.gearRect = { x: xrayGearRect.x, y: xrayGearRect.y, z: xrayGearRect.z, w: xrayGearRect.w };
-        xrayGroundBox.min.set(x - region.radius, elevation - band, z - region.radius);
-        xrayGroundBox.max.set(x + region.radius, elevation + band, z + region.radius);
+        xrayGroundBox.min.set(x - XRAY_CIRCLE_RADIUS, elevation - band, z - XRAY_CIRCLE_RADIUS);
+        xrayGroundBox.max.set(x + XRAY_CIRCLE_RADIUS, elevation + band, z + XRAY_CIRCLE_RADIUS);
         if (replayScissorRect(renderer, camera, [], xrayGroundRect, xrayGroundBox)) {
           if (!rectsOverlap(xrayGearRect, xrayGroundRect)) {
             ordinary.push(...region.meshes);
@@ -2482,22 +2427,18 @@
           region.groundRect = { x: xrayGroundRect.x, y: xrayGroundRect.y, z: xrayGroundRect.z, w: xrayGroundRect.w };
         }
       }
-      if (shellPadding === null && region.root === window.PlayerBodyTransformComposer?.getPlayerMesh?.()) {
-        lastPlayerXrayRadius = Math.max(lastPlayerXrayRadius, region.radius); // Only effective depth groups expand the mobile preview.
-      }
       let group = region.groundRect && groups.find(batch =>
         batch.regions.length < XRAY_MAX_BATCH_TILES
         && Math.abs(batch.elevation - elevation) <= XRAY_ELEVATION_GROUP_EPSILON
         && batch.regions.every(other => other.groundRect
           && !rectsOverlap(other.gearRect, region.groundRect) && !rectsOverlap(region.gearRect, other.groundRect)));
       if (!group) {
-        group = { elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2), radiiSq: new Float32Array(XRAY_MAX_BATCH_TILES) }; // Shader center/radius pairs stay batched.
+        group = { elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2) };
         groups.push(group);
       }
       const centerIndex = group.regions.length * 2; // Real world-XZ origins, within the original eight-region uniform budget.
       group.centers[centerIndex] = x;
       group.centers[centerIndex + 1] = z;
-      group.radiiSq[group.regions.length] = region.radius * region.radius; // Protect the swung part, not just the holder's feet.
       group.regions.push(region);
       group.meshes.push(...region.meshes);
     }
@@ -2631,8 +2572,8 @@
       }
       // Incompatible owners on a single shared-material group need separate
       // renders to avoid one material's stencilRef leaking to another owner.
-      const wet = { elevation: group.elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2), radiiSq: new Float32Array(XRAY_MAX_BATCH_TILES), tintStencilRef: 1 };
-      const dry = { elevation: group.elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2), radiiSq: new Float32Array(XRAY_MAX_BATCH_TILES), tintStencilRef: 0 };
+      const wet = { elevation: group.elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2), tintStencilRef: 1 };
+      const dry = { elevation: group.elevation, regions: [], meshes: [], centers: new Float32Array(XRAY_MAX_BATCH_TILES * 2), tintStencilRef: 0 };
       if (group.regions.length) {
         for (const region of group.regions) {
           for (const [partition, selectedWet] of [[wet, true], [dry, false]]) {
@@ -2641,7 +2582,6 @@
             const at = partition.regions.length * 2;
             partition.centers[at] = region.x;
             partition.centers[at + 1] = region.z;
-            partition.radiiSq[partition.regions.length] = (region.radius ?? XRAY_CIRCLE_RADIUS) ** 2; // Preserve the floor radius in split wet/dry passes.
             partition.regions.push({ ...region, meshes: matches });
             partition.meshes.push(...matches);
           }
@@ -2662,7 +2602,7 @@
     const inheritedCompile = material.onBeforeCompile; // Three's Material.clone keeps userData but drops custom shader callbacks; explicit callback copies can instead close over an older material's state.
     if (state && inheritedCompile?.__hobunjiXrayElevationState === state
         && inheritedCompile?.__hobunjiXrayMaterialOwner === material) return state; // Clones that shallow-copy BOTH metadata and callback must not share tile uniforms.
-    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, centerCount: { value: 0 }, centers: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) }, radiiSq: { value: new Float32Array(XRAY_MAX_BATCH_TILES) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
+    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 }, centerCount: { value: 0 }, centers: { value: new Float32Array(XRAY_MAX_BATCH_TILES * 2) } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof inheritedCompile === 'function'
       ? (Object.prototype.hasOwnProperty.call(inheritedCompile, '__hobunjiXrayBaseCompile') ? inheritedCompile.__hobunjiXrayBaseCompile : inheritedCompile)
@@ -2712,7 +2652,7 @@
       // Path bricks and interior slabs can expose their sides within the
       // actor's elevation band. Mixed terrain keeps cliff/wall faces solid.
       shader.fragmentShader = fragment
-        .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayCenterCount;\nuniform vec2 uHobunjiXrayCenters[${XRAY_MAX_BATCH_TILES}];\nuniform float uHobunjiXrayRadiiSq[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
+        .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayCenterCount;\nuniform vec2 uHobunjiXrayCenters[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
         // enabled 0 = off, 1 = discard the holder's nearby floor (depth
         // rebuild), 2 = keep ONLY that floor (stencil punch of the floor
         // that is frontmost in the existing depth; see punchHeldGroupFloor).
@@ -2721,7 +2661,7 @@ if (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayA
   for (int i = 0; i < ${XRAY_MAX_BATCH_TILES}; ++i) {
     if (i >= uHobunjiXrayCenterCount) break;
     vec2 offsetFromActor = vHobunjiXrayWorldXZ - uHobunjiXrayCenters[i];
-    if (dot(offsetFromActor, offsetFromActor) <= uHobunjiXrayRadiiSq[i]) { hobunjiXrayNearFloor = 1.0; break; }
+    if (dot(offsetFromActor, offsetFromActor) <= ${(XRAY_CIRCLE_RADIUS * XRAY_CIRCLE_RADIUS).toFixed(6)}) { hobunjiXrayNearFloor = 1.0; break; }
   }
 }
 if (uHobunjiXrayElevationEnabled > 1.5) { if (hobunjiXrayNearFloor < 0.5) discard; }
@@ -2731,14 +2671,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       shader.uniforms.uHobunjiXrayAnyFacing = state.uniforms.anyFacing;
       shader.uniforms.uHobunjiXrayCenterCount = state.uniforms.centerCount;
       shader.uniforms.uHobunjiXrayCenters = state.uniforms.centers;
-      shader.uniforms.uHobunjiXrayRadiiSq = state.uniforms.radiiSq;
       state.supported = true;
     };
     material.onBeforeCompile.__hobunjiXrayElevationState = state; // Used to detect stale copied userData after a terrain material clone.
     material.onBeforeCompile.__hobunjiXrayMaterialOwner = material; // The function belongs to this material even if another clone shares its metadata reference.
     material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
-      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-circle-xray-v7';
+      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-circle-xray-v6';
     };
     material.customProgramCacheKey.__hobunjiXrayBaseCacheKey = previousCacheKey; // Keeps prior renderer/Jigsaw program features on clones.
     material.needsUpdate = true;
@@ -2795,14 +2734,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       uniforms.elevation.value = group.elevation;
       uniforms.centerCount.value = group.regions.length;
       uniforms.centers.value = group.centers;
-      uniforms.radiiSq.value = group.radiiSq; // Each center uses the actual held geometry's X/Z reach.
     }
   }
 
   // ── Floor punch: rebuild only the holder's circular ground patch ────────
   // An x-ray group used to clear depth inside its scissor and redraw every
   // occluder there with the holder's nearby floor filtered out. Only that floor
-  // (at least XRAY_CIRCLE_RADIUS, extending to actual weapon bounds) is ever
+  // (XRAY_CIRCLE_RADIUS from the holder's world X/Z, at its standing elevation) is ever
   // exempt, so when the original depth can be copied back afterwards
   // (ScissorDepthSnapshot) the group now keeps the existing depth and:
   //   1. stencil-marks pixels where that nearby floor is the frontmost surface
@@ -2910,8 +2848,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
     if (!(minX <= maxX && minZ <= maxZ)) return -1; // NaN bounds.
     if (belowFloor && Number.isFinite(group.elevation) && minY > group.elevation + XRAY_ELEVATION_TOLERANCE) return 0; // Wholly above the floor.
+    const R = XRAY_CIRCLE_RADIUS;
     for (const region of group.regions) {
-      const R = region.radius ?? XRAY_CIRCLE_RADIUS; // Match the shader's effective holder radius.
       if (maxX >= region.x - R - margin && minX <= region.x + R + margin && maxZ >= region.z - R - margin && minZ <= region.z + R + margin) return 1;
     }
     return 0;
@@ -2943,6 +2881,21 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   // hiding one would also hide a required descendant.
   let ordinaryDepthLeavesSkipped = 0; // Pixel Probe reports redundant leaves excluded from ordinary-depth supplements.
   let ordinaryDepthClearsAvoided = 0; // Counts groups that retain the base depth instead of reconstructing the world.
+  let lastForcedGroundDepthMaterials = 0; // Mobile diagnostic: temporary ground depth writers in the latest held replay.
+
+  function forceGroundDepthForHeldReplay(materials, savedStates) {
+    // Wilderness ground can be visually opaque but intentionally depthWrite:false
+    // in the world pass. Otherwise it cannot obscure tools OUTSIDE the exempt
+    // circle: the opposite of the intended same-elevation floor exception.
+    let forced = 0; // Count material overrides within this colorless replay only.
+    for (const material of materials || []) {
+      if (material?.depthWrite !== false || material.userData?.hobunjiXrayElevationShader?.supported !== true) continue;
+      saveMaterialState(savedStates, material); // Use the existing material transaction to restore base-render state.
+      material.depthWrite = true; // The ground shader still discards the holder's nearby floor in mode 1.
+      forced++;
+    }
+    return forced;
+  }
   function hideOrdinaryDepthRedraws(scene, cutouts, covers) {
     const required = new Set([...cutouts, ...covers]); // Only these materials gain depth writes in the supplement.
     const redundant = []; // Restored before source color and every elevation replay.
@@ -3077,6 +3030,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   }
 
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint = null, portraitOrder = null) {
+    lastForcedGroundDepthMaterials = 0; // Clear the mobile counter even when this pass has no active gear.
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
     if (!held.length && !feet.length && !bodyTint?.portraits.length) {
@@ -3230,6 +3184,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const depthMaterialStates = canLockColorMask
           ? prepareCutoutDepthMaterials(cutoutDepthMeshes, protectedDepthMeshes)
           : prepareNonGroundDepthMaterials(scene);
+        if (group.regions.length) lastForcedGroundDepthMaterials += forceGroundDepthForHeldReplay(groundMaterials, depthMaterialStates);
         if (canLockColorMask) {
           colorBuffer.setMask(false);
           colorBuffer.setLocked(true);
@@ -3716,7 +3671,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           player.updateWorldMatrix?.(true, false);
           playerScope = actorXrayScope(player, scene, new Map());
         }
-        zonePreview.updateGroundZone(scene, playerScope, lastPlayerXrayRadius);
+        zonePreview.updateGroundZone(scene, playerScope, XRAY_CIRCLE_RADIUS);
       }
     }
 
@@ -3742,14 +3697,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const renderBase = () => withPortraitDrawOrder(this, portraitOrder, () => originalRender.call(this, scene, camera), true);
     lastWaterPortraits = 0;
     lastDryGearWaterSkips = 0;
-    if (!held.length && !feet.length && !canTintPortraits) { lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; return renderBase(); } // No active weapon reach.
+    if (!held.length && !feet.length && !canTintPortraits) return renderBase();
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
     const needsOwnerMask = held.some(isPortraitMaskedGear)
       && collectVisible(frontPortraitRegistry, scene).length > 0; // Do not early-return when the private stencil is absent.
     if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
       lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
-      lastPlayerXrayRadius = XRAY_CIRCLE_RADIUS; // No floor exception is active on this map.
       return renderBase();
     }
 
@@ -3876,7 +3830,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       shellXrayMeshes: shellXrayMeshDrawCount,
       elevationReplayGroups: lastElevationReplayGroups,
       xrayTileRegions: lastXrayTileRegions,
-      playerGroundXrayRadius: Number(lastPlayerXrayRadius.toFixed(3)), // Mobile-visible diagnostic for the protected weapon sweep.
+      forcedGroundDepthMaterials: lastForcedGroundDepthMaterials, // Ground depth repaired for gear without changing the world pass.
       xrayOrdinaryMeshes: lastXrayOrdinaryMeshes,
       unknownElevationMeshes: lastUnknownElevationMeshes,
       elevationShaderMaterials: lastElevationShaderMaterials,
