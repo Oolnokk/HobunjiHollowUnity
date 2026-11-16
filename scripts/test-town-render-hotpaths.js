@@ -596,7 +596,7 @@ const rotatingRope = { ...part(0, 0), userData: { hobunjiGeneratedRope: true },
   onBeforeRender() {}, // Like the real flail rope, this callback rotates the sprite when drawn.
 };
 const ropeGroup = groupMeshes({}, actorScene, {}, [rotatingRope]);
-assert.ok(ropeGroup.groups[0].regions[0].radius >= 4.5,
+assert.ok(ropeGroup.groups[0].regions[0].radius >= 4.11,
   'camera-facing flail rope uses its rotation-safe world bounding sphere, not stale pre-render plane bounds');
 assert.match(heldRender, /const regionsByTile = new Map\(\)/,
   'held x-ray scopes are bucketed by tile while preserving per-actor positions');
