@@ -237,10 +237,20 @@
     }
     const key = encodeBoundKey(relic);
     ensureBoundItemDef(key);
+    const previousQuantity = deps.inventory[key]; // Restored if the shared bound-weapon and quest save is explicitly rejected.
     deps.inventory[key] = 1;
-    if (relic.origin === 'Fey') window.FeyArmamentQuest?.maybeStart?.({ deferSave: true }); // Save the new quest and the first Fey weapon together.
+    const questStarted = relic.origin === 'Fey' && window.FeyArmamentQuest?.maybeStart?.({ deferSave: true, silent: true }); // Save the new quest and first Fey weapon atomically.
     deps.buildInventoryGrid?.();
-    deps.saveMemberWorldData?.();
+    const saved = deps.saveMemberWorldData?.(); // The game's canonical member serializer returns false when persistence fails.
+    if (saved === false) {
+      if (previousQuantity === undefined) delete deps.inventory[key];
+      else deps.inventory[key] = previousQuantity;
+      if (questStarted) window.FeyArmamentQuest?.rollbackDeferredStart?.();
+      deps.buildInventoryGrid?.();
+      deps.showToast?.('The bound weapon could not be saved. No weapon was granted; please retry.', false);
+      return null;
+    }
+    if (questStarted) window.FeyArmamentQuest?.notifyStarted?.();
     ES()?.logEvent?.(`Found bound ${SHAPES[relic.shape].label}: ${describeEnchantments(relic.enchantments).join(', ')}`);
     return key;
   }
