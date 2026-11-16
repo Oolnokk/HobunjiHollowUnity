@@ -42,7 +42,7 @@ const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh), d
 const api = new Function('window', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
   'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER',
   render.slice(start, end) +
-  '\nreturn { setShoulderPetLayering, syncShoulderPetLayering, orders: SHOULDER_PET_RENDER_ORDERS, get state() { return lastShoulderPetDecision; } };')(
+  '\nreturn { setShoulderPetLayering, syncShoulderPetLayering, compareShoulderPetDrawFaces, shoulderPetDrawFace, orders: SHOULDER_PET_RENDER_ORDERS, get state() { return lastShoulderPetDecision; } };')(
     windowStub,
     (material, fn) => { for (const entry of Array.isArray(material) ? material : [material]) if (entry) fn(entry); },
     key => key === 'shoulderPet.presentation' ? mode : null,
@@ -57,6 +57,13 @@ const makeMesh = name => ({
 });
 const front = makeMesh('player_avatar_front_plane');
 const back = makeMesh('player_avatar_back_plane');
+const ownerHatFront = makeMesh('player_avatar_front_hat_xray_plane'); // Tests real auxiliary front portrait depth participation.
+const ownerHatBack = makeMesh('player_avatar_back_hat_xray_plane'); // Tests rear hat overlay parity independently.
+const ownerRoot = { children: [front, back, ownerHatFront, ownerHatBack] }; // Fake player's bounded portrait assembly.
+for (const mesh of ownerRoot.children) mesh.parent = ownerRoot;
+ownerHatFront.renderOrder = 12; // Deliberately later than the foreground pet: the pair sort must still win.
+ownerHatBack.renderOrder = 12;
+
 const makePet = () => {
   const petFront = makeMesh('pet_front');
   const petBack = makeMesh('pet_back');
@@ -70,6 +77,7 @@ const makePet = () => {
   } };
 };
 const pet = makePet();
+for (const mesh of pet.avatarRef.group.children) mesh.parent = pet.avatarRef.group;
 const use = (companion, viewerSeesFront) => api.setShoulderPetLayering(
   companion, front, back, front.material, back.material, viewerSeesFront);
 
@@ -85,6 +93,18 @@ function testFacing(inward) {
   assert.equal(a.frontPlane.renderOrder, inward ? api.orders.frontAbove : api.orders.frontBehind);
   assert.equal(a.backPlane.renderOrder, inward ? api.orders.backBehind : api.orders.backAbove);
   assert.equal(a.frontPlane.renderOrder > front.renderOrder, inward, 'front plane swaps across owner front');
+  assert.equal(api.compareShoulderPetDrawFaces('owner-front', 'pet-front'), inward ? -1 : 1,
+    'front pet must x-ray over EVERY owner front sprite in its inward pose');
+  assert.equal(api.compareShoulderPetDrawFaces('owner-back', 'pet-back'), inward ? 1 : -1,
+    'rear pet must x-ray over EVERY owner rear sprite in its outward pose');
+  assert.equal(api.compareShoulderPetDrawFaces('owner-front', 'pet-back'), 0,
+    'opposite faces are never forcibly paired');
+  assert.equal(api.shoulderPetDrawFace({object:a.splitFront,material:a.splitFront.material}), 'pet-front');
+  assert.equal(api.shoulderPetDrawFace({object:a.splitBack,material:a.splitBack.material}), 'pet-back');
+  assert.equal(api.shoulderPetDrawFace({object:ownerHatFront,material:ownerHatFront.material}), 'owner-front');
+  assert.equal(api.shoulderPetDrawFace({object:ownerHatBack,material:ownerHatBack.material}), 'owner-back');
+  assert.equal(ownerHatFront.material.depthWrite, false, 'hat front cannot depth-occlude paired pet');
+  assert.equal(ownerHatBack.material.depthWrite, false, 'hat back cannot depth-occlude paired pet');
   assert.equal(a.backPlane.renderOrder > back.renderOrder, !inward, 'back plane swaps across owner back');
   assert.equal(a.splitFront.renderOrder, a.frontPlane.renderOrder + 0.01, 'split front inherits front stage');
   assert.equal(a.splitBack.renderOrder, a.backPlane.renderOrder + 0.01, 'split back inherits back stage');
@@ -102,7 +122,8 @@ function testFacing(inward) {
   assert.equal(api.state.mode, 'owner-portrait-stages');
   assert.equal(api.state.frontForeground, inward);
   assert.equal(api.state.backForeground, !inward);
-  assert.equal(a.group.userData.hobunjiShoulderPetLayering.xrayEnabled, false);
+  assert.equal(a.group.userData.hobunjiShoulderPetLayering.xrayEnabled, true);
+  assert.equal(api.state.pairedFaceSort, true);
   assert.ok(masks.has(front), 'owner front portrait remains eligible for the private stencil');
 }
 // Manual ordering must not classify a rear split as a front sprite merely
@@ -119,6 +140,45 @@ assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPort
   material: {name:'avatar_skinned_front_material'}}), 'actor.rear');
 
 testFacing(false);
+testFacing(true);
+
+// Execute the production transparent-sort transaction for BOTH normal and
+// manual categories; the previous compositor checked renderOrder only, which
+// let manual ranking or an owner hat overlay silently reverse the pet x-ray.
+const sorterStart = render.indexOf('  function withVisualSort(');
+const sorterEnd = render.indexOf('  function nearbyPortraitOrder(', sorterStart);
+assert(sorterStart > 0 && sorterEnd > sorterStart);
+const stateRef = { get pet() { return api.state.active ? pet : null; } }; // Reuses active pet state from the actual source harness.
+const overrideRank = item => item.object === ownerHatFront || item.object === ownerHatBack ? 8 : 1; // Manual sort deliberately prefers owner art.
+windowStub.XrayHierarchy = { layerRank: overrideRank };
+let useManual = false;
+const productionSort = new Function('window', 'xrayRule', 'visualLayerFor', 'protectedDrawPhase',
+  'comparePortraitDraws', 'shoulderPetPresentation', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces',
+  render.slice(sorterStart,sorterEnd) + '\nreturn withVisualSort;')(
+  windowStub, key => key === 'layers.manualOrder' && useManual ? 'on' : 'off',
+  item => item.object === ownerHatFront ? 'garment.headwear' : 'actor.front',
+  () => 0,
+  () => 0, stateRef, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces);
+const sorterRenderer = {
+  sort: null, setTransparentSort(value) { this.sort = value; },
+  setOpaqueSort() {},
+};
+const drawItem = (mesh) => ({ object:mesh, material:mesh.material, groupOrder:0,
+  renderOrder:mesh.renderOrder, z:0, id:0 });
+for (const inward of [false, true]) for (const manual of [false, true]) {
+  pet.__hobunjiShoulderFacingInward = inward;
+  use(pet, true);
+  useManual = manual;
+  productionSort(sorterRenderer, null, () => {
+    assert.equal(typeof sorterRenderer.sort, 'function', 'paired x-ray installs a sorter even without a nearby NPC');
+    const frontPair = sorterRenderer.sort(drawItem(pet.avatarRef.frontPlane), drawItem(ownerHatFront));
+    const backPair = sorterRenderer.sort(drawItem(pet.avatarRef.backPlane), drawItem(ownerHatBack));
+    assert.equal(Math.sign(frontPair), inward ? 1 : -1, 'front face ordering survives owner hat and manual sort');
+    assert.equal(Math.sign(backPair), inward ? -1 : 1, 'rear face ordering survives owner hat and manual sort');
+    const splitPair = sorterRenderer.sort(drawItem(pet.avatarRef.splitFront), drawItem(ownerHatFront));
+    assert.equal(Math.sign(splitPair), inward ? 1 : -1, 'split face follows foreground under both sort modes');
+  });
+}
 testFacing(true);
 use(pet, false);
 assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove, 'camera side must not flip the pose');
@@ -148,6 +208,8 @@ assert.equal(back.renderOrder, api.orders.back);
 assert.equal(replacement.avatarRef.frontPlane.material.depthWrite, true);
 assert.equal(replacement.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined);
 assert.equal(masks.has(replacement.avatarRef.backPlane), false);
+assert.equal(ownerHatFront.material.depthWrite, true, 'detachment restores original front hat depth');
+assert.equal(ownerHatBack.material.depthWrite, true, 'detachment restores original back hat depth');
 assert.equal(api.state.active, false);
 assert.ok(synced >= 5, 'split sprites synchronized on swaps and detachment');
 

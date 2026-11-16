@@ -444,6 +444,67 @@
     return face === 'front' || face === 'back' ? face : null;
   }
 
+  // Owner/pet face identity is derived from the actual render item (including skinned
+  // material groups), not from the camera or a second animation-state machine.
+  function shoulderPetDrawFace(item) {
+    const state = shoulderPetPresentation;
+    const avatar = state?.pet?.avatarRef;
+    const mesh = item?.object;
+    if (!avatar || !mesh?.isMesh) return null;
+    const petFace = shoulderPetPortraitFace(mesh, avatar);
+    if (petFace && (mesh === avatar.frontPlane || mesh === avatar.backPlane
+        || (mesh.userData?.hobunjiShoulderSplitOverlay === true && mesh.parent === avatar.group))) {
+      return 'pet-' + petFace; // Pet split copies always remain in their source face stage.
+    }
+    if (mesh === state.frontMesh || mesh === state.backMesh) {
+      const materialName = String(item.material?.name || '').toLowerCase();
+      const face = /(?:^|_)back(?:_|$)/.test(materialName) ? 'back'
+        : /(?:^|_)front(?:_|$)/.test(materialName) ? 'front'
+          : mesh === state.backMesh && mesh !== state.frontMesh ? 'back' : 'front';
+      return 'owner-' + face; // One skinned player mesh can contain BOTH portrait sides.
+    }
+    const overlay = /^player_avatar_(front|back)_.+(?:plane|overlay)$/i.exec(String(mesh.name || ''));
+    return overlay ? 'owner-' + overlay[1].toLowerCase() : null; // Same-owner hat/portrait helpers; never unrelated NPCs.
+  }
+
+  function compareShoulderPetDrawFaces(a, b) {
+    if (!a || !b) return 0;
+    const aPet = a.startsWith('pet-'), bPet = b.startsWith('pet-');
+    if (aPet === bPet) return 0;
+    const aFace = a.endsWith('front') ? 'front' : 'back';
+    const bFace = b.endsWith('front') ? 'front' : 'back';
+    if (aFace !== bFace) return 0; // No new global front-vs-back or camera ordering rule.
+    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true;
+    const petAbove = aFace === 'front' ? inward : !inward;
+    return aPet ? (petAbove ? 1 : -1) : (petAbove ? -1 : 1);
+  }
+
+  const ownerOverlayMaterialDepths = new Map(); // Restores the real depthWrite setting of owner hat overlays on detachment.
+  function syncShoulderOwnerOverlayDepth(state, active) {
+    const desired = new Set(); // Only sibling PNG portrait overlays; never GLB hands, held objects or world depth.
+    if (active) {
+      for (const parent of [state?.frontMesh?.parent, state?.backMesh?.parent]) {
+        for (const mesh of parent?.children || []) {
+          if (!mesh?.isMesh || !/^player_avatar_(front|back)_.+(?:plane|overlay)$/i.test(String(mesh.name || ''))
+              || mesh === state.frontMesh || mesh === state.backMesh) continue;
+          forEachMaterial(mesh.material, material => desired.add(material));
+        }
+      }
+    }
+    for (const [material, originalDepthWrite] of ownerOverlayMaterialDepths) {
+      if (desired.has(material)) continue;
+      if (material.depthWrite !== originalDepthWrite) {
+        material.depthWrite = originalDepthWrite;
+        material.needsUpdate = true;
+      }
+      ownerOverlayMaterialDepths.delete(material);
+    }
+    for (const material of desired) {
+      if (!ownerOverlayMaterialDepths.has(material)) ownerOverlayMaterialDepths.set(material, material.depthWrite);
+      setShoulderPartDepthWrite(material, false); // Owner's hat must not leave stale depth that can hide its foreground pet.
+    }
+  }
+
   function syncPetForegroundStencil(pet, foregroundFace) {
     const desired = new Set(); // Bounded to the active pet's two cards and optional split copies, not a scene traversal.
     const avatar = pet?.avatarRef;
@@ -498,6 +559,7 @@
     const pet = state.pet;
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
+      syncShoulderOwnerOverlayDepth(state, false);
       if (petForegroundStencilParts.size) syncPetForegroundStencil(null, null);
       if (previouslyPresentedPet) {
         setShoulderPartDepthWrite(state.frontMaterial, true);
@@ -516,6 +578,7 @@
     const avatar = pet.avatarRef;
 
     // Draw the owner/pet as one depth-tested, depth-write-free portrait stack.
+    syncShoulderOwnerOverlayDepth(state, true); // Front/back hat copies must not write depth through their paired pet face.
     // Do not change either owner's render order to push the whole character above/below the pet.
     setShoulderPartDepthWrite(state.frontMaterial, false);
     setShoulderPartDepthWrite(state.backMaterial, false);
@@ -553,13 +616,15 @@
       petFrontOrder: frontOrder, petBackOrder: backOrder,
       ownerFrontOrder: SHOULDER_PET_RENDER_ORDERS.front, ownerBackOrder: SHOULDER_PET_RENDER_ORDERS.back,
       ownerDepthWrite: false, petDepthWrite: false,
+      ownerOverlayDepthWriteFree: ownerOverlayMaterialDepths.size,
+      pairedFaceSort: true, // The private sorter places a pet above/below ALL owner sprites in its face stage.
     };
     if (avatar?.group) {
       avatar.group.userData = avatar.group.userData || {};
       avatar.group.userData.hobunjiShoulderPetLayering = {
-        ...lastShoulderPetDecision, xrayEnabled: false,
-        depthMode: 'owner-portrait-no-depth-write',
-        recentChange: 'The pet front and back planes individually swap above/below their matching owner portrait planes; no camera- or preset-dependent pet x-ray rules.',
+        ...lastShoulderPetDecision, xrayEnabled: true,
+        depthMode: 'depth-tested-owner-portrait-stage-xray',
+        recentChange: 'The paired portrait sorter enforces pet-to-owner face overlap (including skinned material groups and hat overlays) without disabling physical world depth.',
       };
     }
   }
@@ -747,16 +812,27 @@
 
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
-    if (!manual && !portraitOrder) return draw();
+    if (!manual && !portraitOrder && !shoulderPetPresentation?.pet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
+    const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
+    const pairFace = item => {
+      if (!pairCache.has(item)) pairCache.set(item, shoulderPetDrawFace(item));
+      return pairCache.get(item);
+    };
+    const shoulderPetPairOrder = (a, b) => {
+      const first = pairFace(a);
+      if (!first) return 0;
+      const second = pairFace(b);
+      return second ? compareShoulderPetDrawFaces(first, second) : 0;
+    };
     const rank = item => {
       if (!rankCache.has(item)) rankCache.set(item, window.XrayHierarchy.layerRank(visualLayerFor(item)));
       return rankCache.get(item);
     };
-    const legacyTransparent = (a, b) => portraitOrder
+    const legacyTransparent = (a, b) => shoulderPetPairOrder(a, b) || (portraitOrder
       ? comparePortraitDraws(a, b, portraitOrder.ranks, portraitOrder.extras)
-      : a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || b.z - a.z || a.id - b.id;
+      : a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || b.z - a.z || a.id - b.id);
     const legacyOpaque = (a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder
       || (a.material?.id || 0) - (b.material?.id || 0) || a.z - b.z || a.id - b.id;
     if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => {
@@ -771,6 +847,8 @@
           const boundary = a.groupOrder - b.groupOrder || phaseA - phaseB;
           if (boundary) return boundary;
           if (phaseA) return legacyTransparent(a, b); // Depth masks, pose sentinels and final overlays cannot move by a UI rank.
+          const pairOrder = shoulderPetPairOrder(a, b);
+          if (pairOrder) return pairOrder; // Mandatory owner/pet relationship beats user-configured category ranks.
           // Prioritize actor-to-actor depth before editable intra-actor layers.
           // Otherwise a distant NPC hand ranked above a front portrait paints
           // over the nearby player's body even with ordinary depth protected.
@@ -856,7 +934,7 @@
   }
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
-    if ((!order && xrayRule('layers.manualOrder') !== 'on') || !renderer.setTransparentSort) return draw();
+    if ((!order && xrayRule('layers.manualOrder') !== 'on' && !shoulderPetPresentation?.pet?.avatarRef) || !renderer.setTransparentSort) return draw();
     const changed = new Set(); // Only the farther portraits near the player defer depth writes during the ordinary color draw.
     if (protectNearPortrait && order) {
       for (const [mesh, rank] of order.ranks) {

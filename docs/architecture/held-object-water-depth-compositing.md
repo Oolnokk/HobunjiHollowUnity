@@ -125,7 +125,15 @@ Replacing or detaching a shoulder pet restores the previous pet's ordinary
 depth and draw order, cleans up its private stencil participation, and restores
 the owner's unchanged portrait orders and normal depth writes.
 The compositor reasserts this once more before each base world draw after other
-depth writers have run.
+depth writers have run. Its transparent-sort transaction now guarantees that
+the foreground pet face paints after **all** owner sprites in its matching
+front/back stage (including coplanar hat overlays and skinned/split copies),
+even if manual layer ranking is enabled. The background pet face always paints
+before those matching owner sprites. The comparator is scoped to that one
+owner and only the matching face; nearby NPCs and opposite-facing cards keep
+their original sort rules. Owner portrait hat overlays also temporarily defer
+their depth writes while a pet is attached, then restore their original flags
+on detachment; the world still supplies ordinary depth testing.
 
 The mobile X-ray panel and Pixel Probe show which pet face is in front,
 the individual stage orders and the owner stencil coverage/candidate counts.
