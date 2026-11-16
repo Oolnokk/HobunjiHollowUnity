@@ -848,6 +848,26 @@
     }
   }
 
+  function uncheckpointedLockRegression(meta) {
+    if (!_recoveryNeedsRefresh || !_lastKnownFolderMeta) return null;
+    const latestByCharacter = new Map((meta.characters || []).filter(entry => entry?.id).map(entry => [String(entry.id), entry])); // New capture must retain the immediately durable lock penalty.
+    for (const previous of _lastKnownFolderMeta.characters || []) {
+      const latest = latestByCharacter.get(String(previous?.id));
+      for (const [worldId, locks] of Object.entries(previous?.chestLockProgress || {})) {
+        for (const [lockId, saved] of Object.entries(locks || {})) {
+          if (saved?.version !== 2 || saved.folderUnsynced !== true) continue; // Only guard progress made durable by the fast path.
+          const incoming = latest?.chestLockProgress?.[worldId]?.[lockId];
+          if (incoming?.version !== 2 || Number(incoming.stage) < Number(saved.stage)
+            || Number(incoming.misses) < Number(saved.misses)
+            || !Number.isFinite(Number(incoming.stage)) || !Number.isFinite(Number(incoming.misses))) {
+            return 'browser state is missing durable lock progress for ' + String(lockId);
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto', reason = null } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
@@ -866,6 +886,14 @@
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
+      const missingLock = !force && uncheckpointedLockRegression(meta); // A browser quota failure must not undo a lock penalty already written to the primary folder.
+      if (missingLock) {
+        _lastDataLossRisk = missingLock;
+        _lastError = 'Skipped folder save: ' + missingLock + '. Restore the pending character metadata or Load from Folder.';
+        _lastAction = automatic ? 'autosync-blocked-lock-progress' : 'save-blocked-lock-progress';
+        notify();
+        return getStatus();
+      }
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
         && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
@@ -1048,7 +1076,11 @@
       if (String(profile?.characterId) !== String(characterId) || String(profile?.worldId) !== String(worldId)) {
         throw new Error('Lock progress save belongs to another active character or world.');
       }
-      if (typeof lockId !== 'string' || !lockId || lockId.length > 1024
+      if (!(_lastKnownFolderMeta.worlds || []).some(world => String(world?.id) === String(worldId))) {
+        throw new Error('Lock progress world does not exist in the committed folder.');
+      }
+      if (typeof worldId !== 'string' || ['__proto__', 'prototype', 'constructor'].includes(worldId)
+        || typeof lockId !== 'string' || !lockId || lockId.length > 1024
         || ['__proto__', 'prototype', 'constructor'].includes(lockId)
         || typeof record !== 'object' || !record || Array.isArray(record)
         || record.version !== 2 || record.folderUnsynced !== true || !Number.isInteger(record.stage)) {
