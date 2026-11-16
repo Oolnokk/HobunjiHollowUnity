@@ -77,7 +77,8 @@ assert.equal(voorg.shoulderRest.splitRightUsesIdle, false);
 assert.equal(voorg.shoulderRest.afterPoints[6].y, 1.2729887486531961);
 assert.notStrictEqual(voorg.shoulderRest, uumkaoii.shoulderRest, 'uploaded shoulder profiles remain independent');
 const moot = renderer.ANIMAL_HEAD_RIGS.moot; // Independent copies of the Voorg-Ass painted neck and shoulder.
-assert.deepEqual(JSON.parse(JSON.stringify(moot.shoulderRest)), JSON.parse(JSON.stringify(voorg.shoulderRest)), 'Moot duplicates the entire latest Voorg-Ass shoulder settings');
+assert.notDeepEqual(JSON.parse(JSON.stringify(moot.shoulderRest)), JSON.parse(JSON.stringify(voorg.shoulderRest)), 'Moot preserves the newly uploaded independent shoulder pose');
+assert.equal(moot.shoulderRest.separatorAspect, 1.617, 'Moot keeps its uploaded shoulder separator aspect');
 assert.notStrictEqual(moot.shoulderRest, voorg.shoulderRest, 'Moot shoulder is an independent record');
 assert.notStrictEqual(moot.shoulderRest.beforePoints, voorg.shoulderRest.beforePoints, 'Moot before points are independently editable');
 assert.notStrictEqual(moot.shoulderRest.afterPoints[6], voorg.shoulderRest.afterPoints[6], 'Moot after points are independently editable');
@@ -87,7 +88,10 @@ const mootNeck = JSON.parse(JSON.stringify(moot)); // Full head/neck settings wi
 const voorgNeck = JSON.parse(JSON.stringify(voorg)); // Source head/neck settings without shoulder data.
 delete mootNeck.shoulderRest;
 delete voorgNeck.shoulderRest;
-assert.deepEqual(mootNeck, voorgNeck, 'Moot duplicates all Voorg-Ass neck deformation settings');
+assert.notDeepEqual(mootNeck, voorgNeck, 'Moot has its own independently authored head paint and pivot');
+assert.equal(moot.pivot.x, .37400034701593793, 'Moot retains the uploaded head pivot');
+assert.equal(moot.babyHeadScale, undefined, 'Moot inherits the universal 132% default');
+assert.equal(moot.babyHeadFrame.width, .46468750000000003, 'Moot preserves its uploaded head-frame fallback');
 assert.notStrictEqual(moot.weightMap.data, voorg.weightMap.data, 'Moot neck paint is independently editable');
 assert.notStrictEqual(moot.compressibilityMap.data, voorg.compressibilityMap.data, 'Moot neck compression is independently editable');
 assert.notStrictEqual(uumkaoii.shoulderRest, puktuk.shoulderRest, 'Uumkao’ii stays independent of Puktuk');
@@ -103,4 +107,4 @@ assert.equal(grehlr.shoulderRest.frameShiftX, .54, 'Grehlr remains unchanged');
 const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
 assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
-console.log('uploaded animal head rigs: Moot has independent Voorg-Ass neck and shoulder copies');
+console.log('uploaded animal head rigs: Moot retains its independently uploaded head/shoulder painting');
