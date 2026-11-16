@@ -17,7 +17,7 @@ assert.doesNotMatch(game, /function _setLayerDepthWrite\(/, 'gameplay no longer 
 assert.doesNotMatch(game, /function _setPlayerBodyRenderOrder\(/, 'gameplay no longer reorders shoulder-pet portraits independently');
 assert.match(render, /if \(isBaseWorldPass\(scene, camera\)\) syncShoulderPetLayering\(\)/,
   'the compositor restores its shared policy immediately before a real world draw');
-assert.match(render, /const needsOwnerMask = lastBaseStencilBits >= 8 && held\.some\(isPortraitMaskedGear\)/,
+assert.match(render, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'held owners still receive front-art masks in scenes with no nearby ground/water');
 assert.match(render, /frontPortraitMaskReason: lastFrontPortraitMaskReason/,
   'mobile diagnostics explain zero eligible/masked gear rather than silently reporting 0\/0');
