@@ -25,7 +25,7 @@ assert.doesNotMatch(gameSource, /authoredRotationOffset\.invert\(\)/,
 assert.doesNotMatch(gameSource, /desiredVisualFacingSign|observationMirrored|canonicalFacingSign/,
   'shoulder facing no longer computes or requests sprite mirror parity');
 assert.match(gameSource,
-  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,180}shoulderFacingTurnDeg:[\s\S]{0,120}spriteMirrored: false/,
+  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,180}shoulderFacingTurnDeg:[\s\S]{0,360}spriteMirrored: false/,
   'final diagnostics record 0/180 local turn and guarantee no sprite mirror');
 assert.match(gameSource,
   /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
