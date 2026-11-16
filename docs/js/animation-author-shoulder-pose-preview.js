@@ -110,7 +110,7 @@
     function setPose(pose) {
       const nextPose = pose === 'perched' ? 'perched' : 'source'; // Invalid inputs fail back to the safe unmodified source view.
       if (nextPose === requestedPose && (posedAvatar || buildTask || buildError || nextPose === 'source')) {
-        return buildTask || Promise.resolve(posedAvatar); // The animation loop must not rewrite the inspector DOM on every rendered frame.
+        return buildTask || posedAvatar; // The animation loop must not allocate promises or rewrite the inspector DOM every frame.
       }
       requestedPose = nextPose;
       if (!disposed && requestedPose === 'perched' && !posedAvatar && !buildTask && !buildError) {
@@ -125,7 +125,7 @@
       }
       syncVisibility();
       onChange(status());
-      return buildTask || Promise.resolve(posedAvatar);
+      return buildTask || posedAvatar;
     }
 
     function dispose() {
