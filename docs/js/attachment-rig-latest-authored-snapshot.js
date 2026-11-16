@@ -21,6 +21,7 @@
     new URL('skeleton-species-runtime.js?v=20261115worldPerch1', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20261116maoPerch2', base).href,
     new URL('mao-ao-skeleton-species-runtime.js?v=20261101maoskelrear1', base).href,
+    new URL('boney-shinjimi-skeleton-species-runtime.js?v=20261116boney1', base).href,
     new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261113uniformRigStride2', base).href,
