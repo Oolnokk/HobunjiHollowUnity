@@ -55,10 +55,29 @@
   }
 
   function mountSetting() {
-    const control = document.getElementById('settingTapHoldExtraDelay'); // The ordinary, non-developer Input tab.
+    const inputSection = document.getElementById('settingsSection7'); // The existing player Input subtab; no feature HTML lives in index.html.
+    if (!inputSection) return false;
+    let control = document.getElementById('settingTapHoldExtraDelay'); // Reuse a mounted control if Settings has been refreshed.
+    if (!control) {
+      const row = document.createElement('label'); // Adds the player setting directly below the Input heading.
+      row.className = 'settings-row';
+      row.id = 'settingTapHoldTimingRow';
+      row.innerHTML = `<div class="settings-label">
+        <div class="settings-name">Tap / Hold Timing</div>
+        <div class="settings-desc">Adjust the time before a tap becomes a hold. Positive values make taps easier; negative values make holds faster.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="settingTapHoldExtraDelay" min="${MIN_EXTRA_MS}" max="${MAX_EXTRA_MS}" step="${STEP_MS}" value="${DEFAULT_EXTRA_MS}" aria-label="Extra tap-to-hold delay in milliseconds" style="align-self:center">
+        <span id="settingTapHoldExtraDelayValue" class="settings-slider-value" aria-live="polite">+${DEFAULT_EXTRA_MS} ms</span>
+      </div>`;
+      const heading = inputSection.querySelector('.settings-section-title'); // Preserves keyboard/controller Settings navigation order.
+      if (heading) heading.after(row);
+      else inputSection.prepend(row);
+      control = row.querySelector('#settingTapHoldExtraDelay');
+    }
     if (!control) return false;
     slider = control;
-    readout = document.getElementById('settingTapHoldExtraDelayValue');
+    readout = document.getElementById('settingTapHoldExtraDelayValue') || document.getElementById('settingTapHoldTimingRow')?.querySelector('#settingTapHoldExtraDelayValue');
     if (slider.dataset.tapHoldTimingBound !== '1') {
       slider.dataset.tapHoldTimingBound = '1';
       slider.addEventListener('input', () => setExtraMs(slider.value));

@@ -2,15 +2,19 @@
 const assert = require('node:assert/strict'); // Verifies the production player preference and tap/hold state transitions.
 const fs = require('node:fs'); // Loads actual runtime sources and Settings markup.
 const vm = require('node:vm'); // Runs real modules with a deterministic clock rather than a browser.
-const markup = fs.readFileSync('docs/index.html','utf8'); // Checks ordinary player access to the Input-tab slider.
-assert.match(markup,/id="settingTapHoldExtraDelay"/);
-assert.match(markup,/js\/input-hold-timing\.js/);
-const inputSection = markup.slice(markup.indexOf('id="settingsSection7"'),markup.indexOf('id="settingsSection8"')); // Only the normal Input section.
-assert.match(inputSection,/settingTapHoldExtraDelay/);
+const markup = fs.readFileSync('docs/index.html','utf8'); // The entrypoint contains no tap/hold implementation or settings markup.
+const timingSource = fs.readFileSync('docs/js/input-hold-timing.js','utf8'); // Standalone timing preference and player Input row owner.
+const combatManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/combat-main.js','utf8'); // Parser-time integration without new index.html registrations.
+assert.doesNotMatch(markup,/input-hold-timing\.js|settingTapHoldExtraDelay|Tap \/ Hold Timing/);
+assert.match(combatManifest,/input-hold-timing\.js\?v=/);
+assert(combatManifest.indexOf('input-hold-timing.js') < combatManifest.indexOf('combat-input.js'),'timing preference initializes before combat input');
 const callbacks = {}; // Captures touch/keyboard slider listeners.
 const saved = new Map(); // Simulates durable browser preferences across sessions.
 const slider = {value:'30',dataset:{},addEventListener(type,fn){callbacks[type]=fn;}}; // Player range control.
 const readout = {textContent:''}; // Live value label visible on mobile.
+const rows = []; // Tracks dynamically inserted rows and prevents duplicate controls on remount.
+const heading = {after(row){rows.push(row);}}; // The standard player Input section heading.
+const inputSection = {querySelector: selector => selector === '.settings-section-title' ? heading : null,prepend(row){rows.unshift(row);}}; // Player Input tab fixture.
 let clock=0,holdCount=0,armCount=0,cancelCount=0; // Deterministic real-time and gesture results.
 const ability = {category:'defensiveHold',onTap(){},onHoldStart(){holdCount++;},onHoldEnd(){}}; // Attack callbacks exercised by the combat input state machine.
 const win = {
@@ -19,9 +23,29 @@ const win = {
   Combat:{loadout:{getSlot:()=> 'test'},abilities:{get:()=>ability},deps:{player:{}},isStaggered:()=>false,update(){}},
   matchMedia:()=>({matches:true}),addEventListener(){},dispatchEvent(){}
 };
-const doc = {readyState:'complete',getElementById:id=>id==='settingTapHoldExtraDelay'?slider:id==='settingTapHoldExtraDelayValue'?readout:null,addEventListener(){}};
+const doc = {
+  readyState:'complete',
+  getElementById(id) {
+    if (id === 'settingsSection7') return inputSection;
+    if (id === 'settingTapHoldTimingRow') return rows[0] || null;
+    if (!rows.length) return null;
+    return id === 'settingTapHoldExtraDelay' ? slider : id === 'settingTapHoldExtraDelayValue' ? readout : null;
+  },
+  createElement(tag) {
+    assert.equal(tag,'label');
+    return {className:'',id:'',innerHTML:'',querySelector(id) {
+      return id === '#settingTapHoldExtraDelay' ? slider : id === '#settingTapHoldExtraDelayValue' ? readout : null;
+    }}; // Exercises the real row insertion code without a browser.
+  },
+  addEventListener(){}
+};
 const context = {window:win,document:doc,performance:{now:()=>clock},CustomEvent:function(){},console};
-vm.runInNewContext(fs.readFileSync('docs/js/input-hold-timing.js','utf8'),context);
+vm.runInNewContext(timingSource,context);
+assert.equal(rows.length,1,'creates one player-visible Input row');
+assert.match(rows[0].innerHTML,/min="-80" max="200" step="10"/);
+assert.equal(rows[0].className,'settings-row');
+assert.equal(win.InputHoldTiming.mountSetting(),true,'supports remount when Settings updates');
+assert.equal(rows.length,1,'does not duplicate the Input row');
 assert.equal(win.InputHoldTiming.getExtraMs(),30);
 assert.equal(readout.textContent,'+30 ms');
 assert.equal(win.SCRATCHBONES_CONFIG.game.desktopControls.tapWindowMs,380);
