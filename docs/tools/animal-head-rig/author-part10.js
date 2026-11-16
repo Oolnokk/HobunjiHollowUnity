@@ -63,13 +63,14 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image) {
   if (!image || !babyHeadWarp) return image;
   const species = String($('animalId').value || '').trim(); // Current preview species, independent of its 3D head-rig pivot.
   const amount = Number(babyHeadScaleSlider.value) / 100; // The slider always displays the exact preview strength.
-  if (!species || amount <= 1 || !babyHeadWarp.frameForKind(species)) return image;
+  if (!species || amount <= 1) return image;
   const width = Math.floor(Number(image.naturalWidth || image.width));
   const height = Math.floor(Number(image.naturalHeight || image.height));
   if (!(width > 0 && height > 0)) return image;
   const key = species + ':' + amount.toFixed(2) + ':' + width + 'x' + height; // Changes in source, species or scale invalidate this source's cache.
   const cached = babyPreviewTextureCache.get(image);
   if (cached?.key === key) { babyHeadDebug.hits++; return cached.image; }
+  if (!babyHeadWarp.frameForKind(species)) return image; // Probe authored head bounds only on cache misses, not for every mesh triangle.
   try {
     const source = document.createElement('canvas'); // Canvas snapshot of the idle/run/split layer before baby-only pixel deformation.
     source.width = width;
