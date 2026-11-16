@@ -6650,7 +6650,15 @@
           }
         }
         const breathScaleY = kickPoseHeld ? 1 : window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now()); // Keep the whole held kick silhouette truly still, without idle breathing.
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY, z: c.visualScaleZ }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
+        const authoredPetPerchScale = c.stableRole === 'shoulderPet' && (c.master || player) === player
+          ? playerAttachmentAnchor('shoulderPerch')?.scale : null; // Read the already-authored size only for the player's perched companion, not each wild creature.
+        const petScaleX = Number(authoredPetPerchScale?.x) > 0 ? Number(authoredPetPerchScale.x) : 1; // Multiplies the existing genotype/Small width once per frame.
+        const petScaleY = Number(authoredPetPerchScale?.y) > 0 ? Number(authoredPetPerchScale.y) : 1; // Preserves authored squash and breathing after the perch multiplier.
+        const petScaleZ = Number(authoredPetPerchScale?.z) > 0 ? Number(authoredPetPerchScale.z) : 1; // Retains any authored depth/grip factor.
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, {
+          x: c.visualScaleX * petScaleX, y: c.visualScaleY * petScaleY,
+          z: (c.visualScaleZ || 1) * petScaleZ,
+        }, scaleY * breathScaleY); // Rebuild from unmodified genotype scales each tick, so the authored multiplier cannot accumulate.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -7975,7 +7983,11 @@
               + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
           return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
-        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg, sourcePixel: anchor.sourcePixel ? { ...anchor.sourcePixel } : null } : null;
+        return Number.isFinite(anchor?.position?.y) ? {
+          ...anchor.position, rotationDeg: anchor.rotationDeg,
+          scale: anchor.scale ? { ...anchor.scale } : { x: 1, y: 1, z: 1 }, // Keep the static species/gender perch size available to both visuals and shoulder-grip alignment.
+          sourcePixel: anchor.sourcePixel ? { ...anchor.sourcePixel } : null,
+        } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass = null) {
         const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotypeOrSizeClass); // Matches anchor coordinates to the visible size class.
@@ -8078,7 +8090,12 @@
           worldQuaternion.multiply(authoredRotationOffset);
           if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
         }
-        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Re-solving this offset after the half-turn keeps shoulderGrip exactly pinned to shoulderPerch.
+        const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
+        const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
+        const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
+        const gripWorldOffset = new THREE.Vector3(
+          (grip.x || 0) * perchScaleX, (grip.y || 0) * perchScaleY, (grip.z || 0) * perchScaleZ,
+        ).applyQuaternion(worldQuaternion); // Invert the SAME authored scale applied to the pet body so its grip stays pinned after the half-turn.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
@@ -8854,8 +8871,10 @@
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
               const invGripYaw = -gripYawRad;
-              const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-              const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+              const gripScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Pre-pin pet logic uses the same authored width as its final rendered attachment.
+              const gripScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Pre-pin root placement follows any authored depth scale.
+              const gx = grip.x * gripScaleX * Math.cos(invGripYaw) + (grip.z || 0) * gripScaleZ * Math.sin(invGripYaw);
+              const gz = -grip.x * gripScaleX * Math.sin(invGripYaw) + (grip.z || 0) * gripScaleZ * Math.cos(invGripYaw);
               const lx = perch.x - gx, lz = (perch.z || 0) - gz;
               const theta = (master === player) ? playerMesh.rotation.y : master.angle;
               dx = lx * Math.cos(theta) + lz * Math.sin(theta);
@@ -8879,7 +8898,8 @@
               // height-above-playerMesh convention playerToolBaseY already
               // uses elsewhere — so no additional half-height lift belongs
               // here either. X/Z are NOT pinned here (see below).
-              c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+              const gripScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the statically authored pet size while its final skinned-world pin runs later.
+              c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y * gripScaleY;
             } else {
               // No authored rig anchors for this species/creature pairing —
               // a flat increment on top of updateCreatureMesh's own
