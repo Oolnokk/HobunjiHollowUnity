@@ -1,11 +1,11 @@
-// Baby-only pixel-art head enlargement. The authored chathead frame supplies the
-// center/extent; its surroundings follow with a smooth distance falloff.
-// Applied to FINAL genotype canvases, never to adult textures or head-rig data.
+// Idle-pose alpha-masked head enlargement shared by babies and eligible small pets.
+// Cache the opaque silhouette INSIDE the chathead frame once per species, then use
+// that unchanged mask on final (eyes/patterns included) genotype artwork in every pose.
 (() => {
   'use strict';
 
   const STORAGE_KEY = 'hobunji_baby_head_warp_scale_v1'; // Keeps the Nursery experiment's chosen scale across reloads without modifying saves.
-  const DEFAULT_SCALE = 1.23; // User-approved 123% head enlargement, shared by every species' babies and qualifying small-sized pets.
+  const DEFAULT_SCALE = 1.32; // User-approved universal 132% for babies and qualifying genetically Small shoulder pets.
   const MAX_SCALE = 1.45; // Safety cap for the Nursery slider and public setter.
   const FALLOFF_RADIUS = 0.85; // In units of the larger head-frame half-extent; adjacent neck/body pixels move less with distance.
   const debug = { applied: 0, skipped: 0, lastKind: null, lastFrame: null, lastError: null }; // Exposed in Nursery Debug for mobile inspection.
@@ -18,7 +18,7 @@
   let scale = (() => {
     try {
       const saved = window.localStorage?.getItem(STORAGE_KEY);
-      return saved == null || Number(saved) === 1.22 ? DEFAULT_SCALE : clampScale(saved); // Migrate the old experiment's 122% default to the approved 123%; preserve deliberate edits.
+      return saved == null || Number(saved) === 1.22 || Number(saved) === 1.23 ? DEFAULT_SCALE : clampScale(saved); // Move the two old inherited defaults to 132%; preserve other user choices.
     } catch (_) { return DEFAULT_SCALE; }
   })(); // Used by every new baby composition; independent of species, saved genotype and adult visuals.
 
@@ -114,9 +114,10 @@
     const savedRig = previews?.[normalized] || previews?.[base];
     const committed = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
       || window.CreatureGeneticsRender?.headRigForKind?.(base);
-    const painted = frameFromRig(savedRig) || frameFromRig(committed);
     const chathead = validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame);
-    if (painted || chathead) return painted || chathead;
+    if (chathead) return chathead; // The authored dialogue frame strictly bounds which IDLE opaque pixels belong to the source head mask.
+    const painted = frameFromRig(savedRig) || frameFromRig(committed);
+    if (painted) return painted; // No chathead frame? Preserve custom/unpainted species' authored head crop.
     // Unpainted birds and other registered creatures still deserve baby proportions. Reuse the existing dialogue-frame solver
     // rather than silently skipping them; newly painted rigs automatically supersede this fallback.
     const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
@@ -126,32 +127,161 @@
       coordinateSpace: 'sprite-normalized-top-left' } : null; // Only known sprite species get a conservative fallback; unknown IDs still skip.
   }
 
-  function warpPixels(source, width, height, frame, requestedScale = scale) {
-    const w = Math.floor(Number(width)), h = Math.floor(Number(height)); // Native texture dimensions; source and destination are always the same size.
-    const magnification = clampScale(requestedScale); // Avoids inversion/foldovers from accidental extreme author values.
+  const idleMasks = new Map(); // One native-pixel idle silhouette per species; never regenerated from run/sleep/shoulder poses.
+  const pendingIdleMasks = new Map(); // Deduplicates concurrent requests across nursery, nests, incubators and equipped pets.
+  const maskSourceIds = new WeakMap(); // Editor replaces the mask when it imports a different idle PNG for the same species.
+  let nextSourceId = 1; // Stable identity for source images used only in mask cache keys.
+
+  function baseKind(kind) {
+    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-');
+    return window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized;
+  }
+
+  function frameKey(frame) {
+    return frame ? [frame.x, frame.y, frame.width, frame.height].map(value => Number(value).toFixed(6)).join(':') : '';
+  }
+
+  function buildIdleMask(pixels, width, height, rawFrame) {
+    const w = Math.floor(Number(width)), h = Math.floor(Number(height)), frame = validateFrame(rawFrame);
+    if (!frame || !pixels || w < 1 || h < 1 || pixels.length !== w * h * 4) return null;
+    const left = Math.max(0, Math.floor(frame.x * w)), top = Math.max(0, Math.floor(frame.y * h));
+    const right = Math.min(w, Math.ceil((frame.x + frame.width) * w)), bottom = Math.min(h, Math.ceil((frame.y + frame.height) * h));
+    const occupied = new Uint8Array(w * h); // Alpha > 0 inside the chathead frame is the ONLY full-strength source domain.
+    const distance = new Float32Array(w * h); // Chamfer distance to the nearest opaque idle-head pixel for the soft transition.
+    distance.fill(Infinity);
+    let pixelsInside = 0, sumX = 0, sumY = 0;
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        const i = y * w + x;
+        if (pixels[i * 4 + 3] === 0) continue;
+        occupied[i] = 1;
+        distance[i] = 0;
+        pixelsInside++;
+        sumX += x + 0.5;
+        sumY += y + 0.5;
+      }
+    }
+    if (!pixelsInside) return null; // Never enlarge an empty chathead frame, nor silently restore the rectangular behavior.
+    const diagonal = Math.SQRT2; // Approximate Euclidean distance with two linear-time eight-neighbour passes.
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (x) distance[i] = Math.min(distance[i], distance[i - 1] + 1);
+      if (y) {
+        distance[i] = Math.min(distance[i], distance[i - w] + 1);
+        if (x) distance[i] = Math.min(distance[i], distance[i - w - 1] + diagonal);
+        if (x + 1 < w) distance[i] = Math.min(distance[i], distance[i - w + 1] + diagonal);
+      }
+    }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (x + 1 < w) distance[i] = Math.min(distance[i], distance[i + 1] + 1);
+      if (y + 1 < h) {
+        distance[i] = Math.min(distance[i], distance[i + w] + 1);
+        if (x + 1 < w) distance[i] = Math.min(distance[i], distance[i + w + 1] + diagonal);
+        if (x) distance[i] = Math.min(distance[i], distance[i + w - 1] + diagonal);
+      }
+    }
+    const fade = Math.max(1, Math.max(frame.width * w, frame.height * h) / 2 * FALLOFF_RADIUS);
+    const coverage = new Float32Array(w * h); // Sampled in normalized coordinates so run poses reuse the unchanged idle silhouette.
+    for (let i = 0; i < coverage.length; i++) {
+      const d = distance[i];
+      if (d === 0) coverage[i] = 1;
+      else if (d < fade) {
+        const t = d / fade;
+        coverage[i] = 1 - t * t * (3 - 2 * t);
+      }
+    }
+    return { width: w, height: h, frame, frameKey: frameKey(frame),
+      opaquePixels: pixelsInside, centerX: sumX / pixelsInside, centerY: sumY / pixelsInside, coverage };
+  }
+
+  function sourcePixels(image) {
+    const w = Number(image?.naturalWidth || image?.width), h = Number(image?.naturalHeight || image?.height);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w * h > 4_000_000) return null;
+    if (image?.data?.length === w * h * 4) return { data: image.data, width: w, height: h }; // ImageData/fixture input.
+    const canvas = typeof image?.getContext === 'function' ? image : document.createElement('canvas');
+    if (canvas !== image) { canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(image, 0, 0, w, h); }
+    const data = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, w, h)?.data;
+    return data ? { data, width: w, height: h } : null;
+  }
+
+  function maskForKind(kind) {
+    const key = baseKind(kind), cached = idleMasks.get(key);
+    const frame = frameForKind(key);
+    return cached?.frameKey === frameKey(frame) ? cached.mask : null; // Never use a stale mask after an authored frame edit.
+  }
+
+  function primeIdleMask(kind, image, frameOverride = null) {
+    const key = baseKind(kind), frame = validateFrame(frameOverride) || frameForKind(key);
+    if (!key || !frame || !image) return null;
+    const sourceId = image && typeof image === 'object' ? (maskSourceIds.get(image) || nextSourceId++) : 0;
+    if (sourceId && !maskSourceIds.has(image)) maskSourceIds.set(image, sourceId);
+    const id = sourceId + '|' + frameKey(frame);
+    const previous = idleMasks.get(key);
+    if (previous?.id === id) return previous.mask;
+    try {
+      const source = sourcePixels(image);
+      const mask = source && buildIdleMask(source.data, source.width, source.height, frame);
+      if (!mask) throw new Error('The idle sprite has no opaque pixels inside its chathead frame.');
+      idleMasks.set(key, { id, frameKey: frameKey(frame), mask });
+      debug.lastMaskKind = key;
+      debug.lastMaskPixels = mask.opaquePixels;
+      debug.lastMaskError = null;
+      return mask;
+    } catch (error) {
+      debug.lastMaskError = String(error?.message || error); // On mobile, report tainted/unreadable idle art instead of a fake enlargement.
+      return null;
+    }
+  }
+
+  async function ensureIdleMask(kind, idleSource = null, frameOverride = null) {
+    const key = baseKind(kind);
+    if (!key) return null;
+    const current = maskForKind(key);
+    if (current && !frameOverride) return current;
+    if (idleSource) return primeIdleMask(key, idleSource, frameOverride); // Caller guarantees this is an IDLE pose; never prime from run2.
+    if (pendingIdleMasks.has(key)) return pendingIdleMasks.get(key);
+    const promise = (async () => {
+      try {
+        const renderer = window.CreatureGeneticsRender;
+        const raw = renderer?.SPECIES?.[key]?.base?.idle; // Source is the species' authored base IDLE sprite, independent of genotype.
+        if (!raw) throw new Error('No registered idle base sprite: ' + key);
+        const url = /^(?:https?:|blob:|data:)/i.test(raw) ? raw : new URL(raw, document.baseURI).href;
+        const image = await new Promise((resolve, reject) => {
+          const idle = new Image();
+          idle.crossOrigin = 'anonymous'; // Raw hosted assets must not taint head-mask canvas pixel reads.
+          idle.onload = () => resolve(idle);
+          idle.onerror = () => reject(new Error('Idle source unavailable or not CORS-readable: ' + raw));
+          idle.src = url;
+        });
+        return maskForKind(key) || primeIdleMask(key, image, frameOverride);
+      } catch (error) {
+        debug.lastMaskError = String(error?.message || error);
+        return null;
+      }
+    })();
+    pendingIdleMasks.set(key, promise);
+    try { return await promise; }
+    finally { if (pendingIdleMasks.get(key) === promise) pendingIdleMasks.delete(key); }
+  }
+
+  function warpPixels(source, width, height, frame, requestedScale = scale, idleMask = null) {
+    const w = Math.floor(Number(width)), h = Math.floor(Number(height));
+    const magnification = clampScale(requestedScale);
     if (!source || w < 1 || h < 1 || source.length !== w * h * 4) return null;
-    const output = new Uint8ClampedArray(source); // Exact copy keeps every distant body pixel and its alpha unchanged.
-    if (!frame || magnification <= 1) return output;
-    const left = frame.x * w, top = frame.y * h; // Pixel-space limits of the existing authored normalized head frame.
-    const halfW = frame.width * w / 2, halfH = frame.height * h / 2;
-    const cx = left + halfW, cy = top + halfH;
-    const fade = Math.max(1, Math.max(halfW, halfH) * FALLOFF_RADIUS); // Smooth transition extending beyond all four frame edges.
-    const minX = Math.max(0, Math.floor(left - fade)), maxX = Math.min(w - 1, Math.ceil(left + halfW * 2 + fade));
-    const minY = Math.max(0, Math.floor(top - fade)), maxY = Math.min(h - 1, Math.ceil(top + halfH * 2 + fade));
-    for (let y = minY; y <= maxY; y++) {
-      const py = y + 0.5, dy = py - cy;
-      const outsideY = Math.max(0, Math.abs(dy) - halfH);
-      for (let x = minX; x <= maxX; x++) {
-        const px = x + 0.5, dx = px - cx;
-        const outsideX = Math.max(0, Math.abs(dx) - halfW);
-        const distance = Math.hypot(outsideX, outsideY);
-        if (distance >= fade) continue;
-        const t = distance / fade;
-        const influence = 1 - t * t * (3 - 2 * t); // Smoothstep falloff: full strength in the head box, zero at the outer limit.
+    const output = new Uint8ClampedArray(source); // Do not change adult/shared artwork, its alpha, or distant unmasked pixels.
+    if (!idleMask || !frame || magnification <= 1) return output; // No idle alpha mask: NEVER fall back to stretching the entire frame.
+    const mxScale = idleMask.width / w, myScale = idleMask.height / h;
+    const cx = idleMask.centerX / mxScale, cy = idleMask.centerY / myScale; // Opaque-pixel centroid from IDLE, shared by all poses.
+    for (let y = 0; y < h; y++) {
+      const my = Math.max(0, Math.min(idleMask.height - 1, Math.floor((y + 0.5) * myScale)));
+      for (let x = 0; x < w; x++) {
+        const mx = Math.max(0, Math.min(idleMask.width - 1, Math.floor((x + 0.5) * mxScale)));
+        const influence = idleMask.coverage[my * idleMask.width + mx];
+        if (!(influence > 0)) continue;
         const factor = 1 + (magnification - 1) * influence;
-        // Inverse mapping never leaves empty holes: destination pixels fetch the closest original pixel.
-        const sx = Math.max(0, Math.min(w - 1, Math.round(cx + dx / factor - 0.5)));
-        const sy = Math.max(0, Math.min(h - 1, Math.round(cy + dy / factor - 0.5)));
+        const sx = Math.max(0, Math.min(w - 1, Math.round(cx + (x + 0.5 - cx) / factor - 0.5)));
+        const sy = Math.max(0, Math.min(h - 1, Math.round(cy + (y + 0.5 - cy) / factor - 0.5)));
         const from = (sy * w + sx) * 4, to = (y * w + x) * 4;
         output[to] = source[from]; output[to + 1] = source[from + 1];
         output[to + 2] = source[from + 2]; output[to + 3] = source[from + 3];
@@ -161,17 +291,23 @@
   }
 
   function applyToCanvas(canvas, kind, previewScale = null, previewFrame = null) {
-    const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale); // Editor may override strength without mutating game preferences.
+    const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale);
     if (!canvas || selectedScale <= 1) { debug.skipped++; return canvas; }
-    const frame = validateFrame(previewFrame) || frameForKind(kind); // Rigger can preview its painted head bounds before exporting them.
-    if (!frame) { debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'no authored head frame'; return canvas; }
+    const frame = validateFrame(previewFrame) || frameForKind(kind);
+    const mask = maskForKind(kind);
+    if (!frame || !mask || mask.frameKey !== frameKey(frame)) {
+      debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'idle opacity mask unavailable';
+      debug.lastError = 'Prepare the idle head opacity mask before enlarging ' + kind
+        + (debug.lastMaskError ? ': ' + debug.lastMaskError : '');
+      return canvas;
+    }
     try {
-      const w = canvas.width, h = canvas.height; // Same native resolution for all genotypes and run poses.
+      const w = canvas.width, h = canvas.height; // Original native pose resolution; no recropping or new mask generation.
       const src = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, w, h);
       if (!src) return canvas;
-      const warped = warpPixels(src.data, w, h, frame, selectedScale);
+      const warped = warpPixels(src.data, w, h, frame, selectedScale, mask);
       if (!warped) return canvas;
-      const output = document.createElement('canvas'); // Separate surface avoids changing any cached adult/shared genotype composite.
+      const output = document.createElement('canvas');
       output.width = w; output.height = h;
       const ctx = output.getContext('2d');
       const image = ctx.createImageData(w, h);
@@ -180,14 +316,14 @@
       debug.applied++; debug.lastKind = kind; debug.lastFrame = frame; debug.lastError = null;
       return output;
     } catch (error) {
-      debug.lastError = String(error?.message || error); // Failure remains visible in the Nursery Debug button on mobile.
+      debug.lastError = String(error?.message || error);
       return canvas;
     }
   }
 
   window.BabyAnimalHeadWarp = Object.freeze({
     DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
-    frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, warpPixels, applyToCanvas,
-    debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS }),
+    frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, buildIdleMask, maskForKind, primeIdleMask, ensureIdleMask, warpPixels, applyToCanvas,
+    debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS, masksCached: idleMasks.size, masksPending: pendingIdleMasks.size }),
   });
 })();
