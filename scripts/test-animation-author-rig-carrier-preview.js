@@ -34,22 +34,22 @@ function nearAngle(a,b,msg){near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0,msg);
 const w={};new Function('window',source)(w);
 const solve=w.AnimationAuthorRigCarrierPreview.placeNpcAtGrip;
 assert.equal(solve({THREE:{}}),false);
-function check(grip,basis,body,perch,camera={position:{x:grip.x,z:5}}){ // The pet stays fixed; the NPC moves and aims its +Z portrait at the camera.
+function check(grip,basis,body,perch,camera={position:{x:grip.x,z:5}}){ // Camera is varied only to verify that the NPC never billboards.
  const fixed=grip.clone(),worldParent={matrixWorld:basis,updateWorldMatrix(){}};
  const root={parent:worldParent,matrixAutoUpdate:true,matrix:new M(),
    updateMatrixWorld(){this.matrixWorld=worldParent.matrixWorld.clone().multiply(this.matrix);}};
  const visualOffset={matrix:body,updateMatrix(){}};
  const shoulderPerch={matrix:perch,scale:{x:Math.hypot(perch.a,perch.b)},updateMatrix(){}};
  const creatureGrip={matrixWorld:grip,updateWorldMatrix(){}};
- assert.equal(solve({THREE:{Matrix4:M,Quaternion:Q,Vector3:V},root,visualOffset,shoulderPerch,creatureGrip,camera}),true);
+ assert.equal(solve({THREE:{Matrix4:M,Quaternion:Q,Vector3:V},root,visualOffset,shoulderPerch,creatureGrip,camera}),true); // Intentionally pass camera to guard against restoring an unused billboard input.
  assert.equal(root.matrixAutoUpdate,false);
  const matched=root.matrixWorld.clone().multiply(body).multiply(perch);
  near(matched.x,grip.x,'fixed shoulder contact X');
  near(matched.y,grip.y,'fixed shoulder contact Y');
- const expectedYaw=Math.atan2(camera.position.x-grip.x,camera.position.z); // In the 2D fixture all grip Z values are zero.
- nearAngle(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),expectedYaw,'NPC front (+Z) follows viewport camera, never pet grip yaw');
+ const expectedYaw=0; // The ordinary NPC front (+Z) stays world-aligned as the camera orbits.
+ nearAngle(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),expectedYaw,'NPC portrait must NOT follow viewport camera or animal grip yaw');
  const localShoulder=body.clone().multiply(perch); // Socket rotation still belongs to the NPC, independently of the pet's chosen grip rotation.
- nearAngle(Math.atan2(matched.b,matched.a),expectedYaw+Math.atan2(localShoulder.b,localShoulder.a),'socket follows NPC camera yaw rather than pet grip yaw');
+ nearAngle(Math.atan2(matched.b,matched.a),Math.atan2(localShoulder.b,localShoulder.a),'socket orientation follows neither camera nor pet grip yaw');
  near(Math.hypot(root.matrixWorld.a,root.matrixWorld.b),1/shoulderPerch.scale.x,'NPC root uses reciprocal perch scale');
  near(Math.hypot(matched.a,matched.b),Math.hypot(body.a,body.b),'carrier body retains species size (not Small animal size)');
  for(const k of ['a','b','c','d','x','y'])near(grip[k],fixed[k],'animal grip unchanged '+k);
@@ -63,8 +63,7 @@ const turnedGrip=check(t(.2,-.3,.4+Math.PI,.35,.28),fixture.basis,fixture.body,f
 for(const k of ['a','b','c','d','x','y'])near(one[k],turnedGrip[k],'animal grip rotation cannot rotate or relocate the owner '+k);
 for(const [side,camera] of [['front',{position:{x:.2,z:4}}],['back',{position:{x:.2,z:-4}}],['right',{position:{x:4,z:0}}],['left',{position:{x:-4,z:0}}]]) {
  const turned=check(t(.2,-.3,1.4,.35,.28),fixture.basis,fixture.body,fixture.perch,camera);
- const facing=Math.atan2(turned.b,turned.a),expected=Math.atan2(camera.position.x-.2,camera.position.z); // Matches the NPC builder's painted +Z front normal.
- nearAngle(facing,expected,'front portrait faces '+side+' camera instead of showing a flipped rear canvas');
+ for(const key of ['a','b','c','d','x','y'])near(turned[key],one[key],'camera orbit '+side+' must not billboard/reposition NPC '+key);
 }
 const two=check(t(-.4,.8,-1.1,.3,.3),t(-1,.7,.8,.7,1.15),t(0,.12,-.2,.9,.9),t(-.13,.4,-.5,1.3,1.3));
 assert.notDeepEqual(one,two,'switching species/gender changes the NPC placement');
@@ -76,9 +75,11 @@ assert.match(html,/perch\.rotation\.order = 'YXZ'/,'gameplay rotation order pres
 assert.match(html,/rigWorldAxesV1553\.quaternion\.identity\(\)/,'world axes ignore local grip rotation');
 assert.match(html,/controls\.setSpace\('world'\)/,'actual gizmo is world aligned');
 assert.match(html,/window\.AnimationAuthorRigCarrierPreview\?\.placeNpcAtGrip/,'solver integrated');
-assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier3/,'changed browser helper must invalidate cached wrong-face solver');
-assert.match(html,/camera: state\.three\.camera/,'editor passes live orbit camera to carrier portrait solver');
-assert.match(html,/normal NPC skinned portrait \(not horizontally mirrored\)[^']*front \(\+Z\) faces camera/,'mobile status reports the standard front-facing skinned portrait');
+assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier4/,'changed browser helper must invalidate cached billboard solver');
+assert.doesNotMatch(source,/cameraDX|cameraDZ|faceYaw|camera\?\.position|setFromAxisAngle/,'carrier math must not depend on camera direction');
+const liveCarrierCall=html.slice(html.indexOf('function syncShoulderCarrierV1553()'),html.indexOf('function shoulderCarrierStatusV1553('));
+assert.doesNotMatch(liveCarrierCall,/camera: state\.three\.camera/,'editor must not pass camera data to carrier placement');
+assert.match(html,/fixed world-facing portrait \(\+Z\), no billboarding/,'mobile status reports fixed NPC portrait and correct +Z front');
 assert.match(avatarSource,/function createSinglePlaneAssembly[\s\S]*?frontMesh\.position\.z = config\.anchorZ;[\s\S]*?backMesh\.rotation\.y = Math\.PI;/,'the normal NPC front plane looks toward +Z; only the back is 180° rotated');
 assert.match(avatarSource,/frontMesh\.rotation\.y = Math\.PI \/ 2;/,'animal face plane uses a different +X orientation, not the NPC orientation');
 assert.match(avatarSource,/let portraitsFlipped = true/,'the base PNGPlaneAvatar begins horizontally mirrored by default; it cannot substitute for a normal author NPC');
