@@ -25,7 +25,7 @@ class ImageMock {
   set src(url) { this.url = url; pending.push(this); }
 }
 const context = {
-  Map, Image: ImageMock, URL, _puAssetBase: './assets/', window: {},
+  Map, Image: ImageMock, URL, setTimeout, clearTimeout, _puAssetBase: './assets/', window: {}, // The real loader now times out hung images before retrying a mirror.
   document: { baseURI: 'https://example.test/docs/index.html', createElement: () => ({
     getContext: () => ({ drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray([100, 80, 60, 255]) }), putImageData() {} }),
   }) },
