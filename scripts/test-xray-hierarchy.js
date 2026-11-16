@@ -12,7 +12,7 @@ const store = {};
 const panels = [];
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
-  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2 }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8, frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2, playerGroundXrayRadius: 3.4, xrayTileRegions: 2, elevationShaderFallbacks: 0 }) },
   __hobunjiGameStarted: true,
 };
 global.window = win;
@@ -91,6 +91,11 @@ assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.opti
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
 const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
 assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
+assert.ok(view.rows.some(row => row[0] === 'Ground X-ray zone' && /latest player held reach 3.40 tiles/.test(row[1])),
+  'mobile report shows the effective held weapon radius rather than claiming an unchanging 1.5-tile mask');
+const initialDiagnosis = JSON.parse(win.XrayHierarchy.diagnosticReport());
+assert.strictEqual(initialDiagnosis.xrayDiagnosis.stencilAndReplay.playerGroundXrayRadius, 3.4,
+  'copied mobile diagnosis includes weapon reach without developer console access');
 assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
 assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
 // Mock the 3D scene only for the debug overlay. It must not create persistent
