@@ -100,6 +100,7 @@ async function main() {
     addEventListener() {},
     __hobunjiPlayerProfile: { characterId: 'char', worldId: 'world' },
     showDirectoryPicker: async () => folder,
+    FolderSaveDeviceProvenance: { getDeviceId: () => 'incremental-test-device' }, // The core stamps only the changed portable entities.
     HobunjiSaveSnapshot: {
       browserCacheParts: () => [localStorage.getItem('hobunjiSaveMeta'), 'world', localStorage.getItem('hobunji_farm_layout_v3:world')],
       apply() {}, // The fake browser already contains the generated snapshot's own source data.
@@ -129,6 +130,17 @@ async function main() {
   const initial = await window.LocalSaveFolder.syncNow({ automatic: false });
   assert.equal(initial.lastError, null, 'first folder commit succeeds');
   assert.equal(initial.saveFileWork.written, 3, 'first save writes character, world and layout files');
+  const firstStamp = JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance;
+  assert.equal(firstStamp.lastWriterDeviceId, 'incremental-test-device', 'portable manifest records last-writer identity');
+  const characterBytes = await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text();
+  assert.equal(JSON.parse(characterBytes).folderSaveProvenance.lastWriterDeviceId, 'incremental-test-device');
+  const repeatExplicit = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(repeatExplicit.lastError, null);
+  assert.equal(repeatExplicit.saveFileWork.written, 0, 'explicit save no longer rewrites unchanged character/world files to timestamp them');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'an explicit save preserves exact character bytes when no character data changed');
+  assert.equal(JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance.lastWriterDeviceId,
+    'incremental-test-device', 'manifest alone advances the last-writer provenance');
 
   const writesBeforeIdle = counters.writes.length;
   const idle = await window.LocalSaveFolder.syncNow({ automatic: true });
@@ -156,11 +168,15 @@ async function main() {
   assert.equal(worldUpdate.lastError, null);
   assert.equal(worldUpdate.saveFileWork.written, 1, 'one edited world writes only its own canonical file');
   assert.equal(worldUpdate.saveFileWork.unchanged, 2, 'unchanged character and layout keep their original files');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'editing a world does not churn the unchanged character provenance');
 
   layout.tiles.push({ c: 4, r: 6 });
   saveLayout();
   const farmUpdate = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(farmUpdate.lastError, null);
+  const farmOnlyWriter = JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance;
+  assert.equal(farmOnlyWriter.lastWriterDeviceId, 'incremental-test-device', 'farm-only saves still update portable manifest writer');
   assert.equal(farmUpdate.saveFileWork.written, 1, 'editing a farm writes its layout file without rewriting world and character');
 
   const canonicalFarm = folder.folders.get('farm-layouts').files.get('world.json');
