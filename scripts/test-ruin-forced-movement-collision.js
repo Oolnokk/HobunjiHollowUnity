@@ -39,6 +39,21 @@ scope.RuinJumpShaft={flightBlockedAt:(x,z,radius,y)=>x>=5&&x<=5.5&&z===2.5&&y>=2
 assert(!collision.flightClear(4,2.7,2.5,6,2.7,2.5),'Skeeri cannot fly through a jump-shaft slab');
 delete scope.RuinJumpShaft;
 assert(!collision.shaftBodyBlocksAt(5.5,2.5,.2,1),'opened stone permits player motion immediately');
+const duplicateWall={...grid,isSolid:(c,r,l)=>c===5&&r===2&&l===1}; // An uncarved wing allocation overlaps the real open hub portal.
+ruin.shaftGrids=new Map([
+  ['shaft-hub',{grid,contains:()=>true}],
+  ['wing-overlap',{grid:duplicateWall,contains:()=>true}],
+]);
+scope.RuinLayerPlayable={selectGrid:grids=>grids.get('shaft-hub').grid}; // Same hub-first ownership as the shipped layered ruin.
+assert(!collision.shaftBodyBlocksAt(5.5,2.5,.2,null),
+  'a correctly open shaft portal cannot become an invisible wall from the overlapping wing allocation');
+assert(collision.flightClear(4,1.5,2.5,6,1.5,2.5),
+  'Skeeri may cross a real open shaft/wing junction even if an unowned grid still has border stone');
+scope.RuinLayerPlayable={selectGrid:()=>null};
+assert(collision.shaftBodyBlocksAt(5.5,2.5,.2,null),
+  'unowned border stone still blocks where no playable grid claims the aperture');
+delete scope.RuinLayerPlayable;
+ruin.shaftGrids=new Map([['wing',{grid,contains:x=>x<5}]]);
 blocks.add('5,2,1');
 const movementContext={window:{}};
 vm.runInNewContext(read('docs/js/swept-move.js'),movementContext,{filename:'swept-move.js'});
