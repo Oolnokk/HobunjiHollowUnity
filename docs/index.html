@@ -130,7 +130,7 @@
        window.ZoneRegrowth.init(...) alongside the other window.*.init(...)
        calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
        from its own init() call further down game.js. -->
-  <script src="js/zone-regrowth.js?v=20261112cliffRoutesSafe2"></script>
+  <script src="js/zone-regrowth.js?v=20261116boneyKasaRegrowth1"></script>
   <!-- Player health/stamina/footing regen tick and the vitals-bar HUD
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
@@ -149,7 +149,7 @@
   <script src="debug.js?v=20261112corpseAndSharedTint1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261115coffinBombAudio1"></script>
+  <script src="config/scratchbones-config.js?v=20261116boneyKasaCfg1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -185,7 +185,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261116maoPerch2"></script>
+  <script src="js/held-action-animations.js?v=20261116boneyKasaHeld1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -475,7 +475,7 @@
   <script src="js/scratchbones-name-generator.js?v=20261108harlyao2"></script>
   <script src="js/boney-shinjimi-rewards.js?v=20261116boney1"></script> <!-- Existing museum/relic/trinket reward adapters. -->
   <script src="js/boney-shinjimi-wilderness.js?v=20261116boney1"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
-  <script src="js/slagothim-traders.js?v=20261112longoran1"></script>
+  <script src="js/slagothim-traders.js?v=20261116boneyKasaTraders1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -760,7 +760,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261115h9f0b49d"></script>
+  <script src="js/equipment-panel.js?v=20261116boneyKasaEquip1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
