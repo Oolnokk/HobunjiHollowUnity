@@ -355,6 +355,7 @@
     if (authoredRest && rest.splitFrame) {
       ensureSplitShoulderFrame(companion, combatDeps, rest);
       if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
+      if (needsSmallPetHead(companion, combatDeps)) return true; // Pending split owns both head-warped layers; do not compose a redundant single frame.
     } else {
       companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     }
