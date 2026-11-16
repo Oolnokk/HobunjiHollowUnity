@@ -531,6 +531,14 @@
       mesh.userData = mesh.userData || {};
       mesh.userData.hobunjiShoulderPortraitFace = face; // Keeps manual X-ray category sorting in the same owner portrait stage.
     }
+    // Split and replacement skinned cards share the same portrait-stage rank as
+    // their source face in the optional manual sorter; split-layer parity
+    // supplies the actual source renderOrder and its small in-face epsilon.
+    for (const mesh of avatar?.group?.children || []) {
+      if (mesh?.userData?.hobunjiShoulderSplitOverlay !== true) continue;
+      const face = shoulderPetPortraitFace(mesh, avatar);
+      if (face) mesh.userData.hobunjiShoulderPortraitFace = face;
+    }
     // The owner front remains in its regular held-object stencil.
     if (state.frontMesh?.isMesh && isFrontPortraitMesh(state.frontMesh)) {
       if (!hasLayer(state.frontMesh, FRONT_PORTRAIT_MASK_LAYER)) state.frontMesh.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
@@ -671,9 +679,12 @@
       // A shoulder pet drawn in FRONT is part of its carrier's composite silhouette:
       // its visible pixels must block that carrier's held tools in the later overlay.
       const shoulder = node.userData?.hobunjiShoulderPetLayering;
-      if (shoulder?.active && petForegroundStencilParts.has(mesh)) {
-        const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
-        if (player) return player;
+      if (shoulder?.active) {
+        // External body roots are also classified as the player by actorRootForXrayMesh.
+        // A background pet face must STOP owner resolution here or it would
+        // inherit the player stencil anyway and hide the owner's held tool.
+        if (!petForegroundStencilParts.has(mesh)) return null;
+        return window.PlayerBodyTransformComposer?.getPlayerMesh?.() || null;
       }
       if (node.userData?.hobunjiHeldPortraitOwner) return node.userData.hobunjiHeldPortraitOwner;
     }
