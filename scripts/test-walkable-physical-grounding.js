@@ -93,8 +93,10 @@ assert.match(game, /isPlayerInWater:[\s\S]{0,200}!playerReachableWalkableSupport
   'water under a bridge does not extinguish the person on top, but still wets someone below');
 assert.match(game, /const shadowSurfaceY = player\._freeJump[\s\S]{0,700}playerGroundShadow\.position\.set/,
   'ground shadows use raised platform height, not the old terrain');
-assert.match(game, /ringHud\.position\.set\(playerMesh\.position\.x, shadowSurfaceY/,
-  'resource rings stay with the character on the deck');
+assert.doesNotMatch(game, /ResourceRings\.updateRingHud\(player\b/,
+  'the player has no ground-projected resource ring now that the on-screen bars own its vitals');
+assert.match(game, /ResourceRings\.updateRingHud\(c, ringScene, ringRadius, \{ isTarget \}\)/,
+  'creature resource rings and hostile target indicators remain enabled');
 assert.match(game, /const walkedOffLedge = stoodOnPreviousSupport[\s\S]{0,500}PlayerJump\?\.beginFlight/,
   'walking off a substantial raised deck triggers physical falling instead of downward snapping');
 assert.match(jump, /reset\(player, 'landed on ground'\);\s*player\.physicalFeetY = support\.y/,

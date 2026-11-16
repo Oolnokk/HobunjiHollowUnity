@@ -177,13 +177,10 @@
   }
 
   function presentationSnapshot() {
-    const ring = deps?.player?._ringHud || null; // Used to expose resource-ring parity in the existing mobile/debug ruin snapshot.
     return {
       elevation:lastPresentationElevation,
       bodyY:Number(deps?.playerMesh?.position?.y) || 0,
       shadowY:Number(deps?.playerGroundShadow?.position?.y) || 0,
-      resourceRingY:ring?.position ? Number(ring.position.y) || 0 : null,
-      resourceRingVisible:ring?.visible ?? null,
       renderAuthority:'game-updatePlayerMesh',
     };
   }
@@ -328,7 +325,7 @@
   };
 
   function playerSceneObjects() {
-    return [deps?.playerMesh, deps?.playerGroundShadow, deps?.player?._ringHud, deps?.toolHolder, deps?.reticleMesh,
+    return [deps?.playerMesh, deps?.playerGroundShadow, deps?.toolHolder, deps?.reticleMesh,
       deps?.reticleCircleMesh, deps?.reticleRingMesh, deps?.reticleWavyGroup].filter(Boolean);
   }
   function movePlayerObjectsTo(scene) {
