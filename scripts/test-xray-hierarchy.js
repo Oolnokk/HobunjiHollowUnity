@@ -96,7 +96,7 @@ assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes 
 // Mock the 3D scene only for the debug overlay. It must not create persistent
 // depth/billboard registrations or leave a circle behind while gameplay is paused.
 class PreviewGroup {
-  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; }
+  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; this.scale = { set: (x, y, z) => { this.xyzScale = [x, y, z]; } }; }
   add(child) { this.children.push(child); child.parent = this; }
   traverse(visitor) { visitor(this); this.children.forEach(visitor); }
 }
@@ -118,6 +118,9 @@ assert.ok(previewCircle.children.every(mesh => mesh.material.depthWrite === fals
 assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 1.5), true);
 assert.strictEqual(previewScene.children[0], previewCircle, 'moving reuses the original debug geometry');
 assert.deepStrictEqual(previewCircle.xyz, [3.5, 2.025, -2.5]);
+assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 3.4), true);
+assert.strictEqual(previewScene.children[0], previewCircle, 'changing weapon reach keeps the same debug mesh and GPU geometry');
+assert.deepStrictEqual(previewCircle.xyzScale, [3.4, 1, 3.4], 'debug disc shows the effective extended weapon radius');
 assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: false }), { ok: true }, 'checkbox disables the visualizer');
 assert.strictEqual(previewScene.children.length, 0, 'unchecking removes the overlay immediately, even without another frame');
 assert.strictEqual(X.get('ground.showZone'), 'off');
