@@ -32,6 +32,8 @@ assert.equal(resolve('controller', 'Button0', { bindings: { Button0: 'action3' }
 bindings.controller.jump = 'Button3';
 assert.equal(resolve('controller', 'Button0'), 'interact', 'a separately bound controller Jump leaves Interact on A');
 assert.equal(resolve('controller', 'Button3'), 'jump', 'the separate Jump binding works beside dungeon objects');
+bindings.controller.jump = 'Button0';
+assert.equal(resolve('controller', 'Button0'), 'jump', 'an imported shared Jump/Interact binding still jumps inside dungeons');
 bindings.controller.jump = null;
 area = 'wilderness';
 assert.equal(resolve('controller', 'Button0'), 'interact', 'leaving a dungeon restores A interaction');
