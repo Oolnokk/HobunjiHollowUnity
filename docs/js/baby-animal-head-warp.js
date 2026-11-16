@@ -52,17 +52,52 @@
     return { x, y, width, height, coordinateSpace: 'sprite-normalized-top-left' };
   }
 
+  function frameFromRig(rig) {
+    if (!rig || typeof rig !== 'object') return null;
+    const explicit = validateFrame(rig.babyHeadFrame); // A directly authored baby-only head box takes precedence over the inferred painted region.
+    if (explicit) return explicit;
+    const map = rig.weightMap; // Same Influence paint the animal head-rigger uses to bend the neck; never use Shoulder paint.
+    const w = Number(map?.width), h = Number(map?.height);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w * h > 65536) return null;
+    const total = w * h;
+    let minX = w, minY = h, maxX = -1, maxY = -1; // Bounds of strongly Head-owned pixels, ignoring unpainted/body/soft transition cells.
+    function include(index, raw) {
+      if (!Number.isFinite(raw) || raw < 128 || raw > 255) return;
+      const x = index % w, y = Math.floor(index / w);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    if (map.encoding === 'rle-u9' && Array.isArray(map.data)) {
+      let index = 0; // Walk the exact run-length encoding already used by the rigger; no decoded texture allocation.
+      for (let i = 0; i + 1 < map.data.length && index < total; i += 2) {
+        const count = Number(map.data[i]), raw = Number(map.data[i + 1]);
+        if (!Number.isInteger(count) || count < 0) return null;
+        const end = Math.min(total, index + count);
+        if (raw >= 128 && raw <= 255) for (; index < end; index++) include(index, raw);
+        else index = end;
+      }
+    } else if (Array.isArray(map.data)) {
+      for (let index = 0; index < Math.min(total, map.data.length); index++) include(index, Number(map.data[index]));
+    } else return null;
+    if (maxX < minX || maxY < minY) return null;
+    const padding = 0.035; // Matches the editor's normal padding around the painted head region for silhouettes/neck blending.
+    const x0 = Math.max(0, minX / w - padding), y0 = Math.max(0, minY / h - padding);
+    const x1 = Math.min(1, (maxX + 1) / w + padding), y1 = Math.min(1, (maxY + 1) / h + padding);
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, coordinateSpace: 'sprite-normalized-top-left' };
+  }
+
   function frameForKind(kind) {
-    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for attachment-rig head boxes.
-    const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Variants share the base species' baby proportions.
-    const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame; // Preferred existing, per-species chathead frame.
-    if (validateFrame(authoredFrame)) return validateFrame(authoredFrame);
-    let preview = null; // Custom animals without a chathead box can author one using the rigger's painted Head influence.
-    try { preview = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}'); } catch (_) {}
-    const previewFrame = preview?.[normalized]?.babyHeadFrame || preview?.[base]?.babyHeadFrame; // Same-origin browser preview first.
+    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for head-rig and chathead profiles.
+    const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Species variants share the actual authored head paint.
+    let previews = null; // Browser-local preview overrides must be able to demonstrate the artist's latest Head paint without a merge.
+    try { previews = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}'); } catch (_) {}
+    const savedRig = previews?.[normalized] || previews?.[base];
     const committed = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
-      || window.CreatureGeneticsRender?.headRigForKind?.(base); // Exported head rigs may explicitly contain a custom babyHeadFrame.
-    return validateFrame(previewFrame) || validateFrame(committed?.babyHeadFrame);
+      || window.CreatureGeneticsRender?.headRigForKind?.(base);
+    return frameFromRig(savedRig) || frameFromRig(committed)
+      || validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame); // Older/paintless species retain the existing chathead fallback.
   }
 
   function warpPixels(source, width, height, frame, requestedScale = scale) {
@@ -126,7 +161,7 @@
 
   window.BabyAnimalHeadWarp = Object.freeze({
     DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
-    frameForKind, validateFrame, warpPixels, applyToCanvas,
+    frameForKind, frameFromRig, validateFrame, warpPixels, applyToCanvas,
     debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS }),
   });
 })();
