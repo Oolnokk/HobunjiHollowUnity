@@ -119,7 +119,7 @@
     if (!document.getElementById('mountWheatHudStyle')) {
       const style = document.createElement('style');
       style.id = 'mountWheatHudStyle';
-      style.textContent = '#mountWheatHud{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);display:none;gap:5px;align-items:center;justify-content:center;z-index:110;pointer-events:none;padding:8px 10px;border-radius:12px;background:rgba(12,17,12,.62);white-space:nowrap}#mountWheatHud .wheat-charge{display:block;width:23px;height:23px;background:#6bc36f;-webkit-mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;transition:background .14s,opacity .14s}#mountWheatHud .wheat-charge.empty{background:#737675;opacity:.6}#mountWheatHud .wheat-charge.boosting:not(.empty){background:#f1cc63}@media(max-width:640px){#mountWheatHud{gap:3px;padding:5px 8px}#mountWheatHud .wheat-charge{width:20px;height:20px}}';
+      style.textContent = '#mountWheatHud{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);display:none;gap:5px;align-items:center;justify-content:center;z-index:110;pointer-events:none;padding:8px 10px;border-radius:12px;background:rgba(12,17,12,.62);white-space:nowrap}#mountWheatHud .wheat-charge{display:block;width:23px;height:23px;background:#6bc36f;-webkit-mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;transition:background .14s,opacity .14s}#mountWheatHud .wheat-charge.empty{background:#737675;opacity:.6}#mountWheatHud .wheat-charge.boosting:not(.empty){background:#f1cc63}@media(max-width:640px){#mountWheatHud{gap:3px;padding:5px 8px}#mountWheatHud .wheat-charge{width:20px;height:20px}}#vitalsBar.with-mounted-wheat{visibility:visible;opacity:1;transform:translate(-50%,0)}';
       document.head?.appendChild(style);
     }
     mountWheatHud = document.createElement('div');
@@ -148,6 +148,7 @@
     const signature = [visible, wheatRemaining, mountBoostS > 0].join(':');
     if (lastHudSignature === signature) return;
     lastHudSignature = signature;
+    document.getElementById('vitalsBar')?.classList.toggle('with-mounted-wheat', visible); // Wheat stays visible at full health even if all resource rows are hidden; never activates those rows.
     mountWheatHud.style.display = visible ? 'flex' : 'none';
     mountWheatHud.setAttribute('aria-label', 'Mount acceleration: ' + wheatRemaining + ' of ' + WHEAT_MAX + ' wheat charges');
     for (let i = 0; i < mountWheatHud.children.length; i++) {
