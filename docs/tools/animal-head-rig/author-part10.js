@@ -26,7 +26,7 @@ function readableBabyError(error) {
 }
 
 function syncBabyHeadScaleControl() {
-  const inherited = babyHeadWarp?.getScale?.() || 1.22; // Current Nursery default when the animal has no explicit scale.
+  const inherited = babyHeadWarp?.getScale?.() || 1.32; // Universal 132% for species without explicit overrides.
   const percent = Math.round((authoredBabyHeadScale ?? inherited) * 100);
   babyHeadScaleSlider.value = String(percent);
   babyHeadScaleLabel.textContent = percent + '%' + (authoredBabyHeadScale == null ? ' · inherited default' : ' · species override');
@@ -55,10 +55,12 @@ function paintedBabyHeadFrame() {
 
 function resolveBabyPreviewFrame() {
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-'); // Species whose source image is loaded in the editor.
-  const painted = paintedBabyHeadFrame(); // The exact head Influence currently visible in the painter wins over an unrelated dialogue-portrait crop.
-  if (painted) return { frame: painted, source: 'painted Head influence' };
-  const fromRig = babyHeadWarp?.frameForKind?.(species); // Saved/committed Head paint, then chathead fallback for paintless animals.
-  if (fromRig) return { frame: fromRig, source: 'saved rig or authored chathead fallback' };
+  const chathead = babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[species]?.chatheadFrame);
+  if (chathead) return { frame: chathead, source: 'opaque idle pixels inside chathead frame' }; // Actual mask excludes transparent cells, even within the box.
+  const painted = paintedBabyHeadFrame(); // Custom species without a chathead box may use their authored Head paint fallback.
+  if (painted) return { frame: painted, source: 'painted Head influence fallback' };
+  const fromRig = babyHeadWarp?.frameForKind?.(species);
+  if (fromRig) return { frame: fromRig, source: 'saved/fallback head frame' };
   return { frame: null, source: 'none' };
 }
 
@@ -144,7 +146,8 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
     .map(value => value.toFixed(5)).join(',');
   const cacheKey = species + ':' + amount.toFixed(2) + ':' + width + 'x' + height + ':' + frameKey;
   const cached = babyPreviewTextureCache.get(image);
-  if (cached?.key === cacheKey) { babyHeadDebug.hits++; return cached.image; }
+  const idleMask = babyHeadWarp?.maskForKind?.(species, babyPreviewFrame); // Reimporting idle art changes the silhouette even at the same head percentage.
+  if (cached?.key === cacheKey && cached?.mask === idleMask) { babyHeadDebug.hits++; return cached.image; }
   try {
     const source = document.createElement('canvas'); // Copies the original image/split layer without touching editable paint pixels.
     source.width = width;
@@ -152,7 +155,7 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
     source.getContext('2d').drawImage(image, 0, 0, width, height);
     const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame);
     if (warped === source) throw new Error(babyHeadWarp.debugSnapshot?.()?.lastError || 'Baby head warp returned the original pixels.');
-    babyPreviewTextureCache.set(image, { key: cacheKey, image: warped });
+    babyPreviewTextureCache.set(image, { key: cacheKey, mask: idleMask, image: warped });
     babyHeadDebug.misses++;
     babyHeadDebug.lastSpecies = species;
     babyHeadDebug.lastError = null;
@@ -295,6 +298,7 @@ draw = function drawWithBabyHeadPreview() {
   const resolved = resolveBabyPreviewFrame(); // Resolve painted bounds once per redraw; mesh triangles reuse the frame.
   babyPreviewFrame = resolved.frame;
   babyPreviewFrameSource = resolved.source;
+  if (state.image && babyPreviewFrame) babyHeadWarp?.primeIdleMask?.($('animalId').value, state.image, babyPreviewFrame); // Mask is authored ONLY from the loaded idle sprite; never sample run1.
   drawBeforeBabyHead();
   updateBabyPreviewFeedback(); // Original draw sets the angle badge; append baby scale afterward.
   drawBabyHeadTextureComparison(); // Two head crops bypass all head/shoulder poses and confirm actual changed RGBA pixels.
@@ -318,6 +322,7 @@ window.__animalHeadRigBabyPreview = Object.freeze({
     ...babyHeadDebug, species: String($('animalId').value || ''),
     scale: Number(babyHeadScaleSlider.value) / 100, explicit: authoredBabyHeadScale !== null,
     comparingOriginal: comparingBabyOriginal, frame: babyPreviewFrame, frameSource: babyPreviewFrameSource,
+    idleMaskPixels: babyHeadWarp?.maskForKind?.($('animalId').value, babyPreviewFrame)?.opaquePixels || 0,
   }),
 });
 syncBabyHeadScaleControl();
