@@ -169,7 +169,8 @@ const mesh = { userData: { toolPlane: plane } }; // The shared cached tool mesh 
 let orbitMultiplier = 1.5; // Simulates a species-dependent shoulder sphere radius passed through the shared game orbit helper.
 let orbitCalls = 0; // Counts actual orbit transforms during idle and active torch animation.
 let orbitInput = null; // The completed authored idle point before applying the spherical orbit.
-let orbitOutput = null; // The completed orbit point expected at the holder's render-matrix bake.
+let orbitOutput = null; // The spherical orbit point before grip-size correction.
+let orbitQuaternion = null; // Records the uncorrected holder orientation needed to check the pivot independently.
 const deps = {
   toolHolder: holder, TOOL_ITEM_DEFS: definitions,
   equipmentSlots: { adventuring: 'torch', axe: 'hatchet' },
@@ -179,6 +180,7 @@ const deps = {
     orbitCalls++;
     assert(Number.isFinite(yawRad), 'idle orbit receives its finite authored pose yaw');
     orbitInput = point.clone();
+    orbitQuaternion = holder.quaternion.clone(); // Grip pivot is applied after this transform, before world-upright correction.
     point.x = 2 + (point.x - 2) * orbitMultiplier;
     point.y = 3 + (point.y - 3) * orbitMultiplier;
     point.z = 4 + (point.z - 4) * orbitMultiplier;
@@ -197,13 +199,21 @@ assert.equal(snapshot.worldUprightApplied, true, 'torched PNG receives the world
 assert.equal(renderedScale, 0.68, 'torch renders at the exported neutral size');
 assert.equal(holder.scale.x, 1, 'holder scale is restored after the pose bake');
 assert.equal(orbitCalls, 1, 'idle torch receives the shared shoulder-derived orbit once per render bake');
-assert.deepEqual([renderedPosition.x, renderedPosition.y, renderedPosition.z], [orbitOutput.x, orbitOutput.y, orbitOutput.z], 'the shared orbit result is the position actually rendered');
+const checkTorchGripPivot = label => { // Ensures orbit scaling never multiplies the grip-anchor shift.
+  const gripShift = new Vector3(0.025, 0, 0.03).multiplyScalar(1 - committedTorch.scale).applyQuaternion(orbitQuaternion); // The independently authored torch grip displacement at the neutral sprite size.
+  const expected = orbitOutput.clone().add(gripShift); // Matches game.js: orbit the holder first, then anchor the scaled sprite to the main hand.
+  for (const axis of ['x', 'y', 'z']) {
+    assert(Math.abs(renderedPosition[axis] - expected[axis]) < 1e-10,
+      label + ' ' + axis + ': expected orbit + unscaled grip pivot ' + expected[axis] + ', got ' + renderedPosition[axis]);
+  }
+};
+checkTorchGripPivot('first idle bake');
 assert.deepEqual([holder.position.x, holder.position.y, holder.position.z], [0, 0, 0], 'temporary orbit and authored offset do not accumulate on the idle holder');
 const unscaledIdlePoint = [orbitInput.x, orbitInput.y, orbitInput.z]; // Used to prove a later shoulder-radius change affects render distance, not authored stance coordinates.
 orbitMultiplier = 0.5;
 holder.updateMatrixWorld();
 assert.deepEqual([orbitInput.x, orbitInput.y, orbitInput.z], unscaledIdlePoint, 'idle is recomputed from an unscaled source each frame');
-assert.deepEqual([renderedPosition.x, renderedPosition.y, renderedPosition.z], [orbitOutput.x, orbitOutput.y, orbitOutput.z], 'a different orbit multiplier changes the rendered idle position');
+checkTorchGripPivot('different orbit multiplier'); // The grip shift itself must not change as the shoulder-sphere radius changes.
 assert.equal(orbitCalls, 2, 'second idle render gets exactly one new orbit transform');
 assert.deepEqual([holder.position.x, holder.position.y, holder.position.z], [0, 0, 0], 'second render restores the same raw holder origin');
 assert.equal(snapshot.poses.torchHold.y, 0.1472916715500817, 'diagnostics expose authored neutral height');
