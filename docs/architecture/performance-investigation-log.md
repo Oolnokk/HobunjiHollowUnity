@@ -1,5 +1,25 @@
 # Performance investigation log
 
+## 15 Nov 2026 (applied): avoid redundant Spear Bridge fish SVG style writes
+
+`fish-catalog.js` runs a presentation callback on each animation frame after a cast.
+It used to assign `transformBox`, `transformOrigin` and `transform` to
+`#fishDeformedImage` on every tick, even though the first two are constants and
+the scale only changes with the selected fish. On browsers, same-value inline
+style assignments can still invalidate style and queue mutation records.
+The existing href observer already avoided duplicate image attribute writes.
+
+The callback now compares each serialized inline value before writing and keeps
+the original immediate correction when another writer changes a value, the fish's
+authored scales change, or Fishing replaces the image element. Collision-mask
+rendering, the animated href update and frame cadence are untouched.
+`FishCatalog.getPresentationStyleDebug()` returns cumulative `writes`/`skips`
+and `running` for phone-side A/B inspection. The executable fake-DOM/RAF test
+covers 120 unchanged frames, real scale changes, external overrides, image
+replacement and a stop/restart cast. **Unmeasured:** on-device style-recalc and
+FPS changes; this removes redundant mutation work, not a measured FPS claim.
+
+
 ## 15 Nov 2026 (applied): skip unrelated Gear detail-panel fitting and debug-only layout reads
 
 The 9 Nov user-run browser trace had shown intermittent `inventory-gear-compact-effects.js`
