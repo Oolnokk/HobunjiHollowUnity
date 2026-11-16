@@ -84,9 +84,15 @@
       const c=3+Math.floor(random()*(map.cols-9));
       const r=3+Math.floor(random()*(map.rows-9));
       if(zone===area()&&p&&dist({x:c+1.5,z:r+1.5},p)<15) continue;
+      const centerTile=map.tiles?.[(r+1)*map.cols+c+1]||map.tiles?.[r+1]?.[c+1]||null; // Flat three-by-three footprint must not span a cliff/mesa height seam.
+      const foundationTier=finite(centerTile?.elevTier,0); // Used only for the house's actual 3×3 cells; surrounding apron may contain cliffs for Boney to escape down.
       let clear=true;
       for(let dr=-1;dr<=3&&clear;dr++) for(let dc=-1;dc<=3;dc++) {
         if(!validTile(c+dc,r+dr,zone)){clear=false;break;}
+        if(dc>=0&&dc<3&&dr>=0&&dr<3) {
+          const tile=map.tiles?.[(r+dr)*map.cols+c+dc]||map.tiles?.[r+dr]?.[c+dc]||null;
+          if(finite(tile?.elevTier,0)!==foundationTier) {clear=false;break;}
+        }
       }
       if(!clear) continue;
       if((map.buildings||[]).some(b=>Math.abs(finite(b.gridX,c+100)-c)<6&&Math.abs(finite(b.gridZ,r+100)-r)<6))continue;
