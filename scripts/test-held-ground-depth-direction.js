@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
 
 const start = source.indexOf('  function forceGroundDepthForHeldReplay(');
-const end = source.indexOf('  // Ordinary parts need repaired cutout/cover depth', start);
+const end = source.indexOf('  function hideOrdinaryDepthRedraws(', start);
 assert(start >= 0 && end > start, 'real held ground-depth helper is present');
 const saveMaterialState = (saved, material) => {
   if (!saved.has(material)) saved.set(material, { depthWrite: material.depthWrite });
