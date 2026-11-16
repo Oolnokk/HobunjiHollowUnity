@@ -124,7 +124,32 @@ async function spritePng(page, animal) {
     assert.equal(Object.hasOwn(cleared, 'hat-browser-smoke'), false);
     await page.locator('#riggerNeckTab').click();
     assert.equal(await page.locator('#paintCanvas').isVisible(), true);
-    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat editing');
+    // Exercise the actual mobile browser canvas, not a mocked renderer.
+    await page.locator('#animalId').evaluate(input => {
+      input.value = 'grehlr'; // Real authored head box, with the generated 64x64 test sprite.
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.locator('#imageFile').setInputFiles({
+      name: 'grehlr-baby-fixture.png', mimeType: 'image/png', buffer: await spritePng(page, true),
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame?.width > 0);
+    await page.locator('#babyHeadScale').evaluate(input => {
+      input.value = '145'; // Highest setting makes invisible overrides easy to diagnose.
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.comparisonPixelChanges > 0);
+    const headDebug = await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot());
+    assert.equal(headDebug.scale, 1.45);
+    assert(headDebug.comparisonPixelChanges > 0, 'original and enlarged source pixels must actually differ');
+    assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/);
+    await page.locator('#shoulderRestSplitFrame').check();
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.splitsAfterWarp > 0);
+    await page.locator('#babyHeadCompare').click();
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, true);
+    assert.match(await page.locator('#babyHeadPreviewState').textContent(), /Showing original/);
+    await page.locator('#babyHeadCompare').click();
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
+    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat and baby-head editing');
     console.log('PASS mobile hat editor: catalog, PNG import, hat-only preview, smudge, undo/redo, export, clear, neck tab');
   } catch (error) {
     console.error('Hat editor browser errors:', errors.join('\n'));
