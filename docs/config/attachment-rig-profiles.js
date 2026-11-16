@@ -320,8 +320,11 @@
     sizeScalePercentages: {},
   };
   masterCreatures['skeeri-medium'] = { ...skeeriMediumRig, chatheadFrame: { ...creatureChatheadFrames['skeeri-medium'] } };
-  const skeeriUnscaledSizeClasses = { // These native-width variants must not double-apply Medium Skeeri's independent class multipliers.
+  const skeeriUnscaledSizeClasses = { // Native-width ruin varieties must not also apply Medium Skeeri's unrelated size multipliers.
     large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 },
+  };
+  const skeeriDomesticSizeClasses = { // Domestic Skeeri use the Small native .65-width body, so inherited Medium/Large Size must grow with its ground lift.
+    large: { x: 2.2 / 0.65, y: 2.2 / 0.65 }, medium: { x: 1.15 / 0.65, y: 1.15 / 0.65 }, small: { x: 1, y: 1 },
   };
   for (const kind of ['skeeri', 'skeeri-small', 'skeeri-large']) {
     masterCreatures[kind] = { // Domestic Skeeri and the other two ruin varieties get independent grip/floor data without borrowing Medium's saddle.
@@ -330,7 +333,7 @@
       anchors: { saddle: identityAnchor([0, 0, 0]), shoulderGrip: clone(skeeriShoulderGrip) },
       groundOffsets: { ...skeeriGroundOffsets },
       saddleRule: {}, shoulderGripRule: {},
-      sizeScales: clone(skeeriUnscaledSizeClasses),
+      sizeScales: clone(kind === 'skeeri' ? skeeriDomesticSizeClasses : skeeriUnscaledSizeClasses),
       sizeScaleRule: { ...skeeriMediumRig.sizeScaleRule },
       shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
       sizeScalePercentages: {},

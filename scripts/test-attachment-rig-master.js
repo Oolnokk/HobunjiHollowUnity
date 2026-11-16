@@ -234,7 +234,12 @@ const expectedSkeeriGround = { // Verifies the source Small Y is scaled to Mediu
   medium: skeeriSmallGroundY * (skeeriNativeWidths.medium / skeeriNativeWidths.small),
   small: skeeriSmallGroundY,
 };
-const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width variants must not inherit Medium's class multipliers.
+const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width ruin varieties remain unscaled.
+const domesticSkeeriSizeScales = { // A domestic Small sprite must grow into Medium/Large in step with the exact floor-lift ratio.
+  large: { x: skeeriNativeWidths.large / skeeriNativeWidths.small, y: skeeriNativeWidths.large / skeeriNativeWidths.small },
+  medium: { x: skeeriNativeWidths.medium / skeeriNativeWidths.small, y: skeeriNativeWidths.medium / skeeriNativeWidths.small },
+  small: { x: 1, y: 1 },
+};
 for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
   const skeeri = profiles.creatures[kind]; // The domestic and three ruin kinds must have independent canonical attachment profiles.
   assert(skeeri, kind + ' has a canonical rig profile');
@@ -243,7 +248,7 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.shoulderGrip), plainAnimalRig(pingdort.anchors.shoulderGrip), kind + ' copies Pingdort\'s full grip, including yaw and scale');
   assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), expectedSkeeriGround, kind + ' scales the source Small ground Y by Skeeri width');
   assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults[kind]), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' runtime duplicate defaults use the new grip');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : neutralSkeeriSizeScales, kind + ' preserves its existing effective size class scaling');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : kind === 'skeeri' ? domesticSkeeriSizeScales : neutralSkeeriSizeScales, kind + ' keeps native ruin sizes while scaling domestic inherited size with ground Y');
   assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' retains its empty saddle rule');
   assert.deepStrictEqual(plainAnimalRig(skeeri.shoulderGripRule), {}, kind + ' retains its empty shoulder rule');
   assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), {}, kind + ' does not inherit redundant percentage scales');
