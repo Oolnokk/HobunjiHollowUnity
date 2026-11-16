@@ -518,32 +518,39 @@
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
     const count = state.milksGiven; // Selects first, second, or third dialogue without changing the limit early.
-    let granted = false; // Protects against duplicate dialogue-continue events.
+    let handled = false; // A double Continue or an unsuccessful grant cannot retry the same milk handover mid-dialogue.
     sceneRunning = true; // Locks the action synchronously, before the cutscene promise yields.
     void (async () => {
       try {
         await window.AuthoredCutsceneRuntime.run(milkSceneDefinition(count), {
           onDialogueContinue(stage) {
-            if (stage?.id !== 'milk_reward' || granted || state.phase !== 'leaving'
+            if (stage?.id !== 'milk_reward' || handled || state.phase !== 'leaving'
               || state.milksGiven !== count || area() !== state.zone
               || !insideHome(playerTile(), 0.1) || (Number(giftingDeps.inventory?.[milkKey]) || 0) <= 0) return;
-            const prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+            handled = true;
+            const previousMilk = Number(giftingDeps.inventory[milkKey]); // Rollback value if the Fey weapon could not be granted.
+            giftingDeps.inventory[milkKey] = previousMilk - 1;
+            state.milksGiven = count + 1; // HarlyaoRelics.grantBoundRelic saves immediately, so the first save must already include the exchanged milk and count.
+            let prize = null;
+            try {
+              prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+            } catch (err) {
+              bumpEvent('Fey weapon grant failed: ' + (err?.message || err));
+            }
             if (!prize || prize.kind !== 'boundRelic' || prize.origin !== 'Fey') {
+              giftingDeps.inventory[milkKey] = previousMilk;
+              state.milksGiven = count;
               giftingDeps.showToast?.('Boney could not find a Fey weapon to offer. Keep your milk.', false);
-              bumpEvent('Milk offer unavailable; item preserved');
+              bumpEvent('Milk offer unavailable; item and exchange count restored');
               return;
             }
-            granted = true;
-            giftingDeps.inventory[milkKey] = Math.max(0, (Number(giftingDeps.inventory[milkKey]) || 0) - 1);
             giftingDeps.clampInventoryStack?.(milkKey);
-            state.milksGiven++;
             giftingDeps.refreshItemScroll?.();
             giftingDeps.buildInventoryGrid?.();
             giftingDeps.buildEquipmentSlots?.();
             giftingDeps.refreshActionBar?.();
-            giftingDeps.saveMemberWorldData?.();
             bumpEvent('Milk exchanged for Fey weapon (' + state.milksGiven + '/' + MAX_MILK_GIFTS + ')');
-            save(); // Consumed milk, awarded weapon and count persist together through the existing save seam.
+            save(); // World encounter persistence follows the relic owner's already-consistent inventory save.
           },
         });
       } catch(err) {
