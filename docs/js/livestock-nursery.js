@@ -447,13 +447,16 @@
 
   async function prepareAgentFrames(agent, entry, token) {
     const renderer = window.CreatureGeneticsRender;
-    if (!renderer?.composeFrame || !entry?.genotype) return;
+    if (!renderer?.composeFrame) return;
     try {
       const names = ['idle', 'run1', 'run2'];
       const canvases = await Promise.all(names.map(name => renderer.composeFrame(entry.kind, name, entry.genotype, false)));
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
       for (let i = 0; i < names.length; i++) {
-        if (canvases[i]) agent.frames[names[i]] = makeTexturePair(canvases[i], `nursery_${entry.id}_${names[i]}`);
+        if (canvases[i]) {
+          const babyCanvas = window.BabyAnimalHeadWarp?.applyToCanvas(canvases[i], entry.kind) || canvases[i]; // Baby head warp follows genotype, never changes the shared adult source.
+          agent.frames[names[i]] = makeTexturePair(babyCanvas, `nursery_${entry.id}_${names[i]}`);
+        }
       }
       agent.frameName = agent.frames.run1 ? 'run1' : 'idle';
       applyTexturePair(agent, agent.frames[agent.frameName] || agent.frames.idle);
@@ -780,6 +783,22 @@
     }
     section.appendChild(stack);
 
+    const headWarp = window.BabyAnimalHeadWarp; // Nursery's touch-accessible experiment control; the actual deformation is shared with nests/incubators.
+    if (headWarp) {
+      const tuning = document.createElement('label');
+      tuning.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;margin-top:7px;padding-top:6px;border-top:1px solid var(--border,#444);';
+      const initialScale = headWarp.getScale(); // Current user-selected head magnification, also shown in the mobile Debug snapshot.
+      tuning.innerHTML = `Baby head size (experiment) <input type="range" aria-label="Baby head size" min="1" max="${headWarp.MAX_SCALE}" step="0.01" value="${initialScale}" style="flex:1;min-width:100px;"><output>${Math.round(initialScale * 100)}%</output>`;
+      const slider = tuning.querySelector('input');
+      const value = tuning.querySelector('output');
+      slider?.addEventListener('input', () => { value.textContent = Math.round(Number(slider.value) * 100) + '%'; });
+      slider?.addEventListener('change', () => {
+        headWarp.setScale(slider.value); // Commit only on release: recomposing native-size pixel frames on every slider tick would stutter.
+        rerollSwarm(); // Refreshes visible Nursery babies immediately; distant incubator/nest textures refresh on re-entry.
+      });
+      section.appendChild(tuning);
+    }
+
     const selected = babyList.find(entry => entry.id === selectedBabyId);
     if (selected) {
       const actions = document.createElement('div');
@@ -997,7 +1016,7 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Nursery navigation preserves focus and incubation destination during grid, stepper and unrelated menu updates.',
+      mostRecentChange: 'Experimental baby head-size slider warps authored head pixels with distance-faded neck and body transitions; 100% disables the effect.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
@@ -1011,6 +1030,7 @@
       visibleLimit: NURSERY_VISIBLE_LIMIT,
       visibleIds: [...swarmVisibleIds],
       babyScale: BABY_SCALE,
+      babyHeadWarp: window.BabyAnimalHeadWarp?.debugSnapshot?.() || null, // Mobile diagnostics for missing head-frame metadata or failed image reads.
       speedMultiplier: BABY_SPEED_MULTIPLIER,
     };
   }

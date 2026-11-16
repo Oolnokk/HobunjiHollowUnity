@@ -17,7 +17,7 @@
 // animal avatar. The preview lookup adapter then makes older explicit
 // headRigForKind(kind) callers honor the same browser-local painter override.
 if (typeof document !== 'undefined' && document.readyState === 'loading') {
-  document.write('<script src="js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1"><\/script>');
+  document.write('<script src="js/animal-head-rig-authored.js?v=20261116mootPaintBaby1"><\/script>');
   document.write('<script src="js/animal-head-rig-preview-lookup.js?v=20260917preview1"><\/script>');
 }
 
