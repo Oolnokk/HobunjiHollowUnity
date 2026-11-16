@@ -9,6 +9,8 @@
   const INFO_MIN_FONT_PX = 2.75; // Emergency floor used only when a very dense item detail must remain non-scrolling.
 
   let observedSection = null; // Tracks the current Gear equipment root; EquipmentPanel may rebuild it at runtime.
+  let observedSummary = null; // Tracks replacement of the left summary even while the enclosing section stays mounted.
+  let observedOwned = null; // Tracks replacement of the middle inventory region for ResizeObserver reattachment.
   let observedInfo = null; // Tracks the item-detail panel so resize fitting follows menu/orientation changes.
   let resizeObserver = null; // Watches Gear region dimensions without treating independent left-side resizing as a detail-font change.
   let resizeTargetSizes = new WeakMap(); // Last ResizeObserver content-box size per node; first notifications are baselines, not changes.
@@ -404,10 +406,14 @@
 
   function hookResizeTargets(workspace, info) {
     const section = workspace?.section || null; // Stable workspace identity, including the no-section case while Gear is rebuilding.
+    const summary = workspace?.summary || null; // New inner rail nodes must replace stale ResizeObserver targets.
+    const owned = workspace?.owned || null; // Middle gear inventory can be rebuilt separately from its parent.
     const detail = info || null; // Actual detail node; replacement always needs a newly measured font fit.
-    if (section === observedSection && detail === observedInfo) return;
+    if (section === observedSection && summary === observedSummary && owned === observedOwned && detail === observedInfo) return;
     resizeObserver?.disconnect?.();
     observedSection = section;
+    observedSummary = summary;
+    observedOwned = owned;
     observedInfo = detail;
     resizeTargetSizes = new WeakMap(); // Old observed targets must not influence the new workspace's first size notifications.
     resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
@@ -431,7 +437,7 @@
       if (detailResized) invalidateDetailFit();
       else if (workspaceResized) scheduleFit();
     }) : null;
-    [section, workspace?.summary, workspace?.owned, detail].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
+    [section, summary, owned, detail].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
   }
 
   function gearActuallyVisible(pane) {
