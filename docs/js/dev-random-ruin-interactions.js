@@ -307,6 +307,7 @@
     if (!player) return [];
     const providers = [
       ['interior', window.DevRandomRuin],
+      ['motion', window.DevRandomRuinMotionRuntime], // Elevator push blocks use the normal action bar instead of directly reading controller Interact/Jump.
       ['prototype', window.DevRandomRuinPrototypeHooks],
       ['simple', window.DevRandomRuinSimplePuzzles],
     ];
@@ -754,7 +755,7 @@
         nativeProviderMode:true,
         normalActionBarProvider:true,
         customPromptBridgeInstalled:false,
-        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
+        providerCount:[window.DevRandomRuin, window.DevRandomRuinMotionRuntime, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
         rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,

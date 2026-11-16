@@ -95,6 +95,11 @@ jobs:
           node scripts/test-grapple-dodge-payment.js
           node scripts/test-ruin-composer.js
           node scripts/test-ruin-composer-playable.js
+          node scripts/test-ruin-room-system.js
+          node scripts/test-ruin-forced-movement-collision.js
+          node --check docs/js/cloud-forest-fog.js
+          node --check docs/js/skeeri-ruins.js
+          node --check docs/js/ruin-jump-shaft.js
           node --check docs/js/ruin-composer-playable.js
           node --check scripts/test-ruin-construction-browser.js
           node --check scripts/v50-native-playthrough-browser.js

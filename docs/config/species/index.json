@@ -36,6 +36,11 @@
       "path": "./mao-ao-skeleton.json"
     },
     {
+      "speciesId": "boney-shinjimi-skeleton",
+      "label": "Boney Shinjimi (Mao'ao Skeleton)",
+      "path": "./boney-shinjimi-skeleton.json"
+    },
+    {
       "speciesId": "maskbound-guardian",
       "label": "Maskbound Guardian",
       "path": "./maskbound-guardian.json"

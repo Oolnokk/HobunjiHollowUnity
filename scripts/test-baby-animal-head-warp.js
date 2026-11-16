@@ -178,8 +178,10 @@ assert(bridge.includes('return loadFrameImage(rawUrl)'),
   'non-composited species must still enlarge their real raw shoulder-pet sprite');
 const configManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/combat-config.js', 'utf8');
 const configLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
-assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskCoverage4'),
+assert(configManifest.includes('combat-config-loader.js?v=20261116babyIdleHoldReleaseMerge1'),
   'game parser must invalidate its cached combat bootstrap when shoulder-pet integration changes');
+assert(configLoader.includes('held-item-action-input.js?v=20261116holdReleaseAudit3'),
+  'merge must retain the newer main hold-release input fix');
 assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMaskCoverage4'),
   'game combat bootstrap must load the audited shoulder-pet bridge, not its prior cached implementation');
 const farmManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/farm-buildings.js', 'utf8');

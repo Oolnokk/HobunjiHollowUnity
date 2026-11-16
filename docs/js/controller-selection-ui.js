@@ -282,7 +282,7 @@
       recallTappedSelection(actionId);
       return true;
     }
-    if (frame.now - state.pendingStartedAt >= TAP_HOLD_THRESHOLD_MS) {
+    if (frame.now - state.pendingStartedAt >= (window.InputHoldTiming?.thresholdMs?.(TAP_HOLD_THRESHOLD_MS) ?? TAP_HOLD_THRESHOLD_MS)) {
       const actionId = state.pendingAction; // Used to transfer the exact pending action into the existing held-selector path.
       const openerCode = state.pendingCode; // Used to keep release paired with the physical binding that began this gesture.
       clearPending('promoted to hold');

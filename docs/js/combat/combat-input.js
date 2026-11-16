@@ -12,7 +12,10 @@
   "use strict";
   if (!window.Combat?.loadout) { console.error('combat-input.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const HOLD_THRESHOLD_S = 0.24; // Weapon-action press duration before a hold starts; 50% longer than the previous 0.16 seconds.
+  const BASE_HOLD_THRESHOLD_S = 0.24; // Authored weapon-action timing before the player's shared adjustment.
+  function holdThresholdS() {
+    return (window.InputHoldTiming?.thresholdMs?.(BASE_HOLD_THRESHOLD_S * 1000) ?? BASE_HOLD_THRESHOLD_S * 1000) / 1000;
+  }
   const STALLED_PRESS_SETTLE_MS = 50; // Lets queued release events catch up before a backdated press triggers a held attack; only affects delayed presses.
   const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Compatibility key; enabled state is never restored automatically.
   let autoTargetEnabled = false; // Targeting requires an explicit tap or hold in this session.
@@ -136,7 +139,7 @@
       downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
       pressDeliveryLagMs: s.pressDeliveryLagMs,
       releaseDeliveryLagMs: s.releaseDeliveryLagMs,
-      holdThresholdS: HOLD_THRESHOLD_S,
+      holdThresholdS: holdThresholdS(),
     };
   }
 
@@ -341,7 +344,7 @@
     const releasedAtMs = inputTimeMs('release', physicalEvent); // The real release time disambiguates holds when a frame could not run.
     s.releaseDeliveryLagMs = Math.max(0, performance.now() - releasedAtMs);
     try {
-      if (!s.holding && releasedAtMs / 1000 - s.downAt >= HOLD_THRESHOLD_S) {
+      if (!s.holding && releasedAtMs / 1000 - s.downAt >= holdThresholdS()) {
         s.holding = true; // A full physical hold cannot become a tap merely because the frame update stalled.
         emitState(slotIndex, 'hold-threshold-on-release');
         startHold(slotIndex); // Reuse the existing alignment/ability ownership and cancel rules, never synthesize a tap.
@@ -436,8 +439,8 @@
         continue;
       }
       if (!s.holding) {
-        const settleMs = Math.min(STALLED_PRESS_SETTLE_MS, s.pressDeliveryLagMs); // On-time presses keep the ordinary 240 ms threshold.
-        if (now() - s.downAt >= HOLD_THRESHOLD_S && performance.now() - s.deliveredAtMs >= settleMs) {
+        const settleMs = Math.min(STALLED_PRESS_SETTLE_MS, s.pressDeliveryLagMs); // Live player-selected hold timing; stalled physical presses retain their event-reconciliation grace.
+        if (now() - s.downAt >= holdThresholdS() && performance.now() - s.deliveredAtMs >= settleMs) {
           s.holding = true;
           emitState(slotIndex, 'hold-threshold');
           startHold(slotIndex);
@@ -449,7 +452,7 @@
   }
 
   window.Combat.input = {
-    HOLD_THRESHOLD_S,
+    get HOLD_THRESHOLD_S() { return holdThresholdS(); },
     pressStart,
     pressEnd,
     cancelPress,

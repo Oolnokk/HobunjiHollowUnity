@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DOCS = path.join(ROOT, 'docs');
 const PAGE = 'http://127.0.0.1:8000/tools/animation-author/index.html?actors=nohuknuk&ref=nohuknuk-model-fixture';
 const RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUnity\/[^/]+\/(.+)$/;
+const JSDELIVR_RE = /^https:\/\/cdn\.jsdelivr\.net\/gh\/Oolnokk\/HobunjiHollowUnity@[^/]+\/(docs\/.+)$/; // The same test fixture is also fetched through CDN when the editor falls back from GitHub Raw.
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -56,11 +57,10 @@ const RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUn
       route.fulfill({ status: 200, contentType: 'text/html', body: injected }));
     await page.route('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/commits/**', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'nohuknuk-model-fixture' }) }));
-    await page.route(RAW_RE, route => {
-      const match = RAW_RE.exec(route.request().url());
-      const relative = decodeURIComponent(match[1]);
-      const local = path.resolve(ROOT, relative);
-      if (!local.startsWith(DOCS + path.sep) || !fs.existsSync(local) || !fs.statSync(local).isFile()) {
+    const fulfillCheckoutAsset = (route, requested) => {
+      const relative = String(requested || '').replace(/[?#].*$/, ''); // Browser smoke must resolve current checkout files even through jsDelivr's fallback URL.
+      const local = path.resolve(ROOT, relative); // Both GitHub Raw and CDN aliases share the same trusted local fixture path.
+      if (!relative.startsWith('docs/') || !local.startsWith(DOCS + path.sep) || !fs.existsSync(local) || !fs.statSync(local).isFile()) {
         return route.fulfill({ status: 404, body: 'Missing checkout asset ' + relative });
       }
       const mime = local.endsWith('.js') ? 'application/javascript'
@@ -68,7 +68,11 @@ const RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUn
         : local.endsWith('.png') ? 'image/png'
         : local.endsWith('.glb') ? 'model/gltf-binary' : 'application/octet-stream';
       return route.fulfill({ status: 200, contentType: mime, body: fs.readFileSync(local) });
-    });
+    };
+    await page.route(RAW_RE, route => fulfillCheckoutAsset(route,
+      decodeURIComponent(RAW_RE.exec(route.request().url())?.[1] || '')));
+    await page.route(JSDELIVR_RE, route => fulfillCheckoutAsset(route,
+      decodeURIComponent(JSDELIVR_RE.exec(route.request().url())?.[1] || '')));
     await page.goto(PAGE, { waitUntil: 'domcontentloaded', timeout: 35000 });
     await page.waitForFunction(() => window.MultiAvatarAnimationAuthor?.__primateModelProbe?.().loaded,
       null, { timeout: 120000 });

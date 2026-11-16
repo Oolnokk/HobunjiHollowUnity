@@ -27896,6 +27896,22 @@
         return torchActions.concat(woodenDoorActions, ruinDoorActions);
       }
 
+      function campfireActionButtons(nearbyActions) {
+        if (!nearbyActions?.length || heldMode !== 'tool') return null;
+        const primaryAction = toolActions[activeTool]?.[0]; // Preserves the equipped tool's first action, including Swing Torch, at a nearby campfire.
+        if (!primaryAction) return null;
+        if (activeTool === 'adventuring') return [adventuringToolActionButtons()[0], nearbyActions[0]];
+        const reticle = getReticleTile(); // Shares the current aimed tile with the ordinary tool action bar.
+        const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col]; // Supplies the normal contextual primary-action wording.
+        const [fallbackIcon] = actionLabels[primaryAction] || ['🔧']; // Keeps the tool's existing action icon.
+        return [{
+          icon:attackActionIconHTML(activeTool, primaryAction, fallbackIcon),
+          label:window.HudUpdate.contextualActionLabel(primaryAction, tile),
+          action:primaryAction, inputAction:'action1', style:'primary',
+          allowed:canUseAction(activeTool, primaryAction, reticle.col, reticle.row),
+        }, nearbyActions[0]]; // Campfire takes only Action 2, never Action 1.
+      }
+
       function computeActionButtonsImpl() {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
@@ -28125,7 +28141,8 @@
           const mineCampfireActions = window.TownMine?.floorFromMapId?.(currentArea)
             ? window.WildernessCampfire?.getNearbyActions?.()
             : null;
-          if (mineCampfireActions?.length) return mineCampfireActions;
+          const mineCampfireButtons = campfireActionButtons(mineCampfireActions); // Mine and wilderness campfires share the same physical input layout.
+          if (mineCampfireButtons) return mineCampfireButtons;
           // Building interiors return early above and never reach the
           // farm/zone/town item-context block further down (it also relies
           // on a reticle/tile pair this branch never computes) — without
@@ -28203,7 +28220,8 @@
         const campfireActions = window.WildernessCampfire?.supportsArea?.(currentArea)
           ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
-        if (campfireActions?.length) return campfireActions;
+        const campfireButtons = campfireActionButtons(campfireActions); // Save/Cook/Brew live in the held Action 2 menu.
+        if (campfireButtons) return campfireButtons;
 
         // Climbing is still triggered by a forward dodge (see
         // performContextAction) so an attack/item press never grabs a
@@ -28545,6 +28563,7 @@
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             let _torchThrowPress = false; // This touch pointer owns a held torch throw until release/cancel.
+            let _campfireMenuPress = false; // Tracks the Action 2 campfire hold through this pointer's release/cancellation.
             let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
@@ -28628,6 +28647,7 @@
               _drag = false;
               _combatAimRelease = false;
               _torchThrowPress = false;
+              _campfireMenuPress = false;
               _socket = document.createElement('div');
               _socket.className = 'abt-socket';
               _socket.style.left   = _cx + 'px';
@@ -28680,6 +28700,8 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
+                _campfireMenuPress = act === 'campfire_menu'
+                  && window.WildernessCampfire?.beginInteractionHold?.('touch-arch:' + ev.pointerId) === true;
                 _torchThrowPress = act === 'torch_throw' && heldMode === 'tool' && activeTool === 'adventuring'
                   && window.AdventuringTools?.beginThrow?.('touch-arch', ev.pointerId) === true;
                 _combatAimRelease = Boolean(_pressSlot || _torchThrowPress || (activeTool === 'ranged' && act === 'shoot'));
@@ -28792,7 +28814,9 @@
                   if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
                   else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
                 } else if (!_chargeFiredOnPress) {
-                  if (_torchThrowPress) {
+                  if (_campfireMenuPress) {
+                    window.WildernessCampfire?.endInteractionHold?.('touch-arch:' + ev.pointerId, pointerCanceled);
+                  } else if (_torchThrowPress) {
                     if (pointerCanceled) window.AdventuringTools?.cancelThrow?.('touch-pointer-cancel');
                     else window.AdventuringTools?.releaseThrow?.('touch-arch-release');
                   } else if (_pressSlot) {
@@ -28839,6 +28863,7 @@
                 _combatAimRelease = false;
                 _pressSlot = null;
                 _torchThrowPress = false;
+                _campfireMenuPress = false;
                 try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
               }
             }
@@ -29393,6 +29418,10 @@
           if (window.AdventuringTools?.beginThrow?.(inputActionId)) torchThrowActionPresses.add(inputActionId);
           return; // Action 2 press starts a held windup, never an immediate projectile.
         }
+        if (btn.action === 'campfire_menu') {
+          if (window.WildernessCampfire?.beginInteractionHold?.(inputActionId)) campfireActionPresses.add(inputActionId);
+          return; // Holding the button opens a menu; a tap does not save, cook, or brew.
+        }
         const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
         if (startsCharge) heldChargeInputId = inputActionId;
         actionHeldDown = slotIndex === 1 || startsCharge;
@@ -29413,6 +29442,7 @@
           || action.startsWith('alchemy_flask_')
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
+          && b.action !== 'campfire_menu' // This interaction requires held Action 2, never the ordinary Interact tap.
           && !toolSet.has(b.action) && !isItemAction(b.action));
         if (!btn) { performJumpAction(); return; } // Pad A doubles as Jump/Climb when there is nothing to interact with.
         activeAction = btn.action;
@@ -29454,6 +29484,9 @@
           if (!button?.dataset?.action || button.classList.contains('abt-hidden')) return false; // Even an unavailable contextual action is not permission to attack.
           if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
           if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          if (heldMode === 'tool' && activeTool === 'adventuring')
+            return button.dataset.action !== toolActions.adventuring[slot - 1]
+              && !(slot === 2 && button.dataset.action === 'campfire_menu'); // The torch's own actions are not world overrides, and campfire Action 2 cannot block Swing Torch.
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
@@ -29470,6 +29503,11 @@
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const torchThrowActionPresses = new Set(); // Retains the original keyboard/controller/mouse press across action-bar changes.
+      const campfireActionPresses = new Set(); // Pairs campfire hold input with its original keyboard/controller release.
+      window.addEventListener('blur', () => {
+        for (const inputId of campfireActionPresses) window.WildernessCampfire?.endInteractionHold?.(inputId, true);
+        campfireActionPresses.clear();
+      }); // A lost keyup cannot leave an orphaned campfire hold.
       window.addEventListener('blur', () => { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('window-blur'); });
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('page-hidden'); }
@@ -29514,6 +29552,10 @@
         }
         if (window.__mapEditorGizmoActive) return;
         if(phase==='release'&&dispatchWorldInputClaim(actionId,'release',source))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
+        if (phase === 'release' && campfireActionPresses.delete(actionId)) {
+          window.WildernessCampfire?.endInteractionHold?.(actionId);
+          return; // Held Action 2 release leaves the newly opened campfire selection menu available.
+        }
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;

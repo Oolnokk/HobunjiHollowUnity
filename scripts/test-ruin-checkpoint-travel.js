@@ -204,22 +204,24 @@ try{
   assert(plateau&&plateau.y===7.5,'native V50 checkpoints stand on the actual plateau, not floor.y');
   raised.owner.dispose();
   const frozen=spawn(false,true);
-  const sources=frozen.controls.filter(control=>control.kind==='dungeonFireSource');
-  assert.equal(sources.length,2,'shaft and first story platform both provide repeatable ignition');
-  assert.equal(frozen.owner.getState().ignitionSources.length,1,'mobile debug reports the platform source');
-  assert.equal(frozen.owner.getState().shaftIgnitionAvailable,true);
+  const sources=frozen.owner.getState().ignitionSources; // Mobile debug exposes both low braziers without input claim handlers.
+  assert.equal(frozen.controls.filter(control=>control.kind==='dungeonFireSource').length,0,
+    'short fire-source braziers never claim Action 1 or Action 2 to arm a projectile');
+  assert.equal(sources.length,2,'shaft and platform each have their own reusable torch-lighting source');
+  assert.equal(frozen.owner.getState().shaftIgnitionAvailable,false,'old projectile arm interaction is disabled');
+  assert.equal(frozen.owner.getState().shaftTorchFireAvailable,true,'mobile debug reports a torch-lighting fallback');
+  assert(sources.every(source=>Math.abs(source.y)<100),'fire-source debug coordinates remain finite');
   const platform=frozen.ruin.shaftObeliskRuntime.plan.platforms[0];
-  assert.equal(platform.fixtureSlot.occupiedBy,'ignitionBrazier','source inhabits the shared slot');
-  location={x:platform.x,z:platform.z,y:platform.y};
-  assert.equal(sources[1].available(),true);
-  sources[1].onPress();
-  assert.equal(fireArms,1,'platform gives new fire after a one-use explosive has detonated');
-  location={x:10.5,z:10.5,y:0};
-  sources[0].onPress();
-  assert.equal(fireArms,2,'shaft source also arms a projectile without a Shattercask');
+  assert.equal(platform.fixtureSlot.occupiedBy,'ignitionBrazier','the short platform source retains the shared fixture slot');
+  const fireObjects=Travel.litSourceObjects(); // Actual live THREE objects are consumed by the torch's physical fire-hazard contact test.
+  assert.equal(fireObjects.filter(obj=>obj.userData.fireHazard===true).length,2,
+    'shaft and platform fire sources are both lit and hazard-marked');
+  assert(fireObjects.some(obj=>obj.name==='ruin-source-shaft-fire'),
+    'floor-zero supplies its own short torch-lighting brazier, not the checkpoint interaction');
   rangedEquipped=false;
-  assert.equal(sources[0].available(),false);
-  assert.equal(sources[1].available(),false);
+  assert.equal(frozen.controls.filter(control=>control.kind==='dungeonFireSource').length,0,
+    'changing weapons never adds back a projectile ignition control');
+  assert.equal(fireArms,0,'fire hazards light the adventuring torch without arming an ordinary arrow');
   frozen.owner.dispose();
   assert.equal(frozen.ruin.shaftObeliskRuntime.columns.get(platform.id).holder.children.length,0,
     'platform fixture is detached on teardown');
