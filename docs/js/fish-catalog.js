@@ -266,6 +266,7 @@
   let curvedCollisionMask=null; // Alpha data for the exact curved frame used by Fishing's silhouette collision.
   let collisionMaskReadbackWarned=false; // Deduplicates mobile-visible diagnostics if canvas alpha readback is unavailable.
   let observedFishImage=null, hrefObserver=null, settingHref=false, presentationRunning=false;
+  const presentationStyleStats={writes:0,skips:0}; // Exposed in mobile diagnostics to count avoided SVG style mutations during fishing.
   let caughtSpriteKey=''; // Identifies which hooked fish owns the prewarmed colored retrieval sprite.
   let caughtSpriteUrl=''; // Holds the colored/patterned fish data URL swapped into the minigame image during retraction.
   let caughtSpritePromise=null; // Prevents duplicate recolor work while the active fish sprite is being prewarmed.
@@ -494,6 +495,17 @@
     caughtSpritePromise=null;
   }
 
+  function applyFishPresentationStyle(image,sx,sy) {
+    const style=image.style; // Canonical SVG inline styles for the current authored fish size.
+    const transform=`scale(${sx}, ${sy})`; // The only value that can change when a different fish is selected.
+    if(style.transformBox!=='fill-box'){style.transformBox='fill-box';presentationStyleStats.writes++;}
+    else presentationStyleStats.skips++;
+    if(style.transformOrigin!=='center'){style.transformOrigin='center';presentationStyleStats.writes++;}
+    else presentationStyleStats.skips++;
+    if(style.transform!==transform){style.transform=transform;presentationStyleStats.writes++;}
+    else presentationStyleStats.skips++;
+  }
+
   function presentationLoop() {
     const state=window.Fishing?.state;
     if(!state){
@@ -506,9 +518,7 @@
     if(image&&fishDef){
       const {sx,sy}=minigamePresentationScale(fishDef);
       prewarmCaughtFishSprite(fishDef);
-      image.style.transformBox='fill-box';
-      image.style.transformOrigin='center';
-      image.style.transform=`scale(${sx},${sy})`;
+      applyFishPresentationStyle(image,sx,sy);
       if(state.phase==='active'){
         const href=caughtFishIsRetracting(state) && caughtSpriteKey===fishDef.key && caughtSpriteUrl
           ? caughtSpriteUrl
@@ -539,6 +549,7 @@
     hasMinigameSilhouetteCollisionMask,
     minigameSilhouetteContainsLocalPoint,
     getMinigameSilhouetteCollisionDebug:minigameSilhouetteCollisionDebug,
+    getPresentationStyleDebug:()=>({ ...presentationStyleStats, running:presentationRunning }), // Mobile-friendly snapshot; no debug DOM reads in the animation loop.
   };
   configureCatchCamera();
   hookFishing();
