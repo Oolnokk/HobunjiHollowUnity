@@ -231,6 +231,7 @@
       overlayMask, avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
       footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null, debugSplines: state.splinesToggle ? state.splinesToggle.checked : true,
+      gpuSkin: false, // getPreviewData() reads the skinned vertex positions back, so the author keeps the CPU skin.
     });
     if (!handle) {
       setStatus('Could not solve pants beltline mapping for this species.', 'warn');
