@@ -136,7 +136,8 @@
       if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area, feetY)) return 'town building';
     }
     // Clearing one low piece of cover does not exempt any other blocker.
-    if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05))
+    const footprintCenterY = feetY + CONFIG.radius + 0.055; // Raised-platform walking uses a body volume ABOVE the floor, never a sphere straddling its own slab.
+    if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, footprintCenterY))
       return 'solid footprint';
     if (window.DynamicSurfaces?.blockerAt?.(x, z, {
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,

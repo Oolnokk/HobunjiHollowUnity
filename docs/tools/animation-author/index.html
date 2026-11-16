@@ -1204,9 +1204,9 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      Only resolves when this tool is served from its real docs/tools/
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
-<script src="../../config/attachment-rig-profiles.js?v=20261116pingdortGround1"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261116rigAudit5"></script>
 <script src="../../js/local-db-overrides.js?v=20261109nohuknukRoam1"></script> <!-- Reuses the gameplay NPC species composer. -->
-<script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
+<script src="../../js/animal-chathead-frame.js?v=20261116skeeriChathead2"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 <script src="rig-preview-species.js?v=20261109rig2"></script>
@@ -13694,8 +13694,14 @@ function normalizedAnimalChatheadFrameV1543(value) {
 function effectiveAnimalChatheadFrameV1543(actor) {
   const profile = attachmentRigProfileForActor(actor);
   const authored = normalizedAnimalChatheadFrameV1543(profile?.chatheadFrame);
-  const automatic = window.AnimalChatheadFrame?.automaticFrameForKind?.(actor?.source?.kind) || null;
-  return { frame: authored || automatic || normalizedAnimalChatheadFrameV1543({ x: .32, y: .12, width: .36, height: .36 }), authored: !!authored };
+  const kind = actor?.source?.kind; // Identifies Skeeri size variants that share Medium's dialogue crop, not its rig geometry.
+  const mediumSkeeriFrame = (kind === 'skeeri-small' || kind === 'skeeri-large')
+    ? animationAuthor.attachmentRigProfiles?.creatures?.['skeeri-medium']?.chatheadFrame : null; // The editor's current Medium crop takes precedence over older static defaults.
+  const sharedFrame = window.AnimalChatheadFrame?.frameForKind?.(kind); // Runtime-authored frame fallback for variants without their own Rig Coordinates rows.
+  const inherited = normalizedAnimalChatheadFrameV1543(mediumSkeeriFrame
+    || (sharedFrame?.source === 'attachment-rig-profile' ? sharedFrame.frame : null));
+  const automatic = window.AnimalChatheadFrame?.automaticFrameForKind?.(kind) || null;
+  return { frame: authored || inherited || automatic || normalizedAnimalChatheadFrameV1543({ x: .32, y: .12, width: .36, height: .36 }), authored: !!(authored || inherited) };
 }
 
 function animalChatheadFrameFieldsV1543(frame) {
@@ -13711,7 +13717,8 @@ function animalChatheadFrameFieldsV1543(frame) {
 function animalChatheadFrameMarkupV1543(actor) {
   const resolved = effectiveAnimalChatheadFrameV1543(actor);
   const inheritedBy = actor.source.kind === 'grehlr' ? 'Banubu also uses this Grehlr frame.'
-    : actor.source.kind === 'drenkirra' ? 'Hiki-hiki also uses this Drenkirra frame.' : '';
+    : actor.source.kind === 'drenkirra' ? 'Hiki-hiki also uses this Drenkirra frame.'
+    : actor.source.kind?.startsWith('skeeri-') ? 'Small, Medium and Large Skeeri share Medium Skeeri’s dialogue crop.' : '';
   return `<section class="maaSection" id="maaAnimalChatheadFrameSection">
     <div class="maaSectionTitle"><b>Dialogue chathead frame</b><span class="maaSmall maaMuted">${resolved.authored ? 'Authored' : 'Head-rig fallback'}</span></div>
     <div class="maaSmall maaMuted">Drag from one corner of the animal's head to the opposite corner. This crop is species-wide, independent of size class, and is used only for dialogue/chathead rendering — it never changes the world sprite. ${escapeHtml(inheritedBy)}</div>
@@ -14867,8 +14874,9 @@ function reconcileShoulderGripPreviewV1548(kind, profile, originalGrip) {
   const guard = window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD; // Reuse the game's exact known-stale grip fingerprints instead of maintaining another editor-only recovery list.
   const reconciled = guard?.reconcileProfiles?.({ creatures: { [kind]: {
     anchors: { shoulderGrip: structuredCloneSafe(target) },
-    sizeScales: structuredCloneSafe(profile.sizeScales || {}), // Supplies the active animal sizes so only exact prior Small defaults migrate.
-    sizeScalePercentages: structuredCloneSafe(profile.sizeScalePercentages || {}), // Keeps editor percent controls in sync with repaired Small multipliers.
+    sizeScales: structuredCloneSafe(profile.sizeScales || {}), // Supplies the active animal sizes so only exact retired defaults migrate.
+    sizeScalePercentages: structuredCloneSafe(profile.sizeScalePercentages || {}), // Keeps editor percent controls in sync with repaired multipliers.
+    groundOffsets: structuredCloneSafe(profile.groundOffsets || {}), // Allows exact previous Pingdort floor values to migrate without altering authored Auto/0 offsets.
   } } })?.creatures?.[kind]; // The shared game guard owns both grip and size fingerprints.
   if (reconciled?.anchors?.shoulderGrip) {
     profile.anchors.shoulderGrip = normalizeTransformSnapshot(reconciled.anchors.shoulderGrip, 1); // Never replace a custom grip with the master default.
@@ -14877,7 +14885,22 @@ function reconcileShoulderGripPreviewV1548(kind, profile, originalGrip) {
     profile.sizeScales ||= {};
     profile.sizeScales.small = structuredCloneSafe(reconciled.sizeScales.small); // Repair exact retired animal Small-size defaults, not user edits.
     profile.sizeScalePercentages ||= {};
-    profile.sizeScalePercentages.small = structuredCloneSafe(reconciled.sizeScalePercentages.small); // UI percentages must reflect actual X/Y scales.
+    const smallPercentages = reconciled.sizeScalePercentages?.small; // The approved Pingdort and Skeeri exports intentionally leave duplicate percentage metadata empty.
+    if (smallPercentages) profile.sizeScalePercentages.small = structuredCloneSafe(smallPercentages);
+    else delete profile.sizeScalePercentages.small; // Avoid storing an undefined percentage row in the editor's rig library.
+  }
+  if (kind === 'pingdort') {
+    for (const sizeClass of ['large', 'medium']) {
+      const current = profile.sizeScales?.[sizeClass]; // Only known old 1x Pingdort defaults qualify for migration.
+      const repaired = reconciled?.sizeScales?.[sizeClass]; // Exact new class values come from the shared master guard.
+      if (Number(current?.x) !== 1 || Number(current?.y) !== 1 || !repaired) continue;
+      profile.sizeScales[sizeClass] = structuredCloneSafe(repaired);
+      profile.sizeScalePercentages ||= {};
+      profile.sizeScalePercentages[sizeClass] = { x: repaired.x * 100, y: repaired.y * 100 }; // Editor display mirrors approved world-size multipliers.
+    }
+    const previousFloor = 0.14842300556586271; // Only old all-equal Pingdort floor heights should be replaced.
+    if (['large', 'medium', 'small'].every(size => Number(profile.groundOffsets?.[size]) === previousFloor)
+        && reconciled?.groundOffsets) profile.groundOffsets = structuredCloneSafe(reconciled.groundOffsets);
   }
 }
 const baseNormalizedRigProfileLibraryV1548 = normalizedRigProfileLibrary;
