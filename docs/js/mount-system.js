@@ -999,9 +999,15 @@
     mountedOrbitScanS -= dt;
     if (mountedOrbitScanS <= 0 || !mountedOrbitTarget || mountedOrbitTarget.health <= 0) {
       mountedOrbitScanS = 0.2;
-      const target = window.RangedWeapons?.playerAimSolution?.(key)?.reticleTarget
-        || window.RangedWeapons?.focusedHostile?.()?.candidate?.data
-        || null; // Camera-reticle target has priority; fallback stays inside ranged's existing focus selector.
+      let target = null; // A failed target query must never interrupt mounted movement or make a cached target a teleport beacon.
+      try {
+        target = window.RangedWeapons?.playerAimSolution?.(key)?.reticleTarget
+          || window.RangedWeapons?.focusedHostile?.()?.candidate?.data
+          || null; // Camera-reticle target has priority; fallback stays inside ranged's existing focus selector.
+        ridingDebug.lastOrbitError = null;
+      } catch (error) {
+        ridingDebug.lastOrbitError = String(error?.message || error); // Copyable mobile diagnostic instead of an unhandled game-loop exception.
+      }
       if (target !== mountedOrbitTarget) {
         mountedOrbitTarget = target;
         const distance = target ? Math.hypot(target.x - m.x, target.y - m.y) : 0;
