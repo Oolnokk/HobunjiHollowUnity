@@ -93,7 +93,7 @@ assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY); // c
   const voxelEnd = ruinSource.indexOf('  function shaftBodyBlocksAt(',voxelStart);
   assert(voxelStart>=0 && voxelEnd>voxelStart,'the real ruin voxel collider remains available for the regression');
   const shaftVoxelBlocksAt = new Function('ruin','deps','window','MAP_ID',
-    ruinSource.slice(voxelStart,voxelEnd)+'\\nreturn shaftVoxelBlocksAt;')(
+    ruinSource.slice(voxelStart,voxelEnd)+'\nreturn shaftVoxelBlocksAt;')(
       {shaftGrids:new Map([['shaft-hub',{grid:hub.grid}]])},
       {getCurrentArea:()=> 'map_i_dev_random_ruin'},
       {RuinLayerPlayable:{selectGrid:()=>hub.grid}},'map_i_dev_random_ruin');
