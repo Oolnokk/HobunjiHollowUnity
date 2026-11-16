@@ -340,7 +340,9 @@
     const p=position(),home=homeCenter(),player=playerTile();
     if(!p||!home||!player)return;
     let best=null,bestScore=-Infinity;
-    const observer=sightProxy(walker);
+    const map=layout(); // Local terrain tiers and vegetation blockers determine cover and descent opportunities.
+    const tileAt=(c,r)=>map?.tiles?.[r*map.cols+c]||map?.tiles?.[r]?.[c]||null;
+    const currentTier=finite(tileAt(Math.floor(p.x),Math.floor(p.z))?.elevTier);
     for(let i=0;i<25;i++) {
       const angle=rnd()*Math.PI*2;
       const len=2+rnd()*6;
@@ -351,7 +353,15 @@
       // Pick a route that advances home, dodges the pursuer and bends around cover.
       const angleToHome=Math.atan2(home.z-p.z,home.x-p.x),angleToPoint=Math.atan2(r-p.z,c-p.x);
       const turn=Math.abs(Math.atan2(Math.sin(angleToHome-angleToPoint),Math.cos(angleToHome-angleToPoint)));
-      const score=(currentHome-dx)*1.8+Math.min(dp,10)*0.28+turn*0.42+rnd()*0.3;
+      const lowerTier=Math.max(0,currentTier-finite(tileAt(c,r)?.elevTier)); // Safe NPC pathfinders decide whether a drop/hop is traversable.
+      let blockedAround=0;
+      for(const [ox,oz] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const tile=tileAt(c+ox,r+oz);
+        if(!tile||tile.type==='rock'||tile.rockKind==='diggableRockOre'||tile.floraKind==='copse')blockedAround++;
+      }
+      const cover=Math.min(3,blockedAround)*0.55; // Prefer path turns around real boulders/trees.
+      const score=(currentHome-dx)*1.8+Math.min(dp,10)*0.28+turn*0.42
+        +Math.min(lowerTier,2)*1.2+cover+rnd()*0.3;
       if(score>bestScore){bestScore=score;best={c,r};}
     }
     if(best&&bestScore>0)setTarget(best.c,best.r,'flee'); // Existing pathfinder handles tree/rock corners and safe cliff hops.
