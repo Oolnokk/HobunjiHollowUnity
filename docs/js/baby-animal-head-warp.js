@@ -5,7 +5,7 @@
   'use strict';
 
   const STORAGE_KEY = 'hobunji_baby_head_warp_scale_v1'; // Keeps the Nursery experiment's chosen scale across reloads without modifying saves.
-  const DEFAULT_SCALE = 1.22; // Modest head enlargement applied only to baby sprite textures.
+  const DEFAULT_SCALE = 1.23; // User-approved 123% head enlargement, shared by every species' babies and qualifying small-sized pets.
   const MAX_SCALE = 1.45; // Safety cap for the Nursery slider and public setter.
   const FALLOFF_RADIUS = 0.85; // In units of the larger head-frame half-extent; adjacent neck/body pixels move less with distance.
   const debug = { applied: 0, skipped: 0, lastKind: null, lastFrame: null, lastError: null }; // Exposed in Nursery Debug for mobile inspection.
@@ -18,7 +18,7 @@
   let scale = (() => {
     try {
       const saved = window.localStorage?.getItem(STORAGE_KEY);
-      return saved == null ? DEFAULT_SCALE : clampScale(saved);
+      return saved == null || Number(saved) === 1.22 ? DEFAULT_SCALE : clampScale(saved); // Migrate the old experiment's 122% default to the approved 123%; preserve deliberate edits.
     } catch (_) { return DEFAULT_SCALE; }
   })(); // Used by every new baby composition; independent of species, saved genotype and adult visuals.
 
@@ -42,6 +42,16 @@
       || null; // Full exported head rigs can independently author baby proportions.
     const configured = previewRig?.babyHeadScale ?? authoredRig?.babyHeadScale;
     return typeof configured === 'number' && Number.isFinite(configured) ? clampScale(configured) : scale;
+  }
+
+  function isSmallSizeVariantPet(kind, genotype, stableRole) {
+    // Only the genetics-derived Small variant of a normally non-Small species gets a juvenile-looking head.
+    // A species naturally Small as an adult never gets this effect; its actual babies use applyToCanvas independently.
+    if (stableRole !== 'shoulderPet' || !kind || genotype?.sizeClass !== 'small') return false;
+    const genetics = window.CreatureGenetics;
+    if (typeof genetics?.creatureSizeClass !== 'function') return false; // Never guess a species baseline if genetics is not initialized.
+    return genetics.creatureSizeClass(kind, genotype) === 'small'
+      && genetics.creatureSizeClass(kind, {}) !== 'small';
   }
 
   function validateFrame(frame) {
@@ -161,7 +171,7 @@
 
   window.BabyAnimalHeadWarp = Object.freeze({
     DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
-    frameForKind, frameFromRig, validateFrame, warpPixels, applyToCanvas,
+    frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, warpPixels, applyToCanvas,
     debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS }),
   });
 })();
