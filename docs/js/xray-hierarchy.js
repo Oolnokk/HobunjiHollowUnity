@@ -397,7 +397,7 @@
     }
     const THREE = window.THREE;
     if (!THREE?.CircleGeometry || !THREE?.RingGeometry || !THREE?.Group) return false;
-    if (!groundZoneMarker || groundZoneMarker.userData.radius !== radius) {
+    if (!groundZoneMarker) { // A changing weapon reach must not regenerate two geometries every frame.
       if (groundZoneScene && groundZoneMarker) groundZoneScene.remove(groundZoneMarker);
       if (groundZoneMarker) groundZoneMarker.traverse(node => {
         node.geometry?.dispose?.();
@@ -406,11 +406,11 @@
       groundZoneScene = null;
       groundZoneMarker = new THREE.Group();
       groundZoneMarker.name = 'debug_ground_xray_circle';
-      groundZoneMarker.userData.radius = radius; // Match the renderer's exact radius.
-      const fill = new THREE.Mesh(new THREE.CircleGeometry(radius, 64),
+      groundZoneMarker.userData.radius = radius; // Updated below; retained for diagnostics.
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 64),
         new THREE.MeshBasicMaterial({ color: 0x31bdec, transparent: true, opacity: 0.15,
           depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
-      const rim = new THREE.Mesh(new THREE.RingGeometry(radius - 0.028, radius + 0.028, 64),
+      const rim = new THREE.Mesh(new THREE.RingGeometry(0.99, 1.01, 64),
         new THREE.MeshBasicMaterial({ color: 0x0ce6fa, transparent: true, opacity: 0.9,
           depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
       for (const [mesh, order] of [[fill, 960], [rim, 961]]) {
@@ -426,6 +426,8 @@
       scene.add(groundZoneMarker);
       groundZoneScene = scene;
     }
+    groundZoneMarker.userData.radius = radius; // Preserve the live footprint for Dev Companion and mobile inspection.
+    groundZoneMarker.scale.set(radius, 1, radius); // Unit disc grows without allocating GPU geometry on every swing.
     groundZoneMarker.position.set(scope.x, scope.elevation + 0.025, scope.z);
     return true;
   }
