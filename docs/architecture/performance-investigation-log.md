@@ -17,9 +17,15 @@ read on demand instead of in each scheduled frame callback. The public `refresh(
 still returns those measurements explicitly. `InventoryGearCompactEffects.debugSnapshot()`
 reports `fitStats.detailFits` and `fitStats.reusedDetailFits` for mobile A/B checks.
 The Gear idle-cadence regression covers left-panel reuse, real info mutations, menu
-hide/show, resize invalidation and lazy debug-only reads; a direct module smoke test
-confirmed 6 CSS-var writes on open, 0 additional writes for a summary rebuild, 6 for
-an item-detail change, and 6 for resize (simple fitting fixture).
+hide/show, resize invalidation and lazy debug-only reads. A review follow-up made
+ResizeObserver track content-box dimensions: first notifications and unchanged sizes
+do not double-fit, left summary/owned-gear resizes only schedule maintenance, and
+right-detail/section resizes still invalidate the cached font. When EquipmentPanel
+replaces either inner Gear region without replacing its parent, the new nodes are
+reobserved. The executable fitting fixture checks that item-detail mutations and
+right-panel resizes still shrink text, while left-only updates do not refit.
+A direct module smoke test confirmed 6 CSS-var writes on open, 0 additional writes
+for a summary rebuild, 6 for an item-detail change, and 6 for resize (simple fitting fixture).
 
 **Not yet measured on real hardware:** frame-time change, or what fraction of the
 original style-recalculation trace was actually from this specific redundant fitting.
