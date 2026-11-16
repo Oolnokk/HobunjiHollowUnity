@@ -253,6 +253,44 @@ async function spritePng(page, animal) {
     assert(largeSprite.shoulderEnabled && largeSprite.splitEnabled,
       'Grehlr retains its authored shoulder spline and split settings');
     assert.equal(largeSprite.error, null, 'head resizing succeeds with the authentic Grehlr sprite');
+
+    const grehlrPivot = await page.evaluate(() => ({
+      loaded: state.pivot?.x / state.image?.naturalWidth,
+      committed: window.HobunjiGrehlrHeadRigCorrection?.authored?.pivot?.x,
+    }));
+    assert(Math.abs(grehlrPivot.loaded - grehlrPivot.committed) < 0.0001,
+      'Grehlr must restore the corrected head rig even though the idle sprite loads after selection');
+
+    // Reproduce a slow Grehlr request completing AFTER the player selects another animal.
+    let releaseDelayedIdle; // Delays the obsolete request until the replacement species has loaded.
+    const delayedIdleGate = new Promise(resolve => { releaseDelayedIdle = resolve; });
+    let notifyRequested; // Allows the test to await actual interception rather than a guessed timeout.
+    const requestedGate = new Promise(resolve => { notifyRequested = resolve; });
+    const delayedUrl = '**/grehlr_idle.png?race-rigger-test=1';
+    await page.route(delayedUrl, async route => {
+      notifyRequested();
+      await delayedIdleGate;
+      await route.continue();
+    });
+    await page.evaluate(() => loadImageUrl(
+      repoSpriteUrl('assets/creaturesprites/grehlr_idle.png') + '?race-rigger-test=1', 'superseded-grehlr-idle'));
+    await requestedGate;
+    const nextSpeciesIndex = await page.evaluate(() => state.selectRecords.findIndex(record => record?.id === 'gar-wolf'));
+    assert(nextSpeciesIndex >= 0, 'the follow-up species is listed in the actual bestiary');
+    await page.locator('#animalSelect').selectOption(String(nextSpeciesIndex));
+    await page.waitForFunction(() => state.baseRecord?.id === 'gar-wolf'
+      && state.image?.src?.includes('gar-wolf_idle.png')
+      && window.__animalHeadRigSpriteLoad?.debugSnapshot()?.status === 'ready');
+    releaseDelayedIdle();
+    await page.waitForFunction(() => window.__animalHeadRigSpriteLoad?.debugSnapshot()?.staleCallbacks > 0);
+    const switched = await page.evaluate(() => ({
+      id: state.baseRecord.id, sprite: state.image.src, status: window.__animalHeadRigSpriteLoad.debugSnapshot(),
+    }));
+    assert.equal(switched.id, 'gar-wolf', 'stale loading does not overwrite the chosen species');
+    assert.match(switched.sprite, /gar-wolf_idle\.png/, 'a late Grehlr onload never replaces the newer sprite');
+    assert.equal(switched.status.lastError, null, 'late requests cannot replace current loading diagnostics');
+    await page.unroute(delayedUrl);
+
     assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile editing or full-size Grehlr load');
     console.log('PASS mobile hat editor: catalog, PNG import, hat-only preview, smudge, undo/redo, export, clear, neck tab');
   } catch (error) {
