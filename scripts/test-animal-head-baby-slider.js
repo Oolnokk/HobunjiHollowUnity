@@ -155,6 +155,14 @@ ctx.applyRecord({ id: 'custom-pet', headRig: {} });
 ctx.draw();
 assert.equal(slider.value, '132', 'switching species does not leak another animal setting');
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
+ctx.applyRecord({ id: 'moot', headRig: { babyHeadFrame: canonical } });
+ctx.draw();
+assert.equal(slider.value, '132', 'Moot inherits the default 132%, not the obsolete 123%');
+assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'Moot inherits a scale without exporting a redundant override');
+assert.equal(ctx.normalizedRig().babyHeadFrame.width, canonical.width,
+  'saving an inherited-scale species must NOT erase its independently authored idle mask source frame');
+ctx.applyRecord({ id: 'custom-pet', headRig: {} });
+ctx.draw();
 slider.value = '140';
 listeners.get('babyHeadScale:input')[0]();
 ctx.draw();
