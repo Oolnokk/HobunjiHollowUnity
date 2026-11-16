@@ -1804,16 +1804,6 @@
         return COMPANION_AI_TYPE_BY_KIND[kind] || 'vigilantProtector';
       }
 
-      // Auto-equips a freshly-stabled entry into its Size-appropriate slot if
-      // that slot is currently empty (mirrors the old "first companion is
-      // automatically active" convenience, generalized to 3 slots).
-      function _autoAssignStableRole(entry) {
-        const role = window.CreatureGenetics.stableEntryRole(entry);
-        if (role === 'mount' && !activeMountId) activeMountId = entry.id;
-        else if (role === 'shoulderPet' && !activeShoulderPetId) activeShoulderPetId = entry.id;
-        else if (role === 'companion' && !activeCompanionId) activeCompanionId = entry.id;
-      }
-
       // Tool item definitions: sprite path, compatible slots, animation style
       // dmgType ('sharp'|'blunt', weapon-slot items only) picks which flavor
       // of affliction options the whole weapon-tool ability kit offers (see
@@ -28887,7 +28877,7 @@
         if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
         else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
         if (gearInventory?.tools?.crossbow)               equipmentSlots.ranged = 'crossbow';
-        if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
+        // Reset leaves the whistle unequipped rather than summoning the first owned animal.
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
@@ -31814,7 +31804,6 @@
         _saveWorldBreedingPairs,
         _saveWorldLivestock,
         companionAiTypeForKind,
-        _autoAssignStableRole,
         saveStable,
         _tothalWorldId,
         defaultWorldMemberState,
@@ -33507,7 +33496,6 @@
         saveStable,
         showToast,
         tileSurfaceY,
-        _autoAssignStableRole,
         _markPngPlane,
         _loadWorldBreedingPairs,
         _saveWorldBreedingPairs,
@@ -33985,10 +33973,9 @@
         activeShoulderPetId = playerData.activeShoulderPetId ?? null;
         if (!stable.length) {
           const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
-          stable.push(starter);
-          activeCompanionId = starter.id;
+          stable.push(starter); // Bingo remains owned, but the player must choose an active companion.
         }
-        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // An empty active slot is a deliberate selection, not missing save data.
         // Backfill genotype-less stable entries from older saves (e.g. a
         // starter Bingo saved before pattern genes existed) so they render
         // real genes instead of the plain uncolored sprite forever. Also
@@ -34008,6 +33995,7 @@
         // whose saved item no longer exists in this character's gearInventory
         // (sold/lost since, or a save from before this field existed), which
         // then falls through to the starter-gear defaults just below.
+        equipmentSlots.whistle = null; // A saved explicit selection is the only way this slot is restored.
         if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
           for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
             if (!itemId || !(slot in equipmentSlots)) continue;
@@ -34026,12 +34014,12 @@
         if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
         else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
-        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // Owned whistles remain unequipped unless explicitly selected by the player.
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
         // save via docs/index.html's onboarding-profile handoff, and the
-        // line above auto-equips the starter whistle for any profile that
-        // has none — either way, an uninvited companion animal would spawn
+        // player may have explicitly equipped one; cutscene previews must still
+        // suppress that saved whistle so an uninvited companion cannot spawn
         // and compete for camera framing in a scene the Director never
         // authored one for. A scene's own creature actors are unaffected;
         // this only clears the real player's own companion slot.
