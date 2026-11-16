@@ -29,7 +29,7 @@
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
-  <script src="js/xray-hierarchy.js?v=20261115circle6"></script>
+  <script src="js/xray-hierarchy.js?v=20261116pairedShoulder1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261110cloneaudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
@@ -175,7 +175,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261115spherical2"></script>
+  <script src="js/png-plane-avatar.js?v=20261116liveRigCards1"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -185,7 +185,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261115hposelease04"></script>
+  <script src="js/held-action-animations.js?v=20261115perchbody1833a"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -209,7 +209,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261116h458b02d"></script>
+  <script src="js/pants-garment-renderer.js?v=20261111h18e3e31"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -708,7 +708,7 @@
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261115roomLightBoundary1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261115tothalWallFrame1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2912,7 +2912,7 @@
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261116h17dafba"></script>
+  <script src="game.js?v=20261116hdf567e5"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
