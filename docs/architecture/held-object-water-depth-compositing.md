@@ -121,6 +121,16 @@ never masks the owner's held gear. The mask still runs on maps without
 classified nearby ground, floors or water, and respects the foreground world's
 physical depth. Stencil owner IDs are not shared with unrelated NPCs.
 
+When a shoulder pet makes the owner front/rear portrait stack depth-write-free
+and the framebuffer has no usable 8-bit stencil, the renderer now uses a
+**colorless alpha-tested depth fallback** for the owner front and whichever
+pet face is foreground. It runs *after every held depth reconstruction*
+and before each held weapon draw, preventing tools behind the owner portrait
+from appearing through it. Opposite-facing pet art and unrelated actors
+are excluded; the owner's materials and ordinary pet-facing layering
+are restored immediately afterward. The fallback count and
+`depth-fallback-no-stencil` reason appear in the mobile X-ray diagnostics.
+
 Replacing or detaching a shoulder pet restores the previous pet's ordinary
 depth and draw order, cleans up its private stencil participation, and restores
 the owner's unchanged portrait orders and normal depth writes.

@@ -45,17 +45,25 @@ const runtime = new Function('THREE','window','rawRender','registeredFronts',[
   'const restoreDraws=(prior)=>{for(const [mesh,mask] of prior)mesh.layers.mask=mask;};',
   'const hasLayer=(o,layer)=>!!(o.layers.mask & (1<<layer));',
   'const forEachMaterial=(materials,fn)=>{for(const m of Array.isArray(materials)?materials:[materials])if(m)fn(m);};',
-  'let frontPortraitMaskPassCount=0;',production,
+  'let frontPortraitMaskPassCount=0,frontPortraitDepthFallbackPasses=0;',production,
   'return {isFrontPortraitMesh,isPortraitMaskedGear,portraitStencilOwner,actorRootForXrayMesh,assignPortraitStencilOwners,',
-  'prepareFrontPortraitStencilMaterials,stampFrontPortraitStencil,preparePortraitGearStencilMaterials,',
+  'prepareFrontPortraitStencilMaterials,stampFrontPortraitStencil,stampFrontPortraitDepthFallback,preparePortraitGearStencilMaterials,',
   'prepareSubmergedOverlayStencilMaterials,restoreMaterialStates, getCount:()=>frontPortraitMaskPassCount,',
+  'getDepthFallbackCount:()=>frontPortraitDepthFallbackPasses,',
   'setPetForeground(meshes) { petForegroundStencilParts.clear(); for (const mesh of meshes) petForegroundStencilParts.add(mesh); }};',
 ].join('\n'))(THREE,windowObject,function(_scene,camera){
   observations.push({mask:camera.layers.mask,playerRef:playerFront.stencilRef,npcRef:npcFront.stencilRef,
     playerDraw:playerFront.stencilWrite,playerAlpha:playerFront.alphaTest,npcDraw:npcFront.stencilWrite,
     playerDepth:playerFront.depthWrite,rearDraw:playerRear.stencilWrite,
     unarmedPrivateVisible:!!(unarmedPortrait.layers.mask & camera.layers.mask),
-    unarmedColorWrite:unarmedPortrait.material.colorWrite});
+    unarmedColorWrite:unarmedPortrait.material.colorWrite,
+    depthSamples:registeredFronts.map(mesh=>({
+      name:mesh.name, owner:mesh.parent?.name,
+      materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material]).map(material=>({
+        depthWrite:material.depthWrite,colorWrite:material.colorWrite,depthTest:material.depthTest,
+        alphaTest:material.alphaTest,stencilWrite:material.stencilWrite,
+      })),
+    }))});
   if(failRender)throw new Error('simulated draw failure');
 },registeredFronts);
 function mat(name) {
@@ -156,6 +164,7 @@ const petSplitBack=mesh('shoulder_split_back',[mat('npc_avatar_skinned_front_mat
   skinned:true,tags:{hobunjiShoulderSplitOverlay:true,hobunjiPlaneFace:'back'},
 });
 const bothFaces=[playerPortrait,petFront,petBack,petSplitFront,petSplitBack];
+registeredFronts.push(petFront,petBack,petSplitFront,petSplitBack); // Both facing cards exist in the live registry.
 runtime.setPetForeground([petFront,petSplitFront]);
 assert.equal(runtime.isFrontPortraitMesh(petSplitFront),true,'active front split participates in owner mask');
 assert.equal(runtime.isFrontPortraitMesh(petSplitBack),false,'background split is not a front-mask candidate');
@@ -176,6 +185,32 @@ assert.equal(petSplitFront.material[0].stencilWrite,true,'foreground split front
 assert.equal(petSplitFront.material[1].stencilWrite,true,'foreground split rear material also stamps its foreground pixels');
 assert.equal(petSplitBack.material[0].stencilWrite,false,'background split never stamps owner pixels');
 runtime.restoreMaterialStates(petStates);
+
+function checkNoStencilPetDepth(expectedForeground) {
+  const selected=runtime.assignPortraitStencilOwners([playerWeapon],bothFaces,scene);
+  const before=observations.length;
+  assert.equal(runtime.stampFrontPortraitDepthFallback({},scene,camera,selected.portraits,selected.ownerIds),true);
+  assert.equal(observations.length,before+1,'one colorless owner depth draw per fallback');
+  const draw=observations[before];
+  const ownerFront=draw.depthSamples.find(mesh=>mesh.name==='skinned_player');
+  const petMesh=name=>draw.depthSamples.find(mesh=>mesh.owner==='shoulder_pet' && mesh.name===name);
+  assert.equal(draw.mask,1<<24,'fallback sees only private silhouette layer');
+  assert.equal(ownerFront.materials[0].depthWrite,true,'player FRONT writes depth despite active shoulder pet');
+  assert.equal(ownerFront.materials[0].colorWrite,false,'depth stamp cannot repaint front art');
+  assert.equal(ownerFront.materials[0].stencilWrite,false,'fallback works without stencil');
+  assert.equal(ownerFront.materials[0].alphaTest,.35,'front uses opaque PNG coverage, not its rectangle');
+  assert.equal(ownerFront.materials[1].depthWrite,false,'rear half of skinned owner stays excluded');
+  const foreground=petMesh(expectedForeground);
+  assert.equal(foreground.materials[0].depthWrite,true,'foreground pet face adds depth to owner's silhouette');
+  assert.equal(foreground.materials[0].stencilWrite,false,'foreground pet never requires a stencil for depth');
+  const other=expectedForeground==='npc_avatar_front_plane'?'npc_avatar_back_plane':'npc_avatar_front_plane';
+  assert.equal(petMesh(other).materials[0].depthWrite,false,'background pet face is excluded');
+  assert.equal(draw.unarmedPrivateVisible,false,'other NPCs cannot contaminate owner's silhouette');
+  assert.equal(playerFront.depthWrite,false,'owner front regains depth-write-free presentation');
+  assert.equal(playerFront.colorWrite,true,'owner color material flags restored');
+  assert.equal(camera.layers.mask,1,'fallback restores private layer state');
+}
+checkNoStencilPetDepth('npc_avatar_front_plane');
 
 // Looking away swaps only the stencil faces; the owner and animation stay put.
 petRoot.userData.hobunjiShoulderPetLayering.frontForeground=false;
@@ -198,6 +233,8 @@ assert.equal(petBack.material.stencilWrite,true,'foreground pet back stamps owne
 assert.equal(petSplitBack.material[0].stencilWrite,true,'foreground back split stamps owner pixels');
 assert.equal(petFront.material.stencilWrite,false,'background front cannot mask owner gear');
 runtime.restoreMaterialStates(petStates);
+checkNoStencilPetDepth('npc_avatar_back_plane');
+assert.equal(runtime.getDepthFallbackCount(),2,'both pet stages receive actual fallback depth');
 
 // Detached/replaced pet carries no owner's tool mask.
 runtime.setPetForeground([]);

@@ -168,6 +168,7 @@
   let selectiveOverlayCount = 0;
   let nonGroundDepthReplayCount = 0;
   let frontPortraitMaskPassCount = 0; // Cumulative once-per-world-frame silhouette stencil draws, exposed to mobile diagnostics.
+  let frontPortraitDepthFallbackPasses = 0; // Counts colorless owner-front depth stamps when no usable private stencil is available.
   let lastFrontPortraitMaskCount = 0; // Eligible portrait meshes in the latest held overlay, exposed to mobile diagnostics.
   let lastFrontPortraitGearCandidates = 0; // Gear parts requesting front-art masking in the latest held overlay.
   let lastFrontPortraitMaskedGear = 0; // Gear parts actually assigned a portrait stencil ID in the latest held overlay.
@@ -1549,6 +1550,40 @@
       camera.layers.mask = originalMask;
       restoreMaterialStates(states);
       restoreDraws(unrelatedFronts);
+    }
+  }
+
+  // The attached owner/pet portrait is depth-write-free in its ordinary
+  // color pass. On a stencil-less target this bounded fallback restores only
+  // the owner's alpha-tested front silhouette into the completed world depth
+  // immediately before held sprites. The pet's color-stage order is untouched.
+  function stampFrontPortraitDepthFallback(renderer, scene, camera, portraits, ownerIds, portraitOrder) {
+    if (!portraits.length) return false;
+    const oldMask = camera.layers.mask;
+    const selected = new Set(portraits); // One owner's front portrait plus whichever pet face belongs above that owner face.
+    const unrelated = suppressDraws(
+      collectVisible(frontPortraitRegistry, scene).filter(mesh => !selected.has(mesh)),
+      FRONT_PORTRAIT_MASK,
+    ); // Do not let other NPCs or the background pet write into this owner's private depth mask.
+    const states = prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene); // Exact alpha cutout, world depth and restored material states.
+    try {
+      for (const portrait of portraits) {
+        const materials = Array.isArray(portrait.material) ? portrait.material : [portrait.material];
+        const foregroundPet = portrait.userData?.hobunjiShoulderPetStencilForeground === true;
+        for (const material of materials) {
+          if (!material || (!foregroundPet && material !== materials[0]) || !material.stencilWrite) continue;
+          material.stencilWrite = false; // A stencil-less framebuffer still needs a valid depth fallback.
+          material.depthWrite = true; // Solid front portrait pixels hide weapons physically behind them.
+        }
+      }
+      camera.layers.mask = FRONT_PORTRAIT_MASK;
+      withPortraitDrawOrder(renderer, portraitOrder, () => rawRender.call(renderer, scene, camera));
+      frontPortraitDepthFallbackPasses++;
+      return true;
+    } finally {
+      camera.layers.mask = oldMask;
+      restoreMaterialStates(states); // Never leave the owner or shoulder pet writing depth in its ordinary color pass.
+      restoreDraws(unrelated);
     }
   }
 
@@ -3090,9 +3125,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // same-level ground. Transparent portrait pixels do not protect weapons.
       lastFrontPortraitGearCandidates = 0;
       for (const mesh of overlayMeshes) if (isPortraitMaskedGear(mesh)) lastFrontPortraitGearCandidates++;
-      const portraitMask = lastBaseStencilBits >= 8 && lastFrontPortraitGearCandidates
+      const portraitMask = lastFrontPortraitGearCandidates
         ? assignPortraitStencilOwners(overlayMeshes, collectVisible(frontPortraitRegistry, scene), scene)
-        : null;
+        : null; // Match the owner even if only physical depth is available.
       lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
       lastFrontPortraitMaskedGear = 0;
       lastFrontPortraitMaskReason = !lastFrontPortraitGearCandidates ? 'no-eligible-gear'
@@ -3101,7 +3136,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
-      if (portraitMask?.portraits.length && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
+      if (lastBaseStencilBits >= 8 && portraitMask?.portraits.length
+        && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
         portraitGearIds = portraitMask.gearIds;
         lastFrontPortraitMaskedGear = portraitGearIds.size; // A rank change is effective only if an owner stencil was stamped.
         lastFrontPortraitMaskReason = portraitGearIds.size === lastFrontPortraitGearCandidates ? 'stamped' : 'partially-stamped';
@@ -3171,6 +3207,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
 
+        // This depth must be reintroduced after every clearDepth()/rebuild,
+        // not just once during the original base portrait draw.
+        if (!portraitGearIds && portraitMask?.portraits.length
+          && stampFrontPortraitDepthFallback(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
+          lastFrontPortraitMaskedGear = portraitMask.gearIds.size;
+          lastFrontPortraitMaskReason = 'depth-fallback-no-stencil';
+        }
         for (const mesh of group.meshes) mesh.layers.mask = HELD_OVERLAY_MASK;
         // Keep this group's scissor for the held color/stencil draw. Drawing outside
         // the group's reconstructed depth rectangle can reveal weapons through
@@ -3640,8 +3683,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (!held.length && !feet.length && !canTintPortraits) return renderBase();
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
-    const needsOwnerMask = lastBaseStencilBits >= 8 && held.some(isPortraitMaskedGear)
-      && collectVisible(frontPortraitRegistry, scene).length > 0;
+    const needsOwnerMask = held.some(isPortraitMaskedGear)
+      && collectVisible(frontPortraitRegistry, scene).length > 0; // Do not early-return when the private stencil is absent.
     if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
       lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
       return renderBase();
@@ -3759,6 +3802,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitMaskReason: lastFrontPortraitMaskReason,
       shoulderPetCompositor: { ...lastShoulderPetDecision },
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
+      frontPortraitDepthFallbackPasses, // Visibility into fallback use without mobile devtools.
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
       heldOrderNormalizations,
