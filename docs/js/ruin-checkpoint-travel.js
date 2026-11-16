@@ -124,24 +124,17 @@
         .find(candidate=>Number.isFinite(candidate.y)&&floorCanStand(candidate.x,candidate.z,candidate.y));
       return at?fixture(id,'small',at,.72):null; // Native V50 plateaus need their actual surface height, not the nominal story datum.
     }
-    const ignitionSources=[]; // Reusable Tothal projectile-fire sources, not teleport destinations or Great Door goals.
+    const ignitionSources=[]; // Permanent short Tothal fire hazards (torch-lighting sources), not projectile-arming or teleport controls.
     const tothal=ruin.hachutu!==true&&String(ruin.theme||'').toLowerCase()==='tothal'; // Hachutu's exclusive temple never receives unrelated Harlyao fire mechanisms.
-    function igniteNextShot(at){
-      if(disposed||!closeEnough(player(),at,2.1))return false;
-      if(root.DungeonFire?.armNextProjectile?.()===true){
-        showToast?.('Next ranged projectile ignited.',true);
-        return true;
-      }
-      showToast?.('Equip a ranged weapon first.',false);
-      return false;
-    }
     if(tothal){
-      // The floor-zero shaft waystone remains an ignition fallback after nearby Shattercasks detonate.
-      const shaftSourceControl={kind:'dungeonFireSource',object:shaft.holder,promptRoot:shaft.holder,
-        floorY:shaftAt.y,inputAction:'action2',range:1.8,priority:26,touchIcon:'🔥',
-        available:()=>!!root.RangedWeapons?.equippedRangedKey?.(),
-        label:'Ignite Next Shot',onPress:()=>igniteNextShot(shaftAt)};
-      ruin.controls.push(shaftSourceControl);controls.push(shaftSourceControl);
+      // Floor-zero's fallback is a separate short brazier, not a prompt that steals Action 2 from tools.
+      const shaftHeatAt=[[shaftAt.x+1,shaftAt.z],[shaftAt.x-1,shaftAt.z],
+        [shaftAt.x,shaftAt.z+1],[shaftAt.x,shaftAt.z-1]]
+        .map(([x,z])=>point(x,z,shaftAt.y)).find(at=>floorCanStand(at.x,at.z,at.y)); // Find an actual standable neighboring tile.
+      if(shaftHeatAt){
+        const shaftHeat=fixture('shaft-fire','source',shaftHeatAt,.58); // Regular bowl at forehand-swing height.
+        if(shaftHeat){render(shaftHeat,true);ignitionSources.push(shaftHeat);}
+      }
       const jump=ruin.shaftObeliskRuntime,api=root.RuinJumpShaft;
       if(jump?.method==='jumpPlatforms'&&jump.plan?.routes&&jump.columns&&api?.assignFixture){
         for(const route of jump.plan.routes){
@@ -151,13 +144,8 @@
           const column=platform&&jump.columns.get(platform.id);
           if(!column?.holder||!api.assignFixture(jump.plan,platform.id,'ignitionBrazier'))continue;
           const at=point(platform.x,platform.z,platform.y);
-          const source=fixture('ignition:'+platform.id,'source',at,.72,column.holder);
-          render(source,true);ignitionSources.push(source);
-          const control={kind:'dungeonFireSource',object:source.holder,promptRoot:source.holder,
-            floorY:at.y,inputAction:'action1',range:1.65,priority:26,touchIcon:'🔥',
-            available:()=>!!root.RangedWeapons?.equippedRangedKey?.(),
-            label:'Ignite Next Shot',onPress:()=>igniteNextShot(at)};
-          ruin.controls.push(control);controls.push(control);
+          const source=fixture('ignition:'+platform.id,'source',at,.58,column.holder); // Short, regular lit brazier on the existing jump platform.
+          if(source){render(source,true);ignitionSources.push(source);} // render() marks the actual 3D holder as fireHazard.
         }
       }
     }
@@ -350,7 +338,7 @@
        shaftTravel:{wheelOpen:!!activeTravelWheel,unlocked:[...unlockedShaftIds],
          floors:shaftBraziers.map(r=>({id:r.id,floor:r.story+1,unlocked:unlockedShaftIds.has(r.id),x:r.at.x,z:r.at.z,y:r.at.y}))},
        ignitionSources:ignitionSources.map(r=>({id:r.id,x:r.at.x,z:r.at.z,y:r.at.y})),
-       shaftIgnitionAvailable:tothal,checkpoints:[...records.values()].filter(r=>r.kind!=='source').map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
+       shaftIgnitionAvailable:false,shaftTorchFireAvailable:ignitionSources.length>0,checkpoints:[...records.values()].filter(r=>r.kind!=='source').map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
     return owner;
   }

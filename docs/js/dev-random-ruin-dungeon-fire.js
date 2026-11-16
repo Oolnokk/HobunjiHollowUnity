@@ -61,9 +61,22 @@
 
   function basketBrazier(x,y,z,kind='source') {
     const group = new THREE.Group();
-    group.name = kind==='cleansing'?'kanthic_cleansing_brazier':'dungeon_fire_basket_brazier';
+    group.name = kind==='cleansing'?'kanthic_cleansing_brazier':'dungeon_fire_regular_brazier';
     group.position.set(x,y,z);
-    group.userData.interactive3D = kind==='source';
+    if (kind === 'source') {
+      group.userData.fireHazard = true; // Permanent fire contact replaces projectile-arming interactions.
+      group.userData.devRuinFootprintIgnore = true; // A low stone brazier must not create an invisible floor blocker.
+      const stone = material(0x6a6965, {texture:'carved_smooth.png'}); // Shared regular carved-stone material for the short foot and bowl.
+      const ash = material(0x42372c, {texture:'carved_smooth.png'}); // Visible coal bed indicates an always-lit heat source.
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(.21,.29,.23,8), stone); // Short foot just above the floor.
+      foot.name = 'regular_brazier_foot'; foot.position.y = .12; group.add(foot);
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(.42,.30,.18,9), stone); // Broad low bowl lets a swinging torch contact the flame.
+      bowl.name = 'regular_brazier_bowl'; bowl.position.y = .31; group.add(bowl);
+      const coals = new THREE.Mesh(new THREE.CylinderGeometry(.29,.28,.035,9), ash); // Flame particle base, below the torch-contact surface.
+      coals.name = 'regular_brazier_coals'; coals.position.y = .42; group.add(coals);
+      return group;
+    }
+    group.userData.interactive3D = false;
     group.userData.devRuinInteractionType = kind==='source'?'dungeonFireSource':'dungeonFireTarget';
     group.userData.fireHazard = kind==='source'; // Only the permanently lit Dungeon Fire source may light an adventuring torch.
     const bronze = material(0x855326,{metalness:.78,roughness:.34});
@@ -151,20 +164,8 @@
     group.name='dungeon_fire_source_brazier_'+index;
     world.group.add(group);
     attachBrazierFire(group); // Every lit dungeon ignition source has real authored campfire particles.
-    const record=addMechanismRecord({id:'dungeon-fire-source-'+index,kind:'source',group,point,armed:false});
-    record.control={
-      kind:'dungeonFireSource',object:group,promptRoot:group,
-      range:1.55,priority:34,claimAction1:true,touchIcon:'🔥',
-      label:'Ignite Next Shot',
-      onPress:()=>{
-        const armed=window.DungeonFire?.armNextProjectile?.()===true;
-        if(!armed){kit.deps?.showToast?.('Equip a ranged weapon first.',false);return;}
-        record.armed=true;
-        kit.deps?.showToast?.('Next ranged projectile ignited.',true);
-        lastEvent='source armed';
-      },
-    };
-    return record;
+    return addMechanismRecord({id:'dungeon-fire-source-'+index,kind:'source',group,point});
+    // Swing a held torch into this permanent fire hazard, then throw it at the existing DungeonFire targets.
   }
 
   function buildNet(point,ceilingY,index) {
@@ -516,15 +517,14 @@
   }
 
   function controls(kit) {
-    if(!world?.source||!window.RangedWeapons?.equippedRangedKey?.())return [];
-    return [world.source.control];
+    return []; // Ordinary fire hazards no longer intercept Action 1 to ignite the next ranged projectile.
   }
 
   function snapshot() {
     if(!world)return {active:false,lastEvent};
     return {
       active:true,theme:world.theme,
-      source:world.source?{id:world.source.id,armed:window.DungeonFire?.debugSnapshot?.().armed===true,at:world.source.point}:null,
+      source:world.source?{id:world.source.id,fireHazard:world.source.group?.userData?.fireHazard===true,height:.43,at:world.source.point}:null,
       iceWalls:world.walls.map(wall=>({id:wall.id,doorType:wall.doorType,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2),growth:+(wall.icePlacement.iceLayer.userData.iceGrowthProgress??1).toFixed(3),spikes:wall.icePlacement.iceLayer.userData.surfaceGrowthStats?.spikes||0})), // No devtools required to inspect melting or generated ice.
       iceDiscovery:{eligible:world.iceEligibleCount,attempts:world.iceScanTries,spawned:world.walls.length}, // Diagnoses scenes with no matching physical door.
       nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable,visual:record.group?.children?.some(mesh=>mesh.userData?.dungeonNetAtlas)?'sprite-frustum':'fallback-cords'})),
@@ -570,7 +570,6 @@
   window.DevRandomRuinDungeonFire=Object.freeze({
     snapshot,clear,
     litSourceObjects:()=>world?.source?.group?.parent ? [world.source.group] : [], // Live-only; cleared ruins never expose stale torch fuel.
-    armNextProjectile:()=>window.DungeonFire?.armNextProjectile?.()===true,
     setPayloadKind:kind=>{const value=String(kind||'').trim();if(!value)return false;payloadKind=value;return true;}, // Applies to the next generated net/icicle set; custom kinds use Shattercasks.registerBurdenFactory/ImpactHandler.
     releaseBurden:recordId=>{
       const record=world?.records?.find(item=>item.id===recordId);

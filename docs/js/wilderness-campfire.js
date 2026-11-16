@@ -12,6 +12,7 @@
   // Reuses the authored campfire furniture + its existing
   // Save/Cook/Brew/Return-to-Camp interactions.
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
+  const CAMPFIRE_HOLD_MS = 500; // Action 2 must stay held this long before the shared campfire selection arch opens.
 
   let deps = null;
   let group = null; // Live campfire THREE.Group in whichever scene currently owns the saved campfire map.
@@ -22,6 +23,7 @@
   let returnPending = false; // Used when Return to Camp must first load/regenerate another map (notably a mine floor).
   let campfireDataPromise = null;
   let debugHistory = []; // Recent state-changing events for mobile-friendly debug dumps without relying on console access.
+  let interactionHold = null; // Current Action 2 owner/timer; exposed in mobile debug and canceled on any scene transition.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -74,6 +76,7 @@
   }
 
   function removeVisual() {
+    cancelInteractionHold('campfire visual removed');
     emitterVisuals.forEach(visual => visual?.dispose?.());
     emitterVisuals = [];
     if (group) group.parent?.remove?.(group);
@@ -262,17 +265,73 @@
     return Math.hypot(player.x / deps.TILE - state.x, player.y / deps.TILE - state.z);
   }
 
-  const NEARBY_TILES = 1.75;
+  const NEARBY_TILES = 1.75; // Used by both the campfire prompt and every menu-choice validity check.
+
+  function withinInteractionRange() {
+    return isHere() && !!group && distanceToPlayerTiles() <= NEARBY_TILES
+      && window.GameplayInputRouter?.isInCombat?.() !== true;
+  }
+
+  function campfireMenuEntries() {
+    const cookRank = window.PerkSystem?.rank('foraging', 'survivalist') || 0; // Controls the Cook choice without replacing tool inputs.
+    const brewRank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0; // Controls the Brew choice without replacing tool inputs.
+    const nearby = action => { // Re-check player distance when the menu choice is committed, not only when the hold started.
+      if (!withinInteractionRange()) { deps?.showToast?.('Move closer to the campfire.', false); return; }
+      if (action === 'save') doSave();
+      else if (action === 'cook') doCook();
+      else if (action === 'brew') doBrew();
+    };
+    return [
+      { id:'save', icon:'💾', label:'Save Game', onSelect:()=>nearby('save') },
+      { id:'cook', icon:'🍲', label:cookRank?'Cook Here':'Cook Here (needs Survivalist)', disabled:!cookRank, onSelect:()=>nearby('cook') },
+      { id:'brew', icon:'⚗️', label:brewRank?'Make Potions Here':'Make Potions Here (needs Herbalist)', disabled:!brewRank, onSelect:()=>nearby('brew') },
+      { id:'cancel', icon:'✕', label:'Cancel', onSelect:()=>{} },
+    ];
+  }
+
+  function beginInteractionHold(source = 'action2') {
+    if (interactionHold || !withinInteractionRange()) return false;
+    const owner = String(source); // Pairs this exact keyboard/controller or touch pointer with its eventual release.
+    const hold = { owner, timer:null, opened:false }; // Used to prevent an old timeout from opening a menu after ownership changed.
+    interactionHold = hold;
+    hold.timer = setTimeout(() => {
+      hold.timer = null;
+      if (interactionHold !== hold) return;
+      if (!withinInteractionRange() || !window._desktopSelectionArc?.openEntries) {
+        endInteractionHold(owner, true);
+        return;
+      }
+      window._desktopSelectionArc.openEntries('campfire', campfireMenuEntries());
+      hold.opened = true;
+      recordDebug('campfire-hold-menu-open', { owner });
+    }, CAMPFIRE_HOLD_MS);
+    recordDebug('campfire-hold-start', { owner });
+    return true;
+  }
+
+  function endInteractionHold(source = 'action2', canceled = false) {
+    const hold = interactionHold; // Original owner is checked so one input cannot cancel another's hold.
+    if (!hold || hold.owner !== String(source)) return false;
+    interactionHold = null;
+    if (hold.timer !== null) clearTimeout(hold.timer);
+    if (canceled && hold.opened && window._desktopSelectionArc?.currentMode?.() === 'entries:campfire')
+      window._desktopSelectionArc.close();
+    recordDebug(canceled ? 'campfire-hold-canceled' : 'campfire-hold-released',
+      { owner:hold.owner, opened:hold.opened });
+    return true;
+  }
+
+  function cancelInteractionHold(reason = 'cancel') {
+    if (interactionHold) endInteractionHold(interactionHold.owner, true);
+  }
 
   function getNearbyActions() {
-    if (!isHere() || distanceToPlayerTiles() > NEARBY_TILES) return null;
-    const cookRank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
-    const brewRank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
-    return [
-      { icon: '💾', label: 'Save Game', action: 'campfire_save', style: 'primary', allowed: true, worldInteraction: true, promptRoot: group },
-      { icon: '🍲', label: cookRank ? 'Cook Here' : 'Cook Here (needs Survivalist)', action: 'campfire_cook', style: 'secondary', allowed: !!cookRank, worldInteraction: true, promptRoot: group },
-      { icon: '⚗️', label: brewRank ? 'Make Potions Here' : 'Make Potions Here (needs Herbalist)', action: 'campfire_brew', style: 'secondary', allowed: !!brewRank, worldInteraction: true, promptRoot: group },
-    ];
+    if (!withinInteractionRange()) return null;
+    return [{
+      icon:'🔥', label:'Hold for Campfire', action:'campfire_menu', inputAction:'action2',
+      style:'secondary', allowed:true, worldInteraction:true, promptRoot:group,
+      requiresHold:true, holdSeconds:CAMPFIRE_HOLD_MS / 1000,
+    }]; // One contextual Action 2 replaces Throw, never the primary tool swing or a held item's own input.
   }
 
   async function doSave() {
@@ -326,6 +385,7 @@
 
   function getDebugState() {
     return {
+      interactionHold: interactionHold ? { owner:interactionHold.owner, opened:interactionHold.opened, durationMs:CAMPFIRE_HOLD_MS } : null,
       state: serialize(),
       visualArea,
       hasVisual: !!group,
@@ -335,10 +395,16 @@
     };
   }
 
+  window.addEventListener?.('blur', () => cancelInteractionHold('window-blur')); // A lost mobile/desktop release must not open a stale menu.
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
+    if (document.hidden) cancelInteractionHold('page-hidden');
+  });
+
   window.WildernessCampfire = {
     init, supportsArea, place, placeFromKit, placeAtPlayer, clear, clearIfZone, clearMineCampfireOnDeath,
     relocateForGeneratedMineFloor, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
-    getNearbyActions, returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
+    getNearbyActions, beginInteractionHold, endInteractionHold, cancelInteractionHold,
+    returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
     serialize, restore, ensureLoaded, getDebugState, releaseVisualIfZone,
   };
 })();
