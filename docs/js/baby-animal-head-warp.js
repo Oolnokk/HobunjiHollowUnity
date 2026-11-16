@@ -205,9 +205,9 @@
     return data ? { data, width: w, height: h } : null;
   }
 
-  function maskForKind(kind) {
+  function maskForKind(kind, frameOverride = null) {
     const key = baseKind(kind), cached = idleMasks.get(key);
-    const frame = frameForKind(key);
+    const frame = validateFrame(frameOverride) || frameForKind(key);
     return cached?.frameKey === frameKey(frame) ? cached.mask : null; // Never use a stale mask after an authored frame edit.
   }
 
@@ -237,8 +237,8 @@
   async function ensureIdleMask(kind, idleSource = null, frameOverride = null) {
     const key = baseKind(kind);
     if (!key) return null;
-    const current = maskForKind(key);
-    if (current && !frameOverride) return current;
+    const current = maskForKind(key, frameOverride);
+    if (current) return current;
     if (idleSource) return primeIdleMask(key, idleSource, frameOverride); // Caller guarantees this is an IDLE pose; never prime from run2.
     if (pendingIdleMasks.has(key)) return pendingIdleMasks.get(key);
     const promise = (async () => {
@@ -294,7 +294,7 @@
     const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale);
     if (!canvas || selectedScale <= 1) { debug.skipped++; return canvas; }
     const frame = validateFrame(previewFrame) || frameForKind(kind);
-    const mask = maskForKind(kind);
+    const mask = maskForKind(kind, frame);
     if (!frame || !mask || mask.frameKey !== frameKey(frame)) {
       debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'idle opacity mask unavailable';
       debug.lastError = 'Prepare the idle head opacity mask before enlarging ' + kind
