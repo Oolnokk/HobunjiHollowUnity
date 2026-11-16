@@ -608,7 +608,7 @@
 
   function debugSnapshot() {
     return {
-      bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments) })),
+      bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, origin: entry.origin, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments, entry.origin) })),
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
