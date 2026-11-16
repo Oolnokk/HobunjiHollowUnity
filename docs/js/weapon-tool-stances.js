@@ -568,13 +568,13 @@
         savedQuaternion = this.quaternion.clone();
         try {
           const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon' || torchIdle) deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Apply the shoulder-derived orbit before the torch's grip-pivot correction, just as game.js does for swings.
           if (torchIdle && Number.isFinite(targetPose.scale) && targetPose.scale > 0) {
             savedScale = this.scale.clone();
             this.scale.multiplyScalar(targetPose.scale); // Scale the neutral torch without changing subsequent swing/throw frames.
             const grip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('torch', 'melee'); // Same grip-anchored scale pivot as the Attack Editor.
             SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
           }
-          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
