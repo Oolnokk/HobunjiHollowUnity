@@ -78,5 +78,6 @@ const rooms=read('docs/js/ruin-room-system.js');
 assert(fog.includes("const mistActive = active && currentArea !== 'map_i_dev_random_ruin'"),'Kanthic no longer draws 3D mist tubes');
 assert(fog.includes('syncUndergroundFog(underground && mistActive ? activeScene : null)'),
   'Kanthic keeps no moving depth fog after cylinders are suppressed');
-assert(rooms.includes("room?.theme==='kanthic'||room?.theme==='tothal'"),'Kanthic no longer projects hard-edge room light frames');
+assert(rooms.includes('withLightRegion(_ctx,_project,draw)')&&rooms.includes('roomIsolated:!!active'),
+  'all ruin traditions isolate light sources by room without any projected screen-space frames');
 console.log('ruin-forced-movement-collision: wall borders, upper stories, swept lunges, Skeeri and shaft slabs OK');
