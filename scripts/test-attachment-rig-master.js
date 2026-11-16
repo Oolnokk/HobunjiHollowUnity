@@ -230,8 +230,8 @@ const skeeriSizeScales = { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, sm
 const skeeriNativeWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Native model widths define the correct ratio for ground Y rather than Pingdort's unrelated size scales.
 const skeeriSmallGroundY = pingdort.groundOffsets.small; // Approved Pingdort Small ground Y is the common baseline for all Skeeri.
 const expectedSkeeriGround = { // Verifies the source Small Y is scaled to Medium/Large by Skeeri's native widths.
-  large: skeeriSmallGroundY * skeeriNativeWidths.large / skeeriNativeWidths.small,
-  medium: skeeriSmallGroundY * skeeriNativeWidths.medium / skeeriNativeWidths.small,
+  large: skeeriSmallGroundY * (skeeriNativeWidths.large / skeeriNativeWidths.small),
+  medium: skeeriSmallGroundY * (skeeriNativeWidths.medium / skeeriNativeWidths.small),
   small: skeeriSmallGroundY,
 };
 const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width variants must not inherit Medium's class multipliers.
