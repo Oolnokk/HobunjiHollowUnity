@@ -31,7 +31,9 @@ const bandit = root('bandit_avatar_group');
 const banditHands = root('bandit_hands_pivot',bandit,{hobunjiCharacterRigScaleRoot:true});
 const banditWorldHolder = root('banditToolHolder',scene,{hobunjiHeldPortraitOwner:bandit}); // Hostile held gear is a scene sibling in real combat-bandit.js.
 const otherNpc = root('npc_walker_unarmed');
-const windowObject = { HobunjiSpritePngSurface: { maskAlphaTest:()=>0.35 },
+let weaponStencilEnabled = false; // Exercises the shipped disabled state before explicitly enabling this stencil-specific regression fixture.
+const windowObject = { XrayHierarchy: { get: key => key === 'weapon.frontPlaneMask' && weaponStencilEnabled ? 'on' : 'off' },
+  HobunjiSpritePngSurface: { maskAlphaTest:()=>0.35 },
   PlayerBodyTransformComposer: {getPlayerMesh:()=>player,getVisualRoots:()=>activePetRoot ? [playerHands,activePetRoot] : [playerHands]} };
 const observations = []; // Snapshots only during actual mask draw.
 const registeredFronts = []; // The shared private layer includes unarmed fronts, which must NEVER draw color into an owner's mask.
@@ -101,6 +103,10 @@ assert.equal(runtime.portraitStencilOwner(npcWeapon,scene),npc,'NPC tool matches
 assert.equal(runtime.portraitStencilOwner(banditPortrait,scene),bandit,'enemy front resolves to bandit avatar');
 assert.equal(runtime.portraitStencilOwner(banditWeapon,scene),bandit,'scene-sibling enemy weapon resolves to its tagged avatar');
 
+assert.equal(runtime.isPortraitMaskedGear(playerWeapon),false, 'shipped default leaves weapon art out of the owner portrait stencil');
+assert.equal(runtime.assignPortraitStencilOwners([playerWeapon],[playerPortrait],scene).gearIds.size,0,
+  'no stencil owner IDs are allocated while the optional weapon mask is disabled');
+weaponStencilEnabled = true; // The remainder of this fixture verifies explicitly enabled owner-portrait masking and material restoration.
 const assigned=runtime.assignPortraitStencilOwners(
   [playerWeapon,npcWeapon,banditWeapon,stationWeapon],[playerPortrait,npcPortrait,unarmedPortrait,banditPortrait],scene);
 assert.equal(assigned.ownerIds.size,3,'three owners are assigned distinct IDs');

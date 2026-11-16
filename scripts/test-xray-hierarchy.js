@@ -27,6 +27,7 @@ global.localStorage = { getItem: k => store[k] ?? null, setItem: (k, v) => { sto
 new Function(cfgSource)();
 const X = win.XrayHierarchy;
 assert.ok(X && X.version === 1, 'module registers window.XrayHierarchy');
+assert.strictEqual(X.get('weapon.frontPlaneMask'), 'off', 'owner portrait weapon stencil is opt-in by default');
 
 // Defaults, validation, live change, listeners.
 assert.strictEqual(X.get('hand.frontPlaneMask'), 'off', 'hands are not masked by owner front art by default');
@@ -188,6 +189,8 @@ assert.strictEqual(panel.render().actions.find(action => action.id === 'focus-st
 assert.equal(X.DIAGNOSTIC_PRESETS.length, 10, 'ten diagnostics remain after retiring three competing shoulder-pet modes');
 const presetPicker = panel.render().actions.find(action => action.id === 'focus-preset');
 assert.equal(presetPicker.options.length, X.DIAGNOSTIC_PRESETS.length, 'all experiments appear in one mobile dropdown');
+assert.strictEqual(X.DIAGNOSTIC_PRESETS.find(p => p.id === 'front-mask-off')?.rules['weapon.frontPlaneMask'], 'on',
+  'the retained diagnostic preset ID now enables the optional mask rather than duplicating the baseline');
 assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
 X.set('hand.frontPlaneMask', 'off');
 X.set('actors.order', 'near');
@@ -409,8 +412,11 @@ const maskEnd = render.indexOf('\n  // Hands:', maskBegin);
 const maskScope = new Function('window', 'xrayRule', 'maskedHands',
   render.slice(maskBegin, maskEnd) + '; return { heldPriorityLayer, isPortraitMaskedGear };')(
     win, key => X.get(key), new Set([handItem.object]));
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'the shipped default does not stencil out opaque weapon pixels');
+X.set('weapon.frontPlaneMask', 'on');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
-  'front art masks a held weapon by direct stencil policy');
+  'front art masks a held weapon only after explicit opt-in');
 X.set('layers.manualOrder', 'on');
 X.moveLayer('item.weapons', '__end');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
@@ -425,6 +431,8 @@ X.set('weapon.frontPlaneMask', 'on');
 assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), true,
   'direct mask switch re-enables owner stencil regardless of rank');
 X.reset();
+assert.strictEqual(maskScope.isPortraitMaskedGear({ userData: { hobunjiHeldObjectPlane: true } }), false,
+  'reset to repository defaults disables the owner weapon stencil again');
 
 // Execute the production "hand behind its front plane" math with a tiny matrix stand-in.
 const start = render.indexOf('const HAND_BEHIND_PLANE_EPS');
