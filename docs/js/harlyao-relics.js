@@ -231,6 +231,8 @@
 
   function grantBoundRelic(relic = makeRelic()) {
     if (!deps?.inventory || !relic || !SHAPES[relic.shape]) return null;
+    const shapeOrigin = SHAPES[relic.shape].origin || 'Harlyao'; // The encoded key selects its prefix by shape, so an incompatible declared origin would be unsalvageable on reload.
+    if ((relic.origin || 'Harlyao') !== shapeOrigin) return null;
     if (relic.origin === 'Fey') {
       const ids=[...(relic.enchantments?.base || []), ...Object.values(relic.enchantments?.flourishes || {})]; // Fey items cannot smuggle planar enchantments into the bound-codec.
       if (!ids.length || ids.some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')) return null;
