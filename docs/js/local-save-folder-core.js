@@ -28,6 +28,7 @@
   const MANIFEST_FILE_NAME = 'manifest.json';
   const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json';
   const SAVE_META_KEY = 'hobunjiSaveMeta';
+  const PROVENANCE_KEY = 'folderSaveProvenance'; // Preserved on unchanged entities; writer history for full saves lives in the manifest.
   const FARM_LAYOUT_KEY_PREFIX = 'hobunji_farm_layout_v3:';
   const PORTABLE_SAVE_VERSION = 2;
   const RECOVERY_SAVE_VERSION = 1; // Manifest/debug marker for the independent recovery directory format.
@@ -125,6 +126,7 @@
   let _lastObservedFingerprint = null; // Array of browser-cache strings compared without assembling an enormous joined string.
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
+  let _lastKnownFolderProvenance = null; // Last committed manifest writer, used for cross-device Resume diagnostics.
   let _lastKnownFarmLayoutFingerprint = null; // Tracks last loaded/written layout files, guarding external restorations from autosync.
   let _ignoredFarmLayoutBackupFiles = []; // Exposes version-copy filenames in existing mobile save diagnostics.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
@@ -144,6 +146,7 @@
       state: _state,
       folderName: _handle?.name || null,
       lastSyncedAt: _lastSyncedAt || null,
+      lastWriterProvenance: _lastKnownFolderProvenance ? { ..._lastKnownFolderProvenance } : null,
       lastError: _lastError || null,
       lastAction: _lastAction,
       farmLayoutCount: _farmLayoutCount,
@@ -407,6 +410,28 @@
 
   // Full and incremental saves serialize one entity at a time. Fingerprint
   // comparisons retain only short hashes, not duplicate multi-MB JSON strings.
+  function writerProvenance() {
+    const deviceId = window.FolderSaveDeviceProvenance?.getDeviceId?.(); // Anonymous installation id already used by the Resume source label.
+    return deviceId ? { version: 1, lastWriterDeviceId: deviceId, writtenAt: Date.now() } : null;
+  }
+
+  function stampOnlyChangedEntities(meta) {
+    const stamp = writerProvenance(); // A single timestamp serves every genuinely modified entity in this transaction.
+    if (!stamp) return;
+    const preserve = (entities, previousEntities) => {
+      const before = new Map((previousEntities || []).filter(entry => entry?.id).map(entry => [String(entry.id), entry])); // Prior durable records, not the potentially stale browser mirror.
+      for (const entity of entities || []) {
+        if (!entity?.id) continue;
+        const old = before.get(String(entity.id));
+        if (old && Object.prototype.hasOwnProperty.call(old, PROVENANCE_KEY)) entity[PROVENANCE_KEY] = old[PROVENANCE_KEY];
+        else delete entity[PROVENANCE_KEY]; // A stale browser stamp must not make an unchanged file look different.
+        if (!old || JSON.stringify(entity) !== JSON.stringify(old)) entity[PROVENANCE_KEY] = { ...stamp };
+      }
+    };
+    preserve(meta.characters, _lastKnownFolderMeta?.characters);
+    preserve(meta.worlds, _lastKnownFolderMeta?.worlds);
+  }
+
   function prepareChangedFiles(meta, layouts) {
     if (!_committedFileState) return null;
     const digests = new Map(); // Expected canonical filenames and content fingerprints, including deletion detection.
@@ -759,6 +784,7 @@
     return {
       exists: manifestExists || characters.length > 0 || worlds.length > 0 || corruptEntityFiles.length > 0,
       savedAt: Number(manifest?.savedAt) || 0,
+      writerProvenance: manifest?.writerProvenance?.lastWriterDeviceId ? manifest.writerProvenance : null,
       hasPortableFarmLayouts,
       corruptEntityFiles,
       corruptFarmLayoutFiles: farm.corruptFiles,
@@ -810,6 +836,7 @@
         ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
         : '');
     _lastKnownFolderMeta = folder.exists && !canonicalCorruption ? folder.meta : null;
+    _lastKnownFolderProvenance = folder.exists && !canonicalCorruption ? folder.writerProvenance : null;
     if (_lastKnownFarmLayoutFingerprint === null && !folder.corruptFarmLayoutFiles.length && !folder.missingCanonicalLayoutBackups?.length) {
       _lastKnownFarmLayoutFingerprint = farmLayoutFingerprint(folder.farmLayouts); // Establish once; diagnostics must not silently bless a later external replacement.
     }
@@ -894,6 +921,7 @@
         notify();
         return getStatus();
       }
+      stampOnlyChangedEntities(meta); // Preserve disk provenance on unchanged characters/worlds; update only real entity edits.
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
         && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
@@ -985,12 +1013,14 @@
       }
 
       const savedAt = Date.now();
+      const committedWriter = writerProvenance(); // The manifest records farm-only saves without rewriting unrelated character/world JSON.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
         version: meta.version ?? 1,
         portableSaveVersion: PORTABLE_SAVE_VERSION,
         recoverySaveVersion: RECOVERY_SAVE_VERSION,
         farmLayoutsIncluded: true,
         savedAt,
+        writerProvenance: committedWriter,
         characterCount: (meta.characters || []).length,
         worldCount: (meta.worlds || []).length,
         farmLayoutCount: _farmLayoutCount,
@@ -1002,6 +1032,7 @@
       catch { _lastManifestStamp = null; }
       _lastSaveWork = work;
       _lastKnownFolderMeta = meta;
+      _lastKnownFolderProvenance = committedWriter;
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
@@ -1125,7 +1156,8 @@
         throw new Error('Primary save manifest is inconsistent after the lock progress write.');
       }
       const savedAt = Math.max(Date.now(), _lastSyncedAt + 1); // Lock acknowledgements must advance even when two writes finish in the same millisecond.
-      await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt });
+      const committedWriter = writerProvenance() || manifest.writerProvenance || null; // Targeted lock commits also advance last-writer metadata.
+      await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt, writerProvenance: committedWriter });
       const manifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile());
       _committedFileState = new Map(_committedFileState); // Publish the new character fingerprint only after both canonical writes succeed.
       _committedFileState.set(key, { digest: contentFingerprint(raw), stamp });
@@ -1134,6 +1166,7 @@
         characters: _lastKnownFolderMeta.characters.map(entry => String(entry?.id) === String(characterId) ? character : entry),
       }; // Future ordinary saves compare against the actual patched on-disk character.
       _lastManifestStamp = manifestStamp;
+      _lastKnownFolderProvenance = committedWriter;
       _lastSyncedAt = savedAt;
       _lastSaveWork = { written: 1, unchanged: Math.max(0, _committedFileState.size - 1) };
       _recoveryNeedsRefresh = true; // The regular timer upgrades this tiny durable commit to a complete recoverable checkpoint.
@@ -1213,6 +1246,7 @@
       const changed = metaChanged || layoutsChanged;
 
       _lastKnownFolderMeta = folder.meta;
+      _lastKnownFolderProvenance = folder.writerProvenance;
       const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
       const importSnapshot = () => { // Disk-backed imports must remain loadable even when their browser mirror cannot fit.
         localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
@@ -1316,6 +1350,7 @@
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
+      _lastKnownFolderProvenance = null; // A different folder has its own latest-writer history.
       _lastKnownFarmLayoutFingerprint = null; // The new folder needs its own independent layout baseline.
       _ignoredFarmLayoutBackupFiles = []; // Clear the previous folder's version-copy diagnostics.
       _recoveryHandleFresh = true;
@@ -1350,6 +1385,7 @@
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
+      _lastKnownFolderProvenance = null;
       _lastKnownFarmLayoutFingerprint = null; // Switching folders must not compare against a different directory.
       _ignoredFarmLayoutBackupFiles = []; // Recompute version-copy diagnostics for this directory.
       _recoveryHandleFresh = true;
@@ -1413,6 +1449,7 @@
     _folderSupportsFarmLayouts = false;
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
+    _lastKnownFolderProvenance = null;
     _lastKnownFarmLayoutFingerprint = null;
     _committedFileState = null;
     _lastManifestStamp = null;
