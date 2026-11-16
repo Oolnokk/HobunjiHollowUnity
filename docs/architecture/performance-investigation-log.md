@@ -14,7 +14,9 @@ the original immediate correction when another writer changes a value, the fish'
 authored scales change, or Fishing replaces the image element. Collision-mask
 rendering, the animated href update and frame cadence are untouched.
 `FishCatalog.getPresentationStyleDebug()` returns cumulative `writes`/`skips`
-and `running` for phone-side A/B inspection. The executable fake-DOM/RAF test
+and `running` for phone-side A/B inspection. The existing `?fishingDebug=1`
+panel now displays those counters once per second, and skips same-value water status
+writes. The executable fake-DOM/RAF test
 covers 120 unchanged frames, real scale changes, external overrides, image
 replacement and a stop/restart cast. **Unmeasured:** on-device style-recalc and
 FPS changes; this removes redundant mutation work, not a measured FPS claim.
