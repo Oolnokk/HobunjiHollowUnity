@@ -87,6 +87,8 @@ function testFacing(inward) {
   assert.equal(a.backPlane.renderOrder > back.renderOrder, !inward, 'back plane swaps across owner back');
   assert.equal(a.splitFront.renderOrder, a.frontPlane.renderOrder + 0.01, 'split front inherits front stage');
   assert.equal(a.splitBack.renderOrder, a.backPlane.renderOrder + 0.01, 'split back inherits back stage');
+  assert.equal(a.splitFront.userData.hobunjiShoulderPortraitFace, 'front', 'split front inherits manual-sort portrait category');
+  assert.equal(a.splitBack.userData.hobunjiShoulderPortraitFace, 'back', 'split back inherits manual-sort portrait category');
   assert.equal(a.frontPlane.userData.hobunjiShoulderPortraitFace, 'front');
   assert.equal(a.backPlane.userData.hobunjiShoulderPortraitFace, 'back');
   for (const [mesh, shouldMask] of [
@@ -102,6 +104,19 @@ function testFacing(inward) {
   assert.equal(a.group.userData.hobunjiShoulderPetLayering.xrayEnabled, false);
   assert.ok(masks.has(front), 'owner front portrait remains eligible for the private stencil');
 }
+// Manual ordering must not classify a rear split as a front sprite merely
+// because a skinned helper material happens to have a front-material name.
+const layerStart = render.indexOf('  function visualLayerFor(');
+const layerEnd = render.indexOf('  function protectedDrawPhase(', layerStart);
+assert.ok(layerStart >= 0 && layerEnd > layerStart);
+const visualLayerFor = new Function('isPresentationBackdrop', 'heldPriorityLayer', 'surfaceKindForObject',
+  render.slice(layerStart, layerEnd) + '\\nreturn visualLayerFor;')(
+    () => false, () => 'actor.hands', () => 'solid');
+assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPortraitFace:'front'}},
+  material: {name:'avatar_skinned_back_material'}}), 'actor.front');
+assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPortraitFace:'back'}},
+  material: {name:'avatar_skinned_front_material'}}), 'actor.rear');
+
 testFacing(false);
 testFacing(true);
 use(pet, false);
