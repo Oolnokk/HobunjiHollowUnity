@@ -115,7 +115,7 @@
     ['js/clothing-weaving-npc-compat.js?v=20261105commissionaccept1', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v5.js?v=20261101spousewardrobe2', () => Number(window.NpcFurnitureWardrobes?.version) >= 5],
     ['config/npcs/social-relations.js?v=20261013h9b7e0bc', () => !!window.HobunjiNpcSocialRelationsConfig],
-    ['js/npc-social-relationship-bridge-v2.js?v=20261104faction-luau1', () => !!window.NpcRapport?.eventDriven],
+    ['js/npc-social-relationship-bridge-v2.js?v=20261116boneyMilk1', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20261024hac4892e', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261024h4181e78', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
