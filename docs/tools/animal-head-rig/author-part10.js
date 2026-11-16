@@ -182,9 +182,12 @@ previewSplitLayerCanvases = function splitBabyPreviewAfterEnlarging() {
   const rawRight = rightShoulderSource() || state.image; // The second source may be run1, not the original idle sprite.
   const leftSource = previewImageForAnimal(state.image);
   const rightSource = previewImageForAnimal(rawRight);
-  if (leftSource === state.image && rightSource === rawRight) return splitLayerCanvases(); // Fully original presentation is unchanged.
-  const { width, height } = sourceSize();
-  const shift = shoulderFrameShiftValue(), rotation = shoulderSeparatorRotationValue(); // Same authored diagonal separator as the normal shoulder rig.
+  const { width: sourceW, height: sourceH } = sourceSize();
+  if (leftSource === state.image && rightSource === rawRight && sourceW * sourceH <= MAX_BABY_PREVIEW_PIXELS)
+    return splitLayerCanvases(); // Retain original behavior for small art without allocating giant full-resolution split canvases.
+  const ratio = Math.min(1, Math.sqrt(MAX_BABY_PREVIEW_PIXELS / (sourceW * sourceH))); // Keep the two shoulder layers inside the preview texture budget.
+  const width = Math.max(1, Math.floor(sourceW * ratio)), height = Math.max(1, Math.floor(sourceH * ratio));
+  const shift = shoulderFrameShiftValue(), rotation = shoulderSeparatorRotationValue(); // Same normalized separator as the real rig.
   const prior = babyPreviewSplitCache.get(state.image);
   if (prior && prior.leftSource === leftSource && prior.rightSource === rightSource
       && prior.shift === shift && prior.rotation === rotation
