@@ -750,6 +750,18 @@
     return written;
   }
 
+  function legacyEntityWriterProvenance(characters, worlds) {
+    let latest = null; // Older folders keep portable device history only on individual characters/worlds.
+    for (const entry of [...characters, ...worlds]) {
+      const writer = entry?.[PROVENANCE_KEY];
+      const writtenAt = Number(writer?.writtenAt);
+      if (typeof writer?.lastWriterDeviceId !== 'string' || !writer.lastWriterDeviceId
+        || !Number.isFinite(writtenAt) || writtenAt <= 0) continue;
+      if (!latest || writtenAt > latest.writtenAt) latest = { ...writer, writtenAt };
+    }
+    return latest;
+  }
+
   async function readFolderSnapshot() {
     const characterRead = await readEntities(CHARACTERS_DIR); // Keeps unreadable canonical files visible to the caller instead of silently dropping them.
     const worldRead = await readEntities(WORLDS_DIR); // Same corruption tracking for worlds; missing a world can otherwise erase save selection.
@@ -792,7 +804,9 @@
     return {
       exists: manifestExists || characters.length > 0 || worlds.length > 0 || corruptEntityFiles.length > 0,
       savedAt: Number(manifest?.savedAt) || 0,
-      writerProvenance: manifest?.writerProvenance?.lastWriterDeviceId ? manifest.writerProvenance : null,
+      writerProvenance: manifest?.writerProvenance?.lastWriterDeviceId
+        ? manifest.writerProvenance
+        : legacyEntityWriterProvenance(characters, worlds), // Old folders are identified from their disk files, never a stale browser cache.
       hasPortableFarmLayouts,
       corruptEntityFiles,
       corruptFarmLayoutFiles: farm.corruptFiles,
