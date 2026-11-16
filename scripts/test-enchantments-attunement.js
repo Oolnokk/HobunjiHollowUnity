@@ -624,6 +624,22 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   context.EnchantmentSystem=originalES;
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
 
+  // Cross the actual CombatAttackEvents -> EnchantmentSystem.onHit() path:
+  // direct Fey strikes still use the ordinary collision pipeline, but the
+  // magical add-ons never write Health or Footing.
+  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyEchoDread'),true);
+  const feyImpactTarget=makeEntity({name:'Fey combat-event target',health:77,footing:55});
+  const feyImpact=CAE.prepare({attacker:player,abilityId:'swingCombo',comboStep:3,comboFinisher:true});
+  CAE.hit(feyImpact,{target:feyImpactTarget,actualDamage:0});
+  assert(RS.getAffliction(feyImpactTarget,'phantomWoundsHealth')>0,
+    'actual melee hit events apply Fey Base illusions');
+  assert(RS.getAffliction(feyImpactTarget,'phantomBloodHealth')>0,
+    'actual melee hit events also apply the second Fey Base illusion');
+  assert(RS.hasTimedDebuff(feyImpactTarget,'startled'),
+    'qualifying combo-finisher melee hit triggers the Fey Echo Dread Flourish');
+  assert.equal(feyImpactTarget.health,77,'magical Fey on-hit events cannot deal real damage');
+  assert.equal(feyImpactTarget.footing,55,'magical Fey on-hit events cannot affect real Footing');
+
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
   ES.setFlourish('fey-testing-blade','hold2','feyEchoDread');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
