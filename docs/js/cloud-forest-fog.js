@@ -53,7 +53,6 @@
     kanthic: Object.freeze([96, 83, 140]),
   }); // Subtle colored ambience over the complete viewport, not over projected room-shaped polygons.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
-  let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
@@ -336,9 +335,11 @@
 
   function update(dt) {
     if (!deps || !group) return;
+    const currentArea = deps.getCurrentArea?.(); // One area read determines both lighting and whether 3D mist is appropriate.
     const cloudForest = deps.isCloudForestArea();
-    const underground = !cloudForest && isUndergroundFogArea(deps.getCurrentArea?.());
+    const underground = !cloudForest && isUndergroundFogArea(currentArea);
     const active = cloudForest || underground;
+    const mistActive = active && currentArea !== 'map_i_dev_random_ruin'; // Kanthic keeps screen-space darkness but no player-following mist tunnels.
     const activeScene = active ? deps.getActiveScene() : null;
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
@@ -346,7 +347,7 @@
       attachedScene = activeScene;
     }
     syncUndergroundFog(underground ? activeScene : null);
-    group.visible = active;
+    group.visible = mistActive;
     if (!active) return;
 
     if (cloudForest) {
@@ -357,22 +358,16 @@
       updateFogLighting(activeScene, undergroundLightingForArea(deps.getCurrentArea?.()));
     }
 
+    if (!mistActive) return; // Kanthic still receives the fog palette above, without any geometry animation.
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
-    // The mist is three short tubes that follow the player's feet. Inside a ruin's tall shaft that
-    // means a dark band hovering around the player that snaps up and down with every jump or
-    // fall (and is sliced by platforms), so it fades out while the player is in the shaft room.
-    const inRuinShaft = !cloudForest && deps.getCurrentArea?.() === 'map_i_dev_random_ruin' && window.DevRandomRuin?.isPlayerInShaft?.() === true;
-    ruinMistFade += ((inRuinShaft ? 0 : 1) - ruinMistFade) * Math.min(1, dt * 4);
-    if (ruinMistFade < 0.01) ruinMistFade = inRuinShaft ? 0 : ruinMistFade;
-
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
       // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity) * ruinMistFade;
+      const opacity = clamp01(live.opacity);
       material.opacity = opacity;
       mesh.visible = opacity > 0;
       if (!mesh.visible) continue;
@@ -1265,7 +1260,8 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Tzatzul nest visibility adjusted in mist and darkness; all other den, mine and ruin lighting remains unchanged.',
+        latestChange: 'Kanthic uses stable screen darkness; moving mist cylinders and projected light hulls disabled.',
+        kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? 'screen-overlay-no-mist-geometry' : null, // Mobile Pixel Probe confirms the Kanthic geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
