@@ -880,16 +880,28 @@
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
     });
 
-    root.traverse(object=>{ // V50's prepareRuntimeWallPlanes makes walls double-sided so both faces render; the stone/unlit swap above must not undo that.
-      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
-      for(const material of Array.isArray(object.material)?object.material:[object.material]){
-        if(material&&material.side!==THREE.DoubleSide){material.side=THREE.DoubleSide;material.needsUpdate=true;}
+    const wallMaterials=new Map(); // Reused by V50 vertical walls only, so shared roof/floor material culling remains unchanged.
+    const twoSidedWallMaterial=source=>{
+      if(!source?.clone)return source;
+      if(!wallMaterials.has(source)){
+        const wall=window.RuinWallFaces?.visibleWallMaterial?.(THREE,source)||source.clone();
+        wall.side=THREE.DoubleSide;wall.needsUpdate=true;
+        wallMaterials.set(source,wall);
       }
+      return wallMaterials.get(source);
+    };
+    root.traverse(object=>{ // Ground vestibule and independently generated upper V50 stories share this material-isolation path.
+      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
+      object.material=Array.isArray(object.material)
+        ?object.material.map(twoSidedWallMaterial):twoSidedWallMaterial(object.material);
     });
 
-    root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
+    root.traverse(node=>{ // Engraved walls must keep pointing to their real material after both unlit and wall-only conversion.
       const list=node.userData?.decalMaterials;
-      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
+      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>{
+        const converted=replaced.get(material)||material;
+        return node.userData?.ruinInteriorWall?(wallMaterials.get(converted)||converted):converted;
+      });
     });
     window.DevRandomRuinFurniturePieces?.hidePlaceholderItems?.(root); // V50's gold treasure-diamond placeholders (a letter on a diamond) are never real loot; hidden, not removed, because the sanctum finds pedestals through them.
     window.DevRandomRuinDoorSlabs?.normalize?.(root); // V50 door slabs stop 0.45 above the floor; stretch them down to it (js/dev-random-ruin-door-slabs.js).
