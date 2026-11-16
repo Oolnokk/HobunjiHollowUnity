@@ -302,6 +302,40 @@ function makeElement() {
   assert.equal(recordFor('folder-rejected').folderUnsynced, false, 'touch retry acknowledges the committed primary save');
   press('Button1'); flushMicrotasks();
 
+  // A verified folder baseline takes the fast route: one scoped character
+  // patch instead of pinning a giant farm snapshot before the player can move.
+  let fastLockWrites = 0; // Counts targeted first-failure writes without invoking the full snapshot API.
+  const oldFullSync = window.LocalSaveFolder.syncNow; // Restored after the fast-path integration assertion.
+  const oldCapture = window.HobunjiRuntimeSave.captureSnapshot; // A fast write must not serialize the active farm.
+  window.LocalSaveFolder.canSaveLockProgress = id => id === 'char_a';
+  window.LocalSaveFolder.saveLockProgress = details => {
+    fastLockWrites++;
+    assert.equal(details.characterId, 'char_a');
+    assert.equal(details.worldId, 'world_a');
+    assert.equal(details.lockId, 'folder-fast');
+    assert.equal(details.record.version, 2);
+    assert.equal(details.record.folderUnsynced, true);
+    assert.equal(details.record.misses, 1);
+    return Promise.resolve({ state:'ready', lastAction:'autosaved-lock-progress', lastSyncedAt:120, lastError:null });
+  };
+  window.LocalSaveFolder.syncNow = () => { throw new Error('fast first-failure save invoked full snapshot sync'); };
+  window.HobunjiRuntimeSave.captureSnapshot = () => { throw new Error('fast first-failure save captured the world'); };
+  assert.equal(api.open({ id:'folder-fast', tier:1, onSuccess() {} }), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<20;i++) nextFrameTick();
+  press('Button4');
+  assert.equal(api.snapshot().phase, 'saving');
+  await flushSavePromises();
+  assert.equal(fastLockWrites, 1, 'first failed lock writes exactly one targeted progress update');
+  assert.equal(api.snapshot().phase, 'playing');
+  assert.equal(api.snapshot().lastFolderSaveAction, 'autosaved-lock-progress');
+  assert.equal(recordFor('folder-fast').folderUnsynced, false);
+  press('Button1'); flushMicrotasks();
+  window.LocalSaveFolder.syncNow = oldFullSync;
+  window.HobunjiRuntimeSave.captureSnapshot = oldCapture;
+  delete window.LocalSaveFolder.canSaveLockProgress;
+  delete window.LocalSaveFolder.saveLockProgress;
+
   // Primary-folder saves must keep working when browser storage is full.
   // CharacterMetaSave.schedule is also used by the real direct-snapshot writer.
   const writableMetaUpdate = window.CharacterMetaSave.update;
