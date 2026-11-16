@@ -41,6 +41,12 @@ assert.match(debug, /petRootWorld/);
 assert.match(pixelProbe, /PET_ROOT=/);
 assert.match(pixelProbe, /petRootCapture=/);
 assert.match(game, /playerAttachmentAnchor,/);
+assert.match(game, /gripPositionSource: finalTransform\.gripLocalPosition \? 'rendered-group-matrix'/,
+  'mobile debug distinguishes actual rendered grip measurement from a reconstructed expected offset');
+assert.match(game, /\? group\.localToWorld\(new THREE\.Vector3\(/,
+  'grip-perch error samples the pet root world matrix rather than reproducing the pin equation');
+assert.match(pixelProbe, /localXLean=\$\{Number\(attachmentDebug\?\.shoulderLeanDeg\)/,
+  'mobile Pixel Probe exposes the authored grip-based body lean next to the facing stage');
 assert.match(debug, /grip \$\{state\.error\.toFixed\(5\)\}u/);
 assert.match(debug, /get shoulderPetAttachment\(\)/);
 assert.match(pixelProbe, /Attachment points world: PERCH=/);
