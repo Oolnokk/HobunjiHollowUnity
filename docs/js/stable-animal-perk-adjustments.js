@@ -11,7 +11,7 @@
   const MOUNT_CLIMB_PER_RANK = 0.10; // Cliff Runner still improves the existing mounted cliff-leap; it is not obsolete.
   const MOUNT_MELEE_DAMAGE_PER_RANK = 0.06; // Battle Saddle enhances damage after real mounted speed is measured.
   const MOUNT_MELEE_STAMINA_PER_RANK = 0.05; // Weapon Discipline discounts mounted melee stamina cost only.
-  const MOUNT_BURST_DURATION_PER_RANK = 0.08; // Sustained Gallop extends both charged and quick-attack mount bursts.
+  const MOUNT_BURST_DURATION_PER_RANK = 0.08; // Sustained Gallop keeps its saved rank and now builds mounted windup speed sooner.
   const AMBIENT_REACTION_AFTER_GREETING_MS = 0; // Used so the selected animal reaction begins immediately after the player's greeting fully ends.
   const AMBIENT_REACTION_GREETING_GRACE_MS = 700; // Used only while waiting for a same-encounter player greeting to begin; an observed greeting reschedules the reaction to its exact end.
   const AMBIENT_DEFAULT_GREETING_MS = 4200; // Mirrors AmbientDialogue's ordinary greeting duration for private greetings observed through its persisted greeting ledger.
@@ -48,7 +48,7 @@
     { id: 'mountCliffClimb', name: 'Cliff Runner', maxRank: 5, desc: '+10% mounted cliff-climb speed per rank.' },
     { id: 'mountMeleeDamage', name: 'Battle Saddle', maxRank: 5, desc: '+6% mounted melee damage per rank, including momentum-scaled hits.' },
     { id: 'mountMeleeStamina', name: 'Weapon Discipline', maxRank: 5, desc: '-5% stamina spent on mounted melee abilities per rank.' },
-    { id: 'mountCombatBurst', name: 'Sustained Gallop', maxRank: 5, desc: '+8% mounted Quick Attack and Charged Breaker speed-burst duration per rank.' },
+    { id: 'mountCombatBurst', name: 'Sustained Gallop', maxRank: 5, desc: '+8% quicker mounted Quick Attack and Mounted Charge speed buildup during windup per rank.' },
   ]);
   replaceTree('shoulderPet', [
     { id: 'rapportBond', name: 'Social Perch', maxRank: 5, desc: '+4% positive NPC rapport per rank while this pet is perched.' },

@@ -221,6 +221,27 @@ for (const skinned of [true, false]) {
     }
   }
 }
+// Even the legacy option to cancel the authored perch/grip rotation must not cancel the observation's 180° facing swap.
+const canceledRotationSolver = solverFactory(THREE, playerMesh, playerNeckJoint,
+  { PNGPlaneAvatar: { resolveSkinnedPixelWorldFrame: () => null } },
+  'head', false, true); // Uses the production solver with the authored offset deliberately suppressed.
+const canceledPerch = { x: -0.1, y: 0.5, z: 0.1, rotationDeg: { x: 16, y: 48, z: -7 } }; // Nontrivial authored rotation would expose accidental offset application.
+const canceledGrip = { x: 0.12, y: -0.2, z: 0.08, rotationDeg: { x: 0, y: 23, z: 0 } }; // Off-center grip must still pin during the 180-degree turn.
+const canceledOutward = canceledRotationSolver(canceledPerch, canceledGrip, { __hobunjiShoulderFacingInward: false });
+const canceledInward = canceledRotationSolver(canceledPerch, canceledGrip, { __hobunjiShoulderFacingInward: true });
+const outwardAxis = new TestVector3(1, 0, 0).applyQuaternion(canceledOutward.worldQuaternion); // Compares rendered pet-local facing between the two observation poses.
+const inwardAxis = new TestVector3(1, 0, 0).applyQuaternion(canceledInward.worldQuaternion); // The inward pose must face exactly opposite the outward pose.
+closeness(outwardAxis, new TestVector3(1, 0, 0).applyQuaternion(yaw(31)),
+  'cancel-authored-offset preserves the selected head rotation in the outward pose');
+closeness(outwardAxis.clone().add(inwardAxis), new TestVector3(),
+  'cancel-authored-offset does not suppress the observation 180-degree sprite turn');
+assert.equal(canceledOutward.shoulderFacingTurnDeg, 0);
+assert.equal(canceledInward.shoulderFacingTurnDeg, 180);
+for (const transform of [canceledOutward, canceledInward]) {
+  const gripAt = new TestVector3(canceledGrip.x, canceledGrip.y, canceledGrip.z)
+    .applyQuaternion(transform.worldQuaternion).add(transform.worldPosition); // Final pin is checked independently for both turns.
+  closeness(gripAt, transform.perchWorldPosition, 'cancel-authored-offset still pins both observation poses to the perch');
+}
 // Rebuilding the player portrait/neck must not strand the attachment on a stale reference.
 const runtimeFactory = new Function('window',
   runtimeSource + '\nreturn window.ShoulderPetAttachmentRuntime.create;')({

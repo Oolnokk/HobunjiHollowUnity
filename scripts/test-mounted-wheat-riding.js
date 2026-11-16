@@ -328,7 +328,37 @@ for (let i = 0; i < 60; i++) { now += 1000 / 60; win.Mounts.updateMountedMovemen
 assert(win.Mounts.ridingDebug.speedPxS > 340 * 1.5, 'attack speed multiplies the actual carrier speed, not just the rendering');
 assert(win.Mounts.ridingDebug.combatBoostSeconds > 0, 'charged gallop persists beyond its first frame');
 for (let i = 0; i < 100; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
-assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'combat burst ends and restores ordinary speed settings');
+assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'legacy timed combat burst still ends and restores ordinary speed settings');
+
+// A funded windup changes actual movement's desired speed, never the post-strike
+// boost timer, and does not spend any of the six wheat acceleration charges.
+const wheatBeforeWindup = win.Mounts.ridingDebug.wheatRemaining; // Snapshot AFTER earlier riding/recovery tests, immediately before the windup grant.
+assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.2, 0), true);
+assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'zero paid stamina means zero acceleration');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, wheatBeforeWindup, 'windup spends no wheat');
+assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.2, 0.4), true);
+const partialWindup = win.Mounts.ridingDebug.windupMultiplier; // Recorded target of an intermediate payment.
+assert(partialWindup > 1 && partialWindup < 3.2, 'partial payment yields a partial speed multiplier');
+assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.2, 1), true);
+assert(win.Mounts.ridingDebug.windupMultiplier > partialWindup, 'more stamina payment gives more acceleration');
+assert.equal(win.Mounts.clearMountedCombatWindupBoost('mountedQuickAttack'), false, 'unrelated attack cannot cancel the active charge');
+assert.equal(win.Mounts.clearMountedCombatWindupBoost('mountedCharge'), true);
+assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'release supplies no more additional speed');
+assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedQuickAttack', 1.95, 0.5), true);
+assert(win.Mounts.ridingDebug.windupMultiplier > 1, 'quick attack ramps the same mount movement');
+assert.equal(win.Mounts.clearMountedCombatWindupBoost('mountedQuickAttack'), true);
+assert.equal(win.Mounts.ridingDebug.windupOwner, null, 'quick impact clears the speed owner');
+mount.x = 24 * T; mount.y = 9 * T; // Collision-free corridor for a real acceleration-and-impact transition.
+input.x = 1; input.y = 0;
+win.Mounts.setMountedCombatWindupBoost('mountedQuickAttack', 2.5, 1);
+for (let i = 0; i < 24; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+const windupActualSpeed = win.Mounts.ridingDebug.speedPxS; // Physical velocity reached after a mounted quick windup.
+assert(windupActualSpeed > 340 * 0.85, 'accelerating through the windup changes real carrier velocity');
+win.Mounts.clearMountedCombatWindupBoost('mountedQuickAttack');
+now += 1000 / 60;
+win.Mounts.updateMountedMovement(1 / 60);
+assert(win.Mounts.ridingDebug.speedPxS > 340 * 0.85, 'after boost stops, strike-frame inertia remains instead of being discarded');
+assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'strike cannot continue to accelerate the mount');
 
 // Mobile auto-target must change the mount's path into a circle, not alter
 // projectile aiming or override explicit manual reins.

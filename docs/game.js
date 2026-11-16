@@ -19386,7 +19386,7 @@
           if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
           if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
         }
-        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        const footprintY = feetY + radius / TILE + 0.055; // Full-body footprint probes start above the support surface, so upper ruin floors never block their own walker.
         // A narrow blocker can touch the middle of the player footprint while
         // missing all four sampled corners. Test the FULL box at real feet Y.
         // canOccupyAt checks tile cover separately with a projectile underside
@@ -19396,7 +19396,7 @@
         // canOccupyAt subtracts its collision radius from worldY to form a
         // projectile's underside. Offset by that same radius so the player's
         // actual feet, not a point below them, clear the top of a low rock.
-        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
+        return canOccupyAt(wx, wy, radius, footprintY); // canOccupyAt offsets by radius when checking cover; the resulting underside stays above the deck.
       }
 
       function canPlayerOccupy(wx, wy) {
