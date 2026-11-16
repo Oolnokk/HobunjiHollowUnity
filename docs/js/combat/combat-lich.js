@@ -1974,6 +1974,15 @@
     updateEntrancerMarker(dt);
   }
 
+  function clearBossEffects(owner) {
+    if (!owner) return;
+    // A sanctum retreat must remove only this lich's live spell objects, not unrelated ruin hazards.
+    for (const projectile of [...projectiles]) if (projectile.owner === owner) disposeProjectile(projectile);
+    for (const erupt of [...eruptions]) if (erupt.owner === owner) disposeHronalEruption(erupt);
+    for (const puddle of [...puddles]) if (puddle.owner === owner) disposePetroleumPuddle(puddle);
+    lastEvent='sanctum-boss-effects-cleared';
+  }
+
   function installWrappers() {
     if (wrappersInstalled) return true;
     const BanditCombat = window.BanditCombat; // Shared humanoid constructor/AI API this class extends.
@@ -2056,7 +2065,7 @@
     debugProjectileColliders: () => [...projectiles].map(p => ({ x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.payload.radiusWorld })),
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
-    installWrappers, makeEntity, rosterFor, rollDye,
+    installWrappers, makeEntity, rosterFor, rollDye, clearBossEffects,
     lichCastStep, updateLichHoverPresentation, prepareEmptyCastWeapon, LICH_CAST_WEAPON_KEY, // Also used by unarmed shadow-wind Wyrm-witches (ghoul-special-variants.js). // Shared animation/presentation authority for isolated loadout previews.
     updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
