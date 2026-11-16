@@ -60,7 +60,8 @@
   function tickNpc(walker, dt) {
     const cfg = config();
     if (!deps || !cfg.enabled || !walker || walker.area !== deps.getCurrentArea()) return; // No work for walkers outside the player's scene.
-    if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture || !walker.avatarFrontCanvas || !walker.profile) return;
+    if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture || walker.avatarGroup.userData.namedAnimalNpc
+        || !walker.avatarFrontCanvas || !walker.profile) return; // Named animals animate a different visible creature plane; their hidden NPC portrait must not use the nearby face budget.
     walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
 
     let interval = cfg.intervalS;
@@ -70,6 +71,7 @@
         || !Number.isFinite(playerTile.x) || !Number.isFinite(playerTile.y)) return;
     const distanceSquared = (pos.x - playerTile.x) ** 2 + (pos.z - playerTile.y) ** 2; // No square root or geometry rebuild for the proximity check.
     if (distanceSquared > cfg.farTiles ** 2) { stats.npcDistanceSkips++; return; }
+    if (window.DialogueContent?.ownsWorldPortrait?.(walker)) return; // The dialogue compositor already animates the same real portrait.
     if (distanceSquared > cfg.nearTiles ** 2) interval *= cfg.midIntervalMul;
     if (walker._portraitLifeT < interval) return;
     if (!walker._portraitLifeQueued && readyNpcQueue.length < MAX_QUEUED_NPCS) {
@@ -84,7 +86,8 @@
       const candidatePos = candidate.root?.position;
       const candidatePlayer = deps.getPlayerTile();
       if (candidate.area === deps.getCurrentArea() && !candidate._portraitLifePending
-          && candidate.avatarGroup?.userData?.frontTexture && candidate.avatarFrontCanvas && candidate.profile
+          && candidate.avatarGroup?.userData?.frontTexture && !candidate.avatarGroup.userData.namedAnimalNpc
+          && !window.DialogueContent?.ownsWorldPortrait?.(candidate) && candidate.avatarFrontCanvas && candidate.profile
           && candidatePos && candidatePlayer
           && Number.isFinite(candidatePos.x) && Number.isFinite(candidatePos.z)
           && Number.isFinite(candidatePlayer.x) && Number.isFinite(candidatePlayer.y)
@@ -124,6 +127,7 @@
         const currentRadius = config().farTiles;
         if (rendered === false || walker.avatarGroup !== liveGroup || walker.avatarFrontCanvas !== liveCanvas
             || walker.profile !== liveProfile || walker.area !== deps.getCurrentArea()
+            || liveGroup.userData.namedAnimalNpc || window.DialogueContent?.ownsWorldPortrait?.(walker)
             || !liveGroup?.userData?.frontTexture || !currentPos || !currentPlayer
             || !Number.isFinite(currentPos.x) || !Number.isFinite(currentPos.z)
             || !Number.isFinite(currentPlayer.x) || !Number.isFinite(currentPlayer.y)
