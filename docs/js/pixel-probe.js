@@ -1226,7 +1226,11 @@
     }
     const mountedRide = window.Mounts?.ridingDebug; // Mount speed, wheat, jump state and voice cadence are copyable on phones.
     if (mountedRide && window.Mounts?.rideState !== 'none') {
-      lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
+      lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s combatBurst=${Number(mountedRide.combatBoostSeconds || 0).toFixed(2)}s/x${Number(mountedRide.combatBoostMultiplier || 1).toFixed(2)} momentumDamage=x${Number(mountedRide.meleeDamageMultiplier || 1).toFixed(2)} orbit=${mountedRide.orbitTarget || '-'} radius=${Number(mountedRide.orbitRadiusPx || 0).toFixed(0)}px recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
+    }
+    const mountedMelee = window.Combat?.mountedCombat?.debug; // Mobile diagnostics for fixed one-off strikes and their combo-mastery momentum.
+    if (mountedMelee && window.Mounts?.rideState === 'mounted') {
+      lines.push(`Mounted melee: attempted=${mountedMelee.attempts} strikes=${mountedMelee.strikes} last=${JSON.stringify(mountedMelee.lastHit || null)}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
