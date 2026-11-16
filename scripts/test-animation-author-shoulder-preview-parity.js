@@ -67,7 +67,8 @@ const pet = {
 let restorations = 0;
 const context = {
   window:{HOBUNJI_ATTACHMENT_RIG_MASTER:master,HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD:rigWindow.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD},
-  structuredCloneSafe:clone,animationAuthor:{actors:[pet,owner],mode:'rig',attachmentRigProfiles:library()},
+  structuredCloneSafe:clone,normalizeTransformSnapshot:value=>clone(value),animationAuthor: // Identity normalization is sufficient for complete canonical test anchors.
+  {actors:[pet,owner],mode:'rig',attachmentRigProfiles:library()},
   DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516:library(),
   approvedRigLibraryCloneV1524:library,
   normalizedRigProfileLibrary:value=>{const copy=clone(value);for(const p of Object.values(copy.creatures||{})){p.anchors.shoulderGrip.rotationDeg.y=-61;p.anchors.shoulderGrip.position.x=.01;}return copy;},
