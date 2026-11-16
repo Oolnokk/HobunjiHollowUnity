@@ -81,7 +81,7 @@
     const walker = claimedWalker;
     if (!walker) return;
     clearTimeout(press?.timer);
-    press = { walker, at: nowMs(), timer: setTimeout(() => { if (press?.walker === walker) openWheel(walker, false); }, HOLD_MS) };
+    press = { walker, at: nowMs(), timer: setTimeout(() => { if (press?.walker === walker) openWheel(walker, false); }, window.InputHoldTiming?.thresholdMs?.(HOLD_MS) ?? HOLD_MS) };
   }
   function onRelease(detail) {
     if (deps?.isCombatActive?.()) { if (press) clearTimeout(press.timer); press = null; closeWheel(); return; }

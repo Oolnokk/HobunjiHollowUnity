@@ -75,7 +75,7 @@ const enemy={areaId:ruin,health:10,x:34*TILE,y:14*TILE,homeX:35*TILE,homeY:14*TI
 const hostiles=new Set([enemy]);
 const walker={area:ruin,root:{visible:true,position:{x:34,y:0,z:14}}};
 const walkers=[walker]; // A civilian NPC's update loop follows the same area guard as hostiles.
-const hronalLayout={...layout,rooms:layout.rooms.map(room=>({...room,theme:'hronal'}))}; // Hronal keeps its room-local clip; Tothal is tested separately below.
+const hronalLayout={...layout,rooms:layout.rooms.map(room=>({...room,theme:'hronal'}))}; // Every tradition now keeps isolated light ownership without a projected hull.
 const session=Rooms.mount({layout:hronalLayout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
   getHostiles:()=>hostiles,getWalkers:()=>walkers,mapId:ruin,tile:TILE});
 session.addRooms(v50);
@@ -98,6 +98,15 @@ assert.equal(enemy.avatarRef.group.visible,true);
 assert.equal(walker.area,ruin);
 assert.equal(walker.root.visible,true,'civilian NPC walker wakes with its room');
 assert.equal(session.ambient().darknessOffset,-.035);
+const previousLayerLights=global.RuinLayerPlayable; // A real lit source in this chamber changes only its steady room ambient.
+global.RuinLayerPlayable={roomLights:()=>[
+  {x:34,y:1,z:14,strength:.9,active:true},
+  {x:14,y:1,z:14,strength:1,active:true}, // This other room's stronger fire must not leak into the active room.
+]};
+assert.equal(session.ambient().illumination,.9);
+assert(Math.abs(session.ambient().darknessOffset-(-.035-.9*.13))<1e-9,
+  'solving one chamber restores uniform room-wide visibility without a projected tunnel frame');
+global.RuinLayerPlayable=previousLayerLights;
 let fills=0,projections=0,clips=0;
 const ctx={globalAlpha:.8,clip(){clips++;throw new Error('The room mask must not paint any projected polygon');}};
 const project=()=>{projections++;throw new Error('A full-screen tint needs no camera projection');};
@@ -125,41 +134,20 @@ assert.equal(session.roomGlowRadius({x:35,y:10,z:15},6),6,
   'another story at the same tile does not inherit the active room light radius');
 assert.equal(session.roomGlowRadius({x:NaN,y:1,z:15},6),6,
   'malformed source positions cannot create a clipped light or extra room searches');
-let regionClips=0,saves=0,restores=0,regionPaints=0;
-const corners=[]; // The local-light clip encloses the full wall-height volume, not just the horizontal slice at torso height.
-const regionCtx={save(){saves++;},restore(){restores++;},beginPath(){},
-  moveTo(x,y){corners.push([x,y]);},lineTo(x,y){corners.push([x,y]);},closePath(){},
-  clip(){regionClips++;}};
-const roomProjection=(x,y,z)=>({x:x*2+y*.1,y:z*2-y*.2});
+let regionClips=0,regionPaints=0,projectionsRegion=0; // Verify no camera-space polygon is generated for any room.
+const regionCtx={save(){throw Error('no room hull may save a canvas clip');},
+  clip(){regionClips++;throw Error('no projected tunnel light frame is permitted');}};
+const roomProjection=()=>{projectionsRegion++;throw Error('room light ownership must not project the camera volume');};
 assert.equal(session.withLightRegion(regionCtx,roomProjection,()=>{regionPaints++;}),true);
-assert.equal(regionClips,1,'one enclosing clip covers the whole local-light pass, not each source');
 assert.equal(regionPaints,1);
-const hull=corners.slice(); // One projected convex silhouette must contain the upper wall carvings and the floor below.
-assert(hull.length>=4&&hull.length<=8,'the eight room-volume corners produce a compact camera-dependent polygon');
-const inHull=point=>{
-  let sign=0;
-  for(let i=0;i<hull.length;i++){
-    const a=hull[i],b=hull[(i+1)%hull.length];
-    const cross=(b[0]-a[0])*(point.y-a[1])-(b[1]-a[1])*(point.x-a[0]);
-    if(Math.abs(cross)<1e-6)continue;
-    const direction=Math.sign(cross);
-    if(sign&&direction!==sign)return false;
-    sign=direction;
-  }
-  return true;
-};
-for(const y of [.05,Rooms.WALL_HEIGHT-.05])for(const x of [30.1,40.9])for(const z of [10.1,20.9])
-  assert(inHull(roomProjection(x,y,z)),'the light mask must include lower and upper corners of actual chamber stone');
-const wallCarving=roomProjection(30.1,Rooms.WALL_HEIGHT-.05,10.1);
-assert(wallCarving.y<roomProjection(30.1,1.4,10.1).y,
-  'upper wall engraving falls outside the previous torso-height-only clip');
-assert.equal(saves,1);assert.equal(restores,1,'the room mask does not leak Canvas state');
+assert.equal(regionClips,0);
+assert.equal(projectionsRegion,0);
 assert.throws(()=>session.withLightRegion(regionCtx,roomProjection,()=>{throw new Error('intentional redraw failure');}),
   /intentional redraw failure/);
-assert.equal(saves,2);assert.equal(restores,2,'even a failed light redraw restores the Canvas clip');
-assert.equal(session.withLightRegion(regionCtx,()=>({x:NaN,y:NaN}),()=>{regionPaints++;}),true);
-assert.equal(regionClips,2,'an invalid perspective projection does not install a broken clip');
-assert.equal(regionPaints,2,'invalid camera projections retain basic lighting');
+assert.equal(regionClips,0,'failed callbacks leave no canvas masks behind');
+assert.equal(projectionsRegion,0,'failed callbacks never project room corners');
+assert.equal(session.withLightRegion(regionCtx,roomProjection,()=>{regionPaints++;}),true);
+assert.equal(regionPaints,2,'unclipped room lighting still draws after an exception');
 const lightDebug=session.snapshot().lightClip;
 assert.equal(lightDebug.mode,'full-screen-tint');
 assert.equal(lightDebug.feathered,false);
@@ -169,9 +157,10 @@ assert.equal(projections,0);
 assert.equal(clips,0);
 assert.equal(ctx.globalAlpha,.8,'source filtering must not mutate shared Canvas state');
 const boundaryDebug=session.snapshot().localLightBoundary;
-assert.equal(boundaryDebug.mode,'room-volume-light-clip');
-assert.equal(boundaryDebug.active,true);
-assert.equal(boundaryDebug.canvasPasses,2);
+assert.equal(boundaryDebug.mode,'unclipped-hronal-screen-overlay');
+assert.equal(boundaryDebug.active,false,'a colored projected room hull must never return');
+assert.equal(boundaryDebug.roomIsolated,true,'room-source filtering still isolates the visible chamber');
+assert.equal(boundaryDebug.canvasPasses,0);
 const fogSource=require('node:fs').readFileSync(require('node:path').join(__dirname,'../docs/js/cloud-forest-fog.js'),'utf8');
 assert.match(fogSource,/RUIN_SCREEN_TINT_ALPHA\s*=\s*0\.07/,'the new full-screen tradition overlay is intentionally subtle');
 assert.match(fogSource,/ctx\.fillRect\(0,0,rect\.width,rect\.height\)/,'the tint fills the entire viewport');
@@ -179,13 +168,13 @@ assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,ruinTradition\)/,'ordinary
 assert.match(fogSource,/paintRuinScreenTint\(ctx,rect,activeRuinTradition\(\)\)/,'fog-backed ruins use that same tint');
 assert.doesNotMatch(fogSource,/prepareLightClip\?\./,'lighting redraw cannot revive old room polygon precomputation');
 assert.equal((fogSource.match(/withRuinLightRegion\(ctx,\(\)=>\{/g)||[]).length,2,
-  'both enclosed and fog-backed lighting pass through one room-local clip');
+  'both enclosed and fog-backed lighting route source masks through the room-owned compositor');
 assert.match(fogSource,/roomBound===true[\s\S]*roomGlowRadius/,
   'large solved-room lights fade naturally before the actual wall boundary');
 player.x=24;session.tick(.31);
 assert.equal(session.activeRoomId,null,'hallways are seamless transition space, not an extra sealed room');
 session.withLightRegion(regionCtx,roomProjection,()=>{regionPaints++;});
-assert.equal(regionClips,2,'hallway light remains unmasked until entering a real room');
+assert.equal(regionClips,0,'hallway and room lighting must remain free of projected hulls');
 assert.equal(regionPaints,3);
 assert.equal(enemy.areaId,'__ruin_room_sleep__:'+ruin,'leaving the room immediately breaks pursuit');
 assert.equal(walker.area,'__ruin_room_sleep__:'+ruin,'civilian NPCs also stop when the player leaves');
@@ -203,6 +192,26 @@ assert.equal(diffuseDraws,1,'Tothal ceiling/wall illumination draws once without
 assert.equal(tothalSession.lightAllowed({x:14,y:1,z:14}),false,'unclipped Tothal still rejects light in another room');
 assert.equal(tothalSession.lightAllowed({x:34,y:1,z:14}),true,'Tothal keeps light in the active room');
 assert.deepEqual(tothalSession.snapshot().localLightBoundary,
-  {mode:'unclipped-tothal-overcast',active:false,canvasPasses:0},'mobile diagnostics distinguish the Tothal path');
+  {mode:'unclipped-tothal-overcast',active:false,roomIsolated:true,canvasPasses:0,illumination:0},'mobile diagnostics distinguish the Tothal path');
 tothalSession.dispose();
-console.log('ruin-room-system: enclosure, door IDs, floor holes, lighting and enemy resets OK');
+const kanthicLayout={...layout,rooms:layout.rooms.map(room=>({...room,theme:'kanthic'}))}; // Compare Kanthic against the same independent physical rooms.
+const kanthicSession=Rooms.mount({layout:kanthicLayout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
+  getHostiles:()=>new Set(),getWalkers:()=>[],mapId:ruin,tile:TILE});
+kanthicSession.tick(.31);
+let kanthicDraws=0; // Counts one stable screen lighting pass, not projected room masks.
+const noKanthicClip={save(){throw Error('Kanthic cannot project a room light frame');},
+  clip(){throw Error('Kanthic cannot clip a room light frame');}};
+assert.equal(kanthicSession.withLightRegion(noKanthicClip,()=>{throw Error('Kanthic must not project room geometry');},
+  ()=>{kanthicDraws++;}),true);
+assert.equal(kanthicDraws,1,'Kanthic lighting is a viewport-stable overlay');
+assert.equal(kanthicSession.lightAllowed({x:14,y:1,z:14}),false,'Kanthic still rejects lights from separate rooms');
+assert.equal(kanthicSession.lightAllowed({x:34,y:1,z:14}),true,'Kanthic retains local brazier lighting');
+assert.deepEqual(kanthicSession.snapshot().localLightBoundary,
+  {mode:'unclipped-kanthic-screen-overlay',active:false,roomIsolated:true,canvasPasses:0,illumination:0});
+kanthicSession.dispose();
+assert.match(fogSource,/const mistActive = active && currentArea !== 'map_i_dev_random_ruin'/,
+  'Kanthic must not render a moving 3D mist cylinder');
+assert.match(fogSource,/group\.visible = mistActive;/,'Kanthic hides all mist layers');
+assert.match(fogSource,/if \(!mistActive\) return;/,'Kanthic skips world-space mist updates');
+assert.doesNotMatch(fogSource,/ruinMistFade|inRuinShaft/,'old shaft-centered mist animation must not return');
+console.log('ruin-room-system: enclosure, stable Kanthic overlay, physical walls and enemy resets OK');

@@ -53,7 +53,6 @@
     kanthic: Object.freeze([96, 83, 140]),
   }); // Subtle colored ambience over the complete viewport, not over projected room-shaped polygons.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
-  let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
@@ -336,17 +335,19 @@
 
   function update(dt) {
     if (!deps || !group) return;
+    const currentArea = deps.getCurrentArea?.(); // One area read determines both lighting and whether 3D mist is appropriate.
     const cloudForest = deps.isCloudForestArea();
-    const underground = !cloudForest && isUndergroundFogArea(deps.getCurrentArea?.());
+    const underground = !cloudForest && isUndergroundFogArea(currentArea);
     const active = cloudForest || underground;
+    const mistActive = active && currentArea !== 'map_i_dev_random_ruin'; // Kanthic keeps screen-space darkness but no player-following mist tunnels.
     const activeScene = active ? deps.getActiveScene() : null;
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
       activeScene?.add(group);
       attachedScene = activeScene;
     }
-    syncUndergroundFog(underground ? activeScene : null);
-    group.visible = active;
+    syncUndergroundFog(underground && mistActive ? activeScene : null); // Kanthic uses only viewport darkness; a depth-based 3D fog gradient would still move with the camera.
+    group.visible = mistActive;
     if (!active) return;
 
     if (cloudForest) {
@@ -357,22 +358,16 @@
       updateFogLighting(activeScene, undergroundLightingForArea(deps.getCurrentArea?.()));
     }
 
+    if (!mistActive) return; // Kanthic still receives the fog palette above, without any geometry animation.
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
-    // The mist is three short tubes that follow the player's feet. Inside a ruin's tall shaft that
-    // means a dark band hovering around the player that snaps up and down with every jump or
-    // fall (and is sliced by platforms), so it fades out while the player is in the shaft room.
-    const inRuinShaft = !cloudForest && deps.getCurrentArea?.() === 'map_i_dev_random_ruin' && window.DevRandomRuin?.isPlayerInShaft?.() === true;
-    ruinMistFade += ((inRuinShaft ? 0 : 1) - ruinMistFade) * Math.min(1, dt * 4);
-    if (ruinMistFade < 0.01) ruinMistFade = inRuinShaft ? 0 : ruinMistFade;
-
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
       // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity) * ruinMistFade;
+      const opacity = clamp01(live.opacity);
       material.opacity = opacity;
       mesh.visible = opacity > 0;
       if (!mesh.visible) continue;
@@ -1153,7 +1148,9 @@
       const effectiveDarknessAlpha = farmhouseSceneActive ? INTERIOR_DARKNESS_OVERLAY_ALPHA : darknessAlpha; // The farmhouse uses 80% base darkness regardless of a lagging outdoor area id.
       const roomAmbient = currentArea==='map_i_dev_random_ruin' ? window.RuinRoomSystem?.ambient?.() : null; // Room-specific ambient settings preserve the user's darkness preference.
       const roomAlpha=clamp01(effectiveDarknessAlpha+(roomAmbient?.darknessOffset||0));
-      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: effectiveDarknessAlpha, at: now }; // Mobile diagnostics reflect the painted base, not a hypothetical calculation.
+      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: roomAlpha,
+        baseAlpha: effectiveDarknessAlpha, roomId: roomAmbient?.roomId||null,
+        roomIllumination: roomAmbient?.illumination||0, at: now }; // Mobile Pixel Probe exposes the actual room-darkness result, not just its base setting.
       ctx.globalCompositeOperation = 'source-over';
       const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
       ctx.fillStyle = roomAmbient?.color ? 'rgba('+roomAmbient.color.join(',')+','+roomAlpha+')'
@@ -1265,7 +1262,8 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Tzatzul nest visibility adjusted in mist and darkness; all other den, mine and ruin lighting remains unchanged.',
+        latestChange: 'All ruin traditions keep room-local light sources and steady viewport ambience without projected tunnel frames.',
+        kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? 'screen-overlay-no-mist-geometry' : null, // Mobile Pixel Probe confirms the Kanthic geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.

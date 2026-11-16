@@ -162,11 +162,53 @@
     }
   }
 
+  // NPC-directed felling/mining uses the same live zone grid, visual indexes,
+  // and dated regrowth maps as the player's axe/pick, but gives no player loot/XP.
+  function npcResourceTargets(mapId, centerX, centerZ, radius = 13) {
+    const grid=deps?._zoneScenes?.get(mapId)?.grid; // Only active generated terrain is eligible; never edits unloaded maps.
+    if(!grid||!deps?.TileType)return [];
+    const results=[]; // Read by Boney once per chore-planning interval, not every frame.
+    const r=Math.max(1,Math.min(25,Math.floor(Number(radius)||13)));
+    const x=Math.floor(centerX),z=Math.floor(centerZ);
+    for(let row=Math.max(0,z-r);row<Math.min(grid.length,z+r+1);row++) {
+      for(let col=Math.max(0,x-r);col<Math.min(grid[row]?.length||0,x+r+1);col++) {
+        if(Math.hypot(col+0.5-centerX,row+0.5-centerZ)>r)continue;
+        const tile=grid[row][col];
+        const tree=tile?.type===deps.TileType.SHRUB&&tile.floraKind==='copse';
+        const rock=tile?.type===deps.TileType.ROCK&&tile.rockKind==='diggableRockOre';
+        if(tree||rock)results.push({col,row,kind:tree?'tree':'rock'});
+      }
+    }
+    return results;
+  }
+
+  function npcCompleteResourceWork(mapId, resource) {
+    const col=Number(resource?.col),row=Number(resource?.row),kind=resource?.kind;
+    if(!Number.isInteger(col)||!Number.isInteger(row)||!['tree','rock'].includes(kind))return false;
+    const tile=deps?._zoneScenes?.get(mapId)?.grid?.[row]?.[col]; // Live authoritative terrain before any changes.
+    if(!tile||!deps?.TileType||!deps?.calendar)return false;
+    if(kind==='tree'&&!(tile.type===deps.TileType.SHRUB&&tile.floraKind==='copse'))return false;
+    if(kind==='rock'&&!(tile.type===deps.TileType.ROCK&&tile.rockKind==='diggableRockOre'))return false;
+    const persist=kind==='tree'?deps._zoneFelledTreePersist:deps._zoneMinedRockPersist; // These are already serialized by the game's ordinary wilderness save.
+    if(!persist?.get||!persist?.set)return false;
+    const entries=persist.get(mapId)||[];
+    if(entries.some(entry=>entry.col===col&&entry.row===row))return false;
+    tile.type=deps.TileType.GRASS; // Existing regrowth restores SHRUB/ROCK from the retained floraKind/rockKind metadata.
+    entries.push(kind==='tree'?{col,row,feltDay:deps.calendar.day}:{col,row,minedDay:deps.calendar.day});
+    persist.set(mapId,entries);
+    const removed=kind==='tree'?deps.removeZoneVegetationVisual?.(mapId,col,row)
+      :deps.removeZoneMineableRockVisual?.(mapId,col,row); // Both player tool branches remove these one-cell meshes directly.
+    if(!removed&&mapId===deps.getCurrentArea?.())refreshZoneGroundVisuals(mapId,col,row);
+    return true;
+  }
+
   window.ZoneRegrowth = {
     init,
     updateClearedZoneVegetationVisual,
     refreshZoneGroundVisuals,
     tickFelledTreeRegrowth,
     tickMinedRockRegrowth,
+    npcResourceTargets,
+    npcCompleteResourceWork,
   };
 })();

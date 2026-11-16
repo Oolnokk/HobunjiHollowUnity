@@ -366,7 +366,8 @@
       'baseOffscreenFiltered', 'registeredBackgroundDepthMeshes', 'airborneDepthRebuilds',
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
       'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
-      'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor']) {
+      'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor',
+      'floorPunch', 'forcedGroundDepthMaterials', 'elevationShaderFallbacks', 'xrayTileRegions', 'xrayOrdinaryMeshes', 'baseElevationGroups']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -565,6 +566,11 @@
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
             ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
+            ['Ground depth overrides (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
+            ['Ordinary held parts', String(live.xrayOrdinaryMeshes ?? '-')],
+            ['Ground shader fallbacks', String(live.elevationShaderFallbacks ?? '-')],
+            ['Stencil floor punch', live.floorPunch?.enabled === false ? 'Disabled (full depth rebuild)' : 'Allowed if snapshot available'],
+            ['Floor punch calls / fallbacks', String(live.floorPunch?.punches ?? '-') + ' / ' + String(live.floorPunch?.fallbacks ?? '-')],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
             ['Last held order override', live.lastHeldOrderNormalization
@@ -602,6 +608,9 @@
               group: 'Front portrait occlusion', title: RULES['hand.frontPlaneMask'].help },
             { id: 'toggle-ground-zone', label: 'Show ground X-ray circle in the world', checkbox: true,
                checked: state['ground.showZone'] === 'on', group: 'World depth and airborne replay', title: RULES['ground.showZone'].help },
+            { id: 'toggle-floor-punch', label: 'Use stencil floor punch (A/B test)', checkbox: true,
+               checked: live.floorPunch?.enabled !== false, group: 'World depth and airborne replay',
+               title: 'On: local stencil floor reset; off: full depth rebuild. Test the same weapon and ground without changing other settings.' },
             { id: 'set', args: { key: 'background.gearDepth' }, label: RULES['background.gearDepth'].label,
               value: state['background.gearDepth'], options: RULES['background.gearDepth'].options.map(value => ({ value, label: value })),
               group: 'World depth and airborne replay', title: RULES['background.gearDepth'].help },
@@ -660,6 +669,10 @@
         if (action === 'report') return { ok: true, title: 'X-ray diagnosis (mobile)', text: diagnosticReport() };
         if (action === 'toggle-ground-zone') return set('ground.showZone', args.checked === true ? 'on' : 'off')
           ? { ok: true } : { ok: false, error: 'Could not toggle zone preview.' };
+        if (action === 'toggle-floor-punch') {
+          const enabled = window.HeldObjectRenderOrder?.setFloorPunchEnabled?.(args.checked === true);
+          return typeof enabled === 'boolean' ? { ok: true } : { ok: false, error: 'Floor punch controller unavailable.' };
+        }
         if (action === 'set') {
           const ok = set(String(args.key || ''), String(args.value ?? ''));
           if (ok && args.key === 'weapon.followHandLayer' && args.value === 'on') selectedLayer = effectiveLayerId(selectedLayer);
@@ -685,6 +698,7 @@
           return { ok: true };
         }
         if (action === 'reset') {
+          window.HeldObjectRenderOrder?.setFloorPunchEnabled?.(true); // Restore the renderer's default experiment state too.
           reset();
           selectedStage = 'held'; // Reopen the common equipment stage after a full reset.
           selectedLayer = 'actor.hands'; // Make the newly restored, linked position visible.

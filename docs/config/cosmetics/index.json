@@ -27,6 +27,10 @@
       "path": "./riverlandskasa_wide.json"
     },
     {
+      "id": "appearance::hat::old_highlands_kasa",
+      "path": "./oldhighlandskasa.json"
+    },
+    {
       "id": "layered_travel_cloak",
       "path": "./layered_travel_cloak.json"
     },
