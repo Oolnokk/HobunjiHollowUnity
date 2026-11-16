@@ -5,7 +5,7 @@
 
   const ID = 'nuhongan'; // Distinct saved/runtime species id so Nuhongan retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Nuhongan system.
-  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.387298, female: 0.41118 }); // Fixed pet scale from world-space portrait-plane width/height, normalized to Tletingan male; no runtime derivation.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.741763, female: 0.787502 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const PART_SCALE_AXES = window.HobunjiCharacterRigScaleDefaults?.nuhonganPartScaleAxes; // Reads fixed authored axes; this bridge never calculates a donor/body scale ratio.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Prevents Nuhongan edits from mutating Tletingan source records.
