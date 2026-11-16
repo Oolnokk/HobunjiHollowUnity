@@ -1091,6 +1091,8 @@
     owner.encounterRevision = (owner.encounterRevision || 0) + 1; // Invalidates pending boss and coffin-portrait promises from the previous attempt.
     owner.bossPending = false;
     owner.inSanctum = false;
+    owner.enteringSanctum = false;
+    owner.leavingSanctum = false;
     endBossIntro(owner,false);
     const boss = owner.boss;
     if (boss) {
@@ -1126,9 +1128,12 @@
 
   function enterSanctum() {
     const owner=s, entry=owner?.entry; // A delayed transition must never use the next ruin's state after teardown.
-    if (!entry) return;
+    if (!entry || owner.inSanctum || owner.enteringSanctum || owner.leavingSanctum) return;
+    owner.enteringSanctum = true; // Death can happen during the fade, before the player has been teleported.
+    const entryRevision = owner.encounterRevision;
     fadeThen(() => {
-      if (s!==owner || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID)) return;
+      if (s!==owner || owner.encounterRevision!==entryRevision || !owner.enteringSanctum || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID)) return;
+      owner.enteringSanctum = false;
       teleport(entry);
       for (const fire of owner.arenaFires || []) igniteFire(fire);
       owner.inSanctum = true;
@@ -1142,12 +1147,17 @@
   }
 
   function leaveSanctum() {
-    const door = s?.door;
-    if (!door) return;
+    const owner=s, door=owner?.door;
+    if (!door || owner.leavingSanctum) return;
     const front=door.front; // Capture the original door anchor before a delayed fade or teardown.
     resetSanctumEncounter('leave');
-    const owner=s; // Return fade cannot pull the player back into a departed or rebuilt dungeon.
-    fadeThen(() => { if(s===owner && owner?.door===door && !owner.inSanctum && (typeof deps?.getCurrentArea!=='function' || deps.getCurrentArea()===MAP_ID))teleport(front); });
+    owner.leavingSanctum = true; // Explicitly track the return fade so death can cancel its late teleport.
+    const exitRevision = owner.encounterRevision;
+    fadeThen(() => {
+      if(s!==owner || owner.encounterRevision!==exitRevision || !owner.leavingSanctum || owner.door!==door || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID))return;
+      owner.leavingSanctum = false;
+      teleport(front);
+    });
   }
 
   async function spawnBoss(owner=s,revision=owner?.encounterRevision) {
@@ -1315,11 +1325,11 @@
         boss:null,bossPending:false,intro:null,encounterRevision:0,lastEncounterEvent:'unvisited', // Separate attempts never reuse delayed actor spawns or cinematic ownership.
         bossDefeated:window.DevRandomRuin?.getSeed?.()!=null
           &&window.RuinSites?.isActiveRuinBossDefeated?.(window.DevRandomRuin.getSeed())===true,
-        inSanctum:false, // Re-entry restores the boss outcome from the same world/cycle/site as the brazier network.
+        inSanctum:false, enteringSanctum:false, leavingSanctum:false, // Both fade directions are cancelable if the player dies or the ruin tears down.
         isSpecialBoss:context.specialBoss === true, roomCoffins:[], // Site generation explicitly opts into the three named key guardians; dev/ordinary ruins stay unchanged.
       };
     },
-    onPlayerDeath() { if (s?.inSanctum || s?.intro || s?.bossPending) resetSanctumEncounter('death'); }, // The checkpoint host calls this before moving the player.
+    onPlayerDeath() { if (s?.inSanctum || s?.enteringSanctum || s?.leavingSanctum || s?.intro || s?.bossPending) resetSanctumEncounter('death'); }, // The checkpoint host calls this before moving the player.
     update(kit, now, dt) {
       if (!s) return;
       deps = kit.deps || deps;
@@ -1362,7 +1372,7 @@
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
-        inSanctum:s.inSanctum, bossIntro:!!s.intro, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
+        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },
