@@ -258,7 +258,7 @@
           coverStone('secret-net-grounded-column-'+rec.id,.15,1.75,.15,dx,-.875,dz);
         for(const dz of [-.65,.65])
           coverStone('secret-net-top-crossbeam-'+rec.id,1.45,.14,.14,0,-.035,dz,dark);
-        const netSkin=root.DungeonRopeArt?.createNetFrustum?.(1.36,1.36,1.75);
+        const netSkin=root.DungeonRopeArt?.createNetFrustum?.(1.36,1.36,1.75,1); // Straight-sided rope_long.png net fully encloses the ground-level chest; hanging nets retain their original taper.
         if(netSkin){
           netSkin.name='secret-rope-long-net-cover-'+rec.id;
           netSkin.userData.devRuinFootprintIgnore=true;
