@@ -168,3 +168,48 @@ assert(nursery.includes('headWarp.setScale(slider.value)') && nursery.includes('
 assert(incubator.includes('BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind)'), 'incubator baby renders are warped AFTER the sleep composer');
 assert(nest.includes('BabyAnimalHeadWarp?.applyToCanvas(canvas, kind)'), 'nest babies and fallback textures use the same math');
 console.log('Baby animal authored-head warp integration and pixel tests passed.');
+ 
+// Verify that the first genetically decorated baby CANNOT poison the per-species head silhouette.
+// A registered unmodified base idle PNG must win even when a genotype-composited idle canvas is supplied first.
+(async () => {
+  const rawIdle = new Uint8ClampedArray(width * height * 4); // Actual base artwork silhouette, deliberately smaller than the decorated genotype.
+  const decorated = new Uint8ClampedArray(width * height * 4); // Individual variant with extra opaque pattern and eye layers.
+  for (let y = 15; y < 26; y++) for (let x = 15; x < 26; x++) decorated[(y * width + x) * 4 + 3] = 255;
+  for (let y = 19; y < 23; y++) for (let x = 19; x < 23; x++) rawIdle[(y * width + x) * 4 + 3] = 255;
+  const requested = []; // Observes actual loader mode/source instead of assuming a CORS-safe image.
+  class RawIdleImage {
+    constructor() { this.naturalWidth = width; this.naturalHeight = height; this.data = rawIdle; }
+    set src(url) {
+      requested.push({ url, mode: this.crossOrigin });
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  const isolatedWindow = {
+    localStorage: storage,
+    HOBUNJI_ATTACHMENT_RIG_PROFILES: windowStub.HOBUNJI_ATTACHMENT_RIG_PROFILES,
+    CreatureGeneticsRender: { SPECIES: { grehlr: { base: { idle: 'assets/creaturesprites/grehlr_idle.png' } } } },
+  };
+  const isolatedDocument = { ...documentStub, baseURI: 'https://example.test/docs/index.html' };
+  vm.runInNewContext(source, {
+    window: isolatedWindow, document: isolatedDocument, Image: RawIdleImage, URL,
+    Uint8Array, Uint8ClampedArray, Float32Array,
+  });
+  const api = isolatedWindow.BabyAnimalHeadWarp;
+  const decoratedIdle = { width, height, data: decorated };
+  const established = await api.ensureIdleMask('grehlr', decoratedIdle);
+  assert(established && established.opaquePixels === 16, 'only the original base IDLE opaque pixels establish the shared mask');
+  assert.equal(requested.length, 1, 'load the base idle PNG exactly once');
+  assert.equal(requested[0].mode, 'anonymous', 'CORS mode precedes base idle PNG source assignment');
+  assert.match(requested[0].url, /grehlr_idle\.png$/, 'the source is always the idle sprite, not a running frame');
+  assert.equal(await api.ensureIdleMask('grehlr', { width, height, data: pixels }), established,
+    'a second animal with different eyes and patterns cannot replace the established idle mask');
+  const alternatePose = Uint8ClampedArray.from(pixels); // Movement pose and its colored overlays are warped after the fixed source was chosen.
+  alternatePose.set([245, 40, 70, 255], (21 * width + 21) * 4);
+  assert.notDeepEqual(
+    Array.from(api.warpPixels(alternatePose, width, height, head, 1.32, established)),
+    Array.from(alternatePose),
+    'a non-idle pose still changes under the stable raw-idle opacity mask',
+  );
+  console.log('PASS raw idle mask precedence, cross-origin loader, multi-genotype reuse and alternate pose');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
