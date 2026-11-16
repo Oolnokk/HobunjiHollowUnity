@@ -111,6 +111,7 @@ const renderColors={SPECIES:{},
   recolorPixels(data,color,predicate){for(let i=0;i<data.length;i+=4)if(predicate(i))for(let n=0;n<3;n++)data[i+n]=color[n];},
 }; // Real registration and pixel mask selection use the existing shared recolor interface.
 const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
+  DevRandomRuin:{flightClear:()=>true}, // This isolated fixture has no ruin wall voxels: explicitly declare unobstructed air rather than relying on an absent collision API.
   HobunjiSpritePngSurface:{makeCanvasTexture(_three,canvas){return {image:canvas,dispose(){this.disposed=true;}};}},
   SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{},animalWidths:{},diet:{},resources:{}}}},
   CreatureGenetics:{makeDefaultGenotype:()=>({base:{color:'#aaaaaa'},sizeClass:'small'}),

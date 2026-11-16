@@ -1081,6 +1081,15 @@
       return true; // Even an already-descending climb must not start a combat dodge.
     }
     if (player._cliffSideStep) return false;
+    if (deps?.getCurrentArea?.() === 'map_i_dev_random_ruin' && !player.dodging) {
+      const move = deps.getMovementInput?.() || { x: 0, y: 0 }; // Used to reserve authored dungeon climbing for a forward Dodge, not Jump.
+      const length = Math.hypot(Number(move.x) || 0, Number(move.y) || 0); // Used to distinguish forward climbing intent from sideways/backward evasive rolls.
+      const forward = length < 0.08 || ((Number(move.x) || 0) * Math.cos(player.angle) + (Number(move.y) || 0) * Math.sin(player.angle)) / length > 0.35;
+      if (forward && window.GameplayInputRouter?.isInCombat?.() !== true) {
+        const world = getWorldClimbTarget(); // Used only on a deliberate dungeon Dodge, preserving ledge/wall climbing without hijacking a jump.
+        if (world?.start?.()) return true;
+      }
+    }
     const net = currentCliffNetwork();
     const shelf = player.onCliffBalcony ? window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony) : null;
     if (!shelf) return false;
@@ -1115,6 +1124,7 @@
     const climb = getClimbTarget();
     if (climb && (!mounted || climb.type === 'wall')) return startClimb(climb);
     if (mounted) return window.Mounts?.jumpMount?.() || false; // Mounted on open ground: no dismounted PlayerJump state or branch-climb toast.
+    if (deps?.getCurrentArea?.() === 'map_i_dev_random_ruin') return window.PlayerJump?.start?.() || false; // A dungeon Jump always starts physical jumping; nearby climbable world objects are handled by forward Dodge instead.
     const world = getWorldClimbTarget();
     if (world) { world.start(); return true; }
     return window.PlayerJump?.start?.() || false; // Empty ground still has a valid Jump action.

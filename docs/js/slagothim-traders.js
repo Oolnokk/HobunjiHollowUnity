@@ -1026,6 +1026,7 @@
   // ── Frame update ────────────────────────────────────────────────────
   function update(dt) {
     if (!deps) return;
+    window.BoneyShinjimiWilderness?.update?.(dt); // Shares the existing traveller frame scheduler; no extra frame scan.
     const nowHours = worldHours();
     if (nowHours == null) return;
     if (lastWorldHours == null || nowHours < lastWorldHours - 1e-6 || nowHours - lastWorldHours > 24 * 30) lastWorldHours = nowHours;
@@ -1191,6 +1192,7 @@
   function serialize() {
     return {
       version: SAVE_VERSION,
+      boneyShinjimi: window.BoneyShinjimiWilderness?.serialize?.() || null, // World-scoped moonlit encounter, saved with existing caravan record.
       lastRollDay: state.lastRollDay,
       seq: state.seq,
       caravans: state.caravans.map(caravan => ({
@@ -1202,6 +1204,7 @@
     };
   }
   function restore(saved) {
+    window.BoneyShinjimiWilderness?.restore?.(saved?.boneyShinjimi); // Older saves have no encounter; reset safely.
     state.caravans.forEach(release);
     state.caravans = [];
     state.lastRollDay = saved?.lastRollDay ?? null;
@@ -1370,6 +1373,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.BoneyShinjimiWilderness?.init?.(injectedDeps); // Reuses our real NPC, calendar, resource and inventory adapters.
     gridCache.clear();
     registerDevCompanionPanel();
     if (!schedulerRegistered && window.RuntimeFrameScheduler?.register) {

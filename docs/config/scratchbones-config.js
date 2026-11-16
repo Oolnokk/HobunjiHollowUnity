@@ -191,7 +191,8 @@ window.SCRATCHBONES_CONFIG = {
         "bandolier1": "assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_m.png",
         "appearance::hat::basic_headband": "assets/cosmetics/clothes/hat/headband.png",
         "appearance::hat::leather_headband": "assets/cosmetics/clothes/hat/headband.png",
-        "appearance::hat::riverlandskasa_wide": "assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+        "appearance::hat::riverlandskasa_wide": "assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png",
+        "appearance::hat::old_highlands_kasa": "assets/cosmetics/clothes/hat/oldhighlandskasa-front.png"
       }
     },
     "movement": {

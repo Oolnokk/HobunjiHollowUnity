@@ -6,8 +6,10 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false } = {}) {
-  const opaque = { isMesh: true, visible: true, children: [] }; // Base world depth has already drawn this terrain/cover.
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true } = {}) {
+  const groundMaterial = wildernessGround ? { depthWrite: false,
+    userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
+  const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
   const sky = { isMesh: true, visible: true, children: [], layers: { mask: 1 } }; // Far-plane cloud mask, not a physical gear occluder.
   const cutout = { isMesh: true, visible: true, children: [] }; // Portrait PNG needs forced alpha-tested depth.
   const cover = { isMesh: true, visible: true, children: [] }; // Water/grass must preserve occlusion of held parts.
@@ -37,19 +39,22 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     objectProto: { onBeforeRender: undefined }, internalReplay: false,
     lastBaseStencilBits: tint ? 1 : 0, replayScissorEnabled: false, replayCullEnabled: false,
     buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
-    collectGroundElevationMaterials: () => [], hasOverlappingHeldCover: () => tint,
+    collectGroundElevationMaterials: () => wildernessGround ? new Set([groundMaterial]) : [], hasOverlappingHeldCover: () => tint,
+    forEachMaterial(material, visit) { for (const member of Array.isArray(material) ? material : [material]) if (member) visit(member); }, // Exercise the renderer's actual ground selection against ordinary and x-ray groups.
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
     collectVisible: registry => registry === 'png' ? [cutout] : registry === 'background' ? [sky] : [cover],
     pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),
-    restoreMaterialStates() {}, prepareGroundDepthMaterials: () => new Map(),
+    saveMaterialState(states, material) { if (!states.has(material)) states.set(material, { depthWrite: material.depthWrite }); }, // The actual renderer transaction restores every property; only depth writes matter to this fixture.
+    restoreMaterialStates(states) { for (const [material, state] of states) material.depthWrite = state.depthWrite; },
+    prepareGroundDepthMaterials: () => new Map(),
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
     waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4,
     rawRender: function(_scene, _camera) {
       const nodes = []; _scene.traverseVisible(node => { if ((node.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(node); });
-      draws.push({ mask: _camera.layers.mask, nodes });
+      draws.push({ mask: _camera.layers.mask, nodes, groundDepthWrite: groundMaterial?.depthWrite }); // Confirm the true flag at submission, not merely after the helper runs.
       if (fail) throw new Error('render failure');
     },
   };
@@ -70,7 +75,9 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   assert.equal(camera.layers.mask, 1); assert.equal(scene.background, 'sky'); assert.equal(scene.autoUpdate, true);
   assert.equal(renderer.autoClear, before.autoClear); assert.equal(renderer.shadowMap.autoUpdate, true);
   assert.equal(scope.internalReplay, false);
-  return { draws, clears, opaque, cutout, cover, sky, parent, hooked, scope, weapon, hand };
+  if (groundMaterial) assert.equal(groundMaterial.depthWrite, false, 'every render exit restores the wilderness ground material');
+  const forcedGround = vm.runInContext('lastForcedGroundDepthMaterials', scope); // The shipping module uses a lexical counter rather than exposing it on the context.
+  return { draws, clears, opaque, cutout, cover, sky, parent, hooked, scope, weapon, hand, forcedGround };
 }
 const normal = fixture(); // Common above-floor case: supplement + source draw, without a terrain redraw/restore.
 assert.equal(normal.clears, 0);
@@ -99,4 +106,32 @@ const flail = fixture({ bounded: true, nested: true });
 assert(!flail.draws[3].nodes.includes(flail.weapon), 'the haft is suppressed in the head’s replay group');
 assert(flail.draws[3].nodes.includes(flail.hand), 'suppressing the haft must never prune its head from the scene graph');
 fixture({ fail: true });
+const ordinaryWilderness = fixture({ wildernessGround: true }); // Ordinary held parts must also obey physical ground depth outside the x-ray circle.
+assert.equal(ordinaryWilderness.clears, 0, 'ordinary ground restoration reuses the original cheap supplement (no full depth clear)');
+assert(ordinaryWilderness.draws[0].nodes.includes(ordinaryWilderness.opaque),
+  'the selective supplement retains ground that failed to write depth in the normal world pass');
+assert.equal(ordinaryWilderness.draws[0].groundDepthWrite, true,
+  'ordinary held equipment cannot x-ray through non-depth-writing wilderness ground');
+assert.equal(ordinaryWilderness.draws[1].groundDepthWrite, false,
+  'the ordinary held weapon color pass restores the authored ground depth setting');
+assert.equal(ordinaryWilderness.forcedGround, 1, 'the ordinary path contributes its repair to mobile diagnostics');
+const ordinaryLegacy = fixture({ wildernessGround: true, colorLock: false });
+assert.equal(ordinaryLegacy.draws[0].groundDepthWrite, true,
+  'unsupported color-mask renderers still repair ground depth in their full replay');
+const wilderness = fixture({ bounded: true, ordinary: false, wildernessGround: true });
+assert.equal(wilderness.draws[0].groundDepthWrite, true,
+  'the actual colorless ground-depth rebuild writes missing wilderness depth outside the actor circle');
+assert.equal(wilderness.draws[1].groundDepthWrite, false,
+  'the held weapon color pass cannot inherit the temporary ground material depth override');
+assert.equal(wilderness.draws[2].groundDepthWrite, false,
+  'the final ground restore preserves wilderness material settings');
+assert.equal(wilderness.forcedGround, 1, 'the active replay exposes one repaired ground material in mobile diagnostics');
+const fallbackGround = fixture({ bounded: true, ordinary: false, wildernessGround: true, groundShaderSupported: false });
+assert.equal(fallbackGround.draws[0].groundDepthWrite, true,
+  'unsupported/cold ground shaders still write physical depth outside the player circle');
+assert.equal(fallbackGround.draws[1].groundDepthWrite, false,
+  'fallback ground cannot leak the temporary depth override into the held color pass');
+assert.equal(fallbackGround.forcedGround, 1, 'the phone counter also includes fallback material repairs');
+fixture({ bounded: true, ordinary: false, wildernessGround: true, fail: true }); // Even an interrupted render must restore the material.
+fixture({ wildernessGround: true, fail: true }); // Ordinary supplement exceptions restore ground too.
 console.log('ordinary held replay: 2 passes instead of 3; no opaque terrain depth redraw; mixed/fallback/exception checks passed');

@@ -249,7 +249,7 @@
           if(timer!==null)clearTimeout(timer);
           wheelOpen=false;
           if(record.kind==='shaft'&&unlockedShaftIds.has(record.id)&&root._desktopSelectionArc?.openEntries)
-            timer=setTimeout(openTravelWheel,350); // Taps remain instant; the destination wheel appears before the hold threshold.
+            timer=setTimeout(openTravelWheel,root.InputHoldTiming?.thresholdMs?.(350) ?? 350); // Honor the player setting for this early-opening selection wheel.
         },
         onHoldEnd:(detail)=>{
           if(pressedAt===null)return;
@@ -265,7 +265,7 @@
             return;
           }
           if(!valid)return;
-          if(held>=HOLD_MS){
+          if(held>=(root.InputHoldTiming?.thresholdMs?.(HOLD_MS) ?? HOLD_MS)){
             if(record.kind==='shaft'&&root._desktopSelectionArc?.openEntries)showToast?.('Hold and select a destination to travel.',false);
             else onHold?.(); // Standalone authoring previews without the game's wheel retain the old entrance hold.
           }else onTap?.();

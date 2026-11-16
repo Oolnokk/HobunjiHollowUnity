@@ -28,24 +28,24 @@
         x:bounds.minX,z:bounds.minZ,w,d,y:Number(support.y)};
       const planned=secrets.planForRoom(roomSpec,seed,theme); // Plan once; extra validation must never re-roll the selected type.
       if(!planned)continue;
-      // Source rooms may have steps; corners are only suitable if their real standing heights match.
-      const corners=[[1.55,1.55],[w-1.55,1.55],[1.55,d-1.55],[w-1.55,d-1.55]];
-      const left=(planned.corner&1)===0,top=(planned.corner&2)===0;
-      const edgeX=left?bounds.minX:bounds.maxX,edgeZ=top?bounds.minZ:bounds.maxZ;
-      const sx=left?1:-1,sz=top?1:-1;
-      const optionalSites=[[1.55,1.55],[2.6,2.55]]; // The chest, blocking pillar/closet, and the hidden trigger must share a reachable floor.
-      if(planned.kind==='closet')optionalSites.push([3.3,1.95],[4.6,3.4]);
-      if(planned.babies)optionalSites.push([w-1.2,d-1.2]); // Opposite shelf may never cover an existing fixture.
-      const sampleSites=[
-        ...corners.map(([ox,oz])=>[bounds.minX+ox,bounds.minZ+oz]),
-        ...optionalSites.map(([ox,oz])=>[edgeX+sx*ox,edgeZ+sz*oz])
-      ];
-      const obstructed=sampleSites.some(([px,pz])=>{
+      // Use the same corner-sized, floor-anchored layout as RuinHiddenSecrets; the old
+      // adapter rejected all four corners before checking the actual optional puzzle footprint.
+      const sites=planned.kind==='closet'
+        ?[[1.55,1.55],[2.6,2.55],[3.3,1.95],[4.6,3.4]]
+        :planned.kind==='suspended'?[[1.55,1.55],[2.6,2.55],[2.5,2.35]]
+        :[[1.55,1.55],[2.6,2.55]];
+      const grounded=(corner,dx,dz)=>{
+        const left=(corner&1)===0,top=(corner&2)===0;
+        const px=(left?bounds.minX:bounds.maxX)+(left?dx:-dx);
+        const pz=(top?bounds.minZ:bounds.maxZ)+(top?dz:-dz);
+        if(px<bounds.minX+.55||px>bounds.maxX-.55||pz<bounds.minZ+.55||pz>bounds.maxZ-.55)return false;
         const sample=kit.sampleSupport(px,pz);
-        if(!sample||Math.abs(Number(sample.y)-roomSpec.y)>.08)return true;
-        return window.DevRandomRuinTileOccupancy?.solidAt?.(px,pz,.24,roomSpec.y)===true;
-      });
-      if(obstructed){refused.push(String(room.id)+': corner or hidden switch blocked');continue;}
+        return !!sample&&Math.abs(Number(sample.y)-roomSpec.y)<=.12
+          &&window.DevRandomRuinTileOccupancy?.solidAt?.(px,pz,.22,roomSpec.y)!==true;
+      };
+      const validCorner=Array.from({length:4},(_,offset)=>(planned.corner+offset)%4)
+        .find(corner=>sites.every(([dx,dz])=>grounded(corner,dx,dz)));
+      if(validCorner===undefined){refused.push(String(room.id)+': optional puzzle has no grounded, reachable corner');continue;}
       const owner=secrets.create({room:roomSpec,seed,theme,ruinTier:context.tier,
         allowBrood:placements.filter(entry=>entry.babies>0).length<1, // Only one supplementary native-V50 brood per ruin.
         THREE:kit.THREE,parent:kit.group(),mapId:context.mapId||'map_i_dev_random_ruin',

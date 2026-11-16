@@ -185,6 +185,21 @@
       name: "Mirrored Health", resource: "health", extend: "currentBack", priority: 34, recovers: false, enhanced: true,
       family: "enhanced", tags: ["enhanced", "mirror"],
       desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
+    },
+    phantomWoundsHealth: {
+      name: "Phantom Wounds", resource: "health", extend: "currentBack", priority: 31, recovers: true,
+      family: "control", tags: ["fey", "illusion", "perceived-injury"],
+      desc: "Imaginary cuts feel and look real, but these nonlethal segments do not lower Health, max Health, or apply damage over time."
+    },
+    phantomBloodHealth: {
+      name: "False Bleeding", resource: "health", extend: "currentBack", priority: 32, recovers: true,
+      family: "control", tags: ["fey", "illusion", "apparent-blood"],
+      desc: "The bearer sees themselves bleeding. No actual blood is lost, and this affliction never triggers the ordinary Bleeding damage tick."
+    },
+    phantomPainFooting: {
+      name: "Phantom Pain", resource: "footing", extend: "currentBack", priority: 33, recovers: true,
+      family: "control", tags: ["fey", "illusion", "pain"],
+      desc: "Pain without bodily injury. Shows a Footing affliction segment but does not subtract Footing, break posture, or cause damage."
     }
   };
 
@@ -252,6 +267,21 @@
       name: "Inhibited", maxStacks: 5, minModifier: 0.2,
       modifiers: Object.freeze({ healingReceived: 0.90 }),
       desc: "Receives less Health recovery per stack."
+    }),
+    disoriented: Object.freeze({
+      name: "Disoriented", maxStacks: 4, minModifier: 0.45,
+      modifiers: Object.freeze({ moveSpeed: 0.93, dodgeLungeDistance: 0.89 }),
+      desc: "Fey vertigo makes distances and direction feel wrong, reducing walking and evasive travel without physical injury."
+    }),
+    trembling: Object.freeze({
+      name: "Trembling", maxStacks: 4, minModifier: 0.50,
+      modifiers: Object.freeze({ attackSpeed: 0.92, dodgeLungeDistance: 0.94 }),
+      desc: "Phantom pain causes involuntary hesitation and shorter evasive movement, without real trauma."
+    }),
+    startled: Object.freeze({
+      name: "Startled", maxStacks: 4, minModifier: 0.50, maxModifier: 1.9,
+      modifiers: Object.freeze({ outgoingDamage: 0.92, staminaCost: 1.10 }),
+      desc: "Illusory fear weakens committed strikes and makes exertion feel more costly."
     }),
     knockdown: Object.freeze({
       name: "Knockdown", maxStacks: 1, durationStacksInstead: true,

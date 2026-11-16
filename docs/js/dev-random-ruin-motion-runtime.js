@@ -24,8 +24,6 @@
   let repairedEgress = []; // Kept for diagnostics compatibility; simplified mode no longer injects duplicate runtime ladders.
   let authoredLadderCount = 0; // Counts the V50 stone ladders that now own all climb interaction/animation.
   let nearestElevatorBlock = null;
-  let promptOwned = false;
-  let controllerInteractDown = false;
   let frameInstalled = false;
 
   const previousDevInit = DevSpawner.init;
@@ -330,27 +328,18 @@
     }
     return nearest;
   }
-  function pollController(block) {
-    const bind = window.InputBindings?.getCurrentBindings?.()?.controller?.interact;
-    const down = !!bind && !!window.ControllerInput?.frame?.()?.isDown?.(bind); // Shared per-frame snapshot; ControllerInput is the only gamepad polling authority.
-    if (down && !controllerInteractDown) pushElevatorBlock(block);
-    controllerInteractDown = down;
-  }
   function updatePrompt() {
-    nearestElevatorBlock = nearestElevatorControl();
-    if (!nearestElevatorBlock) {
-      controllerInteractDown = false;
-      if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-      promptOwned = false;
-      return;
-    }
-    window.ActionPromptUI?.showActionPrompt?.({
-      actionId:'interact', touchIcon:'✋', verb:'Push Stone Block',
-      onPress:() => pushElevatorBlock(nearestElevatorBlock),
-      statusText:'DEV RUIN · elevator block', statusType:'',
-    });
-    promptOwned = true;
-    pollController(nearestElevatorBlock);
+    nearestElevatorBlock = nearestElevatorControl(); // Reused by the shared ruin action list, never polled from the controller's Jump button.
+  }
+
+  function elevatorInteractionControls() {
+    const block = nearestElevatorBlock; // Current nearby block is the only candidate offered to the shared world-action input router.
+    if (!root || !block || currentArea() !== MAP_ID) return [];
+    return [{
+      kind:'elevatorPushBlock', object:block, promptRoot:block, range:CONTROL_RANGE,
+      priority:25, claimAction1:true, label:'Push Stone Block', touchIcon:'✋',
+      onPress:() => currentArea() === MAP_ID && nearestElevatorControl() === block && pushElevatorBlock(block),
+    }]; // Action 1/touch arch, not Jump; direct keyboard Interact remains available below.
   }
 
   document.addEventListener('keydown', event => {
@@ -369,9 +358,7 @@
 
   function clear() {
     root = null; meta = null; daises = []; pushBlocks = []; elevatorBlocks = []; repairedEgress = []; authoredLadderCount = 0;
-    nearestElevatorBlock = null; controllerInteractDown = false;
-    if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-    promptOwned = false;
+    nearestElevatorBlock = null;
     window.DevRandomRuin?.setDebugBadgePart?.('motion',''); // Cleared by the central badge lifecycle on ruin exit.
   }
 
@@ -427,6 +414,7 @@
   }, 0), 0);
 
   window.DevRandomRuinMotionRuntime = Object.freeze({
+    getInteractionControls:elevatorInteractionControls, // Consumed by DevRandomRuinInteractions alongside native puzzle controls.
     snapshot:() => ({
       active:!!root,
       daises:daises.length,

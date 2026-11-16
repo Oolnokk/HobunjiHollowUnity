@@ -796,6 +796,26 @@
     return true;
   }
 
+  // Grant a physical quest/NPC garment through the Pack collection used by
+  // treasure, merchants, and Gear transfer; cosmetic: keys are editor metadata.
+  function grantPackClothing(article) {
+    const pack = deps?.getPackClothing?.(); // One authoritative world-scoped clothing list.
+    const cosmeticId = typeof article?.cosmeticId === 'string' ? article.cosmeticId.trim() : '';
+    const slot = typeof article?.slot === 'string' ? article.slot.trim() : '';
+    if (!Array.isArray(pack) || !cosmeticId || !CLOTHING_SLOTS.includes(slot)) return null;
+    const uid = String(article.uid || ('citem_reward_' + Date.now().toString(36)
+      + '_' + Math.random().toString(36).slice(2, 10))); // Stable instance identity for persistence.
+    if (pack.some(item => item?.uid === uid)) return null; // Reentrant grants cannot duplicate a UID.
+    const item = { ...article, uid, cosmeticId, slot,
+      label: String(article.label || cosmeticId),
+      baseLabel: String(article.baseLabel || article.label || cosmeticId),
+      sprite: article.sprite || clothingSpriteForCosmetic(cosmeticId) };
+    pack.push(item);
+    deps.saveMemberWorldData?.();
+    deps.buildInventoryGrid?.();
+    return item;
+  }
+
   function transferClothingToGear(uid) {
     const packClothing = deps.getPackClothing();
     const idx = packClothing.findIndex(c => c.uid === uid);
@@ -1454,6 +1474,7 @@
     ensureGearClothingCollection,
     buildPackClothingSection,
     getPackClothingForWardrobe,
+    grantPackClothing, // Quest clothing uses the canonical Pack-to-Gear lifecycle.
     transferPackClothingToNpcWardrobe,
     previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,

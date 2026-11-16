@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261109stonebeatcfg1',
+  'config/scratchbones-config.js?v=20261116boneyKasaCfg1',
   'config/attachment-rig-profiles.js?v=20261116shoulderParity2',
   'config/character-rig-scale-defaults.js?v=20261114uniformRigStrideMerge1',
   'js/character-rig-scale.js?v=20261114uniformRigStrideMerge1',
@@ -50,7 +50,7 @@ const files = [
   'js/creature-genetics-render.js?v=20261028a',
   'config/modular-weapons.js?v=20261112kyliehaft1',
   'js/modular-weapons.js?v=20261112kylieruntime1',
-  'js/held-action-animations.js?v=20261116dualOccluder1',
+  'js/held-action-animations.js?v=20261116dualOccluder2',
   'js/combat/shared-attack-pose.js?v=20261111flailPose1',
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
