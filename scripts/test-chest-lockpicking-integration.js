@@ -343,7 +343,7 @@ function makeElement() {
   window.CharacterMetaSave.capturePending(stagedSnapshot);
   assert.equal(stagedSnapshot.characters[0].chestLockProgress.world_a['folder-fast'].folderUnsynced, false,
     'the later full snapshot contains the acknowledged disk lock penalty');
-  assert.equal(stagedSnapshot.characters[0].chestLockProgress.world_a['persistent'].stage, 1,
+  assert.equal(stagedSnapshot.characters[0].chestLockProgress.world_a['persistent'].stage, recordFor('persistent').stage,
     'staging a new lock preserves other existing locks');
   press('Button1'); flushMicrotasks();
   window.LocalSaveFolder.syncNow = oldFullSync;
