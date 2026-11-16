@@ -55,16 +55,18 @@ function fakeAvatar() {
   }; // Preserves the source root hierarchy and traverses the gameplay split-overlay meshes.
   return {
     group,
-    frontPlane: { visible: true, rotation: { y: Math.PI / 2 } },
-    backPlane: { visible: true, rotation: { y: -Math.PI / 2 } },
+    frontPlane: { visible: true, rotation: { y: Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() { this.updated = true; } },
+    backPlane: { visible: true, rotation: { y: -Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() { this.updated = true; } },
     dispose() { this.didDispose = true; },
     setShoulderRestEnabled(value) { this.deformed = value; return value; },
     setShoulderSplitOverlayCanvas(canvas, visible) {
       this.overlay = canvas;
       this.overlayVisible = visible;
       this.group.overlays = [
-        { userData: { hobunjiShoulderSplitOverlay: true }, rotation: { y: Math.PI / 2 } },
-        { userData: { hobunjiShoulderSplitOverlay: true }, rotation: { y: -Math.PI / 2 } },
+        { userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'front' },
+          rotation: { y: Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() {} },
+        { userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'back' },
+          rotation: { y: -Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() {} },
       ]; // The actual gameplay decorator makes a dedicated skinned foreground for each face.
       return true;
     },
@@ -114,6 +116,8 @@ async function runTest() {
   source.group.parent = scaledRigParent;
   source.group.position.x = 0.11;
   source.group.scale.z = 1.42;
+  source.frontPlane.scale.copy({ x: 0.52, y: 0.48, z: 1 }); // This is the editor's post-V15.14 direct mesh scale, not the group's unit scale.
+  source.backPlane.scale.copy({ x: 0.52, y: 0.48, z: 1 });
   const savedAnchor = JSON.stringify(anchor); // Ensures swapping source/perched art never touches the authored grip.
   const controller = moduleApi.create({
     kind: 'puktuk', genotype: { sizeClass: 'small' }, THREE: {},
@@ -135,6 +139,17 @@ async function runTest() {
   assert.equal(builds[0].avatar.group.position.x, 0.11, 'posed art clones the original creature-root position');
   assert.equal(builds[0].avatar.group.scale.z, 1.42, 'posed art clones the original creature-root scale');
   assert.equal(viewport.length, 2, 'both posed planes take part in the existing viewport orientation logic');
+  assert.equal(builds[0].avatar.frontPlane.scale.x, 0.52,
+    'posed front mesh uses the same direct X scale as the source and the grip position');
+  assert.equal(builds[0].avatar.backPlane.scale.y, 0.48,
+    'posed back mesh uses the actual direct Y size-class scale');
+  source.frontPlane.scale.copy({ x: 0.3, y: 0.28, z: 1 });
+  source.backPlane.scale.copy({ x: 0.3, y: 0.28, z: 1 });
+  controller.syncPlaneScale();
+  assert.equal(builds[0].avatar.frontPlane.scale.x, 0.3,
+    'changing creature size while posed updates the skinned foreground without rebuilding');
+  assert.equal(builds[0].avatar.backPlane.scale.y, 0.28,
+    'changing creature size also updates the back card');
   const noticeCount = notifications.length; // Ensures a 60-fps editor loop does not rewrite the inspector on every tick.
   for (let i = 0; i < 60; i++) controller.setPose('perched');
   assert.equal(notifications.length, noticeCount, 'repeated frames cause no inspector DOM updates');
@@ -153,6 +168,8 @@ async function runTest() {
   assert.equal(source.frontPlane.visible, true, 'normal art becomes visible after the editor clears actors');
 
   const splitSource = fakeAvatar(), before = calls.length, splitViewport = []; // Verify split foreground planes participate in viewport deadzone rotation.
+  splitSource.frontPlane.scale.copy({ x: .77, y: .63, z: 1 });
+  splitSource.backPlane.scale.copy({ x: .68, y: .61, z: 1 });
   const split = moduleApi.create({ kind: 'grehlr', genotype: {}, THREE: {},
     sourceAvatar: splitSource, modelWidth: 2, modelHeight: 1, actorName: 'Grehlr',
     viewportCreaturePlanes: splitViewport });
@@ -163,6 +180,8 @@ async function runTest() {
   assert.equal(builds.at(-1).avatar.overlayVisible, true, 'the split foreground uses the actual overlay mesh');
   assert.equal(builds.at(-1).avatar.overlay.drawn[0], 'grehlr/idle', 'left foreground retains idle pixels');
   assert.equal(splitViewport.length, 4, 'both skinned foreground overlays rotate with Grehlr background cards');
+  assert.equal(builds.at(-1).avatar.group.overlays[0].scale.x, .77, 'Grehlr split front overlay follows the front size class');
+  assert.equal(builds.at(-1).avatar.group.overlays[1].scale.y, .61, 'Grehlr split back overlay follows the back size class');
   split.dispose();
   assert.equal(splitViewport.length, 0, 'split foreground camera-yaw entries release on disposal');
 
