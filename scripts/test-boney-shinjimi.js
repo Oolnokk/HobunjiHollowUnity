@@ -187,6 +187,8 @@ async function testRealEncounterFlow() {
   const milkDialogues=[]; // Captures each actual authored milk conversation, including its three distinct greetings.
   const snapshotsAtGrant=[]; // The real relic owner saves synchronously while granting; confirm milk and count are already updated at that point.
   let failNextMilkGrant=false; // Simulates a failed relic award to verify rollback, without consuming the single-night allowance.
+  let deferNextMilk=false; // Keeps a milk cutscene open while the world restores, exposing stale callback races.
+  let continueDelayedMilk=null; // Test-only callback that releases the paused cutscene after a restore.
   let savedDuringGrant=null;
   moonWindow.BoneyShinjimiRewards={grant(kind){
     if(kind==='milk'){
@@ -197,6 +199,11 @@ async function testRealEncounterFlow() {
   }};
   moonWindow.AuthoredCutsceneRuntime={async run(scene,handlers){
     if(scene.stages.some(stage=>stage.id==='milk_welcome')) {
+      if(deferNextMilk){
+        deferNextMilk=false;
+        await new Promise(resolve=>{continueDelayedMilk=()=>{handlers.onDialogueContinue({id:'milk_reward'});resolve();};});
+        return;
+      }
       milkDialogues.push(scene.stages.map(stage=>stage.text));
       handlers.onDialogueContinue({id:'milk_reward'});
       handlers.onDialogueContinue({id:'milk_reward'}); // A repeated Continue must not award or consume another milk.
@@ -306,6 +313,18 @@ async function testRealEncounterFlow() {
   assert.equal(rewards.length,1,'a failed weapon grant creates no new prize');
   assert.equal(snapshotsAtGrant.length,1,'a duplicate Continue does not retry a failed award');
   assert(gifting.getNpcGiftOfferAction(npc),'the gift can be retried after an unsuccessful award');
+  deferNextMilk=true;
+  assert.equal(gifting.offerGift(npc),true,'paused milk cutscene starts before reload');
+  assert.equal(typeof continueDelayedMilk,'function','a pending dialogue Continue is available for race testing');
+  C.restore(C.serialize()); // Same room and milk count; only encounter generation distinguishes the stale cutscene.
+  continueDelayedMilk();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'a stale post-reload dialogue cannot consume milk');
+  assert.equal(C.serialize().milksGiven,0,'a stale post-reload dialogue cannot increment the limit');
+  assert.equal(snapshotsAtGrant.length,1,'a stale post-reload dialogue cannot create another Fey relic');
+  C.update(.1); // Restores the ordinary NPC walker after scene cancellation without changing the encounter.
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(C.debugSnapshot().phase,'leaving','reloaded completed confrontation remains in post-dialogue phase');
   for(const key of ['puktukMilk','yellowDewMilk','uumkaoiiWhiteDewMilk']) {
     held={kind:'item',key,def:milkDefs[key]};
     const milkAction=gifting.getNpcGiftOfferAction(npc);
