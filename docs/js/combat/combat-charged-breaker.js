@@ -171,7 +171,9 @@
       const shape = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Reuses the active weapon's authored efficiency at every payment.
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
-      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency; // Cumulative pre-tax price for the visible pose.
+      const mounted = window.Mounts?.rideState === 'mounted'; // Mounted Charged Breaker reuses the same heavy mastery, with riding-specific stamina training.
+      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency
+        * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Cumulative pre-tax price for the visible pose.
       debugState.staminaCostTarget = target;
       const delta = Math.max(0, target - paidChargeBaseline); // Never compare a pre-tax target against an already-discounted actual payment.
       if (!(delta > 1e-6)) return null;
@@ -256,6 +258,7 @@
       }
 
       const effects = currentEffects();
+      const mounted = window.Mounts?.rideState === 'mounted'; // This release's movement is either a mount burst or the normal player lunge, never both.
       if (!forced) commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker'); // Settle only a final unprocessed pose slice, without surcharge.
 
       // This slices the live authored pose at poseCharge and starts Strike
@@ -288,14 +291,14 @@
         knockbackPxS: baseKnockbackPxS,
         rangePx,
         halfConeRad,
-        lungePx: baseLungePx,
+        lungePx: mounted ? 0 : baseLungePx,
         chargePercentage: poseCharge,
         fullCharge: isFullChargePose(poseCharge),
-        metadata: { attackAngle: deps.player.angle, paidChargeCost },
+        metadata: { attackAngle: deps.player.angle, paidChargeCost, mounted },
       }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
       const damage = Math.round((attackContext.damage ?? baseDamage) * (attackContext.modifiers?.damage || 1));
       const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
-      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const lungePx = mounted ? 0 : baseLungePx * (attackContext.modifiers?.lunge || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
       const pitchDistanceResistance = lerp(
@@ -312,12 +315,13 @@
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
-      deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
-        rangePx,
-        halfConeRad,
-        pitchDistanceResistance,
-        directFlightStrength,
-      });
+      if (mounted) {
+        window.Mounts?.beginMountedCombatBurst?.(2.4 + poseCharge * 0.8, 2.1 + poseCharge * 0.5); // Charged heavy strike becomes a sustained gallop; collision and reins still apply.
+      } else {
+        deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
+          rangePx, halfConeRad, pitchDistanceResistance, directFlightStrength,
+        });
+      }
 
       debugState.lastRelease = {
         at: Date.now(),
@@ -358,7 +362,8 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health for post-mitigation damage only.
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Impact resolves from actual collision-tested speed, not charge pose alone.
+            deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
               abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
