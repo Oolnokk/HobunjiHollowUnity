@@ -205,4 +205,20 @@ assert.equal(bursts.length, heavyBurstsBeforeDismount, 'dismount cannot trigger 
 assert.equal(lunges, 0, 'dismounted heavy hold cannot produce an on-foot lunge');
 assert(holdCancelled > 0, 'dismounted heavy cancels its held weapon pose');
 assert.equal(regenBlocked, false, 'dismount fully releases heavy stamina regeneration block');
-console.log('mounted combat loadout, real combo/quick/heavy abilities, momentum and dismount safety passed');
+// A scripted cliff crossing retains the mounted loadout for its duration,
+// but does not permit a quick/heavy to fall through as a rider lunge.
+riding = 'climbLeap';
+const cliffStrikesBefore = strikes.length;
+const cliffLungesBefore = lunges;
+timeMs += 1000;
+Combat.input.pressStart(1);
+timeMs += 100;
+Combat.input.pressEnd(1);
+assert.equal(strikes.length, cliffStrikesBefore, 'cliff crossing rejects mounted taps');
+Combat.input.pressStart(1);
+timeMs += 300;
+Combat.input.update(0.3);
+assert.equal(Combat.input.getState(1).down, false, 'cliff crossing does not leave a pending heavy hold');
+assert.equal(lunges, cliffLungesBefore, 'cliff traversal cannot trigger an on-foot lunge');
+riding = 'none';
+console.log('mounted combat loadout, real combo/quick/heavy abilities, momentum, dismount and cliff safety passed');
