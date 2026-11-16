@@ -634,7 +634,10 @@ only within an appropriate opaque or transparent draw list.
 
 **Crucially, the weapon's front-art mask is not a sort position.**
 The direct `weapon.frontPlaneMask` switch decides whether the owner's opaque
-front-portrait pixels stencil out held gear in the later overlay pass.
+front-portrait pixels stencil out held gear in the later overlay pass. This
+switch now defaults to **off** because the stencil can obscure weapon pixels
+that should remain visible. Developers can opt back in via the Dev Companion
+for comparison; an explicitly stored browser override continues to apply.
 The independent `hand.frontPlaneMask` rule handles hands that straddle the
 front plane. The old assumption that moving a tool's color-list rank relative
 to `actor.front` could control the stencil was removed. Front masking requires
