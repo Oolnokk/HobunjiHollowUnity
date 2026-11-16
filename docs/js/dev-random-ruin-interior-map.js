@@ -505,6 +505,10 @@
     floorCellSize = worldCellSize(meta);
     let floorMesh = null;
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
+    if (floorMesh?.isMesh) {
+      floorMesh.userData.hobunjiRuinFloorSurface = true; // The shared x-ray classifier uses this registered floor identity even when V50 has no plateau map.
+      window.HeldObjectRenderOrder?.markGroundMesh?.(floorMesh, 'interior-floor'); // Immediately registers the mesh in the selective ground depth replay.
+    }
     const levels = floorMesh?.userData?.plateauModel?.levelByCell || {};
     const step = Number(floorMesh?.userData?.plateauModel?.stepHeight ?? meta.plateauModel?.stepHeight ?? 0.42);
     const cs = worldCellSize(meta);

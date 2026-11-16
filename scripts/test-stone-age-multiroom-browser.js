@@ -51,7 +51,13 @@ const server=http.createServer((request,response)=>{
       const floorMask=floor.layers.mask,wallMask=wall.layers.mask,sourceGeometry=wall.geometry;
       const scenery=window.StoneAgeRuinScenery.buildRoom({root,meta,seed:'stone-browser',floorHeights:heights});
       const room=scenery.room,visible=room.model.children.find(child=>child.userData?.ruinPreviewRole==='floor');
+      const wallSurface=room.model.children.find(child=>child.userData?.ruinPreviewRole==='wall')?.material; // Proves the real wall doesn't inherit the floor-specific depth shader rule.
       check(!!visible?.isMesh,'the floor must be a regular masked THREE.Mesh, not a rectangular InstancedMesh');
+      check(visible.material===room.floorMaterial,'the replacement floor uses the material reserved for its x-ray pass');
+      check(visible.material!==wallSurface&&!!wallSurface,'floor and wall must have distinct THREE materials');
+      check(visible.material.userData.hobunjiInteriorFloorMaterial===true,'floor material has the existing selective ground x-ray marker');
+      check(wallSurface.userData?.hobunjiInteriorFloorMaterial!==true,'stone walls cannot inherit the floor x-ray marker');
+      check(visible.material.map===wallSurface.map,'separate floor material must reuse the same existing texture, not allocate one per floor');
       check(!visible.isInstancedMesh,'multiroom floor cannot repeat unmasked 4×4 tiles');
       check(room.floorStats.levelCount===3&&room.floorStats.voidCells===131,'the real THREE floor retains three elevations and all absent cells');
       check(!room.floorStats.pos&&!room.floorStats.idx&&!room.floorStats.uv,'mobile diagnostics must not retain temporary full-resolution stone arrays');
@@ -65,6 +71,8 @@ const server=http.createServer((request,response)=>{
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'native V50 source and collision visibility must be preserved');
       const stoneGeometry=visible.geometry,wallStone=room.model.children.find(child=>child.userData?.ruinPreviewRole==='wall')?.geometry;
       let floorDisposed=false,wallDisposed=false; // Real THREE dispose events detect GPU buffer leaks, not just detached Object3D parents.
+      let floorMaterialDisposed=false; // Watches the distinct floor shader material for correct teardown alongside its geometry.
+      room.floorMaterial.addEventListener('dispose',()=>{floorMaterialDisposed=true;});
       stoneGeometry.addEventListener('dispose',()=>{floorDisposed=true;});
       wallStone?.addEventListener('dispose',()=>{wallDisposed=true;});
       const location={levels:room.floorStats.levelCount,voids:room.floorStats.voidCells,cells:room.floorStats.floorCells,boulders:room.floorStones,triangles:(stoneGeometry.index?.count||stoneGeometry.getAttribute('position').count)/3};
@@ -73,6 +81,7 @@ const server=http.createServer((request,response)=>{
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'source collision geometry must survive disposal');
       check(!room.model.parent,'replaced scene must be detached');
       check(floorDisposed&&wallDisposed,'rockified floor and wall GPU geometry must be disposed exactly once');
+      check(floorMaterialDisposed,'the cloned x-ray floor material must also be disposed during scenery teardown');
       return location;
     });
     assert.equal(errors.length,0,errors.join('\n'));

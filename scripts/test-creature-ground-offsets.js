@@ -32,6 +32,10 @@ context.CreatureGenetics.init({
     'gar-wolf-alpha': { defaultSizeClass: 'large' },
     'dabinggi-hound': { defaultSizeClass: 'medium' },
     uumkaoii: { defaultSizeClass: 'medium' },
+    skeeri: { defaultSizeClass: 'small', modelWidth: 0.65 },
+    'skeeri-small': { defaultSizeClass: 'small', modelWidth: 0.65 },
+    'skeeri-medium': { defaultSizeClass: 'medium', modelWidth: 1.15 },
+    'skeeri-large': { defaultSizeClass: 'large', modelWidth: 2.2 },
   },
   clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
 });
@@ -39,6 +43,28 @@ assert.equal(context.CreatureGenetics.creatureGroundOffset('drenkirra', 'large')
 assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.26, 'default size class resolves as the authored floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('gar-wolf-alpha', { sizeClass: 'small' }), 0.11, 'variant inherits base species floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('unknown-kind', 'medium'), null, 'unknown species requests automatic fallback');
+
+const skeeriWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Real ruined Skeeri native model widths used for class-proportional floor lift.
+const expectedSkeeriOffset = { small: 0.07, medium: 0.07 * (1.15 / 0.65), large: 0.07 * (2.2 / 0.65) }; // Shared Pingdort Small floor Y scales to Skeeri native widths.
+const pingdortGrip = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.pingdort.anchors.shoulderGrip.position; // Checks the live copied grip rather than a second hardcoded constant.
+for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
+  const profile = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind]; // Every domestic/ruin registry entry must reach the new rig source.
+  assert.deepEqual({ ...profile.anchors.shoulderGrip.position }, { ...pingdortGrip }, kind + ' runtime should copy Pingdort shoulder grip');
+  for (const sizeClass of ['small', 'medium', 'large']) {
+    assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, sizeClass), expectedSkeeriOffset[sizeClass], kind + ' '+ sizeClass + ' runtime floor offset matches Skeeri width');
+  }
+  const defaultClass = kind === 'skeeri' ? 'small' : kind.slice('skeeri-'.length); // Distinguishes native fixed-size ruin variants from the domestic species.
+  assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, null), expectedSkeeriOffset[defaultClass], kind + ' defaults to its native floor lift');
+  const defaultSize = context.CreatureGenetics.creatureSizeScale(kind, defaultClass); // Uses the real genetics renderer's profile lookup, not just the master table.
+  assert.equal(defaultSize.x, 1, kind + ' native fixed class retains 1x width');
+  assert.equal(defaultSize.y, 1, kind + ' native fixed class retains 1x height');
+}
+for (const sizeClass of ['small', 'medium', 'large']) {
+  const scale = context.CreatureGenetics.creatureSizeScale('skeeri', sizeClass); // Domestic Skeeri use one Small native sprite with genetic size multipliers.
+  const ratio = skeeriWidths[sizeClass] / skeeriWidths.small; // Class scaling must match ground Y to avoid hover on the farm or in a stable.
+  assert.equal(scale.x, ratio, sizeClass + ' domestic Skeeri width tracks its class');
+  assert.equal(scale.y, ratio, sizeClass + ' domestic Skeeri height tracks its class');
+}
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(game, /const groundLift = Number\.isFinite\(authoredGroundOffset\) \? authoredGroundOffset : halfH/, 'wild creatures replace half-height with authored lift when available');

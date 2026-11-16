@@ -16,6 +16,7 @@
   const FULL_CHARGE_POSE = 0.999; // Single full-charge threshold shared by glow, diagnostics, and Flourish qualification.
   const FURIOUS_PROGRESS_OWNER = 'charged-breaker-furious'; // Owns only this hold's temporary transform on Combat.windupPoseProgress.
   const STAMINA_REGEN_BLOCK_SOURCE = 'charged-breaker-hold'; // Independent ResourceSystem regeneration lock held only while charging.
+  const MOUNT_CHARGE_BOOST_OWNER = 'mountedCharge'; // Mounted Charge owns only the acceleration earned during its paid hold.
 
   // Damage still rises with the pose charge, but this technique is now
   // deliberately centered on movement/control geometry rather than reach.
@@ -49,6 +50,7 @@
     staminaCostCommitted: 0,
     staminaCostActual: 0,
     staminaCostTarget: 0,
+    mountedBoostPaidFraction: 0, // Diagnostics compare funded windup progress with the charged strike's actual momentum.
     lastRelease: null,
   }; // Used by mobile-friendly diagnostics without requiring console access.
 
@@ -134,12 +136,16 @@
     window.Combat.weaponChargeGlow?.clear?.('chargedBreaker');
   }
 
-  function chargeCostForPose(poseCharge, staminaCostMul = 1) {
-    const pose = clamp01(poseCharge); // Visible pose percentage is the same progress axis used by the interruptible total-cost curve.
-    if (pose < MIN_READY_POSE) return 0; // Before the first releasable frame, there is no attack cost.
-    const readyProgress = clamp01((pose - MIN_READY_POSE) / Math.max(1e-6, 1 - MIN_READY_POSE)); // Only the releasable segment has a cost.
-    const multiplier = Number(staminaCostMul); // Used by both melee and thrown holds to apply progression modifiers.
-    return Math.max(0, lerp(COST_MIN, COST_MAX, readyProgress) * (Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1));
+  function chargeCostForPose(poseCharge, staminaCostMul = 1, mounted = false) {
+    const pose = clamp01(poseCharge); // The same visible weapon pose funds both charge and acceleration.
+    const multiplier = Number(staminaCostMul); // Shared mastery factor for mounted and on-foot holds.
+    const scale = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1; // Clamp invalid or negative stamina costs.
+    if (pose < MIN_READY_POSE) {
+      // Mounted Charge pays smoothly from the first windup frame; on-foot attacks keep their former free unready segment.
+      return mounted ? Math.max(0, COST_MIN * pose / Math.max(1e-6, MIN_READY_POSE) * scale) : 0;
+    }
+    const readyProgress = clamp01((pose - MIN_READY_POSE) / Math.max(1e-6, 1 - MIN_READY_POSE));
+    return Math.max(0, lerp(COST_MIN, COST_MAX, readyProgress) * scale);
   }
 
   function isFullChargePose(poseCharge) {
@@ -173,7 +179,7 @@
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
       const mounted = window.Mounts?.rideState === 'mounted'; // Mounted Charged Breaker reuses the same heavy mastery, with riding-specific stamina training.
-      const target = chargeCostForPose(poseCharge, progressionMultiplier) / efficiency
+      const target = chargeCostForPose(poseCharge, progressionMultiplier, mounted) / efficiency
         * (mounted ? (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1) : 1); // Cumulative pre-tax price for the visible pose.
       debugState.staminaCostTarget = target;
       const delta = Math.max(0, target - paidChargeBaseline); // Never compare a pre-tax target against an already-discounted actual payment.
@@ -211,14 +217,16 @@
         staminaCostCommitted: 0,
         staminaCostActual: 0,
         staminaCostTarget: 0,
+        mountedBoostPaidFraction: 0,
       };
       const deps = window.Combat.deps;
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Weapon speed controls the full authored charge-pose clock.
       const effects = currentEffects();
       setHoldStaminaRegenBlocked(true); // Block regeneration throughout the actual hold, even when charge is not yet releasable.
+      if (startedMounted) window.Mounts?.setMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER, 1, 0); // No speed is granted before any stamina is committed.
 
       setGlow(0);
-      deps.showToast('Charged Breaker charging — release to strike.', true);
+      deps.showToast(startedMounted ? 'Mounted Charge charging — release to strike.' : 'Charged Breaker charging — release to strike.', true);
       deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)), {
         anim: 'sweep',
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
@@ -238,7 +246,9 @@
         return;
       }
       startedAt = -1;
+      const releasedMounted = startedMounted; // Capture the original riding state for early-release diagnostics.
       startedMounted = false;
+      window.Mounts?.clearMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER); // Release ends the boost; the actual carrier velocity carries the attack.
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Release keeps the same weapon profile as the live pose.
@@ -259,8 +269,8 @@
         const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
         const readyPct = Math.round(MIN_READY_POSE * 100);
         deps.showToast(forced
-          ? `Charged Breaker fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
-          : `Charged Breaker released too early (${posePct}% pose, needed ${readyPct}%).`, false);
+          ? `${releasedMounted ? 'Mounted Charge' : 'Charged Breaker'} fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
+          : `${releasedMounted ? 'Mounted Charge' : 'Charged Breaker'} released too early (${posePct}% pose, needed ${readyPct}%).`, false);
         return;
       }
 
@@ -322,15 +332,11 @@
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
-      if (mounted) {
-        const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Preserves Charged Breaker's existing lunge mastery as extra mounted acceleration instead of discarding it.
-        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Mastery remains useful beyond the mounted speed cap by lengthening the gallop.
-        window.Mounts?.beginMountedCombatBurst?.((2.4 + poseCharge * 0.8) * burstScale, (2.1 + poseCharge * 0.5) * durationScale); // Charged heavy strike becomes a sustained gallop; collision and reins still apply.
-      } else {
+      if (!mounted) {
         deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
           rangePx, halfConeRad, pitchDistanceResistance, directFlightStrength,
         });
-      }
+      } // Mounted Charge gained speed only while spending stamina in Windup; Strike uses real residual momentum.
 
       debugState.lastRelease = {
         at: Date.now(),
@@ -357,6 +363,7 @@
         strikeS: 0,
         recoverS: 0,
         onStrike: () => {
+          if (mounted && window.Mounts?.rideState !== 'mounted') return; // A dismount after release cannot turn this committed attack into a phantom on-foot hit.
           const vegetationCleared = deps.clearVegetationInAttackCone?.(
             deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad,
           ) || 0;
@@ -396,11 +403,12 @@
 
           window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
           const pct = Math.round(poseCharge * 100);
+          const name = mounted ? 'Mounted Charge' : 'Charged Breaker'; // The same mastered heavy ability has a distinct riding label.
           const msg = hits > 0
-            ? `Charged Breaker (${pct}% pose charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
+            ? `${name} (${pct}% pose charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : vegetationCleared > 0
-              ? `Charged Breaker (${pct}% pose charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
-              : `Charged Breaker (${pct}% pose charge) connects with nothing.`;
+              ? `${name} (${pct}% pose charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
+              : `${name} (${pct}% pose charge) connects with nothing.`;
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) {
             window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
@@ -433,7 +441,24 @@
       debugState.poseCharge = poseCharge;
       setGlow(poseCharge);
 
-      const payment = commitStaminaCostToPose(poseCharge, currentEffects(), 'Charged Breaker (charging)'); // Unchanged pose spends nothing.
+      const effects = currentEffects(); // Single mastery snapshot funds this hold step and determines its mounted speed ceiling.
+      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)'); // Unchanged pose spends nothing.
+      if (startedMounted) {
+        const efficiency = Math.max(0.05, Number(shapeStats.efficiency) || 1); // Mirror the payment's authored cost denominator.
+        const fullCost = chargeCostForPose(1, 1 + (Number(effects.stats.staminaCostMul) || 0)) / efficiency
+          * (window.Mounts?.mountedMeleeStaminaMultiplier?.() || 1); // Normalize against this rider's full paid charge budget, including training.
+        const funded = fullCost > 0 ? clamp01(paidChargeBaseline / fullCost) : 0; // Each successful incremental stamina commitment raises speed; no elapsed-time-only bonus.
+        const masteryScale = Math.max(0, 1 + (Number(effects.stats.lungeMul) || 0)); // Preserve heavy lunge mastery as more mounted charge speed.
+        const enchantment = window.EnchantmentSystem; // Living Gust's lunge enhancement must also help mounted windup, without firing its spend-Footing attack event early.
+        const weaponKey = deps.currentWeaponKey(); // Use the equipped weapon's existing enchantment identity, not a new buff owner.
+        const hasGust = !!enchantment?.hasBase?.('livingGust', weaponKey); // No enchantment lookup or extra per-frame work for ordinary weapons.
+        const gustPower = hasGust ? Number(enchantment.getEnchantmentPowerMultiplier?.(weaponKey)) : 0;
+        const gustMultiplier = hasGust ? Number(enchantment.TUNING?.LIVING_GUST_LUNGE_MULTIPLIER) : 1;
+        const gustScale = Number.isFinite(gustPower) && Number.isFinite(gustMultiplier)
+          ? Math.max(0, 1 + (gustMultiplier - 1) * gustPower) : 1; // Read-only counterpart to the impact event's existing lunge modifier.
+        window.Mounts?.setMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER, (2.4 + poseCharge * 0.8) * masteryScale * gustScale, funded);
+        debugState.mountedBoostPaidFraction = funded;
+      }
       const tempo = Math.max(1, Number(payment?.tempoMultiplier) || 1);
       if (tempo > 1 && MAX_CHARGE_S > 0) {
         furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)) / MAX_CHARGE_S; // Keep Furious acceleration on the original visible-pose clock.
@@ -446,6 +471,7 @@
       if (startedAt < 0) return;
       startedAt = -1;
       startedMounted = false;
+      window.Mounts?.clearMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER); // Cancel any remaining charge acceleration on stagger, dismount, or input cancellation.
       debugState.active = false;
       setHoldStaminaRegenBlocked(false); // Cancellation releases only this action's blocker.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);

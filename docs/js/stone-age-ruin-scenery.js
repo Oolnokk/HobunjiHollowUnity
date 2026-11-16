@@ -219,7 +219,9 @@
       throw new Error('Stone Age scenery dependencies are not loaded.');
     const model=new T.Group(); // Holds the authored replacement wall, pillars, floor and static vegetation under the native V50 transform.
     model.name='Rooted Stone Age scenery';
-    const stoneMaterial=makeRuinStoneMaterial(color); // Shared textured material; released with the authored scenery.
+    const stoneMaterial=makeRuinStoneMaterial(color); // Walls and pillars retain their normal solid-depth stone appearance.
+    const floorMaterial=stoneMaterial.clone(); // Used only by the replacement floor so its x-ray face policy cannot leak into shared wall materials.
+    floorMaterial.userData={...floorMaterial.userData,hobunjiInteriorFloorMaterial:true}; // The held-overlay shader may omit nearby floor faces while retaining ruin walls.
     const nativeMeshes=[]; // Original native meshes remain intact as collision and puzzle authorities.
     let walls=0,pillars=0,props=0,pieces=0,closed=false,active=false;
     try{
@@ -260,11 +262,11 @@
       }
       if(!walls)throw new Error('Stone Age ruin has no generated walls to replace.');
       const floorBuildStart=root.performance?.now?.()??Date.now(); // Used for mobile debug timing of the expensive geometry/UV mapping stage.
-      const floor=floorHeights?ruinMappedFloorMesh(meta,seed,stoneMaterial,floorHeights):ruinFloorMesh(meta,seed,stoneMaterial); // Multiroom gameplay uses exact V50 cells; the standalone preview retains its original 4×4 room tiles.
+      const floor=floorHeights?ruinMappedFloorMesh(meta,seed,floorMaterial,floorHeights):ruinFloorMesh(meta,seed,floorMaterial); // Multiroom gameplay uses exact V50 cells; the standalone preview retains its original 4×4 room tiles.
       const floorBuildMs=Math.round((root.performance?.now?.()??Date.now())-floorBuildStart); // Separately exposes the floor build cost without counting Temple asset loading.
       model.add(floor.mesh);
       model.updateWorldMatrix(true,true);
-      const room={model,seed,stoneMaterial,floorPattern:floor.pattern,floorLayout:floor.layout,
+      const room={model,seed,stoneMaterial,floorMaterial,floorPattern:floor.pattern,floorLayout:floor.layout,
         floorY:Number(meta.floorSurfaceY)||0,walls,pillars,props,pieces,floorStones:floor.mesh.userData.stoneCount,
         floorStats:floor.stats||null,floorBuildMs}; // Multi-elevation and real device-side build timing diagnostics.
       const activate=()=>{
@@ -279,6 +281,7 @@
         const geometries=new Set();
         model.traverse(mesh=>{if(!mesh.isMesh)return;if(mesh.geometry)geometries.add(mesh.geometry);if(mesh.isInstancedMesh)mesh.dispose?.();});
         for(const geometry of geometries)geometry.dispose();
+        floorMaterial.dispose();
         stoneMaterial.dispose();
       };
       return {room,activate,dispose,nativeMeshes,get active(){return active;}};
@@ -286,6 +289,7 @@
       const geometries=new Set();
       model.traverse(mesh=>{if(mesh.isMesh&&mesh.geometry)geometries.add(mesh.geometry);});
       for(const geometry of geometries)geometry.dispose();
+      floorMaterial.dispose();
       stoneMaterial.dispose();
       throw error;
     }

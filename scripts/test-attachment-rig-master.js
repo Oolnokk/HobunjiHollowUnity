@@ -226,38 +226,68 @@ assert.strictEqual(pingdort.shoulderGripRule.authoredFixed, true, 'Pingdort fixe
 assert.strictEqual(pingdort.creatureShoulderGripDefaultVersion, 4, 'Pingdort latest exported grip-version metadata wins');
 assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults.pingdort), plainAnimalRig(pingdort.anchors.shoulderGrip.position), 'runtime shoulder grip default matches Pingdort canonical rig');
 
-const skeeriSizeScales = { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } }; // Validates the original Medium profile and shared sprite-space baselines.
-for (const kind of ['skeeri-medium']) {
-  const skeeri = profiles.creatures[kind]; // Only Medium has an independently authored rig; other variants must not inherit its unrelated attachments/scales.
+const skeeriSizeScales = { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } }; // The Medium Skeeri's independent authored size multipliers are unchanged.
+const skeeriNativeWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Native model widths define the correct ratio for ground Y rather than Pingdort's unrelated size scales.
+const skeeriSmallGroundY = pingdort.groundOffsets.small; // Approved Pingdort Small ground Y is the common baseline for all Skeeri.
+const expectedSkeeriGround = { // Verifies the source Small Y is scaled to Medium/Large by Skeeri's native widths.
+  large: skeeriSmallGroundY * (skeeriNativeWidths.large / skeeriNativeWidths.small),
+  medium: skeeriSmallGroundY * (skeeriNativeWidths.medium / skeeriNativeWidths.small),
+  small: skeeriSmallGroundY,
+};
+const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width ruin varieties remain unscaled.
+const domesticSkeeriSizeScales = { // A domestic Small sprite must grow into Medium/Large in step with the exact floor-lift ratio.
+  large: { x: skeeriNativeWidths.large / skeeriNativeWidths.small, y: skeeriNativeWidths.large / skeeriNativeWidths.small },
+  medium: { x: skeeriNativeWidths.medium / skeeriNativeWidths.small, y: skeeriNativeWidths.medium / skeeriNativeWidths.small },
+  small: { x: 1, y: 1 },
+};
+for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
+  const skeeri = profiles.creatures[kind]; // The domestic and three ruin kinds must have independent canonical attachment profiles.
   assert(skeeri, kind + ' has a canonical rig profile');
-  assert.strictEqual(skeeri.kind, kind, kind + ' profile retains its variant ID');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.chatheadFrame), expectedSkeeriChathead, kind + ' uses the Medium chathead crop');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.saddle.position), { x: 0, y: 0.12801484107971195, z: 0.02 }, kind + ' shared-sprite saddle baseline');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.shoulderGrip.position), { x: 0, y: -0.16357451915740964, z: 0 }, kind + ' shared-sprite shoulder baseline');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), skeeriSizeScales, kind + ' size scalars follow the authored Medium profile');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), { large: 0, medium: 0, small: 0 }, kind + ' retains automatic floor calibration sentinel');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' keeps an empty exported saddle rule');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.shoulderGripRule), {}, kind + ' keeps an empty exported shoulder rule');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), {}, kind + ' empty percent overrides match export');
-  assert.strictEqual(skeeri.creatureShoulderGripDefaultVersion, 4, kind + ' grip default version');
-  assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults[kind]), plainAnimalRig(skeeri.anchors.shoulderGrip.position), kind + ' runtime default copies canonical profile');
+  assert.strictEqual(skeeri.kind, kind, kind + ' retains its own species key');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.chatheadFrame), expectedSkeeriChathead, kind + ' shares the approved idle-frame chathead crop');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.shoulderGrip), plainAnimalRig(pingdort.anchors.shoulderGrip), kind + ' copies Pingdort\'s full grip, including yaw and scale');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), expectedSkeeriGround, kind + ' scales the source Small ground Y by Skeeri width');
+  assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults[kind]), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' runtime duplicate defaults use the new grip');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : kind === 'skeeri' ? domesticSkeeriSizeScales : neutralSkeeriSizeScales, kind + ' keeps native ruin sizes while scaling domestic inherited size with ground Y');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' retains its empty saddle rule');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.shoulderGripRule), {}, kind + ' retains its empty shoulder rule');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), {}, kind + ' does not inherit redundant percentage scales');
+  assert.strictEqual(skeeri.creatureShoulderGripDefaultVersion, 4, kind + ' retains the exported grip-default version');
+  if (kind === 'skeeri-medium') {
+    assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.saddle.position), { x: 0, y: 0.12801484107971195, z: 0.02 }, 'Medium Skeeri keeps its independent saddle coordinates');
+  } else {
+    assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.saddle.position), { x: 0, y: 0, z: 0 }, kind + ' does not copy Medium Skeeri\'s saddle');
+  }
 }
-assert.strictEqual(profiles.creatures['skeeri-small'], undefined, 'Small Skeeri retains its original non-chathead rig defaults');
-assert.strictEqual(profiles.creatures['skeeri-large'], undefined, 'Large Skeeri retains its original non-chathead rig defaults');
 const importedSkeeriVariants = guard.reconcileProfiles({ creatures: {
   'skeeri-small': { kind: 'skeeri-small', chatheadFrame: null, sizeScales: { small: { x: .22, y: .24 } }, marker: 'unchanged-small' },
   'skeeri-large': { kind: 'skeeri-large', chatheadFrame: null, sizeScales: { large: { x: 1.9, y: 2.2 } }, marker: 'unchanged-large' },
-} }).creatures; // Existing separate editor rig rows inherit a chathead frame without inheriting Medium creature scale/attachments.
+} }).creatures; // Older independent editor rig rows retain their own custom scale fields while gaining the approved grip and floor calibration.
 for (const kind of ['skeeri-small', 'skeeri-large']) {
-  assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants[kind].chatheadFrame), expectedSkeeriChathead, kind + ' exported rig row persists the shared crop');
+  assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants[kind].chatheadFrame), expectedSkeeriChathead, kind + ' null legacy head frame repairs to the shared crop');
   assert.strictEqual(importedSkeeriVariants[kind].marker, 'unchanged-' + kind.split('-')[1], kind + ' unknown custom fields survive authoring');
-  assert.strictEqual(importedSkeeriVariants[kind].anchors, undefined, kind + ' must not inherit Medium saddle/shoulder grips');
+  assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants[kind].anchors.shoulderGrip.position), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' missing legacy grip receives canonical Pingdort values');
+  assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants[kind].groundOffsets), expectedSkeeriGround, kind + ' missing floor table receives the calibrated values');
 }
-assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants['skeeri-small'].sizeScales), { small: { x: .22, y: .24 } }, 'Small Skeeri keeps independent authored size values');
-assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants['skeeri-large'].sizeScales), { large: { x: 1.9, y: 2.2 } }, 'Large Skeeri keeps independent authored size values');
+assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants['skeeri-small'].sizeScales), { small: { x: .22, y: .24 } }, 'Small Skeeri keeps an independently authored size row');
+assert.deepStrictEqual(plainAnimalRig(importedSkeeriVariants['skeeri-large'].sizeScales), { large: { x: 1.9, y: 2.2 } }, 'Large Skeeri keeps an independently authored size row');
+for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
+  const legacy = plainAnimalRig(profiles.creatures[kind]); // Old stock floor zeros can be present even when the editor has other valid authored fields.
+  legacy.groundOffsets = { large: 0, medium: 0, small: 0 };
+  if (kind === 'skeeri-medium') legacy.anchors.shoulderGrip.position = { x: 0, y: -0.16357451915740964, z: 0 }; // Exact retired Medium Skeeri grip only.
+  const migrated = guard.reconcileProfiles({ creatures: { [kind]: legacy } }).creatures[kind];
+  assert.deepStrictEqual(plainAnimalRig(migrated.groundOffsets), expectedSkeeriGround, kind + ' obsolete zero floor table migrates');
+  assert.deepStrictEqual(plainAnimalRig(migrated.anchors.shoulderGrip.position), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' old grip receives approved coordinates');
+  const custom = plainAnimalRig(legacy); // A later hand-authored grip or positive floor table must not be mistaken for an obsolete stock value.
+  custom.groundOffsets.small = 0.123;
+  custom.anchors.shoulderGrip.position = { x: 0.01, y: -0.13, z: 0.03 };
+  const retained = guard.reconcileProfiles({ creatures: { [kind]: custom } }).creatures[kind];
+  assert.deepStrictEqual(plainAnimalRig(retained.groundOffsets), custom.groundOffsets, kind + ' preserves a custom floor offset table');
+  assert.deepStrictEqual(plainAnimalRig(retained.anchors.shoulderGrip.position), custom.anchors.shoulderGrip.position, kind + ' preserves a custom shoulder grip');
+}
 assert.deepStrictEqual(plainAnimalRig(profiles.creatures.moot.chatheadFrame), expectedMootChathead, 'Moot chathead frame is authored, not borrowed from another animal');
 const roundTripAnimalRig = guard.reconcileProfiles({ characters: {}, creatures: {} }).creatures; // Checks authoring imports with no prior animal profiles get the approved defaults.
-for (const kind of ['pingdort', 'skeeri-medium', 'moot']) {
+for (const kind of ['pingdort', 'skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large', 'moot']) {
   assert.deepStrictEqual(plainAnimalRig(roundTripAnimalRig[kind]), plainAnimalRig(profiles.creatures[kind]), kind + ' master guard preserves the exact newly approved profile');
 }
 vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/js/animal-chathead-frame.js'), 'utf8'), sandbox, { filename: 'animal-chathead-frame.js' });
