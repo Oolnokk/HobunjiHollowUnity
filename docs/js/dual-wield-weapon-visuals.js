@@ -438,6 +438,14 @@
     offRoot.add(offMesh);
     plane.add(offRoot);
     plane.add(mainRoot);
+    // The copies inherit the source plane's layers, including the PNG outline-occluder layer, but their cloned
+    // materials are unknown to that registry. Unregistered, its depth-only replay draws them in full COLOR with
+    // no portrait stencil, so with a depth-write-free shoulder-pet owner the weapon shows through the front plane.
+    const occluder = global.PngPlaneOutlineOccluder;
+    if (occluder?.registerDepthMesh && Number.isInteger(occluder.LAYER) && (plane.layers?.mask & (1 << occluder.LAYER))) {
+      occluder.registerDepthMesh(mainMesh);
+      occluder.registerDepthMesh(offMesh);
+    }
     const next = {
       ...context,
       key,
