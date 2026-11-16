@@ -383,7 +383,7 @@
       const outsideView = withinRadius && cameraReady && chunk.viewSphere
         && !state.frustum.intersectsSphere(chunk.viewSphere);
       const visible = withinRadius && !outsideView;
-      if (chunk.visible !== visible) chunk.group.visible = visible;
+      chunk.group.visible = visible; // Reassert our view gate if the general vegetation culler touched the group.
       chunk.visible = visible;
       if (!visible) culledChunkCount++;
       if (outsideView) frustumCulledChunkCount++;
@@ -407,8 +407,8 @@
     if (!state) return false;
     activeState = state;
     refreshState(state, Number(playerX), Number(playerZ), radius);
-    const camera = fogDeps?.getActiveCamera?.() || fogDeps?.camera
-      || root.Combat?.deps?.getActiveCamera?.() || null; // Same camera gameplay uses for the rendered Cloud Forest.
+    const camera = fogDeps?.getActiveCamera?.()
+      || root.Combat?.deps?.getActiveCamera?.() || fogDeps?.camera || null; // Prefer the active cinematic/gameplay camera over a static camera reference.
     updateChunkVisibility(state, Number(playerX), Number(playerZ), radius, camera);
     updateDevPanelStatus(state);
     return state.status === 'ready';
