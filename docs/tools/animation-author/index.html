@@ -4401,9 +4401,9 @@ async function onAnimationRepositoryReady() {
       setAnimationRecentChange('Repository loaded; the previous autosave could not be restored.');
     }
   } else {
-    hideOverlay();
     setStatus(`Animation library ready · ${state.npcs.length} NPCs`, 'good');
   }
+  hideOverlay(); // Also dismiss loading after a successful (or failed) autosave restoration, not only when no saved actors exist.
 }
 
 async function initAnimationWorkspaceScene() {
