@@ -23,7 +23,7 @@ const library = () => ({creatures:{
   drenkirra:{anchors:{shoulderGrip:clone(oldGrip)}},
   grehlr:{anchors:{shoulderGrip:clone(oldGrehlr)}},
   uumkaoii:{anchors:{shoulderGrip:clone(oldUum)}},
-  puktuk:{anchors:{shoulderGrip:{position:{x:0,y:0,z:0},rotationDeg:{x:0,y:-61,z:0}}}},
+  puktuk:{anchors:{shoulderGrip:{position:clone(master.profiles.creatures.puktuk.anchors.shoulderGrip.position),rotationDeg:{x:0,y:-61,z:0}}}},
 }});
 
 class Q {
