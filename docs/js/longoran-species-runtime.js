@@ -5,6 +5,7 @@
 
   const ID = 'longoran'; // Distinct saved/runtime species id so Longoran retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Longoran system.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.852434, female: 0.801288 }); // Fixed body-proportional pet size (geometric mean of Longoran/Tletingan x/y full-rig defaults); never calculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const DEFAULT_GAIT_PROFILE = Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }); // Bulwark's strongest existing forward lurch.
   const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.1, sway: 0, kyphosis: 1 }); // User-exported male/female posture; independent of walking gait.
@@ -193,6 +194,10 @@
       const profile = clone(source);
       profile.species = ID;
       profile.gender = gender;
+      if (profile.anchors?.shoulderPerch) {
+        const perchScale = AUTHORED_PERCH_SCALES[gender]; // Used only to author this gender's cloned anchor; the character parent still scales the pet normally.
+        profile.anchors.shoulderPerch.scale = { x: perchScale, y: perchScale, z: perchScale };
+      }
       if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
       if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
       profile.anatomy ||= {};
