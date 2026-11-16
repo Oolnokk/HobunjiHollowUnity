@@ -292,7 +292,13 @@ async function testRealEncounterFlow() {
   assert.equal(milkInventory.apple,2,'rejected ordinary gift not consumed');
   for(const key of ['puktukMilk','yellowDewMilk','uumkaoiiWhiteDewMilk']) {
     held={kind:'item',key,def:milkDefs[key]};
-    assert(gifting.getNpcGiftOfferAction(npc),key+' is eligible before the third exchange');
+    const milkAction=gifting.getNpcGiftOfferAction(npc);
+    assert(milkAction,key+' is eligible before the third exchange: '+JSON.stringify({
+      giftable:gifting.isItemGiftable(held),accepted:C.canAcceptMilkGift(held,giftDeps),
+      phase:C.debugSnapshot().phase,milkCount:C.debugSnapshot().milksGiven,
+      reward:!!C.debugSnapshot().reward,zone:C.debugSnapshot().zone,
+      player:game.player,npc:npc.root.position,
+    }));
     assert.equal(gifting.offerGift(npc),true,'milk gift opens its cutscene');
     assert.equal(gifting.offerGift(npc),false,'repeated input during the active cutscene is rejected');
     await Promise.resolve();await Promise.resolve(); // Finish milk dialogue and release the synchronous input lock.
