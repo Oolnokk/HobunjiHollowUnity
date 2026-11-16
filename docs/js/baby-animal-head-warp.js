@@ -238,33 +238,44 @@
 
   async function ensureIdleMask(kind, idleSource = null, frameOverride = null) {
     const key = baseKind(kind);
-    if (!key) return null;
-    const current = maskForKind(key, frameOverride);
+    const frame = validateFrame(frameOverride) || frameForKind(key); // One authored source crop shared across every genotype and pose.
+    if (!key || !frame) return null;
+    const current = maskForKind(key, frame);
     if (current) return current;
-    if (idleSource) return primeIdleMask(key, idleSource, frameOverride); // Caller guarantees this is an IDLE pose; never prime from run2.
-    if (pendingIdleMasks.has(key)) return pendingIdleMasks.get(key);
+    const promiseKey = key + '|' + frameKey(frame); // Different revisions of an authored chathead box must not share a pending request.
+    if (pendingIdleMasks.has(promiseKey)) return pendingIdleMasks.get(promiseKey);
     const promise = (async () => {
       try {
-        const renderer = window.CreatureGeneticsRender;
-        const raw = renderer?.SPECIES?.[key]?.base?.idle; // Source is the species' authored base IDLE sprite, independent of genotype.
-        if (!raw) throw new Error('No registered idle base sprite: ' + key);
-        const url = /^(?:https?:|blob:|data:)/i.test(raw) ? raw : new URL(raw, document.baseURI).href;
-        const image = await new Promise((resolve, reject) => {
-          const idle = new Image();
-          idle.crossOrigin = 'anonymous'; // Raw hosted assets must not taint head-mask canvas pixel reads.
-          idle.onload = () => resolve(idle);
-          idle.onerror = () => reject(new Error('Idle source unavailable or not CORS-readable: ' + raw));
-          idle.src = url;
-        });
-        return maskForKind(key) || primeIdleMask(key, image, frameOverride);
+        const raw = window.CreatureGeneticsRender?.SPECIES?.[key]?.base?.idle; // Prefer the untouched species IDLE art, never an individual genotype's eye/pattern composite.
+        if (raw) {
+          try {
+            const url = /^(?:https?:|blob:|data:)/i.test(raw) ? raw : new URL(raw, document.baseURI).href;
+            const image = await new Promise((resolve, reject) => {
+              const idle = new Image();
+              idle.crossOrigin = 'anonymous'; // Needed before src so hosted raw idle pixels remain readable.
+              idle.onload = () => resolve(idle);
+              idle.onerror = () => reject(new Error('Idle sprite unavailable or not CORS-readable: ' + raw));
+              idle.src = url;
+            });
+            const produced = primeIdleMask(key, image, frame);
+            if (produced) return produced; // The unmodified idle silhouette is authoritative whenever available.
+            return null; // A transparent authored head box must remain empty, not silently become a genotype-driven mask.
+          } catch (error) {
+            debug.lastMaskError = String(error?.message || error);
+            // Unregistered/temporarily unavailable raw assets may still have a genuine idle canvas from the caller.
+          }
+        }
+        if (idleSource) return primeIdleMask(key, idleSource, frame); // Fallback ONLY to a caller explicitly supplying the IDLE pose.
+        if (!raw) debug.lastMaskError = 'No registered idle sprite for ' + key;
+        return null;
       } catch (error) {
         debug.lastMaskError = String(error?.message || error);
         return null;
       }
     })();
-    pendingIdleMasks.set(key, promise);
+    pendingIdleMasks.set(promiseKey, promise);
     try { return await promise; }
-    finally { if (pendingIdleMasks.get(key) === promise) pendingIdleMasks.delete(key); }
+    finally { if (pendingIdleMasks.get(promiseKey) === promise) pendingIdleMasks.delete(promiseKey); }
   }
 
   function warpPixels(source, width, height, frame, requestedScale = scale, idleMask = null) {
