@@ -68,7 +68,7 @@ const warp = {
     return role === 'shoulderPet' && genes?.sizeClass === 'small' && kind !== 'pingdort';
   },
   frameForKind: () => headBox,
-  scaleForKind: () => 1.32,
+  scaleForKind: () => 1.23,
   async ensureIdleMask(kind, idleCanvas = null) {
     maskRequests.push({ kind, sourcePose: idleCanvas?.frame || null });
     return { kind, opaquePixels: 20 }; // Represents a cached idle alpha silhouette supplied by the actual warp module.
@@ -176,7 +176,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moot.weightMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.compressibilityMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.pivot.x, 0.37400034701593793);
-  assert.equal(moot.babyHeadScale, undefined, 'Moot must inherit 132% instead of freezing its earlier 123% setting');
+  assert.equal(moot.babyHeadScale, undefined, 'Moot must inherit the new 123% default instead of freezing a species override');
   assert.equal(moot.babyHeadFrame.width, 0.46468750000000003);
   assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2729887486531961);
   console.log('Rare Small pet final textures, naturally Small exemption, split patterns and eyes, and Moot paint pass.');
