@@ -112,6 +112,7 @@
       if (nextPose === requestedPose && (posedAvatar || buildTask || buildError || nextPose === 'source')) {
         return buildTask || posedAvatar; // The animation loop must not allocate promises or rewrite the inspector DOM every frame.
       }
+      if (nextPose === 'perched' && requestedPose === 'source') buildError = null; // Revisiting Perched retries a transient artwork error after Source remained usable.
       requestedPose = nextPose;
       if (!disposed && requestedPose === 'perched' && !posedAvatar && !buildTask && !buildError) {
         buildTask = buildPerchedAvatar().catch(error => {
