@@ -43,6 +43,7 @@
         // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
+          lastDecision = 'task-turn-in';
           const _commissionPrompt = _turnInTask.commission ? window.NpcCraftingCommissionDelivery?.turnInPrompt?.(_turnInTask) : null; // Crafting jobs carry a real garment/furniture deliverable, not fetch items.
           const _turnInLabel = (_turnInTask.items || []).map(it => `${deps.ITEM_DEFS?.[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', '); // Ordinary request/favor items still use their existing labels.
           window.DialogueContent?.beginSyntheticChoice(rec);
@@ -58,6 +59,7 @@
         }
 
         if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
+          lastDecision = 'combat-tutorial';
           window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
           return;
         }
@@ -72,6 +74,7 @@
         // favor roll.
         const _requestOffer = rec?.id ? await window.ProceduralTasks.maybeProposeRequest(rec) : null;
         if (_requestOffer) {
+          lastDecision = 'request-offer';
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
@@ -92,6 +95,7 @@
         // shortcut the shop fast-paths use. See maybeOfferFavor.
         const _favorTask = window.ProceduralTasks.maybeOfferFavor(rec);
         if (_favorTask) {
+          lastDecision = 'favor-offer';
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
@@ -114,6 +118,7 @@
         // their own dialogueTrees — reachable through ordinary conversation
         // any time, with no station/idle requirement at all.
         if (deps.isGeneralStoreNpcOnDuty?.(walker)) {
+          lastDecision = 'general-store';
           const cfg = deps.generalStoreButtonConfig?.() || {};
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
@@ -128,6 +133,7 @@
         }
 
         if (deps.isCarpenterNpcOnDuty?.(walker)) {
+          lastDecision = 'carpenter';
           const cfg = deps.carpenterButtonConfig?.() || {};
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
@@ -147,6 +153,7 @@
         // than being station-gated. "Chat" re-enters his normal dialogue
         // tree exactly like the General Store's Chat option does.
         if (rec?.id === 'jubmir') {
+          lastDecision = 'jubmir-trade';
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
