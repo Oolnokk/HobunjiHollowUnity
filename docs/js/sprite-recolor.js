@@ -212,7 +212,7 @@
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
     parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20261104scent1439',()=>!!window.AmphibiousFishing);
     parserOrderedScript('amphibious-fish-corpse-cleanup.js','amphibious-corpse-cleanup','20260826a');
-    parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
+    parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20261115fishStyleCounters1',()=>!!window.FishingPresentationDebug);
   }
 
   window.SpriteRecolor={getRecoloredCanvas,recolorImageData,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,SECONDARY_KEY_A,SECONDARY_KEY_B,KEY_HUE_TOLERANCE,DUAL_KEY_MODE_PREFIX};
