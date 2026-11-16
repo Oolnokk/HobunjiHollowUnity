@@ -76,8 +76,24 @@
     };
   }
   function persist() {
-    if (profile() && questStore()) profile().questProgress = questStore();
-    inventoryDeps?.saveMemberWorldData?.(); // Reuses the member-scoped save already used by relic acquisition.
+    const store = questStore(); // Keeps the profile's in-memory copy aligned with the member-scoped Quest Log.
+    if (profile() && store) profile().questProgress = store;
+    try {
+      return inventoryDeps?.saveMemberWorldData?.() !== false; // The canonical member serializer explicitly returns false on quota/save failure.
+    } catch (error) {
+      console.warn('[fey-armament-quest] Could not save quest state:', error);
+      return false;
+    }
+  }
+  function notifyStarted() {
+    inventoryDeps?.showToast?.('Quest started: ' + TITLE, true); // Acquisition announces the quest only after its weapon and progress are saved.
+  }
+  function rollbackDeferredStart() {
+    const store = questStore(); // Undo only a just-created stage-zero quest if its containing relic grant failed.
+    if (!store || store[QUEST_ID]?.status !== 'active' || store[QUEST_ID]?.stage !== 0) return false;
+    delete store[QUEST_ID];
+    if (profile()) profile().questProgress = store;
+    return true;
   }
   function maybeStart(options = {}) {
     const store = questStore();
@@ -85,8 +101,13 @@
     store[QUEST_ID] = { status: 'active', stage: 0, progress: descriptor(0) };
     if (options.deferSave === true) {
       if (profile()) profile().questProgress = store; // The acquisition path saves the weapon and quest in one member write.
-    } else persist();
-    inventoryDeps?.showToast?.('Quest started: ' + TITLE, true);
+    } else if (!persist()) {
+      delete store[QUEST_ID]; // A rejected save must not create an in-memory-only quest unlock.
+      if (profile()) profile().questProgress = store;
+      inventoryDeps?.showToast?.('Could not save The Knotworked Armament. Your weapon was kept; try again after saving.', false);
+      return false;
+    }
+    if (options.silent !== true) notifyStarted();
     return true;
   }
   function syncFromInventory() {
@@ -101,7 +122,12 @@
     store[QUEST_ID] = next >= OBJECTIVES.length
       ? { status: 'complete', stage: next, progress: { ...current.progress, objective: 'Garanki will now handle Fey enchantments, reluctantly and for twice his usual fee.', ready: false } }
       : { status: 'active', stage: next, progress: descriptor(next) };
-    persist();
+    if (!persist()) {
+      store[QUEST_ID] = current; // Preserve the last saved stage; never unlock Fey services without a durable quest completion.
+      if (profile()) profile().questProgress = store;
+      inventoryDeps?.showToast?.('Quest progress could not be saved. Speak to them again to retry.', false);
+      return false;
+    }
     inventoryDeps?.showToast?.(next >= OBJECTIVES.length ? 'Quest completed: ' + TITLE + ' — Fey services unlocked!' : 'Quest updated: ' + OBJECTIVES[next], true);
     window.TasksPanel?.render?.();
     window.HarlyaoRelics?.render?.();
@@ -203,6 +229,7 @@
   window.FeyArmamentQuest = Object.freeze({
     QUEST_ID, TITLE, OBJECTIVES, bindInventoryDeps, bindQuestDeps, maybeStart, syncFromInventory,
     completed, hasWeapon, menuStatus, ownedFeyWeaponKeys, dialogueTreeFor, onDialogueNode, debugSnapshot,
+    notifyStarted, rollbackDeferredStart, // Used only to commit/rollback a newly granted bound relic's shared member save.
   });
   document.addEventListener('hobunjiPlayerReady', () => {
     window.setTimeout(() => { syncFromInventory(); }, 0); // Wait for member inventory + equipment restoration before legacy detection.
