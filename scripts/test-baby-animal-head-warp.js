@@ -37,7 +37,7 @@ const documentStub = {
 };
 vm.runInNewContext(source, { window: windowStub, document: documentStub, Uint8ClampedArray }, { filename: 'baby-animal-head-warp.js' });
 const warp = windowStub.BabyAnimalHeadWarp;
-assert.equal(warp.getScale(), 1.32, 'every species defaults to the new 132% scale');
+assert.equal(warp.getScale(), 1.23, 'every species defaults to the new 123% scale');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
 windowStub.AnimalChatheadFrame = { frameForKind: () => ({ ...head, source: 'animal-head-rig-fallback' }) }; // The dialogue module returns a generic crop even for non-species.
@@ -49,7 +49,7 @@ assert.equal(warp.frameForKind('moot').height, .55, 'explicit Moot source box ou
 windowStub.HobunjiAuthoredAnimalHeadRigs = null;
 windowStub.AnimalChatheadFrame = null;
 assert(warp.frameForKind('pingdort'), 'unpainted registered species retain a conservative baby head frame');
-assert.equal(warp.scaleForKind('pingdort'), 1.32, 'all baby species default to 132%, including babies of naturally small birds');
+assert.equal(warp.scaleForKind('pingdort'), 1.23, 'all baby species default to 123%, including babies of naturally small birds');
 assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'small' }, 'shoulderPet'), true,
   'genetically Small animals of normally Medium species use the juvenile head warp as pets');
 assert.equal(warp.isSmallSizeVariantPet('pingdort', { sizeClass: 'small' }, 'shoulderPet'), false,
@@ -64,13 +64,23 @@ writes.set('hobunji_baby_head_warp_scale_v1', '1.22'); // Prior experiments save
 const migratedWindow = { ...windowStub };
 const migratedCanvas = { ...documentStub };
 vm.runInNewContext(source, { window: migratedWindow, document: migratedCanvas, Uint8ClampedArray });
-assert.equal(migratedWindow.BabyAnimalHeadWarp.getScale(), 1.32,
-  'the deprecated default 122% preference migrates to the approved universal 132%');
+assert.equal(migratedWindow.BabyAnimalHeadWarp.getScale(), 1.23,
+  'the deprecated default 122% preference migrates to the approved universal 123%');
 writes.set('hobunji_baby_head_warp_scale_v1', '1.23');
 const migratedFrom123 = { ...windowStub };
 vm.runInNewContext(source, { window: migratedFrom123, document: documentStub, Uint8ClampedArray });
-assert.equal(migratedFrom123.BabyAnimalHeadWarp.getScale(), 1.32,
-  'previous inherited 123% preference also migrates to the new 132% default');
+assert.equal(migratedFrom123.BabyAnimalHeadWarp.getScale(), 1.23,
+  'a previously saved 123% remains at the new universal default');
+writes.set('hobunji_baby_head_warp_scale_v1', '1.32');
+const migratedFrom132 = { ...windowStub }; // Previous inherited 132% must not pin existing browsers to an obsolete setting.
+vm.runInNewContext(source, { window: migratedFrom132, document: documentStub, Uint8ClampedArray });
+assert.equal(migratedFrom132.BabyAnimalHeadWarp.getScale(), 1.23,
+  'existing browsers using the former 132% default migrate to 123%');
+writes.set('hobunji_baby_head_warp_scale_v1', '1.27');
+const userChosenScale = { ...windowStub }; // Non-default manual Nursery adjustments survive the default migration.
+vm.runInNewContext(source, { window: userChosenScale, document: documentStub, Uint8ClampedArray });
+assert.equal(userChosenScale.BabyAnimalHeadWarp.getScale(), 1.27,
+  'a separate manually chosen scale is not overwritten by migration');
 writes.delete('hobunji_baby_head_warp_scale_v1');
 const paintedFrame = { x: 0.25, y: 0.18, width: 0.3, height: 0.42, coordinateSpace: 'sprite-normalized-top-left' };
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ 'custom-pet': { babyHeadScale: 1.4, babyHeadFrame: paintedFrame } }));
@@ -92,6 +102,8 @@ const mask = warp.primeIdleMask('grehlr', idleSource);
 assert(mask && mask.opaquePixels > 0, 'idle opaque pixels inside chathead frame define the first mask');
 assert.equal(warp.maskForKind('grehlr'), mask, 'same cached idle mask is reused for every animated pose');
 const warped = warp.warpPixels(pixels, width, height, head, 1.32, mask);
+assert.notEqual(warp.warpPixels(pixels, width, height, head, 1.23, mask), pixels,
+  'the new 123% setting still produces an actual pixel deformation');
 assert.notEqual(warped, pixels, 'the warp returns new pixels and never mutates shared adult art');
 assert.equal(at(warped, 0, 0), at(pixels, 0, 0), 'far-away corner is exactly unchanged');
 assert.equal(at(warped, width - 1, height - 1, 3), at(pixels, width - 1, height - 1, 3), 'distant transparency is unchanged');
@@ -104,7 +116,7 @@ assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1.32)),
   'without an established idle mask no rectangular fallback is permitted');
 
 const input = { width, height, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
-const output = warp.applyToCanvas(input, 'grehlr');
+const output = warp.applyToCanvas(input, 'grehlr', 1.32); // Match the existing exact pixel-position fixture's explicit 132% comparison scale.
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
@@ -252,9 +264,9 @@ console.log('Baby animal authored-head warp integration and pixel tests passed.'
   const birdMask = await api.ensureIdleMask('pingdort', decoratedIdle); // Real baby-bird idle art still exists, despite missing genotype metadata.
   assert(birdMask?.opaquePixels > 0, 'a supplied idle sprite establishes the baby mask for a naturally Small species');
   assert(api.frameForKind('pingdort'), 'the chathead fallback is now available for that verified real idle-sprite species');
-  api.setScale(1.32);
+  api.setScale(1.23);
   assert.notEqual(api.applyToCanvas(input, 'pingdort'), input,
-    'a naturally Small baby without a genotype renderer still receives the universal 132% head warp');
+    'a naturally Small baby without a genotype renderer still receives the universal 123% head warp');
   const alternatePose = Uint8ClampedArray.from(pixels); // Movement pose and its colored overlays are warped after the fixed source was chosen.
   alternatePose.set([245, 40, 70, 255], (21 * width + 21) * 4);
   assert.notDeepEqual(
