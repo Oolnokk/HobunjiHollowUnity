@@ -151,6 +151,25 @@ async function testRealEncounterFlow() {
   const npc={root:{position:{x:center.c+1.5,y:0,z:center.r+3.5},parent:{remove(){}}},
     area:'map_western_slope',rec:{id:'boney_shinjimi'},resetRouteState(){},update(){}};
   const spawned=[],despawned=[];
+  const sceneGroups=[]; // Tracks the real encounter's one authored Highland house in a fake active zone scene.
+  const scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  let generatedPiece=null; // Captures post-cut source geometry so the door can be verified against actual authored wall vertices.
+  const authoredPiece=JSON.parse(read('docs/config/pieces/house-section-3x3.json'));
+  moonWindow.GridTileAccessors={getActiveScene:()=>scene};
+  moonWindow.THREE={};
+  moonWindow.HousePieceGen={buildGroupFromPiece(_THREE,piece,c,r){
+    generatedPiece=piece;
+    assert.equal(c,center.c);assert.equal(r,center.r);
+    return {visible:true,userData:{},parent:null,name:''};
+  }};
+  moonContext.fetch=async url=>{
+    assert.equal(url,'config/pieces/house-section-3x3.json');
+    return {ok:true,json:async()=>authoredPiece};
+  };
+  const colliders=[]; // Drives the same public Combat.debugMeleeColliders() API that the live game uses for recent swing hit volumes.
+  moonWindow.Combat={debugMeleeColliders:()=>colliders};
+  let walkerDt=0; // Verifies that momentary escape boosts affect the installed NPC walker instead of only its debug state.
+  npc.update=dt=>{walkerDt=dt;};
   let visible=false, where='map_western_slope';
   game.npcWalkers=[];
   game.getCurrentArea=()=>where;
@@ -176,8 +195,20 @@ async function testRealEncounterFlow() {
   game.player.x=(center.c+4.5)*64; // Outside body-collision reach: isolates cover-aware LOS from the separate physical-contact escape mechanic.
   game.player.y=(center.r+3.5)*64;
   C.update(.05);
-  await Promise.resolve();await Promise.resolve();
+  for(let i=0;i<8;i++)await Promise.resolve(); // Resolve the independent house-fetch and NPC-building promises without wall-clock timers.
+  C.update(.05);
   assert.equal(spawned.length,1,'single NPC materialization');
+  assert.equal(sceneGroups.length,1,'only one authored house is materialized');
+  const jambs=generatedPiece.base.faces.filter(face=>String(face.id).includes('_boneyDoor_'));
+  assert.equal(jambs.length,3,'south wall has two physical jambs and a lintel');
+  assert.equal(generatedPiece.footprint.cells.length,9,'Highland house retains its 3×3 footprint');
+  assert.equal(sceneGroups[0].visible,true,'house is visible while Boney is near it');
+  npc.root.position.x=center.c+12; npc.root.position.z=center.r+12;
+  C.update(.05);
+  assert.equal(sceneGroups[0].visible,false,'house is hidden when the hermit is far away');
+  assert.equal(C.debugSnapshot().collision,true,'magic house remains solid even when invisible');
+  npc.root.position.x=center.c+1.5; npc.root.position.z=center.r+3.5;
+  C.update(.05);
   assert.equal(npc.rec.equippedCosmetics.includes(hat),true,'Boney starts wearing the real kasa');
   assert.equal(npc.rec.appearance.cosmetics.facialHair,beard,'Boney has the authored Grand Beard');
   for(let i=0;i<4;i++)C.update(.10);
@@ -186,6 +217,22 @@ async function testRealEncounterFlow() {
   for(let i=0;i<4;i++)C.update(.10);
   assert.equal(C.debugSnapshot().phase,'flee','mutual LOS starts the chase');
   assert.equal(C.debugSnapshot().escaped,1);
+  const catchesBefore=C.debugSnapshot().catches;
+  game.player.x=npc.root.position.x*64;
+  game.player.y=npc.root.position.z*64;
+  C.update(.1);
+  assert.equal(C.debugSnapshot().catches,catchesBefore+1,'player-body hitbox contact triggers escape boost');
+  npc.update(.1);
+  assert(walkerDt>0.26&&walkerDt<0.28,'body-contact escape boost multiplies the normal walker dt by 2.7 temporarily');
+  game.player.x=(npc.root.position.x-1.6)*64;
+  game.player.y=npc.root.position.z*64;
+  for(let i=0;i<10;i++)C.update(.1); // Let the brief contact cooldown expire without another body overlap.
+  colliders.push({actor:game.player,recordedAt:Date.now(),
+    origin:{x:npc.root.position.x-1,y:0.6,z:npc.root.position.z},
+    horizontalRangeWorld:2.2,verticalRiseWorld:0,halfConeRad:0.8,yaw:0,halfHeightWorld:0.4});
+  C.update(.1);
+  assert.equal(C.debugSnapshot().weaponContacts,1,'recent real melee collider triggers the distinct weapon-contact escape boost');
+  colliders.length=0;
   npc.root.position.x=center.c+1.5;npc.root.position.z=center.r+1.5;
   C.update(.1);
   assert.equal(C.debugSnapshot().phase,'home','Boney reaches his hiding place');
