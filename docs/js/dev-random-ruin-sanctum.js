@@ -981,9 +981,12 @@
     const base = corpse.rosterRecord || null;
     const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics:[], cosmeticSlots:{}, appliedDyes:{} } : base) : null;
     coffin.raising = true;
+    const owner=s, revision=owner?.encounterRevision; // A prior attempt's asynchronous resurrection cannot unlock a new attempt's coffin.
     deps?.corpseObjects?.delete?.(corpse);
     if (deps?.despawnCreature) deps.despawnCreature(corpse); else disposeActor(corpse);
-    spawnSkeleton(coffin, roster, at).finally(() => { coffin.raising = false; });
+    spawnSkeleton(coffin, roster, at).finally(() => {
+      if (s===owner && owner.encounterRevision===revision) coffin.raising=false;
+    });
     coffin.raised = (coffin.raised || 0) + 1;
     deps?.showToast?.('The lich raises a fallen skeleton!', false);
     return true;
