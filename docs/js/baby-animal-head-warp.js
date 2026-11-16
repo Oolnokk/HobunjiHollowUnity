@@ -106,8 +106,16 @@
     const savedRig = previews?.[normalized] || previews?.[base];
     const committed = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
       || window.CreatureGeneticsRender?.headRigForKind?.(base);
-    return frameFromRig(savedRig) || frameFromRig(committed)
-      || validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame); // Older/paintless species retain the existing chathead fallback.
+    const painted = frameFromRig(savedRig) || frameFromRig(committed);
+    const chathead = validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame);
+    if (painted || chathead) return painted || chathead;
+    // Unpainted birds and other registered creatures still deserve baby proportions. Reuse the existing dialogue-frame solver
+    // rather than silently skipping them; newly painted rigs automatically supersede this fallback.
+    const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
+    if (dialogue) return dialogue;
+    const knownSpecies = window.CreatureGeneticsRender?.SPECIES?.[base];
+    return knownSpecies ? { x: 0.32, y: 0.17, width: 0.36, height: 0.36,
+      coordinateSpace: 'sprite-normalized-top-left' } : null; // Only known sprite species get a conservative fallback; unknown IDs still skip.
   }
 
   function warpPixels(source, width, height, frame, requestedScale = scale) {
