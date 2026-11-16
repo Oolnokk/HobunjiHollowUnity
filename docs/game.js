@@ -8763,62 +8763,15 @@
         }
       }
 
-      // Shoulder-pet-vs-player layering uses whole-sprite draw order, not
-      // intersecting depth surfaces. Both cutouts keep depth testing against
-      // the world, but stop writing depth against each other while attached.
-      const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
-      const PLAYER_OVER_SHOULDER_PET_RENDER_ORDER = 8;
-      const SHOULDER_PET_LAYER_FACE_HYSTERESIS = 0.1; // Used by the face classifier below to prevent layer flips while the logical facing is nearly edge-on.
-      const _shoulderPetLayerPlayerWorld = new THREE.Vector3(); // Reused by the logical-facing classifier to sample the player's world position without per-frame allocation.
-      const _shoulderPetLayerCameraWorld = new THREE.Vector3(); // Reused by the logical-facing classifier to sample the camera's world position without per-frame allocation.
-      let _shoulderPetLayerFrontVisible = null; // Used by the face classifier to retain the last stable front/back side inside the hysteresis band.
-      let _shoulderPetLayerDecision = null; // Used by Pixel Probe diagnostics to report the exact logical-facing layer decision applied this frame.
-      let _petLayeringActive = false;
-      let _petLayeringPet = null;
-      function _cameraSeesPlayerFrontFace() {
-        if (!playerMesh || !camera) {
-          _shoulderPetLayerFrontVisible = true;
-          _shoulderPetLayerDecision = { source: 'fallback-no-player-or-camera', frontVisible: true };
-          return true;
-        }
-        playerMesh.updateWorldMatrix?.(true, false);
-        camera.updateWorldMatrix?.(true, false);
-        const playerWorld = playerMesh.getWorldPosition
-          ? playerMesh.getWorldPosition(_shoulderPetLayerPlayerWorld)
-          : _shoulderPetLayerPlayerWorld.copy(playerMesh.position); // World-space origin used to derive the true camera bearing, independent of the portrait deadzone snap.
-        const cameraWorld = camera.getWorldPosition
-          ? camera.getWorldPosition(_shoulderPetLayerCameraWorld)
-          : _shoulderPetLayerCameraWorld.copy(camera.position); // World-space camera position paired with playerWorld above.
-        const dx = cameraWorld.x - playerWorld.x;
-        const dz = cameraWorld.z - playerWorld.z;
-        const horizontalDistance = Math.hypot(dx, dz);
-        const logicalYaw = Number.isFinite(facingAngle)
-          ? -facingAngle + Math.PI / 2
-          : playerMesh.rotation.y; // Matches updatePlayerMesh's rawTargetRotY before perpClamp snaps the flat portrait away from edge-on.
-        const cameraBearing = horizontalDistance > 1e-6 ? Math.atan2(dx, dz) : logicalYaw;
-        const normalizedFaceZ = Math.cos(logicalYaw - cameraBearing); // +1 means camera is in front of the logical player facing, -1 means behind.
-        if (_shoulderPetLayerFrontVisible === null) {
-          _shoulderPetLayerFrontVisible = normalizedFaceZ >= 0;
-        } else if (_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
-          _shoulderPetLayerFrontVisible = false;
-        } else if (!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
-          _shoulderPetLayerFrontVisible = true;
-        }
-        _shoulderPetLayerDecision = {
-          source: Number.isFinite(facingAngle) ? 'logical-player-facing' : 'rendered-yaw-fallback',
-          logicalYaw,
-          renderedYaw: playerMesh.rotation.y,
-          cameraBearing,
-          normalizedFaceZ,
-          frontVisible: _shoulderPetLayerFrontVisible,
-        };
-        return _shoulderPetLayerFrontVisible;
-      }
+      // The owner's portrait stages remain at their authored render orders; the
+      // held-object compositor alone swaps the shoulder pet's front/back occlusion.
+      const PLAYER_FRONT_PLANE_RENDER_ORDER = 2; // Used during player avatar construction.
+      const PLAYER_BACK_PLANE_RENDER_ORDER = 4; // Used for the separate back card and hat art.
+      let _petLayeringActive = false; // Exposes active state to the Pixel Probe.
+      let _petLayeringPet = null; // Exposes the exact active pet to the Pixel Probe.
       function updatePetLayering(active, pet) {
-        // Gameplay only chooses the active pet and supplies the current facing; all depth/order
-        // decisions and the weapon front-mask contract belong to HeldObjectRenderOrder.
+        // Gameplay selects the pet; its existing inward/outward animation state is the
+        // compositor's only input for pairing the pet's two portrait occlusion stages.
         const nextPet = active ? pet : null;
         _petLayeringActive = !!nextPet;
         _petLayeringPet = nextPet;
@@ -8826,7 +8779,6 @@
         window.HeldObjectRenderOrder?.setShoulderPetLayering?.(
           nextPet, _playerAvatarFrontMesh, _playerAvatarBackMesh,
           _playerAvatarFrontMaterial, _playerAvatarBackMaterial,
-          nextPet ? _cameraSeesPlayerFrontFace() : false,
         );
       }
 
