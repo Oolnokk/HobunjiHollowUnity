@@ -375,7 +375,7 @@
   }
 
   function activeStableIds() {
-    return new Set(['companion', 'mount', 'shoulderPet'].map(role => activeStableIdForRole(role)).filter(Boolean)); // Prioritizes currently deployed animals during old-save cap migration.
+    return new Set(['companion', 'mount', 'shoulderPet'].map(role => activeStableIdForRole(role)).filter(Boolean)); // Preserves deployed animals when normalizing legacy stowed flags.
   }
 
   function normalizeStableStorage(stable) {
@@ -464,7 +464,6 @@
     growth()?.normalizeStableLifeStages?.();
     const stable = stableDeps.getStable?.() || [];
     if (normalizeStableStorage(stable)) stableDeps.saveStable?.(); // Migrates the optional stowed flag without imposing any accessible-roster limit.
-    const outCount = stable.filter(entry => !entry.stowed).length;
     if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId && stableRole(entry) === selectedStableRole)) expandedStableId = null;
     list.innerHTML = '';
     ensureStableRosterStyles();
@@ -478,7 +477,9 @@
     const tonicLabel = growth()?.CONFIG?.item?.label || 'Growth Tonic'; // Used in baby-section guidance and growth controls.
     const tonicIcon = growth()?.CONFIG?.item?.icon || '🧪'; // Used to keep the native grow button consistent with AnimalGrowth.
     const roleCount = stable.filter(entry => stableRole(entry) === selectedStableRole).length; // Summarizes the selected role including stored animals.
-    const roleSummary = makeText('div', `${roleCount} in this category · Available: ${outCount} · Optional storage: ${stable.filter(entry => entry.stowed && stableRole(entry) === selectedStableRole).length} · Up to ${MAX_FAVORITES_PER_ROLE} favorites per category.`);
+    const availableRoleCount = stable.filter(entry => stableRole(entry) === selectedStableRole && !entry.stowed).length; // Only the selected category contributes to its own available count.
+    const stowedRoleCount = roleCount - availableRoleCount; // Summarizes optional storage without accidentally including other roles.
+    const roleSummary = makeText('div', `${roleCount} in this category · Available: ${availableRoleCount} · Optional storage: ${stowedRoleCount} · Up to ${MAX_FAVORITES_PER_ROLE} favorites per category.`);
     roleSummary.className = 'stable-role-summary';
     list.appendChild(roleSummary);
     const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`, {
