@@ -102,7 +102,7 @@ async function main() {
   assert(dialogue.some(d => typeof d === 'object' && d.choices?.some(c => c.label === 'See Wares')), 'normal Jubmir trading remains accessible');
   turnIn = { id: 'test-favor', items: [{ itemKey: 'milk', qty: 1 }] };
   await context.NpcDialogueEntryRouter.route({ id: 'villager' }, {});
-  assert(dialogue.some(d => typeof d === 'object' && d.text?.includes('Milk')), 'existing task turn-ins still precede generic conversation');
+  assert(dialogue.some(d => typeof d === 'object' && d.choices?.some(choice => choice.label.includes('Milk'))), 'existing task turn-ins still precede generic conversation');
   turnIn = null;
   await context.NpcDialogueEntryRouter.route({ id: 'shopkeeper' }, { onDuty: true });
   assert(dialogue.some(d => typeof d === 'object' && d.text === 'Welcome to the shop.'), 'ordinary merchant greeting still works');
