@@ -38,7 +38,7 @@
     'uumkaoii': {"enabled":true,"useSpline":true,"useRun1":false,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.4925794930295689,"y":0.5463868424105978},{"x":0.5716885511139638,"y":0.6111358470236757},{"x":0.6507976091983583,"y":0.6758848516367537},{"x":0.7299066672827524,"y":0.7406338562498317},{"x":0.8090157253671474,"y":0.8053828608629098},{"x":0.8881247834515421,"y":0.8701318654759878},{"x":0.9672338415359367,"y":0.9348808700890657}],"separatorRotationDeg":-1,"separatorAspect":1.4212860310421287},
     'nazgraku': {"enabled":true,"useSpline":true,"useRun1":true,"splitFrame":false,"splitRightUsesIdle":false,"frameShiftX":0.51,"followFrameShiftX":false,"beforePoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.583816188635752,"y":0.5507710342403657},{"x":0.6750528842419348,"y":0.5551552260701335},{"x":0.7662895798481173,"y":0.5595394178999014},{"x":0.8575262754543005,"y":0.5639236097296693},{"x":0.9487629710604835,"y":0.568307801559437},{"x":1.0399996666666664,"y":0.572691993389205}],"afterPoints":[{"x":0.49257949302956894,"y":0.5463868424105978},{"x":0.5509881034402343,"y":0.734040352123257},{"x":0.6072950224552714,"y":0.9436586641661738},{"x":0.6604828198681657,"y":1.174597302240037},{"x":0.7095701622731685,"y":1.425965055336482},{"x":0.7536231697871396,"y":1.6966342914963568},{"x":0.7917662236038489,"y":1.9852540076075054}],"separatorRotationDeg":-13,"separatorAspect":2.2916666666666665},
   });
-  // Moot has no committed head paint yet; a body-only rig enables the shoulder pose without fake head deformation.
+  // Fallback for species without authored head paint; Moot instead receives an independent Voorg-Ass neck copy.
   const BODY_ONLY_HEAD_RIG = Object.freeze({
     enabled: true, coordinateSpace: 'sprite-normalized-top-left', pivot: { x: 0.5, y: 0.5 },
     weightMap: { width: 2, height: 2, encoding: 'rle-u9', unsetValue: 256, data: [4, 0] },
@@ -47,7 +47,9 @@
 
   const authored = { ...EXPORTED_HEAD_RIGS };
   for (const [kind, shoulderRest] of Object.entries(INDEPENDENT_SHOULDER_RESTS)) {
-    const headRig = authored[kind] || renderer.ANIMAL_HEAD_RIGS?.[kind] || BODY_ONLY_HEAD_RIG; // Preserve the original head pivot and paint.
+    const headRig = kind === 'moot'
+      ? EXPORTED_HEAD_RIGS['voorg-ass'] // Copy Voorg-Ass neck rig; Moot's shoulder remains independently authored below.
+      : (authored[kind] || renderer.ANIMAL_HEAD_RIGS?.[kind] || BODY_ONLY_HEAD_RIG); // Preserve other species' original head paint.
     authored[kind] = { ...clone(headRig), shoulderRest: clone(shoulderRest) }; // Deep-clone per species for independent edits.
   }
   const AUTHORED_HEAD_RIGS = Object.freeze(authored);
@@ -112,9 +114,9 @@
   }
 
   window.HobunjiAuthoredAnimalHeadRigs = Object.freeze({
-    version: '2026-11-15-uploads6-moot-voorg-shoulder',
+    version: '2026-11-15-uploads7-moot-voorg-neck',
     rigs: AUTHORED_HEAD_RIGS,
     get: kind => AUTHORED_HEAD_RIGS[baseSpeciesFor(kind)] || null,
   });
-  window.__farmLog?.('[head-rig] Independent shoulder poses installed for nine species; Moot starts with its own copy of the latest Voorg-Ass pose, while Uumkao’ii keeps its uploaded pose.', 'wildlife');
+  window.__farmLog?.('[head-rig] Independent shoulder poses installed for nine species; Moot has independent copies of Voorg-Ass neck and shoulder rigs.', 'wildlife');
 })();
