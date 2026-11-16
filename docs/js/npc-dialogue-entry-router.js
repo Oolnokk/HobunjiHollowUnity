@@ -34,8 +34,6 @@
     }
     // From the original game.js conversation dispatch: preserve the relative order
     // of turn-ins, coaching, fresh requests, favors and station/shop shortcuts.
-        if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
-
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
         // sitting ready in the player's log, offer to hand it over right
@@ -55,13 +53,13 @@
               { label: 'Not yet.', actions: [] },
             ],
           });
-          return;
+          return true;
         }
 
         if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
           lastDecision = 'combat-tutorial';
           window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
-          return;
+          return true;
         }
 
         // Named quest-givers — replaces the old bulletin board. Once a
@@ -84,7 +82,7 @@
               { label: 'Not right now.', actions: [{ type: 'declineRequest', taskId: _requestOffer.task.id }] },
             ],
           });
-          return;
+          return true;
         }
 
         // Trusted-NPC favors — checked ahead of every other fast-path
@@ -105,7 +103,7 @@
               { label: 'Not right now.', actions: [{ type: 'declineFavor', taskId: _favorTask.id }] },
             ],
           });
-          return;
+          return true;
         }
 
         // These synthetic pre-choice screens are a fast-path shortcut for
@@ -129,7 +127,7 @@
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
-          return;
+          return true;
         }
 
         if (deps.isCarpenterNpcOnDuty?.(walker)) {
@@ -144,7 +142,7 @@
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
-          return;
+          return true;
         }
 
         // Jubmir the traveling trader — unlike the General Store/Carpenter,
@@ -163,7 +161,7 @@
               { label: 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
-          return;
+          return true;
         }
     lastDecision = 'ordinary';
     dc.beginNpcConversation(rec);
