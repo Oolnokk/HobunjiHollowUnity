@@ -301,6 +301,15 @@ async function testRealEncounterFlow() {
   };
   moonWindow.NpcGifting.init(giftDeps);
   const gifting=moonWindow.NpcGifting;
+  const allMilkDefs=Object.values(JSON.parse(read('docs/config/items/item-index.json')))
+    .filter(item=>/Milk$/.test(item.key) && /milk$/i.test(item.label)); // Canonical milk variants, not inferred from cooking ingredients.
+  assert(allMilkDefs.length>=8,'the authored item catalog contains multiple milk variants');
+  for(const milk of allMilkDefs) {
+    assert(C.canAcceptMilkGift({kind:'item',key:milk.key,def:milk},
+      {...giftDeps,inventory:{...milkInventory,[milk.key]:1}}),milk.key+' is recognized as milk');
+  }
+  assert(C.canAcceptMilkGift({kind:'item',key:'garWolfMilk',def:{label:'Gar-wolf Milk'}},
+    {...giftDeps,inventory:{...milkInventory,garWolfMilk:1}}),'runtime livestock milk is eligible too');
   assert.equal(gifting.getNpcGiftOfferAction(npc),null,'no gift action for non-milk, even after confrontation');
   assert.equal(gifting.offerGift(npc),false,'direct non-milk press cannot bypass rejection');
   assert.equal(milkInventory.apple,2,'rejected ordinary gift not consumed');
