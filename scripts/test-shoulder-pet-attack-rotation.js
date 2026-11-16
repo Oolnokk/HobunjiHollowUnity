@@ -56,6 +56,9 @@ const pivotSource = gameSource.slice(pivotStart, pivotEnd); // Used by the direc
 class TestVector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   clone() { return new TestVector3(this.x, this.y, this.z); }
+  copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+  toArray() { return [this.x, this.y, this.z]; }
+  multiply(v) { this.x *= v.x; this.y *= v.y; this.z *= v.z; return this; }
   add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
   sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
   distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
@@ -74,6 +77,8 @@ class TestVector3 {
 class TestQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { Object.assign(this, { x, y, z, w }); }
   clone() { return new TestQuaternion(this.x, this.y, this.z, this.w); }
+  copy(v) { Object.assign(this, { x: v.x, y: v.y, z: v.z, w: v.w }); return this; }
+  toArray() { return [this.x, this.y, this.z, this.w]; }
   setFromAxisAngle(a, radians) {
     const s = Math.sin(radians / 2);
     Object.assign(this, { x: a.x * s, y: a.y * s, z: a.z * s, w: Math.cos(radians / 2) });
@@ -128,6 +133,14 @@ const solverFactory = new Function('THREE', 'playerMesh', 'playerNeckJoint', 'wi
   pivotSource + '\nreturn _shoulderPetSurfaceTransform;'); // Uses the production source verbatim.
 const closeness = (actual, expected, description) =>
   assert.ok(actual.distanceTo(expected) < 1e-9, description + ': ' + actual.distanceTo(expected)); // Grip error tolerance in world units.
+const finalStart = gameSource.indexOf('      function _applyShoulderPetFinalTransform('); // Includes the production matrix and mobile diagnostic path.
+const finalEnd = gameSource.indexOf('\n      function updateShoulderPetMeshPin()', finalStart); // Ends before the unrelated per-companion loop.
+assert.ok(finalStart >= 0 && finalEnd > finalStart, 'production final pin can be exercised directly');
+const applyFinalTransform = new Function('THREE', 'window',
+  gameSource.slice(finalStart, finalEnd) + '\nreturn _applyShoulderPetFinalTransform;')(
+  THREE, { ShoulderPetObservationFlip: null }); // Runs real attachment application against a minimal THREE-compatible group.
+assert.match(gameSource, /gripPositionSource: finalTransform\.gripLocalPosition \? 'rendered-group-matrix'/,
+  'mobile grip error identifies actual rendered-matrix measurement');
 
 for (const skinned of [true, false]) {
   const windowFixture = {
@@ -147,23 +160,42 @@ for (const skinned of [true, false]) {
         rotationDeg: { x: 4, y: -12, z: 7 },
         scale: { x: multiplier, y: multiplier, z: multiplier },
       }; // Off-center authored shoulder surface with a nontrivial 3D orientation.
+      const rawGrip = { x: 0.19, y: -0.36, z: 0.08 }; // Deliberately off-center authoring-space grip, independent of genotype rendering scale.
+      const renderedScale = { x: multiplier, y: multiplier * 0.8 * 1.018, z: multiplier * 1.5 }; // Mirrors THREE's depth/height/width scale mapping plus breathing.
       const grip = {
-        x: 0.19, y: -0.36, z: 0.08,
+        x: rawGrip.x * 1.5, y: rawGrip.y * 0.8, z: rawGrip.z, // Legacy fields retain their old genotype-normalized form for unrelated consumers.
+        localPosition: rawGrip, // The updated shoulder pin must use the raw grip through the actual group scale instead.
         rotationDeg: { x: -9, y: 61, z: 3 },
-      }; // Deliberately off-center foot grip, so center-based rotation fails by a visible amount.
+      }; // Renderer deliberately scales width, depth, and breathing differently; a simplistic uniform offset must fail this test.
       const perchWorld = skinned
         ? skinnedPerchPosition.clone()
         : playerMesh.localToWorld(new TestVector3(perch.x, perch.y, perch.z));
       const pinAt = lean => solve(perch, grip, {
         __hobunjiShoulderFacingInward: facingInward,
         shoulderCuriosity: { currentLeanDeg: lean },
-      }); // Samples the actual runtime function with both facing stages and a changing lean.
+        avatarRef: { group: { scale: renderedScale } },
+      }); // Samples the real pin with the full rendered scale, not just the static authored perch multiplier.
       const neutral = pinAt(0);
       for (const lean of [-7, -3, 0, 3, 7]) {
         const pose = pinAt(lean);
-        const localGrip = new TestVector3(grip.x * multiplier, grip.y * multiplier, grip.z * multiplier);
-        const worldGrip = localGrip.applyQuaternion(pose.worldQuaternion).add(pose.worldPosition);
-        closeness(worldGrip, perchWorld, 'shoulderGrip stays on shoulderPerch throughout a body lean');
+        const localGrip = new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z); // Native grip coordinates before THREE's nonuniform group scale.
+        const worldGrip = localGrip.multiply(renderedScale).applyQuaternion(pose.worldQuaternion).add(pose.worldPosition);
+        closeness(worldGrip, perchWorld, 'actual rendered shoulderGrip stays on shoulderPerch through breathing and lean');
+        assert.ok(pose.gripLocalPosition, 'production solver exposes native grip for a real matrix measurement');
+        const fakeGroup = {
+          parent: null, position: new TestVector3(), quaternion: new TestQuaternion(), scale: renderedScale,
+          userData: { hobunjiShoulderSpriteCanonicalized: true },
+          localToWorld(v) { return v.multiply(this.scale).applyQuaternion(this.quaternion).add(this.position); },
+        }; // Simulates the THREE root, including its real nonuniform width/depth and breathing scale.
+        const fakePlane = () => ({ rotation: { set() {} }, updateMatrix() {}, matrixWorldNeedsUpdate: false }); // Minimal visible front/back plane reset.
+        const fakePet = { avatarRef: { group: fakeGroup, frontPlane: fakePlane(), backPlane: fakePlane() } }; // Captures actual rendered grip error after the final pin.
+        applyFinalTransform(fakePet, pose);
+        closeness(fakeGroup.localToWorld(new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z)),
+          perchWorld, 'the production final-render transform preserves the physical grip');
+        assert.ok(fakeGroup.userData.hobunjiShoulderPetAttachment.gripPerchError < 1e-9,
+          'reported grip error is measured from the rendered group matrix');
+        assert.equal(fakeGroup.userData.hobunjiShoulderPetAttachment.gripPositionSource,
+          'rendered-group-matrix', 'mobile diagnostics report the live render-matrix source');
         assert.equal(pose.shoulderFacingTurnDeg, facingInward ? 180 : 0, 'facing state remains unchanged by lean');
         assert.equal(pose.shoulderLeanDeg, lean, 'runtime exposes the exact applied lean');
         if (lean !== 0) {
@@ -171,7 +203,9 @@ for (const skinned of [true, false]) {
             'the root translates around an off-center grip rather than pivoting about its image center');
         }
       }
-      const withoutCuriosity = solve(perch, grip, { __hobunjiShoulderFacingInward: facingInward });
+      const withoutCuriosity = solve(perch, grip, {
+        __hobunjiShoulderFacingInward: facingInward, avatarRef: { group: { scale: renderedScale } },
+      });
       assert.equal(withoutCuriosity.shoulderLeanDeg, 0, 'missing curiosity state is neutral, not NaN');
       closeness(withoutCuriosity.worldPosition, neutral.worldPosition, 'neutral lean leaves the authored facing pose unchanged');
     }
