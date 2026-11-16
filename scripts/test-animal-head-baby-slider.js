@@ -59,6 +59,7 @@ const ctx = {
   clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
   numberOr: (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback,
   headBounds: () => ({ minX: 1, minY: 1, maxX: 2, maxY: 2 }),
+  sourceSize: () => ({ width: image.width, height: image.height }),
   requestDraw: () => { draws++; },
   checkpointHistory: () => { checkpoints++; },
   readPreviewRigs: () => ({}),
