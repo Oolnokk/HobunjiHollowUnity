@@ -346,7 +346,7 @@
       activeScene?.add(group);
       attachedScene = activeScene;
     }
-    syncUndergroundFog(underground ? activeScene : null);
+    syncUndergroundFog(underground && mistActive ? activeScene : null); // Kanthic uses only viewport darkness; a depth-based 3D fog gradient would still move with the camera.
     group.visible = mistActive;
     if (!active) return;
 
