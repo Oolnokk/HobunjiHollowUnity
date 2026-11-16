@@ -206,6 +206,7 @@
   function installDialogueHooks() {
     if (dialogueInstalled || !window.DialogueContent?.registerContextProvider || !window.DialogueContent?.registerNodeEnterHandler) return false;
     dialogueInstalled = true;
+    window.NpcDialogueEntryRouter?.registerPriorityProvider?.(QUEST_ID, rec => !!dialogueTreeFor(rec?.id)); // Urgent Fey handoffs precede Jubmir's Wares/Chat shortcut and ordinary procedural offers.
     window.DialogueContent.registerContextProvider(QUEST_ID, {
       treeFor(rec) { return rec?.id === 'jubmir' ? dialogueTreeFor('jubmir') : null; },
     }); // Context routing preserves Jubmir's normal trading/dialogue without replacing an existing tree provider.
