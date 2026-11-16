@@ -14911,6 +14911,103 @@ renderAttachmentRigInspector = function(...args) {
   return result;
 };
 
+
+// V15.49 — Rig Coordinates: compare original art with the actual shoulder-pet pose.
+// The shoulderGrip anchor stays in exactly the same exported creature-local
+// coordinates while this editor-only preview switches the visible animal mesh.
+function shoulderGripPosePreviewForActorV1549(actor) {
+  if (!actor || actor.source?.type !== 'creature' || !actor.shoulderRestSourceAvatar) return null;
+  if (actor.shoulderGripPosePreviewControllerV1549) return actor.shoulderGripPosePreviewControllerV1549;
+  const preview = window.AnimationAuthorShoulderPosePreview; // Reuses the authored shoulder/runtime geometry adapter instead of reimplementing the spline.
+  if (!preview?.authoredRestFor?.(actor.source.kind)) return null;
+  const dimensions = actor.shoulderRestModelDimensions; // The preview mesh must share world-space dimensions with its undeformed source.
+  const controller = preview.create({
+    kind: actor.source.kind, genotype: actor.source.genotype,
+    THREE: state.three.THREE,
+    sourceAvatar: actor.shoulderRestSourceAvatar,
+    modelWidth: dimensions.modelWidth,
+    modelHeight: dimensions.modelHeight,
+    actorName: 'RigGrip_' + safeFilename(actor.id),
+    viewportCreaturePlanes: actor.viewportVisual?.creaturePlanes,
+    isCurrent: () => animationAuthor.actors.includes(actor), // A queued sprite composition cannot resurrect a deleted actor.
+    onChange: snapshot => {
+      if (selectedAnimationActor() !== actor || animationAuthor.mode !== 'rig') return;
+      const label = $('maaShoulderGripPoseStatusV1549'); // Visible mobile diagnostic; no developer console required.
+      if (!label) return;
+      label.textContent = snapshot.error
+        ? 'Pose preview unavailable: ' + snapshot.error
+        : snapshot.loading ? 'Building authored ' + snapshot.shoulderFrame + ' shoulder pose…'
+        : snapshot.hasPose && snapshot.requestedPose === 'perched'
+          ? 'Rendered: ' + snapshot.shoulderFrame + ' + authored shoulder spline. Grip coordinates unchanged.'
+          : 'Rendered: original, undeformed creature frame. Grip coordinates unchanged.';
+    },
+  });
+  if (controller) actor.shoulderGripPosePreviewControllerV1549 = controller; // Retains the same skinned pose between inspector redraws.
+  return controller;
+}
+
+function syncShoulderGripPosePreviewV1549() {
+  const selected = selectedAnimationActor(); // A temporary viewport choice; not a new authored rig parameter.
+  for (const actor of animationAuthor.actors) {
+    const controller = actor.shoulderGripPosePreviewControllerV1549;
+    if (!controller) continue;
+    const showPerched = animationAuthor.mode === 'rig' && actor === selected
+      && selectedRigAnchorName(actor) === 'shoulderGrip'
+      && actor.shoulderGripPoseChoiceV1549 !== 'source';
+    controller.setPose(showPerched ? 'perched' : 'source'); // The adapter short-circuits unchanged poses.
+  }
+}
+
+const baseRenderAttachmentRigInspectorV1549 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function(...args) {
+  const result = baseRenderAttachmentRigInspectorV1549(...args); // Keep the current grip gizmos, numeric fields and facing-stage controls.
+  const actor = selectedAnimationActor();
+  if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'creature'
+      || selectedRigAnchorName(actor) !== 'shoulderGrip') {
+    syncShoulderGripPosePreviewV1549();
+    return result;
+  }
+  const panel = $('maaInspector');
+  if (!panel) return result;
+  const controller = shoulderGripPosePreviewForActorV1549(actor);
+  const section = document.createElement('div');
+  section.className = 'maaRigStatus';
+  section.style.marginTop = '9px';
+  if (!controller) {
+    section.innerHTML = '<b>Shoulder-pet body pose</b><div class="maaSmall maaMuted">This species has no authored shoulder deformation; its normal frame is shown.</div>';
+    panel.appendChild(section);
+    return result;
+  }
+  section.innerHTML = '<b>Shoulder-pet body pose</b>'
+    + '<div class="maaField" style="margin-top:8px"><label for="maaShoulderGripPoseSelectV1549">Pose while setting shoulder grip</label>'
+    + '<select id="maaShoulderGripPoseSelectV1549"><option value="perched">Perched · gameplay shoulder deformation</option><option value="source">Source · undeformed sprite</option></select></div>'
+    + '<div class="maaSmall maaMuted" id="maaShoulderGripPoseStatusV1549">Preparing shoulder pose…</div>'
+    + '<div class="maaSmall maaMuted">This is a visual comparison only. The grip gizmo and exported XYZ/rotation never change when switching poses.</div>';
+  panel.appendChild(section);
+  const select = section.querySelector('#maaShoulderGripPoseSelectV1549');
+  select.value = actor.shoulderGripPoseChoiceV1549 === 'source' ? 'source' : 'perched'; // Default to the shape the pet takes on the player's shoulder.
+  select.addEventListener('change', event => {
+    actor.shoulderGripPoseChoiceV1549 = event.currentTarget.value === 'source' ? 'source' : 'perched'; // Editor-only pose choice; never serialized into the master rig.
+    syncShoulderGripPosePreviewV1549();
+    setAnimationRecentChange('Shoulder-grip preview: ' + (actor.shoulderGripPoseChoiceV1549 === 'source'
+      ? 'original undeformed frame' : 'gameplay perched deformation') + '. Authored grip unchanged.');
+  });
+  syncShoulderGripPosePreviewV1549();
+  return result;
+};
+
+const baseUpdateAnimationRelationLinesV1549 = updateAnimationRelationLines;
+updateAnimationRelationLines = function(...args) {
+  syncShoulderGripPosePreviewV1549(); // Restore ordinary sprites when leaving Rig Coordinates or choosing another anchor.
+  return baseUpdateAnimationRelationLinesV1549(...args);
+};
+
+const baseClearAnimationActorsV1549 = clearAnimationActors;
+clearAnimationActors = function(...args) {
+  for (const actor of animationAuthor.actors) actor.shoulderGripPosePreviewControllerV1549?.dispose?.(); // Dispose the added skinned mesh when the actor is replaced.
+  return baseClearAnimationActorsV1549(...args);
+};
+
 })();
 </script>
 <script>
