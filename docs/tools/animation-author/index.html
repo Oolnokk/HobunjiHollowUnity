@@ -14865,9 +14865,20 @@ function reconcileShoulderGripPreviewV1548(kind, profile, originalGrip) {
   if (originalGrip?.position) target.position = { ...target.position, ...originalGrip.position }; // The old editor normalizer forced X = .01, even for user-edited sockets.
   if (originalGrip?.rotationDeg) target.rotationDeg = { ...target.rotationDeg, ...originalGrip.rotationDeg }; // Do not let old V15.21/V15.22 defaults overwrite intentional yaw edits.
   const guard = window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD; // Reuse the game's exact known-stale grip fingerprints instead of maintaining another editor-only recovery list.
-  const reconciled = guard?.reconcileProfiles?.({ creatures: { [kind]: { anchors: { shoulderGrip: structuredCloneSafe(target) } } } })
-    ?.creatures?.[kind]?.anchors?.shoulderGrip;
-  if (reconciled) profile.anchors.shoulderGrip = normalizeTransformSnapshot(reconciled, 1); // Repairs only recognized obsolete stock grips; preserves custom XYZ, Y and other authored fields.
+  const reconciled = guard?.reconcileProfiles?.({ creatures: { [kind]: {
+    anchors: { shoulderGrip: structuredCloneSafe(target) },
+    sizeScales: structuredCloneSafe(profile.sizeScales || {}), // Supplies the active animal sizes so only exact prior Small defaults migrate.
+    sizeScalePercentages: structuredCloneSafe(profile.sizeScalePercentages || {}), // Keeps editor percent controls in sync with repaired Small multipliers.
+  } } })?.creatures?.[kind]; // The shared game guard owns both grip and size fingerprints.
+  if (reconciled?.anchors?.shoulderGrip) {
+    profile.anchors.shoulderGrip = normalizeTransformSnapshot(reconciled.anchors.shoulderGrip, 1); // Never replace a custom grip with the master default.
+  }
+  if (reconciled?.sizeScales?.small) {
+    profile.sizeScales ||= {};
+    profile.sizeScales.small = structuredCloneSafe(reconciled.sizeScales.small); // Repair exact retired animal Small-size defaults, not user edits.
+    profile.sizeScalePercentages ||= {};
+    profile.sizeScalePercentages.small = structuredCloneSafe(reconciled.sizeScalePercentages.small); // UI percentages must reflect actual X/Y scales.
+  }
 }
 const baseNormalizedRigProfileLibraryV1548 = normalizedRigProfileLibrary;
 normalizedRigProfileLibrary = function(value = {}) {
