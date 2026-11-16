@@ -8005,12 +8005,16 @@
           : NaN; // Native plane height before the genotype size-class transform.
         const birdGrip = Number.isFinite(birdSpriteHeight) && birdSpriteHeight > 0
           ? { x: 0, y: -birdSpriteHeight * sizeScale.y / 2, z: 0,
+              localPosition: { x: 0, y: -birdSpriteHeight / 2, z: 0 }, // Unscaled sprite-space foot used by the render-matrix grip pin.
               rotationDeg: { x: 0, y: 0, z: 0 }, source: 'native-flying-sprite-foot' }
           : null; // Root-centred perched artwork: bottom centre is the virtual foot grip.
         const result = Number.isFinite(anchor?.position?.y) ? {
           x: (Number(anchor.position.x) || 0) * sizeScale.x,
           y: anchor.position.y * sizeScale.y,
           z: Number(anchor.position.z) || 0,
+          localPosition: { // Unscaled authoring-space socket used only by the actual rendered shoulder-root pin.
+            x: Number(anchor.position.x) || 0, y: Number(anchor.position.y) || 0, z: Number(anchor.position.z) || 0,
+          },
           rotationDeg: anchor.rotationDeg,
         } : birdGrip;
         _creatureAttachmentAnchorCache.set(cacheKey, result);
@@ -8099,14 +8103,21 @@
         const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
         const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
         const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
+        const rawGrip = grip.localPosition; // Native unscaled socket coordinates; the grip resolver retains them alongside its legacy scaled fields.
+        const renderedScale = pet?.avatarRef?.group?.scale; // Actual THREE root scale, including the swapped width/depth axes and the current breath/squash multiplier.
+        const useRenderedGrip = !!(rawGrip && renderedScale
+          && Number.isFinite(renderedScale.x) && Number.isFinite(renderedScale.y) && Number.isFinite(renderedScale.z)); // Only fall back for old callers without a real avatar root.
         const gripWorldOffset = new THREE.Vector3(
-          (grip.x || 0) * perchScaleX, (grip.y || 0) * perchScaleY, (grip.z || 0) * perchScaleZ,
-        ).applyQuaternion(worldQuaternion); // Invert the SAME authored scale applied to the pet body so its grip stays pinned after the half-turn.
+          useRenderedGrip ? rawGrip.x * renderedScale.x : (grip.x || 0) * perchScaleX,
+          useRenderedGrip ? rawGrip.y * renderedScale.y : (grip.y || 0) * perchScaleY,
+          useRenderedGrip ? rawGrip.z * renderedScale.z : (grip.z || 0) * perchScaleZ,
+        ).applyQuaternion(worldQuaternion); // Rotate the real scaled grip, not an approximate socket with axis-swapped or stale breathing scale.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
           perchWorldPosition: perchWorldPosition.clone(),
           gripWorldOffset: gripWorldOffset.clone(),
+          gripLocalPosition: useRenderedGrip ? rawGrip : null, // Final transform uses this to measure the real world grip from the pet's updated THREE matrix.
           gripSource: grip.source || 'authored-shoulder-grip', // Reports whether the foot socket is authored or derived from a flying sprite.
           rotationFrameWorldQuaternion: selectedRotationQuaternion,
           perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
@@ -9257,10 +9268,13 @@
         };
         setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
         setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
-        const alignedGripWorldPosition = finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Reconstructs the authored grip point from the exact transform used to place the pet.
+        const alignedGripWorldPosition = finalTransform.gripLocalPosition
+          ? group.localToWorld(new THREE.Vector3( // Read the actual rendered root matrix, not merely undoing the same offset calculation.
+              finalTransform.gripLocalPosition.x, finalTransform.gripLocalPosition.y, finalTransform.gripLocalPosition.z))
+          : finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Legacy no-anchor or mock callers have only the expected offset.
         const gripPerchError = finalTransform.perchWorldPosition
           ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
-          : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
+          : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
         group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
           recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
           rotationSource: finalTransform.rotationSource,
@@ -9269,6 +9283,7 @@
           authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
           alignedGripWorldPosition: alignedGripWorldPosition.toArray(),
           gripPerchError,
+          gripPositionSource: finalTransform.gripLocalPosition ? 'rendered-group-matrix' : 'estimated-offset-fallback', // Mobile debug distinguishes measured vs algebraic grip placement.
           gripSource: finalTransform.gripSource || 'unavailable', // Mobile Pixel Probe shows which grip solved the final world attachment.
           authoritativeRootTransform: true,
           requestedRotationSource: finalTransform.requestedRotationSource,
