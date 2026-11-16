@@ -65,6 +65,16 @@ function directory(name, counters) {
 async function main() {
   const counters = { clock: 0, writes: [], reads: [], fail: false }; // Records real canonical/manifest writes for assertions.
   const folder = directory('primary', counters);
+  let deviceId = 'incremental-test-device'; // Simulated current installation; switched to test a second device's save.
+  const jsonVisits = { character: 0, world: 0 }; // Count production-core entity serialization passes during no-op saves.
+  const trackedJSON = {
+    parse: JSON.parse,
+    stringify(value, ...options) {
+      if (value?.id === 'char') jsonVisits.character++;
+      if (value?.id === 'world') jsonVisits.world++;
+      return JSON.stringify(value, ...options);
+    },
+  }; // Instrument only the isolated production core, never the test's own setup and assertions.
   const native = new Map(); // Browser cache that survives each simulated save.
   const localStorage = {
     getItem: key => native.get(key) ?? null,
@@ -100,7 +110,7 @@ async function main() {
     addEventListener() {},
     __hobunjiPlayerProfile: { characterId: 'char', worldId: 'world' },
     showDirectoryPicker: async () => folder,
-    FolderSaveDeviceProvenance: { getDeviceId: () => 'incremental-test-device' }, // The core stamps only the changed portable entities.
+    FolderSaveDeviceProvenance: { getDeviceId: () => deviceId }, // The core stamps only the changed portable entities.
     HobunjiSaveSnapshot: {
       browserCacheParts: () => [localStorage.getItem('hobunjiSaveMeta'), 'world', localStorage.getItem('hobunji_farm_layout_v3:world')],
       apply() {}, // The fake browser already contains the generated snapshot's own source data.
@@ -109,7 +119,7 @@ async function main() {
   const source = fs.readFileSync('docs/js/local-save-folder-core.js', 'utf8');
   new Function(source); // Syntax must be valid even before a save folder is connected.
   const context = vm.createContext({
-    window, localStorage, indexedDB, console,
+    window, localStorage, indexedDB, console, JSON: trackedJSON,
     setInterval: () => 1, clearInterval() {},
     setTimeout: () => 1, clearTimeout() {},
   });
@@ -141,11 +151,23 @@ async function main() {
     'an explicit save preserves exact character bytes when no character data changed');
   assert.equal(JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance.lastWriterDeviceId,
     'incremental-test-device', 'manifest alone advances the last-writer provenance');
+  deviceId = 'second-device';
+  const newDeviceSave = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(newDeviceSave.lastError, null);
+  assert.equal(newDeviceSave.saveFileWork.written, 0, 'changing only the writing device never rewrites character/world entities');
+  assert.equal(JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance.lastWriterDeviceId,
+    'second-device', 'manifest records the new writer even though entity bytes were unchanged');
+  assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
+    'the first device remains recorded on its unchanged character entity');
+  deviceId = 'incremental-test-device';
 
   const writesBeforeIdle = counters.writes.length;
+  jsonVisits.character = 0; jsonVisits.world = 0;
   const idle = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(idle.lastAction, 'autosync-skipped-unchanged');
   assert.equal(counters.writes.length, writesBeforeIdle, 'identical autosave does not rewrite files or manifest');
+  assert.deepEqual(jsonVisits, { character: 1, world: 1 },
+    'unchanged autosave serializes each entity once, not once for provenance and again for the folder digest');
 
   folder.files.delete('manifest.json');
   const repairedManifest = await window.LocalSaveFolder.syncNow({ automatic: true });
