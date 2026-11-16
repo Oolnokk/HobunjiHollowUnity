@@ -415,45 +415,53 @@
     return deviceId ? { version: 1, lastWriterDeviceId: deviceId, writtenAt: Date.now() } : null;
   }
 
-  function stampOnlyChangedEntities(meta) {
-    const stamp = writerProvenance(); // A single timestamp serves every genuinely modified entity in this transaction.
-    if (!stamp) return;
-    const preserve = (entities, previousEntities) => {
-      const before = new Map((previousEntities || []).filter(entry => entry?.id).map(entry => [String(entry.id), entry])); // Prior durable records, not the potentially stale browser mirror.
-      for (const entity of entities || []) {
-        if (!entity?.id) continue;
-        const old = before.get(String(entity.id));
-        if (old && Object.prototype.hasOwnProperty.call(old, PROVENANCE_KEY)) entity[PROVENANCE_KEY] = old[PROVENANCE_KEY];
-        else delete entity[PROVENANCE_KEY]; // A stale browser stamp must not make an unchanged file look different.
-        if (!old || JSON.stringify(entity) !== JSON.stringify(old)) entity[PROVENANCE_KEY] = { ...stamp };
-      }
-    };
-    preserve(meta.characters, _lastKnownFolderMeta?.characters);
-    preserve(meta.worlds, _lastKnownFolderMeta?.worlds);
-  }
-
   function prepareChangedFiles(meta, layouts) {
-    if (!_committedFileState) return null;
-    const digests = new Map(); // Expected canonical filenames and content fingerprints, including deletion detection.
-    let changed = false; // True if any canonical file's JSON changed or its filename is new.
-    const visit = (dirName, filename, value) => {
+    const committed = _committedFileState; // Existing canonical digests let unchanged entities be serialized exactly once.
+    const stamp = writerProvenance(); // Per-entity stamps are applied only when the canonical entity's data actually changed.
+    const digests = new Map(); // Expected file fingerprints, including new/removed entities.
+    let changed = false; // Tracks canonical additions, edits, and deletions.
+    const byId = entries => new Map((entries || []).filter(entry => entry?.id).map(entry => [String(entry.id), entry])); // Durable records for preserving prior per-entity writer metadata.
+    const previousCharacters = byId(_lastKnownFolderMeta?.characters); // Character provenance must survive unrelated saves.
+    const previousWorlds = byId(_lastKnownFolderMeta?.worlds); // World provenance must survive unrelated saves.
+    const visit = (dirName, filename, value, previous = null) => {
       const key = fileKey(dirName, filename);
-      const raw = JSON.stringify(value);
-      const digest = contentFingerprint(raw);
+      if (stamp && (dirName === CHARACTERS_DIR || dirName === WORLDS_DIR)) {
+        if (previous && Object.prototype.hasOwnProperty.call(previous, PROVENANCE_KEY)) {
+          value[PROVENANCE_KEY] = previous[PROVENANCE_KEY];
+        } else if (previous) {
+          delete value[PROVENANCE_KEY]; // Ignore stale browser stamps when the known durable entity has no provenance.
+        }
+      }
+
+      let raw = JSON.stringify(value); // One JSON pass for a normal unchanged entity, not an extra comparison pass.
+      let digest = contentFingerprint(raw);
+      const oldDigest = committed?.get(key)?.digest;
+      if (stamp && (dirName === CHARACTERS_DIR || dirName === WORLDS_DIR)) {
+        const entityChanged = !previous || (committed
+          ? digest !== oldDigest
+          : raw !== JSON.stringify(previous)); // On a cold baseline, compare with the actual imported entity.
+        if (entityChanged) {
+          value[PROVENANCE_KEY] = { ...stamp };
+          raw = JSON.stringify(value); // A second pass is needed only for changed entities whose new writer is embedded.
+          digest = contentFingerprint(raw);
+        }
+      }
       digests.set(key, digest);
-      if (_committedFileState.get(key)?.digest !== digest) changed = true;
+      if (oldDigest !== digest) changed = true;
     };
     for (const character of meta.characters || []) {
-      if (character?.id) visit(CHARACTERS_DIR, slugify(character.nickname) + '-' + character.id + '.json', character);
+      if (character?.id) visit(CHARACTERS_DIR, slugify(character.nickname) + '-' + character.id + '.json',
+        character, previousCharacters.get(String(character.id)));
     }
     for (const world of meta.worlds || []) {
-      if (world?.id) visit(WORLDS_DIR, slugify(world.label) + '-' + world.id + '.json', world);
+      if (world?.id) visit(WORLDS_DIR, slugify(world.label) + '-' + world.id + '.json',
+        world, previousWorlds.get(String(world.id)));
     }
     for (const world of meta.worlds || []) {
       if (!world?.id || !Object.prototype.hasOwnProperty.call(layouts, world.id)) continue;
       visit(FARM_LAYOUTS_DIR, farmLayoutFilename(world.id), { worldId: world.id, layout: layouts[world.id] });
     }
-    return { digests, changed: changed || digests.size !== _committedFileState.size };
+    return committed ? { digests, changed: changed || digests.size !== committed.size } : null;
   }
 
   async function writeTrackedFile(dirHandle, dirName, filename, payload, delta, next, work) {
@@ -921,7 +929,6 @@
         notify();
         return getStatus();
       }
-      stampOnlyChangedEntities(meta); // Preserve disk provenance on unchanged characters/worlds; update only real entity edits.
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
         && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
