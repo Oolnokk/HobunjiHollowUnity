@@ -163,6 +163,14 @@ assert(bridge.includes('await warp?.ensureIdleMask?.(kind)'),
   'small shoulder-pet frame pipeline awaits the registered idle sprite');
 assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource)'),
   'small shoulder-pet split source uses the LEFT idle sprite before clipping run1');
+assert(bridge.includes('return loadFrameImage(rawUrl)'),
+  'non-composited species must still enlarge their real raw shoulder-pet sprite');
+const configManifest = fs.readFileSync('docs/js/bootstrap/classic-groups/combat-config.js', 'utf8');
+const configLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
+assert(configManifest.includes('combat-config-loader.js?v=20261116idleMaskAudit3'),
+  'game parser must invalidate its cached combat bootstrap when shoulder-pet integration changes');
+assert(configLoader.includes('player-body-attachment-bridge.js?v=20261116idleMask132b'),
+  'game combat bootstrap must load the audited shoulder-pet bridge, not its prior cached implementation');
 assert(nursery.includes('Baby head size (experiment)'), 'touch-accessible Nursery tuning is visible');
 assert(nursery.includes('headWarp.setScale(slider.value)') && nursery.includes('rerollSwarm()'), 'size changes refresh active babies');
 assert(incubator.includes('BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind)'), 'incubator baby renders are warped AFTER the sleep composer');
