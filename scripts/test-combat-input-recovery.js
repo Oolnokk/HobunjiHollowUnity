@@ -194,6 +194,7 @@ assert.equal(holdActive, true, 'fixed mounted heavy hold starts immediately inst
 assert.equal(alignment, null, 'mounted heavy holds never request on-foot target alignment');
 input.cancelPress(1);
 mountActive = false;
+input.setAutoTargetEnabled(false, { persist: false }); // On-foot fallback executes immediately only when the optional alignment assist is disabled.
 input.fireTap(2);
 assert.equal(legacySwingCount, 1, 'ordinary on-foot legacy fallback remains available outside mounted context');
 delete context.window.Combat.loadout.isMounted;
