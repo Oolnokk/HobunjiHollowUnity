@@ -67,8 +67,8 @@ function loadImageUrl(url,displayPath=url){
       $('expandRadius').value=String(Math.min(numberOr($('expandRadius').value,60),maxR));
       if(state.pendingRig)applyRigToPaint(state.pendingRig);
       else{makeBlankWeights();state.pivot=null}
-      resetHistory();resizeCanvases();draw();
       spriteLoadDebug.status='ready';spriteLoadDebug.loaded=displayPath;spriteLoadDebug.lastError=null;
+      resetHistory();resizeCanvases();draw();
     } catch(error) {
       spriteLoadDebug.status='error';spriteLoadDebug.lastError=String(error?.message||error);
       setStatus('Could not initialize sprite: '+displayPath+'\n'+spriteLoadDebug.lastError,false);
