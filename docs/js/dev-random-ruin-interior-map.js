@@ -1789,11 +1789,13 @@
     return false;
   }
   function shaftBodyBlocksAt(x,z,half=.2,worldY=null){
-    const playerFeet=ruin?.supportY; // Grounded player elevation disambiguates F1–F5 when legacy canOccupyAt omits a height.
-    const airborneFeet=deps.player?._freeJump ? Number(deps.player.physicalFeetY) : NaN; // Airborne forced movement keeps its real feet rather than the support below.
-    const feet=worldY!=null&&Number.isFinite(Number(worldY))?Number(worldY)
-      :Number.isFinite(airborneFeet)?airborneFeet:Number.isFinite(playerFeet)?playerFeet:0;
-    return shaftVoxelBlocksAt(x,z,Math.max(0,Number(half)||0),feet+.055,feet+SHAFT_BODY_HEIGHT);
+    const radius=Math.max(.025,Number(half)||0); // A shared occupancy caller supplies this horizontal radius in world tiles.
+    const explicitY=worldY!=null?Number(worldY):NaN; // Only projectiles and other height-aware probes pass a world height.
+    if(Number.isFinite(explicitY))return shaftVoxelBlocksAt(x,z,radius,explicitY-radius,explicitY+radius); // Test the actual shot/point volume, not a phantom full-height player.
+    const playerFeet=ruin?.supportY; // Heightless movement (walk, dodge, lunge) uses the current shaft support story.
+    const airborneFeet=deps.player?._freeJump ? Number(deps.player.physicalFeetY) : NaN; // Heightless jump motion still uses the airborne player's real feet.
+    const feet=Number.isFinite(airborneFeet)?airborneFeet:Number.isFinite(playerFeet)?playerFeet:0;
+    return shaftVoxelBlocksAt(x,z,radius,feet+.055,feet+SHAFT_BODY_HEIGHT);
   }
   // Skeeri flight is a volume sweep through the SAME live shaft/wing voxels that stop the player's
   // forced movement. Thin wall edges and solid 3D props must block the path as well as voxel centers.
