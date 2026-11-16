@@ -166,7 +166,11 @@ async function main() {
     const rawBefore = localStorage.getItem('hobunjiSaveMeta'); // A mere explicit save must not rewrite a huge browser save blob.
     await localSave.syncNow();
     assert.equal(localStorage.getItem('hobunjiSaveMeta'), rawBefore, 'provenance wrapper does not reserialize browser metadata');
+    const originalGetItem = localStorage.getItem.bind(localStorage); // Instrument browser reads made by repeated Resume-source refreshes.
+    let browserMetaReads = 0; // Manifest-backed provenance must not parse the massive browser metadata just to draw a label.
+    localStorage.getItem = key => { if (key === 'hobunjiSaveMeta') browserMetaReads++; return originalGetItem(key); };
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /From “Hobunji Save”/);
+    assert.equal(browserMetaReads, 0, 'manifest-backed Resume labels never read the browser save metadata');
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on this device/);
     folderStatus.lastWriterProvenance = { version: 1, lastWriterDeviceId: 'device-other-installation', writtenAt: 123457 };
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on a different device/);
