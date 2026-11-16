@@ -14,7 +14,15 @@ const rain = fs.readFileSync('docs/js/rain-planes.js','utf8'); // The rain boots
 const manifestRainVersion = weather.match(/js\/rain-planes\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must agree with the revised weather module.
 const loadedRuntimeVersion = rain.match(/js\/environment-surface-runtime\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must bypass a previously cached parent loader.
 const plateauVersion = loader.match(/js\/northern-cliffs-plateau-backdrop\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Must bypass a previously cached child backdrop.
-assert(manifestRainVersion?.includes('flatRockReview') && loadedRuntimeVersion?.includes('flatRockReview') && plateauVersion?.includes('giantRock'), 'all three boot layers must invalidate old mobile-cached plateau code');
+// Every loader needs a versioned URL, but the exact token must be free to change
+// when rain, surface and plateau owners are updated independently. The CI
+// cache-bust checker verifies that a changed module's referencing URL moves.
+assert(manifestRainVersion && loadedRuntimeVersion && plateauVersion,
+  'rain, surface bootstrap and plateau scripts must each have a cache-busting version');
+assert.match(rain, /if \(!window\.EnvironmentSurfaceRuntime\)/,
+  'the rain loader must still load the surface-runtime dependency');
+assert.match(loader, /global: 'NorthernCliffsPlateauBackdrop', src: 'js\/northern-cliffs-plateau-backdrop\.js\?v=/,
+  'surface runtime must still load the Northern Cliffs backdrop');
 assert.match(source,/HobunjiSurfaceStretchUV/);
 assert.match(source,/NaturalSurfaceMaterials/);
 
