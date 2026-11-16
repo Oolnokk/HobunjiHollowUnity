@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Exercises the actual editor adapter rather than a duplicated Y-axis conversion.
+const rigCacheVersion = 'attachment-rig-profiles.js?v=20261115drenkirraYaw1'; // All consumer pages must load the same current rig revision, not an old mobile-browser cache.
+for (const consumer of ['docs/index.html', 'docs/tools/animation-author/index.html',
+  'docs/tools/attack-animation-editor/index.html', 'docs/tools/enemy-loadout-editor/preview.js']) {
+  assert(fs.readFileSync(consumer, 'utf8').includes(rigCacheVersion), consumer + ' must load the corrected attachment-rig version');
+}
 const rig = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Canonical gameplay socket used in the parity assertions.
 const begin = html.lastIndexOf('// V15.48 — Shoulder-pet viewport parity with the gameplay attachment solver.');
 const end = html.lastIndexOf('</script>');
@@ -102,6 +107,12 @@ for(const kind of ['grehlr','uumkaoii']) {
 const edited=library();
 edited.creatures.drenkirra.anchors.shoulderGrip.position.x=.03;
 edited.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y=17;
+const legacyCustomRotation=library(); // Older Drenkirra socket XYZ may coexist with a legitimately customized Y angle.
+legacyCustomRotation.creatures.drenkirra.anchors.shoulderGrip.rotationDeg={x:9,y:17,z:-4};
+const migratedCustom=api.normalizedRigProfileLibrary(legacyCustomRotation).creatures.drenkirra.anchors.shoulderGrip;
+assert.equal(migratedCustom.rotationDeg.y,17,'editor legacy XYZ migration preserves custom Y');
+assert.equal(migratedCustom.rotationDeg.x,9,'editor legacy XYZ migration preserves custom X');
+assert.equal(migratedCustom.rotationDeg.z,-4,'editor legacy XYZ migration preserves custom Z');
 edited.creatures.puktuk.anchors.shoulderGrip.rotationDeg.y=24;
 const normalized=api.normalizedRigProfileLibrary(edited);
 assert.equal(normalized.creatures.drenkirra.anchors.shoulderGrip.rotationDeg.y,17,'custom Drenkirra yaw survives');
