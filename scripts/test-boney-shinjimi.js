@@ -185,8 +185,14 @@ async function testRealEncounterFlow() {
   moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
   const rewards=[];
   const milkDialogues=[]; // Captures each actual authored milk conversation, including its three distinct greetings.
+  const snapshotsAtGrant=[]; // The real relic owner saves synchronously while granting; confirm milk and count are already updated at that point.
+  let failNextMilkGrant=false; // Simulates a failed relic award to verify rollback, without consuming the single-night allowance.
   let savedDuringGrant=null;
   moonWindow.BoneyShinjimiRewards={grant(kind){
+    if(kind==='milk'){
+      snapshotsAtGrant.push({count:C.serialize().milksGiven,milk:milkInventory[held.key]});
+      if(failNextMilkGrant){failNextMilkGrant=false;throw new Error('intentional test grant failure');}
+    }
     rewards.push(kind); return {kind:'boundRelic',origin:'Fey',key:'feyBound_dagger_123'};
   }};
   moonWindow.AuthoredCutsceneRuntime={async run(scene,handlers){
@@ -291,6 +297,15 @@ async function testRealEncounterFlow() {
   assert.equal(gifting.getNpcGiftOfferAction(npc),null,'no gift action for non-milk, even after confrontation');
   assert.equal(gifting.offerGift(npc),false,'direct non-milk press cannot bypass rejection');
   assert.equal(milkInventory.apple,2,'rejected ordinary gift not consumed');
+  held={kind:'item',key:'puktukMilk',def:milkDefs.puktukMilk};
+  failNextMilkGrant=true;
+  assert.equal(gifting.offerGift(npc),true,'failed grant is attempted through real gifting');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'a failed weapon grant rolls milk back');
+  assert.equal(C.serialize().milksGiven,0,'failed weapon grant does not use a milk allowance');
+  assert.equal(rewards.length,1,'a failed weapon grant creates no new prize');
+  assert.equal(snapshotsAtGrant.length,1,'a duplicate Continue does not retry a failed award');
+  assert(gifting.getNpcGiftOfferAction(npc),'the gift can be retried after an unsuccessful award');
   for(const key of ['puktukMilk','yellowDewMilk','uumkaoiiWhiteDewMilk']) {
     held={kind:'item',key,def:milkDefs[key]};
     const milkAction=gifting.getNpcGiftOfferAction(npc);
@@ -309,10 +324,14 @@ async function testRealEncounterFlow() {
   assert.equal(milkInventory.yellowDewMilk,0);
   assert.equal(milkInventory.uumkaoiiWhiteDewMilk,0);
   assert.equal(rewards.filter(kind=>kind==='milk').length,3,'three milk gifts each get one Fey weapon');
-  assert.equal(milkDialogues.length,3);
-  assert.match(milkDialogues[0][0],/Milk is good for my bones/);
-  assert.match(milkDialogues[1][0],/More milk/);
-  assert.match(milkDialogues[2][0],/A third milk/);
+  assert.equal(milkDialogues.length,4,'failed first offer may be retried without using the allowance');
+  assert.match(milkDialogues[1][0],/Milk is good for my bones/);
+  assert.match(milkDialogues[2][0],/More milk/);
+  assert.match(milkDialogues[3][0],/A third milk/);
+  assert.deepEqual(snapshotsAtGrant.slice(1).map(entry=>entry.count),[1,2,3],
+    'immediate reward saves must see the incremented milk count, preventing save/load duplication');
+  assert.deepEqual(snapshotsAtGrant.slice(1).map(entry=>entry.milk),[1,0,0],
+    'immediate reward saves must see each consumed milk in inventory');
   assert.equal(C.serialize().milksGiven,3,'milk limit persists in the existing world record');
   held={kind:'item',key:'puktukMilk',def:milkDefs.puktukMilk};
   assert.equal(gifting.getNpcGiftOfferAction(npc),null,'fourth milk gift is never offered');
