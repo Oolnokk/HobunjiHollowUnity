@@ -154,6 +154,22 @@
     }
     walkerBuilding=false;
   }
+  function cutSouthDoorway(piece) {
+    const faces=piece?.base?.faces;
+    if(!Array.isArray(faces))return piece;
+    // The authored bare 3x3 section has no entrance: split its south-facing
+    // frustum wall into left/right jambs and a lintel, retaining its roof.
+    const wall=faces.find(face=>face.tag==='wall'&&Array.isArray(face.v)
+      &&face.v[0]?.[2]>0.9&&face.v[3]?.[2]>0.9);
+    if(!wall)return piece;
+    const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+    const p=(u,v)=>mix(mix(wall.v[3],wall.v[0],u),mix(wall.v[2],wall.v[1],u),v);
+    const quad=(u0,u1,v0,v1,index)=>({...wall,id:String(wall.id)+'_boneyDoor_'+index,
+      v:[p(u1,v0),p(u1,v1),p(u0,v1),p(u0,v0)]});
+    const newFaces=faces.filter(face=>face!==wall);
+    newFaces.push(quad(0,1/3,0,1,'left'),quad(2/3,1,0,1,'right'),quad(1/3,2/3,0.82,1,'lintel'));
+    return {...piece,base:{...piece.base,faces:newFaces}}; // Authoring JSON stays unchanged.
+  }
   async function ensureHouse() {
     const scene=window.GridTileAccessors?.getActiveScene?.();
     if(!state.home||area()!==state.zone||!scene||houseBuilding)return;
@@ -170,7 +186,7 @@
       const base=piece.currentPiece||piece;
       if(!Array.isArray(base.footprint?.cells)||base.footprint.cells.length!==9)
         throw new Error('Highland 3x3 footprint no longer matches its authored asset');
-      const authored={...base,footprint:{...base.footprint,door:{x:8,y:9}}}; // A south-facing door added to a clone, never to the authored source.
+      const authored=cutSouthDoorway({...base,footprint:{...base.footprint,door:{x:8,y:9}}}); // Real geometric doorway cut, not a fake collision-only entrance.
       const h=state.home;
       const y=finite(deps?.npcSurfaceY?.(state.zone,h.c+1,h.r+1),0);
       const group=window.HousePieceGen.buildGroupFromPiece(window.THREE,authored,h.c,h.r,{
@@ -339,9 +355,10 @@
     state.fleeTime+=dt;planTimer+=dt;
     const h=homeCenter(),p={x:position().x,z:position().z};
     if(dist(p,h)<3.8) {
-      setTarget(state.home.c+1,state.home.r+3,'flee'); // Approach south door before routing inside.
-      if(dist(p,{x:state.home.c+1.5,z:state.home.r+3.5})<1.1)
-        setTarget(state.home.c+1,state.home.r+1,'flee');
+      const headedInside=state.target?.c===state.home.c+1&&state.target?.r===state.home.r+1;
+      if(!headedInside)setTarget(state.home.c+1,state.home.r+3,'flee'); // First approach the real south opening.
+      if(dist(p,{x:state.home.c+1.5,z:state.home.r+3.5})<1.1||headedInside)
+        setTarget(state.home.c+1,state.home.r+1,'flee'); // Never oscillate back outside on the next tick.
     } else if(planTimer>=1.8) {
       planTimer=0;escapeAroundCover();
     }
@@ -450,8 +467,8 @@
     ensureSite();
     if(state.phase==='waiting'||state.phase==='complete'||state.phase==='planned')return;
     syncZone();
+    if(state.phase==='leaving') {finishEncounter();return;} // Leaving the zone counts as exiting the magic house.
     if(area()!==state.zone||!walker)return;
-    if(state.phase==='leaving') {finishEncounter();return;}
     if(state.phase==='scene')return;
     contactBoost(dt);
     scanTimer+=dt;
