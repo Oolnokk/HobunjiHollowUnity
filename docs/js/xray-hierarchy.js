@@ -367,7 +367,7 @@
       'backgroundDepthMeshesExcluded', 'rankedPortraitActors', 'waterReplays',
       'selectiveOverlays', 'lastHeldFullscreenReason', 'heldOrderNormalizations',
       'lastHeldOrderNormalization', 'frontPortraitMaskReason', 'shoulderPetCompositor',
-      'floorPunch', 'forcedGroundDepthMaterials', 'elevationShaderFallbacks', 'xrayTileRegions']) {
+      'floorPunch', 'forcedGroundDepthMaterials', 'elevationShaderFallbacks', 'xrayTileRegions', 'xrayOrdinaryMeshes', 'baseElevationGroups']) {
       if (Object.prototype.hasOwnProperty.call(live, field)) diagnostics[field] = live[field];
     }
     return JSON.stringify({ xrayDiagnosis: {
@@ -566,9 +566,11 @@
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
             ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
-            ['Ground depth writers repaired (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
+            ['Ground depth overrides (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
+            ['Ordinary held parts', String(live.xrayOrdinaryMeshes ?? '-')],
             ['Ground shader fallbacks', String(live.elevationShaderFallbacks ?? '-')],
-            ['Stencil floor punch', live.floorPunch?.enabled === false ? 'Disabled (full depth rebuild)' : 'Enabled'],
+            ['Stencil floor punch', live.floorPunch?.enabled === false ? 'Disabled (full depth rebuild)' : 'Allowed if snapshot available'],
+            ['Floor punch calls / fallbacks', String(live.floorPunch?.punches ?? '-') + ' / ' + String(live.floorPunch?.fallbacks ?? '-')],
             ['Tool/hand priority', linked ? 'Linked: one effective rank' : 'Independent ranks'],
             ['Held renderOrder overrides', String(live.heldOrderNormalizations ?? '-') + ' automatic normalizations'],
             ['Last held order override', live.lastHeldOrderNormalization
