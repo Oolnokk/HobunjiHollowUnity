@@ -108,7 +108,11 @@
     }
 
     function setPose(pose) {
-      requestedPose = pose === 'perched' ? 'perched' : 'source'; // Invalid inputs fail back to the safe unmodified source view.
+      const nextPose = pose === 'perched' ? 'perched' : 'source'; // Invalid inputs fail back to the safe unmodified source view.
+      if (nextPose === requestedPose && (posedAvatar || buildTask || buildError || nextPose === 'source')) {
+        return buildTask || Promise.resolve(posedAvatar); // The animation loop must not rewrite the inspector DOM on every rendered frame.
+      }
+      requestedPose = nextPose;
       if (!disposed && requestedPose === 'perched' && !posedAvatar && !buildTask && !buildError) {
         buildTask = buildPerchedAvatar().catch(error => {
           buildError = error instanceof Error ? error : new Error(String(error)); // Expose frame/spline failures visibly.
