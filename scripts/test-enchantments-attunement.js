@@ -586,6 +586,16 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   reset();weapon='fey-testing-blade';
   const fey= context.FeyIllusions;
   assert(fey&&fey.EFFECTS.feyPhantomWound&&fey.EFFECTS.feyMazeStep);
+  assert.equal(fey.debugSnapshot().registered,false,'Fey combat script loads before the actual EffectBuffBar owner');
+  let feyBuffProvider=null; // Tests the late-loaded shared HUD registration seam using the production FeyIllusions module.
+  context.EffectBuffBar={registerProvider(id,callback){
+    assert.equal(id,'fey-illusions');
+    feyBuffProvider=callback;return true;
+  },refresh(){}};
+  assert.equal(fey.ensureBuffProvider(),true,'lazy registration succeeds once EffectBuffBar is loaded');
+  assert.equal(fey.ensureBuffProvider(),true,'repeated registration is idempotent');
+  assert.equal(typeof feyBuffProvider,'function','Fey symptoms participate in the existing buff icon owner');
+  assert.equal(fey.debugSnapshot().registered,true);
   const allFeyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
   same([...allFeyIds].sort(),['feyPhantomWound','feyFalseBleeding','feyNeedlePain','feyMazeStep','feyEchoDread'].sort());
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
