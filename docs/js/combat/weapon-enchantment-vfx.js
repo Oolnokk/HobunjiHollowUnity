@@ -942,9 +942,11 @@
 
       const preview = document.createElement('div'); // Used as an immediate readable color/opacity sample beneath browser-native selects.
       preview.className = 'loadout-slot-combo-note';
-      const swatch = document.createElement('span'); // Used to show the exact dye hex at the plane's authored transparency.
-      swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${alignmentDef.opacity};`;
-      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity (60% minimum)`));
+      const previewEffect = styleFor(state); // VFX effect-level opacity overrides the plane's base (Tiny Fireflies are fully luminous).
+      const previewOpacity = Number.isFinite(previewEffect?.opacity) ? previewEffect.opacity : alignmentDef.opacity; // Reflect the actual SpriteMaterial opacity in mobile/controller previews.
+      const swatch = document.createElement('span'); // Used to show the exact dye hex at the selected effect opacity.
+      swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${previewOpacity};`;
+      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${previewEffect?.label || state.effectId} · ${Math.round(previewOpacity * 100)}% effect opacity${previewEffect?.blend === 'additive' ? ' · additive glow' : ''}`));
       section.appendChild(preview);
     }
 
@@ -995,7 +997,10 @@
       weaponKey: key,
       activeAlignments: activeAlignments(key),
       counts,
-      visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
+      visual: state ? { ...state, colorHex: dyeHex(state.dyeId),
+        opacity: styleFor(state)?.opacity ?? ALIGNMENTS[state.alignment]?.opacity ?? null,
+        blend: styleFor(state)?.blend || 'normal', toneMapped: styleFor(state)?.toneMapped !== false,
+        particleSize: styleFor(state)?.size ?? null } : null, // Mobile diagnostics show actual chosen effect brightness and size, not only origin defaults.
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
       currentHeldVisualMatchesSnapshot: !!activeSnapshot?.heldVisual && activeSnapshot.heldVisual === heldVisualForWeapon(key), // True only when a real current visual matches a live snapshot.
