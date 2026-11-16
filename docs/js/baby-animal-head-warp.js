@@ -117,7 +117,8 @@
     const chathead = validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame);
     if (chathead) return chathead; // The authored dialogue frame strictly bounds which IDLE opaque pixels belong to the source head mask.
     const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
-    if (dialogue) return dialogue; // Dynamic/solved chathead frames also outrank head deformation paint.
+    if (dialogue && (savedRig || committed || window.CreatureGeneticsRender?.SPECIES?.[base])) return dialogue;
+    // The dialogue solver has a generic fallback even for unknown species. Only registered creatures can inherit that frame.
     const painted = frameFromRig(savedRig) || frameFromRig(committed);
     if (painted) return painted; // Preserve custom species without any authored chathead frame.
     const knownSpecies = window.CreatureGeneticsRender?.SPECIES?.[base];
