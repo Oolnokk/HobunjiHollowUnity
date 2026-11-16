@@ -124,6 +124,10 @@
         const profile = clone(source); // Independent copy prevents skeleton adjustments from mutating the donor.
         profile.species = SPECIES_ID;
         profile.gender = gender;
+        const perchScale = Number(config.perchScaleByGender?.[gender]); // Optional fixed authored perch size, never derived automatically from the body transform.
+        if (Number.isFinite(perchScale) && perchScale > 0 && profile.anchors?.shoulderPerch) {
+          profile.anchors.shoulderPerch.scale = { x: perchScale, y: perchScale, z: perchScale };
+        }
         if (profile.shoulderPerchRule?.appearanceSpeciesId) profile.shoulderPerchRule.appearanceSpeciesId = SPECIES_ID;
         if (profile.posteriorRule?.appearanceSpeciesId) profile.posteriorRule.appearanceSpeciesId = SPECIES_ID;
         removeInheritedWholeRigScale(profile);
