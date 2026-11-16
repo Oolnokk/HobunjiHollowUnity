@@ -75,8 +75,9 @@
     syncWorld();
     window.DelversGuild?.bindInventoryDeps?.(injected); // Reuses these authoritative inventory and save adapters for the Stone and key-stones.
     window.TownMagicCheckpoint?.bindInventoryDeps?.(injected); // Shares the same live pack, member save and inventory UI for imperial custody.
-    window.DialogueContent?.registerTreeProvider?.('garanki_gabu', () => window.DelversGuild?.dialogueTree?.() || unlockDialogue());
-    window.DialogueContent?.registerNodeEnterHandler?.('garanki_gabu', node => {
+    window.DialogueContent?.registerTreeProvider?.('garanki_gabu', () => window.FeyArmamentQuest?.dialogueTreeFor?.('garanki_gabu') || window.DelversGuild?.dialogueTree?.() || unlockDialogue());
+    window.DialogueContent?.registerNodeEnterHandler?.('garanki_gabu', (node, context) => {
+      window.FeyArmamentQuest?.onDialogueNode?.(node, context); // Reuses Garanki's sole registered handler without displacing Guild/custody dialogue.
       if (node?.id === 'artifact_explanation') acknowledgeUnlocks();
       window.DelversGuild?.onDialogueNode?.(node); // End-node handoff launches the private tent cutscenes after dialogue closes.
     });
