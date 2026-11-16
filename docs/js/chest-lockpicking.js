@@ -100,10 +100,12 @@
     const fingerprint = JSON.stringify(record); // Skips redundant metadata rewrites on successful closure or unchanged cancellation.
     if (state.persistedSignature === fingerprint) { lastSaveStatus = 'Already saved (' + reason + ')'; return true; }
     const folder = window.LocalSaveFolder; // Only events with an immediate verified primary-folder commit may bypass the synchronous browser-meta rewrite.
-    const fastReason = reason.startsWith('first failure at set ') || reason === 'retry failed lock save'
+    const fastSecuredStage = reason.startsWith('secured set '); // Secure completed sets in the same small folder commit as failed stages.
+    const fastReason = fastSecuredStage || reason.startsWith('first failure at set ') || reason === 'retry failed lock save'
       || reason === 'folder failure-save acknowledged';
     if (fastReason && folder?.canSaveLockProgress?.(scope.characterId) && typeof window.CharacterMetaSave.stageMutation === 'function') {
       const stagedRecord = JSON.parse(fingerprint); // Preserve this exact lock state even when the mutable session advances during disk I/O.
+      if (fastSecuredStage) stagedRecord.folderUnsynced = true; // A completed set is not acknowledged until its actual folder commit succeeds.
       const staged = window.CharacterMetaSave.stageMutation('lock:' + scope.worldId + ':' + state.id, character => {
         character[PROGRESS_FIELD] ||= {};
         character[PROGRESS_FIELD][scope.worldId] ||= {};
@@ -111,8 +113,9 @@
       }); // capturePending merges this one lock into live folder snapshots; other locks and fields stay unchanged.
       if (staged) {
         folderOnlyProgress.set(progressKey(scope, state.id), stagedRecord);
-        state.folderFallback = false;
-        state.persistedSignature = fingerprint;
+        state.folderUnsynced = stagedRecord.folderUnsynced;
+        state.folderFallback = fastSecuredStage; // Existing completed-set flow blocks progression until the targeted folder write confirms success.
+        state.persistedSignature = JSON.stringify(stagedRecord);
         lastSaveStatus = 'Staged for targeted primary-folder commit: ' + reason;
         return true;
       }
@@ -588,6 +591,10 @@
     }
     if (outcome === 'cancelled' && finished.phase === 'playing' && finished.rings.some(ring => ring.frozen)) {
       recordFailure(finished, 'Abandoned an in-progress set'); // Cancelling a nearly slipped set cannot preserve a flawless streak.
+      if (finished.savePending) {
+        announce('Saving your abandoned lock set. Cancel after the primary folder confirms the penalty.');
+        return false; // The cancel press must not discard a newly initiated disk write.
+      }
     }
     if (outcome !== 'invalid' && !saveProgress(finished, outcome)) finished.saveFailed = true;
     if (outcome === 'success' && (finished.saveFailed || finished.savePending || finished.folderUnsynced || finished.pendingStageSave)) {
