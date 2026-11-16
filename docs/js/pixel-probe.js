@@ -539,11 +539,10 @@
     const lines = ['', '=== Shoulder-pet diagnostics ==='];
     const compositor = window.HeldObjectRenderOrder?.snapshot?.() || {};
     const petPolicy = compositor.shoulderPetCompositor || {};
-    const legacyDepth = petPolicy.active && petPolicy.mode === 'world-depth';
-    const expectedDepth = !liveActivePet || legacyDepth;
+    const expectedDepth = !liveActivePet; // Attached pet cards and the owner's portrait share one depth-write-free stack.
     lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
     lines.push(`Gameplay attachment state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
-    lines.push(`Compositor: mode=${petPolicy.mode || '(not available)'} active=${!!petPolicy.active} playerInFront=${petPolicy.playerDrawsOnTop ?? '-'} frontMask=${compositor.frontPortraitMaskedGear ?? '-'}/${compositor.frontPortraitGearCandidates ?? '-'} reason=${compositor.frontPortraitMaskReason || '-'} stencilBits=${compositor.stencilBits ?? '-'}`);
+    lines.push(`Compositor: mode=${petPolicy.mode || '(not available)'} active=${!!petPolicy.active} frontPet=${petPolicy.frontForeground ? 'ABOVE' : 'behind'} backPet=${petPolicy.backForeground ? 'ABOVE' : 'behind'} frontMask=${compositor.frontPortraitMaskedGear ?? '-'}/${compositor.frontPortraitGearCandidates ?? '-'} reason=${compositor.frontPortraitMaskReason || '-'} stencilBits=${compositor.stencilBits ?? '-'}`);
     if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet || !!liveActivePet !== !!petPolicy.active) {
       lines.push('>>> MISMATCH — gameplay and shared compositor have different active shoulder pets; inspect the game render/attachment frame.');
     }
@@ -554,13 +553,17 @@
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
-        checks.push([label, 'depthWrite', legacyDepth, mesh.material.depthWrite]);
-        checks.push([label, 'renderOrder', window.HeldObjectRenderOrder?.SHOULDER_PET_RENDER_ORDERS?.pet
-          || deps.SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+        checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
+        const front = label === 'active pet front plane'; // The owner's portrait stages are fixed; only the active pet swaps sides.
+        const orders = window.HeldObjectRenderOrder?.SHOULDER_PET_RENDER_ORDERS;
+        const expectedOrder = front
+          ? (petPolicy.frontForeground ? orders?.frontAbove : orders?.frontBehind)
+          : (petPolicy.backForeground ? orders?.backAbove : orders?.backBehind);
+        if (expectedOrder !== undefined) checks.push([label, 'renderOrder', expectedOrder, mesh.renderOrder]);
       }
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
-    if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} under the shared compositor preset.`));
+    if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} under the paired portrait compositor.`));
     else if (checks.length) lines.push('Player and pet materials match the selected compositor policy.');
 
     if (liveActivePet) {
