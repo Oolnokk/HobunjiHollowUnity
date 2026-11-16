@@ -8,6 +8,13 @@
   const blizzardSourceTextures = [];
   let attachedScene = null;
   const layers = [];
+  const rowAssignments = []; // Reused row descriptors populated during updateRowLayers, avoiding per-frame temporary arrays and Sets.
+  let rowAssignmentCount = 0; // Number of populated descriptors in the current update; consumed by assignRowLayers and rendering.
+  let rowAssignmentStamp = 0; // Marks claimed pooled layers without allocating a per-frame Set.
+  let rowReassignments = 0; // Exposed in getDebugState to diagnose row churn while walking.
+  let activeContentKind = 'rain'; // Keeps layer-content changes event-driven instead of visiting every plane each frame.
+  let wasPrecipitating = false; // Avoids resetting all pooled layers on every dry/interior frame.
+  let sharedPlaneGeometry = null; // One immutable unit quad shared by rain and blizzard planes.
   let cameraForward = null; // Reused by update() to avoid per-frame allocation.
   let cameraEuler = null; // Supplies independently-toggleable camera X/Y/Z rotation.
   let rowTravelCoordinate = 0; // Player travel projected onto the current precipitation-row axis; preserves walking-through-row parallax while yaw rotates around the player.
@@ -196,9 +203,9 @@
       depthWrite: false,
       fog: true,
     });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    const mesh = new THREE.Mesh(sharedPlaneGeometry, material);
     mesh.name = `world_rain_plane_${index + 1}`;
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = true; // Cull off-camera transparent sheets before they consume fill rate.
     mesh.renderOrder = 900;
     mesh.userData.isBillboard = true;
     mesh.visible = false;
@@ -212,12 +219,20 @@
       contentKind: 'rain',
       config,
       rowKey: null,
+      rowIndex: null, // Stable integer lattice coordinate used to match this mesh to its row on subsequent frames.
+      rowCoordinate: null, // Preserves the old row identity when the Testing Arena changes row spacing.
+      rowSide: null, // Distinguishes forward and behind rows for the row pool.
+      assignmentStamp: 0, // Used only by assignRowLayers to mark each claimed mesh.
       currentOpacity: 0,
     };
   }
 
   function ensureLayerCount(count) {
-    while (layers.length < count) layers.push(makeLayer(layers.length));
+    while (layers.length < count) {
+      const layer = makeLayer(layers.length);
+      if (activeContentKind !== 'rain') setLayerContent(layer, activeContentKind);
+      layers.push(layer);
+    }
   }
 
   function setLayerContent(layer, kind) {
@@ -231,6 +246,8 @@
   }
 
   function setAllLayerContent(kind) {
+    if (activeContentKind === kind) return;
+    activeContentKind = kind;
     layers.forEach(layer => setLayerContent(layer, kind));
   }
 
@@ -251,6 +268,7 @@
     }
     const THREE = deps.THREE;
     rainSourceTexture = createRainSourceTexture();
+    sharedPlaneGeometry = new THREE.PlaneGeometry(1, 1);
     blizzardSourceTextures.length = 0;
     for (let i = 0; i < CAMERA_CONFIG.length; i++) blizzardSourceTextures.push(createBlizzardSourceTexture(i));
     cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -291,53 +309,84 @@
       material.opacity = config.opacity * context.opacityMultiplier;
       layer.currentOpacity = material.opacity;
       layer.rowKey = null;
+      layer.rowIndex = null;
+      layer.rowCoordinate = null;
+      layer.rowSide = null;
       mesh.visible = true;
       advanceTexture(layer, dt, context.speedMultiplier * settings.speedMultiplier);
     });
   }
 
   function desiredRows(playerRowCoordinate) {
-    const spacing = settings.rowSpacingTiles;
-    const rows = [];
-    const gridPosition = playerRowCoordinate / spacing;
-    const addDirection = (sign, count, side) => {
+    const spacing = settings.rowSpacingTiles; // Spacing used by both row families and their placement calculations.
+    const gridPosition = playerRowCoordinate / spacing; // Current position on the player-following row lattice.
+    rowAssignmentCount = 0;
+    // Reuse each descriptor across frames. A descriptor's row index changes only
+    // when the player crosses a band boundary (or the arena settings change).
+    for (let sideIndex = 0; sideIndex < 2; sideIndex++) {
+      const front = sideIndex === 0;
+      const sign = front ? 1 : -1;
+      const count = front ? settings.frontCount : settings.behindCount;
+      const side = front ? 'front' : 'behind';
       const firstIndex = sign > 0 ? Math.floor(gridPosition) + 1 : Math.ceil(gridPosition) - 1;
       const maxDistance = Math.max(spacing, spacing * count);
       for (let i = 0; i < count; i++) {
-        const rowCoordinate = (firstIndex + sign * i) * spacing;
-        rows.push({
-          rowCoordinate,
-          side,
-          distance: Math.abs(rowCoordinate - playerRowCoordinate),
-          maxDistance,
-          order: i,
-        });
+        const rowIndex = firstIndex + sign * i; // Stable integer row identity used for mesh reuse.
+        const rowCoordinate = rowIndex * spacing; // World-space row coordinate along the moving lattice.
+        let assignment = rowAssignments[rowAssignmentCount];
+        if (!assignment) {
+          assignment = { rowIndex: null, rowCoordinate: 0, side: null, distance: 0, maxDistance: 0, layer: null };
+          rowAssignments.push(assignment);
+        }
+        assignment.rowIndex = rowIndex;
+        assignment.rowCoordinate = rowCoordinate;
+        assignment.side = side;
+        assignment.distance = Math.abs(rowCoordinate - playerRowCoordinate);
+        assignment.maxDistance = maxDistance;
+        assignment.layer = null;
+        rowAssignmentCount++;
       }
-    };
-    // Local +Z is defined as the camera-facing direction, so "front" is always positive in this frame.
-    addDirection(1, settings.frontCount, 'front');
-    addDirection(-1, settings.behindCount, 'behind');
-    return rows;
+    }
+    return rowAssignmentCount;
   }
 
-  function assignRowLayers(assignments) {
-    ensureLayerCount(Math.max(3, assignments.length));
-    const unused = new Set(layers);
-    const claimed = assignments.map(assignment => {
-      const key = `${assignment.side}:${assignment.rowCoordinate}`;
-      const layer = [...unused].find(candidate => candidate.rowKey === key) || null;
-      if (layer) unused.delete(layer);
-      return { assignment, key, layer };
-    });
-    for (const entry of claimed) {
-      if (entry.layer) continue;
-      entry.layer = unused.values().next().value;
-      unused.delete(entry.layer);
-      entry.layer.rowKey = entry.key;
-      entry.layer.currentOpacity = 0;
-      entry.layer.material.opacity = 0;
+  function assignRowLayers(count) {
+    ensureLayerCount(Math.max(3, count));
+    const stamp = ++rowAssignmentStamp; // Current-update claim marker; no Set or array expansion is needed.
+    // First claim all existing matching rows before recycling any spare layer.
+    for (let i = 0; i < count; i++) {
+      const assignment = rowAssignments[i];
+      for (let j = 0; j < layers.length; j++) {
+        const candidate = layers[j];
+        if (candidate.assignmentStamp === stamp
+            || candidate.rowIndex !== assignment.rowIndex
+            || candidate.rowCoordinate !== assignment.rowCoordinate
+            || candidate.rowSide !== assignment.side) continue;
+        candidate.assignmentStamp = stamp;
+        assignment.layer = candidate;
+        break;
+      }
     }
-    return claimed;
+    let nextUnused = 0; // Advances through the unused pool once when bands enter the visible row window.
+    for (let i = 0; i < count; i++) {
+      const assignment = rowAssignments[i];
+      if (assignment.layer) continue;
+      while (layers[nextUnused].assignmentStamp === stamp) nextUnused++;
+      const layer = layers[nextUnused++];
+      layer.assignmentStamp = stamp;
+      layer.rowIndex = assignment.rowIndex;
+      layer.rowCoordinate = assignment.rowCoordinate;
+      layer.rowSide = assignment.side;
+      layer.rowKey = `${assignment.side}:${assignment.rowCoordinate}`;
+      layer.currentOpacity = 0;
+      layer.material.opacity = 0;
+      assignment.layer = layer;
+      rowReassignments++;
+    }
+    // Hide unused pool members without allocating the old activeLayers Set.
+    for (const layer of layers) {
+      if (layer.assignmentStamp !== stamp) layer.mesh.visible = false;
+    }
   }
 
   function updateRowLayers(dt, context) {
@@ -375,11 +424,12 @@
     const localForwardX = cameraForward.x * cosYaw - cameraForward.z * sinYaw;
     const localForwardZ = cameraForward.x * sinYaw + cameraForward.z * cosYaw;
 
-    const active = assignRowLayers(desiredRows(rowTravelCoordinate));
-    const activeLayers = new Set(active.map(entry => entry.layer));
-    layers.forEach(layer => { if (!activeLayers.has(layer)) layer.mesh.visible = false; });
-
-    for (const { assignment, layer } of active) {
+    assignRowLayers(desiredRows(rowTravelCoordinate));
+    const fadeLerp = 1 - Math.exp(-dt / 0.32); // One shared fade coefficient for all active sheets this frame.
+    const groundY = settings.followCameraY ? 0 : deps.getPlayerGroundY(); // Reused if row placement follows terrain rather than the camera.
+    for (let i = 0; i < rowAssignmentCount; i++) {
+      const assignment = rowAssignments[i];
+      const layer = assignment.layer;
       const { mesh, material, config } = layer;
       const cameraRelativeDistance = config.distance;
       const localZ = settings.lockRowZ
@@ -399,10 +449,9 @@
       const z = playerZ - localX * sinYaw + localZ * cosYaw;
       const y = settings.followCameraY
         ? context.camera.position.y + cameraForward.y * rayDistance
-        : deps.getPlayerGroundY() + viewHeight * 0.5;
+        : groundY + viewHeight * 0.5;
       const distanceFade = Math.max(0, Math.min(1, 1 - assignment.distance / assignment.maxDistance));
       const targetOpacity = config.opacity * context.opacityMultiplier * distanceFade;
-      const fadeLerp = 1 - Math.exp(-dt / 0.32);
       layer.currentOpacity += (targetOpacity - layer.currentOpacity) * fadeLerp;
       material.opacity = layer.currentOpacity;
       mesh.position.set(x, y, z);
@@ -420,6 +469,9 @@
       layer.currentOpacity = 0;
       layer.material.opacity = 0;
       layer.rowKey = null;
+      layer.rowIndex = null;
+      layer.rowCoordinate = null;
+      layer.rowSide = null;
     });
     resetRowFrameTracking();
   }
@@ -440,9 +492,11 @@
 
     group.visible = precipitating;
     if (!precipitating) {
-      hideLayers();
+      if (wasPrecipitating) hideLayers();
+      wasPrecipitating = false;
       return;
     }
+    wasPrecipitating = true;
 
     ensureLayerCount(settings.mode === 'rows' ? Math.max(3, settings.frontCount + settings.behindCount) : 3);
     setAllLayerContent(contentKind);
@@ -514,6 +568,10 @@
       rowTravelCoordinate,
       layerPoolSize: layers.length,
       layerCount: layers.filter(layer => layer.mesh.visible).length,
+      sharedPlaneGeometry: !!sharedPlaneGeometry, // Confirms all layers reuse the single cached quad.
+      frustumCulling: true, // Offscreen sheet rejection is handled by Three.js during rendering.
+      rowAssignmentScratchSize: rowAssignments.length,
+      rowReassignments,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
       blizzardAudioRouting: typeof window.Music?.weatherRegionForArea === 'function',
