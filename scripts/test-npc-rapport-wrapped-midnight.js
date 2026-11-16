@@ -60,4 +60,13 @@ assert.equal(stateFor('npc_test').rapport, 0, 'Rapport is cleared immediately on
 assert.equal(stateFor('npc_test').favor, 4, '37 Rapport converts with Math.round(37 × 10%) at midnight');
 assert.equal(stateFor('npc_test').rapportDay, 6, 'relationship metadata advances at civil midnight rather than raw 06:00 rollover');
 
+const boney={rec:{id:'boney_shinjimi',name:'Boney Shinjimi'}}; // One-night milk exchanges bypass regular per-day gifting.
+const resident={rec:{id:'npc_test',name:'Resident'}}; // Ordinary NPCs must retain the daily limit.
+assert.equal(gifting.offerGift(boney),true);
+assert.equal(gifting.offerGift(boney),true,'a second Boney milk exchange works on the same day');
+assert.equal(stateFor('boney_shinjimi').lastGiftDay,-1,'Boney exchanges do not mark daily gift usage');
+assert(gifting.getNpcGiftOfferAction(boney),'Boney still has a gift action after the first exchange');
+assert.equal(gifting.offerGift(resident),true);
+assert.equal(gifting.offerGift(resident),false,'ordinary residents remain daily-limited');
+assert.equal(gifting.getNpcGiftOfferAction(resident),null,'ordinary gift action remains hidden after a gift');
 console.log('npc Rapport wrapped-midnight regression tests passed');
