@@ -65,9 +65,11 @@
     const scope = profileScope();
     if (!scope || typeof localStorage === 'undefined') return null;
     try {
-      const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
-      const saved = folderOnlyProgress.get(progressKey(scope,id))
-        || meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      let saved = folderOnlyProgress.get(progressKey(scope,id)); // A queued folder-backed lock does not need to reparse the enormous browser meta on reentry.
+      if (!saved) {
+        const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
+        saved = meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      }
       if (!saved || saved.version !== PROGRESS_VERSION || saved.tier !== tier) return null;
       return {
         stage:safeInt(saved.stage, stages - 1), misses:safeInt(saved.misses, 9999),
@@ -97,6 +99,24 @@
     const record = progressRecord(state); // Shared with the character-only primary-folder path so both formats are identical.
     const fingerprint = JSON.stringify(record); // Skips redundant metadata rewrites on successful closure or unchanged cancellation.
     if (state.persistedSignature === fingerprint) { lastSaveStatus = 'Already saved (' + reason + ')'; return true; }
+    const folder = window.LocalSaveFolder; // Only events with an immediate verified primary-folder commit may bypass the synchronous browser-meta rewrite.
+    const fastReason = reason.startsWith('first failure at set ') || reason === 'retry failed lock save'
+      || reason === 'folder failure-save acknowledged';
+    if (fastReason && folder?.canSaveLockProgress?.(scope.characterId) && typeof window.CharacterMetaSave.stageMutation === 'function') {
+      const stagedRecord = JSON.parse(fingerprint); // Preserve this exact lock state even when the mutable session advances during disk I/O.
+      const staged = window.CharacterMetaSave.stageMutation('lock:' + scope.worldId + ':' + state.id, character => {
+        character[PROGRESS_FIELD] ||= {};
+        character[PROGRESS_FIELD][scope.worldId] ||= {};
+        character[PROGRESS_FIELD][scope.worldId][state.id] = stagedRecord;
+      }); // capturePending merges this one lock into live folder snapshots; other locks and fields stay unchanged.
+      if (staged) {
+        folderOnlyProgress.set(progressKey(scope, state.id), stagedRecord);
+        state.folderFallback = false;
+        state.persistedSignature = fingerprint;
+        lastSaveStatus = 'Staged for targeted primary-folder commit: ' + reason;
+        return true;
+      }
+    }
     let ok = window.CharacterMetaSave.update(character => {
       character[PROGRESS_FIELD] ||= {};
       character[PROGRESS_FIELD][scope.worldId] ||= {};
