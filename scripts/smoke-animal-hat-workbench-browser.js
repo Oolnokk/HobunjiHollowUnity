@@ -146,9 +146,10 @@ async function spritePng(page, animal) {
     await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.splitsAfterWarp > 0);
     await page.locator('#babyHeadCompare').click();
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, true);
-    assert.match(await page.locator('#babyHeadPreviewState').textContent(), /Showing original/);
+    await page.waitForFunction(() => /Showing original/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     await page.locator('#babyHeadCompare').click();
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
+    await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat and baby-head editing');
     console.log('PASS mobile hat editor: catalog, PNG import, hat-only preview, smudge, undo/redo, export, clear, neck tab');
   } catch (error) {
