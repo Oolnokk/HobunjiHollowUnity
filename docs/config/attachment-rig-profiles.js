@@ -501,7 +501,22 @@
       const candidate = output.creatures[kind] || {};
       const merged = { ...clone(canonical), ...candidate, anchors: { ...clone(canonical.anchors), ...(candidate.anchors || {}) } };
       const oldGrip = merged.anchors.shoulderGrip;
+      const drenkirraOldPosition = kind === 'drenkirra' && normalizeStalePositions(staleCreatureShoulderGrips.drenkirra)
+        .some(position => samePosition(oldGrip?.position, position)); // Detects a known obsolete socket XYZ independently from any hand-authored rotation.
       merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
+      if (drenkirraOldPosition && oldGrip?.rotationDeg) {
+        const canonicalRotation = canonical.anchors.shoulderGrip.rotationDeg; // Keeps unchanged components while correcting the known obsolete stock Y.
+        const authoredRotation = oldGrip.rotationDeg; // Preserves custom yaw/pitch/roll even when its old grip POSITION needs migrating.
+        const restoredRotation = { ...canonicalRotation };
+        for (const axis of ['x', 'y', 'z']) {
+          const value = Number(authoredRotation[axis]);
+          if (Number.isFinite(value)) restoredRotation[axis] = axis === 'y' && sameNumber(value, -61) ? canonicalRotation.y : value;
+        }
+        merged.anchors.shoulderGrip.rotationDeg = restoredRotation;
+        if (oldGrip.scale && ['x', 'y', 'z'].every(axis => Number.isFinite(Number(oldGrip.scale[axis])) && Number(oldGrip.scale[axis]) > 0)) {
+          merged.anchors.shoulderGrip.scale = { ...oldGrip.scale }; // A deliberately scaled old grip must not lose its independent user-authored scale.
+        }
+      }
       if (isStaleDrenkirraShoulderGripYaw(kind, merged.anchors.shoulderGrip)) {
         merged.anchors.shoulderGrip.rotationDeg = { ...merged.anchors.shoulderGrip.rotationDeg, y: canonical.anchors.shoulderGrip.rotationDeg.y }; // Migrate only obsolete stock Drenkirra Y; never rewrite grip position or custom pose.
       }
