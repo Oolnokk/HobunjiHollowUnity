@@ -5,7 +5,7 @@ const vm=require('node:vm');
 
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
-let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0;
+let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0;
 const timers=new Map(),nodes=[],enemies=new Set();
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
@@ -29,7 +29,7 @@ function actor(options){
 }
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
-  DevRandomRuin:{setPlayerWorldPoint:()=>true,getSeed:()=>77},
+  DevRandomRuin:{setPlayerWorldPoint:()=>{playerTeleports++;return true;},getSeed:()=>77},
   BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}}, // Use the canonical teardown path in the real encounter.
   MinionCombat:{makeEntity:async options=>({id:'skeleton'+(++skeletons),x:options.x,y:options.y,health:50,avatarRef:{dispose(){skeletonDisposals++;}}})},
 
@@ -125,6 +125,26 @@ async function run(){
   win.DevRandomRuinSanctum.resetEncounter('completed-tomb');
   assert.equal(state.bossDefeated,true,'permanent authored-victory progress cannot be undone');
   assert.equal(state.rearDoor.open,true,'defeated guardian keeps vault accessible');
-  console.log('PASS: reveal, all-caps outlined title, timed combat, skeleton teardown, death/exit, stale spawns, persistent victory');
+  state.bossDefeated=false; // A fresh unfinished tomb exercises the still-fading entrance boundary.
+  win.DevRandomRuinSanctum.enter();
+  assert.equal(state.enteringSanctum,true,'Great Door fade is tracked before the scene teleports');
+  const teleportsBeforeEntryDeath=playerTeleports;
+  composer.onPlayerDeath();
+  await advance(400);
+  assert.equal(playerTeleports,teleportsBeforeEntryDeath,'a delayed entrance may not teleport the player after death');
+  assert.equal(state.inSanctum,false);
+  assert.equal(state.enteringSanctum,false);
+  win.DevRandomRuinSanctum.enter();
+  await advance(350);
+  assert.equal(state.inSanctum,true);
+  win.DevRandomRuinSanctum.leave();
+  assert.equal(state.leavingSanctum,true,'the return fade remains cancellable until its callback');
+  const teleportsBeforeExitDeath=playerTeleports;
+  composer.onPlayerDeath();
+  await advance(400);
+  assert.equal(playerTeleports,teleportsBeforeExitDeath,'a delayed exit may not move the player after their checkpoint respawn');
+  assert.equal(state.leavingSanctum,false);
+  assert.equal(state.intro,null);
+  console.log('PASS: reveal, outline, timed combat, canonical cleanup, death/exit, fade cancellation, stale spawns, persistent victory');
 }
 run().catch(err=>{console.error(err);process.exitCode=1;});
