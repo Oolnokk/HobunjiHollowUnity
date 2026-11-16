@@ -268,7 +268,8 @@ async function testRealEncounterFlow() {
   game.player.x=(center.c+1.5)*64; // Walk through the south opening into the house after Boney gets home.
   game.player.y=(center.r+1.5)*64;
   C.update(.1);
-  await Promise.resolve();await Promise.resolve();
+  await new Promise(resolve=>setImmediate(resolve)); // Flush the sandboxed cutscene's Promise jobs before testing post-confrontation actions.
+  assert.equal(C.debugSnapshot().phase,'leaving','the confrontation must finish before gifting becomes available');
   assert.equal(rewards.length,1,'entering while Boney is home grants exactly one chosen prize');
   assert.equal(rewards[0],'useful');
   assert.equal(savedDuringGrant.phase,'leaving','an immediate mid-cutscene save must not revive the gift dialogue');
@@ -301,7 +302,8 @@ async function testRealEncounterFlow() {
     }));
     assert.equal(gifting.offerGift(npc),true,'milk gift opens its cutscene');
     assert.equal(gifting.offerGift(npc),false,'repeated input during the active cutscene is rejected');
-    await Promise.resolve();await Promise.resolve(); // Finish milk dialogue and release the synchronous input lock.
+    await new Promise(resolve=>setImmediate(resolve)); // Finish the VM-owned milk cutscene before offering the next milk.
+    assert.equal(C.debugSnapshot().phase,'leaving','Boney remains in the house after a milk exchange');
   }
   assert.equal(milkInventory.puktukMilk,1);
   assert.equal(milkInventory.yellowDewMilk,0);
