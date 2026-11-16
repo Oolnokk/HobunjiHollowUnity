@@ -196,7 +196,10 @@
     }
     const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
     smallPetHeadFrameCache.set(companion, entry);
-    Promise.resolve().then(() => renderer.composeFrame(kind, frameName, companion.genotype, false)).then(composed => {
+    Promise.resolve().then(async () => {
+      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind); // Always read the authored base idle sprite, never run or shoulder animation art.
+      return renderer.composeFrame(kind, frameName, companion.genotype, false);
+    }).then(composed => {
       if (!composed) throw new Error('Genotype frame unavailable');
       const enlarged = warpSmallPetSource(composed, kind);
       if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
