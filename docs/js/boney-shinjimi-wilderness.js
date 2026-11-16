@@ -563,7 +563,7 @@
       +'house '+d.houseVisible+'/'+d.collision+' NPC '+d.walker+' boosts '+d.catches;
   }
   function serialize() {
-    return {version:SAVE_VERSION,phase:state.phase==='scene'?'home':state.phase,
+    return {version:SAVE_VERSION,phase:state.phase==='scene'?(state.reward?'leaving':'home'):state.phase, // Persist reward-claimed cutscenes as departure, never as retriable gift prompts.
       cycle:state.cycle,completedCycle:state.completedCycle,zone:state.zone,
       home:state.home&&{...state.home},target:state.target&&{...state.target},
       activity:state.activity,resourceTarget:state.resourceTarget,workLeft:state.workLeft,chores:state.chores,
@@ -592,6 +592,7 @@
     state.catches=Math.max(0,Math.floor(finite(raw.catches)));
     state.weaponContacts=Math.max(0,Math.floor(finite(raw.weaponContacts)));
     state.reward=raw.reward||null;state.hatTaken=raw.hatTaken===true;
+    if(state.reward && state.phase==='home') state.phase='leaving'; // Legacy/interrupted cutscene saves with an already-granted prize must never duplicate rewards.
     if(state.phase==='flee') {
       state.target={c:state.home.c+1,r:state.home.r+3}; // Interrupted chase resumes toward the real house.
     }
