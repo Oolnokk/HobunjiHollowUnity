@@ -201,7 +201,7 @@
       return request;
     }
 
-    if (!isAutoTargetEnabled()) {
+    if (!isAutoTargetEnabled() || window.Combat.loadout?.isMounted?.()) {
       const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
       lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
       callback();
@@ -250,7 +250,7 @@
     runAfterAttackAlignment(() => {
       if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || window.GameplayInputRouter?.isAttackBlocked?.()) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
-      else legacyTapFallback(slotIndex);
+      else if (!window.Combat.loadout?.isMounted?.()) legacyTapFallback(slotIndex); // An empty mounted slot never triggers an ordinary cut/slash as a fallback.
     }, slotIndex);
   }
 
