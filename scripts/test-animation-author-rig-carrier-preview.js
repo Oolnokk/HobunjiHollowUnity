@@ -30,6 +30,7 @@ class M { // Affine XY equivalent of THREE.Matrix4 for rotated/scaled parent and
 }
 function t(x,y,angle,sx,sy){const c=Math.cos(angle),s=Math.sin(angle);return new M(c*sx,s*sx,-s*sy,c*sy,x,y);}
 function near(a,b,msg){assert(Math.abs(a-b)<1e-9,msg+': '+a+' vs '+b);}
+function nearAngle(a,b,msg){near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0,msg);}
 const w={};new Function('window',source)(w);
 const solve=w.AnimationAuthorRigCarrierPreview.placeNpcAtGrip;
 assert.equal(solve({THREE:{}}),false);
@@ -46,9 +47,9 @@ function check(grip,basis,body,perch,camera={position:{x:grip.x,z:5}}){ // The p
  near(matched.x,grip.x,'fixed shoulder contact X');
  near(matched.y,grip.y,'fixed shoulder contact Y');
  const expectedYaw=Math.atan2(camera.position.x-grip.x,camera.position.z); // In the 2D fixture all grip Z values are zero.
- near(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),expectedYaw,'NPC front (+Z) follows viewport camera, never pet grip yaw');
+ nearAngle(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),expectedYaw,'NPC front (+Z) follows viewport camera, never pet grip yaw');
  const localShoulder=body.clone().multiply(perch); // Socket rotation still belongs to the NPC, independently of the pet's chosen grip rotation.
- near(Math.atan2(matched.b,matched.a),Math.atan2(localShoulder.b,localShoulder.a),'socket orientation is independent of pet grip yaw');
+ nearAngle(Math.atan2(matched.b,matched.a),expectedYaw+Math.atan2(localShoulder.b,localShoulder.a),'socket follows NPC camera yaw rather than pet grip yaw');
  near(Math.hypot(root.matrixWorld.a,root.matrixWorld.b),1/shoulderPerch.scale.x,'NPC root uses reciprocal perch scale');
  near(Math.hypot(matched.a,matched.b),Math.hypot(body.a,body.b),'carrier body retains species size (not Small animal size)');
  for(const k of ['a','b','c','d','x','y'])near(grip[k],fixed[k],'animal grip unchanged '+k);
@@ -63,7 +64,7 @@ for(const k of ['a','b','c','d','x','y'])near(one[k],turnedGrip[k],'animal grip 
 for(const [side,camera] of [['front',{position:{x:.2,z:4}}],['back',{position:{x:.2,z:-4}}],['right',{position:{x:4,z:0}}],['left',{position:{x:-4,z:0}}]]) {
  const turned=check(t(.2,-.3,1.4,.35,.28),fixture.basis,fixture.body,fixture.perch,camera);
  const facing=Math.atan2(turned.b,turned.a),expected=Math.atan2(camera.position.x-.2,camera.position.z); // Matches the NPC builder's painted +Z front normal.
- near(facing,expected,'front portrait faces '+side+' camera instead of showing a flipped rear canvas');
+ nearAngle(facing,expected,'front portrait faces '+side+' camera instead of showing a flipped rear canvas');
 }
 const two=check(t(-.4,.8,-1.1,.3,.3),t(-1,.7,.8,.7,1.15),t(0,.12,-.2,.9,.9),t(-.13,.4,-.5,1.3,1.3));
 assert.notDeepEqual(one,two,'switching species/gender changes the NPC placement');
