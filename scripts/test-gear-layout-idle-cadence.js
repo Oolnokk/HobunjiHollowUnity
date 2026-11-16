@@ -34,6 +34,26 @@ const detail = {
   get scrollWidth() { return 200; },
   querySelectorAll() { return []; },
 }; // Geometry fixture exercises the real overflow branch and nine-step binary fit.
+const summary = {
+  nodeType: 1,
+  classList: { contains(name) { return name === 'gear-summary-panel'; } },
+  scrollHeight: 400, clientHeight: 300,
+}; // Existing left summary rail, whose resize should never invalidate right-hand text.
+const owned = {
+  nodeType: 1,
+  classList: { contains(name) { return name === 'gear-middle-inventory'; } },
+  clientHeight: 300,
+}; // Independently scrolling middle owned-gear panel.
+const section = {
+  nodeType: 1,
+  querySelector(selector) {
+    if (selector === ':scope > .gear-loadout-grid') return summary;
+    if (selector === ':scope > .gear-owned-section') return owned;
+    if (selector === '.gear-summary-panel') return summary;
+    if (selector === '.gear-middle-inventory') return owned;
+    return null;
+  },
+}; // Real workspace shape ensures four ResizeObserver targets are registered.
 const info = {
   nodeType: 1,
   style: { setProperty(name, value) { styleWrites++; if (name === '--gear-info-font') currentInfoFontPx = parseFloat(value); } },
@@ -45,7 +65,7 @@ const info = {
 const document = {
   readyState: 'complete',
   head: { appendChild() {} },
-  getElementById(id) { return id === 'mpInventory' ? pane : id === 'invInfo' ? info : id === 'menuPanel' ? menu : null; },
+  getElementById(id) { return id === 'mpInventory' ? pane : id === 'invInfo' ? info : id === 'menuPanel' ? menu : id === 'invEquipSection' ? section : null; },
   createElement() { return { id: '', textContent: '' }; },
 };
 class MutationObserver {
@@ -55,8 +75,8 @@ class MutationObserver {
   notify(records) { this.callback(records); }
 }
 class ResizeObserver {
-  constructor(callback) { this.callback = callback; resizers.push(this); }
-  observe() {}
+  constructor(callback) { this.callback = callback; this.targets = []; resizers.push(this); }
+  observe(node) { this.targets.push(node); }
   disconnect() { disconnects++; }
 }
 const window = { addEventListener() {}, innerWidth: 900, innerHeight: 500 };
@@ -83,6 +103,17 @@ assert.equal(queued.length, 1, 'entering Gear schedules a fit');
 flushFrames();
 assert.equal(layoutReads, 0, 'normal Gear refresh does not run diagnostics-only layout measurements');
 assert(styleWrites > 0, 'Gear open applies its own adaptive font metrics');
+const initialResizeObserver = resizers.at(-1);
+assert.equal(initialResizeObserver.targets.length, 4, 'Gear observes its section, summary, owned gear, and detail');
+const firstFitWritesAfterOpen = styleWrites; // Initial ResizeObserver deliveries must not perform a second font fit.
+initialResizeObserver.callback([
+  { target:section, contentRect:{ width:480, height:300 } },
+  { target:summary, contentRect:{ width:180, height:300 } },
+  { target:owned, contentRect:{ width:300, height:300 } },
+  { target:info, contentRect:{ width:150, height:300 } },
+]);
+assert.equal(queued.length, 0, 'initial ResizeObserver size delivery does not double-fit the panel');
+assert.equal(styleWrites, firstFitWritesAfterOpen);
 const firstFitWrites = styleWrites; // A real content update must still rerun the font metrics.
 
 observer.notify([mutation(pane), mutation(irrelevant)]);
@@ -113,6 +144,12 @@ assert.equal(queued.length, 1, 'real effect-section rebuilds still schedule a la
 flushFrames();
 assert.equal(styleWrites, afterDetailWrites, 'rebuilding the left effects card reuses the existing item-detail fit');
 assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.reusedDetailFits, 1);
+const writesBeforeLeftResize = styleWrites; // A left-only summary resize should not remeasure the right detail.
+initialResizeObserver.callback([{ target:summary, contentRect:{ width:170, height:300 } }]);
+assert.equal(queued.length, 1, 'left summary resize still schedules presentation maintenance');
+flushFrames();
+assert.equal(styleWrites, writesBeforeLeftResize, 'left summary resize does not rerun the font fitting');
+assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.reusedDetailFits, 2);
 assert.equal(layoutReads, 1, 'explicit mobile diagnostics still read the actual detail-panel width');
 
 
@@ -146,21 +183,24 @@ flushFrames();
 assert.equal(layoutReads, 1, 'reopening Gear fits without diagnostics-only geometry');
 const debug = window.InventoryGearCompactEffects.debugSnapshot();
 assert.equal(debug.gearActive, true);
-assert.equal(debug.fitStats.passes, 5);
+assert.equal(debug.fitStats.passes, 6);
 assert.equal(debug.fitStats.detailFits, 4, 'first open, detail change, and both reopens require a real fit');
-assert.equal(debug.fitStats.reusedDetailFits, 1, 'unrelated left-rail update skips the real fit');
+assert.equal(debug.fitStats.reusedDetailFits, 2, 'left-rail mutation and resize both skip the real fit');
 assert.equal(layoutReads, 2, 'on-demand diagnostics retain the measured item-detail width');
 assert(debug.fitStats.ignoredMutations >= 2);
 assert(debug.fitStats.inactiveSkips >= 3);
 
 const preResizeWrites = styleWrites; // Resize invalidates even when the item-detail text itself is unchanged.
 maxFittingFontPx = 4; // A narrower right-hand panel requires another real fit even without a text mutation.
-resizers.at(-1).callback([]);
+const reopenedObserver = resizers.at(-1); // New observation after reopening starts with clean size baselines.
+reopenedObserver.callback([{ target:info, contentRect:{ width:150, height:300 } }]);
+assert.equal(queued.length, 0, 'reopened observer initial size notification is not an extra fit');
+reopenedObserver.callback([{ target:info, contentRect:{ width:120, height:300 } }]);
 flushFrames();
 const afterResize = window.InventoryGearCompactEffects.debugSnapshot();
 assert(styleWrites > preResizeWrites, 'Gear resize reruns the fit');
 assert(currentInfoFontPx <= 4 && currentInfoFontPx > 3.9, 'resize recomputes the fitting font for new geometry');
 assert.equal(afterResize.fitStats.detailFits, 5, 'resizing forces fresh content measurements');
-assert.equal(afterResize.fitStats.passes, 6);
+assert.equal(afterResize.fitStats.passes, 7);
 assert.equal(layoutReads, 3, 'only explicit diagnostics produce layout width reads');
 console.log('Gear layout idle-cadence tests passed');
