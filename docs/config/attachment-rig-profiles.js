@@ -129,10 +129,8 @@
     'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
     'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
     'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018])]), // Exact old master grip; user-authored positions remain untouched.
-    'nelk': Object.freeze([Object.freeze([0.030176488041515424,-0.11264054358274966,0.028253979555520257])]), // Exact old master grip; user-authored positions remain untouched.
-    'nazgraku': Object.freeze([Object.freeze([0.011498553593554665,-0.14241261412989242,0.000946211786312177])]), // Exact old master grip; user-authored positions remain untouched.
-    nelk: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
-    nazgraku: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
+    nelk: Object.freeze([Object.freeze([0.030176488041515424,-0.11264054358274966,0.028253979555520257]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
+    nazgraku: Object.freeze([Object.freeze([0.011498553593554665,-0.14241261412989242,0.000946211786312177]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
     drenkirra: Object.freeze([
       Object.freeze([0.01,-0.11914729549653388,-0.001096892109713506]), // November 16: former canonical grip; migrate only its exact old XYZ.
