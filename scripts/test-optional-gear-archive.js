@@ -60,10 +60,14 @@ let gear = {
 }; // Character-owned gear replaces itself when the active character changes.
 const equipmentSlots = { axe: 'axe1', weapon: 'axe1', pick: 'pick1' }; // An axe used in two slots must be fully unassigned on stow.
 const root = new FakeElement(); // The real Gear pane is rendered into this root.
+const itemDetail = new FakeElement(); // Canonical selection identity is recorded here for mastery rendering.
+const itemName = new FakeElement('span'); // The ordinary visible name is intentionally ambiguous for same-named crafted tools.
+const itemActions = new FakeElement(); // Receives real gear action buttons from selectGearTool.
 const events = { gearSave: 0, slotSave: 0, mesh: 0, avatar: 0 }; // Counts exactly which live systems need updates.
 const document = {
   addEventListener() {},
-  getElementById: id => id === 'invEquipSection' ? root : null,
+  getElementById: id => id === 'invEquipSection' ? root
+    : id === 'iiDetail' ? itemDetail : id === 'iiName' ? itemName : id === 'iiActions' ? itemActions : null,
   createElement: tag => new FakeElement(tag),
   createTextNode: text => Object.assign(new FakeElement('#text'), { textContent: text }),
 };
@@ -79,7 +83,7 @@ const dependencies = {
   saveEquipmentSlots: () => events.slotSave++,
   rebuildToolMeshes: () => events.mesh++,
   refreshPlayerAvatar: () => events.avatar++,
-  buildInventoryGrid() {}, clearInventoryDetail() {}, refreshActionBar() {},
+  buildInventoryGrid() {}, clearInventoryDetail() {}, clearInvSelection() {}, refreshActionBar() {},
   getActiveTool: () => 'axe', toolMasteryLevel: key => key === 'axe1' ? 2 : 0,
   toolMeshMap: {}, toolHolder: { add() {}, remove() {} },
   showToast() {},
@@ -141,5 +145,27 @@ assert.equal(saved.clothingItems[0].archived, true, 'clothing archive persists o
 gear = { tools: { axe1: true }, clothing: { hat: null }, clothingItems: [], starterPantsGranted: true };
 assert.equal(panel.isToolArchived('axe1'), false, 'other characters do not inherit storage state');
 assert.equal(panel.getArchiveDebug().stowedClothing, 0);
+
+// Two materially different owned axes share the same visible name. Their
+// distinct mastery values must follow the selected key, including storage.
+gear.tools.axe2 = true;
+gear.toolMastery.axe2 = { xp: 210 };
+dependencies.TOOL_ITEM_DEFS.axe2 = { label: 'Axe', icon: '🪓', slots: ['axe'] };
+assert(panel.setToolArchived('axe2', true), 'the second same-named tool can be stored individually');
+const secondAxe = descendants(root).find(node => node.dataset?.itemKey === 'axe2');
+assert(secondAxe, 'archived second axe has its own tile');
+secondAxe.listeners.click();
+assert.equal(itemDetail.dataset.gearToolKey, 'axe2', 'Gear detail publishes the selected canonical tool key');
+assert.match(itemName.textContent, /\(Gear Storage\)$/, 'stored tool detail identifies its archived status');
+vm.runInNewContext(fs.readFileSync('docs/js/inventory-ui.js', 'utf8'), { window, document });
+const combatDeps = {
+  TOOL_ITEM_DEFS: dependencies.TOOL_ITEM_DEFS, equipmentSlots,
+  gearInventory: () => gear,
+};
+assert.equal(window.InventoryUI.__test.selectedDetailToolKey(combatDeps), 'axe2',
+  'mastery resolves second archived Axe, not the first same-named Axe');
+itemName.textContent = 'Blue Hat';
+assert.equal(window.InventoryUI.__test.selectedDetailToolKey(combatDeps), null,
+  'stale Gear selection metadata must not reappear on unrelated item details');
 
 console.log('Optional tool/clothing Gear archive UI, equipment guards, save fields, and character scope passed');
