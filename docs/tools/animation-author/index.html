@@ -1210,7 +1210,8 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 <script src="rig-preview-species.js?v=20261109rig2"></script>
-<script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
+<script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script>
+<script src="../../js/animation-author-rig-carrier-preview.js?v=20261116carrier1"></script> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
 
 <script>
 (() => {
@@ -15013,6 +15014,290 @@ const baseClearAnimationActorsV1549 = clearAnimationActors;
 clearAnimationActors = function(...args) {
   for (const actor of animationAuthor.actors) actor.shoulderGripPosePreviewControllerV1549?.dispose?.(); // Dispose the extra posed geometry before the editor clears an entire scene.
   return baseClearAnimationActorsV1549(...args);
+};
+
+
+// V15.53 — A shoulder-grip edit is previewed against a real, swappable NPC.
+// Only its disposable carrier is inverted about the already-small animal's
+// authored grip; neither creature plane, rig anchor, nor exported profile is
+// transformed to make the preview line up.
+let shoulderCarrierPreviewV1553 = null; // Owns the unselectable NPC and its disposable rendering resources.
+let shoulderCarrierTaskV1553 = null; // One in-flight portrait build; inspector redraws do not duplicate it.
+let shoulderCarrierGenerationV1553 = 0; // Discards stale asynchronous builds after a selection or mode change.
+let shoulderCarrierNpcIdV1553 = null; // Editor-only NPC choice, shared when the user swaps animals.
+let shoulderCarrierCandidatesV1553 = null; // One representative repository NPC for each authored species/gender.
+let rigWorldAxesV1553 = null; // An unparented world-aligned XYZ guide, never part of the saved rig.
+
+function shoulderCarrierEditingV1553(actor = selectedAnimationActor()) {
+  return animationAuthor.mode === 'rig' && actor?.source?.type === 'creature'
+    && selectedRigAnchorName(actor) === 'shoulderGrip';
+}
+
+function shoulderCarrierNpcChoicesV1553() {
+  if (shoulderCarrierCandidatesV1553?.source === state.npcs) return shoulderCarrierCandidatesV1553.items;
+  const unique = new Map(); // Keeps the switcher small when many NPCs have the same species/gender.
+  for (const npc of state.npcs || []) {
+    if (!npc) continue;
+    const appearance = portraitExportFor(npc)?.appearance;
+    const key = characterRigProfileKey({ appearance });
+    if (!animationAuthor.attachmentRigProfiles.characters?.[key] || unique.has(key)) continue;
+    unique.set(key, { npcId: String(npc.id || npc.name), label: npc.name || npc.id || key, key });
+  }
+  const items = [...unique.values()].sort((a, b) => a.key.localeCompare(b.key));
+  shoulderCarrierCandidatesV1553 = { source: state.npcs, items };
+  return items;
+}
+
+function disposeShoulderCarrierV1553() {
+  ++shoulderCarrierGenerationV1553;
+  shoulderCarrierTaskV1553 = null;
+  const preview = shoulderCarrierPreviewV1553;
+  shoulderCarrierPreviewV1553 = null;
+  preview?.feet?.dispose?.();
+  preview?.root?.removeFromParent?.();
+  if (preview?.model) window.PNGPlaneAvatar?.disposeAvatarModel?.(preview.model);
+}
+
+function restoreShoulderGripSmallV1553(actor) {
+  if (!actor || !Object.hasOwn(actor, '__shoulderGripPriorSizeV1553')) return;
+  const prior = actor.__shoulderGripPriorSizeV1553; // Restore the pre-grip preview selection on exit, without editing sizeScales.
+  delete actor.__shoulderGripPriorSizeV1553;
+  if (prior && actor.creatureSizeClass !== prior) applyCreatureSizeClass(actor, prior, { announce: false, render: false });
+}
+
+function syncShoulderCarrierV1553() {
+  const actor = selectedAnimationActor();
+  const preview = shoulderCarrierPreviewV1553;
+  if (!shoulderCarrierEditingV1553(actor) || !preview || preview.creatureId !== actor.id) return;
+  const profile = animationAuthor.attachmentRigProfiles.characters?.[preview.profileKey];
+  const perch = profile?.anchors?.shoulderPerch;
+  if (!perch) { preview.root.visible = false; return; }
+  const signature = JSON.stringify(perch); // Updates only when the authored species/gender pivot actually changes.
+  if (signature !== preview.perchSignature) {
+    applyTransformSnapshot(preview.perch, perch);
+    preview.perchSignature = signature;
+  }
+  preview.root.visible = window.AnimationAuthorRigCarrierPreview?.placeNpcAtGrip?.({
+    THREE: state.three.THREE, root: preview.root, visualOffset: preview.visualOffset,
+    shoulderPerch: preview.perch, creatureGrip: actor.rigAnchors?.shoulderGrip,
+  }) === true;
+}
+
+function shoulderCarrierStatusV1553(message) {
+  const label = $('maaShoulderCarrierStatusV1553'); // Mobile-visible loading/failure feedback rather than console-only diagnostics.
+  if (label) label.textContent = message;
+}
+
+async function buildShoulderCarrierV1553(actor, npcId) {
+  if (!shoulderCarrierEditingV1553(actor) || !npcId) return;
+  disposeShoulderCarrierV1553();
+  const generation = shoulderCarrierGenerationV1553;
+  const npc = state.npcs.find(entry => String(entry?.id || entry?.name) === npcId);
+  if (!npc) { shoulderCarrierStatusV1553('No matching repository NPC.'); return; }
+  shoulderCarrierStatusV1553('Building temporary ' + (npc.name || npc.id) + ' portrait…');
+  const task = (async () => {
+    const avatar = await buildAvatarRender(npc); // Exactly the portrait compositor already used by Rig Coordinates' reference NPC.
+    if (generation !== shoulderCarrierGenerationV1553 || !shoulderCarrierEditingV1553(actor)
+        || selectedAnimationActor() !== actor) return;
+    const THREE = state.three.THREE;
+    const root = new THREE.Group(); // Not an Animation Author actor: cannot be selected, keyed, saved or exported.
+    root.name = 'ShoulderGripCarrierPreview_' + safeFilename(npcId);
+    root.userData = { rigReferenceOnly: true, nonInteractive: true };
+    const visualOffset = new THREE.Group(); // Holds the real species/gender portrait scale and the authored perch in a shared parent.
+    visualOffset.name = 'ShoulderGripCarrierVisual';
+    root.add(visualOffset);
+    const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
+      backCanvas: avatar.back, profile: avatar.profile,
+      appearance: avatar.exportNpc.appearance, npcRecord: npc,
+      modelWidth: animationAuthorAvatarBaseWidthV1536(),
+      modelHeight: animationAuthorAvatarBaseWidthV1536(),
+      name: root.name + '_portrait',
+      userData: { source: 'shoulder-grip-carrier-preview', nonInteractive: true, npcId },
+    });
+    model.userData.proceduralHandParent = visualOffset;
+    visualOffset.add(model);
+    const modelHeight = Number(model.userData.portraitModelHeight) || 1;
+    const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
+    model.position.y = modelHeight / 2; // The existing reference-NPC builder uses this gameplay floor-relative placement.
+    const appearance = avatar.exportNpc.appearance;
+    const source = { type: 'npc', id: npcId, species: appearance.speciesId, gender: appearance.gender, appearance };
+    const profileKey = characterRigProfileKey(source);
+    const profile = animationAuthor.attachmentRigProfiles.characters?.[profileKey];
+    if (!profile?.anchors?.shoulderPerch) {
+      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
+      shoulderCarrierStatusV1553('No authored shoulder perch for ' + profileKey + '.');
+      return;
+    }
+    const builtScale = modelWidth / animationAuthorAvatarBaseWidthV1536();
+    const anatomy = ensureCharacterAnatomyV1530(profile);
+    const targetScale = requestedRigActorAvatarScaleV1534({ source, model }, anatomy.portraitScale);
+    visualOffset.scale.setScalar(targetScale / Math.max(.001, builtScale)); // Matches NPC body calibration before the inverse carrier solve.
+    const perch = new THREE.Group(); // Hidden carrier anchor carries position, YXZ orientation and pet scale.
+    perch.name = 'ShoulderGripCarrierPerch_' + profileKey;
+    visualOffset.add(perch);
+    applyTransformSnapshot(perch, profile.anchors.shoulderPerch);
+    animationAuthor.modeRoots.rig.add(root);
+    const feet = window.ProceduralLegAnimation?.attach?.(THREE, visualOffset, {
+      speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: avatar.profile?.bodyColors,
+      modelWidth, modelHeight, handAttachY: model.userData.handAttachY, profile: avatar.profile,
+      name: root.name + '_feet', portraitSize: avatar.front.width || 200,
+    }) || null; // Same feet pipeline as the existing unselectable rig reference NPC.
+    feet?.update?.(0, 0, false, null);
+    if (generation !== shoulderCarrierGenerationV1553 || selectedAnimationActor() !== actor) {
+      feet?.dispose?.();
+      root.removeFromParent();
+      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
+      return;
+    }
+    shoulderCarrierPreviewV1553 = {
+      npcId, creatureId: actor.id, profileKey, label: npc.name || npc.id || profileKey,
+      root, visualOffset, perch, model, feet, perchSignature: JSON.stringify(profile.anchors.shoulderPerch),
+    };
+    syncShoulderCarrierV1553();
+    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · inverse perch/grip placement · animal fixed at Small.');
+    frameAllAnimationActors('angle');
+  })();
+  shoulderCarrierTaskV1553 = task;
+  try { await task; }
+  catch (error) {
+    if (generation === shoulderCarrierGenerationV1553) {
+      disposeShoulderCarrierV1553();
+      shoulderCarrierStatusV1553('NPC preview unavailable: ' + error.message);
+      log('Shoulder carrier preview: ' + (error.stack || error.message), 'warn');
+    }
+  } finally {
+    if (shoulderCarrierTaskV1553 === task) shoulderCarrierTaskV1553 = null;
+  }
+}
+
+function syncRigWorldAxesV1553() {
+  const actor = selectedAnimationActor();
+  const anchor = actor?.rigAnchors?.[selectedRigAnchorName(actor)];
+  const world = animationAuthor.mode === 'rig' && !!anchor && animationAuthor.transformSpace === 'world';
+  if (!rigWorldAxesV1553 && state.three.THREE && state.three.scene) {
+    rigWorldAxesV1553 = new state.three.THREE.AxesHelper(.23); // World guide supplements TransformControls when authored anchors have rotated parents.
+    rigWorldAxesV1553.name = 'RigWorldCoordinateAxesGuide';
+    rigWorldAxesV1553.userData.nonInteractive = true;
+    state.three.scene.add(rigWorldAxesV1553);
+  }
+  if (rigWorldAxesV1553) {
+    rigWorldAxesV1553.visible = world;
+    if (world) {
+      anchor.updateWorldMatrix(true, false);
+      anchor.getWorldPosition(rigWorldAxesV1553.position);
+      rigWorldAxesV1553.quaternion.identity(); // Fixed XYZ orientation; never inherits the pet's grip rotation.
+    }
+  }
+  if (!anchor) return;
+  for (const child of anchor.children) {
+    if (child.type === 'AxesHelper' || String(child.name).startsWith('RigAnchorAxes_')) {
+      child.visible = animationAuthor.mode === 'rig' && !world;
+    }
+  }
+  const controls = animationAuthor.transformControls;
+  if (world && controls?.object === anchor && controls.space !== 'world') controls.setSpace('world');
+}
+
+const baseAttachAnimationGizmoV1553 = attachAnimationGizmo;
+attachAnimationGizmo = function(...args) {
+  const result = baseAttachAnimationGizmoV1553(...args);
+  syncRigWorldAxesV1553(); // Re-evaluate after attach(), which may replace the target under a rotated parent.
+  return result;
+};
+const baseToggleAnimationGizmoSpaceV1553 = toggleAnimationGizmoSpace;
+toggleAnimationGizmoSpace = function(...args) {
+  const result = baseToggleAnimationGizmoSpaceV1553(...args);
+  syncRigWorldAxesV1553();
+  return result;
+};
+const baseRenderAttachmentRigInspectorV1553 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function(...args) {
+  const actor = selectedAnimationActor();
+  const grip = shoulderCarrierEditingV1553(actor);
+  for (const candidate of animationAuthor.actors) if (candidate !== actor || !grip) restoreShoulderGripSmallV1553(candidate);
+  if (!grip) {
+    disposeShoulderCarrierV1553();
+  } else if (!Object.hasOwn(actor, '__shoulderGripPriorSizeV1553')) {
+    actor.__shoulderGripPriorSizeV1553 = actor.creatureSizeClass; // One-time auto-switch; does not fight deliberate subsequent size-button choices.
+    if (actor.creatureSizeClass !== 'small') applyCreatureSizeClass(actor, 'small', { announce: false, render: false });
+  }
+  const result = baseRenderAttachmentRigInspectorV1553(...args);
+  if (!grip) { syncRigWorldAxesV1553(); return result; }
+  const choices = shoulderCarrierNpcChoicesV1553();
+  if (!choices.length) {
+    const missing = document.createElement('div');
+    missing.className = 'maaRigStatus';
+    missing.textContent = 'Shoulder carrier preview: no repository NPC has an authored species/gender perch.';
+    $('maaInspector')?.appendChild(missing);
+    return result;
+  }
+  if (!choices.some(choice => choice.npcId === shoulderCarrierNpcIdV1553)) {
+    shoulderCarrierNpcIdV1553 = choices.find(choice => choice.key === 'mao-ao::male')?.npcId || choices[0].npcId;
+  }
+  const section = document.createElement('div');
+  section.className = 'maaRigStatus';
+  section.style.marginTop = '9px';
+  section.innerHTML = '<b>Temporary shoulder carrier · not selectable/exported</b>'
+    + '<div class="maaField" style="margin-top:8px"><label for="maaShoulderCarrierNpcV1553">Preview NPC (species + gender)</label>'
+    + '<select id="maaShoulderCarrierNpcV1553">' + choices.map(choice =>
+      '<option value="' + escapeHtml(choice.npcId) + '">' + escapeHtml(choice.key + ' · ' + choice.label) + '</option>').join('') + '</select></div>'
+    + '<div class="maaSmall maaMuted" id="maaShoulderCarrierStatusV1553">Comparing Small creature with its owner’s authored shoulder perch…</div>'
+    + '<div class="maaSmall maaMuted">The animal remains fixed. NPC translation, rotation and scale are solved from this grip and the selected species/gender perch (including its grip-scale multiplier). Switch NPCs to compare fits.</div>';
+  $('maaInspector')?.appendChild(section);
+  const select = section.querySelector('#maaShoulderCarrierNpcV1553');
+  select.value = shoulderCarrierNpcIdV1553;
+  select.addEventListener('change', event => {
+    shoulderCarrierNpcIdV1553 = event.currentTarget.value;
+    buildShoulderCarrierV1553(actor, shoulderCarrierNpcIdV1553);
+  });
+  if (shoulderCarrierPreviewV1553?.creatureId === actor.id
+      && shoulderCarrierPreviewV1553.npcId === shoulderCarrierNpcIdV1553) {
+    syncShoulderCarrierV1553();
+    shoulderCarrierStatusV1553('Carrier: ' + shoulderCarrierPreviewV1553.profileKey
+      + ' · inverse perch/grip placement · animal fixed at Small.');
+  } else if (!shoulderCarrierTaskV1553) {
+    buildShoulderCarrierV1553(actor, shoulderCarrierNpcIdV1553);
+  } else shoulderCarrierStatusV1553('Building temporary NPC portrait…');
+  syncRigWorldAxesV1553();
+  return result;
+};
+const baseUpdateAnimationRelationLinesV1553 = updateAnimationRelationLines;
+updateAnimationRelationLines = function(...args) {
+  const result = baseUpdateAnimationRelationLinesV1553(...args);
+  syncShoulderCarrierV1553(); // Follow edits in the already-authored grip without touching its animal plane.
+  syncRigWorldAxesV1553(); // World axes stay fixed despite creature/model rotation.
+  return result;
+};
+const baseFrameAllAnimationActorsV1553 = frameAllAnimationActors;
+frameAllAnimationActors = function(view = 'angle') {
+  const preview = shoulderCarrierPreviewV1553;
+  if (!preview?.root || !shoulderCarrierEditingV1553() || !state.three.ready) return baseFrameAllAnimationActorsV1553(view);
+  syncShoulderCarrierV1553();
+  const THREE = state.three.THREE;
+  const box = new THREE.Box3(); // Frame the temporary carrier plus the fixed animal without adding an actor.
+  for (const actor of animationAuthor.actors) box.expandByObject(actor.model);
+  box.expandByObject(preview.root);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(1.2, box.getSize(new THREE.Vector3()).length() * .58);
+  const offsets = { front:[0,radius*.18,radius*2.1], angle:[radius*1.35,radius*.8,radius*1.75],
+    side:[radius*2.1,radius*.18,0], top:[0,radius*2.35,.001] };
+  const offset = offsets[view] || offsets.angle;
+  state.three.camera.position.set(center.x + offset[0], center.y + offset[1], center.z + offset[2]);
+  state.three.camera.lookAt(center);
+  state.three.controls?.target.copy(center);
+  state.three.controls?.update();
+};
+const baseRemoveAnimationActorV1553 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  if (shoulderCarrierPreviewV1553?.creatureId === id || selectedAnimationActor()?.id === id) disposeShoulderCarrierV1553();
+  restoreShoulderGripSmallV1553(actorById(id));
+  return baseRemoveAnimationActorV1553(id);
+};
+const baseClearAnimationActorsV1553 = clearAnimationActors;
+clearAnimationActors = function(...args) {
+  disposeShoulderCarrierV1553();
+  for (const actor of animationAuthor.actors) restoreShoulderGripSmallV1553(actor);
+  return baseClearAnimationActorsV1553(...args);
 };
 
 })();
