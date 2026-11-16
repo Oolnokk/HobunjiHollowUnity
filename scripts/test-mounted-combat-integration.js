@@ -20,6 +20,7 @@ let alignmentRequests = 0; // Counts on-foot target alignment attempted while se
 let bursts = []; // Actual mounted quick/heavy movement bursts requested by their production abilities.
 let holdCancelled = 0; // Ensures dismounting cancels the charged visual, not an on-foot release.
 let regenBlocked = false; // Checks that the heavy hold removes its stamina-regeneration blocker.
+let lungeMasteryBonus = 0; // Exercises the normal on-foot lunge upgrade in its mounted speed/duration replacement.
 
 const player = { x: 0, y: 0, stamina: 100, angle: 0 };
 const foe = { health: 1000, areaId: 'field', x: 36, y: 0, def: { label: 'target' } };
@@ -84,7 +85,7 @@ const window = {
   CombatProgression: {
     getEffects(_key, id) {
       masteryIds.push(id);
-      return { afflictions: { weak: 1 }, stats: { damageMul: 0.2 } };
+      return { afflictions: { weak: 1 }, stats: { damageMul: 0.2, lungeMul: lungeMasteryBonus } };
     },
   },
   ResourceSystem: {
@@ -169,9 +170,12 @@ riding = 'mounted';
 const quick = Combat.abilities.get('exhaustCutter'); // Production Quick Attack (not a fake registered ability).
 const quickStagesBefore = strikes.length;
 const quickBurstsBefore = bursts.length;
+lungeMasteryBonus = 0.4; // Same purchased Quick Attack lunge mastery should amplify its mounted gallop.
 quick.onTap();
 assert.equal(strikes.length, quickStagesBefore + 1, 'mounted quick uses production staged attack timeline');
 assert.equal(bursts.length, quickBurstsBefore + 1, 'mounted quick replaces its lunge with a speed burst');
+assert(Math.abs(bursts.at(-1).multiplier - 1.95 * 1.4) < 1e-9, 'Quick Attack lunge mastery enhances mounted speed multiplier');
+assert(bursts.at(-1).seconds > 1.05, 'Quick Attack lunge mastery also lengthens the capped-speed burst');
 assert.equal(lunges, 0, 'mounted quick does not move the player with a lunge');
 const hitsBeforeQuickDismount = hits.length; // Delayed strike must be harmless after dismounting.
 riding = 'none';
@@ -185,13 +189,15 @@ riding = 'mounted';
 const heavy = Combat.abilities.get('chargedBreaker'); // Locked mounted hold1 resolves to the production heavy ability.
 const heavyStagesBefore = strikes.length;
 const heavyBurstsBefore = bursts.length;
+lungeMasteryBonus = 0.5; // Heavy lunge mastery remains valuable after its on-foot lunge is replaced.
 heavy.onHoldStart();
 assert.equal(regenBlocked, true, 'heavy hold blocks stamina regeneration while charging');
 heavy.onHoldEnd();
 assert.equal(regenBlocked, false, 'heavy release restores stamina regeneration');
 assert.equal(strikes.length, heavyStagesBefore + 1, 'charged mounted strike is still scheduled');
 assert.equal(bursts.length, heavyBurstsBefore + 1, 'charged heavy releases the mount gallop multiplier');
-assert(bursts.at(-1).multiplier >= 2.4, 'charged heavy surge is stronger than ordinary cruise');
+assert(bursts.at(-1).multiplier > 3.2, 'Charged Breaker lunge mastery increases mounted speed');
+assert(bursts.at(-1).seconds > 2.5, 'Charged Breaker lunge mastery increases burst duration at the speed cap');
 assert.equal(lunges, 0, 'mounted heavy release never calls the player lunge');
 
 heavy.onHoldStart();
@@ -205,6 +211,7 @@ assert.equal(bursts.length, heavyBurstsBeforeDismount, 'dismount cannot trigger 
 assert.equal(lunges, 0, 'dismounted heavy hold cannot produce an on-foot lunge');
 assert(holdCancelled > 0, 'dismounted heavy cancels its held weapon pose');
 assert.equal(regenBlocked, false, 'dismount fully releases heavy stamina regeneration block');
+lungeMasteryBonus = 0;
 // A scripted cliff crossing retains the mounted loadout for its duration,
 // but does not permit a quick/heavy to fall through as a rider lunge.
 riding = 'climbLeap';
