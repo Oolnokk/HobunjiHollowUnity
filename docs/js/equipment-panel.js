@@ -14,6 +14,8 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
+  let archivedToolsCollapsed = true; // Controls the optional long-term tool drawer in Gear.
+  let archivedClothingCollapsed = true; // Controls the optional long-term clothing drawer in Gear.
   const CLOTHING_SLOTS = ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
@@ -90,7 +92,7 @@
     deps = injectedDeps;
     registerFluteDefinition();
     // Existing characters receive the same starter instrument after their saved character data is loaded.
-    document?.addEventListener?.('hobunjiPlayerReady', () => ensureStarterFlute());
+    document?.addEventListener?.('hobunjiPlayerReady', () => { ensureStarterFlute(); reconcileArchivedGear(); });
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -188,7 +190,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261115h8d0a0d6';
+    script.src = 'js/inventory-ui.js?v=20261116optionalArchive1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -204,12 +206,107 @@
     deps.saveEquipmentSlots();
   }
 
+  function isToolArchived(key, gear = deps?.getGearInventory?.()) {
+    return gear?.archivedTools?.[key] === true; // The character-owned Gear record tracks tool storage without losing mastery or ownership.
+  }
+
+  function isClothingArchived(item) {
+    return item?.archived === true; // Each physical garment carries its own optional storage state.
+  }
+
+  function refreshToolAssignments() {
+    deps.rebuildToolMeshes?.(); // Reload the currently equipped tool after archiving an assigned one.
+    for (const mesh of Object.values(deps.toolMeshMap || {})) if (mesh) deps.toolHolder?.remove?.(mesh);
+    const activeMesh = deps.toolMeshMap?.[deps.getActiveTool?.()]; // Restores only the still-equipped active slot's mesh.
+    if (activeMesh) deps.toolHolder?.add?.(activeMesh);
+    deps.refreshActionBar?.();
+    deps.buildInventoryGrid?.();
+  }
+
+  function clearArchivedToolAssignments(shouldClear) {
+    let changed = false; // Multiple slots may hold the same tool; persist one coherent slot update instead of N full saves.
+    for (const [slot, key] of Object.entries(deps.equipmentSlots || {})) {
+      if (!key || !shouldClear(key)) continue;
+      if (slot === 'instrument') window.MusicMinigame?.close?.(); // Preserve the existing instrument slot's performance cleanup.
+      deps.equipmentSlots[slot] = null;
+      changed = true;
+    }
+    if (changed) deps.saveEquipmentSlots?.();
+    return changed;
+  }
+
+  function reconcileArchivedGear() {
+    const gear = deps?.getGearInventory?.();
+    if (!gear) return false;
+    const toolsChanged = clearArchivedToolAssignments(key => isToolArchived(key, gear)); // One save reconciles all invalid tool assignments.
+    let clothingChanged = false; // Tracks worn garments that should have been removed when they were stowed.
+    for (const slot of CLOTHING_SLOTS) {
+      if (!isClothingArchived(gear.clothing?.[slot])) continue;
+      gear.clothing[slot] = null;
+      clothingChanged = true;
+    }
+    if (toolsChanged) refreshToolAssignments();
+    if (clothingChanged) { deps.saveGearInventory?.(); deps.refreshPlayerAvatar?.(); }
+    return toolsChanged || clothingChanged;
+  }
+
+  function setToolArchived(key, archived) {
+    const gear = deps?.getGearInventory?.();
+    if (!gear?.tools?.[key] || !deps.TOOL_ITEM_DEFS?.[key]) return false;
+    if (isToolArchived(key, gear) === !!archived) return false;
+    gear.archivedTools ||= {}; // Lives beside tools in the existing character-scoped Gear save.
+    if (archived) {
+      gear.archivedTools[key] = true;
+      if (clearArchivedToolAssignments(equippedKey => equippedKey === key)) refreshToolAssignments();
+      archivedToolsCollapsed = false;
+    } else delete gear.archivedTools[key];
+    deps.saveGearInventory?.();
+    deps.showToast?.(`${deps.TOOL_ITEM_DEFS[key].label} ${archived ? 'stowed' : 'returned to available Gear'}.`, true);
+    buildEquipmentSlots();
+    deps.clearInventoryDetail?.();
+    return true;
+  }
+
+  function setClothingArchived(uid, archived) {
+    ensureGearClothingCollection();
+    const gear = deps?.getGearInventory?.();
+    const item = gear?.clothingItems?.find(entry => entry?.uid === uid); // UID preserves independent storage of patterned pieces.
+    if (!item || isClothingArchived(item) === !!archived) return false;
+    if (archived) {
+      item.archived = true;
+      archivedClothingCollapsed = false;
+    } else delete item.archived;
+    let wasWorn = false; // Triggers one avatar rebuild only if a worn garment was just stowed.
+    if (archived) for (const slot of CLOTHING_SLOTS) {
+      if (gear.clothing?.[slot]?.uid !== uid) continue;
+      gear.clothing[slot] = null;
+      wasWorn = true;
+    }
+    deps.saveGearInventory?.();
+    if (wasWorn) deps.refreshPlayerAvatar?.();
+    deps.showToast?.(`${clothingArticleLabel(item)} ${archived ? 'stowed' : 'returned to available Gear'}.`, true);
+    buildEquipmentSlots();
+    deps.clearInventoryDetail?.();
+    return true;
+  }
+
+  function appendArchiveToggle(sec, label, count, collapsed, onToggle) {
+    const toggle = document.createElement('button'); // Touch/controller-accessible drawer instead of adding archived items to the ordinary Pack.
+    toggle.type = 'button';
+    toggle.className = 'settings-small-btn gear-archive-toggle';
+    toggle.textContent = `${collapsed ? '▸' : '▾'} ${label} · ${count}`;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.addEventListener('click', onToggle);
+    sec.appendChild(toggle);
+  }
+
   // Assign a tool item to a slot (tool must be in gear inventory)
   function equipItem(itemKey, slot) {
     const toolDef = deps.TOOL_ITEM_DEFS[itemKey];
     if (!toolDef || !toolDef.slots.includes(slot)) { deps.showToast('Cannot assign that item to that slot.', false); return; }
     const gearInventory = deps.getGearInventory();
     if (!gearInventory?.tools?.[itemKey]) { deps.showToast((deps.TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
+    if (isToolArchived(itemKey, gearInventory)) { deps.showToast('Take this tool out of Gear storage before assigning it.', false); return; }
     setEquipmentSlot(slot, itemKey);
     deps.rebuildToolMeshes();
     Object.values(deps.toolMeshMap).forEach(m => { if (m) deps.toolHolder.remove(m); });
@@ -238,7 +335,7 @@
     const toolDef = deps.TOOL_ITEM_DEFS[itemKey];
     if (!toolDef) return;
     const gearInventory = deps.getGearInventory();
-    if (gearInventory.tools[itemKey]) { deps.showToast(toolDef.label + ' is already in your gear.', false); return; }
+    if (gearInventory.tools[itemKey]) { deps.showToast(toolDef.label + (isToolArchived(itemKey, gearInventory) ? ' is stowed in your Gear archive.' : ' is already in your gear.'), false); return; }
     if ((deps.inventory[itemKey] || 0) < 1) { deps.showToast('No ' + toolDef.label + ' in pack.', false); return; }
     deps.inventory[itemKey]--;
     deps.clampInventoryStack(itemKey);
@@ -587,14 +684,14 @@
         if (catItem.category === slot) equippedCosmetics.delete(catItem.id);
       }
       const item = gearInventory?.clothing?.[slot];
-      if (!item) continue;
+      if (!item || isClothingArchived(item)) continue;
       const portraitCosmeticId = item.baseCosmeticId || item.cosmeticId; // Loom/smith instances have unique ids; portrait config is keyed by their authored base id.
       if (portraitCosmeticId) equippedCosmetics.add(portraitCosmeticId);
       const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
       if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };
       if (secondaryTintKey && item.colorB) bodyColors[secondaryTintKey] = { ...item.colorB };
     }
-    const equippedArticles = Object.values(gearInventory?.clothing || {}).filter(Boolean); // Used by the generic metal-armor portrait bridge; any slot may contain metal or non-metal clothing.
+    const equippedArticles = Object.values(gearInventory?.clothing || {}).filter(item => item && !isClothingArchived(item)); // Used by the generic metal-armor portrait bridge; any slot may contain metal or non-metal clothing.
     const decoratedBodyColors = window.MetalArmorSystem?.decorateBodyColorsWithMetalArmor
       ? window.MetalArmorSystem.decorateBodyColorsWithMetalArmor(bodyColors, equippedArticles)
       : bodyColors;
@@ -834,6 +931,7 @@
     } else {
       gearInventory.clothingItems.push(item);
     }
+    delete equippedItem.archived; // Explicit Pack-to-Gear transfer makes an already collected archived article available again.
     gearInventory.clothing[equippedItem.slot] = equippedItem;
     packClothing.splice(idx, 1);
     if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
@@ -855,7 +953,8 @@
 
   function selectGearTool(key) {
     const def = deps.TOOL_ITEM_DEFS[key];
-    if (!def) return;
+    if (!def || !deps.getGearInventory()?.tools?.[key]) return;
+    const archived = isToolArchived(key); // The same detail panel manages available and long-term stored tools.
     deps.clearInvSelection();
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
@@ -865,23 +964,24 @@
     set('iiIcon',  def.icon);
     const iiIconEl2 = document.getElementById('iiIcon');
     if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
-    set('iiName',  def.label + ' — Mastery ' + deps.toolMasteryLevel(key) + '/5 (Gear)');
+    set('iiName',  def.label + ' — Mastery ' + deps.toolMasteryLevel(key) + '/5 (Gear' + (archived ? ' Storage' : '') + ')');
     set('iiPrice', 'Permanent — not sellable');
     set('iiTags',  '');
-    set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
+    set('iiDesc',  archived ? 'Stowed for long-term storage. Take it out to assign it; mastery and ownership are preserved.' : 'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
       const mkBtn = (label, cls, fn) => {
         const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
       };
-      for (const slot of def.slots) {
+      for (const slot of (archived ? [] : def.slots)) {
         const isAssigned = deps.equipmentSlots[slot] === key;
         mkBtn(isAssigned ? 'Unassign from ' + slot : 'Assign as ' + slot, 'equip', () => {
           if (isAssigned) unequipItem(slot); else equipItem(key, slot);
           buildEquipmentSlots(); selectGearTool(key);
         });
       }
+      mkBtn(archived ? 'Take Out of Storage' : 'Stow Tool', 'equip', () => setToolArchived(key, !archived));
     }
   }
 
@@ -909,7 +1009,7 @@
     actEl.innerHTML = '';
     const gearInventory = deps.getGearInventory();
     const eligible = Object.keys(gearInventory?.tools || {})
-      .filter(k => gearInventory.tools[k] && deps.TOOL_ITEM_DEFS[k]?.slots.includes(slot));
+      .filter(k => gearInventory.tools[k] && !isToolArchived(k, gearInventory) && deps.TOOL_ITEM_DEFS[k]?.slots.includes(slot));
     if (!eligible.length) {
       const none = document.createElement('div');
       none.className = 'ii-tag';
@@ -1000,6 +1100,7 @@
     const item = gearInventory.clothingItems.find(c => c.uid === uid);
     if (!item) return;
     if (item.cursed) { deps.showToast(cursedMessage(item), false); return; } // Defends old saves or other routes that put a cursed piece in gear.
+    if (isClothingArchived(item)) { deps.showToast('Take this garment out of Gear storage before equipping it.', false); return; }
     gearInventory.clothing[item.slot] = item;
     deps.saveGearInventory();
     deps.refreshPlayerAvatar();
@@ -1023,11 +1124,17 @@
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
     const metalArmorDetail = window.MetalArmorSystem?.detailText?.(item) || ''; // Mobile-visible material/Temper/weight diagnostics for any smith-crafted metal clothing.
     const weaveDetail = hasIndividualClothingPattern(item) ? 'Patterned garment — its unique woven design is saved with this article.' : ''; // Mobile-visible confirmation for inspected bandit loot.
-    set('iiDesc',  [item.description, metalArmorDetail, weaveDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
+    set('iiDesc',  [item.description, metalArmorDetail, weaveDetail, isClothingArchived(item) ? 'Stowed for long-term storage; take it out to wear or redye it.' : isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
-      if (!isWorn) {
+      if (isClothingArchived(item)) {
+        const takeOutBtn = document.createElement('button'); // Archived clothing cannot be accidentally equipped through its detail panel.
+        takeOutBtn.className = 'ii-btn equip';
+        takeOutBtn.textContent = 'Take Out of Storage';
+        takeOutBtn.onclick = () => setClothingArchived(item.uid, false);
+        actEl.appendChild(takeOutBtn);
+      } else if (!isWorn) {
         const equipBtn = document.createElement('button');
         equipBtn.className = 'ii-btn equip';
         equipBtn.textContent = 'Equip';
@@ -1047,14 +1154,20 @@
         actEl.appendChild(btn);
       }
       const canRedye = item?.dyeable !== false && !window.MetalArmorSystem?.isMetalArmor?.(item); // Dyeability follows the literal item; the slot itself can still contain ordinary dyeable clothing.
-      if (canRedye) {
+      if (canRedye && !isClothingArchived(item)) {
         const redyeBtn = document.createElement('button');
         redyeBtn.className = 'ii-btn redye';
         redyeBtn.textContent = '🎨 Redye';
         redyeBtn.onclick = () => openRedyePanel(slot, item);
         actEl.appendChild(redyeBtn);
       }
-
+      if (!isClothingArchived(item)) {
+        const stowBtn = document.createElement('button'); // One-click indefinite storage even for presently worn clothing.
+        stowBtn.className = 'ii-btn';
+        stowBtn.textContent = 'Stow Clothing';
+        stowBtn.onclick = () => setClothingArchived(item.uid, true);
+        actEl.appendChild(stowBtn);
+      }
     }
   }
 
@@ -1262,7 +1375,7 @@
     const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged', 'instrument']; // Instrument uses the permanent gear collection and saved slot assignments.
     for (const slot of TOOL_SLOTS) {
       const itemKey = deps.equipmentSlots[slot];
-      const def = itemKey ? deps.TOOL_ITEM_DEFS[itemKey] : null;
+      const def = itemKey && !isToolArchived(itemKey, gearInventory) ? deps.TOOL_ITEM_DEFS[itemKey] : null;
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
       cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
@@ -1296,15 +1409,18 @@
     ownedHdr.textContent = 'Owned Tools';
     sec.appendChild(ownedHdr);
 
-    const gearTools = Object.keys(gearInventory?.tools || {}).filter(k => gearInventory.tools[k] && deps.TOOL_ITEM_DEFS[k]);
-    if (gearTools.length) {
-      const gearRow = document.createElement('div');
+    const allGearTools = Object.keys(gearInventory?.tools || {}).filter(k => gearInventory.tools[k] && deps.TOOL_ITEM_DEFS[k]); // Existing owned flags remain authoritative for both drawers.
+    const gearTools = allGearTools.filter(key => !isToolArchived(key, gearInventory)); // Available tools alone appear in ordinary Gear assignment UI.
+    const archivedGearTools = allGearTools.filter(key => isToolArchived(key, gearInventory)); // Stowed tools retain individual mastery and ownership.
+
+    const renderOwnedToolRow = (keys, archived) => {
+      const gearRow = document.createElement('div'); // Reused by the available and archived tool lists.
       gearRow.className = 'inv-equip-row';
-      for (const key of gearTools) {
+      for (const key of keys) {
         const def = deps.TOOL_ITEM_DEFS[key];
         const cell = document.createElement('div');
-        cell.className = 'inv-equip-slot';
-        cell.setAttribute('title', def.label + ' (Mastery ' + deps.toolMasteryLevel(key) + '/5) — click to assign');
+        cell.className = 'inv-equip-slot gear-archiveable-cell';
+        cell.setAttribute('title', def.label + ' (Mastery ' + deps.toolMasteryLevel(key) + '/5)' + (archived ? ' — stored' : ' — click to assign'));
         cell.setAttribute('role', 'button');
         cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
@@ -1314,15 +1430,32 @@
         lbl.className = 'ies-label';
         lbl.textContent = def.label.split(' ')[0] + ' Lv' + deps.toolMasteryLevel(key);
         cell.appendChild(lbl);
+        const stowBtn = document.createElement('button'); // Direct mobile/controller storage action in addition to item details.
+        stowBtn.className = 'settings-small-btn gear-archive-action';
+        stowBtn.textContent = archived ? 'Take Out' : 'Stow';
+        stowBtn.addEventListener('click', event => { event.stopPropagation(); setToolArchived(key, !archived); });
+        cell.appendChild(stowBtn);
         cell.addEventListener('click', () => selectGearTool(key));
         gearRow.appendChild(cell);
       }
-      sec.appendChild(gearRow);
-    } else {
+      return gearRow;
+    };
+    if (gearTools.length) sec.appendChild(renderOwnedToolRow(gearTools, false));
+    else {
       const empty = document.createElement('div');
       empty.className = 'inv-equip-empty';
-      empty.textContent = 'No tools in gear.';
+      empty.textContent = 'No available tools in gear.';
       sec.appendChild(empty);
+    }
+    if (archivedGearTools.length) {
+      const archiveSection = document.createElement('div'); // InventoryUI moves this whole drawer into the Owned Tools group.
+      archiveSection.className = 'gear-archive-section gear-tools-archive';
+      appendArchiveToggle(archiveSection, 'Stowed Tools', archivedGearTools.length, archivedToolsCollapsed, () => {
+        archivedToolsCollapsed = !archivedToolsCollapsed;
+        buildEquipmentSlots();
+      });
+      if (!archivedToolsCollapsed) archiveSection.appendChild(renderOwnedToolRow(archivedGearTools, true));
+      sec.appendChild(archiveSection);
     }
 
     ensureGearClothingCollection();
@@ -1336,7 +1469,8 @@
     const clothRow = document.createElement('div');
     clothRow.className = 'inv-equip-row';
     for (const slot of CLOTHING_SLOTS) {
-      const item = gearInventory?.clothing?.[slot];
+      const selected = gearInventory?.clothing?.[slot]; // A stored article is never shown as equipped, including older saved snapshots.
+      const item = isClothingArchived(selected) ? null : selected;
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
       cell.dataset.clothingSlot = slot; // ClothingWeavingSystem maps worn cells back to items by slot.
@@ -1363,26 +1497,26 @@
     }
     sec.appendChild(clothRow);
 
-    const ownedClothing = (gearInventory?.clothingItems || []).filter(Boolean);
+    const ownedClothing = (gearInventory?.clothingItems || []).filter(item => item && !isClothingArchived(item)); // Only available garments appear in ordinary Gear.
+    const archivedClothing = (gearInventory?.clothingItems || []).filter(isClothingArchived); // Individual physical garments retain all crafting and dye metadata.
     const ownedClothHdr = document.createElement('div');
     ownedClothHdr.className = 'inv-equip-label';
     ownedClothHdr.textContent = 'Owned Clothing';
     sec.appendChild(ownedClothHdr);
-    if (ownedClothing.length) {
-      const ownedClothRow = document.createElement('div');
+    const renderOwnedClothingRow = (items, archived) => {
+      const ownedClothRow = document.createElement('div'); // Shared renderer preserves thumbnails, dyes and labels in both lists.
       ownedClothRow.className = 'inv-equip-row inv-owned-clothing-row';
-      for (const item of ownedClothing) {
-        const worn = gearInventory?.clothing?.[item.slot]?.uid === item.uid;
+      for (const item of items) {
+        const worn = !archived && gearInventory?.clothing?.[item.slot]?.uid === item.uid;
         const articleLabel = clothingArticleLabel(item);
         const cell = document.createElement('div');
-        cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
-        cell.setAttribute('title', articleLabel + (worn ? ' — currently worn' : ' — click to equip'));
+        cell.className = 'inv-equip-slot clothing-owned-slot gear-archiveable-cell occupied' + (worn ? ' active-slot' : '');
+        cell.setAttribute('title', articleLabel + (archived ? ' — stored' : worn ? ' — currently worn' : ' — click to equip'));
         cell.setAttribute('role', 'button');
         cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-key', item.uid);
         const ownedIcon = renderClothingIcon(cell, item);
-        // Owned clothing art should dominate the tile; the normal clothing sprite is too conservative here.
         ownedIcon.style.width = 'calc(2.3 * var(--inv-row))';
         ownedIcon.style.height = 'calc(2.3 * var(--inv-row))';
         ownedIcon.style.maxWidth = '82%';
@@ -1401,15 +1535,32 @@
         lbl.className = 'ies-label';
         lbl.textContent = item.slot.charAt(0).toUpperCase() + item.slot.slice(1);
         cell.appendChild(lbl);
+        const stowBtn = document.createElement('button'); // A single click archives or restores one specific garment.
+        stowBtn.className = 'settings-small-btn gear-archive-action';
+        stowBtn.textContent = archived ? 'Take Out' : 'Stow';
+        stowBtn.addEventListener('click', event => { event.stopPropagation(); setClothingArchived(item.uid, !archived); });
+        cell.appendChild(stowBtn);
         cell.addEventListener('click', () => selectGearClothing(item.slot, item));
         ownedClothRow.appendChild(cell);
       }
-      sec.appendChild(ownedClothRow);
-    } else {
+      return ownedClothRow;
+    };
+    if (ownedClothing.length) sec.appendChild(renderOwnedClothingRow(ownedClothing, false));
+    else {
       const empty = document.createElement('div');
       empty.className = 'inv-equip-empty';
-      empty.textContent = 'No collected clothing in gear.';
+      empty.textContent = 'No available clothing in gear.';
       sec.appendChild(empty);
+    }
+    if (archivedClothing.length) {
+      const archiveSection = document.createElement('div'); // Owns all garments kept away from the regular worn/available collection.
+      archiveSection.className = 'gear-archive-section gear-clothing-archive';
+      appendArchiveToggle(archiveSection, 'Stowed Clothing', archivedClothing.length, archivedClothingCollapsed, () => {
+        archivedClothingCollapsed = !archivedClothingCollapsed;
+        buildEquipmentSlots();
+      });
+      if (!archivedClothingCollapsed) archiveSection.appendChild(renderOwnedClothingRow(archivedClothing, true));
+      sec.appendChild(archiveSection);
     }
     window.WhistleEquip.build();
     window.TrinketSystem?.renderEquipmentSection?.(sec); // Attunement-budget trinkets (js/trinket-system.js).
@@ -1469,6 +1620,22 @@
     equipItem,
     unequipItem,
     transferToolToGear,
+    isToolArchived, // Read-only hook for other gear/loadout views to respect long-term storage.
+    isClothingArchived,
+    setToolArchived,
+    setClothingArchived,
+    reconcileArchivedGear,
+    getArchiveDebug: () => { // Mobile-visible state for the saved character without devtools.
+      const gear = deps?.getGearInventory?.() || {};
+      const tools = Object.keys(gear.tools || {}).filter(key => gear.tools[key] && deps?.TOOL_ITEM_DEFS?.[key]);
+      const clothing = (gear.clothingItems || []).filter(Boolean);
+      return { availableTools: tools.filter(key => !isToolArchived(key, gear)).length,
+        stowedTools: tools.filter(key => isToolArchived(key, gear)).length,
+        availableClothing: clothing.filter(item => !isClothingArchived(item)).length,
+        stowedClothing: clothing.filter(isClothingArchived).length,
+        assignedStowedTools: Object.values(deps?.equipmentSlots || {}).filter(key => key && isToolArchived(key, gear)).length,
+        wornStowedClothing: Object.values(gear.clothing || {}).filter(isClothingArchived).length };
+    },
     applyGearClothingToPlayerData,
     clothingSpriteForCosmetic,
     ensureGearClothingCollection,
