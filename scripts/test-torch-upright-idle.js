@@ -166,15 +166,29 @@ const definitions = {
   hatchet: { animStyle: 'sweep', shapeKey: 'hatchet' },
 };
 const mesh = { userData: { toolPlane: plane } }; // The shared cached tool mesh used by the holder hook.
+let orbitMultiplier = 1.5; // Simulates a species-dependent shoulder sphere radius passed through the shared game orbit helper.
+let orbitCalls = 0; // Counts actual orbit transforms during idle and active torch animation.
+let orbitInput = null; // The completed authored idle point before applying the spherical orbit.
+let orbitOutput = null; // The completed orbit point expected at the holder's render-matrix bake.
 const deps = {
   toolHolder: holder, TOOL_ITEM_DEFS: definitions,
   equipmentSlots: { adventuring: 'torch', axe: 'hatchet' },
   toolMeshMap: { adventuring: mesh, axe: mesh },
   getActiveTool: () => active.slot, getHeldMode: () => 'tool',
+  scaleToolWorldPointAroundPlayerCentroid(point, yawRad) {
+    orbitCalls++;
+    assert(Number.isFinite(yawRad), 'idle orbit receives its finite authored pose yaw');
+    orbitInput = point.clone();
+    point.x = 2 + (point.x - 2) * orbitMultiplier;
+    point.y = 3 + (point.y - 3) * orbitMultiplier;
+    point.z = 4 + (point.z - 4) * orbitMultiplier;
+    orbitOutput = point.clone();
+  }, // The same game.js dependency used for weapon idle and all pose-driven attacks.
 };
 let renderedUp = null; // Captures the pose *inside* the temporary matrix hook, before it restores idle-basis transforms.
 let renderedScale = null; // The committed torch rest-size should be temporary and must not accumulate.
-holder.updateMatrixWorld = function () { renderedUp = upDirection(plane); renderedScale = holder.scale.x; };
+let renderedPosition = null; // Captures the actual temporarily transformed holder origin during its render bake.
+holder.updateMatrixWorld = function () { renderedUp = upDirection(plane); renderedScale = holder.scale.x; renderedPosition = holder.position.clone(); };
 window.WeaponToolStances.init(deps);
 holder.updateMatrixWorld();
 let snapshot = window.WeaponToolStances.debugSnapshot();
@@ -182,6 +196,16 @@ assert.equal(snapshot.stanceApplied, true, 'torch starts in its dedicated idle s
 assert.equal(snapshot.worldUprightApplied, true, 'torched PNG receives the world-up correction');
 assert.equal(renderedScale, 0.68, 'torch renders at the exported neutral size');
 assert.equal(holder.scale.x, 1, 'holder scale is restored after the pose bake');
+assert.equal(orbitCalls, 1, 'idle torch receives the shared shoulder-derived orbit once per render bake');
+assert.deepEqual([renderedPosition.x, renderedPosition.y, renderedPosition.z], [orbitOutput.x, orbitOutput.y, orbitOutput.z], 'the shared orbit result is the position actually rendered');
+assert.deepEqual([holder.position.x, holder.position.y, holder.position.z], [0, 0, 0], 'temporary orbit and authored offset do not accumulate on the idle holder');
+const unscaledIdlePoint = [orbitInput.x, orbitInput.y, orbitInput.z]; // Used to prove a later shoulder-radius change affects render distance, not authored stance coordinates.
+orbitMultiplier = 0.5;
+holder.updateMatrixWorld();
+assert.deepEqual([orbitInput.x, orbitInput.y, orbitInput.z], unscaledIdlePoint, 'idle is recomputed from an unscaled source each frame');
+assert.deepEqual([renderedPosition.x, renderedPosition.y, renderedPosition.z], [orbitOutput.x, orbitOutput.y, orbitOutput.z], 'a different orbit multiplier changes the rendered idle position');
+assert.equal(orbitCalls, 2, 'second idle render gets exactly one new orbit transform');
+assert.deepEqual([holder.position.x, holder.position.y, holder.position.z], [0, 0, 0], 'second render restores the same raw holder origin');
 assert.equal(snapshot.poses.torchHold.y, 0.1472916715500817, 'diagnostics expose authored neutral height');
 assert(renderedUp.y < -.99999, 'rendered torch flame points up, even through mirrored scales');
 for (let i = 0; i < 4; i++) {
@@ -193,7 +217,9 @@ for (let i = 0; i < 4; i++) {
   assert(renderedUp.y < -.99999, 'torch flame remains upright throughout locomotion');
 }
 holder.userData.authoredToolActionActive = true;
+const orbitCountBeforeAction = orbitCalls; // Confirms the idle-only orbit does not double-scale swing and throw frames.
 holder.updateMatrixWorld();
+assert.equal(orbitCalls, orbitCountBeforeAction, 'active torch actions already own their orbit and must not get an idle transform');
 assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, false, 'real authored torch actions own their pose');
 holder.userData.authoredToolActionActive = false;
 holder.updateMatrixWorld();
