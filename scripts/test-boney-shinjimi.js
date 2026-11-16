@@ -173,7 +173,7 @@ async function testRealEncounterFlow() {
     savedDuringGrant=C.serialize();
     // Simulates an interrupted scene after the reward enters the inventory.
   }};
-  game.player.x=(center.c+1.5)*64;
+  game.player.x=(center.c+4.5)*64; // Outside body-collision reach: isolates cover-aware LOS from the separate physical-contact escape mechanic.
   game.player.y=(center.r+3.5)*64;
   C.update(.05);
   await Promise.resolve();await Promise.resolve();
