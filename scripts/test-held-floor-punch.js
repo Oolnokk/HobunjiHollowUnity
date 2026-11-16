@@ -23,7 +23,7 @@ const rawRender = { call(renderer, scene, camera) {
 const forEachMaterial = (m, fn) => (Array.isArray(m) ? m : [m]).forEach(fn);
 const restoreVisibility = states => { for (const [o, v] of states) o.visible = v; };
 const mat = supported => ({ colorWrite: true, depthWrite: true, depthTest: true, depthFunc: 'LEQUAL_D', stencilWrite: false, stencilFunc: 'ALWAYS_S', stencilRef: 0, stencilFuncMask: 0xff, stencilWriteMask: 0xff, stencilFail: 'KEEP', stencilZFail: 'KEEP', stencilZPass: 'KEEP',
-  userData: { hobunjiXrayElevationShader: { supported, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, centerCount: { value: 0 }, centers: { value: null } } } } });
+  userData: { hobunjiXrayElevationShader: { supported, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, centerCount: { value: 0 }, centers: { value: null }, radiiSq: { value: null } } } } });
 const grass = mat(true), dirt = mat(true), custom = mat(false);
 const groundMats = new Set([grass, dirt, custom]);
 const filteredMesh = { visible: true, material: grass }, unsupportedMesh = { visible: true, material: custom };
@@ -36,7 +36,7 @@ const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibi
 const camera = { layers: { mask: 0xffffffff } };
 const colorLog = [];
 const colorBuffer = { setMask: v => colorLog.push(['mask', v]), setLocked: v => colorLog.push(['lock', v]) };
-const group = { elevation: 0, regions: [{ col: 10, row: 10, x: 10.5, z: 10.5 }], centers: new Float32Array([10.5, 10.5]) };
+const group = { elevation: 0, regions: [{ col: 10, row: 10, x: 10.5, z: 10.5 }], centers: new Float32Array([10.5, 10.5]), radiiSq: new Float32Array([2.25]) };
 assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [filteredMesh, unsupportedMesh, farGround], groundMats, colorBuffer), true);
 assert.equal(draws.length, 2, 'one ground-layer stencil pass, one far-depth quad');
 const [groundPass, quadPass] = draws;
@@ -69,11 +69,16 @@ assert.deepEqual([inside.visible, edge.visible, far.visible, unbounded.visible, 
   'the refill keeps non-ground objects in the patch column that reach below the floor; ground, far and wholly-above objects leave');
 restoreVisibility(hidden);
 assert.equal(far.visible, true);
+const extendedGroup = { ...group, regions: [{ ...group.regions[0], radius: 3.4 }] };
+const extendedFloor = boxed(14.2, 14.4, 10, 11); // Beyond the old radius + refill margin.
+const extendedHidden = api.hideOutsideFloorPatch([extendedFloor], extendedGroup);
+assert.equal(extendedFloor.visible, true, 'local depth refill follows a weapon-extended radius outside the original ground circle');
+restoreVisibility(extendedHidden);
 
 api.setEnabled(false);
 assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [], groundMats, colorBuffer), false, 'A/B switch');
 
 // Shader: mode 2 keeps ONLY the nearby floor, mode 1 discards it, 0 is off.
 assert.match(source, /if \(uHobunjiXrayElevationEnabled > 1\.5\) \{ if \(hobunjiXrayNearFloor < 0\.5\) discard; \}\s*\nelse if \(hobunjiXrayNearFloor > 0\.5\) discard;/);
-assert.match(source, /hobunji-ground-circle-xray-v6/, 'shader change bumps the program cache key');
+assert.match(source, /hobunji-ground-circle-xray-v7/, 'shader change bumps the program cache key');
 console.log('ok - x-ray groups punch only the holder\'s nearby floor and redraw only its patch');
