@@ -170,6 +170,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     window.DelversGuild?.bindQuestDeps?.(injectedDeps); // Shares the live quest store with the Guild's three-key-stones story task.
+    window.FeyArmamentQuest?.bindQuestDeps?.(injectedDeps); // The knotwork investigation uses the same saved member Quest Log.
     _installBanditCampDangerSubtitle();
   }
 
