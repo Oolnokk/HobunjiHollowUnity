@@ -2373,6 +2373,26 @@
       const source = geometry?.boundingBox;
       const parity = mesh?.__hobunjiXrayBoundParity;
       const posed = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.() ? parity.visibleMatrixWorld : null;
+      const cameraFacing = mesh.userData?.hobunjiGeneratedRope === true
+        || (mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
+          && !(parity && parity.hook === mesh.onBeforeRender)); // Unknown render hooks may rotate a sprite after its CPU bounds were read.
+      if (cameraFacing && geometry) {
+        if (!geometry.boundingSphere) geometry.computeBoundingSphere?.();
+        const sphere = geometry.boundingSphere;
+        const matrix = mesh.matrixWorld;
+        const e = matrix?.elements;
+        if (sphere && e && Number.isFinite(sphere.radius) && Number.isFinite(e[12]) && Number.isFinite(e[14])) {
+          // BoundingBox transformed BEFORE onBeforeRender is unsafe for the camera-facing flail rope.
+          // A sphere around its pivot covers every possible billboard orientation without running that hook.
+          const offset = sphere.center?.length?.() ?? Math.hypot(sphere.center?.x || 0, sphere.center?.y || 0, sphere.center?.z || 0);
+          const scale = typeof matrix.getMaxScaleOnAxis === 'function' ? matrix.getMaxScaleOnAxis() : 1;
+          if (Number.isFinite(offset) && Number.isFinite(scale)) {
+            radius = Math.max(radius, Math.hypot(e[12] - region.x, e[14] - region.z)
+              + (sphere.radius + offset) * Math.abs(scale) + XRAY_HELD_FOOTPRINT_MARGIN);
+            continue;
+          }
+        }
+      }
       const matrices = posed ? [mesh.matrixWorld, posed] : [mesh.matrixWorld]; // Cover both authored and replay-time poses.
       for (const matrix of matrices) {
         if (!matrix?.elements) continue;
