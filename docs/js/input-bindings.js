@@ -250,9 +250,17 @@
   }
 
 
+  function dungeonJumpOwnsButton(device, button, heldShift = null) {
+    if (device !== 'controller' || !button || heldShift?.bindings?.[button]) return false;
+    const bindings = getCurrentBindings()?.controller; // Used to reserve the shared controller Interact/Jump button for movement only in ruins.
+    return window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin'
+      && (bindings?.jump === button || (!bindings?.jump && bindings?.interact === button)); // An imported same-button Jump/Interact mapping still grants Jump priority in ruins.
+  }
+
   function resolveActionForButton(device, button, heldShift = null) {
     if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
     const bindings = getCurrentBindings()?.[device] || {}; // Uses the live map so game.js never needs to know how contextual controller actions are authored.
+    if (dungeonJumpOwnsButton(device, button, heldShift)) return 'jump'; // Controller A must jump even when a dungeon object advertises an Interact action.
     if (bindings.toolSelect === button && window.Shattercasks?.toolArchAction?.() === 'pickup') return 'toolSelect'; // Contextual pickup is dispatched by gameplay; ordinary selectors remain owned by ControllerSelectionUI.
     return Object.keys(bindings).find(actionId => bindings[actionId] === button && actionContext(actionId) === 'gameplay') || null;
   }
@@ -322,6 +330,6 @@
     init, loadInputBindings, getCurrentBindings, saveInputBindings,
     resetDeviceToDefaults, getDefaultBindings, getDefaultModeShifts,
     canonicalControllerDefaults: CANONICAL_CONTROLLER_DEFAULTS,
-    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice, resolveActionForButton, consumeControllerPress,
+    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice, resolveActionForButton, dungeonJumpOwnsButton, consumeControllerPress,
   };
 })();
