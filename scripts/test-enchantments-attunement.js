@@ -494,6 +494,15 @@ reset();
 const TOOL_ITEM_DEFS = { sword: { label: 'Sword', slots: ['weapon'] } };
 const ITEM_DEFS = {};
 const inventory = { gold: 10000 };
+context.CharacterMetaSave = { update(mutate) {
+  try { mutate({ id: 'test-character' }, { characters: [{ id: 'test-character' }] }); return true; }
+  catch { return false; }
+} }; // The game adapter saves character gear and world-member inventory in one update.
+load('docs/js/gear-member-transaction.js');
+context.GearMemberTransaction.init({
+  inventory, getGearInventory: () => gear, captureMemberWorldData: meta => meta,
+  buildInventoryGrid() {}, buildEquipmentSlots() {}, showToast() {},
+});
 const texturesRequested = [];
 HR.init({
   TOOL_ITEM_DEFS, ITEM_DEFS, inventoryItems: [], inventory,

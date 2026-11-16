@@ -10,6 +10,7 @@ const dyesSource = read('docs/js/dye-trait-labels.js');
 const generatorSource = read('docs/js/npc-crafting-commission-generator.js');
 const deliverySource = read('docs/js/npc-crafting-commission-delivery.js');
 const gameSource = read('docs/game.js');
+const entryRouterSource = read('docs/js/npc-dialogue-entry-router.js'); // The real turn-in/merchant entry choices now live in this feature-owned module.
 const adapterSource = read('docs/js/npc-crafting-commissions.js');
 const craftingPanelSource = read('docs/js/crafting-panel.js');
 
@@ -41,14 +42,14 @@ assert.match(deliverySource, /mastery\.saveState\(masteryBefore\)/, 'failed lite
 
 assert.match(adapterSource, /getTurnInReadyTaskForNpc = function npcCraftingCommissionTurnInReady/, 'commission readiness overrides the empty-items false positive');
 assert.match(gameSource, /turnInTask: taskId => window\.ProceduralTasks\.turnInTask\(taskId\)/, 'dialogue resolves live commission handler instead of capturing the generic fetch-only function');
-assert.match(gameSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
-const turnInScreenPosition = gameSource.indexOf('const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id)');
-assert(turnInScreenPosition > 0, 'main NPC dialogue uses the shared ready-commission lookup');
-const tutorialPosition = gameSource.indexOf("if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active())");
+assert.match(entryRouterSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
+const turnInScreenPosition = entryRouterSource.indexOf('const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id)');
+assert(turnInScreenPosition > 0, 'shipped NPC entry router uses the shared ready-commission lookup');
+const tutorialPosition = entryRouterSource.indexOf("if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active())");
 assert(tutorialPosition > turnInScreenPosition, 'finished crafting commissions can be handed to Spearhead even during his active training, while ordinary coaching is still protected');
 
-for (const specialMenu of ["if (isGeneralStoreNpcOnDuty(walker))", "if (isCarpenterNpcOnDuty(walker))", "if (rec?.id === 'jubmir')"]) {
-  assert(gameSource.indexOf(specialMenu, turnInScreenPosition) > turnInScreenPosition, 'ready crafting hand-in precedes special first-dialogue menu: ' + specialMenu);
+for (const specialMenu of ["if (deps.isGeneralStoreNpcOnDuty?.(walker))", "if (deps.isCarpenterNpcOnDuty?.(walker))", "if (rec?.id === 'jubmir')"]) {
+  assert(entryRouterSource.indexOf(specialMenu, turnInScreenPosition) > turnInScreenPosition, 'ready crafting hand-in precedes special first-dialogue menu: ' + specialMenu);
 }
 
 assert.match(adapterSource, /__craftCommissionDebug/, 'mobile-friendly commission diagnostics exist');
@@ -316,8 +317,8 @@ assert.equal(regularDeps.inventory.berry, 0, 'turn-in consumes the requested inv
 assert(regularPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + overdue.gold + 'g'), 'regular task money is included in the floating reward list');
 
 
-// Exercise the shipped game.js openNpcDialogue function directly, not just its
-// source-code ordering. Special first-dialogue options must not hide ready jobs.
+// Exercise the shipped game.js openNpcDialogue function and its actual extracted entry router.
+// Special first-dialogue options must not hide ready jobs.
 const dialogueStart = gameSource.indexOf('async function openNpcDialogue(walker, opts = null) {'); // Bounds the game-owned interaction router without copying production logic.
 const dialogueEnd = gameSource.indexOf('// advanceNpcDialogue now lives', dialogueStart); // Stops before the next top-level game helper.
 assert(dialogueStart > 0 && dialogueEnd > dialogueStart, 'production openNpcDialogue function is available for executable regression coverage');
@@ -363,6 +364,15 @@ async function runRealNpcDialogueRoute({ npcId, readyTask = null, tutorialActive
     isGeneralStoreNpcOnDuty: () => false,
     isCarpenterNpcOnDuty: () => false,
   }; // Only the runtime dependencies referenced by the actual NPC dialogue function.
+  const routerContext = vm.createContext({ window: dialogueWorld, console }); // Execute the actual extracted router, not a reimplemented test-only choice policy.
+  vm.runInContext(entryRouterSource, routerContext, { filename: 'npc-dialogue-entry-router.js' });
+  dialogueWorld.NpcDialogueEntryRouter.init({
+    ITEM_DEFS: context.ITEM_DEFS,
+    isGeneralStoreNpcOnDuty: context.isGeneralStoreNpcOnDuty,
+    generalStoreButtonConfig: () => ({}),
+    isCarpenterNpcOnDuty: context.isCarpenterNpcOnDuty,
+    carpenterButtonConfig: () => ({}),
+  });
   const openDialogue = vm.runInNewContext(dialogueRouterSource + '\nopenNpcDialogue;', context);
   const npc = { rec: { id: npcId, name: npcId }, root: {}, pause: 0 }; // Uses canonical NPC IDs from saved commissions.
   await openDialogue(npc, options);

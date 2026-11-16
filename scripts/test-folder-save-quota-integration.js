@@ -126,6 +126,8 @@ async function boot(folder, nativeData, sessionData = new Map()) {
         defaultWorldMemberState: () => ({}), serializeWildernessChunkState: () => ({}),
         serializeZoneFelledTreeState: () => ({}), serializeZoneMinedRockState: () => ({}),
       });
+      vm.runInContext(fs.readFileSync('docs/js/quest-progress-store.js', 'utf8'), context, { filename: 'quest-progress-store.js' });
+      window.QuestProgressStore.restore({}); // Canonical member serialization reads this store instead of game.js's former local variable.
       const game = fs.readFileSync('docs/game.js', 'utf8'); // Execute the actual gameplay serializer rather than a miniature inventory-only substitute.
       const start = game.indexOf('      function captureMemberWorldData('); // Shared production serializer and its browser writer are adjacent.
       const end = game.indexOf('\n      // ── Owner/farmhand', start);

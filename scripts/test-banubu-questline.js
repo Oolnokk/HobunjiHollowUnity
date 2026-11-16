@@ -712,5 +712,5 @@ console.log('Banubu Pie → Color Pools world key → Tea → blocked progressio
 
 assert(canonicalSaveCalls > 0, 'Banubu state changes must persist through the canonical game save dependency when injected');
 
-assert.match(read('docs/game.js'), /BanubuQuestline\?\.init\?\.\(\{[\s\S]*getQuestProgress: \(\) => questProgress[\s\S]*saveMemberWorldData/, 'game runtime must inject the canonical quest store/save path into BanubuQuestline');
+assert.match(read('docs/game.js'), /BanubuQuestline\?\.init\?\.\(\{[\s\S]*getQuestProgress: \(\) => window\.QuestProgressStore\.snapshot\(\)[\s\S]*saveMemberWorldData/, 'game runtime must inject the canonical quest store/save path into BanubuQuestline');
 assert.match(read('docs/js/tasks-panel.js'), /kind === 'story'[\s\S]*state\?\.status === 'active'/, 'Tasks panel must include active authored story quests');
