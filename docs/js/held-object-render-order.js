@@ -2884,14 +2884,15 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   let lastForcedGroundDepthMaterials = 0; // Mobile diagnostic: temporary ground depth writers in the latest held replay.
 
   function forceGroundDepthForHeldReplay(materials, savedStates) {
-    // Wilderness ground can be visually opaque but intentionally depthWrite:false
-    // in the world pass. Otherwise it cannot obscure tools OUTSIDE the exempt
-    // circle: the opposite of the intended same-elevation floor exception.
+    // Some ground is drawn without depth writes during the world pass.
+    // Rebuild its true depth outside the actor circle, including first-frame
+    // and unsupported-shader fallbacks. An unsupported filter fails closed:
+    // that floor still blocks the weapon inside, never leaks through outside.
     let forced = 0; // Count material overrides within this colorless replay only.
     for (const material of materials || []) {
-      if (material?.depthWrite !== false || material.userData?.hobunjiXrayElevationShader?.supported !== true) continue;
+      if (material?.depthWrite !== false || !material.userData?.hobunjiXrayElevationShader) continue;
       saveMaterialState(savedStates, material); // Use the existing material transaction to restore base-render state.
-      material.depthWrite = true; // The ground shader still discards the holder's nearby floor in mode 1.
+      material.depthWrite = true; // Mode 1 drops the near floor when supported; unsupported shaders retain physical occlusion.
       forced++;
     }
     return forced;
