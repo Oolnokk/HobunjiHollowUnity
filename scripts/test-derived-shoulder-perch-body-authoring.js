@@ -66,7 +66,8 @@ assert.equal(JSON.stringify(Object.fromEntries(
   Object.keys(donorPerches).map(key => [key, host.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[key]]))),
 donorSnapshot, 'Derived species installers may not modify the donor profiles');
 
-const gameSource = read('docs/game.js'); // Verify the live game, not only editor rig profiles, actually consumes authored size.
+const gameSource = read('docs/game.js');
+const attachmentSource = read('docs/js/shoulder-pet-attachment-runtime.js'); // Actual final grip solver now owns rendered scale and fallback. // Verify the live game, not only editor rig profiles, actually consumes authored size.
 const anchorStart = gameSource.indexOf('function _computePlayerAttachmentAnchor(anchorName) {'); // Private gameplay resolver extracted without starting WebGL.
 const anchorEnd = gameSource.indexOf('function creatureAttachmentAnchor(', anchorStart); // Delimits only this function and its return shape.
 assert(anchorStart > 0 && anchorEnd > anchorStart, 'Game must expose an authored player attachment resolver');
@@ -84,8 +85,10 @@ assert.match(gameSource, /const authoredPetPerchScale = c\.stableRole === 'shoul
   'Only a shoulder pet should adopt the authored carrier perch size during creature rendering');
 assert.match(gameSource, /x: c\.visualScaleX \* petScaleX, y: c\.visualScaleY \* petScaleY/,
   'Runtime size must multiply existing genotype size without overwriting it or accumulating each frame');
-assert.match(gameSource, /\(grip\.y \|\| 0\) \* perchScaleY/,
-  'The final foot-grip offset must use the same authored scale as the rendered sprite');
+assert.match(attachmentSource, /useRenderedGrip \? rawGrip\.y \* renderedScale\.y : \(grip\.y \|\| 0\) \* perchScaleY/,
+  'The final foot-grip offset uses actual rendered root scale and retains the authored legacy fallback');
+assert.match(attachmentSource, /const renderedScale = pet\?\.avatarRef\?\.group\?\.scale;/,
+  'The live rendered size is sampled from the actual pet root, not inferred from the owner');
 assert.match(gameSource, /perch\.y - grip\.y \* gripScaleY/,
   'The initial shoulder pet location must honor the scaled grip until final pose positioning');
 

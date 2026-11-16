@@ -8005,12 +8005,16 @@
           : NaN; // Native plane height before the genotype size-class transform.
         const birdGrip = Number.isFinite(birdSpriteHeight) && birdSpriteHeight > 0
           ? { x: 0, y: -birdSpriteHeight * sizeScale.y / 2, z: 0,
+              localPosition: { x: 0, y: -birdSpriteHeight / 2, z: 0 }, // Unscaled sprite-space foot used by the render-matrix grip pin.
               rotationDeg: { x: 0, y: 0, z: 0 }, source: 'native-flying-sprite-foot' }
           : null; // Root-centred perched artwork: bottom centre is the virtual foot grip.
         const result = Number.isFinite(anchor?.position?.y) ? {
           x: (Number(anchor.position.x) || 0) * sizeScale.x,
           y: anchor.position.y * sizeScale.y,
           z: Number(anchor.position.z) || 0,
+          localPosition: { // Unscaled authoring-space socket used only by the actual rendered shoulder-root pin.
+            x: Number(anchor.position.x) || 0, y: Number(anchor.position.y) || 0, z: Number(anchor.position.z) || 0,
+          },
           rotationDeg: anchor.rotationDeg,
         } : birdGrip;
         _creatureAttachmentAnchorCache.set(cacheKey, result);
@@ -8024,94 +8028,15 @@
       // authored ROTATION is interpreted relative to the live face/neck bone.
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
-      const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
-      const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
-      function _shoulderPetSurfaceTransform(perch, grip, pet) {
-        const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
-          const degrees = rotationDeg || {};
-          return new THREE.Quaternion().setFromEuler(new THREE.Euler(
-            THREE.MathUtils.degToRad(Number(degrees.x) || 0),
-            THREE.MathUtils.degToRad(Number(degrees.y) || 0),
-            THREE.MathUtils.degToRad(Number(degrees.z) || 0),
-            'YXZ',
-          ));
-        };
-        playerMesh.updateWorldMatrix?.(true, false);
-        const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
-        const perchWorldPosition = perchFrame?.position
-          || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
-        const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Brief curiosity state: true selects the same authored attachment transform turned exactly 180° around local Y.
-        let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
-        let resolvedRotationSource = s_shoulderPetRotationSource;
-        switch (s_shoulderPetRotationSource) {
-          case 'body':
-            selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = 'player-body';
-            break;
-          case 'bodyNeckMidpoint': {
-            const bodyRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Body endpoint for the equal world-space midpoint below.
-            const neckRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : null; // Neck endpoint; rigid avatars safely fall back to the body frame.
-            if (!neckRotationSource) {
-              selectedRotationQuaternion = bodyRotationQuaternion;
-              resolvedRotationSource = 'player-body-fallback-no-neck';
-              break;
-            }
-            neckRotationSource.updateWorldMatrix?.(true, false);
-            const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
-            selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
-            resolvedRotationSource = 'player-body-neck-midpoint';
-            break;
-          }
-          case 'head': {
-            const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
-            headRotationSource.updateWorldMatrix?.(true, false);
-            selectedRotationQuaternion = headRotationSource.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = headRotationSource === playerNeckJoint ? 'player-head-neck' : 'player-body-fallback-no-neck';
-            break;
-          }
-          case 'world':
-            selectedRotationQuaternion = new THREE.Quaternion();
-            resolvedRotationSource = 'world-aligned';
-            break;
-          case 'pixel':
-          default:
-            selectedRotationQuaternion = perchFrame?.quaternion?.clone()
-              || playerMesh.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = perchFrame ? 'player-authored-skinned-surface' : 'player-body-fallback-no-skinned-frame';
-            break;
-        }
-        if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
-        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
-        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
-        const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
-        const shoulderFacingTurnDeg = facingTowardPlayerCenter ? 180 : 0; // Inward/front is the outward authored local transform plus one exact half-turn, never a quaternion inversion or sprite mirror.
-        const worldQuaternion = selectedRotationQuaternion.clone();
-        if (!s_cancelShoulderPetRotationalOffset) {
-          worldQuaternion.multiply(authoredRotationOffset);
-          if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
-        }
-        const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
-        const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
-        const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
-        const gripWorldOffset = new THREE.Vector3(
-          (grip.x || 0) * perchScaleX, (grip.y || 0) * perchScaleY, (grip.z || 0) * perchScaleZ,
-        ).applyQuaternion(worldQuaternion); // Invert the SAME authored scale applied to the pet body so its grip stays pinned after the half-turn.
-        return {
-          worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
-          worldQuaternion,
-          perchWorldPosition: perchWorldPosition.clone(),
-          gripWorldOffset: gripWorldOffset.clone(),
-          gripSource: grip.source || 'authored-shoulder-grip', // Reports whether the foot socket is authored or derived from a flying sprite.
-          rotationFrameWorldQuaternion: selectedRotationQuaternion,
-          perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
-          rotationSource: resolvedRotationSource,
-          requestedRotationSource: s_shoulderPetRotationSource,
-          rotationSourceInverted: s_invertShoulderPetRotationSource,
-          rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
-          facingTowardPlayerCenter,
-          shoulderFacingTurnDeg,
-        };
-      }
+      const shoulderPetAttachment = window.ShoulderPetAttachmentRuntime?.create?.({
+        THREE,
+        getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
+        getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
+        getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.
+        getInvertRotationSource: () => s_invertShoulderPetRotationSource, // Existing compatibility setting.
+        getCancelRotationalOffset: () => s_cancelShoulderPetRotationalOffset, // Existing authored offset setting.
+      }); // One shared solver/pin instance; the companion loop remains in game.js.
+      if (!shoulderPetAttachment) throw new Error('ShoulderPetAttachmentRuntime must load before game.js.');
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -8335,8 +8260,6 @@
           targetPitchDeg: 0,
           currentYawDeg: 0,
           targetYawDeg: 0,
-          baseFrontRoll: null,
-          baseBackRoll: null,
         });
         state.timer -= dt;
         if (state.timer <= 0) {
@@ -8370,18 +8293,9 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
-        if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
-        if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
-        // updateCreatureMesh owns the attachment root and will be followed by
-        // updateShoulderPetMeshPin. A local Y turn on the whole plane
-        // foreshortens these flat side-view planes and used to look exactly
-        // like the small pet was randomly becoming medium-sized. Roll the
-        // mirrored planes within their own image instead; the authored head
-        // rig's own Y-axis bone (below) supplies the real independent
-        // curious head-turn without disturbing genotype scale or plane width.
-        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
-        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
+        // updateShoulderPetMeshPin applies this state to the pet root around the
+        // authored grip. Rotating the two image cards here would pivot each
+        // around its image center and then get cleared by the final pin.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
@@ -9234,63 +9148,7 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
-      function _applyShoulderPetFinalTransform(c, finalTransform) {
-        const group = c.avatarRef?.group;
-        if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
-        const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
-        parent?.updateWorldMatrix?.(true, false);
-        const parentWorldQuaternion = parent?.getWorldQuaternion
-          ? parent.getWorldQuaternion(new THREE.Quaternion())
-          : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
-        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
-        const localPosition = parent?.worldToLocal
-          ? parent.worldToLocal(finalTransform.worldPosition.clone())
-          : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
-        group.position.copy(localPosition);
-        group.quaternion.copy(localQuaternion);
-        // The selected root transform is now authoritative for both placement
-        // and rendering. Restore normal matrix inheritance and only retain the
-        // canonical mirrored face rotations; png-plane-avatar's render hook
-        // recognizes the marker below and no longer replaces this orientation.
-        const setCanonicalPlaneRotation = (plane, y) => {
-          if (!plane) return;
-          plane.matrixAutoUpdate = true;
-          plane.rotation.set(0, y, 0);
-          plane.updateMatrix();
-          plane.matrixWorldNeedsUpdate = true;
-        };
-        setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
-        setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
-        const alignedGripWorldPosition = finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Reconstructs the authored grip point from the exact transform used to place the pet.
-        const gripPerchError = finalTransform.perchWorldPosition
-          ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
-          : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
-        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-          recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
-          rotationSource: finalTransform.rotationSource,
-          positionSource: finalTransform.perchPositionSource,
-          expectedWorldPosition: finalTransform.worldPosition.toArray(),
-          authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
-          alignedGripWorldPosition: alignedGripWorldPosition.toArray(),
-          gripPerchError,
-          gripSource: finalTransform.gripSource || 'unavailable', // Mobile Pixel Probe shows which grip solved the final world attachment.
-          authoritativeRootTransform: true,
-          requestedRotationSource: finalTransform.requestedRotationSource,
-          rotationSourceInverted: finalTransform.rotationSourceInverted,
-          rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
-          rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
-          finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
-          facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
-          shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
-          spriteMirrored: false,
-        };
-        let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;
-        if (!canonicalPlaneRestored && finalTransform.perchWorldPosition) {
-          canonicalPlaneRestored = window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition) === true;
-          if (canonicalPlaneRestored) group.userData.hobunjiShoulderSpriteCanonicalized = true; // One-time hot-reload cleanup; no per-frame avatar traversal now that shoulder sprites never mirror.
-        }
-        group.userData.hobunjiShoulderPetAttachment.canonicalPlaneRestored = canonicalPlaneRestored;
-      }
+
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
@@ -9298,8 +9156,8 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const finalTransform = _shoulderPetSurfaceTransform(perch, grip, c); // Composes the selected live frame with direction-signed authored perch/grip rotation.
-            _applyShoulderPetFinalTransform(c, finalTransform);
+            const finalTransform = shoulderPetAttachment.solveSurfaceTransform(perch, grip, c); // Composes the selected live frame with direction-signed authored perch/grip rotation.
+            shoulderPetAttachment.applyFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
@@ -9309,7 +9167,7 @@
               playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3,
             );
             const fallbackWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Keeps legacy pets body-relative when either authored anchor is absent.
-            _applyShoulderPetFinalTransform(c, {
+            shoulderPetAttachment.applyFinalTransform(c, {
               worldPosition: fallbackWorldPosition,
               worldQuaternion: fallbackWorldQuaternion,
               faceWorldQuaternion: fallbackWorldQuaternion,

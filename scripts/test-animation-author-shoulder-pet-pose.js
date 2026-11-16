@@ -1,0 +1,225 @@
+#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Checks integration into the actual Rig Coordinates editor.
+const adapter = fs.readFileSync('docs/js/animation-author-shoulder-pose-preview.js', 'utf8'); // Executes the shipped preview controller, not a test clone.
+const scriptPaths = [
+  'js/grehlr-head-rig-correction.js',
+  'js/animal-head-rig-authored.js',
+  'js/animal-shoulder-spline-profiles.js',
+  'js/animal-shoulder-spline.js',
+]; // Must load after CreatureGeneticsRender and in the same order as the gameplay renderer.
+const scriptList = html.slice(html.indexOf('const REQUIRED_SCRIPTS = ['), html.indexOf('];', html.indexOf('const REQUIRED_SCRIPTS = ['))); // Ignore the nearby paired-runtime URL map when checking loader order.
+const positions = scriptPaths.map(path => scriptList.indexOf("  '" + path + "'"));
+assert(positions.every(x => x > scriptList.indexOf('  CREATURE_RENDER_SCRIPT,')), 'all authored shoulder scripts load after creature genetics');
+assert(positions.every((x, i) => !i || positions[i - 1] < x), 'shoulder scripts load in dependency order');
+assert.match(html, /animation-author-shoulder-pose-preview\.js\?v=/, 'the editor loads the reusable shoulder pose controller');
+assert.match(html, /creatureId: kind, \/\/ The authored head\/shoulder rig resolves by species/,
+  'the generated PNG URL cannot substitute for explicit species identification');
+assert.match(html, /actor\.shoulderRestSourceAvatar = animal/, 'source avatar is retained for restoring the unposed art');
+assert.match(html, /selectedRigAnchorName\(actor\) === 'shoulderGrip'/, 'posed presentation is scoped to grip authoring');
+assert.match(html, /selectedRigAnchorName\(actor\) !== 'shoulderGrip'/, 'other rig anchors do not implicitly use the shoulder-pet pose');
+assert.match(html, /value="perched">Perched · gameplay shoulder deformation/, 'the authored pose is a visible selectable editor option');
+assert.match(html, /value="source">Source · undeformed sprite/, 'the original art is available for visual comparison');
+assert.match(html, /actor\.shoulderGripPosePreviewControllerV1549\?\.dispose\?\.\(\)/,
+  'clearing actors disposes skinned shoulder-pet preview resources');
+assert.match(html, /actorById\(id\)\?\.shoulderGripPosePreviewControllerV1549\?\.dispose\?\.\(\)/,
+  'removing one rig actor also releases its skinned shoulder pose and split overlays');
+assert.doesNotMatch(adapter, /profile\.anchors\.shoulderGrip\s*=|rigAnchors\.shoulderGrip\.position\.(?:set|copy)/,
+  'displaying a posed preview must not rewrite the authored attachment grip');
+
+function makeCanvas(tag) {
+  const canvas = {
+    tag, width: 64, height: 40, drawn: [],
+    toDataURL() { return 'data:image/png;pose=' + tag; },
+    getContext() {
+      return {
+        beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {},
+        drawImage(image) { canvas.drawn.push(image.tag); },
+      };
+    },
+  }; // Mimics only the Canvas2D operations used by the production split renderer.
+  return canvas;
+}
+function fakeAvatar() {
+  const copyable = (x, y, z, w) => ({ x, y, z, ...(w === undefined ? {} : { w }),
+    copy(value) { Object.assign(this, value); return this; } }); // Mimics the live THREE position/quaternion/scale API during sibling placement.
+  const group = {
+    visible: true, parent: null, children: [],
+    position: copyable(0, 0, 0), quaternion: copyable(0, 0, 0, 1), scale: copyable(1, 1, 1),
+    add(child) { this.children.push(child); child.parent = this; },
+    remove(child) { this.children = this.children.filter(x => x !== child); child.parent = null; },
+    traverse(callback) { for (const overlay of this.overlays || []) callback(overlay); },
+  }; // Preserves the source root hierarchy and traverses the gameplay split-overlay meshes.
+  return {
+    group,
+    frontPlane: { visible: true, rotation: { y: Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() { this.updated = true; } },
+    backPlane: { visible: true, rotation: { y: -Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() { this.updated = true; } },
+    dispose() { this.didDispose = true; },
+    setShoulderRestEnabled(value) { this.deformed = value; return value; },
+    setShoulderSplitOverlayCanvas(canvas, visible) {
+      this.overlay = canvas;
+      this.overlayVisible = visible;
+      this.group.overlays = [
+        { userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'front' },
+          rotation: { y: Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() {} },
+        { userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'back' },
+          rotation: { y: -Math.PI / 2 }, scale: copyable(1, 1, 1), updateMatrix() {} },
+      ]; // The actual gameplay decorator makes a dedicated skinned foreground for each face.
+      return true;
+    },
+  };
+}
+
+async function runTest() {
+  const calls = [], builds = [], notifications = [], separatorCalls = []; // Captures real adapter decisions without requiring browser WebGL.
+  const authored = {
+    puktuk: { enabled: true, useSpline: true, useRun1: true, splitFrame: false },
+    grehlr: { enabled: true, useSpline: true, useRun1: false, splitFrame: true, splitRightUsesIdle: false },
+    moot: { enabled: true, useSpline: true, useRun1: false, splitFrame: false },
+  }; // Test run1, the runtime's two-layer split, and a normal idle shoulder pose.
+  const window = {
+    HobunjiShoulderSplineProfiles: { supportRigFor(kind) { return authored[kind] ? { shoulderRest: authored[kind] } : null; } },
+    AnimalShoulderSpline: {
+      separatorPolygon(width, height, rest, right) {
+        separatorCalls.push(right);
+        return right
+          ? [{ x: width / 2, y: 0 }, { x: width, y: 0 }, { x: width, y: height }]
+          : [{ x: 0, y: 0 }, { x: width / 2, y: 0 }, { x: 0, y: height }];
+      },
+    }, // Uses the same geometry API as gameplay rather than independently computing a separator.
+    CreatureGeneticsRender: {
+      async composeFrame(kind, frame) {
+        calls.push([kind, frame]);
+        return makeCanvas(kind + '/' + frame);
+      },
+    },
+    PNGPlaneAvatar: {
+      buildAnimalPlaneAvatarModel(THREE, url, options) {
+        const avatar = fakeAvatar();
+        builds.push({ avatar, url, options });
+        return avatar;
+      },
+    },
+  }; // Editor's runtime dependencies are injected into the actual module.
+  const document = { createElement(type) { assert.equal(type, 'canvas'); return makeCanvas('split-canvas'); } };
+  new Function('window', 'document', adapter)(window, document);
+  const moduleApi = window.AnimationAuthorShoulderPosePreview;
+  assert.equal(moduleApi.authoredRestFor('nonexistent'), null);
+  assert.equal(moduleApi.create({ kind: 'nonexistent', sourceAvatar: fakeAvatar(), THREE: {} }), null);
+
+  const source = fakeAvatar(), viewport = [], anchor = { x: 0.21, y: -0.32, z: 0.06 };
+  const scaledRigParent = { children: [], add(object) { this.children.push(object); object.parent = this; },
+    remove(object) { this.children = this.children.filter(entry => entry !== object); object.parent = null; } }; // Mimics CreaturePngPlaneScale, which also owns shoulderGrip but must not change during preview.
+  source.group.parent = scaledRigParent;
+  source.group.position.x = 0.11;
+  source.group.scale.z = 1.42;
+  source.frontPlane.scale.copy({ x: 0.52, y: 0.48, z: 1 }); // This is the editor's post-V15.14 direct mesh scale, not the group's unit scale.
+  source.backPlane.scale.copy({ x: 0.52, y: 0.48, z: 1 });
+  const savedAnchor = JSON.stringify(anchor); // Ensures swapping source/perched art never touches the authored grip.
+  const controller = moduleApi.create({
+    kind: 'puktuk', genotype: { sizeClass: 'small' }, THREE: {},
+    sourceAvatar: source, modelWidth: 1.1, modelHeight: 0.7, actorName: 'Puktuk',
+    viewportCreaturePlanes: viewport, onChange: state => notifications.push(state),
+  });
+  assert(controller, 'Puktuk gets a pose controller');
+  await controller.setPose('perched');
+  assert.deepEqual(calls, [['puktuk', 'run1']], 'Puktuk uses its runtime run1 shoulder stance, not idle');
+  assert.equal(builds.length, 1, 'one extra posed rig is built on first use');
+  assert.equal(builds[0].options.creatureId, 'puktuk', 'the actual animal rig resolves by species id');
+  assert.equal(builds[0].options.modelWidth, 1.1, 'posed mesh retains original plane dimensions');
+  assert.equal(builds[0].avatar.deformed, true, 'production shoulder deformation is enabled on the rendered pose');
+  assert.equal(source.frontPlane.visible, false);
+  assert.equal(source.backPlane.visible, false);
+  assert.equal(builds[0].avatar.group.visible, true);
+  assert.equal(scaledRigParent.children[0], builds[0].avatar.group, 'perched sprite shares CreaturePngPlaneScale with the authored shoulderGrip');
+  assert.equal(source.group.children.length, 0, 'posed art remains outside actor.model bounds and cannot change auto anchor metrics');
+  assert.equal(builds[0].avatar.group.position.x, 0.11, 'posed art clones the original creature-root position');
+  assert.equal(builds[0].avatar.group.scale.z, 1.42, 'posed art clones the original creature-root scale');
+  assert.equal(viewport.length, 2, 'both posed planes take part in the existing viewport orientation logic');
+  assert.equal(builds[0].avatar.frontPlane.scale.x, 0.52,
+    'posed front mesh uses the same direct X scale as the source and the grip position');
+  assert.equal(builds[0].avatar.backPlane.scale.y, 0.48,
+    'posed back mesh uses the actual direct Y size-class scale');
+  source.frontPlane.scale.copy({ x: 0.3, y: 0.28, z: 1 });
+  source.backPlane.scale.copy({ x: 0.3, y: 0.28, z: 1 });
+  controller.syncPlaneScale();
+  assert.equal(builds[0].avatar.frontPlane.scale.x, 0.3,
+    'changing creature size while posed updates the skinned foreground without rebuilding');
+  assert.equal(builds[0].avatar.backPlane.scale.y, 0.28,
+    'changing creature size also updates the back card');
+  const noticeCount = notifications.length; // Ensures a 60-fps editor loop does not rewrite the inspector on every tick.
+  for (let i = 0; i < 60; i++) controller.setPose('perched');
+  assert.equal(notifications.length, noticeCount, 'repeated frames cause no inspector DOM updates');
+  await controller.setPose('source');
+  assert.equal(source.frontPlane.visible, true);
+  assert.equal(source.backPlane.visible, true);
+  assert.equal(builds[0].avatar.group.visible, false);
+  await controller.setPose('perched');
+  assert.equal(builds.length, 1, 'switching views reuses the existing skinned mesh');
+  assert.equal(JSON.stringify(anchor), savedAnchor, 'the grip is not moved or reauthored');
+  controller.dispose();
+  assert.equal(builds[0].avatar.didDispose, true, 'extra skinned pose resources are disposed');
+  assert.equal(scaledRigParent.children.length, 0, 'posed sibling is removed from the real rig-scale parent on disposal');
+  assert.equal(source.group.children.length, 0, 'original model never retains a hidden posed child');
+  assert.equal(viewport.length, 0, 'old skinned plane camera-yaw entries are removed with the pose');
+  assert.equal(source.frontPlane.visible, true, 'normal art becomes visible after the editor clears actors');
+
+  const splitSource = fakeAvatar(), before = calls.length, splitViewport = []; // Verify split foreground planes participate in viewport deadzone rotation.
+  splitSource.frontPlane.scale.copy({ x: .77, y: .63, z: 1 });
+  splitSource.backPlane.scale.copy({ x: .68, y: .61, z: 1 });
+  const split = moduleApi.create({ kind: 'grehlr', genotype: {}, THREE: {},
+    sourceAvatar: splitSource, modelWidth: 2, modelHeight: 1, actorName: 'Grehlr',
+    viewportCreaturePlanes: splitViewport });
+  await split.setPose('perched');
+  assert.deepEqual(calls.slice(before), [['grehlr', 'idle'], ['grehlr', 'run1']],
+    'split artwork uses the same idle left and run1 right sources as gameplay');
+  assert.deepEqual(separatorCalls, [true, false], 'foreground and background use authored split-side polygon');
+  assert.equal(builds.at(-1).avatar.overlayVisible, true, 'the split foreground uses the actual overlay mesh');
+  assert.equal(builds.at(-1).avatar.overlay.drawn[0], 'grehlr/idle', 'left foreground retains idle pixels');
+  assert.equal(splitViewport.length, 4, 'both skinned foreground overlays rotate with Grehlr background cards');
+  assert.equal(builds.at(-1).avatar.group.overlays[0].scale.x, .77, 'Grehlr split front overlay follows the front size class');
+  assert.equal(builds.at(-1).avatar.group.overlays[1].scale.y, .61, 'Grehlr split back overlay follows the back size class');
+  split.dispose();
+  assert.equal(splitViewport.length, 0, 'split foreground camera-yaw entries release on disposal');
+
+  let isCurrent = true;
+  const slowSource = fakeAvatar();
+  const stale = moduleApi.create({ kind: 'moot', THREE: {}, sourceAvatar: slowSource,
+    modelWidth: 1, modelHeight: 1, actorName: 'Moot', isCurrent: () => isCurrent });
+  isCurrent = false;
+  await stale.setPose('perched');
+  assert.equal(slowSource.group.children.length, 0, 'queued art cannot resurrect a removed actor');
+  assert.equal(slowSource.frontPlane.visible, true);
+
+  const failingWindow = {
+    ...window,
+    CreatureGeneticsRender: { async composeFrame() { throw new Error('network artwork missing'); } },
+  }; // Test visible in-editor failure diagnostics without requiring a desktop console.
+  new Function('window', 'document', adapter)(failingWindow, document);
+  const failureSource = fakeAvatar();
+  const failure = failingWindow.AnimationAuthorShoulderPosePreview.create({
+    kind: 'puktuk', THREE: {}, sourceAvatar: failureSource, modelWidth: 1,
+    modelHeight: 1, actorName: 'Failure',
+  });
+  await failure.setPose('perched');
+  assert.match(failure.status().error, /network artwork missing/, 'load failures are visible via status');
+  assert.equal(failureSource.frontPlane.visible, true, 'failure never hides the existing creature');
+  let attempts = 0; // Verifies the user can retry a transient sprite-loading failure without reopening the editor.
+  failingWindow.CreatureGeneticsRender.composeFrame = async (kind, frame) => {
+    attempts++;
+    return makeCanvas(kind + '/' + frame);
+  };
+  await failure.setPose('source');
+  await failure.setPose('perched');
+  assert.equal(attempts, 1, 'returning to Source and choosing Perched retries the real artwork loader');
+  assert.equal(failure.status().error, null, 'a successful retry clears the mobile-visible error');
+  assert.equal(failureSource.frontPlane.visible, false, 'the recovered posed art becomes visible');
+  failure.dispose();
+}
+
+module.exports = { runTest };
+if (require.main === module) runTest().then(() => console.log('Animation Author shoulder-pet grip pose checks passed'))
+  .catch(error => { console.error(error); process.exitCode = 1; });

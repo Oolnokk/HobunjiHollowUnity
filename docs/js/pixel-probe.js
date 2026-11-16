@@ -630,7 +630,7 @@
           : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
         lines.push(`Pet shoulder grip: ${attachmentDebug?.gripSource || grip.source || 'authored-shoulder-grip'}; native-grip height=${Number(grip.y).toFixed(5)}u (foot socket to live player perch).`);
         lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
-        lines.push(`Shoulder local facing transform: facing=${attachmentDebug?.facingTowardPlayerCenter ? 'inward/front' : 'outward/behind'} localYTurn=${Number(attachmentDebug?.shoulderFacingTurnDeg) || 0}° spriteMirrored=${attachmentDebug?.spriteMirrored === true}`);
+        lines.push(`Shoulder local facing transform: facing=${attachmentDebug?.facingTowardPlayerCenter ? 'inward/front' : 'outward/behind'} localYTurn=${Number(attachmentDebug?.shoulderFacingTurnDeg) || 0}° localXLean=${Number(attachmentDebug?.shoulderLeanDeg) || 0}° spriteMirrored=${attachmentDebug?.spriteMirrored === true}`);
         const perchWorld = attachmentDebug?.authoredPerchWorldPosition;
         const gripWorld = attachmentDebug?.alignedGripWorldPosition;
         const perchWorldValid = Array.isArray(perchWorld) && perchWorld.length >= 3 && perchWorld.slice(0, 3).every(Number.isFinite);

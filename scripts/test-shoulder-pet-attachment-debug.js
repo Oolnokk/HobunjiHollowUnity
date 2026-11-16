@@ -4,7 +4,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const game = fs.readFileSync('docs/game.js', 'utf8'); // Guards persistence and dependency wiring for the in-game marker mode.
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Guards gameplay Settings and attachment adapter wiring.
+const attachment = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8'); // Final pin owns rendered root debug metadata.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Guards the mobile-accessible Settings toggle.
 const debug = fs.readFileSync('docs/js/debug-hitboxes.js', 'utf8'); // Guards the world-space perch/grip renderer and copyable snapshot.
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards copyable world/local shoulder attachment coordinates.
@@ -41,6 +42,12 @@ assert.match(debug, /petRootWorld/);
 assert.match(pixelProbe, /PET_ROOT=/);
 assert.match(pixelProbe, /petRootCapture=/);
 assert.match(game, /playerAttachmentAnchor,/);
+assert.match(attachment, /gripPositionSource: finalTransform\.gripLocalPosition \? 'rendered-group-matrix'/,
+  'mobile debug distinguishes actual rendered grip measurement from a reconstructed expected offset');
+assert.match(attachment, /\? group\.localToWorld\(new THREE\.Vector3\(/,
+  'grip-perch error samples the pet root world matrix rather than reproducing the pin equation');
+assert.match(pixelProbe, /localXLean=\$\{Number\(attachmentDebug\?\.shoulderLeanDeg\)/,
+  'mobile Pixel Probe exposes the authored grip-based body lean next to the facing stage');
 assert.match(debug, /grip \$\{state\.error\.toFixed\(5\)\}u/);
 assert.match(debug, /get shoulderPetAttachment\(\)/);
 assert.match(pixelProbe, /Attachment points world: PERCH=/);
