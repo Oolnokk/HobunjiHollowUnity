@@ -212,9 +212,13 @@ now += 300;
 boost.onPress(); now += 300; boost.onPress(); now += 300; boost.onPress();
 assert.equal(win.Mounts.ridingDebug.wheatRemaining, 2, 'each genuine additional press uses exactly one charge');
 const beforeBindingJump = win.Mounts.ridingDebug.manualJumps; // A bound press must add one hop regardless of earlier regression jumps.
+const boostedStartX = mount.x, boostedStartY = mount.y; // Verify a boosted jump keeps the wheat-boosted forward cruise.
 jump.onPress();
 assert.equal(win.Mounts.ridingDebug.manualJumps, beforeBindingJump + 1, 'jump binding initiates a manual mounted hop');
-for (let i = 0; i < 340; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+for (let i = 0; i < 20; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(Math.hypot(mount.x - boostedStartX, mount.y - boostedStartY) > T * 1.5,
+  'wheat boost still provides high-speed travel during the jump');
+for (let i = 20; i < 340; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
 assert(breaths > 0, 'partially spent wheat produces periodic species exertion calls');
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'manual hop finishes and clears its visual arc');
 assert(win.Mounts.ridingDebug.wheatRemaining > 2, 'wheat charges regenerate after the surge ends');
@@ -274,6 +278,17 @@ for (let i = 0; i < 180; i++) {
 }
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, beforeTallRock, 'tall boulders are not eligible for automatic jumps');
 assert(mount.x < 20 * T, 'the horse stops at the boulder instead of passing through it');
+
+// A manual jump must not defeat the solid-boulder collision check.
+assert.equal(win.Mounts.jumpMount(), true, 'jump is available even while facing an impassable boulder');
+for (let i = 0; i < 29; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+  assert(canOccupy(mount.x, mount.y), 'jumping against a tall boulder does not phase through it');
+  assert.equal(player.x, mount.x, 'rider remains seated against the airborne collision boundary');
+}
+assert(mount.x < 20 * T, 'a manual hop cannot leap through the tall boulder');
+assert.equal(win.Mounts.ridingDebug.jumping, false, 'collision-limited jump still lands cleanly');
 
 // Dismounting mid-jump releases visual hop state immediately, without losing the rider/mount transition.
 assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
