@@ -113,37 +113,40 @@ together within each face stage; a split helper tracks its base card's priority
 and material flags. There is no `shoulderPet.presentation` setting or competing
 player-over/pet-over/world-depth diagnostic mode.
 
-The player front portrait remains part of the owner's private held-item stencil
-even when the portrait does not write normal color-pass depth. **Only the pet
-face above its matching owner face**, and its same-face split copy, joins this
-stencil: front when looking inward, back when looking away. The other face
-never masks the owner's held gear. The mask still runs on maps without
-classified nearby ground, floors or water, and respects the foreground world's
-physical depth. Stencil owner IDs are not shared with unrelated NPCs.
+When the optional owner-front weapon stencil is enabled (its shipped default
+is **off**), the player's front portrait participates even though it does not
+write normal color-pass depth. **Only the pet face above its matching owner
+face**, and its same-face split copy, joins that private mask: front when
+looking inward, back when looking away. The other face never masks the owner's
+held gear. An enabled mask also runs on maps without nearby classified ground,
+floors or water; stencil owner IDs are not shared with unrelated NPCs.
 
-When a shoulder pet makes the owner front/rear portrait stack depth-write-free
-and the framebuffer has no usable 8-bit stencil, the renderer now uses a
-**colorless alpha-tested depth fallback** for the owner front and whichever
-pet face is foreground. It runs *after every held depth reconstruction*
-and before each held weapon draw, preventing tools behind the owner portrait
-from appearing through it. Opposite-facing pet art and unrelated actors
-are excluded; the owner's materials and ordinary pet-facing layering
-are restored immediately afterward. The fallback count and
-`depth-fallback-no-stencil` reason appear in the mobile X-ray diagnostics.
+When the front-art masking rule is enabled, a shoulder pet makes the
+owner's portrait stack depth-write-free, and the framebuffer has no usable
+8-bit stencil, the renderer uses a **colorless alpha-tested depth fallback**
+for the owner front and whichever pet face is foreground. It runs after held
+depth reconstruction and before the held weapon draw, preventing tools behind
+the portrait from appearing through it. Opposite-facing pet art and unrelated
+actors are excluded; the materials and pet-facing layers are restored
+immediately afterward. Diagnostics expose the fallback count and
+`depth-fallback-no-stencil` reason.
 
 Replacing or detaching a shoulder pet restores the previous pet's ordinary
 depth and draw order, cleans up its private stencil participation, and restores
 the owner's unchanged portrait orders and normal depth writes.
 The compositor reasserts this once more before each base world draw after other
-depth writers have run. Its transparent-sort transaction now guarantees that
-the foreground pet face paints after **all** owner sprites in its matching
-front/back stage (including coplanar hat overlays and skinned/split copies),
-even if manual layer ranking is enabled. The background pet face always paints
-before those matching owner sprites. The comparator is scoped to that one
-owner and only the matching face; nearby NPCs and opposite-facing cards keep
-their original sort rules. Owner portrait hat overlays also temporarily defer
-their depth writes while a pet is attached, then restore their original flags
-on detachment; the world still supplies ordinary depth testing.
+depth writers have run. Its transparent-sort transaction gives the owner's
+front/back cards, pet front/back cards, hat overlays and split helpers
+**one consistent set of four face-stage priorities**. The observation animation
+alone chooses which pet face is foreground. Individual pairwise overrides are
+not sufficient: with a nearby NPC, portrait-depth ranking can otherwise
+produce non-transitive ordering cycles involving a third transparent item.
+When that actor-depth rank is active, the owner's pet and hat layers inherit
+the player's rank. With manual category ordering enabled, one stable
+per-item key preserves far-to-near actor ordering before the owner's local
+front/back/pet stages. Unrelated world surfaces still use their own normal
+depth testing, and a shoulder pet's hat overlays temporarily defer depth
+writes until detachment.
 
 The mobile X-ray panel and Pixel Probe show which pet face is in front,
 the individual stage orders and the owner stencil coverage/candidate counts.
