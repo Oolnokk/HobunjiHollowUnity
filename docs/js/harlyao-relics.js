@@ -124,7 +124,7 @@
   function decodeBoundKey(key) {
     const match = /^(harlyaoBound_|feyBound_)([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
     if (!match || !SHAPES[match[2]]) return null;
-    const origin = match[1] === FEY_BOUND_PREFIX ? 'Fey' : 'Harlyao'; // A malformed item cannot claim the wrong shape/origin.
+    const origin = match[1] === 'feyBound_' ? 'Fey' : 'Harlyao'; // Self-contained codec also works in the GH minion/ghoul isolated-serialization harness. // A malformed item cannot claim the wrong shape/origin.
     if ((SHAPES[match[2]].origin || 'Harlyao') !== origin) return null;
     const flourishes = {};
     for (const pair of match[5] ? match[5].split('-') : []) {
