@@ -14,6 +14,13 @@ const head = { x: 0.3, y: 0.3, width: 0.4, height: 0.4, coordinateSpace: 'sprite
 const windowStub = {
   localStorage: storage,
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: { grehlr: { chatheadFrame: head } } },
+  CreatureGeneticsRender: { SPECIES: { pingdort: { base: { idle: 'pingdort_idle.png' } } } },
+  CreatureGenetics: {
+    creatureSizeClass(kind, genotype) {
+      const original = kind === 'pingdort' ? 'small' : kind === 'honeyfuzzle' ? 'medium' : 'medium';
+      return kind === 'honeyfuzzle' ? original : (genotype?.sizeClass || original);
+    },
+  },
 };
 let lastOutput = null;
 const documentStub = {
@@ -30,9 +37,28 @@ const documentStub = {
 };
 vm.runInNewContext(source, { window: windowStub, document: documentStub, Uint8ClampedArray }, { filename: 'baby-animal-head-warp.js' });
 const warp = windowStub.BabyAnimalHeadWarp;
-assert.equal(warp.getScale(), 1.22, 'experimental size defaults to 122%');
+assert.equal(warp.getScale(), 1.23, 'every species defaults to the user-approved 123% scale');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
-assert.equal(warp.frameForKind('missing'), null, 'a missing authored frame never guesses where the head is');
+assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
+assert(warp.frameForKind('pingdort'), 'unpainted registered species retain a conservative baby head frame');
+assert.equal(warp.scaleForKind('pingdort'), 1.23, 'all baby species default to 123%, even naturally small birds');
+assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'small' }, 'shoulderPet'), true,
+  'genetically Small animals of normally Medium species use the juvenile head warp as pets');
+assert.equal(warp.isSmallSizeVariantPet('pingdort', { sizeClass: 'small' }, 'shoulderPet'), false,
+  'a naturally Small adult pet does not get an enlarged head');
+assert.equal(warp.isSmallSizeVariantPet('pingdort', { sizeClass: 'small' }, 'baby'), false,
+  'baby status is handled by the separate baby texture pipeline, irrespective of species');
+assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'medium' }, 'shoulderPet'), false,
+  'ordinary Medium adults are not eligible');
+assert.equal(warp.isSmallSizeVariantPet('grehlr', { sizeClass: 'small' }, 'companion'), false,
+  'only small-sized pets receive the extra head warp; ordinary companions do not');
+writes.set('hobunji_baby_head_warp_scale_v1', '1.22'); // Prior experiments saved a former default for returning users.
+const migratedWindow = { ...windowStub };
+const migratedCanvas = { ...documentStub };
+vm.runInNewContext(source, { window: migratedWindow, document: migratedCanvas, Uint8ClampedArray });
+assert.equal(migratedWindow.BabyAnimalHeadWarp.getScale(), 1.23,
+  'the deprecated default 122% preference migrates to the approved universal 123%');
+writes.delete('hobunji_baby_head_warp_scale_v1');
 const paintedFrame = { x: 0.25, y: 0.18, width: 0.3, height: 0.42, coordinateSpace: 'sprite-normalized-top-left' };
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ 'custom-pet': { babyHeadScale: 1.4, babyHeadFrame: paintedFrame } }));
 assert.equal(warp.frameForKind('custom-pet').height, paintedFrame.height, 'custom animals use the frame exported from painted Head influence');
@@ -48,7 +74,7 @@ for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
   pixels[i] = x * 5; pixels[i + 1] = y * 5; pixels[i + 2] = x ^ y; pixels[i + 3] = (x + y) % 2 ? 255 : 0;
 }
 const at = (array, x, y, channel = 0) => array[(y * width + x) * 4 + channel];
-const warped = warp.warpPixels(pixels, width, height, head, 1.22);
+const warped = warp.warpPixels(pixels, width, height, head, 1.23);
 assert.notEqual(warped, pixels, 'the warp returns new pixels and never mutates shared adult art');
 assert.equal(at(warped, 0, 0), at(pixels, 0, 0), 'far-away corner is exactly unchanged');
 assert.equal(at(warped, width - 1, height - 1, 3), at(pixels, width - 1, height - 1, 3), 'distant transparency is unchanged');
@@ -63,6 +89,18 @@ const output = warp.applyToCanvas(input, 'grehlr');
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
+const layeredArt = Uint8ClampedArray.from(pixels);
+const eye = (19 * width + 23) * 4, pattern = (22 * width + 25) * 4; // Distinct final-composite colors: eye and painted coat pattern.
+layeredArt.set([252, 22, 75, 255], eye);
+layeredArt.set([19, 155, 235, 255], pattern);
+const layeredWarp = warp.warpPixels(layeredArt, width, height, head, 1.23);
+const position = (x, y) => (y * width + x) * 4;
+assert(layeredWarp.some((value, i) => value !== layeredArt[i]), 'post-composite head warp moves genuine image pixels');
+const enlargedEye = [25, 19].map((value, i) => value); // Head-local test samples move outward with the same inverse pixel transform.
+assert(layeredWarp.some((_, i) => i % 4 === 0 && layeredWarp[i] === 252 && layeredWarp[i+1] === 22),
+  'red eye artwork stays in the enlarged texture');
+assert(layeredWarp.some((_, i) => i % 4 === 0 && layeredWarp[i] === 19 && layeredWarp[i+1] === 155),
+  'blue coat-pattern artwork remains in the same enlarged texture');
 assert.equal(warp.applyToCanvas(input, 'missing'), input, 'unsupported baby species retain their original appearance');
 const paintedRig = { width: 4, height: 4, encoding: 'rle-u9', data: [5, 0, 2, 255, 2, 0, 2, 255, 5, 0] };
 windowStub.HobunjiAuthoredAnimalHeadRigs = { get: kind => kind === 'grehlr' ? { babyHeadScale: 1.33, weightMap: paintedRig } : null };
