@@ -66,13 +66,22 @@
     const edgeX=left?room.x:room.x+room.w,edgeZ=top?room.z:room.z+room.d;
     const at=(dx,dz)=>({x:edgeX+sx*dx,z:edgeZ+sz*dz});
     const center=at(1.55,1.55),mouth=at(3.3,1.95);
-    const mat=root.ProceduralFurniture?.makePartMaterial?.({
-      materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#625d57'
-    })||new THREE.MeshBasicMaterial({color:0x625d57}); // Reuse the ruin's authored carved stone rather than flat gray geometry.
-    const dark=new THREE.MeshBasicMaterial({color:0x383733});
-    const accent=new THREE.MeshBasicMaterial({color:0x8d806f});
-    const ice=new THREE.MeshBasicMaterial({color:0x96cad8,transparent:true,opacity:.56,depthWrite:false});
-    const materials=[mat,dark,accent,ice]; // Owned by this scene-only discovery, never a shared furniture material.
+    const stoneFinish=(color,filled=true,opacity=1)=>{
+      const finish=root.ProceduralFurniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',
+        materialFillEnabled:filled,materialFillColor:filled?color:null,
+        materialFillMode:filled?'always':'never',color,
+        surfaceOpacity:opacity,textureTransparent:opacity<1,
+      }); // Reuse V50's authored stone texture and its actual color-fill workflow, not flat basic-material boxes.
+      return finish||new THREE.MeshBasicMaterial({
+        color,transparent:opacity<1,opacity,depthWrite:opacity>=1,
+      }); // Headless fixture fallback: production has the real furniture texture factory.
+    };
+    const mat=stoneFinish('#777267',false); // Main room masonry and puzzle plinths use untouched carved_smooth.png.
+    const dark=stoneFinish('#4d3831'); // Native V50 door slab tint on the same carved-stone texture.
+    const accent=stoneFinish('#b08d57'); // The main treasure/glyph mechanisms' bronze-coloured stone.
+    const ice=stoneFinish('#bcecff',true,.72); // Texture-backed translucent fallback if the authored ice growth system is absent.
+    const materials=[mat,dark,accent,ice]; // Only these per-secret authored finishes belong to the optional room puzzle.
     const colliders=[]; // Precise per-floor optional barriers; cleared when the ruin session ends.
     const controls=[]; // Interactions participate in the existing ruin resolver and its teardown.
     const links=[]; // Projectile and fire target disposers, tied to this room's lifetime.
@@ -83,7 +92,13 @@
     const box=(name,w,h,d,x,y,z,material=mat)=>{
       const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
       mesh.name=name;mesh.position.set(x,y,z);
-      mesh.userData.devRuinFootprintIgnore=true;group.add(mesh);return mesh;
+      mesh.userData.devRuinFootprintIgnore=true;
+      mesh.userData.ruinSecretTexturedStone=true; // Pixel Probe/scene inspection can distinguish authored PNG stone from geometry-only placeholders.
+      group.add(mesh);
+      root.HobunjiSurfaceStretchUV?.mapMesh?.(mesh,{
+        label:'ruin-side-treasure-stone',maxPatchWorldSize:6,
+      }); // Match the main puzzle's connected-face UV mapping even on tall columns and narrow gates.
+      return mesh;
     };
     const registerControl=control=>{if(!control)return;addControl?.(control);controls.push(control);};
     function blocker(name,x,z,w,d,enabled){
@@ -216,16 +231,34 @@
     }else if(spec.kind==='suspended'){
       chestAt(center.x,center.z,floor);
       box('secret-clasp-grounded-plinth-'+rec.id,.65,.9,.65,center.x+sx*.95,floor+.45,center.z+sz*.35);
-      rec.cover=spec.suspension==='ice'
-        ?box('secret-grounded-ice-prison-'+rec.id,1.3,1.75,1.3,center.x,floor+.875,center.z,ice)
-        :new THREE.Group();
-      if(spec.suspension==='net'){
-        rec.cover.name='secret-grounded-net-cage-'+rec.id;
-        rec.cover.position.set(center.x,floor+.88,center.z);group.add(rec.cover);
-        for(const p of [-.54,-.18,.18,.54]){
-          const strand=new THREE.Mesh(new THREE.BoxGeometry(.045,1.76,1.24),accent);
-          strand.name='secret-net-cage-strand';strand.position.set(p,0,0);
-          strand.userData.devRuinFootprintIgnore=true;rec.cover.add(strand);
+      rec.cover=new THREE.Group(); // The reward sits on its real floor; only the visible enclosing cover is destroyed on solve.
+      rec.cover.name='secret-grounded-'+spec.suspension+'-cover-'+rec.id;
+      group.add(rec.cover);
+      if(spec.suspension==='ice'){
+        const iceSeed=box('secret-ice-growth-seed-'+rec.id,1.3,1.75,1.3,center.x,floor+.875,center.z,ice);
+        group.remove(iceSeed);rec.cover.add(iceSeed); // Fallback remains a carved-textured icy solid attached to the removable cover.
+        const placement=root.DungeonDoorIceCoverage?.create?.({
+          door:iceSeed,parent:rec.cover,groundY:floor,seed:rec.id+':ice-cover',
+        }); // Same Furniture Author stalagmite coverage as Tothal dungeon doors, not a translucent rectangular placeholder.
+        if(placement?.iceLayer){
+          iceSeed.visible=false; // Real authored ice alone forms the cover; the physical chest remains available after it breaks.
+          rec.icePlacement=placement;
+        }
+      }else{
+        rec.cover.position.set(center.x,floor+1.75,center.z); // The net's top edge sits on the grounded enclosure's height.
+        const netSkin=root.DungeonRopeArt?.createNetFrustum?.(1.36,1.36,1.75);
+        if(netSkin){
+          netSkin.name='secret-rope-long-net-cover-'+rec.id;
+          netSkin.userData.devRuinFootprintIgnore=true;
+          rec.cover.add(netSkin); // Shared rope_long.png atlas and transparent strand silhouettes, not untextured rod boxes.
+        }else{
+          // Missing sprite module must never turn the prize into an invisible puzzle. Use authored stone posts as a visible fallback.
+          for(const dx of [-.57,.57])for(const dz of [-.57,.57]){
+            const post=box('secret-net-fallback-stone-post-'+rec.id,.1,1.75,.1,
+              center.x+dx,floor+.875,center.z+dz,dark);
+            group.remove(post);rec.cover.add(post);
+            post.position.x-=center.x;post.position.y-=floor+1.75;post.position.z-=center.z;
+          }
         }
       }
       targetAt(center.x+sx*.95,floor+1.11,center.z+sz*.35,unlock); // Clasp rests on the stone plinth, not unsupported air.
