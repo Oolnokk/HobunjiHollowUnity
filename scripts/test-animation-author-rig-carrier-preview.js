@@ -75,7 +75,7 @@ assert.match(html,/perch\.rotation\.order = 'YXZ'/,'gameplay rotation order pres
 assert.match(html,/rigWorldAxesV1553\.quaternion\.identity\(\)/,'world axes ignore local grip rotation');
 assert.match(html,/controls\.setSpace\('world'\)/,'actual gizmo is world aligned');
 assert.match(html,/window\.AnimationAuthorRigCarrierPreview\?\.placeNpcAtGrip/,'solver integrated');
-assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier4/,'changed browser helper must invalidate cached billboard solver');
+assert.match(html,/animation-author-rig-carrier-preview\.js\?v=[A-Za-z0-9_-]+/,'browser loader must version the carrier helper without pinning an exact cache token');
 assert.doesNotMatch(source,/cameraDX|cameraDZ|faceYaw|camera\?\.position|setFromAxisAngle/,'carrier math must not depend on camera direction');
 const liveCarrierCall=html.slice(html.indexOf('function syncShoulderCarrierV1553()'),html.indexOf('function shoulderCarrierStatusV1553('));
 assert.doesNotMatch(liveCarrierCall,/camera: state\.three\.camera/,'editor must not pass camera data to carrier placement');
