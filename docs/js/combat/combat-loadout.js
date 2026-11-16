@@ -57,6 +57,16 @@
   // reading an unconfigured weapon's loadout just returns the defaults
   // above without creating an entry.
   let loadoutsByWeapon = {};
+  let mountedLoadoutsByWeapon = {}; // Per-weapon Action 2 tap selection while riding; foot loadouts stay independent.
+  const MOUNTED_STORAGE_KEY = '__mountedCombatLoadouts'; // Dedicated key in the existing character combatLoadout save record.
+  const MOUNTED_SLOTS = Object.freeze({ tap1: 'mountedStrike', hold1: 'chargedBreaker', hold2: null }); // Locked mounted controls share existing combo/heavy mastery sources.
+
+  function isMounted() {
+    return window.Mounts?.rideState === 'mounted' || window.Mounts?.rideState === 'climbLeap'; // Selects the active combat context without touching ranged weapon input.
+  }
+  function mountedMode(mode = 'auto') {
+    return mode === 'mounted' || (mode === 'auto' && isMounted()); // UI can inspect either loadout while dismounted.
+  }
 
   function registerAbility(id, def) {
     abilities.set(id, { ...def, id, label: def.label || id });
@@ -102,11 +112,14 @@
     return loadoutsByWeapon[key] || DEFAULT_SLOT_LOADOUT;
   }
 
-  function getLoadout() {
+  function getLoadout(mode = 'auto') {
+    if (mountedMode(mode)) return { ...MOUNTED_SLOTS, tap2: mountedLoadoutsByWeapon[weaponKey()]?.tap2 ?? null };
     return { ...weaponLoadout(weaponKey()), tap1: comboAbilityId() };
   }
 
-  function getSlot(slotId) {
+  function getSlot(slotId, mode = 'auto') {
+    if (!SLOT_IDS.includes(slotId)) return null;
+    if (mountedMode(mode)) return slotId === 'tap2' ? (mountedLoadoutsByWeapon[weaponKey()]?.tap2 ?? null) : MOUNTED_SLOTS[slotId];
     if (slotId === 'tap1') return comboAbilityId();
     return weaponLoadout(weaponKey())[slotId] ?? null;
   }
@@ -118,7 +131,8 @@
   // for the category/family check — an ability not registered yet is
   // allowed through so the default loadout above can reference ids before
   // their modules load.
-  function setSlot(slotId, abilityId) {
+  function setSlot(slotId, abilityId, mode = 'auto') {
+    if (mountedMode(mode) && slotId !== 'tap2') return false; // Fixed mount one-off / heavy charge and deliberately empty special are never replaceable.
     if (slotId === 'tap1') return false;
     if (!SLOT_IDS.includes(slotId)) return false;
     if (abilityId === 'opportunistJab') return false; // Disabled technique cannot be assigned by stale callers.
@@ -126,6 +140,13 @@
     if (def && def.slotFamily !== SLOT_FAMILY[slotId]) return false;
     if (def && !SLOT_CATEGORIES[slotId].includes(def.category)) return false;
     const key = weaponKey();
+    if (mountedMode(mode)) {
+      if (abilityId != null && (!def || def.category !== 'quickAttack')) return false; // Mount Action 2 tap accepts only learned, registered ordinary Quick Attacks.
+      if (abilityId == null) delete mountedLoadoutsByWeapon[key];
+      else mountedLoadoutsByWeapon[key] = { tap2: abilityId };
+      persist();
+      return true;
+    }
     if (!loadoutsByWeapon[key]) loadoutsByWeapon[key] = { ...DEFAULT_SLOT_LOADOUT };
     loadoutsByWeapon[key][slotId] = abilityId;
     persist();
@@ -133,12 +154,19 @@
   }
 
   function serialize() {
-    return JSON.parse(JSON.stringify(loadoutsByWeapon));
+    return JSON.parse(JSON.stringify({ ...loadoutsByWeapon, [MOUNTED_STORAGE_KEY]: mountedLoadoutsByWeapon })); // One atomic character record preserves both contexts.
   }
 
   function load(saved) {
     loadoutsByWeapon = {};
+    mountedLoadoutsByWeapon = {};
     if (!saved || typeof saved !== 'object') return;
+    const mountRecords = saved[MOUNTED_STORAGE_KEY]; // Legacy saves have no mounted section and remain valid.
+    if (mountRecords && typeof mountRecords === 'object' && !Array.isArray(mountRecords)) {
+      for (const [key, slots] of Object.entries(mountRecords)) {
+        if (typeof slots?.tap2 === 'string' && slots.tap2 && slots.tap2 !== 'opportunistJab') mountedLoadoutsByWeapon[key] = { tap2: slots.tap2 };
+      }
+    }
     for (const [key, slots] of Object.entries(saved)) {
       if (!slots || typeof slots !== 'object') continue;
       const clean = {};
@@ -181,6 +209,8 @@
     SLOT_IDS,
     SLOT_FAMILY,
     SLOT_CATEGORIES,
+    MOUNTED_STORAGE_KEY,
+    isMounted,
     get: getLoadout,
     getSlot,
     setSlot,
