@@ -205,4 +205,24 @@ assert.equal(tothalSession.lightAllowed({x:34,y:1,z:14}),true,'Tothal keeps ligh
 assert.deepEqual(tothalSession.snapshot().localLightBoundary,
   {mode:'unclipped-tothal-overcast',active:false,canvasPasses:0},'mobile diagnostics distinguish the Tothal path');
 tothalSession.dispose();
-console.log('ruin-room-system: enclosure, door IDs, floor holes, lighting and enemy resets OK');
+const kanthicLayout={...layout,rooms:layout.rooms.map(room=>({...room,theme:'kanthic'}))}; // Compare Kanthic against the same independent physical rooms.
+const kanthicSession=Rooms.mount({layout:kanthicLayout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
+  getHostiles:()=>new Set(),getWalkers:()=>[],mapId:ruin,tile:TILE});
+kanthicSession.tick(.31);
+let kanthicDraws=0; // Counts one stable screen lighting pass, not projected room masks.
+const noKanthicClip={save(){throw Error('Kanthic cannot project a room light frame');},
+  clip(){throw Error('Kanthic cannot clip a room light frame');}};
+assert.equal(kanthicSession.withLightRegion(noKanthicClip,()=>{throw Error('Kanthic must not project room geometry');},
+  ()=>{kanthicDraws++;}),true);
+assert.equal(kanthicDraws,1,'Kanthic lighting is a viewport-stable overlay');
+assert.equal(kanthicSession.lightAllowed({x:14,y:1,z:14}),false,'Kanthic still rejects lights from separate rooms');
+assert.equal(kanthicSession.lightAllowed({x:34,y:1,z:14}),true,'Kanthic retains local brazier lighting');
+assert.deepEqual(kanthicSession.snapshot().localLightBoundary,
+  {mode:'unclipped-kanthic-screen-overlay',active:false,canvasPasses:0});
+kanthicSession.dispose();
+assert.match(fogSource,/const mistActive = active && currentArea !== 'map_i_dev_random_ruin'/,
+  'Kanthic must not render a moving 3D mist cylinder');
+assert.match(fogSource,/group\.visible = mistActive;/,'Kanthic hides all mist layers');
+assert.match(fogSource,/if \(!mistActive\) return;/,'Kanthic skips world-space mist updates');
+assert.doesNotMatch(fogSource,/ruinMistFade|inRuinShaft/,'old shaft-centered mist animation must not return');
+console.log('ruin-room-system: enclosure, stable Kanthic overlay, physical walls and enemy resets OK');
