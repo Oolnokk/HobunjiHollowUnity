@@ -25,7 +25,7 @@ const alreadySolid = { depthWrite: true, userData: { hobunjiXrayElevationShader:
 const unsupported = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: false, compileAttempted: true } } };
 const coldCompile = { depthWrite: false, userData: { hobunjiXrayElevationShader: { supported: false, compileAttempted: false } } }; // Shader not yet compiled during first world frame.
 const unrelated = { depthWrite: false, userData: {} };
-const materials = new Set([eligible, alreadySolid, unsupported, coldCompile, unrelated]);
+const materials = new Set([eligible, alreadySolid, unsupported, coldCompile]); // This set comes exclusively from the registered ground meshes.
 const saved = new Map();
 assert.equal(force(materials, saved), 3,
   'all registered ground without depth writes is repaired, even on the first frame or after shader fallback');
@@ -35,7 +35,7 @@ assert.equal(unsupported.depthWrite, true,
   'unsupported shaders fail closed with ordinary ground occlusion, not accidental x-ray outside the circle');
 assert.equal(coldCompile.depthWrite, true,
   'first-frame ground depth does not depend on an already compiled elevation shader');
-assert.equal(unrelated.depthWrite, false, 'unrelated transparent materials are never overridden');
+assert.equal(unrelated.depthWrite, false, 'unregistered transparent materials are not passed to the ground-only override');
 assert.equal(alreadySolid.depthWrite, true, 'already solid materials remain unchanged');
 assert.equal(force(materials, saved), 0, 'multiple groups do not save/rewrite an already repaired material');
 restore(saved);
@@ -60,7 +60,11 @@ assert.equal(!testDistance(0.5, 0.5), false, 'inside ground is excluded from the
 assert.equal(!testDistance(2.5, 0.5), true, 'outside ground must be able to occlude the weapon');
 
 assert.match(source, /if \(group\.regions\.length\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(groundMaterials, depthMaterialStates\);/,
-  'the live replay applies depth writes only for groups using the circle filter');
+  'the local floor-exception path rebuilds its registered ground depth');
+assert.match(source, /else if \(ordinaryGroundMaterials\.size\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(ordinaryGroundMaterials, depthMaterialStates\);/,
+  'ordinary above-floor equipment also rebuilds missing ground depth instead of x-raying outside the circle');
+assert.match(source, /hideOrdinaryDepthRedraws\(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes\)/,
+  'the optimized ordinary replay retains the precise ground leaves whose base material omitted depth');
 assert.match(source, /restoreMaterialStates\(depthMaterialStates\);/,
   'material state returns to normal after the colorless depth draw');
 assert.match(source, /forcedGroundDepthMaterials: lastForcedGroundDepthMaterials/,
