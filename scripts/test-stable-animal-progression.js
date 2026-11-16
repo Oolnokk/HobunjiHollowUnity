@@ -133,8 +133,8 @@ assert(!api.trees.companion.some(perk => /XP/i.test(perk.desc) || perk.id === 'f
 assert(!api.trees.shoulderPet.some(perk => /XP/i.test(perk.desc) || perk.id === 'perchLessons'), 'shoulder pets have no XP multiplier perk');
 assert(!api.trees.mount.some(perk => perk.id === 'rapportBond' || /XP/i.test(perk.desc) || perk.id === 'roadLessons'), 'mounts have neither rapport nor XP multiplier perks');
 assert.deepEqual(Array.from(api.trees.mount, perk => perk.id),
-  ['mountSpeed', 'mountAcceleration', 'mountManeuverability', 'mountMeleeDamage', 'mountMeleeStamina', 'mountCombatBurst'],
-  'mount tree focuses on riding and mounted melee; obsolete cliff-only ranks are retired');
+  ['mountSpeed', 'mountAcceleration', 'mountManeuverability', 'mountCliffClimb', 'mountMeleeDamage', 'mountMeleeStamina', 'mountCombatBurst'],
+  'mount tree keeps useful climbing training while adding mounted melee training');
 
 api.awardXp('comp1', 181, 'test');
 assert.equal(stable[0].level, 3, 'XP crosses level 0->1, 1->2, and 2->3 thresholds');
@@ -166,7 +166,7 @@ assert(companions.has(shoulder) && companions.has(mount), 'temporarily filtered 
 
 stable[1].level = 20;
 stable[1].animalPerks = { mountSpeed: 1, mountAcceleration: 1, mountManeuverability: 1,
-  mountMeleeDamage: 2, mountMeleeStamina: 3, mountCombatBurst: 4, mountCliffClimb: 1 }; // Legacy Cliff Runner should be refunded, never applied.
+  mountMeleeDamage: 2, mountMeleeStamina: 3, mountCombatBurst: 4, mountCliffClimb: 1 }; // Existing Cliff Runner investment stays active alongside combat perks.
 context.Mounts.updateMountedMovement(0.5);
 assert.equal(mountedChecks.speed, 104, 'Fleet Stride scales only the mount riding top speed');
 assert.equal(mountedChecks.accel, 11, 'Quick Start scales the existing mount acceleration');
@@ -177,10 +177,10 @@ const mountedTraining = api.mountRidingModifiers(); // Existing perk API is also
 assert(Math.abs(mountedTraining.meleeDamage - 1.12) < 1e-9, 'Battle Saddle scales actual melee impact damage');
 assert(Math.abs(mountedTraining.meleeStamina - 0.85) < 1e-9, 'Weapon Discipline reduces mounted melee stamina spending');
 assert(Math.abs(mountedTraining.combatBurstDuration - 1.32) < 1e-9, 'Sustained Gallop increases technique bursts');
-assert(!('mountCliffClimb' in stable[1].animalPerks), 'obsolete Cliff Runner ranks are refunded on normalization');
+assert.equal(stable[1].animalPerks.mountCliffClimb, 1, 'existing useful Cliff Runner ranks survive normalization');
 mountRideState = 'climbLeap';
 context.Mounts.updateMountRide(1);
-assert.equal(mountedChecks.rideDt, 1, 'cliff-crossing remains unchanged by retired training perks');
+assert.equal(mountedChecks.rideDt, 1.1, 'Cliff Runner continues to accelerate the existing mounted cliff-leap');
 mountRideState = 'mounted';
 
 stable[2].level = 3;
