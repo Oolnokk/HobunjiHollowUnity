@@ -985,6 +985,8 @@
     try {
       const composed = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); // Sleep wrapper first selects run2 and closed eyes.
       if (!composed || !sleepingBabies.has(key)) return;
+      await window.BabyAnimalHeadWarp?.ensureIdleMask?.(slot.baby.kind, composed); // This requested 'idle' composite defines the silhouette shared with every other pose.
+      if (!sleepingBabies.has(key)) return;
       const canvas = window.BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind) || composed; // Baby-only warp preserves the adult genotype canvas.
       const front = new THREE.CanvasTexture(canvas); // Front genotype texture.
       const back = new THREE.CanvasTexture(canvas); // Mirrored back genotype texture.
