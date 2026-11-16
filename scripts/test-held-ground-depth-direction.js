@@ -42,7 +42,7 @@ const shaderStart = source.indexOf('  function installGroundElevationShader(');
 const shaderEnd = source.indexOf('  function isRoadXrayMesh(', shaderStart);
 assert(shaderStart >= 0 && shaderEnd > shaderStart);
 const shaderCode = source.slice(shaderStart, shaderEnd);
-assert.match(shaderCode, /dot\(offsetFromActor, offsetFromActor\) <= 2\.250000/,
+assert.ok(shaderCode.includes('dot(offsetFromActor, offsetFromActor) <= ${(XRAY_CIRCLE_RADIUS * XRAY_CIRCLE_RADIUS).toFixed(6)}'),
   'the authored three-tile circle has not been expanded or inverted');
 assert.match(shaderCode, /if \(uHobunjiXrayElevationEnabled > 1\.5\) \{ if \(hobunjiXrayNearFloor < 0\.5\) discard; \}/,
   'mode 2 still isolates the local floor for stencil punching');
