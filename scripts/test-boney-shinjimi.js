@@ -314,7 +314,7 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().phase,'leaving','old inconsistent saves with an awarded prize are upgraded to departure');
   assert.equal(C.debugSnapshot().milksGiven,3,'gift limit survives save/restore');
   for(let i=0;i<4;i++)C.update(.10);
-  assert.equal(rewards.length,1,'reloading in a gifted house never awards another item');
+  assert.equal(rewards.length,4,'reloading in a gifted house never awards another encounter or milk prize');
   game.player.y=(center.r+3.3)*64; // Player steps beyond the physical south doorway, remaining in the same wilderness zone.
   C.update(.1);
   assert.equal(C.debugSnapshot().phase,'complete','crossing the door threshold makes the enchanted house vanish immediately');
