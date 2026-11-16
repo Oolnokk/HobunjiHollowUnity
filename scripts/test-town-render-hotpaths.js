@@ -783,10 +783,11 @@ assert.equal(uniforms.enabled.value, 1);
 assert.equal(uniforms.elevation.value, tileBatch.elevation);
 assert.equal(uniforms.centerCount.value, 2);
 assert.equal(uniforms.centers.value, tileBatch.centers);
+assert.equal(uniforms.radiiSq.value, tileBatch.radiiSq, 'each packed holder passes its own squared X-ray radius to the ground shader');
 setFilter(filterStates, null);
 assert.equal(uniforms.enabled.value, 0, 'ordinary depth and subsequent lighting passes disable the tile filter');
-assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= 2\.250000/,
-  'shader performs one world-space circular radius test per candidate center');
+assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= uHobunjiXrayRadiiSq\[i\]/,
+  "shader performs one world-space circle test against each holder's live squared radius");
 assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldXZ = hobunjiXrayWorldPosition.xz;'));
 const sharedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
