@@ -275,6 +275,7 @@
     }
     state.base = next.filter(Boolean).slice(0, BASE_LIMIT);
     persist();
+    if (def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // An owned ordinary weapon gaining Fey magic also starts the one-time investigation.
     return true;
   }
 
@@ -291,6 +292,7 @@
     if (enchantmentId) state.flourishes[slotId] = enchantmentId;
     else delete state.flourishes[slotId];
     persist();
+    if (def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // Flourish-only Fey equipment follows the same acquisition rule.
     return true;
   }
 
