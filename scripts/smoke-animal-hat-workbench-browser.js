@@ -219,7 +219,41 @@ async function spritePng(page, animal) {
     await page.locator('#babyHeadCompare').click();
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
     await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
-    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile hat and baby-head editing');
+    // Grehlr's REAL 3000×2250 sprite previously exceeded the 4MP idle-mask ceiling.
+    // The failed warp then allocated a full canvas for every preview triangle until the mobile tab crashed.
+    await page.locator('#loadBestiary').click();
+    await page.waitForFunction(() => [...document.querySelectorAll('#animalSelect option')].some(option => option.textContent.trim() === 'Grehlr'));
+    const grehlrOption = await page.locator('#animalSelect').evaluate(select =>
+      [...select.options].find(option => option.textContent.trim() === 'Grehlr')?.value);
+    assert(grehlrOption, 'Grehlr must appear in the real bestiary');
+    await page.locator('#animalSelect').selectOption(grehlrOption);
+    await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000
+      && window.__animalHeadRigBabyPreview?.debugSnapshot()?.idleMaskPixels > 0,
+    null, { timeout: 60000 });
+    const largeSprite = await page.evaluate(() => {
+      const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr');
+      const texture = previewImageForAnimal(state.image);
+      const layers = previewSplitLayerCanvases();
+      return {
+        original: [state.image.naturalWidth, state.image.naturalHeight],
+        maskPixels: headMask.width * headMask.height,
+        maskOpaque: headMask.opaquePixels,
+        previewPixels: texture.width * texture.height,
+        splitPixels: layers.left.width * layers.left.height,
+        error: window.__animalHeadRigBabyPreview.debugSnapshot().lastError,
+        shoulderEnabled: document.getElementById('shoulderRestUseSpline').checked,
+        splitEnabled: document.getElementById('shoulderRestSplitFrame').checked,
+      };
+    });
+    assert.deepEqual(largeSprite.original, [3000, 2250], 'the original large sprite remains unmodified');
+    assert(largeSprite.maskOpaque > 0 && largeSprite.maskPixels <= 1024 * 1024,
+      'Grehlr receives an actual opaque-idle head mask with bounded memory');
+    assert(largeSprite.previewPixels <= 1_250_000 && largeSprite.splitPixels <= 1_250_000,
+      'both baby preview and shoulder-split layers remain bounded despite full-resolution input');
+    assert(largeSprite.shoulderEnabled && largeSprite.splitEnabled,
+      'Grehlr retains its authored shoulder spline and split settings');
+    assert.equal(largeSprite.error, null, 'head resizing succeeds with the authentic Grehlr sprite');
+    assert.deepEqual(errors, [], 'no uncaught JavaScript errors during mobile editing or full-size Grehlr load');
     console.log('PASS mobile hat editor: catalog, PNG import, hat-only preview, smudge, undo/redo, export, clear, neck tab');
   } catch (error) {
     console.error('Hat editor browser errors:', errors.join('\n'));
