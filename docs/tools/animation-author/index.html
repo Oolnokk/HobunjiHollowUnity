@@ -15023,6 +15023,7 @@ clearAnimationActors = function(...args) {
 // transformed to make the preview line up.
 let shoulderCarrierPreviewV1553 = null; // Owns the unselectable NPC and its disposable rendering resources.
 let shoulderCarrierTaskV1553 = null; // One in-flight portrait build; inspector redraws do not duplicate it.
+let shoulderCarrierRequestedV1553 = null; // In-flight actor/NPC choice used to reject stale portraits after quick selections.
 let shoulderCarrierGenerationV1553 = 0; // Discards stale asynchronous builds after a selection or mode change.
 let shoulderCarrierNpcIdV1553 = null; // Editor-only NPC choice, shared when the user swaps animals.
 let shoulderCarrierCandidatesV1553 = null; // One representative repository NPC for each authored species/gender.
@@ -15038,7 +15039,9 @@ function shoulderCarrierNpcChoicesV1553() {
   const unique = new Map(); // Keeps the switcher small when many NPCs have the same species/gender.
   for (const npc of state.npcs || []) {
     if (!npc) continue;
-    const appearance = portraitExportFor(npc)?.appearance;
+    let appearance;
+    try { appearance = portraitExportFor(npc)?.appearance; }
+    catch (error) { log('Skipping invalid carrier NPC ' + String(npc.id || npc.name) + ': ' + error.message, 'warn'); continue; }
     const key = characterRigProfileKey({ appearance });
     if (!animationAuthor.attachmentRigProfiles.characters?.[key] || unique.has(key)) continue;
     unique.set(key, { npcId: String(npc.id || npc.name), label: npc.name || npc.id || key, key });
@@ -15051,6 +15054,7 @@ function shoulderCarrierNpcChoicesV1553() {
 function disposeShoulderCarrierV1553() {
   ++shoulderCarrierGenerationV1553;
   shoulderCarrierTaskV1553 = null;
+  shoulderCarrierRequestedV1553 = null;
   const preview = shoulderCarrierPreviewV1553;
   shoulderCarrierPreviewV1553 = null;
   preview?.feet?.dispose?.();
@@ -15095,6 +15099,7 @@ async function buildShoulderCarrierV1553(actor, npcId) {
   const npc = state.npcs.find(entry => String(entry?.id || entry?.name) === npcId);
   if (!npc) { shoulderCarrierStatusV1553('No matching repository NPC.'); return; }
   shoulderCarrierStatusV1553('Building temporary ' + (npc.name || npc.id) + ' portrait…');
+  shoulderCarrierRequestedV1553 = { creatureId: actor.id, npcId }; // Guards a still-loading carrier against a newly selected creature.
   const task = (async () => {
     const avatar = await buildAvatarRender(npc); // Exactly the portrait compositor already used by Rig Coordinates' reference NPC.
     if (generation !== shoulderCarrierGenerationV1553 || !shoulderCarrierEditingV1553(actor)
@@ -15137,22 +15142,21 @@ async function buildShoulderCarrierV1553(actor, npcId) {
     visualOffset.add(perch);
     applyTransformSnapshot(perch, profile.anchors.shoulderPerch);
     animationAuthor.modeRoots.rig.add(root);
+    shoulderCarrierPreviewV1553 = {
+      npcId, creatureId: actor.id, profileKey, label: npc.name || npc.id || profileKey,
+      root, visualOffset, perch, model, feet: null, perchSignature: JSON.stringify(profile.anchors.shoulderPerch),
+    }; // Own the root before optional leg construction so every failed build is disposable.
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, visualOffset, {
       speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: avatar.profile?.bodyColors,
       modelWidth, modelHeight, handAttachY: model.userData.handAttachY, profile: avatar.profile,
       name: root.name + '_feet', portraitSize: avatar.front.width || 200,
     }) || null; // Same feet pipeline as the existing unselectable rig reference NPC.
+    shoulderCarrierPreviewV1553.feet = feet;
     feet?.update?.(0, 0, false, null);
     if (generation !== shoulderCarrierGenerationV1553 || selectedAnimationActor() !== actor) {
-      feet?.dispose?.();
-      root.removeFromParent();
-      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
+      disposeShoulderCarrierV1553();
       return;
     }
-    shoulderCarrierPreviewV1553 = {
-      npcId, creatureId: actor.id, profileKey, label: npc.name || npc.id || profileKey,
-      root, visualOffset, perch, model, feet, perchSignature: JSON.stringify(profile.anchors.shoulderPerch),
-    };
     syncShoulderCarrierV1553();
     shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · inverse perch/grip placement · animal fixed at Small.');
     frameAllAnimationActors('angle');
@@ -15166,7 +15170,10 @@ async function buildShoulderCarrierV1553(actor, npcId) {
       log('Shoulder carrier preview: ' + (error.stack || error.message), 'warn');
     }
   } finally {
-    if (shoulderCarrierTaskV1553 === task) shoulderCarrierTaskV1553 = null;
+    if (shoulderCarrierTaskV1553 === task) {
+      shoulderCarrierTaskV1553 = null;
+      shoulderCarrierRequestedV1553 = null;
+    }
   }
 }
 
@@ -15255,7 +15262,9 @@ renderAttachmentRigInspector = function(...args) {
     syncShoulderCarrierV1553();
     shoulderCarrierStatusV1553('Carrier: ' + shoulderCarrierPreviewV1553.profileKey
       + ' · inverse perch/grip placement · animal fixed at Small.');
-  } else if (!shoulderCarrierTaskV1553) {
+  } else if (!shoulderCarrierTaskV1553
+      || shoulderCarrierRequestedV1553?.creatureId !== actor.id
+      || shoulderCarrierRequestedV1553?.npcId !== shoulderCarrierNpcIdV1553) {
     buildShoulderCarrierV1553(actor, shoulderCarrierNpcIdV1553);
   } else shoulderCarrierStatusV1553('Building temporary NPC portrait…');
   syncRigWorldAxesV1553();
@@ -15286,6 +15295,15 @@ frameAllAnimationActors = function(view = 'angle') {
   state.three.camera.lookAt(center);
   state.three.controls?.target.copy(center);
   state.three.controls?.update();
+};
+const baseSetAnimationAuthorModeV1553 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode, ...args) {
+  if (mode !== 'rig' && animationAuthor.mode === 'rig') {
+    disposeShoulderCarrierV1553();
+    for (const actor of animationAuthor.actors) restoreShoulderGripSmallV1553(actor);
+    if (rigWorldAxesV1553) rigWorldAxesV1553.visible = false;
+  }
+  return baseSetAnimationAuthorModeV1553(mode, ...args);
 };
 const baseRemoveAnimationActorV1553 = removeAnimationActor;
 removeAnimationActor = function(id) {
