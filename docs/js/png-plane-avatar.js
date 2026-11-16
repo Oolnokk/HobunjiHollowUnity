@@ -1753,6 +1753,10 @@
     group.remove(backPlane);
     group.add(front.mesh);
     group.add(back.mesh);
+    // The compositor, mist-depth occluder and mobile Pixel Probe must address
+    // the visible skinned cards, not the rigid meshes removed from this group.
+    avatarRef.frontPlane = front.mesh;
+    avatarRef.backPlane = back.mesh;
 
     const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
     const state = {
