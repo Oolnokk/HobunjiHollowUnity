@@ -32,6 +32,7 @@ function directory(name, counters) {
           kind: 'file',
           replaceBytesPreservingMetadata(next) { raw = String(next); }, // Models an external restore that preserves file size and modification time.
           getFile: async () => {
+            counters.reads.push(name + '/' + key); // Verifies a fast lock save does not even inspect large farm/recovery files.
             if (counters.onFileRead) {
               const listener = counters.onFileRead; // Single injected in-flight edit for no-op race regression.
               counters.onFileRead = null;
@@ -62,7 +63,7 @@ function directory(name, counters) {
 }
 
 async function main() {
-  const counters = { clock: 0, writes: [], fail: false }; // Records real canonical/manifest writes for assertions.
+  const counters = { clock: 0, writes: [], reads: [], fail: false }; // Records real canonical/manifest writes for assertions.
   const folder = directory('primary', counters);
   const native = new Map(); // Browser cache that survives each simulated save.
   const localStorage = {
@@ -97,6 +98,7 @@ async function main() {
   };
   const window = {
     addEventListener() {},
+    __hobunjiPlayerProfile: { characterId: 'char', worldId: 'world' },
     showDirectoryPicker: async () => folder,
     HobunjiSaveSnapshot: {
       browserCacheParts: () => [localStorage.getItem('hobunjiSaveMeta'), 'world', localStorage.getItem('hobunji_farm_layout_v3:world')],
@@ -278,7 +280,65 @@ async function main() {
   const persistedLarge = JSON.parse(await (await largeFolder.folders.get('farm-layouts').files.get('world.json').getFile()).text());
   assert.equal(persistedLarge.layout.tiles.length, 20000, 'all large farm tiles remain intact after the world-only save');
 
-  console.log('OK  incremental saves, no-op autosaves, protected farm layouts, external edits, recovery transitions, write retries, world deletion and large-farm stress');
+  // Lockpicking's first failure writes a tiny penalty; it must not scan or
+  // rewrite the 20,000-tile farm, or rewrite massive rolling checkpoints.
+  const lockRecord = { version: 2, tier: 1, stage: 0, misses: 1, streak: 0, streakScore: 0,
+    bestStreak: 0, bestScore: 0, failedStage: 0, folderUnsynced: true }; // Durable first-failure penalty owned by the current character.
+  meta.characters[0].chestLockProgress = { world: { 'chest-a': lockRecord } };
+  saveMeta();
+  assert.equal(window.LocalSaveFolder.canSaveLockProgress('char'), true, 'the verified character baseline enables fast saving');
+  const quickWritesBefore = counters.writes.length;
+  const quickReadsBefore = counters.reads.length;
+  const quick = await window.LocalSaveFolder.saveLockProgress({
+    characterId: 'char', worldId: 'world', lockId: 'chest-a', record: lockRecord,
+  });
+  assert.equal(quick.lastError, null, 'first-failure character-only folder commit succeeds');
+  assert.equal(quick.lastAction, 'autosaved-lock-progress');
+  assert.equal(quick.saveFileWork.written, 1, 'only the character canonical JSON is rewritten');
+  assert.equal(quick.recoveryRefreshPending, true, 'full recovery refresh remains scheduled for the next ordinary autosave');
+  assert.deepEqual(counters.writes.slice(quickWritesBefore),
+    ['characters/farmer-char.json', 'large-farm/manifest.json'],
+    'fast save does not write any world/farm/recovery files');
+  assert.equal(counters.reads.slice(quickReadsBefore).some(name => name.startsWith('farm-layouts/')), false,
+    'fast save never reads the large farm layout, even for integrity scanning');
+  const largeCharacterFile = largeFolder.folders.get('characters').files.get('farmer-char.json');
+  assert.equal(JSON.parse(await (await largeCharacterFile.getFile()).text()).chestLockProgress.world['chest-a'].misses, 1,
+    'reloading canonical character bytes preserves the first-try failure');
+  assert.equal(JSON.parse(await (await largeCharacterFile.getFile()).text()).chestLockProgress.world['chest-a'].folderUnsynced, false,
+    'reloading a successfully committed lock does not demand a redundant retry');
+  assert.equal(JSON.parse(await (await largeFolder.folders.get('farm-layouts').files.get('world.json').getFile()).text()).layout.tiles.length,
+    20000, 'character-only save preserves the entire farm');
+
+  // A browser quota failure must not replace the just-committed character with
+  // an old character lacking this penalty during the deferred full autosave.
+  delete meta.characters[0].chestLockProgress;
+  saveMeta();
+  const stale = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(stale.lastAction, 'autosync-blocked-lock-progress', 'stale browser metadata cannot erase durable lock penalties');
+  assert.equal(JSON.parse(await (await largeCharacterFile.getFile()).text()).chestLockProgress.world['chest-a'].misses, 1);
+  meta.characters[0].chestLockProgress = { world: { 'chest-a': { ...lockRecord, folderUnsynced: false } } };
+  saveMeta();
+  const recoveryCatchup = await window.LocalSaveFolder.syncNow({ automatic: true });
+  assert.equal(recoveryCatchup.lastError, null, 'regular full autosave can follow the fast lock save');
+  assert.equal(recoveryCatchup.recoveryRefreshPending, false, 'deferred recovery work is complete');
+  assert.equal(recoveryCatchup.saveFileWork.written, 0, 'the acknowledged lock progress is already durable; full recovery refresh need not rewrite canonical files');
+
+  // Even same-size, same-timestamp external edits to the CHARACTER file must
+  // be rejected rather than silently overwritten by the targeted path.
+  const originalCharacterBytes = await (await largeCharacterFile.getFile()).text();
+  const externallyEditedCharacter = originalCharacterBytes.replace('"coins":10', '"coins":99');
+  assert.notEqual(externallyEditedCharacter, originalCharacterBytes);
+  assert.equal(externallyEditedCharacter.length, originalCharacterBytes.length);
+  largeCharacterFile.replaceBytesPreservingMetadata(externallyEditedCharacter);
+  const rejected = await window.LocalSaveFolder.saveLockProgress({
+    characterId: 'char', worldId: 'world', lockId: 'chest-a',
+    record: { ...lockRecord, misses: 2 },
+  });
+  assert.equal(rejected.lastAction, 'save-error', 'externally edited canonical character data blocks a fast save');
+  assert.match(rejected.lastError, /changed outside this session/i);
+  assert.equal(await (await largeCharacterFile.getFile()).text(), externallyEditedCharacter, 'outside edits are preserved');
+
+  console.log('OK  incremental saves, lock-progress fast commits, quota rollback protection, no-op autosaves, protected farm layouts, external edits, recovery transitions, retries and large-farm stress');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -10,6 +10,7 @@
 
   const META_KEY = 'hobunjiSaveMeta';
   const pending = new Map(); // Progression fields waiting for an idle save, keyed by the character that earned them.
+  const pendingMutations = new Map(); // Keyed character-field mutations for already-folder-backed events, merged into later full captures without a huge synchronous localStorage write.
   let queued = false; // One idle callback serves all pending character updates.
 
   function write(characterId, mutator) {
@@ -20,9 +21,11 @@
       if (!character) return false;
       const patch = pending.get(characterId); // An immediate save can include this character's queued progression.
       if (patch) Object.assign(character, patch);
+      for (const change of pendingMutations.get(characterId)?.values() || []) change(character, meta); // Apply narrow pending lock-progress deltas without replacing sibling lock records.
       mutator?.(character, meta);
       localStorage.setItem(META_KEY, JSON.stringify(meta));
       pending.delete(characterId);
+      pendingMutations.delete(characterId); // Browser now contains each staged character change.
       return true;
     } catch {
       return false;
@@ -31,7 +34,7 @@
 
   function flush() {
     if (window.HobunjiSessionPersistenceStartupGuard?.exitFlushSuppressed?.()) return;
-    for (const characterId of pending.keys()) write(characterId);
+    for (const characterId of new Set([...pending.keys(), ...pendingMutations.keys()])) write(characterId);
   }
 
   function capturePending(meta) {
@@ -39,7 +42,17 @@
     for (const character of (meta?.characters || [])) {
       const patch = pending.get(character.id); // The queue stays intact for a later browser write.
       if (patch) Object.assign(character, patch);
+      for (const change of pendingMutations.get(character.id)?.values() || []) change(character, meta); // Folder snapshots always include staged, not-yet-browser-mirrored lock progress.
     }
+  }
+
+  function stageMutation(key, mutate) {
+    const characterId = window.__hobunjiPlayerProfile?.characterId; // The current character owns the in-memory delta until a verified folder commit or later browser flush.
+    if (!characterId || typeof key !== 'string' || !key || typeof mutate !== 'function') return false;
+    let changes = pendingMutations.get(characterId); // Stable keys collapse repeated attempts at one lock rather than retaining every mutation closure.
+    if (!changes) pendingMutations.set(characterId, changes = new Map());
+    changes.set(key, mutate);
+    return true;
   }
 
   function schedule(patch) {
@@ -63,5 +76,5 @@
     return !!characterId && typeof mutator === 'function' && write(characterId, mutator);
   }
 
-  window.CharacterMetaSave = Object.freeze({ META_KEY, update, schedule, flush, capturePending });
+  window.CharacterMetaSave = Object.freeze({ META_KEY, update, schedule, stageMutation, flush, capturePending });
 })();

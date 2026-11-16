@@ -40,6 +40,8 @@
   let lastOutcome = null; // Last completed/cancelled chest, visible in the debug snapshot.
   let mounted = false; // Prevents duplicate event handlers when a chest is reopened.
   let lastSaveStatus = 'not attempted'; // Shown in mobile diagnostics when storage or a character profile is unavailable.
+  let lastFolderSaveDurationMs = null; // Actual time spent waiting for the most recent first-failure folder commit, visible on mobile.
+  let lastFolderSaveAction = null; // Shows whether the character-only or full-snapshot fallback was used.
   let retrySaveButton = null; // Touch-accessible retry when a primary-folder write was rejected or failed.
   const folderOnlyProgress = new Map(); // Per-character/world lock state staged in CharacterMetaSave when browser storage is full; used on same-session reentry.
 
@@ -63,9 +65,11 @@
     const scope = profileScope();
     if (!scope || typeof localStorage === 'undefined') return null;
     try {
-      const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
-      const saved = folderOnlyProgress.get(progressKey(scope,id))
-        || meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      let saved = folderOnlyProgress.get(progressKey(scope,id)); // A queued folder-backed lock does not need to reparse the enormous browser meta on reentry.
+      if (!saved) {
+        const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
+        saved = meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      }
       if (!saved || saved.version !== PROGRESS_VERSION || saved.tier !== tier) return null;
       return {
         stage:safeInt(saved.stage, stages - 1), misses:safeInt(saved.misses, 9999),
@@ -78,19 +82,44 @@
     } catch (error) { describeError(error); return null; }
   }
 
-  function saveProgress(state, reason) {
-    const scope = profileScope();
-    if (!scope) { lastSaveStatus = 'No character/world loaded (test or pre-boot)'; return true; }
-    if (!window.CharacterMetaSave?.update) { lastSaveStatus = 'Character save unavailable'; return false; }
-    const record = {
+  function progressRecord(state) {
+    return {
       version:PROGRESS_VERSION, tier:state.tier, stage:state.stage, misses:state.misses,
       streak:state.streak, streakScore:state.streakScore,
       bestStreak:state.bestStreak, bestScore:state.bestScore,
       failedStage:state.failedStage ? state.stage : null,
       folderUnsynced:state.folderUnsynced === true, // A browser-only failure cannot be laundered into a fresh folder-backed attempt.
     }; // Stored per lock; no reset on cancel and no second fresh chance after a saved failure.
+  }
+
+  function saveProgress(state, reason) {
+    const scope = profileScope();
+    if (!scope) { lastSaveStatus = 'No character/world loaded (test or pre-boot)'; return true; }
+    if (!window.CharacterMetaSave?.update) { lastSaveStatus = 'Character save unavailable'; return false; }
+    const record = progressRecord(state); // Shared with the character-only primary-folder path so both formats are identical.
     const fingerprint = JSON.stringify(record); // Skips redundant metadata rewrites on successful closure or unchanged cancellation.
     if (state.persistedSignature === fingerprint) { lastSaveStatus = 'Already saved (' + reason + ')'; return true; }
+    const folder = window.LocalSaveFolder; // Only events with an immediate verified primary-folder commit may bypass the synchronous browser-meta rewrite.
+    const fastSecuredStage = reason.startsWith('secured set '); // Secure completed sets in the same small folder commit as failed stages.
+    const fastReason = fastSecuredStage || reason.startsWith('first failure at set ') || reason === 'retry failed lock save'
+      || reason === 'folder failure-save acknowledged';
+    if (fastReason && folder?.canSaveLockProgress?.(scope.characterId) && typeof window.CharacterMetaSave.stageMutation === 'function') {
+      const stagedRecord = JSON.parse(fingerprint); // Preserve this exact lock state even when the mutable session advances during disk I/O.
+      if (fastSecuredStage) stagedRecord.folderUnsynced = true; // A completed set is not acknowledged until its actual folder commit succeeds.
+      const staged = window.CharacterMetaSave.stageMutation('lock:' + scope.worldId + ':' + state.id, character => {
+        character[PROGRESS_FIELD] ||= {};
+        character[PROGRESS_FIELD][scope.worldId] ||= {};
+        character[PROGRESS_FIELD][scope.worldId][state.id] = stagedRecord;
+      }); // capturePending merges this one lock into live folder snapshots; other locks and fields stay unchanged.
+      if (staged) {
+        folderOnlyProgress.set(progressKey(scope, state.id), stagedRecord);
+        state.folderUnsynced = stagedRecord.folderUnsynced;
+        state.folderFallback = fastSecuredStage; // Existing completed-set flow blocks progression until the targeted folder write confirms success.
+        state.persistedSignature = JSON.stringify(stagedRecord);
+        lastSaveStatus = 'Staged for targeted primary-folder commit: ' + reason;
+        return true;
+      }
+    }
     let ok = window.CharacterMetaSave.update(character => {
       character[PROGRESS_FIELD] ||= {};
       character[PROGRESS_FIELD][scope.worldId] ||= {};
@@ -152,18 +181,24 @@
       return;
     }
     const previousSync = Number(status.lastSyncedAt) || 0; // Detect a folder operation that was skipped instead of committed.
+    const saveStartedAt = Date.now(); // Time from lock freeze to canonical acknowledgement, including any queued older save.
     Promise.resolve().then(() => {
-      const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Pin the just-recorded failure to its own disk write.
-      if (!captured?.ok || !captured.snapshot) throw new Error(captured?.error || 'Cannot capture the current character save for the primary folder.');
       const scope = profileScope();
+      if (folder.canSaveLockProgress?.(scope?.characterId) && typeof folder.saveLockProgress === 'function') {
+        return folder.saveLockProgress({ characterId:scope.characterId, worldId:scope.worldId, lockId:state.id, record:progressRecord(state) }); // Only the failed lock's canonical character data needs an immediate durable write.
+      }
+      const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Without a verified incremental baseline, retain the full guarded save path.
+      if (!captured?.ok || !captured.snapshot) throw new Error(captured?.error || 'Cannot capture the current character save for the primary folder.');
       const serialized = captured.snapshot.meta?.characters?.find(character => character.id === scope?.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[state.id];
       if (!serialized || serialized.stage !== state.stage || serialized.folderUnsynced !== true) {
         throw new Error('The primary-folder snapshot does not include the latest secured set or failure penalty.');
       } // A folder-only save may have pending metadata even when the browser copy is full.
       return folder.syncNow({ automatic:true, reason:'lockpicking-first-failure', snapshot:captured.snapshot }); // A pinned snapshot queues AFTER an in-flight autosave instead of reusing its stale Promise.
     }).then(saved => {
+      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
+      lastFolderSaveAction = saved?.lastAction || 'unknown';
       const committed = saved?.state === 'ready'
-        && (saved.lastAction === 'autosaved-browser-to-folder' || saved.lastAction === 'autosaved-primary-recovery-error')
+        && (saved.lastAction === 'autosaved-browser-to-folder' || saved.lastAction === 'autosaved-primary-recovery-error' || saved.lastAction === 'autosaved-lock-progress')
         && Number(saved.lastSyncedAt) > previousSync
         && (!saved.lastError || saved.lastAction === 'autosaved-primary-recovery-error');
       state.savePending = false;
@@ -183,6 +218,8 @@
       announce(state.phase === 'playing' ? 'Failure saved. Continue from the secured sets.' : 'Primary folder save failed. Retry the save before picking further.');
       render();
     }).catch(error => {
+      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
+      lastFolderSaveAction = 'save-error';
       describeError(error);
       state.savePending = false;
       state.saveFailed = true;
@@ -528,6 +565,7 @@
       streak:session?.streak||0, bestStreak:session?.bestStreak||0, bestScore:session?.bestScore||0,
       bonusDrops:session?bonusDrops(session):0, failedStage:session?.failedStage||false,
       stutters:session?.stutters||0, lastStallMs:session?.lastStallMs||0, lastSaveStatus,
+      lastFolderSaveDurationMs, lastFolderSaveAction, // Copyable on-device timing and path diagnostics.
       savePending:session?.savePending||false, saveFailed:session?.saveFailed||false,
       pendingStageSave:session?.pendingStageSave||false,
       pendingStageFolderSync:session?.pendingStageFolderSync||false, folderFallback:session?.folderFallback||false,
@@ -553,6 +591,10 @@
     }
     if (outcome === 'cancelled' && finished.phase === 'playing' && finished.rings.some(ring => ring.frozen)) {
       recordFailure(finished, 'Abandoned an in-progress set'); // Cancelling a nearly slipped set cannot preserve a flawless streak.
+      if (finished.savePending) {
+        announce('Saving your abandoned lock set. Cancel after the primary folder confirms the penalty.');
+        return false; // The cancel press must not discard a newly initiated disk write.
+      }
     }
     if (outcome !== 'invalid' && !saveProgress(finished, outcome)) finished.saveFailed = true;
     if (outcome === 'success' && (finished.saveFailed || finished.savePending || finished.folderUnsynced || finished.pendingStageSave)) {
