@@ -7983,12 +7983,24 @@
         const cacheKey = `${profileKind}::${anchorName}::${sizeScale.sizeClass}`;
         if (_creatureAttachmentAnchorCache.has(cacheKey)) return _creatureAttachmentAnchorCache.get(cacheKey);
         const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.anchors?.[anchorName]; // Unscaled canonical rig anchor.
+        // Trained flying birds have native perched sprites but no Rig Coordinates
+        // shoulderGrip export yet. Resolve a foot grip from their actual sprite
+        // height so they use the same live shoulderPerch pin as authored pets.
+        const birdDefinition = anchorName === 'shoulderGrip' && !Number.isFinite(anchor?.position?.y)
+          ? CREATURE_DB[kind] : null; // Reads the live species definition only when an authored grip is missing.
+        const birdSpriteHeight = birdDefinition?.isFlyingSpecies
+          ? Number(birdDefinition.modelWidth) * Number(birdDefinition.spriteAspect)
+          : NaN; // Native plane height before the genotype size-class transform.
+        const birdGrip = Number.isFinite(birdSpriteHeight) && birdSpriteHeight > 0
+          ? { x: 0, y: -birdSpriteHeight * sizeScale.y / 2, z: 0,
+              rotationDeg: { x: 0, y: 0, z: 0 }, source: 'native-flying-sprite-foot' }
+          : null; // Root-centred perched artwork: bottom centre is the virtual foot grip.
         const result = Number.isFinite(anchor?.position?.y) ? {
           x: (Number(anchor.position.x) || 0) * sizeScale.x,
           y: anchor.position.y * sizeScale.y,
           z: Number(anchor.position.z) || 0,
           rotationDeg: anchor.rotationDeg,
-        } : null;
+        } : birdGrip;
         _creatureAttachmentAnchorCache.set(cacheKey, result);
         return result;
       }
@@ -8072,6 +8084,7 @@
           worldQuaternion,
           perchWorldPosition: perchWorldPosition.clone(),
           gripWorldOffset: gripWorldOffset.clone(),
+          gripSource: grip.source || 'authored-shoulder-grip', // Reports whether the foot socket is authored or derived from a flying sprite.
           rotationFrameWorldQuaternion: selectedRotationQuaternion,
           perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
           rotationSource: resolvedRotationSource,
@@ -9288,6 +9301,7 @@
           authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
           alignedGripWorldPosition: alignedGripWorldPosition.toArray(),
           gripPerchError,
+          gripSource: finalTransform.gripSource || 'unavailable', // Mobile Pixel Probe shows which grip solved the final world attachment.
           authoritativeRootTransform: true,
           requestedRotationSource: finalTransform.requestedRotationSource,
           rotationSourceInverted: finalTransform.rotationSourceInverted,
