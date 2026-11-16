@@ -4,12 +4,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards the production full-transform shoulder pin.
+const attachmentSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8'); // Guards the production pin now owned by the feature module.
 const planeSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Guards the exact render-time world-yaw compensation.
-assert.match(gameSource,
+assert.match(attachmentSource,
   /function _applyShoulderPetFinalTransform\(c, finalTransform\)[\s\S]{0,1800}group\.quaternion\.copy\(localQuaternion\)/,
   'shoulder-pet full-transform helper applies the face-relative root quaternion');
-assert.match(gameSource,
+assert.match(attachmentSource,
   /const setCanonicalPlaneRotation = \(plane, y\) => \{[\s\S]{0,200}plane\.rotation\.set\(0, y, 0\);[\s\S]{0,300}setCanonicalPlaneRotation\(c\.avatarRef\.frontPlane, Math\.PI \/ 2\);[\s\S]{0,120}setCanonicalPlaneRotation\(c\.avatarRef\.backPlane, -Math\.PI \/ 2\);/,
   'final-transform attachment restores the canonical mirrored plane rotations');
 assert.match(planeSource,

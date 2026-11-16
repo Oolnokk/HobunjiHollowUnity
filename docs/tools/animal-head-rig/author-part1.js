@@ -13,6 +13,8 @@ const deepClone=v=>v==null?v:JSON.parse(JSON.stringify(v)); // Preserves arbitra
 const pretty=v=>JSON.stringify(v,null,2); // Canonical human-readable export formatting.
 const lerp=(a,b,t)=>a+(b-a)*t; // Brush-strength interpolation used by Influence and material reduction/restore.
 let drawScheduled=false; // Coalesces rapid brush pointer events so the always-live deformation preview redraws at most once per animation frame.
+let previewImageForAnimal = image => image; // Remains a no-op until the separate baby preview bridge is loaded after all existing author parts.
+let previewSplitLayerCanvases = () => splitLayerCanvases(); // Preview-only adapter; normal paint/composite splitting retains its unwarped source coordinates.
 
 function setStatus(message,ok=true){const n=$('status');n.textContent=message;n.className='status '+(ok?'ok':'error')}
 function sourceSize(){const i=state.image;return i?{width:i.naturalWidth||i.width,height:i.naturalHeight||i.height}:{width:0,height:0}}

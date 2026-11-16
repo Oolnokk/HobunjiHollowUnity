@@ -8028,108 +8028,15 @@
       // authored ROTATION is interpreted relative to the live face/neck bone.
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
-      const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
-      const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
-      const SHOULDER_PET_LEAN_AXIS = new THREE.Vector3(1, 0, 0); // Maps the front/back sprite planes' opposite Z rolls into one shared pet-local X lean.
-      const SHOULDER_PET_LEAN_QUATERNION = new THREE.Quaternion(); // Reused by the final perch/grip solver to avoid allocating a quaternion each animation frame.
-      function _shoulderPetSurfaceTransform(perch, grip, pet) {
-        const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
-          const degrees = rotationDeg || {};
-          return new THREE.Quaternion().setFromEuler(new THREE.Euler(
-            THREE.MathUtils.degToRad(Number(degrees.x) || 0),
-            THREE.MathUtils.degToRad(Number(degrees.y) || 0),
-            THREE.MathUtils.degToRad(Number(degrees.z) || 0),
-            'YXZ',
-          ));
-        };
-        playerMesh.updateWorldMatrix?.(true, false);
-        const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
-        const perchWorldPosition = perchFrame?.position
-          || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
-        const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Brief curiosity state: true selects the same authored attachment transform turned exactly 180° around local Y.
-        let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
-        let resolvedRotationSource = s_shoulderPetRotationSource;
-        switch (s_shoulderPetRotationSource) {
-          case 'body':
-            selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = 'player-body';
-            break;
-          case 'bodyNeckMidpoint': {
-            const bodyRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Body endpoint for the equal world-space midpoint below.
-            const neckRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : null; // Neck endpoint; rigid avatars safely fall back to the body frame.
-            if (!neckRotationSource) {
-              selectedRotationQuaternion = bodyRotationQuaternion;
-              resolvedRotationSource = 'player-body-fallback-no-neck';
-              break;
-            }
-            neckRotationSource.updateWorldMatrix?.(true, false);
-            const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
-            selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
-            resolvedRotationSource = 'player-body-neck-midpoint';
-            break;
-          }
-          case 'head': {
-            const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
-            headRotationSource.updateWorldMatrix?.(true, false);
-            selectedRotationQuaternion = headRotationSource.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = headRotationSource === playerNeckJoint ? 'player-head-neck' : 'player-body-fallback-no-neck';
-            break;
-          }
-          case 'world':
-            selectedRotationQuaternion = new THREE.Quaternion();
-            resolvedRotationSource = 'world-aligned';
-            break;
-          case 'pixel':
-          default:
-            selectedRotationQuaternion = perchFrame?.quaternion?.clone()
-              || playerMesh.getWorldQuaternion(new THREE.Quaternion());
-            resolvedRotationSource = perchFrame ? 'player-authored-skinned-surface' : 'player-body-fallback-no-skinned-frame';
-            break;
-        }
-        if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
-        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
-        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
-        const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
-        const shoulderFacingTurnDeg = facingTowardPlayerCenter ? 180 : 0; // Inward/front is the outward authored local transform plus one exact half-turn, never a quaternion inversion or sprite mirror.
-        const worldQuaternion = selectedRotationQuaternion.clone();
-        if (!s_cancelShoulderPetRotationalOffset) {
-          worldQuaternion.multiply(authoredRotationOffset);
-          if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
-        }
-        const shoulderLeanDeg = Number(pet?.shoulderCuriosity?.currentLeanDeg); // The root lean must participate in the grip-offset solve, not rotate sprite planes around their centers.
-        if (Number.isFinite(shoulderLeanDeg) && shoulderLeanDeg !== 0) {
-          worldQuaternion.multiply(SHOULDER_PET_LEAN_QUATERNION.setFromAxisAngle(SHOULDER_PET_LEAN_AXIS, THREE.MathUtils.degToRad(shoulderLeanDeg)));
-        }
-        const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
-        const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
-        const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
-        const rawGrip = grip.localPosition; // Native unscaled socket coordinates; the grip resolver retains them alongside its legacy scaled fields.
-        const renderedScale = pet?.avatarRef?.group?.scale; // Actual THREE root scale, including the swapped width/depth axes and the current breath/squash multiplier.
-        const useRenderedGrip = !!(rawGrip && renderedScale
-          && Number.isFinite(renderedScale.x) && Number.isFinite(renderedScale.y) && Number.isFinite(renderedScale.z)); // Only fall back for old callers without a real avatar root.
-        const gripWorldOffset = new THREE.Vector3(
-          useRenderedGrip ? rawGrip.x * renderedScale.x : (grip.x || 0) * perchScaleX,
-          useRenderedGrip ? rawGrip.y * renderedScale.y : (grip.y || 0) * perchScaleY,
-          useRenderedGrip ? rawGrip.z * renderedScale.z : (grip.z || 0) * perchScaleZ,
-        ).applyQuaternion(worldQuaternion); // Rotate the real scaled grip, not an approximate socket with axis-swapped or stale breathing scale.
-        return {
-          worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
-          worldQuaternion,
-          perchWorldPosition: perchWorldPosition.clone(),
-          gripWorldOffset: gripWorldOffset.clone(),
-          gripLocalPosition: useRenderedGrip ? rawGrip : null, // Final transform uses this to measure the real world grip from the pet's updated THREE matrix.
-          gripSource: grip.source || 'authored-shoulder-grip', // Reports whether the foot socket is authored or derived from a flying sprite.
-          rotationFrameWorldQuaternion: selectedRotationQuaternion,
-          perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
-          rotationSource: resolvedRotationSource,
-          requestedRotationSource: s_shoulderPetRotationSource,
-          rotationSourceInverted: s_invertShoulderPetRotationSource,
-          rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
-          facingTowardPlayerCenter,
-          shoulderFacingTurnDeg,
-          shoulderLeanDeg: Number.isFinite(shoulderLeanDeg) ? shoulderLeanDeg : 0, // Exposed to mobile diagnostics alongside the pinned grip error.
-        };
-      }
+      const shoulderPetAttachment = window.ShoulderPetAttachmentRuntime?.create?.({
+        THREE,
+        getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
+        getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
+        getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.
+        getInvertRotationSource: () => s_invertShoulderPetRotationSource, // Existing compatibility setting.
+        getCancelRotationalOffset: () => s_cancelShoulderPetRotationalOffset, // Existing authored offset setting.
+      }); // One shared solver/pin instance; the companion loop remains in game.js.
+      if (!shoulderPetAttachment) throw new Error('ShoulderPetAttachmentRuntime must load before game.js.');
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -9241,68 +9148,7 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
-      function _applyShoulderPetFinalTransform(c, finalTransform) {
-        const group = c.avatarRef?.group;
-        if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
-        const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
-        parent?.updateWorldMatrix?.(true, false);
-        const parentWorldQuaternion = parent?.getWorldQuaternion
-          ? parent.getWorldQuaternion(new THREE.Quaternion())
-          : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
-        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
-        const localPosition = parent?.worldToLocal
-          ? parent.worldToLocal(finalTransform.worldPosition.clone())
-          : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
-        group.position.copy(localPosition);
-        group.quaternion.copy(localQuaternion);
-        // The selected root transform is now authoritative for both placement
-        // and rendering. Restore normal matrix inheritance and only retain the
-        // canonical mirrored face rotations; png-plane-avatar's render hook
-        // recognizes the marker below and no longer replaces this orientation.
-        const setCanonicalPlaneRotation = (plane, y) => {
-          if (!plane) return;
-          plane.matrixAutoUpdate = true;
-          plane.rotation.set(0, y, 0);
-          plane.updateMatrix();
-          plane.matrixWorldNeedsUpdate = true;
-        };
-        setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
-        setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
-        const alignedGripWorldPosition = finalTransform.gripLocalPosition
-          ? group.localToWorld(new THREE.Vector3( // Read the actual rendered root matrix, not merely undoing the same offset calculation.
-              finalTransform.gripLocalPosition.x, finalTransform.gripLocalPosition.y, finalTransform.gripLocalPosition.z))
-          : finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Legacy no-anchor or mock callers have only the expected offset.
-        const gripPerchError = finalTransform.perchWorldPosition
-          ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
-          : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
-        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-          recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
-          rotationSource: finalTransform.rotationSource,
-          positionSource: finalTransform.perchPositionSource,
-          expectedWorldPosition: finalTransform.worldPosition.toArray(),
-          authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
-          alignedGripWorldPosition: alignedGripWorldPosition.toArray(),
-          gripPerchError,
-          gripPositionSource: finalTransform.gripLocalPosition ? 'rendered-group-matrix' : 'estimated-offset-fallback', // Mobile debug distinguishes measured vs algebraic grip placement.
-          gripSource: finalTransform.gripSource || 'unavailable', // Mobile Pixel Probe shows which grip solved the final world attachment.
-          authoritativeRootTransform: true,
-          requestedRotationSource: finalTransform.requestedRotationSource,
-          rotationSourceInverted: finalTransform.rotationSourceInverted,
-          rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
-          rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
-          finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
-          facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
-          shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
-          shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Reports the local X lean solved around the grip instead of either sprite center.
-          spriteMirrored: false,
-        };
-        let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;
-        if (!canonicalPlaneRestored && finalTransform.perchWorldPosition) {
-          canonicalPlaneRestored = window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition) === true;
-          if (canonicalPlaneRestored) group.userData.hobunjiShoulderSpriteCanonicalized = true; // One-time hot-reload cleanup; no per-frame avatar traversal now that shoulder sprites never mirror.
-        }
-        group.userData.hobunjiShoulderPetAttachment.canonicalPlaneRestored = canonicalPlaneRestored;
-      }
+
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
@@ -9310,8 +9156,8 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const finalTransform = _shoulderPetSurfaceTransform(perch, grip, c); // Composes the selected live frame with direction-signed authored perch/grip rotation.
-            _applyShoulderPetFinalTransform(c, finalTransform);
+            const finalTransform = shoulderPetAttachment.solveSurfaceTransform(perch, grip, c); // Composes the selected live frame with direction-signed authored perch/grip rotation.
+            shoulderPetAttachment.applyFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
@@ -9321,7 +9167,7 @@
               playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3,
             );
             const fallbackWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Keeps legacy pets body-relative when either authored anchor is absent.
-            _applyShoulderPetFinalTransform(c, {
+            shoulderPetAttachment.applyFinalTransform(c, {
               worldPosition: fallbackWorldPosition,
               worldQuaternion: fallbackWorldQuaternion,
               faceWorldQuaternion: fallbackWorldQuaternion,
@@ -27908,6 +27754,22 @@
         return torchActions.concat(woodenDoorActions, ruinDoorActions);
       }
 
+      function campfireActionButtons(nearbyActions) {
+        if (!nearbyActions?.length || heldMode !== 'tool') return null;
+        const primaryAction = toolActions[activeTool]?.[0]; // Preserves the equipped tool's first action, including Swing Torch, at a nearby campfire.
+        if (!primaryAction) return null;
+        if (activeTool === 'adventuring') return [adventuringToolActionButtons()[0], nearbyActions[0]];
+        const reticle = getReticleTile(); // Shares the current aimed tile with the ordinary tool action bar.
+        const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col]; // Supplies the normal contextual primary-action wording.
+        const [fallbackIcon] = actionLabels[primaryAction] || ['🔧']; // Keeps the tool's existing action icon.
+        return [{
+          icon:attackActionIconHTML(activeTool, primaryAction, fallbackIcon),
+          label:window.HudUpdate.contextualActionLabel(primaryAction, tile),
+          action:primaryAction, inputAction:'action1', style:'primary',
+          allowed:canUseAction(activeTool, primaryAction, reticle.col, reticle.row),
+        }, nearbyActions[0]]; // Campfire takes only Action 2, never Action 1.
+      }
+
       function computeActionButtonsImpl() {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
@@ -28137,7 +27999,8 @@
           const mineCampfireActions = window.TownMine?.floorFromMapId?.(currentArea)
             ? window.WildernessCampfire?.getNearbyActions?.()
             : null;
-          if (mineCampfireActions?.length) return mineCampfireActions;
+          const mineCampfireButtons = campfireActionButtons(mineCampfireActions); // Mine and wilderness campfires share the same physical input layout.
+          if (mineCampfireButtons) return mineCampfireButtons;
           // Building interiors return early above and never reach the
           // farm/zone/town item-context block further down (it also relies
           // on a reticle/tile pair this branch never computes) — without
@@ -28215,7 +28078,8 @@
         const campfireActions = window.WildernessCampfire?.supportsArea?.(currentArea)
           ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
-        if (campfireActions?.length) return campfireActions;
+        const campfireButtons = campfireActionButtons(campfireActions); // Save/Cook/Brew live in the held Action 2 menu.
+        if (campfireButtons) return campfireButtons;
 
         // Climbing is still triggered by a forward dodge (see
         // performContextAction) so an attack/item press never grabs a
@@ -28557,6 +28421,7 @@
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             let _torchThrowPress = false; // This touch pointer owns a held torch throw until release/cancel.
+            let _campfireMenuPress = false; // Tracks the Action 2 campfire hold through this pointer's release/cancellation.
             let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
@@ -28640,6 +28505,7 @@
               _drag = false;
               _combatAimRelease = false;
               _torchThrowPress = false;
+              _campfireMenuPress = false;
               _socket = document.createElement('div');
               _socket.className = 'abt-socket';
               _socket.style.left   = _cx + 'px';
@@ -28692,6 +28558,8 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
+                _campfireMenuPress = act === 'campfire_menu'
+                  && window.WildernessCampfire?.beginInteractionHold?.('touch-arch:' + ev.pointerId) === true;
                 _torchThrowPress = act === 'torch_throw' && heldMode === 'tool' && activeTool === 'adventuring'
                   && window.AdventuringTools?.beginThrow?.('touch-arch', ev.pointerId) === true;
                 _combatAimRelease = Boolean(_pressSlot || _torchThrowPress || (activeTool === 'ranged' && act === 'shoot'));
@@ -28804,7 +28672,9 @@
                   if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
                   else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
                 } else if (!_chargeFiredOnPress) {
-                  if (_torchThrowPress) {
+                  if (_campfireMenuPress) {
+                    window.WildernessCampfire?.endInteractionHold?.('touch-arch:' + ev.pointerId, pointerCanceled);
+                  } else if (_torchThrowPress) {
                     if (pointerCanceled) window.AdventuringTools?.cancelThrow?.('touch-pointer-cancel');
                     else window.AdventuringTools?.releaseThrow?.('touch-arch-release');
                   } else if (_pressSlot) {
@@ -28851,6 +28721,7 @@
                 _combatAimRelease = false;
                 _pressSlot = null;
                 _torchThrowPress = false;
+                _campfireMenuPress = false;
                 try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
               }
             }
@@ -29405,6 +29276,10 @@
           if (window.AdventuringTools?.beginThrow?.(inputActionId)) torchThrowActionPresses.add(inputActionId);
           return; // Action 2 press starts a held windup, never an immediate projectile.
         }
+        if (btn.action === 'campfire_menu') {
+          if (window.WildernessCampfire?.beginInteractionHold?.(inputActionId)) campfireActionPresses.add(inputActionId);
+          return; // Holding the button opens a menu; a tap does not save, cook, or brew.
+        }
         const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
         if (startsCharge) heldChargeInputId = inputActionId;
         actionHeldDown = slotIndex === 1 || startsCharge;
@@ -29425,6 +29300,7 @@
           || action.startsWith('alchemy_flask_')
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
+          && b.action !== 'campfire_menu' // This interaction requires held Action 2, never the ordinary Interact tap.
           && !toolSet.has(b.action) && !isItemAction(b.action));
         if (!btn) { performJumpAction(); return; } // Pad A doubles as Jump/Climb when there is nothing to interact with.
         activeAction = btn.action;
@@ -29466,6 +29342,9 @@
           if (!button?.dataset?.action || button.classList.contains('abt-hidden')) return false; // Even an unavailable contextual action is not permission to attack.
           if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
           if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
+          if (heldMode === 'tool' && activeTool === 'adventuring')
+            return button.dataset.action !== toolActions.adventuring[slot - 1]
+              && !(slot === 2 && button.dataset.action === 'campfire_menu'); // The torch's own actions are not world overrides, and campfire Action 2 cannot block Swing Torch.
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
@@ -29482,6 +29361,11 @@
       const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const torchThrowActionPresses = new Set(); // Retains the original keyboard/controller/mouse press across action-bar changes.
+      const campfireActionPresses = new Set(); // Pairs campfire hold input with its original keyboard/controller release.
+      window.addEventListener('blur', () => {
+        for (const inputId of campfireActionPresses) window.WildernessCampfire?.endInteractionHold?.(inputId, true);
+        campfireActionPresses.clear();
+      }); // A lost keyup cannot leave an orphaned campfire hold.
       window.addEventListener('blur', () => { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('window-blur'); });
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) { torchThrowActionPresses.clear(); window.AdventuringTools?.cancelThrow?.('page-hidden'); }
@@ -29526,6 +29410,10 @@
         }
         if (window.__mapEditorGizmoActive) return;
         if(phase==='release'&&dispatchWorldInputClaim(actionId,'release',source))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
+        if (phase === 'release' && campfireActionPresses.delete(actionId)) {
+          window.WildernessCampfire?.endInteractionHold?.(actionId);
+          return; // Held Action 2 release leaves the newly opened campfire selection menu available.
+        }
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;

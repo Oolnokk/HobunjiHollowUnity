@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm'); // Executes the real attachment config so grip scaling is checked numerically, not only by regex.
 
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Guards the attached-pet look-around path embedded in the main game closure.
+const attachmentSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8'); // Production grip solver and final-pinning owner.
 const rigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the instantaneous horizontal mirror bridge and refreshed shoulder anchors.
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible size/curiosity diagnostic added for shoulder pets.
 
@@ -114,10 +115,10 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
   'curiosity never yaws a flat animal plane and therefore cannot imitate a size-class change');
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
-assert.match(source,
+assert.match(attachmentSource,
   /const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;[\s\S]{0,420}worldQuaternion\.multiply\(SHOULDER_PET_HALF_TURN_QUATERNION\)/,
   'shoulder curiosity swaps between the two local facing transforms with one exact 180-degree Y turn');
-assert.doesNotMatch(source, /authoredRotationOffset\.invert\(\)|desiredVisualFacingSign|observationMirrored/,
+assert.doesNotMatch(attachmentSource, /authoredRotationOffset\.invert\(\)|desiredVisualFacingSign|observationMirrored/,
   'shoulder facing never uses quaternion inversion or sprite-mirror parity');
 assert.match(probeSource, /Shoulder local facing transform: facing=/,
   'Pixel Probe exposes the 0/180-degree local facing transform');
@@ -152,7 +153,7 @@ assert.match(rigSource,
   'the compatibility hook only restores canonical unmirrored plane transforms');
 assert.match(rigSource, /mode: 'canonical-no-sprite-mirror'/,
   'debug state explicitly reports that shoulder sprites are never mirrored');
-assert.match(source,
+assert.match(attachmentSource,
   /hobunjiShoulderSpriteCanonicalized === true[\s\S]{0,420}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,300}hobunjiShoulderSpriteCanonicalized = true/,
   'canonical sprite restoration is a one-time avatar cleanup rather than a per-frame hierarchy traversal');
 assert.match(source,

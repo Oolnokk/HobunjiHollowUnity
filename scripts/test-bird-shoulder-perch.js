@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+const attachmentSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8'); // Birds use the same final foot/perch solver as mammals.
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 
 // Evaluate only the real runtime anchor resolver: no WebGL/browser boot needed.
@@ -68,9 +69,9 @@ assert.equal(get('unknown', 'shoulderGrip', { sizeClass: 'small' }), null,
 
 assert.match(gameSource, /const grip = creatureAttachmentAnchor\(c\.creatureKey, 'shoulderGrip', c\.genotype\);/g,
   'the gameplay attachment path reuses the same resolver');
-assert.match(gameSource, /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
+assert.match(attachmentSource, /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
   'pet root is solved from the real player perch minus the rotated foot grip');
-assert.match(gameSource, /gripSource: finalTransform\.gripSource/,
+assert.match(attachmentSource, /gripSource: finalTransform\.gripSource/,
   'the final attachment snapshot identifies the grip type');
 assert.match(probeSource, /Pet shoulder grip:.*gripSource/,
   'mobile Pixel Probe reports whether a bird is using its virtual foot grip');
