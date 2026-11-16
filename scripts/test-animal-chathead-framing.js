@@ -122,4 +122,27 @@ const clamped = api.normalizeFrame({ x: 0.98, y: -1, width: 0.9, height: 5 });
 assert(clamped.x >= 0 && clamped.y >= 0 && clamped.x + clamped.width <= 1.000001 && clamped.y + clamped.height <= 1.000001,
   'malformed authoring data must clamp inside source sprite bounds');
 
+
+const editorPreviewFunction = authorSource.match(/function effectiveAnimalChatheadFrameV1543\(actor\) \{[\s\S]*?\n\}/); // Extracts the real shipped Rig Coordinates preview resolver to exercise it without a browser.
+assert(editorPreviewFunction, 'Rig Coordinates must retain the animal-frame preview resolver');
+const mediumFrame = { x: 0.6611149088541667, y: 0.24899449865398673, width: 0.04, height: 0.04 }; // Authored Medium Skeeri frame expected for both variants.
+const editorRigProfiles = { creatures: { 'skeeri-medium': { chatheadFrame: mediumFrame } } }; // Simulates the live editor library, not only the static game master.
+const editorPreview = vm.runInNewContext('(' + editorPreviewFunction[0] + ')', {
+  window: sandbox.window,
+  animationAuthor: { attachmentRigProfiles: editorRigProfiles },
+  attachmentRigProfileForActor: actor => actor.profile || { chatheadFrame: null },
+  normalizedAnimalChatheadFrameV1543: api.normalizeFrame,
+}); // Calls the actual editor implementation while preserving its crop-source precedence.
+for (const kind of ['skeeri-small', 'skeeri-large']) {
+  const preview = editorPreview({ source: { kind } });
+  assert.strictEqual(preview.authored, true, kind + ' editor preview must identify the inherited Medium crop as authored');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(preview.frame)), JSON.parse(JSON.stringify(api.normalizeFrame(mediumFrame))), kind + ' editor preview must use Medium Skeeri crop');
+}
+const overrideFrame = { x: .2, y: .25, width: .25, height: .22 }; // An explicitly authored variant crop must win over the shared default.
+const variantPreview = editorPreview({ source: { kind: 'skeeri-small' }, profile: { chatheadFrame: overrideFrame } });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(variantPreview.frame)), JSON.parse(JSON.stringify(api.normalizeFrame(overrideFrame))), 'user-authored Small Skeeri crop must remain editable');
+const revisedMediumFrame = { x: .4, y: .2, width: .17, height: .21 }; // Live Medium edits must immediately propagate to both previews.
+editorRigProfiles.creatures['skeeri-medium'].chatheadFrame = revisedMediumFrame;
+assert.deepStrictEqual(JSON.parse(JSON.stringify(editorPreview({ source: { kind: 'skeeri-large' } }).frame)), JSON.parse(JSON.stringify(api.normalizeFrame(revisedMediumFrame))), 'Large Skeeri preview inherits the current editor Medium frame rather than a cached old crop');
+
 console.log('animal chathead framing tests passed');

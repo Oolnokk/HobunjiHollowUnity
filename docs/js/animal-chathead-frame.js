@@ -134,7 +134,10 @@
   }
 
   function frameForKind(kind) {
-    const authored = normalizeFrame(profileForKind(kind)?.chatheadFrame);
+    const normalized = normalizeKind(kind);
+    const variantFrameSource = (normalized === 'skeeri-small' || normalized === 'skeeri-large') ? 'skeeri-medium' : null; // Both variants use the Medium Skeeri sprite but retain independent non-chathead rig settings.
+    const authored = normalizeFrame(profileForKind(normalized)?.chatheadFrame
+      || (variantFrameSource ? profileForKind(variantFrameSource)?.chatheadFrame : null));
     return authored
       ? resolvedFrameResult(authored, 'attachment-rig-profile')
       : resolvedFrameResult(automaticFrameForKind(kind), 'animal-head-rig-fallback');
