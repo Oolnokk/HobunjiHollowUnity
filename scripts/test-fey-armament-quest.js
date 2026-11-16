@@ -40,6 +40,7 @@ const gear = { tools: { sword: true }, harlyaoRelics: {}, toolMastery: {}, weapo
 const profile = { worldId: 'quest-test', questProgress: {} };
 const enchantmentStates = {};
 let saves = 0; // Verifies new weapon and quest persist together on first acquisition.
+let failSave = false; // Simulates a canonical member-save rejection during grant and dialogue completion.
 let gearSaves = 0; // Verifies enchanting uses the existing gear-save adapter.
 const messages = [];
 const enchantments = {
@@ -94,7 +95,7 @@ const deps = {
   TOOL_ITEM_DEFS: { sword: { label: 'Sword', slots: ['weapon'] } },
   getGearInventory: () => gear,
   getQuestProgress: () => profile.questProgress,
-  saveMemberWorldData() { saves++; },
+  saveMemberWorldData() { saves++; return !failSave; },
   saveGearInventory() { gearSaves++; },
   showToast(message) { messages.push(message); },
   buildInventoryGrid() {},
@@ -120,10 +121,17 @@ function allElements(root) {
 }
 
 assert.equal(quest.maybeStart(), false, 'no quest from ordinary weapons');
+const failedRelic = { shape: 'dagger', origin: 'Fey', uid: 'failed1', enchantments: { base: ['feyMist'], flourishes: {} } }; // Exercises an attempted first acquisition that cannot be saved.
+const failedKey = relics.encodeBoundKey(failedRelic);
+failSave = true;
+assert.equal(relics.grantBoundRelic(failedRelic), null, 'rejected save must fail the weapon grant');
+assert.equal(inventory[failedKey], undefined, 'failed grant leaves no phantom inventory item');
+assert.equal(profile.questProgress[quest.QUEST_ID], undefined, 'failed grant also rolls back the first quest');
+failSave = false;
 const key = relics.grantBoundRelic({ shape: 'dagger', origin: 'Fey', uid: 'abc123', enchantments: { base: ['feyMist'], flourishes: {} } });
 assert.match(key, /^feyBound_/);
 assert.equal(profile.questProgress[quest.QUEST_ID].stage, 0);
-assert.equal(saves, 1, 'first Fey weapon and quest saved in one member write');
+assert.equal(saves, 2, 'the real acquisition saves weapon and quest together only once');
 assert.equal(relics.unbindPrice({ base: ['feyMist'], flourishes: {} }), 160);
 assert.equal(relics.unbindPrice({ base: ['feyMist'], flourishes: {} }, 'Fey'), 320);
 assert.equal(relics.unbind(key).reason, 'quest', 'service is unavailable until the player persuades Garanki');
@@ -136,6 +144,10 @@ const first = treeForGaranki();
 assert.equal(first.id, 'fey_knot_garanki_first', 'quest gets Garanki dialogue without replacing the Guild provider');
 registered.nodes.garanki_gabu(first.nodes[0], { npc: { id: 'garanki_gabu' }, tree: first });
 assert.equal(profile.questProgress[quest.QUEST_ID].stage, 0, 'opening or abandoning a conversation does not advance the quest');
+failSave = true;
+assert.equal(finish('garanki_gabu', first), false, 'a rejected quest save cannot advance the first conversation');
+assert.equal(profile.questProgress[quest.QUEST_ID].stage, 0);
+failSave = false;
 assert.equal(finish('garanki_gabu', first), true);
 assert.equal(profile.questProgress[quest.QUEST_ID].stage, 1);
 
@@ -156,6 +168,11 @@ assert.equal(profile.questProgress[quest.QUEST_ID].stage, 2);
 
 const returning = treeForGaranki();
 assert.equal(returning.id, 'fey_knot_garanki_return');
+failSave = true;
+assert.equal(finish('garanki_gabu', returning), false, 'failed final save cannot unlock Fey services');
+assert.equal(quest.completed(), false);
+assert.equal(relics.unbind(key).reason, 'quest', 'Fey unbinding remains locked until the final quest save succeeds');
+failSave = false;
 assert.equal(finish('garanki_gabu', returning), true);
 assert.equal(quest.completed(), true);
 assert.equal(quest.maybeStart(), false, 'completed quest cannot restart');
