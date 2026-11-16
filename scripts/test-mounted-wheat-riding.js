@@ -161,6 +161,45 @@ assert(autoHopSeen && lifted, 'autonomous mount hops across the low rock patch w
 assert(mount.x > 9.5 * T, 'three-rock patch does not permanently obstruct forward riding');
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, 1, 'rock cluster is crossed with one airborne leap');
 
+
+// A manual jump on clear ground must retain normal forward speed and airborne steering.
+// The rock-crossing hop above stays a scripted traversal, but ordinary air time
+// must not replace the riding controller with the old 0.8-tile horizontal lerp.
+mount.x = 12 * T; mount.y = 6.5 * T;
+input.x = 1; input.y = 0; // Hold forward throughout this jump, matching the reported input combination.
+const levelStartX = mount.x; // Compare the airborne displacement with the species' normal forward cruise.
+let manualPeak = 0; // Confirm the horizontal movement fix does not remove the vertical jump animation.
+assert.equal(win.Mounts.jumpMount(), true, 'forward riding still accepts a manual jump');
+for (let i = 0; i < 29; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+  manualPeak = Math.max(manualPeak, mount._banditLungeHopCurrent || 0);
+  assert.equal(player.x, mount.x, 'rider remains attached while moving forward during jump');
+}
+const airborneTravel = mount.x - levelStartX; // Expected: close to cruise speed × 29 frames, not a fixed 0.8 tile.
+assert(airborneTravel > 1.2 * T, 'manual jump keeps cruising forward instead of replacing motion with a fixed short hop');
+assert(manualPeak > 0.3, 'manual jump retains a visible airborne elevation arc');
+assert.equal(win.Mounts.ridingDebug.jumping, false, 'jump finishes without leaving stale airborne state');
+
+const steerStartY = mount.y; // Turning the reins in midair should still alter the actual travel vector.
+input.x = 0; input.y = 1;
+assert.equal(win.Mounts.jumpMount(), true, 'a second manual jump can start after landing');
+for (let i = 0; i < 18; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+}
+assert(mount.y > steerStartY + T * 0.2, 'ordinary airborne mounted steering still changes direction');
+for (let i = 0; i < 20 && win.Mounts.ridingDebug.jumping; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+}
+input.x = 1; input.y = 0; // Restore the original forward bearing for the later tall-boulder regression.
+for (let i = 0; i < 24; i++) {
+  now += 1000 / 60;
+  win.Mounts.updateMountedMovement(1 / 60);
+}
+input.x = 0; input.y = 0;
+
 const boost = claims['mount-riding'].find(x => x.actionId === 'dodge');
 const jump = claims['mount-riding'].find(x => x.actionId === 'jump');
 boost.onPress();
