@@ -125,10 +125,13 @@
     mesh.quaternion.setFromRotationMatrix(basis);
   }
 
-  function createNetFrustum(width = .82, depth = .68, drop = .92) {
-    const bottomScale = .28; // Small payload cradle under the broad ceiling edge.
+  function createNetFrustum(width = .82, depth = .68, drop = .92, bottomScale = .28) {
+    const taper = Number.isFinite(Number(bottomScale))
+      ? Math.max(.1,Math.min(1,Number(bottomScale))) : .28;
+    // Hanging burden cradles keep their original .28 taper; floor-standing treasure nets
+    // explicitly request 1 for four vertical walls enclosing the whole grounded chest.
     const top = [[-width/2,0,-depth/2],[width/2,0,-depth/2],[width/2,0,depth/2],[-width/2,0,depth/2]];
-    const bottom = top.map(point => [point[0]*bottomScale,-drop,point[2]*bottomScale]);
+    const bottom = top.map(point => [point[0]*taper,-drop,point[2]*taper]);
     const positions = []; // Frustum positions: two triangles per side, no end-cap geometry.
     const uvs = []; // A complete un-tiled net atlas is mapped exactly once onto each face.
     for (let index = 0; index < 4; index++) {
@@ -148,6 +151,7 @@
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'dungeon_fire_net_sprite_frustum';
     mesh.userData.dungeonNetAtlas = SPRITE_URL;
+    mesh.userData.dungeonNetBottomScale = taper; // Mobile scene diagnostics distinguish straight-sided prize cages from burden cradles.
     return mesh;
   }
 
