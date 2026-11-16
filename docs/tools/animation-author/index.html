@@ -1204,7 +1204,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      Only resolves when this tool is served from its real docs/tools/
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
-<script src="../../config/attachment-rig-profiles.js?v=20261114hperch1760"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261116shoulderParity2"></script>
 <script src="../../js/local-db-overrides.js?v=20261109nohuknukRoam1"></script> <!-- Reuses the gameplay NPC species composer. -->
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
@@ -8747,6 +8747,18 @@ applyViewportRotationDeadzones = function(dt = 0) {
   const orderedActors = viewportActorsParentFirst(); // Used so a carrier facing transform reaches its rider before rider yaw is measured.
 
   for (const actor of orderedActors) {
+    if (actor.source?.type === 'creature' && shoulderPetCarrierV1521(actor)) {
+      const facingRoot = actor.viewportFacingRoot || actor.viewportVisual?.facingRoot; // V15.12 uses this shared root, not the retired per-plane camera correction.
+      if (facingRoot) {
+        facingRoot.rotation.y = finiteNumber(actor.viewportVisual?.facingRootBaseRotationY, 0); // Gameplay leaves a pinned shoulder pet's full PNG root at its authored Y orientation.
+        facingRoot.updateMatrixWorld(true);
+      } else {
+        for (const plane of actor.viewportVisual?.creaturePlanes || []) {
+          if (plane.object) plane.object.rotation.y = plane.baseRotationY; // Rigid/legacy editor actor fallback.
+        }
+      }
+      continue;
+    }
     const rawYaw = viewportActorWorldYaw(actor); // Used as the inherited authored yaw before this actor's own visible deadzone correction.
     const record = actor.viewportFacingState || (actor.viewportFacingState = { perpSides: [null, null], locked: [false, false], visualYaw: null }); // Used to retain deadzone hysteresis between frames.
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
@@ -14761,6 +14773,130 @@ document.title = 'Hobunji Animation Author V15.51';
 animationAuthor.recentChange = 'V15.51 restores a small space between kissing faces and gives dramatically shorter partners a two-foot, posterior-anchored jump with live knee/pants IK.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 log('V15.51 kiss spacing adjusted; the smaller partner straddles the tall posterior only when kneeling alone cannot align their mouths comfortably.');
+
+// V15.48 — Shoulder-pet viewport parity with the gameplay attachment solver.
+// These adapters sit after the old V15.21/V15.22 defaults, which used to
+// overwrite any newer, species-specific grip Y angle on every editor load.
+const baseApprovedRigLibraryCloneV1548 = approvedRigLibraryCloneV1524;
+approvedRigLibraryCloneV1524 = function() {
+  const approved = baseApprovedRigLibraryCloneV1548(); // Keeps all other approved species and coordinates intact.
+  const currentCreatures = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures;
+  if (approved?.creatures && currentCreatures) {
+    for (const [kind, current] of Object.entries(currentCreatures)) {
+      approved.creatures[kind] = structuredCloneSafe(current); // Repository defaults must match gameplay for every species, including rigs absent from the older embedded V15.24 library.
+    }
+  }
+  return approved;
+};
+
+function reconcileShoulderGripPreviewV1548(kind, profile, originalGrip) {
+  const target = profile?.anchors?.shoulderGrip;
+  if (!target) return;
+  if (originalGrip?.position) target.position = { ...target.position, ...originalGrip.position }; // The old editor normalizer forced X = .01, even for user-edited sockets.
+  if (originalGrip?.rotationDeg) target.rotationDeg = { ...target.rotationDeg, ...originalGrip.rotationDeg }; // Do not let old V15.21/V15.22 defaults overwrite intentional yaw edits.
+  const guard = window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD; // Reuse the game's exact known-stale grip fingerprints instead of maintaining another editor-only recovery list.
+  const reconciled = guard?.reconcileProfiles?.({ creatures: { [kind]: { anchors: { shoulderGrip: structuredCloneSafe(target) } } } })
+    ?.creatures?.[kind]?.anchors?.shoulderGrip;
+  if (reconciled) profile.anchors.shoulderGrip = normalizeTransformSnapshot(reconciled, 1); // Repairs only recognized obsolete stock grips; preserves custom XYZ, Y and other authored fields.
+}
+const baseNormalizedRigProfileLibraryV1548 = normalizedRigProfileLibrary;
+normalizedRigProfileLibrary = function(value = {}) {
+  const output = baseNormalizedRigProfileLibraryV1548(value); // Reuse all existing schema/size migrations.
+  for (const [kind, profile] of Object.entries(output.creatures || {})) {
+    reconcileShoulderGripPreviewV1548(kind, profile, value?.creatures?.[kind]?.anchors?.shoulderGrip);
+  }
+  return output;
+};
+for (const library of [animationAuthor.attachmentRigProfiles, DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516]) {
+  for (const [kind, profile] of Object.entries(library?.creatures || {})) {
+    reconcileShoulderGripPreviewV1548(kind, profile, null);
+  }
+}
+
+function syncShoulderPetPreviewFacingV1548() {
+  const THREE = state.three.THREE;
+  if (!THREE) return;
+  for (const pet of animationAuthor.actors) {
+    const owner = shoulderPetCarrierV1521(pet);
+    const perch = owner?.rigAnchors?.shoulderPerch;
+    const socket = owner?.rigAnchorSockets?.shoulderPerch;
+    if (!perch || !socket || pet.root?.parent !== socket || !pet.attachmentAlignment) continue;
+    const head = owner.neckRig?.neckJoint?.isObject3D ? owner.neckRig.neckJoint : owner.model; // Matches game.js's 'head' rotation source, falling back to the body for rigid owners.
+    if (!head?.getWorldQuaternion || !perch.getWorldQuaternion) continue;
+    head.updateWorldMatrix?.(true, false);
+    perch.updateWorldMatrix?.(true, false);
+    const perchRotation = perch.rotation; // Authored shoulderPerch rotation is local to the live head/neck frame, as it is in gameplay.
+    const authoredQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(perchRotation.x, perchRotation.y, perchRotation.z, 'YXZ'));
+    const desiredWorldQuaternion = head.getWorldQuaternion(new THREE.Quaternion()).multiply(authoredQuaternion);
+    const parentWorldQuaternion = perch.getWorldQuaternion(new THREE.Quaternion());
+    socket.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)); // The socket keeps its actual shoulder position while inheriting the head/neck orientation.
+    socket.updateMatrixWorld(true);
+
+    const inward = pet.previewShoulderFacingInward === true; // Author-only switch between the two actual game states; never written into exported animation tracks.
+    if (inward) {
+      const pose = actorRigAnchorLocalMatrix(pet, 'shoulderGrip'); // Exactly the scaled grip pose used by the editor's existing outward-facing alignment.
+      const gripPosition = new THREE.Vector3();
+      const gripQuaternion = new THREE.Quaternion();
+      pose.decompose(gripPosition, gripQuaternion, new THREE.Vector3());
+      const halfTurn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+      const facingQuaternion = gripQuaternion.invert().multiply(halfTurn); // Gameplay multiplies the local 180° turn AFTER inverse grip alignment.
+      pet.attachmentAlignment.quaternion.copy(facingQuaternion);
+      pet.attachmentAlignment.position.copy(gripPosition.applyQuaternion(facingQuaternion).negate()); // Grip stays pinned during the facing switch.
+      pet.attachmentAlignment.scale.set(1, 1, 1);
+      pet.attachmentAlignment.updateMatrixWorld(true);
+    } else if (pet.__previewShoulderWasInwardV1548) {
+      updateActorAttachmentAlignment(pet); // Recover exact authored outward pose after deselecting the half-turn.
+    }
+    pet.__previewShoulderWasInwardV1548 = inward;
+    pet.previewShoulderParityDebug = {
+      rotationSource: head === owner.model ? 'player-body-fallback-no-neck' : 'player-head-neck',
+      gripYawDeg: attachmentRigProfileForActor(pet, { create: false })?.anchors?.shoulderGrip?.rotationDeg?.y,
+      inward,
+      stageTurnDeg: inward ? 180 : 0,
+      mode: 'gameplay-inverse-grip-yxz',
+    }; // Visible through the preview inspector; no console needed on mobile.
+  }
+}
+const baseUpdateAnimationRelationLinesV1548 = updateAnimationRelationLines;
+updateAnimationRelationLines = function(...args) {
+  syncShoulderPetPreviewFacingV1548(); // Runs after the existing head/gaze updates and before each preview render.
+  return baseUpdateAnimationRelationLinesV1548(...args);
+};
+
+const baseRenderAttachmentRigInspectorV1548 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function(...args) {
+  const result = baseRenderAttachmentRigInspectorV1548(...args);
+  const pet = selectedAnimationActor();
+  if (animationAuthor.mode !== 'rig' || !shoulderPetCarrierV1521(pet)) return result;
+  const panel = $('maaInspector');
+  if (!panel) return result;
+  const section = document.createElement('div');
+  section.className = 'maaRigStatus';
+  section.style.marginTop = '9px';
+  section.innerHTML = '<b>Game shoulder-pet facing</b><label style="margin-top:8px"><input type="checkbox" id="maaShoulderPetInwardPreview" style="width:auto;min-height:auto"> Face toward owner (180° runtime stage)</label><div class="maaSmall maaMuted" id="maaShoulderPreviewSourceLabel">Preview follows owner head/neck rotation and the inverse authored grip; the other stage faces outward.</div>';
+  panel.appendChild(section);
+  const checkbox = section.querySelector('#maaShoulderPetInwardPreview');
+  const status = section.querySelector('#maaShoulderPreviewSourceLabel');
+  const updatePreviewDiagnostics = () => {
+    const snapshot = pet.previewShoulderParityDebug;
+    if (!snapshot || !status) return;
+    const gripYaw = Number(snapshot.gripYawDeg); // Display the real authored grip, rather than a guessed full-pet yaw, in the mobile preview.
+    status.textContent = 'Rotation source: ' + snapshot.rotationSource
+      + ' · grip Y: ' + (Number.isFinite(gripYaw) ? gripYaw.toFixed(1) + '°' : 'unavailable')
+      + ' · local facing turn: ' + snapshot.stageTurnDeg + '°'
+      + ' · game-style inverse grip (YXZ), no creature-plane deadzone.';
+  };
+  checkbox.checked = pet.previewShoulderFacingInward === true;
+  syncShoulderPetPreviewFacingV1548();
+  updatePreviewDiagnostics();
+  checkbox.addEventListener('change', event => {
+    pet.previewShoulderFacingInward = event.currentTarget.checked;
+    syncShoulderPetPreviewFacingV1548();
+    updatePreviewDiagnostics();
+    setAnimationRecentChange('Preview shoulder pet: ' + (pet.previewShoulderFacingInward ? 'facing owner midline' : 'facing outward') + '. Authoring coordinates unchanged.');
+  });
+  return result;
+};
 
 })();
 </script>
