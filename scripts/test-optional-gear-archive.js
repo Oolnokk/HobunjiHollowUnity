@@ -150,7 +150,7 @@ assert.equal(panel.getArchiveDebug().stowedClothing, 0);
 // Two materially different owned axes share the same visible name. Their
 // distinct mastery values must follow the selected key, including storage.
 gear.tools.axe2 = true;
-gear.toolMastery.axe2 = { xp: 210 };
+gear.toolMastery = { axe2: { xp: 210 } }; // The second character's new mastery record is independent from the first.
 dependencies.TOOL_ITEM_DEFS.axe2 = { label: 'Axe', icon: '🪓', slots: ['axe'] };
 assert(panel.setToolArchived('axe2', true), 'the second same-named tool can be stored individually');
 const secondAxe = descendants(root).find(node => node.dataset?.itemKey === 'axe2');
