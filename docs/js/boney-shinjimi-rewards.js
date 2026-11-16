@@ -2,8 +2,8 @@
 // Uses the museum, Harlyao bound-relic and gear-trinket owners; no parallel item/gear model.
 (() => {
   'use strict';
-  const HAT_COSMETIC = 'appearance::hat::riverlandskasa_wide'; // TEMP ART: the Old Highlands kasa is not authored yet.
-  const HAT_ITEM_KEY = 'cosmetic:' + HAT_COSMETIC; // Existing wearable cosmetic inventory key, not a new unrenderable item.
+  const HAT_COSMETIC = 'appearance::hat::old_highlands_kasa'; // Newly authored front/back kasa sprites, registered in cosmetics index.
+  const HAT_ITEM_KEY = 'cosmetic:' + HAT_COSMETIC; // Editor catalog key only; wearable articles live in Pack clothing.
   const SLOT_IDS = ['tap1', 'tap2', 'hold1', 'hold2']; // Fallback until the live Combat loadout is initialized.
   const random = () => window.GameRandom?.random?.() ?? Math.random();
 
@@ -75,8 +75,20 @@
   function grant(kind, deps, rng = random) {
     if (!deps?.inventory || !['valuable', 'useful', 'apologize', 'hat'].includes(kind)) return null;
     if (kind === 'hat') {
-      if (!deps.ITEM_DEFS?.[HAT_ITEM_KEY] && !deps.inventoryItems?.some(item => item.key === HAT_ITEM_KEY)) return null;
-      return giveInventory(deps, HAT_ITEM_KEY, 'his kasa (temporary Riverland artwork)');
+      const grant = window.EquipmentPanel?.grantPackClothing; // Actual Pack/Gear clothing owner, not numeric inventory.
+      if (typeof grant !== 'function') return null;
+      const item = grant({
+        uid: 'citem_boney_' + Date.now().toString(36) + '_' + Math.floor(random() * 0x10000000).toString(36),
+        cosmeticId: HAT_COSMETIC, slot: 'hat',
+        label: 'Old Highlands Kasa', baseLabel: 'Old Highlands Kasa',
+        description: "Boney Shinjimi's well-traveled Highland kasa.",
+        sprite: window.EquipmentPanel.clothingSpriteForCosmetic?.(HAT_COSMETIC)
+          || 'assets/cosmetics/clothes/hat/oldhighlandskasa-front.png',
+        sellPrice: 25,
+      });
+      if (!item) return null;
+      deps.showToast?.('Boney Shinjimi gave you his Old Highlands Kasa! Find it in Pack clothing.', true);
+      return { kind: 'clothing', uid: item.uid, cosmeticId: HAT_COSMETIC, label: item.label };
     }
     if (kind === 'valuable') {
       const worldId = deps.tothalWorldId?.();

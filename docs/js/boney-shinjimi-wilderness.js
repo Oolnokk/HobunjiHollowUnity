@@ -9,7 +9,7 @@
   const ZONES = Object.freeze(['map_northern_cliffs', 'map_western_slope',
     'map_eastern_mire', 'map_southern_cloud_forest']); // Eligible generated wilderness maps.
   const HOUSE_FILE = 'config/pieces/house-section-3x3.json'; // Reuses an authored three-by-three Highland roof and wall assembly.
-  const HAT_ID = 'appearance::hat::riverlandskasa_wide'; // Explicit temporary art stand-in for absent Old Highlands kasa.
+  const HAT_ID = 'appearance::hat::old_highlands_kasa'; // Boney's actual authored two-sided kasa, also granted to the player.
   const SIGHT_TILES = 10; // LOS range; existing RangedWeapons rays handle trees, rocks, terrain and cover.
   const WORK_RADIUS_TILES = 13; // Keeps his chores in the neighboring chunks around the magical house.
   const FLEE_BOOST_SECONDS = 0.58; // Contact gives a strong but short burst, never an indefinite movement buff.

@@ -9,10 +9,22 @@ const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8'); // Executes t
 const species=JSON.parse(read('docs/config/species/boney-shinjimi-skeleton.json'));
 const defaultSkeleton=JSON.parse(read('docs/config/species/mao-ao-skeleton.json'));
 const beard='appearance::Mao-ao_M::mao-ao_grandbeard'; // The repository's authored Grand Beard cosmetic id.
-const hat='appearance::hat::riverlandskasa_wide'; // Documented temporary stand-in for the missing Old Highlands kasa art.
+const hat='appearance::hat::old_highlands_kasa'; // Actual authored Old Highlands Kasa cosmetic id.
 assert.equal(species.speciesId,'boney-shinjimi-skeleton');
 assert(species.male.allowedCosmetics.includes(beard));
 assert(species.male.allowedCosmetics.includes(hat));
+const hatDef=JSON.parse(read('docs/config/cosmetics/oldhighlandskasa.json')); // Both portrait layers come from main's uploaded PNGs.
+assert.equal(hatDef.slot,'hat');
+assert.equal(hatDef.parts.head.layers.front.image.url,'./assets/cosmetics/clothes/hat/oldhighlandskasa-front.png');
+assert.equal(hatDef.parts.head.layers.back.image.url,'./assets/cosmetics/clothes/hat/oldhighlandskasa-back.png');
+assert(JSON.parse(read('docs/config/cosmetics/index.json')).entries.some(e=>e.id===hat&&e.path==='./oldhighlandskasa.json'));
+assert.equal(JSON.parse(read('docs/config/items/item-index.json'))['cosmetic:'+hat]?.cat,'clothing');
+for(const path of ['docs/config/species/mao-ao.json','docs/config/species/tletingan.json']) {
+ const species=JSON.parse(read(path));
+ for(const gender of ['male','female']) assert(species[gender].allowedCosmetics.includes(hat),path+' '+gender+' can wear it');
+}
+assert(read('docs/config/scratchbones-config.js').includes('oldhighlandskasa-front.png'));
+assert.match(read('docs/js/equipment-panel.js'),/grantPackClothing,.*Quest clothing/);
 assert.equal(species.male.forcedCosmetics.facialHair,undefined);
 assert.equal(defaultSkeleton.male.forcedCosmetics.facialHair,'none','ordinary skeletons remain beard-free');
 const index=JSON.parse(read('docs/config/species/index.json')).entries;
@@ -37,6 +49,11 @@ const W={GameRandom:{random:()=>0},ArtifactCollection:{ARTIFACTS:{
     grantBoundRelic:()=> 'bound-u1'},
   TrinketSystem:{DEFINITIONS:{first:{displayName:'First'},second:{displayName:'Second'}},
     ownedEntries:()=>[{id:'first'}],grant:id=>'trinket-'+id}};
+const pack=[]; // Real clothing belongs to Pack, not to a bag item counter.
+W.EquipmentPanel={
+ grantPackClothing:item=>{pack.push(item);return item;},
+ clothingSpriteForCosmetic:()=> 'assets/cosmetics/clothes/hat/oldhighlandskasa-front.png',
+};
 const ctx=vm.createContext({window:W,console,Math,Date});
 vm.runInContext(read('docs/js/boney-shinjimi-rewards.js'),ctx);
 const rewards=W.BoneyShinjimiRewards;
@@ -50,7 +67,13 @@ assert.equal(deps.inventory.artifactHigh,1);
 assert.equal(rewards.grant('useful',deps,()=>0).key,'bound-u1');
 delete W.EnchantmentSystem.DEFINITIONS.locked;
 assert.equal(rewards.grant('apologize',deps,()=>0).id,'second');
-assert.equal(rewards.grant('hat',deps,()=>0).key,'cosmetic:'+hat);
+const hatPrize=rewards.grant('hat',deps,()=>0);
+assert.equal(hatPrize.kind,'clothing');
+assert.equal(hatPrize.cosmeticId,hat);
+assert.equal(pack.length,1);
+assert.equal(pack[0].slot,'hat');
+assert.equal(pack[0].cosmeticId,hat);
+assert.equal(deps.inventory['cosmetic:'+hat],undefined,'not a numeric bag stack');
 
 // NPC felling must affect the same live grid and regrowth records as player tools,
 // never player inventory, and must refuse to fell the same tree twice.
