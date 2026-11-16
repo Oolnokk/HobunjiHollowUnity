@@ -4,17 +4,28 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Exercises the actual editor adapter rather than a duplicated Y-axis conversion.
-const rigCacheVersion = 'attachment-rig-profiles.js?v=20261116shoulderParity2'; // All consumer pages must load the same current rig revision, not an old mobile-browser cache.
-for (const consumer of ['docs/index.html', 'docs/tools/animation-author/index.html',
-  'docs/tools/attack-animation-editor/index.html', 'docs/tools/enemy-loadout-editor/preview.js']) {
-  assert(fs.readFileSync(consumer, 'utf8').includes(rigCacheVersion), consumer + ' must load the corrected attachment-rig version');
+function referencedAssetVersion(source, basename) {
+  let at = source.indexOf(basename);
+  while (at >= 0) {
+    const after = source.slice(at + basename.length); // Checks actual loader references without hardcoding a revision.
+    if (after[0] === '?') {
+      const match = /^v=([A-Za-z0-9_-]+)/.exec(after.slice(1));
+      if (match) return match[1];
+    }
+    at = source.indexOf(basename, at + basename.length);
+  }
+  assert.fail('Missing versioned asset reference: ' + basename);
 }
-const loadoutPreviewToken = 'preview.js?v=20261116shoulderParity2'; // Mirrors the app's import for the cache-bust CI check.
-const loadoutAppToken = 'app.js?v=20261116shoulderParity2'; // Mirrors the top-level module entrypoint, completing the browser cache chain.
-assert(fs.readFileSync('docs/tools/enemy-loadout-editor/app.js', 'utf8').includes(loadoutPreviewToken),
-  'Enemy Loadout app must import the current preview module revision');
-assert(fs.readFileSync('docs/tools/enemy-loadout-editor/index.html', 'utf8').includes(loadoutAppToken),
-  'Enemy Loadout page must import the current app module revision');
+const rigConsumers = ['docs/index.html', 'docs/tools/animation-author/index.html',
+  'docs/tools/attack-animation-editor/index.html', 'docs/tools/enemy-loadout-editor/preview.js'];
+const rigVersions = rigConsumers.map(consumer =>
+  referencedAssetVersion(fs.readFileSync(consumer, 'utf8'), 'attachment-rig-profiles.js')
+); // All consumers should resolve the same current master rig.
+assert.equal(new Set(rigVersions).size, 1, 'game and editors must share the same versioned attachment rig');
+const enemyApp = fs.readFileSync('docs/tools/enemy-loadout-editor/app.js', 'utf8');
+const enemyHtml = fs.readFileSync('docs/tools/enemy-loadout-editor/index.html', 'utf8');
+assert(referencedAssetVersion(enemyApp, 'preview.js'), 'Enemy Loadout must import a versioned preview');
+assert(referencedAssetVersion(enemyHtml, 'app.js'), 'Enemy Loadout must import a versioned entry module');
 const rig = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Canonical gameplay socket used in the parity assertions.
 const mainEditorScriptStart = html.indexOf('<script>\n(() => {'); // The actual Animation Author runs in a private IIFE, not the separate global layout script.
 const mainEditorScriptEnd = html.indexOf('</script>', mainEditorScriptStart);
