@@ -1805,7 +1805,8 @@
     for(let i=1;i<=steps;i++){
       const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t,z=az+(bz-az)*t;
       if(shaftVoxelBlocksAt(x,z,SHAFT_FLIGHT_RADIUS,y-SHAFT_FLIGHT_RADIUS,y+SHAFT_FLIGHT_RADIUS)
-        ||window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,SHAFT_FLIGHT_RADIUS,y))return false;
+        ||window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,SHAFT_FLIGHT_RADIUS,y)
+        ||window.RuinJumpShaft?.flightBlockedAt?.(x,z,SHAFT_FLIGHT_RADIUS,y))return false; // Flying Skeeri cannot pass through elevated jump slabs either.
     }
     return true;
   }
