@@ -3,6 +3,7 @@
   'use strict';
   const ID = 'mammakhbuur'; // Shared species identity for player/NPC appearance, scale and attachment registries.
   const DONOR = 'mashtzarr'; // Authored cosmetic, palette, hand/foot and anatomy authority.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.930776, female: 0.756247 }); // Fixed body-proportional pet size (geometric mean of Mammakhbuur/Mashtzarr x/y full-rig defaults); never calculated at runtime.
   const clone = value => JSON.parse(JSON.stringify(value)); // Copies donor data so edits never mutate Mashtzarr definitions.
   const withoutFrontHair = genderData => { // Mammakhbuur do not expose or retain any front-hair cosmetic, while every other Mashtzarr cosmetic remains inherited.
     const data = clone(genderData || {});
@@ -33,6 +34,10 @@
     const profile = clone(source); // Keeps local anatomy independent of the donor.
     profile.species = ID;
     profile.gender = gender;
+    if (profile.anchors?.shoulderPerch) {
+      const perchScale = AUTHORED_PERCH_SCALES[gender]; // Used only to author this gender's cloned anchor; the character parent still scales the pet normally.
+      profile.anchors.shoulderPerch.scale = { x: perchScale, y: perchScale, z: perchScale };
+    }
     if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
     if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
     profile.anatomy ||= {};

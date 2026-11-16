@@ -5,6 +5,7 @@
 
   const ID = 'nuhongan'; // Distinct saved/runtime species id so Nuhongan retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Nuhongan system.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.387298, female: 0.36406 }); // Fixed body-proportional pet size (geometric mean of 0.8× Tletingan width and 0.75× Tletingan height); never calculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const PART_SCALE_AXES = window.HobunjiCharacterRigScaleDefaults?.nuhonganPartScaleAxes; // Reads fixed authored axes; this bridge never calculates a donor/body scale ratio.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Prevents Nuhongan edits from mutating Tletingan source records.
@@ -63,6 +64,10 @@
       const profile = clone(source);
       profile.species = ID;
       profile.gender = gender;
+      if (profile.anchors?.shoulderPerch) {
+        const perchScale = AUTHORED_PERCH_SCALES[gender]; // Used only to author this gender's cloned anchor; the character parent still scales the pet normally.
+        profile.anchors.shoulderPerch.scale = { x: perchScale, y: perchScale, z: perchScale };
+      }
       if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
       if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
       profile.anatomy ||= {};

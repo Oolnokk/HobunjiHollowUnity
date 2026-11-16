@@ -11,6 +11,7 @@
 
   const SPECIES_ID = 'harlyao'; // Used as the runtime/config key for every Harlyao-specific override below.
   const BODY_SPECIES_ID = 'engh-sho'; // Used whenever Harlyao must resolve Engh-sho-authored body, wardrobe, extremity, or rig data.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.84, female: 0.78 }); // Fixed body-proportional pet size (1.2× Engh-sho authored dimensions); never calculated at runtime.
   const COLOR_SPECIES_ID = 'mao-ao'; // Used to inherit the live Mao-ao body-color ranges after species configs load.
   const GENDERS = Object.freeze(['male', 'female']); // Used to install both NPC gender variants without duplicating bridge logic.
   const EXPECTED_HEAD_SPRITES = Object.freeze({ // Exposed in mobile diagnostics so missing not-yet-authored head art is obvious.
@@ -96,6 +97,10 @@
       const profile = clone(source); // Independent copy prevents Harlyao scale edits from mutating the canonical Engh-sho profile.
       profile.species = SPECIES_ID;
       profile.gender = gender;
+      if (profile.anchors?.shoulderPerch) {
+        const perchScale = AUTHORED_PERCH_SCALES[gender]; // Used only to author this gender's cloned anchor; the character parent still scales the pet normally.
+        profile.anchors.shoulderPerch.scale = { x: perchScale, y: perchScale, z: perchScale };
+      }
       if (profile.shoulderPerchRule?.appearanceSpeciesId) profile.shoulderPerchRule.appearanceSpeciesId = SPECIES_ID;
       if (profile.posteriorRule?.appearanceSpeciesId) profile.posteriorRule.appearanceSpeciesId = SPECIES_ID;
       removeInheritedWholeRigScale(profile);

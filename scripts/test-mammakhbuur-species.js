@@ -38,7 +38,10 @@ for (const gender of ['male','female']) {
   assert.match(species[gender].headSprite, new RegExp(`fightersprites/mammakhbuur-${gender[0]}/head\\.png$`));
   assert(fs.existsSync('docs/assets/' + species[gender].headSprite));
   for (const fallback of species[gender].headFallbackUrls || []) assert(fs.existsSync('docs/assets/' + fallback));
-  assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mammakhbuur::' + gender].anchors)), donors['mashtzarr::' + gender].anchors);
+  const expectedAnchors = JSON.parse(JSON.stringify(donors['mashtzarr::' + gender].anchors)); // Preserve every donor anchor except the independently authored perch size.
+  const expectedPerchScale = gender === 'male' ? 0.930776 : 0.756247; // Fixed body-proportion authoring, uniform across X/Y/Z.
+  expectedAnchors.shoulderPerch.scale = { x: expectedPerchScale, y: expectedPerchScale, z: expectedPerchScale };
+  assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mammakhbuur::' + gender].anchors)), expectedAnchors);
 }
 // Execute the actual portrait image-load branch to prove a configured fallback still fills a missing primary image without changing composition identity.
 const portrait = read('docs/js/portrait-utils.js'); // Isolates only loading, before canvas composition.
