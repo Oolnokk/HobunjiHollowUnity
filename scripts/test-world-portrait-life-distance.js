@@ -18,6 +18,7 @@ function makeCanvas() {
 let finishNpc = null; // Delays one NPC composite to simulate expensive art during a crowded festival.
 let rejectNpc = null; // Simulates an asset failure so the shared render slot must recover.
 let area = 'town'; // Exercises the existing current-area gate.
+let dialogueWalker = null; // When non-null, real dialogue already owns this walker's world portrait.
 const playerTile = { x: 10, y: 20 }; // Distances are measured in world tiles rather than pixels or rounded grid cells.
 const avatar = { group: { userData: { frontTexture: {} } }, frontCanvas: makeCanvas(), profile: {}, generation: 1 }; // Independent player path must continue while the NPC slot is busy.
 const window = {
@@ -28,6 +29,7 @@ const window = {
   DialogueContent: {
     dialogueSeatId: walker => walker.rec.id,
     npcRestingExpression: rec => rec.restingExpression || 'neutral',
+    ownsWorldPortrait: walker => dialogueWalker === walker,
   },
   NpcAvatarPreview: { renderProfileToCanvas(canvas, profile, options) {
     renders.push(options.seatId);
@@ -108,6 +110,25 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
   const beforeRebuild = uploads.length;
   finishNpc(); await flush();
   assert.equal(uploads.length, beforeRebuild, 'new outfit is not overwritten by an older asynchronous portrait render');
+
+  const speaking = walker('npc-speaking', 1); // Dialogue repaints this exact world portrait with its own expression/yap cadence.
+  dialogueWalker = speaking;
+  const beforeSpeaking = renders.length;
+  life.tickNpc(speaking, 1);
+  assert.equal(renders.length, beforeSpeaking, 'passive world animation never competes with the active dialogue face');
+  dialogueWalker = null;
+  life.tickNpc(speaking, 1);
+  dialogueWalker = speaking; // Dialogue starts after the passive composite begins.
+  const beforeDialogueRace = uploads.length;
+  finishNpc(); await flush();
+  assert.equal(uploads.length, beforeDialogueRace, 'an in-flight passive composite cannot overwrite dialogue face art');
+  dialogueWalker = null;
+
+  const namedAnimal = walker('npc-named-animal', 1); // Named animals use their own animated creature plane.
+  namedAnimal.avatarGroup.userData.namedAnimalNpc = true;
+  const beforeAnimal = renders.length;
+  life.tickNpc(namedAnimal, 1);
+  assert.equal(renders.length, beforeAnimal, 'named animal cannot repaint an unused hidden humanoid canvas');
 
   area = 'farm';
   life.tickNpc(boundary, 1);
