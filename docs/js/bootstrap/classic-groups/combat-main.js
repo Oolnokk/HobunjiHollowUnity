@@ -30,7 +30,7 @@
     "js/combat/combat-charged-breaker.js?v=20261116mountAudit2",
     "js/combat/combat-flurry.js?v=20261106trinkets20",
     "js/combat/combat-loadout-ui.js?v=20261116mountedCombat1",
-    "js/combat/combat-enchantments.js?v=20261116knotwork2",
+    "js/combat/combat-enchantments.js?v=20261116decouple1",
     "js/combat/fey-illusions.js?v=20261116feyAudited3",
     "js/combat/weapon-enchantment-vfx.js?v=20261116feyFireflies2",
     "js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"
