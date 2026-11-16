@@ -33,6 +33,13 @@ const warp = windowStub.BabyAnimalHeadWarp;
 assert.equal(warp.getScale(), 1.22, 'experimental size defaults to 122%');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'a missing authored frame never guesses where the head is');
+const paintedFrame = { x: 0.25, y: 0.18, width: 0.3, height: 0.42, coordinateSpace: 'sprite-normalized-top-left' };
+writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ 'custom-pet': { babyHeadScale: 1.4, babyHeadFrame: paintedFrame } }));
+assert.equal(warp.frameForKind('custom-pet').height, paintedFrame.height, 'custom animals use the frame exported from painted Head influence');
+assert.equal(warp.scaleForKind('custom-pet'), 1.4, 'custom animals retain their saved head proportion independently');
+writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ 'custom-pet': { babyHeadScale: 1.4, babyHeadFrame: { ...paintedFrame, width: -1 } } }));
+assert.equal(warp.frameForKind('custom-pet'), null, 'malformed custom frame is rejected rather than corrupting pixels');
+writes.delete('hobunji_animal_head_rigs_v1');
 
 const width = 41, height = 41;
 const pixels = new Uint8ClampedArray(width * height * 4);
