@@ -96,7 +96,14 @@
         return null;
       }
       avatar.group.visible = false; // Remains hidden until the user selects Perched.
-      sourceAvatar.group.add(avatar.group); // Inherit all existing actor/size transforms without changing the grip's local origin.
+      const sourceRoot = sourceAvatar.group; // The authored grip is a sibling of this root under CreaturePngPlaneScale in Rig Coordinates.
+      const renderParent = sourceRoot.parent || sourceRoot; // Detached preview mocks still have a safe local fallback.
+      if (renderParent !== sourceRoot) {
+        avatar.group.position.copy(sourceRoot.position);
+        avatar.group.quaternion.copy(sourceRoot.quaternion);
+        avatar.group.scale.copy(sourceRoot.scale);
+      } // Match the exact existing source-root transform while keeping posed art OUT of actor.model's bounds.
+      renderParent.add(avatar.group); // Inherit the same creature scale and carrier motion without changing the anchor's parent or exported coordinates.
       const posedPlanes = [avatar.frontPlane, avatar.backPlane]; // Both rendered PNG faces must share the editor's viewport-facing behavior.
       avatar.group.traverse?.(object => {
         if (object?.userData?.hobunjiShoulderSplitOverlay) posedPlanes.push(object); // Grehlr's left foreground must rotate exactly with the deformed right background.
