@@ -47,7 +47,7 @@ let lastPreviewScale = null, lastPreviewFrame = null;
 const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 'sprite-normalized-top-left' };
 const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
 const warp = {
-  getScale: () => 1.22, MAX_SCALE: 1.45, validateFrame,
+  getScale: () => 1.32, MAX_SCALE: 1.45, validateFrame,
   frameForKind: kind => kind === 'grehlr' ? canonical : null,
   applyToCanvas: (_source, kind, scale, frame) => {
     applied++; lastPreviewScale = scale; lastPreviewFrame = frame;
@@ -105,7 +105,7 @@ vm.runInNewContext(part10, ctx, { filename: 'author-part10.js' });
 const slider = elements.get('babyHeadScale');
 const label = elements.get('babyHeadScaleLabel');
 ctx.draw();
-assert.equal(slider.value, '122', 'new species inherits Nursery default');
+assert.equal(slider.value, '132', 'new species inherits universal default');
 assert.match(label.textContent, /inherited/);
 ctx.applyRecord({ id: 'grehlr', headRig: { babyHeadScale: 1.35 } });
 ctx.draw();
@@ -124,7 +124,7 @@ assert.match(elements.get('previewBadge').textContent, /Baby 145%/, 'preview vis
 const first = ctx.previewImageForAnimal(image);
 assert.equal(applied, 1, 'new scale produces exactly one rasterized preview');
 assert.equal(lastPreviewScale, 1.45);
-assert(lastPreviewFrame.width > canonical.width, 'painted Head influence takes priority over the unrelated chathead box');
+assert.equal(lastPreviewFrame.width, canonical.width, 'chathead box beats painted Head influence as alpha-mask source');
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
 assert.equal(applied, 1, 'no per-triangle recomposition');
 const split = ctx.previewSplitLayerCanvases();
@@ -153,7 +153,7 @@ ctx.draw();
 assert.equal(slider.value, '135', 'undo restores the slider');
 ctx.applyRecord({ id: 'custom-pet', headRig: {} });
 ctx.draw();
-assert.equal(slider.value, '122', 'switching species does not leak another animal setting');
+assert.equal(slider.value, '132', 'switching species does not leak another animal setting');
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
 slider.value = '140';
 listeners.get('babyHeadScale:input')[0]();
