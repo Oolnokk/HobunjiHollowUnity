@@ -144,8 +144,9 @@
         plane.updateMatrix();
         plane.matrixWorldNeedsUpdate = true;
       };
-      setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
-      setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
+      // Swap the shoulder-only face normals, not the observation root's 0/180° turn or the grip-point pivot.
+      setCanonicalPlaneRotation(c.avatarRef.frontPlane, -Math.PI / 2);
+      setCanonicalPlaneRotation(c.avatarRef.backPlane, Math.PI / 2);
       const alignedGripWorldPosition = finalTransform.gripLocalPosition
         ? group.localToWorld(new THREE.Vector3( // Read the actual rendered root matrix, not merely undoing the same offset calculation.
             finalTransform.gripLocalPosition.x, finalTransform.gripLocalPosition.y, finalTransform.gripLocalPosition.z))
@@ -154,7 +155,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+        recentChange: 'The grip-anchored root turn is unchanged; attached front/back animal planes face the opposite direction while original x-ray pairing is restored.',
         rotationSource: finalTransform.rotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),

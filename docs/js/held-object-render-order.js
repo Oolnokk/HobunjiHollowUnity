@@ -475,8 +475,8 @@
     switch (face) {
       case 'owner-front': return SHOULDER_PET_RENDER_ORDERS.front;
       case 'owner-back': return SHOULDER_PET_RENDER_ORDERS.back;
-      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontBehind : SHOULDER_PET_RENDER_ORDERS.frontAbove;
-      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backAbove : SHOULDER_PET_RENDER_ORDERS.backBehind;
+      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontAbove : SHOULDER_PET_RENDER_ORDERS.frontBehind;
+      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backBehind : SHOULDER_PET_RENDER_ORDERS.backAbove;
       default: return null;
     }
   }
@@ -585,8 +585,8 @@
     }
     previouslyPresentedPet = pet;
     const inward = pet.__hobunjiShoulderFacingInward === true; // The existing animation alone decides when the two stages swap.
-    const frontOrder = inward ? SHOULDER_PET_RENDER_ORDERS.frontBehind : SHOULDER_PET_RENDER_ORDERS.frontAbove;
-    const backOrder = inward ? SHOULDER_PET_RENDER_ORDERS.backAbove : SHOULDER_PET_RENDER_ORDERS.backBehind;
+    const frontOrder = inward ? SHOULDER_PET_RENDER_ORDERS.frontAbove : SHOULDER_PET_RENDER_ORDERS.frontBehind;
+    const backOrder = inward ? SHOULDER_PET_RENDER_ORDERS.backBehind : SHOULDER_PET_RENDER_ORDERS.backAbove;
     const avatar = pet.avatarRef;
 
     // Draw the owner/pet as one depth-tested, depth-write-free portrait stack.
@@ -620,11 +620,11 @@
       if (!frontPortraitRegistry.has(state.frontMesh)) frontPortraitRegistry.add(state.frontMesh);
     }
     // Only the pet face actually ABOVE its matching owner face contributes to the private owner mask.
-    syncPetForegroundStencil(pet, inward ? 'back' : 'front');
+    syncPetForegroundStencil(pet, inward ? 'front' : 'back');
     window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar); // The split halves inherit face-specific render order, material and stencil in the same frame.
     lastShoulderPetDecision = {
       active: true, mode: 'owner-portrait-stages', inwardFrontPose: inward,
-      frontForeground: !inward, backForeground: inward,
+      frontForeground: inward, backForeground: !inward,
       petFrontOrder: frontOrder, petBackOrder: backOrder,
       ownerFrontOrder: SHOULDER_PET_RENDER_ORDERS.front, ownerBackOrder: SHOULDER_PET_RENDER_ORDERS.back,
       ownerDepthWrite: false, petDepthWrite: false,
@@ -636,7 +636,7 @@
       avatar.group.userData.hobunjiShoulderPetLayering = {
         ...lastShoulderPetDecision, xrayEnabled: true,
         depthMode: 'depth-tested-owner-portrait-stage-xray',
-        recentChange: 'Observation turns now pair 180-degree inward art with rear-foreground x-ray and outward art with front-foreground x-ray; physical world depth is unchanged.',
+        recentChange: 'Original inward-front/outward-rear pet x-ray restored; the shoulder-only image-plane facing is reversed instead, without moving the pinned grip.',
       };
     }
   }
