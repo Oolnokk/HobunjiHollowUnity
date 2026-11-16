@@ -44,15 +44,25 @@
     return typeof configured === 'number' && Number.isFinite(configured) ? clampScale(configured) : scale;
   }
 
-  function frameForKind(kind) {
-    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for attachment-rig head boxes.
-    const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Allows registered species variants to share their authored parent frame.
-    const frame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame; // Authored chathead box, NOT the head-rig pivot/weight map.
+  function validateFrame(frame) {
     if (!frame || frame.coordinateSpace !== 'sprite-normalized-top-left') return null;
-    const { x, y, width, height } = frame;
+    const { x, y, width, height } = frame; // The baby's head area is expressed in normalized original-art coordinates.
     if (![x, y, width, height].every(Number.isFinite)) return null;
     if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1.000001 || y + height > 1.000001) return null;
-    return { x, y, width, height };
+    return { x, y, width, height, coordinateSpace: 'sprite-normalized-top-left' };
+  }
+
+  function frameForKind(kind) {
+    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for attachment-rig head boxes.
+    const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Variants share the base species' baby proportions.
+    const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame; // Preferred existing, per-species chathead frame.
+    if (validateFrame(authoredFrame)) return validateFrame(authoredFrame);
+    let preview = null; // Custom animals without a chathead box can author one using the rigger's painted Head influence.
+    try { preview = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}'); } catch (_) {}
+    const previewFrame = preview?.[normalized]?.babyHeadFrame || preview?.[base]?.babyHeadFrame; // Same-origin browser preview first.
+    const committed = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
+      || window.CreatureGeneticsRender?.headRigForKind?.(base); // Exported head rigs may explicitly contain a custom babyHeadFrame.
+    return validateFrame(previewFrame) || validateFrame(committed?.babyHeadFrame);
   }
 
   function warpPixels(source, width, height, frame, requestedScale = scale) {
@@ -89,10 +99,10 @@
     return output;
   }
 
-  function applyToCanvas(canvas, kind, previewScale = null) {
-    const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale); // Editor may override the strength without mutating stored gameplay settings.
+  function applyToCanvas(canvas, kind, previewScale = null, previewFrame = null) {
+    const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale); // Editor may override strength without mutating game preferences.
     if (!canvas || selectedScale <= 1) { debug.skipped++; return canvas; }
-    const frame = frameForKind(kind);
+    const frame = validateFrame(previewFrame) || frameForKind(kind); // Rigger can preview its painted head bounds before exporting them.
     if (!frame) { debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'no authored head frame'; return canvas; }
     try {
       const w = canvas.width, h = canvas.height; // Same native resolution for all genotypes and run poses.
@@ -116,7 +126,7 @@
 
   window.BabyAnimalHeadWarp = Object.freeze({
     DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
-    frameForKind, warpPixels, applyToCanvas,
+    frameForKind, validateFrame, warpPixels, applyToCanvas,
     debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS }),
   });
 })();
