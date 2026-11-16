@@ -38,7 +38,7 @@ const registered = { trees: {}, contexts: {}, nodes: {} };
 const inventory = { gold: 30000 };
 const gear = { tools: { sword: true }, harlyaoRelics: {}, toolMastery: {}, weaponEnchantments: {} };
 const profile = { worldId: 'quest-test', questProgress: {} };
-const enchantmentStates = {};
+let txSaves = 0; // Counts combined character/member writes, separate from bound-item and dialogue member saves.
 let saves = 0; // Verifies new weapon and quest persist together on first acquisition.
 let failSave = false; // Simulates a canonical member-save rejection during grant and dialogue completion.
 let gearSaves = 0; // Verifies enchanting uses the existing gear-save adapter.
@@ -52,15 +52,16 @@ const enchantments = {
   },
   cleanWeaponState: state => state,
   stateFor(key, create) {
-    return enchantmentStates[key] || (create ? (enchantmentStates[key] = { base: [], flourishes: {} }) : { base: [], flourishes: {} });
+    return gear.weaponEnchantments[key] || (create ? (gear.weaponEnchantments[key] = { base: [], flourishes: {} }) : { base: [], flourishes: {} });
   },
-  addBase(key, id) { this.stateFor(key, true).base.push(id); },
+  addBase(key, id) { this.stateFor(key, true).base.push(id); return true; },
   equipBase(key, index, id) {
     const state = this.stateFor(key, true);
     if (id) state.base[index] = id;
     else state.base.splice(index, 1);
+    return true;
   },
-  setFlourish(key, slot, id) { this.stateFor(key, true).flourishes[slot] = id; },
+  setFlourish(key, slot, id) { this.stateFor(key, true).flourishes[slot] = id; return true; },
   flourishForSlot(slot, key) { return this.stateFor(key).flourishes[slot]; },
   isBaseUnlocked(id) { return !!this.DEFINITIONS[id]; },
   isFlourishUnlocked(id) { return !!this.DEFINITIONS[id]; },
@@ -82,10 +83,15 @@ const window = {
   DelversGuild: { isMember: () => true, canEnchant: () => true, dialogueTree: () => null },
   WorldMetaStore: { loadArtifactCollection: () => ({ donated: [], pendingUnlocks: [] }), saveArtifactCollection: () => true },
   TasksPanel: { render() {} },
+  CharacterMetaSave: { update(mutate) {
+    if (failSave) return false;
+    try { mutate({ id: 'test-character' }, { characters: [{ id: 'test-character' }] }); txSaves++; return true; }
+    catch { return false; }
+  } },
   setTimeout(fn) { fn(); },
 };
 const context = vm.createContext({ window, document, console, Date, Math, performance: { now: () => 0 } });
-for (const path of ['docs/js/fey-armament-quest.js', 'docs/js/harlyao-relics.js', 'docs/js/artifact-collection.js']) {
+for (const path of ['docs/js/gear-member-transaction.js', 'docs/js/fey-armament-quest.js', 'docs/js/harlyao-relics.js', 'docs/js/artifact-collection.js']) {
   vm.runInContext(fs.readFileSync(path, 'utf8'), context, { filename: path });
 }
 const deps = {
@@ -104,6 +110,10 @@ const deps = {
 };
 const relics = window.HarlyaoRelics;
 const quest = window.FeyArmamentQuest;
+window.GearMemberTransaction.init({
+  inventory, getGearInventory: () => gear, captureMemberWorldData: meta => meta,
+  buildInventoryGrid() {}, buildEquipmentSlots() {}, showToast() {},
+}); // The real combined-save module replaces separate gear/member saves for Garanki services.
 relics.init(deps);
 quest.bindQuestDeps(deps);
 window.ArtifactCollection.init(deps);
@@ -221,6 +231,7 @@ before = inventory.gold;
 assert.equal(relics.clearSlot('sword', 'base', 0).ok, true);
 assert.equal(inventory.gold, before - 40, 'Hronal removal keeps original price');
 
-assert(gearSaves >= 4, 'all enchant changes persist through existing gear-save callbacks');
+assert.equal(gearSaves, 0, 'enchanting does not trigger separate gear saves');
+assert(txSaves >= 6, 'all Garanki enchant changes were saved as combined transactions');
 assert.equal(quest.debugSnapshot().stage, 3, 'mobile diagnostics show the completed quest');
 console.log('Fey Knotworked Armament: acquisition, dialogue, persistence, menu and fees passed.');
