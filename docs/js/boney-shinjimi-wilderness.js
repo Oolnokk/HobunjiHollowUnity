@@ -518,13 +518,14 @@
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
     const count = state.milksGiven; // Selects first, second, or third dialogue without changing the limit early.
+    const encounterGeneration = generation; // Invalidates stale dialogue continuations after world reload, house teardown or encounter replacement.
     let handled = false; // A double Continue or an unsuccessful grant cannot retry the same milk handover mid-dialogue.
     sceneRunning = true; // Locks the action synchronously, before the cutscene promise yields.
     void (async () => {
       try {
         await window.AuthoredCutsceneRuntime.run(milkSceneDefinition(count), {
           onDialogueContinue(stage) {
-            if (stage?.id !== 'milk_reward' || handled || state.phase !== 'leaving'
+            if (stage?.id !== 'milk_reward' || handled || generation !== encounterGeneration || state.phase !== 'leaving'
               || state.milksGiven !== count || area() !== state.zone
               || !insideHome(playerTile(), 0.1) || (Number(giftingDeps.inventory?.[milkKey]) || 0) <= 0) return;
             handled = true;
@@ -669,7 +670,7 @@
     const d=debugSnapshot();
     debugElement.textContent='Boney Shinjimi\n'+d.phase+' / moon '+d.cycle+'\n'+(d.zone||'no zone')
       +' '+JSON.stringify(d.home)+'\nLOS '+d.lastSight+'\n'+d.lastEvent+'\n'
-      +'house '+d.houseVisible+'/'+d.collision+' NPC '+d.walker+' boosts '+d.catches;
+      +'house '+d.houseVisible+'/'+d.collision+' NPC '+d.walker+' boosts '+d.catches+' milk '+d.milksGiven+'/'+MAX_MILK_GIFTS;
   }
   function serialize() {
     return {version:SAVE_VERSION,phase:state.phase==='scene'?(state.reward?'leaving':'home'):state.phase, // Persist reward-claimed cutscenes as departure, never as retriable gift prompts.
