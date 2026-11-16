@@ -511,6 +511,8 @@ assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json', p
 assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'floor' })), 'interior-floor', 'stone-age instanced floor x-rays');
 assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'wall' })), null, 'rooted walls remain solid even when they share a floor material family');
 assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json' })), null, 'a V50 non-floor WallBuilder mesh cannot be removed');
+assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json', hobunjiRuinFloorSurface: true })), 'interior-floor',
+  'the V50 flat floor explicitly registered by the ruin runtime x-rays the held weapon');
 assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true })), null, 'an unqualified outdoor/raised mesh is never removed based only on generic ground tags');
 const classifyTintCover = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
   heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3, surfaceComposer,
