@@ -17,14 +17,14 @@
   <div><h2>Source</h2><div class="row"><button id="loadBestiary">Load repo bestiary</button><button id="loadJsonButton">Load JSON</button><input id="jsonFile" type="file" accept="application/json,.json" hidden></div><label>Animal<select id="animalSelect"><option value="">New / custom animal</option></select></label><div class="row"><button id="loadSpritePath">Load sprite path</button><button id="pickImageButton">Choose image</button><input id="imageFile" type="file" accept="image/*" hidden></div></div>
   <div id="babyHeadScalePanel" style="border:1px solid #7c7252;border-radius:10px;padding:10px;background:rgba(240,200,120,.055);">
     <h2>Baby head proportions · experimental</h2>
-    <label>Head enlargement <span id="babyHeadScaleLabel">122% · inherited default</span>
-      <input id="babyHeadScale" type="range" min="100" max="145" step="1" value="122">
+    <label>Head enlargement <span id="babyHeadScaleLabel">132% · inherited default</span>
+      <input id="babyHeadScale" type="range" min="100" max="145" step="1" value="132">
     </label>
     <div class="row" style="margin-top:8px;">
       <button id="babyHeadCompare" type="button" aria-pressed="false">Show original for comparison</button>
       <span id="babyHeadPreviewState" class="small" role="status" aria-live="polite">Load a species to preview.</span>
     </div>
-    <div class="hint" style="margin-top:6px;">Choose an animal above, then watch the Live deformation preview. 100% is original; 145% makes the change easiest to see. Original paint coordinates stay intact. Saving the rig exports this species' setting.</div>
+    <div class="hint" style="margin-top:6px;">Choose an animal above, then watch the Live deformation preview. Opaque idle-sprite pixels inside the chathead frame define the head mask for every pose. 100% is original; 145% makes the change easiest to see. Original paint coordinates stay intact. Saving the rig exports this species' setting.</div>
     <div class="row" style="justify-content:space-around;font-size:12px;margin-top:8px"><span>Original head</span><span>Enlarged head</span></div>
     <canvas id="babyHeadComparisonCanvas" width="580" height="180" aria-label="Original and enlarged head pixels side by side" style="width:100%;height:135px;border:1px solid var(--line);border-radius:8px;background:#30353c;image-rendering:pixelated;touch-action:auto"></canvas>
     <div id="babyHeadPixelDelta" class="hint" role="status" aria-live="polite">Load an animal to compare its actual head pixels.</div>
@@ -65,7 +65,7 @@
 </div>
 <script src="../../js/creature-genetics-render.js?v=20261104nelkRig1"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261116shoulderParity2"></script> <!-- Match the game's authored chathead boxes in baby-size previews. -->
-<script src="../../js/baby-animal-head-warp.js?v=20261116babyPets123b"></script>
+<script src="../../js/baby-animal-head-warp.js?v=20261116idleMask132a"></script>
 <script src="../../js/creature-genetics.js"></script>
 <script src="../../js/grehlr-head-rig-correction.js?v=20260917uploads1"></script>
 <script src="../../js/animal-head-rig-authored.js?v=20261116mootPaintBaby1"></script>
@@ -83,7 +83,7 @@
 <script src="./author-part7.js"></script>
 <script src="./author-part8.js"></script>
 <script src="./author-part9.js"></script>
-<script src="./author-part10.js?v=20261116babyCors1"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
+<script src="./author-part10.js?v=20261116idleMask132a"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
 <script src="../../js/modular-weapon-bridge-fill.js?v=20261115hatTab1"></script>
 <script src="./hat-tab.js?v=20261115hatTab1"></script>
 </body>
