@@ -587,6 +587,17 @@ const swungGroup = groupMeshes({}, actorScene, {}, [extendedWeapon]);
 assert.equal(swungGroup.groups.length, 1, 'held weapon remains eligible after leaving the actor-centered base circle');
 assert.ok(swungGroup.groups[0].radiiSq[0] > 2.25 && swungGroup.groups[0].regions[0].radius > 2.5,
   'world-space held sprite bounds extend the floor exception beyond the old hard circle edge');
+const rotatingRope = { ...part(0, 0), userData: { hobunjiGeneratedRope: true },
+  geometry: {
+    boundingBox: { min: { x: -0.01, y: -0.01, z: -0.01 }, max: { x: 0.01, y: 0.01, z: 0.01 } },
+    boundingSphere: { radius: 0.75, center: { x: 0, y: 0, z: 0 } },
+  },
+  matrixWorld: { elements: { 12: 3, 14: 0.5 }, getMaxScaleOnAxis: () => 2 },
+  onBeforeRender() {}, // Like the real flail rope, this callback rotates the sprite when drawn.
+};
+const ropeGroup = groupMeshes({}, actorScene, {}, [rotatingRope]);
+assert.ok(ropeGroup.groups[0].regions[0].radius >= 4.5,
+  'camera-facing flail rope uses its rotation-safe world bounding sphere, not stale pre-render plane bounds');
 assert.match(heldRender, /const regionsByTile = new Map\(\)/,
   'held x-ray scopes are bucketed by tile while preserving per-actor positions');
 const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
