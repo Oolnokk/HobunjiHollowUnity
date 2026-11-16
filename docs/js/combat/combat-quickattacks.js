@@ -283,17 +283,24 @@
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      if (mounted) {
-        const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Converts Quick Attack lunge mastery/enchantment bonuses into the mount's replacement speed surge.
-        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Higher-ranked lunge mastery still extends speed when the burst hits the mount speed cap.
-        window.Mounts?.beginMountedCombatBurst?.(1.95 * burstScale, Math.max(1.05, windupS + strikeS + 0.45) * durationScale);
-      } // Speed follows real mount steering, rock collision and inertia.
+      const quickWindupOwner = 'mountedQuickAttack'; // A shared owner for this staged jab's windup-only movement grant.
+      const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Preserve unlocked lunge mastery/enchantments as mount acceleration.
+      const mountedPeakMultiplier = 1.95 * burstScale; // Target speed grows progressively through the paid-upfront jab windup.
+      if (mounted) window.Mounts?.setMountedCombatWindupBoost?.(quickWindupOwner, mountedPeakMultiplier, 0);
       else deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
         strikeS,
         recoverS: 0,
+        onUpdate: action => {
+          if (!mounted) return;
+          if (window.Mounts?.rideState !== 'mounted' || action.t >= windupS) {
+            window.Mounts?.clearMountedCombatWindupBoost?.(quickWindupOwner); // Stop providing extra speed at the strike boundary or on dismount.
+            return;
+          }
+          window.Mounts?.setMountedCombatWindupBoost?.(quickWindupOwner, mountedPeakMultiplier, Math.min(1, action.t / Math.max(1e-6, windupS)));
+        },
         onStrike: () => {
           if (mounted && window.Mounts?.rideState !== 'mounted') return; // A dismount mid-windup cannot turn the scheduled mounted jab into a foot strike.
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
@@ -425,8 +432,8 @@
           };
           deps.debugLog?.(`[quick-attack] ${def.label} hits=${hits} conditions=${conditionalHits} bonusProcs=${bonusEffectProcs} cooldownEnemies=${procTargets.length} debuffs=${appliedDebuffs.map(entry => `${entry.id}x${entry.stacks || 1}`).join(',') || '-'} instant=${appliedInstantEffects.map(entry => `${entry.id}:${entry.consumed || entry.damage || 0}`).join(',') || '-'} cost=${actualCost} refund=${refunded} lungeTiles=${LUNGE_TILE_MUL}`, 'combat');
         },
-        onComplete: () => { busyAction = null; },
-        onCancel: () => { busyAction = null; },
+        onComplete: () => { if (mounted) window.Mounts?.clearMountedCombatWindupBoost?.(quickWindupOwner); busyAction = null; },
+        onCancel: () => { if (mounted) window.Mounts?.clearMountedCombatWindupBoost?.(quickWindupOwner); busyAction = null; },
         data: {
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
             yaw: deps.player.angle,

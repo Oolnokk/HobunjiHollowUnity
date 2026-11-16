@@ -56,7 +56,10 @@
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
   let mountBoostS = 0; // Remaining wheat surge; read by movement and exertion scheduling.
   let mountedCombatBoostS = 0; // Remaining charge/quick-attack speed burst, independent of wheat spending.
-  let mountedCombatBoostMultiplier = 1; // Active mounted melee burst multiplier applied to forward riding speed.
+  let mountedCombatBoostMultiplier = 1; // Legacy timed bursts still support their existing callers.
+  let mountedWindupOwner = null; // Only the currently active mounted windup can adjust/clear its own acceleration.
+  let mountedWindupMultiplier = 0; // Windup-only desired-speed factor; zero means no combat acceleration.
+  let mountedWindupSpentFraction = 0; // Mobile diagnostics track actual funded charge progress, not just elapsed time.
   let mountedOrbitTarget = null; // Cached ranged auto-target used to steer the carrier in a circle.
   let mountedOrbitRadiusPx = 0; // Initial target distance retained as the desired orbit radius.
   let mountedOrbitScanS = 0; // Limits ranged target-acquisition work to about five checks per second.
@@ -249,6 +252,9 @@
     mountBoostS = 0;
     mountedCombatBoostS = 0;
     mountedCombatBoostMultiplier = 1;
+    mountedWindupOwner = null;
+    mountedWindupMultiplier = 0;
+    mountedWindupSpentFraction = 0;
     mountedOrbitTarget = null;
     mountedOrbitRadiusPx = 0;
     mountedOrbitScanS = 0;
@@ -284,6 +290,28 @@
       (window.PerceptionMode?.speedMultiplier?.() ?? 1) * (Number(mountedTrainingModifiers().baseSpeed) || 1);
     const ratio = currentSpeed / Math.max(1, baseSpeed); // Preserves extra damage from genuinely high boosted velocity, and zero bonus against collisions.
     return (1 + Math.min(1.8, Math.max(0, ratio) * 0.65)) * (Number(mountedTrainingModifiers().meleeDamage) || 1);
+  }
+
+  function setMountedCombatWindupBoost(owner, peakMultiplier, spentFraction) {
+    if (mountRideState !== 'mounted' || !mountRideEntity || !owner) return false;
+    const peak = Number(peakMultiplier); // The ability's mastery-adjusted maximum speed multiplier.
+    const funded = Number(spentFraction); // Charge uses cumulative committed stamina; quick attacks use completed windup fraction after their upfront payment.
+    if (!Number.isFinite(peak) || !Number.isFinite(funded)) return false;
+    mountedWindupOwner = owner;
+    mountedWindupSpentFraction = Math.max(0, Math.min(1, funded));
+    const training = Math.max(1, Number(mountedTrainingModifiers().combatBurstDuration) || 1); // Sustained Gallop now builds speed sooner, rather than prolonging the boost after impact.
+    const progress = Math.min(1, mountedWindupSpentFraction * training);
+    mountedWindupMultiplier = progress > 0 ? 1 + (Math.min(3.5, Math.max(1, peak)) - 1) * progress * progress : 0; // Quadratic buildup avoids a sudden speed jump on the first stamina payment.
+    ridingDebug.lastCombatWindup = { owner, spentFraction: mountedWindupSpentFraction, multiplier: mountedWindupMultiplier }; // Phone-readable proof of the windup's actual speed grant.
+    return true;
+  }
+
+  function clearMountedCombatWindupBoost(owner) {
+    if (mountedWindupOwner !== owner) return false; // An older interrupted attack must not cancel a newer technique.
+    mountedWindupOwner = null;
+    mountedWindupMultiplier = 0; // Actual mount velocity decelerates naturally; no fresh acceleration is supplied during Strike.
+    mountedWindupSpentFraction = 0;
+    return true;
   }
 
   function beginMountedCombatBurst(multiplier, seconds) {
@@ -1074,7 +1102,8 @@
     ridingDebug.orbitActive = false; // Reset the frame's steering diagnostic even when manual braking bypasses target pursuit.
     const boosting = mountBoostS > 0;
     const desiredSpeed = topSpeed * Math.max(boosting ? BOOST_SPEED_RATIO : CRUISE_SPEED_RATIO,
-      mountedCombatBoostS > 0 ? mountedCombatBoostMultiplier : 0); // Combat bursts replace lunge displacement with real, collision-tested mount velocity.
+      mountedCombatBoostS > 0 ? mountedCombatBoostMultiplier : 0,
+      mountedWindupMultiplier); // Windup accelerates the real collision-tested carrier; Strike inherits only momentum already earned.
     // Backward reins brake only when substantially opposed to the current heading.
     // Releasing controls does not stop the mount: it continues along its heading.
     const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
@@ -1170,8 +1199,8 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
-    beginMountedCombatBurst, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
+    beginMountedCombatBurst, setMountedCombatWindupBoost, clearMountedCombatWindupBoost, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
 })();

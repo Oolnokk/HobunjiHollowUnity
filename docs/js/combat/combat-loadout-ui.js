@@ -46,8 +46,8 @@
   ];
   const MOUNTED_SLOTS = [
     { id: 'tap1', name: 'Mounted Strike', desc: 'Action 1 tap: one straightforward hit. Uses the opening Combo mastery, never starts a 3-hit chain.', readOnly: true, note: 'Locked · inherits your equipped weapon’s Combo mastery.' },
-    { id: 'hold1', name: 'Charged Gallop', desc: 'Action 1 hold: Charged Breaker strike without a player lunge, followed by a powerful mount speed burst.', readOnly: true, note: 'Locked · uses Charged Breaker heavy mastery and mount velocity at impact.' },
-    { id: 'tap2', name: 'Mounted Quick Attack', desc: 'Action 2 tap: select an unlocked ordinary Quick Attack. Its lunge becomes a mount speed burst.' },
+    { id: 'hold1', name: 'Mounted Charge', desc: 'Action 1 hold: build mount speed as stamina is spent during Charged Breaker windup, then strike using that momentum without a player lunge.', readOnly: true, note: 'Locked · uses Charged Breaker heavy mastery and mount velocity at impact.' },
+    { id: 'tap2', name: 'Mounted Quick Attack', desc: 'Action 2 tap: select an unlocked ordinary Quick Attack. Its lunge becomes gradual mount acceleration during windup, ending at the strike.' },
     { id: 'hold2', name: 'Mounted Special', desc: 'Action 2 hold: reserved for future mount-only unlockable abilities.', readOnly: true, note: 'No mounted specials have been introduced yet.' },
   ];
   let displayedMode = null; // User-chosen loadout preview; null follows actual riding state on first opening.
