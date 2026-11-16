@@ -242,8 +242,8 @@
   }
   function actorLocation(actor,session) {
     const unit=Number(deps?.TILE)||64;
-    const flightY=Number(actor.branchSurfaceY); // Preserve ground-level (Y=0) Skeeri instead of relocating their collision to the high bomber nest.
-    return {x:actor.x/unit,z:actor.y/unit,y:Number.isFinite(flightY)?flightY:session.nest.y};
+    const flightY=actor.branchSurfaceY; // A legitimate Y=0 flight is ground-level; only an absent height falls back to the nest.
+    return {x:actor.x/unit,z:actor.y/unit,y:flightY!=null&&Number.isFinite(Number(flightY))?Number(flightY):session.nest.y};
   }
   function point(session,location) {
     const unit=Number(deps?.TILE)||64;
