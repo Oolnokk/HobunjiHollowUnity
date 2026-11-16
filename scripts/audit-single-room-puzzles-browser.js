@@ -106,6 +106,11 @@ async function main(){
               if(d.pushable)counts.pushable=(counts.pushable||0)+1;
               if(d.pushPuzzle?.totalPushes>=6&&d.pushPuzzle?.directionChanges>=2)counts.routedPush=(counts.routedPush||0)+1; // Must be the deliberate multi-turn push course, not a trivial pressure plate.
               if(d.requiresCarriedTorch)counts.requiresCarriedTorch=(counts.requiresCarriedTorch||0)+1;
+              if(d.fireHazard===true)counts.fireHazard=(counts.fireHazard||0)+1; // Other generated ruin-root fire sources live here.
+            });
+            const livePuzzleGroup=runtime?.scene?.getObjectByName?.('dev_random_ruin_simple_puzzles'); // Single-room challenge visuals live under the scene, not the sibling ruin root.
+            livePuzzleGroup?.traverse?.(object=>{
+              if(object.userData?.fireHazard===true)counts.fireHazard=(counts.fireHazard||0)+1; // Test the physically reachable, torch-lightable brazier owned by the active challenge.
             });
             return {area:window.GridTileAccessors?.getCurrentArea?.(),trial,
               rooms:meta.rooms?.length,noLoot:runtime?.noLoot===true,shaftHub:!!runtime?.shaftHub,
@@ -125,7 +130,8 @@ async function main(){
             nativePushBlock:'pressurePlate'}[kind];
           row.ok=s.rooms===1&&s.noLoot&&!s.trial.error&&s.trial.kind===kind&&s.trial.ready===true
             &&(!needsLink||(s.trial.linked===true&&s.targets>0))
-            &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls>0))
+            &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls===0
+               &&(s.counts.fireHazard||0)>0)) // A lit fire-hazard brazier replaces the old projectile-arming control.
             &&(kind!=='timedMelody'||s.trial.noteCount>=2)
             &&(kind!=='ropeChain'||(s.trial.ropeLinked===true&&s.ropes>0))
             &&(!native||(s.mechanism?.gated===true&&s.mechanism.rootPresent===true
@@ -143,7 +149,8 @@ async function main(){
       }catch(e){row.error=String(e?.stack||e);}
       // Do not abort on one failed puzzle: the remaining variants still need verification.
       console.log('Solo puzzle audit:',JSON.stringify({kind:row.kind,ok:row.ok,error:row.error||null,
-        snapshot:row.snapshot?.trial||null,fixture:row.snapshot?.fixture||null}));
+        snapshot:row.snapshot?.trial||null,fixture:row.snapshot?.fixture||null,
+        counts:row.ok?undefined:row.snapshot?.counts,controls:row.ok?undefined:row.snapshot?.controls}));
     }
     fs.mkdirSync('test-artifacts',{recursive:true});
     fs.writeFileSync('test-artifacts/solo-puzzle-audit.json',JSON.stringify({report,errors:errors.slice(-40)},null,2));

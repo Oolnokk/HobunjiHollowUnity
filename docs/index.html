@@ -683,7 +683,7 @@
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20261109freecamp1"></script>
+  <script src="js/wilderness-campfire.js?v=20261116campfireTapHold1"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -2914,7 +2914,7 @@
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261116hdf567e5"></script>
+  <script src="game.js?v=20261116torchinput1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -159,7 +159,6 @@
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let timedNoteListener=null; // Every ruin/cave melody consumes only the player's real, plate-gated note events.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
-    let fireControl=null; // This chamber removes its fire-source interaction when disposed, including on partial mounts.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
     let icePlacement=null; // The existing door-ice generator owns the visible stalagmites over the fire target.
     let flameVisuals=[]; // Authored particle emitters are ticked and disposed with their puzzle, never left running after a reroll.
@@ -342,14 +341,16 @@
         yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
         length:math.ROPE_LENGTH,maxLength:math.MAX_LENGTH,parent:group};
     }else if(kind==='dungeonFire'){
-      // The standard DungeonFire runtime owns shot ignition and plume-to-ice
-      // collision. The room merely authors a source brazier, a heat target,
-      // and a progression gate; it never guesses from a normal arrow hit.
+      // A short, permanent source brazier ignites the held torch on physical contact.
+      // DungeonFire still owns thrown-lit-torch collision with the ice seal and its gate.
       const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
-        ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
+        ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.46,.54,.44,8),stone,cx-2.3,y+.24,cz);
+      source.scale.y *= .58; // Shortens the regular authored standing brazier to be reachable by a swinging torch.
+      source.userData.fireHazard=true; // Held adventuring torches use the shared 3D fire-source test; no projectile arm action.
+      source.userData.devRuinFootprintIgnore=true;
       const flameRoot=new THREE.Group(); // Reuses the player's campfire visual; no custom flame cones or alternative particle recipes.
       flameRoot.name='ruin-fire-flame-'+id;
-      flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
+      flameRoot.position.set(cx-2.3,y+.62,cz);group.add(flameRoot);
       const flameVisual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flameRoot,{
         scale:.94,rateScale:.8,
       }); // AuthoredFurniture loads campfire_fire from the exact campfire furniture JSON.
@@ -386,17 +387,6 @@
           return complete();
         },
       };
-      fireControl={
-        kind:'dungeonFireSource',object:source,promptRoot:source,
-        floorY:y,range:1.75,priority:26,touchIcon:'🔥',label:'Ignite Next Shot',
-        onPress:()=>{
-          if(rec.disposed||rec.solved||!isActive()
-            ||Math.abs(Number(getPlayerY?.())-y)>.9)return;
-          if(fire?.armNextProjectile?.()===true)options.onFireArmed?.(rec);
-          else options.onFireUnavailable?.(rec);
-        }
-      };
-      options.addControl?.(fireControl);
     }else if(kind==='fireSconces'||kind==='cavePressurePlate'){
       // Both indoor puzzle types own the same full-size authored cliff gate.
       // The fallback plate avoids blocking progress if the music/fire runtime is unavailable.
@@ -868,7 +858,6 @@
       rec.releaseMelodyCamera?.(); // Dispose the clue-camera source before its meshes and puzzle are removed.
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
-      if(fireControl)options.removeControl?.(fireControl);
       rec.removePillarFootprints?.();
       if(rec.pillarScope)(options.DynamicSurfaces||root.DynamicSurfaces)?.clearScope?.(rec.pillarScope); // The pillar hall's solid blockers.
       rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
