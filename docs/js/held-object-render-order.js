@@ -249,9 +249,10 @@
     if (data.hobunjiGroundSurface === true || data.cavernWalkableFloor === true) return true;
     if (materialMarksInteriorFloor(object.material)) return true;
 
-    // Every V50 WallBuilder recipe-2 mesh is a ruin floor. Flat floors do
-    // not have a plateau levelByCell map, but still need the held x-ray.
-    if (data.wallBuilderRecipe === 'wallrecipe2.json') return true;
+    // A V50 flat floor gets its identity from registerFloor; untagged
+    // recipe-2 meshes are not automatically floors. Stepped floors also
+    // expose their plateau map directly and retain the existing exception.
+    if (data.hobunjiRuinFloorSurface === true || (data.wallBuilderRecipe === 'wallrecipe2.json' && data.plateauModel?.levelByCell)) return true;
     return false;
   }
 
@@ -315,7 +316,8 @@
     const walkableFloor = !!object?.isMesh && !object.isSkinnedMesh && (
       materialMarksInteriorFloor(object.material)
       || data.cavernWalkableFloor === true
-      || data.wallBuilderRecipe === 'wallrecipe2.json'
+      || data.hobunjiRuinFloorSurface === true
+      || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
       || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor')
     );
     surfaceClassificationHints.topFaceGround = isTopFacesGroundSurface(object);
