@@ -30,8 +30,8 @@
     }
   }
   if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-16-moot-painted-baby-pets1') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261116mootPaintBaby1', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261116mootPaintBaby1', 'animal-head-rig-authored');
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261116mootPaint132b', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261116mootPaint132b', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
