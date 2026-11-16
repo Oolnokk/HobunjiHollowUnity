@@ -312,7 +312,10 @@ assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'combat burst ends an
 // Mobile auto-target must change the mount's path into a circle, not alter
 // projectile aiming or override explicit manual reins.
 const orbitEnemy = { id: 'orbited-enemy', health: 100, areaId: 'wild', x: 32 * T, y: 9 * T };
-win.Combat = { input: { isAutoTargetEnabled: () => true } };
+win.Combat = {
+  input: { isAutoTargetEnabled: () => true },
+  deps: { getActiveTool: () => 'ranged', getHeldMode: () => 'tool' },
+};
 win.RangedWeapons = {
   equippedRangedKey: () => 'bow',
   playerAimSolution: () => ({ reticleTarget: orbitEnemy }),
@@ -327,6 +330,11 @@ assert.equal(win.Mounts.ridingDebug.orbitTarget, 'orbited-enemy', 'orbit only fo
 assert(Math.abs(mount.y - orbitStartY) > T * 0.25, 'ranged auto-target bends travel into a real encircling path');
 assert(Math.hypot(mount.x - orbitEnemy.x, mount.y - orbitEnemy.y) < orbitStartDistance + T * 0.5,
   'orbit does not drift substantially farther from the chosen enemy than its acquired distance');
+win.Combat.deps.getActiveTool = () => 'weapon';
+mount.x = 28 * T; mount.y = 9 * T;
+const meleeModeY = mount.y;
+for (let i = 0; i < 12; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.orbitTarget, 'orbited-enemy', 'orbit diagnostic retains last chosen target for inspection');
 win.Combat.input.isAutoTargetEnabled = () => false;
 input.x = 0; input.y = 0;
 
