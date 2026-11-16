@@ -488,7 +488,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261113uniformRigStride2', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261110xrayHandAudit1', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261115worldPerch1', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261116maoPerch2', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261107instrHand1', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261114h48d6c18', docsBase).href,
