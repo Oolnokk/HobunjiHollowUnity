@@ -39,7 +39,7 @@
   // can wrap that module's init() and capture the existing player/scene deps.
   // Keep this parser-synchronous for the same reason as the scenery guard above.
   (function loadCloudForestTreeBatcherEarly() {
-    const src = 'js/cloud-forest-tree-batcher.js?v=20260824a';
+    const src = 'js/cloud-forest-tree-batcher.js?v=20261116cfFrustum2';
     if (window.CloudForestTreeBatcher || document.querySelector('script[data-cloud-forest-tree-batcher]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-cloud-forest-tree-batcher="1"><\/script>`);

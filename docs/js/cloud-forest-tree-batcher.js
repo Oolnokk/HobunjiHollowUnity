@@ -14,13 +14,16 @@
   const CHUNK_SIZE_TILES = 8;
   const DEFAULT_NEAR_RADIUS_TILES = 10;
   const MOVE_REFRESH_TILES = 0.35;
-  const STATIC_REFRESH_MS = 750;
+  const STATIC_REFRESH_MS = 1500; // Limits periodic dead-tree validation when the player is stationary.
+  const ROOT_RETRY_MS = 3000; // Rechecks a not-yet-populated Cloud Forest scene without traversing it every frame.
+  const FRUSTUM_PADDING_TILES = 3; // Keeps animated foliage and camera-edge canopies inside the view bounds.
   const BATCHABLE_SPECIES = new Set(['crowned_pine', 'shadewood']);
 
   let nearRadiusTiles = DEFAULT_NEAR_RADIUS_TILES;
   let activeState = null;
   let fogDeps = null; // Captured from CloudForestFog.init so batching follows the authoritative player/scene/cull state.
   let lastDebugLog = '';
+  let lastDevPanelCheckMs = -Infinity; // Used to throttle optional dev-panel DOM work to once per second.
   const states = new WeakMap();
 
   function debug(message, level = 'info') {
@@ -62,10 +65,31 @@
 
   function collectRoots(scene) {
     const roots = [];
-    scene?.traverse?.(object => {
-      if (isBatchableTreeRoot(object)) roots.push(object);
-    });
+    const pending = scene ? [scene] : []; // Used to stop at the outermost tagged gameplay tree; its GLB/LOD children carry the same tags.
+    while (pending.length) {
+      const object = pending.pop();
+      if (isBatchableTreeRoot(object)) {
+        roots.push(object);
+        continue; // A baked tree's inner near/far GLBs must not be registered as separate trees.
+      }
+      const children = object?.children || [];
+      for (let i = children.length - 1; i >= 0; i--) pending.push(children[i]);
+    }
     return roots;
+  }
+
+  function batchVisualRoot(treeRoot) {
+    const lod = treeRoot.children?.find(child => child?.isLOD && child.userData?.treeLodController);
+    return lod?.levels?.[lod.levels.length - 1]?.object || treeRoot; // Use only the most distant authored GLB for far instances.
+  }
+
+  function isInVisualRoot(mesh, visualRoot) {
+    let node = mesh;
+    while (node) {
+      if (node === visualRoot) return true;
+      node = node.parent;
+    }
+    return false;
   }
 
   function restoreSourceMeshes(state) {
@@ -115,6 +139,7 @@
         status: 'no-baked-roots',
         entries: [], chunks: [], treeCount: 0, sourceMeshCount: 0,
         instancedMeshCount: 0, lastRefreshMs: performance.now(),
+        lastRootProbeMs: performance.now(), // Retry after async tree scene construction finishes.
         lastPlayerX: NaN, lastPlayerZ: NaN, lastCullRadius: NaN,
       };
     }
@@ -138,6 +163,8 @@
           entries: [],
           buckets: new Map(),
           minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity,
+          renderBounds: new THREE.Box3(), // Union of source meshes used for conservative 3D view culling.
+          canFrustumCull: true, // Falls back to radial-only culling if any source has unknown geometry bounds.
         };
         chunkDefs.set(chunkKey, chunk);
       }
@@ -159,11 +186,11 @@
       chunk.minZ = Math.min(chunk.minZ, entry.z);
       chunk.maxZ = Math.max(chunk.maxZ, entry.z);
 
+      const farVisual = batchVisualRoot(treeRoot); // GLB LODs contain separate near/far meshes, never batch both.
       treeRoot.traverse(object => {
         if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return;
         if (!object.geometry || !object.material || object.userData?.cloudForestTreeBatch) return;
         object.updateWorldMatrix?.(true, false);
-        const bucket = makeBucket(chunk.buckets, object.geometry, object.material, object);
         const source = {
           mesh: object,
           originalVisible: object.visible !== false,
@@ -171,9 +198,18 @@
           batchMesh: null,
           batchIndex: -1,
         };
-        entry.sources.push(source);
-        bucket.slots.push({ entry, source });
+        entry.sources.push(source); // Both near and far meshes still need hiding/restoring as the player approaches.
         sourceMeshCount++;
+        if (!isInVisualRoot(object, farVisual)) return;
+        const bucket = makeBucket(chunk.buckets, object.geometry, object.material, object);
+        // Only the selected far-detail GLB contributes to camera bounds or instanced draw calls.
+        const geometryBounds = object.geometry.boundingBox || (object.geometry.computeBoundingBox?.(), object.geometry.boundingBox);
+        if (geometryBounds && !geometryBounds.isEmpty()) {
+          chunk.renderBounds.union(geometryBounds.clone().applyMatrix4(source.matrix));
+        } else {
+          chunk.canFrustumCull = false;
+        }
+        bucket.slots.push({ entry, source });
       });
     }
 
@@ -226,6 +262,10 @@
         (definition.maxZ - definition.minZ) * 0.5 + pad,
       );
       group.userData.cullSphere = { x: centerX, z: centerZ, radius, xzRadius: radius };
+      // Include the complete authored height, not only trunk origins, before hiding a chunk off-camera.
+      const viewSphere = definition.canFrustumCull && !definition.renderBounds.isEmpty()
+        ? definition.renderBounds.getBoundingSphere(new THREE.Sphere()) : null;
+      if (viewSphere) viewSphere.radius += FRUSTUM_PADDING_TILES;
       scene.add(group);
       chunks.push({
         ...definition,
@@ -234,6 +274,7 @@
         centerX,
         centerZ,
         radius,
+        viewSphere, // Used by updateChunkVisibility to skip batches outside the live camera view.
         visible: true,
       });
     }
@@ -249,6 +290,12 @@
       nearTreeCount: 0,
       batchedTreeCount: 0,
       culledChunkCount: 0,
+      frustumCulledChunkCount: 0, // Exposed in mobile diagnostics, separate from distance culling.
+      frustumActive: false, // Shows whether a valid gameplay camera is supplying view bounds.
+      lastVisibilityX: NaN, lastVisibilityZ: NaN, lastVisibilityRadius: NaN,
+      lastViewCamera: null, lastViewMatrix: null, lastProjectionMatrix: null,
+      frustum: new THREE.Frustum(), // Reused; never allocate a new frustum in the frame loop.
+      projectionViewMatrix: new THREE.Matrix4(), // Reused to project chunk bounds into camera space.
       lastRefreshMs: 0,
       lastPlayerX: NaN,
       lastPlayerZ: NaN,
@@ -316,26 +363,75 @@
 
     for (const mesh of dirtyMeshes) mesh.instanceMatrix.needsUpdate = true;
 
+    state.nearTreeCount = nearTreeCount;
+    state.batchedTreeCount = batchedTreeCount;
+  }
+
+  function updateChunkVisibility(state, playerX, playerZ, cullRadiusTiles, camera) {
+    if (!state || state.disposed || state.status !== 'ready') return;
+    const cameraReady = !!(camera?.isCamera && camera.matrixWorld && camera.matrixWorldInverse && camera.projectionMatrix);
+    if (cameraReady) camera.updateWorldMatrix?.(true, false);
+    const cameraChanged = cameraReady !== state.frustumActive
+      || (cameraReady && (state.lastViewCamera !== camera
+        || !state.lastViewMatrix?.equals(camera.matrixWorld)
+        || !state.lastProjectionMatrix?.equals(camera.projectionMatrix)));
+    const moved = !Number.isFinite(state.lastVisibilityX)
+      || Math.hypot(playerX - state.lastVisibilityX, playerZ - state.lastVisibilityZ) >= MOVE_REFRESH_TILES;
+    const radiusChanged = !Number.isFinite(state.lastVisibilityRadius)
+      || Math.abs(cullRadiusTiles - state.lastVisibilityRadius) >= 0.05;
+    if (!cameraChanged && !moved && !radiusChanged) {
+      // The general wilderness vegetation pass can toggle group.visible independently.
+      // Preserve the last camera decision without recomputing frustum planes every frame.
+      for (const chunk of state.chunks) {
+        if (chunk.group.visible !== chunk.visible) chunk.group.visible = chunk.visible;
+      }
+      return;
+    }
+
+    state.lastVisibilityX = playerX;
+    state.lastVisibilityZ = playerZ;
+    state.lastVisibilityRadius = cullRadiusTiles;
+    state.frustumActive = cameraReady;
+    if (cameraReady) {
+      state.lastViewCamera = camera;
+      if (!state.lastViewMatrix) state.lastViewMatrix = camera.matrixWorld.clone();
+      else state.lastViewMatrix.copy(camera.matrixWorld);
+      if (!state.lastProjectionMatrix) state.lastProjectionMatrix = camera.projectionMatrix.clone();
+      else state.lastProjectionMatrix.copy(camera.projectionMatrix);
+      state.frustum.setFromProjectionMatrix(
+        state.projectionViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      );
+    } else {
+      state.lastViewCamera = null;
+    }
+
     let culledChunkCount = 0;
+    let frustumCulledChunkCount = 0;
     for (const chunk of state.chunks) {
       const dx = chunk.centerX - playerX;
       const dz = chunk.centerZ - playerZ;
       const maxDistance = Math.max(0, cullRadiusTiles) + chunk.radius;
-      const visible = dx * dx + dz * dz <= maxDistance * maxDistance;
-      chunk.group.visible = visible;
+      const withinRadius = dx * dx + dz * dz <= maxDistance * maxDistance;
+      const outsideView = withinRadius && cameraReady && chunk.viewSphere
+        && !state.frustum.intersectsSphere(chunk.viewSphere);
+      const visible = withinRadius && !outsideView;
+      chunk.group.visible = visible; // Reassert our view gate if the general vegetation culler touched the group.
       chunk.visible = visible;
       if (!visible) culledChunkCount++;
+      if (outsideView) frustumCulledChunkCount++;
     }
-
-    state.nearTreeCount = nearTreeCount;
-    state.batchedTreeCount = batchedTreeCount;
     state.culledChunkCount = culledChunkCount;
-    updateDevPanelStatus(state);
+    state.frustumCulledChunkCount = frustumCulledChunkCount;
   }
 
   function ensureState(scene) {
     let state = states.get(scene);
-    if (state && !state.disposed) return state;
+    if (state && !state.disposed) {
+      if (state.status !== 'no-baked-roots') return state;
+      if (root.TreeAssetLibrary?.getMode?.() === 'procedural') return null; // No repeated scene scans in the game's default procedural mode.
+      const now = performance.now(); // Used to retry a scene that was first visited before its baked trees were attached.
+      if (now - state.lastRootProbeMs < ROOT_RETRY_MS) return state;
+    }
     state = buildState(scene);
     if (state) states.set(scene, state);
     return state;
@@ -345,9 +441,16 @@
     if (!scene || !Number.isFinite(Number(playerX)) || !Number.isFinite(Number(playerZ))) return false;
     const radius = Number.isFinite(Number(cullRadiusTiles)) ? Math.max(0, Number(cullRadiusTiles)) : 34;
     const state = ensureState(scene);
-    if (!state) return false;
+    if (!state) {
+      activeState = null;
+      updateDevPanelStatus(null);
+      return false;
+    }
     activeState = state;
     refreshState(state, Number(playerX), Number(playerZ), radius);
+    const camera = fogDeps?.getActiveCamera?.()
+      || root.Combat?.deps?.getActiveCamera?.() || fogDeps?.camera || null; // Prefer the active cinematic/gameplay camera over a static camera reference.
+    updateChunkVisibility(state, Number(playerX), Number(playerZ), radius, camera);
     updateDevPanelStatus(state);
     return state.status === 'ready';
   }
@@ -442,6 +545,9 @@
   }
 
   function updateDevPanelStatus(state = activeState) {
+    const now = performance.now();
+    if (now - lastDevPanelCheckMs < 1000) return;
+    lastDevPanelCheckMs = now;
     const panel = document.getElementById('cloudForestDevTuning');
     const devMode = document.getElementById('settingDevMode');
     if (!panel || !devMode?.checked) return;
@@ -455,22 +561,29 @@
       else panel.appendChild(line);
     }
     if (!state) {
-      line.textContent = 'Tree batching: inactive';
+      const message = root.TreeAssetLibrary?.getMode?.() === 'procedural'
+        ? 'Tree batching: procedural mode (baked-tree optimization inactive)'
+        : 'Tree batching: inactive';
+      if (line.textContent !== message) line.textContent = message;
       return;
     }
     if (state.status !== 'ready') {
-      line.textContent = `Tree batching: ${state.status === 'no-baked-roots' ? 'waiting for baked tree roots / rebuild' : state.status}`;
+      const message = `Tree batching: ${state.status === 'no-baked-roots' ? 'waiting for baked tree roots / rebuild' : state.status}`;
+      if (line.textContent !== message) line.textContent = message;
       return;
     }
     const visibleChunks = Math.max(0, (state.chunks?.length || 0) - (state.culledChunkCount || 0));
-    line.textContent = `Tree batching: ${state.batchedTreeCount} batched · ${state.nearTreeCount} near-original · ${visibleChunks}/${state.chunks.length} chunks visible · ${state.instancedMeshCount} instanced draws max`;
+    const viewCull = state.frustumActive ? `${state.frustumCulledChunkCount} off-camera` : 'camera unavailable';
+    const message = `Tree batching: ${state.batchedTreeCount} batched · ${state.nearTreeCount} near-original · ${visibleChunks}/${state.chunks.length} chunks visible (${viewCull}) · ${state.instancedMeshCount} instanced draws max`;
+    if (line.textContent !== message) line.textContent = message;
   }
 
   function getDebugState() {
     const state = activeState;
     return {
       enabled: !!state && state.status === 'ready',
-      status: state?.status || 'inactive',
+      status: state?.status || (root.TreeAssetLibrary?.getMode?.() === 'procedural' ? 'procedural-mode' : 'inactive'),
+      treeSourceMode: root.TreeAssetLibrary?.getMode?.() || 'unknown', // Identifies whether this optimization can affect the current game.
       chunkSizeTiles: CHUNK_SIZE_TILES,
       nearRadiusTiles,
       treeCount: state?.treeCount || 0,
@@ -480,6 +593,8 @@
       instancedMeshCount: state?.instancedMeshCount || 0,
       chunkCount: state?.chunks?.length || 0,
       culledChunkCount: state?.culledChunkCount || 0,
+      frustumActive: !!state?.frustumActive,
+      frustumCulledChunkCount: state?.frustumCulledChunkCount || 0,
       cullRadiusTiles: Number.isFinite(state?.lastCullRadius) ? state.lastCullRadius : null,
     };
   }
