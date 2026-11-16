@@ -294,9 +294,9 @@ const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
 const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
 assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
   'owner-aware wet/dry grouping is part of the production renderer');
-const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
+const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'XRAY_CIRCLE_RADIUS', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
   heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
-)(8, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
+)(8, 1.5, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
 const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
 const wetHeld = { material: sharedMaterial };
 const dryHeld = { material: sharedMaterial };
@@ -305,8 +305,8 @@ const dryActor = scope(18, 18);
 const tintScopes = new Map([[wetHeld, wetActor], [dryHeld, dryActor]]);
 const mixedGroup = {
   elevation: 0.2,
-  regions: [{ col: 5, row: 5, x: 5.5, z: 5.5, elevation: 0.2, meshes: [wetHeld] },
-    { col: 18, row: 18, x: 18.5, z: 18.5, elevation: 0.2, meshes: [dryHeld] }],
+  regions: [{ col: 5, row: 5, x: 5.5, z: 5.5, radius: 3.4, elevation: 0.2, meshes: [wetHeld] },
+    { col: 18, row: 18, x: 18.5, z: 18.5, radius: 2.1, elevation: 0.2, meshes: [dryHeld] }],
   meshes: [wetHeld, dryHeld],
 };
 const separatedTintGroups = splitTintGroups([mixedGroup], tintScopes, [sparseWaterMesh]);
@@ -322,6 +322,10 @@ assert.equal(separatedTintGroups[0].centers[0], 5.5,
   'wet x-ray group keeps its physical world-space center');
 assert.equal(separatedTintGroups[1].centers[0], 18.5,
   'dry x-ray group retains its own actor center rather than inheriting the wet actor center');
+assert.ok(Math.abs(separatedTintGroups[0].radiiSq[0] - 3.4 ** 2) < 0.00001,
+  'wet x-ray group retains the extended weapon radius through shared-material stencil splitting');
+assert.ok(Math.abs(separatedTintGroups[1].radiiSq[0] - 2.1 ** 2) < 0.00001,
+  'dry x-ray group keeps its own weapon radius, not the wet actor radius');
 const ordinaryMixed = splitTintGroups([
   { elevation: undefined, regions: [], meshes: [wetHeld, dryHeld] },
 ], tintScopes, [sparseWaterMesh]);
