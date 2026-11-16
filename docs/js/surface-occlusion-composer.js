@@ -96,7 +96,7 @@
     const interiorFloorMaterial = someMaterial(object.material, material =>
       material?.userData?.hobunjiInteriorFloorMaterial === true);
     const authoredWalkableFloor = data.cavernWalkableFloor === true
-      || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
+      || data.wallBuilderRecipe === 'wallrecipe2.json' // Flat V50 ruin floors have no plateau map, but remain walkable.
       || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor');
     if (hints.walkableFloor === true || interiorFloorMaterial || authoredWalkableFloor) {
       return SURFACE.WALKABLE_FLOOR;
