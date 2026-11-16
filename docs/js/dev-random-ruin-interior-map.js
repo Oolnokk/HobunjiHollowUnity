@@ -1774,8 +1774,14 @@
     if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return false;
     if(![x,z,half,minY,maxY].every(Number.isFinite)||minY>maxY)return false;
     const h=Math.max(.005,half); // Tested horizontal body extent, not a center-point-only wall probe.
+    const owner=window.RuinLayerPlayable?.selectGrid?.(ruin.shaftGrids,x,z,(minY+maxY)*.5)||null;
+    // Two independently mounted grids overlap at the shaft/wing portal. Only the selected
+    // physical owner may block that shared aperture; the other grid's unopened border
+    // would otherwise create an invisible F2 wall despite a genuinely carved corridor.
+    // At coordinates with NO walkable owner, inspect all stone grids, including border
+    // voxels outside their contains() masks: a solid side wall must still stop lunges.
     for(const {grid:g} of ruin.shaftGrids.values()){
-      if(!g)continue;
+      if(!g||(owner&&g!==owner))continue;
       const c0=Math.max(0,g.xToCol(x-h+.00001)),c1=Math.min(g.cols-1,g.xToCol(x+h-.00001));
       const r0=Math.max(0,g.zToRow(z-h+.00001)),r1=Math.min(g.rows-1,g.zToRow(z+h-.00001));
       const l0=Math.max(0,g.yToLevel(minY+.00001)),l1=Math.min(g.levels-1,g.yToLevel(maxY-.00001));
