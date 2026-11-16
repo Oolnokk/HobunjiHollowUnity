@@ -195,14 +195,34 @@
       opaquePixels: pixelsInside, centerX: sumX / pixelsInside, centerY: sumY / pixelsInside, coverage };
   }
 
+  const MAX_IDLE_MASK_PIXELS = 1024 * 1024; // Bounds the two floating-point distance/coverage maps even for 3000×2250 Grehlr art.
   function sourcePixels(image) {
     const w = Number(image?.naturalWidth || image?.width), h = Number(image?.naturalHeight || image?.height);
-    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w * h > 4_000_000) return null;
-    if (image?.data?.length === w * h * 4) return { data: image.data, width: w, height: h }; // ImageData/fixture input.
-    const canvas = typeof image?.getContext === 'function' ? image : document.createElement('canvas');
-    if (canvas !== image) { canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(image, 0, 0, w, h); }
-    const data = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, w, h)?.data;
-    return data ? { data, width: w, height: h } : null;
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w * h > 32_000_000) return null;
+    const ratio = Math.min(1, Math.sqrt(MAX_IDLE_MASK_PIXELS / (w * h))); // Mask resolution only; final pose textures retain their native dimensions.
+    const maskW = Math.max(1, Math.floor(w * ratio)), maskH = Math.max(1, Math.floor(h * ratio));
+    if (image?.data?.length === w * h * 4) {
+      if (maskW === w && maskH === h) return { data: image.data, width: w, height: h }; // Keep exact pixels for small ImageData fixtures.
+      const data = new Uint8ClampedArray(maskW * maskH * 4); // Raw ImageData has no drawImage source; sample its alpha at mask resolution.
+      for (let y = 0; y < maskH; y++) for (let x = 0; x < maskW; x++) {
+        const sx = Math.min(w - 1, Math.floor((x + 0.5) * w / maskW));
+        const sy = Math.min(h - 1, Math.floor((y + 0.5) * h / maskH));
+        const from = (sy * w + sx) * 4, to = (y * maskW + x) * 4;
+        for (let c = 0; c < 4; c++) data[to + c] = image.data[from + c];
+      }
+      return { data, width: maskW, height: maskH };
+    }
+    const canvas = typeof image?.getContext === 'function' && maskW === w && maskH === h
+      ? image : document.createElement('canvas');
+    if (canvas !== image) {
+      canvas.width = maskW; canvas.height = maskH;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return null;
+      context.imageSmoothingEnabled = false; // Nearest-neighbor opacity sampling preserves sharp authored sprite boundaries.
+      context.drawImage(image, 0, 0, maskW, maskH);
+    }
+    const data = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, maskW, maskH)?.data;
+    return data ? { data, width: maskW, height: maskH } : null;
   }
 
   function maskForKind(kind, frameOverride = null) {

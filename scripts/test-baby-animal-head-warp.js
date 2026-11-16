@@ -158,6 +158,18 @@ assert.equal(warp.debugSnapshot().masksCached >= 1, true, 'mobile diagnostics ex
 assert.equal(warp.debugSnapshot().scale, warp.MAX_SCALE, 'diagnostics report current effect strength');
 assert(warp.debugSnapshot().applied > 0, 'diagnostics report actual use');
 
+// Grehlr's source PNG is 3000×2250: the old 4MP sourcePixels ceiling rejected it outright.
+const largeW = 3000, largeH = 2250; // Real Grehlr source dimensions exercise adaptive idle-mask sampling.
+const largeIdle = new Uint8ClampedArray(largeW * largeH * 4); // Mostly transparent pixels mimic a detailed sprite canvas.
+for (let y = 900; y < 1400; y++) for (let x = 1000; x < 1600; x++)
+  largeIdle[(y * largeW + x) * 4 + 3] = 255;
+const largeMask = warp.primeIdleMask('grehlr', { width: largeW, height: largeH, data: largeIdle }, head);
+assert(largeMask?.opaquePixels > 0, 'full-resolution Grehlr idle artwork must produce a valid alpha-only head mask');
+assert(largeMask.width * largeMask.height <= 1024 * 1024, 'large idle masks stay under the one-megapixel memory budget');
+assert.equal(warp.maskForKind('grehlr', head), largeMask, 'large masks remain available for different pose textures');
+assert.equal(warp.warpPixels(pixels, width, height, head, 1.32, largeMask).length, pixels.length,
+  'the bounded idle mask scales correctly to another pose resolution');
+
 assert(index.indexOf('baby-animal-head-warp.js') > index.indexOf('creature-genetics-render.js'), 'runtime module loads after genotype renderer');
 assert(nursery.includes('BabyAnimalHeadWarp?.applyToCanvas(canvases[i], entry.kind)'), 'all baby nursery movement frames use the warp');
 assert(nursery.includes('ensureIdleMask?.(entry.kind, canvases[0])'), 'nursery primes the fixed mask from the actual idle frame before run frames');
