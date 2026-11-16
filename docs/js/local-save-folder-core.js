@@ -1123,7 +1123,7 @@
       if (!manifest || Number(manifest.savedAt) !== _lastSyncedAt) {
         throw new Error('Primary save manifest is inconsistent after the lock progress write.');
       }
-      const savedAt = Date.now();
+      const savedAt = Math.max(Date.now(), _lastSyncedAt + 1); // Lock acknowledgements must advance even when two writes finish in the same millisecond.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt });
       const manifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile());
       _committedFileState = new Map(_committedFileState); // Publish the new character fingerprint only after both canonical writes succeed.
