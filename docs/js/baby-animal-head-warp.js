@@ -210,7 +210,7 @@
     return cached?.frameKey === frameKey(frame) ? cached.mask : null; // Never use a stale mask after an authored frame edit.
   }
 
-  function primeIdleMask(kind, image, frameOverride = null) {
+  function primeIdleMask(kind, image, frameOverride = null, sourceLabel = 'caller-idle-pose') {
     const key = baseKind(kind), frame = validateFrame(frameOverride) || frameForKind(key);
     if (!key || !frame || !image) return null;
     const sourceId = image && typeof image === 'object' ? (maskSourceIds.get(image) || nextSourceId++) : 0;
@@ -223,8 +223,10 @@
       const source = sourcePixels(image);
       const mask = source && buildIdleMask(source.data, source.width, source.height, frame);
       if (!mask) throw new Error('The idle sprite has no opaque pixels inside its chathead frame.');
+      mask.sourceLabel = sourceLabel; // Mobile debugger distinguishes authoritative PNG masks from caller-provided idle fallback canvases.
       idleMasks.set(key, { id, frameKey: frameKey(frame), mask });
       debug.lastMaskKind = key;
+      debug.lastMaskSource = sourceLabel;
       debug.lastMaskPixels = mask.opaquePixels;
       debug.lastMaskError = null;
       return mask;
@@ -255,7 +257,7 @@
               idle.onerror = () => reject(new Error('Idle sprite unavailable or not CORS-readable: ' + raw));
               idle.src = url;
             });
-            const produced = primeIdleMask(key, image, frame);
+            const produced = primeIdleMask(key, image, frame, 'unmodified-base-idle-png');
             if (produced) return produced; // The unmodified idle silhouette is authoritative whenever available.
             return null; // A transparent authored head box must remain empty, not silently become a genotype-driven mask.
           } catch (error) {
@@ -263,7 +265,7 @@
             // Unregistered/temporarily unavailable raw assets may still have a genuine idle canvas from the caller.
           }
         }
-        if (idleSource) return primeIdleMask(key, idleSource, frame); // Fallback ONLY to a caller explicitly supplying the IDLE pose.
+        if (idleSource) return primeIdleMask(key, idleSource, frame, 'provided-idle-fallback'); // Fallback ONLY to a caller explicitly supplying the IDLE pose.
         if (!raw) debug.lastMaskError = 'No registered idle sprite for ' + key;
         return null;
       } catch (error) {
