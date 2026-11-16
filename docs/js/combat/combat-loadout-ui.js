@@ -44,6 +44,13 @@
     { id: 'hold1', name: 'Held — Offensive', desc: 'Left click held past a beat. Choose a heavy offensive release.' },
     { id: 'hold2', name: 'Held — Defensive or Offensive', desc: 'Right click held past a beat. Choose a defensive stance or a heavy offensive release.' },
   ];
+  const MOUNTED_SLOTS = [
+    { id: 'tap1', name: 'Mounted Strike', desc: 'Action 1 tap: one straightforward hit. Uses the opening Combo mastery, never starts a 3-hit chain.', readOnly: true, note: 'Locked · inherits your equipped weapon’s Combo mastery.' },
+    { id: 'hold1', name: 'Charged Gallop', desc: 'Action 1 hold: Charged Breaker strike without a player lunge, followed by a powerful mount speed burst.', readOnly: true, note: 'Locked · uses Charged Breaker heavy mastery and mount velocity at impact.' },
+    { id: 'tap2', name: 'Mounted Quick Attack', desc: 'Action 2 tap: select an unlocked ordinary Quick Attack. Its lunge becomes a mount speed burst.' },
+    { id: 'hold2', name: 'Mounted Special', desc: 'Action 2 hold: reserved for future mount-only unlockable abilities.', readOnly: true, note: 'No mounted specials have been introduced yet.' },
+  ];
+  let displayedMode = null; // User-chosen loadout preview; null follows actual riding state on first opening.
 
   // Which level (if any) currently has its options picker expanded — an
   // abilityId+level pair (toolKey is implicitly whatever's equipped right
@@ -73,15 +80,16 @@
   }
 
   function setSlotChoice(slotId, abilityId, source = 'select', focusId = null) {
-    const before = window.Combat.loadout.getSlot(slotId); // Used by diagnostics to distinguish real controller swaps from no-op presses.
-    const changed = window.Combat.loadout.setSlot(slotId, abilityId); // Reuses the canonical validation/persistence path rather than mutating loadout state in the UI.
+    const before = window.Combat.loadout.getSlot(slotId, displayedMode || 'auto'); // Used by diagnostics to distinguish real controller swaps from no-op presses.
+    const changed = window.Combat.loadout.setSlot(slotId, abilityId, displayedMode || 'auto'); // Reuses the canonical validation/persistence path rather than mutating loadout state in the UI.
     lastLoadoutControlChange = {
       slotId,
       source,
       before,
-      after: changed ? window.Combat.loadout.getSlot(slotId) : before,
+      after: changed ? window.Combat.loadout.getSlot(slotId, displayedMode || 'auto') : before,
       changed: !!changed,
       weaponKey: window.Combat.deps?.currentWeaponKey?.() || 'none',
+      mode: displayedMode || 'auto',
       at: Date.now(),
     };
     if (!changed) return false;
@@ -93,7 +101,7 @@
   function cycleSlotChoice(slotId, delta, source, focusId) {
     const abilities = abilitiesForSlot(slotId); // Used to cycle only learned/eligible attacks for this slot.
     if (!abilities.length) return false;
-    const currentId = window.Combat.loadout.getSlot(slotId); // Used to anchor the cycle on the actually equipped attack rather than the browser's visual select state.
+    const currentId = window.Combat.loadout.getSlot(slotId, displayedMode || 'auto'); // Used to anchor the cycle on the actually equipped attack rather than the browser's visual select state.
     const currentIndex = abilities.findIndex(ability => ability.id === currentId); // Used so empty slots can still choose the first/last available technique deterministically.
     const step = delta < 0 ? -1 : 1; // Used to normalize all controller cycle requests to one slot at a time.
     const nextIndex = currentIndex < 0
@@ -107,7 +115,11 @@
   function loadoutDebugState() {
     return {
       weaponKey: window.Combat.deps?.currentWeaponKey?.() || 'none',
-      loadout: window.Combat.loadout.get?.() || null,
+      loadout: window.Combat.loadout.get?.(displayedMode || 'auto') || null,
+      loadoutMode: displayedMode || 'auto',
+      mountedLoadout: window.Combat.loadout.get?.('mounted') || null,
+      mountedCombat: window.Combat.mountedCombat?.debug || null,
+      mountRiding: window.Mounts?.ridingDebug || null,
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
@@ -292,8 +304,29 @@
 
     const title = document.createElement('div');
     title.className = 'settings-section-title';
-    title.textContent = 'Weapon Tool Loadout';
+    const mode = displayedMode || (window.Combat.loadout.isMounted?.() ? 'mounted' : 'foot'); // Defaults to the actual mounted state; manually selectable off the saddle.
+    displayedMode = mode;
+    title.textContent = mode === 'mounted' ? 'Mounted Combat Loadout' : 'Weapon Tool Loadout';
     pane.appendChild(title);
+    const contextPicker = document.createElement('div'); // Lets players prepare mount abilities while dismounted without changing gameplay equipment.
+    contextPicker.className = 'ranged-loadout-dev-row';
+    contextPicker.style.display = 'flex';
+    contextPicker.style.gap = '8px';
+    for (const [context, label] of [['foot', 'On Foot'], ['mounted', 'Mounted']]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ii-btn';
+      button.id = 'combatLoadoutMode_' + context;
+      button.textContent = label;
+      button.setAttribute('aria-pressed', String(mode === context));
+      button.addEventListener('click', () => {
+        displayedMode = context;
+        expandedFor = null;
+        render('combatLoadoutMode_' + context);
+      });
+      contextPicker.appendChild(button);
+    }
+    pane.appendChild(contextPicker);
 
     // Everything below (Quick Attack/Held picks, and every ability's own
     // upgrade tree) is scoped to this one tool instance — see combat-
@@ -342,7 +375,7 @@
       pane.appendChild(devRow);
     }
 
-    for (const slot of SLOTS) {
+    for (const slot of (mode === 'mounted' ? MOUNTED_SLOTS : SLOTS)) {
       const card = document.createElement('div');
       card.className = 'loadout-slot';
 
@@ -361,12 +394,12 @@
       label.appendChild(desc);
       head.appendChild(label);
 
-      const abilityId = window.Combat.loadout.getSlot(slot.id);
+      const abilityId = window.Combat.loadout.getSlot(slot.id, mode);
 
       if (slot.readOnly) {
         const readout = document.createElement('div');
         readout.className = 'settings-name';
-        readout.textContent = window.Combat.abilities.get(abilityId)?.label || abilityId;
+        readout.textContent = abilityId ? (window.Combat.abilities.get(abilityId)?.label || abilityId) : 'Empty';
         head.appendChild(readout);
       } else {
         const picker = document.createElement('div'); // Used to expose explicit controller-confirmable previous/next controls beside the existing mouse/touch dropdown.
@@ -395,6 +428,11 @@
         select.setAttribute('data-no-select-stepper', ''); // Already flanked by its own ◀/▶ buttons; keeps js/controller-select-steppers.js from adding a second pair.
         select.style.minWidth = '0';
         select.style.flex = '1 1 auto';
+        const emptyOption = document.createElement('option'); // Avoids a native select inventing a technique when none is learned or assigned.
+        emptyOption.value = '';
+        emptyOption.textContent = 'No Quick Attack selected';
+        emptyOption.selected = !abilityId;
+        select.appendChild(emptyOption);
         for (const ability of abilities) {
           const opt = document.createElement('option');
           opt.value = ability.id;
@@ -424,7 +462,7 @@
       if (slot.readOnly) {
         const note = document.createElement('div');
         note.className = 'loadout-slot-combo-note';
-        note.textContent = 'Auto-selected by your equipped weapon’s swing style.';
+        note.textContent = slot.note || 'Auto-selected by your equipped weapon’s swing style.';
         card.appendChild(note);
       } else {
         const note = document.createElement('div'); // Used to make the controller path discoverable instead of depending on hidden native-select behavior.
@@ -433,7 +471,10 @@
         card.appendChild(note);
       }
 
-      if (abilityId) renderLevelPicker(card, toolKey, abilityId);
+      const masteryId = mode === 'mounted' && slot.id === 'tap1'
+        ? (window.Combat.deps?.currentComboAbilityId?.() || 'swingCombo')
+        : abilityId; // Mounted Strike deliberately borrows the existing Combo mastery levels and bonuses.
+      if (masteryId) renderLevelPicker(card, toolKey, masteryId);
       if (slot.readOnly && (abilityId === 'swingCombo' || abilityId === 'pokeCombo')) {
         const specialNote = document.createElement('div'); // Special finisher is an additional mastery track on the SAME automatic combo, not a selectable attack slot.
         specialNote.className = 'loadout-slot-combo-note';
@@ -456,12 +497,12 @@
     restoreLoadoutControlFocus(pane, restoreFocusId);
   }
 
-  window.CombatLoadoutUI = { render, debugState: loadoutDebugState, copyDebug: copyLoadoutDebug };
+  window.CombatLoadoutUI = { render, getMode: () => displayedMode || 'auto', debugState: loadoutDebugState, copyDebug: copyLoadoutDebug };
 
   document.addEventListener('DOMContentLoaded', () => {
     render();
     const tab = document.querySelector('.mp-tab[data-mpanel="loadout"]');
-    if (tab) tab.addEventListener('click', () => { expandedFor = null; render(); });
+    if (tab) tab.addEventListener('click', () => { expandedFor = null; displayedMode = null; render(); });
     document.addEventListener('hobunji-ranged-ammo-change', render);
     window.addEventListener('hobunji-mastery-unlocks-change', render);
   });
