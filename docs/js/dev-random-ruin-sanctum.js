@@ -1127,7 +1127,7 @@
     const owner=s, entry=owner?.entry; // A delayed transition must never use the next ruin's state after teardown.
     if (!entry) return;
     fadeThen(() => {
-      if (s!==owner || deps?.getCurrentArea?.()!==MAP_ID) return;
+      if (s!==owner || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID)) return;
       teleport(entry);
       for (const fire of owner.arenaFires || []) igniteFire(fire);
       owner.inSanctum = true;
@@ -1146,7 +1146,7 @@
     const front=door.front; // Capture the original door anchor before a delayed fade or teardown.
     resetSanctumEncounter('leave');
     const owner=s; // Return fade cannot pull the player back into a departed or rebuilt dungeon.
-    fadeThen(() => { if(s===owner && owner?.door===door && !owner.inSanctum && deps?.getCurrentArea?.()===MAP_ID)teleport(front); });
+    fadeThen(() => { if(s===owner && owner?.door===door && !owner.inSanctum && (typeof deps?.getCurrentArea!=='function' || deps.getCurrentArea()===MAP_ID))teleport(front); });
   }
 
   async function spawnBoss(owner=s,revision=owner?.encounterRevision) {
