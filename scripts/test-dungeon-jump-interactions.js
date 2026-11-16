@@ -1,0 +1,114 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs'); // Loads the shipped input owners for executable controller and dungeon-interaction tests.
+const vm = require('node:vm'); // Executes the real browser modules with a minimal fake scene instead of asserting source snippets.
+
+const read = path => fs.readFileSync(path, 'utf8'); // Shared source reader for the two browser runtime fixtures.
+
+let area = 'wilderness'; // Mutable area shared by the binding fixture to verify live ruin entry/exit.
+const bindings = { // Live user bindings: controller A is dual-purpose unless the player binds Jump separately.
+  controller: { interact: 'Button0', jump: null, action1: 'RightTrigger', action2: 'LeftTrigger' },
+  desktop: { interact: 'KeyE', jump: 'Space', action1: 'Mouse0' },
+};
+const bindingWindow = {
+  GridTileAccessors: { getCurrentArea: () => area },
+};
+vm.runInNewContext(read('docs/js/input-bindings.js'), { window: bindingWindow });
+bindingWindow.InputBindings.init({
+  getInputBindings: () => bindings,
+  INPUT_DEFAULTS: { storageKey: 'dungeon-jump-test', actions: [], controller: {}, desktop: {}, modeShifts: [] },
+});
+const resolve = (device, button, shift) => bindingWindow.InputBindings.resolveActionForButton(device, button, shift);
+assert.equal(resolve('controller', 'Button0'), 'interact', 'controller A retains Interact outside dungeons');
+area = 'map_i_dev_random_ruin';
+assert.equal(resolve('controller', 'Button0'), 'jump', 'controller A jumps inside a dungeon even when Interact would be available');
+assert.equal(resolve('controller', 'RightTrigger'), 'action1', 'dungeon object controls retain their separate Action 1 input');
+assert.equal(resolve('controller', 'LeftTrigger'), 'action2', 'secondary dungeon object controls remain available');
+assert.equal(resolve('desktop', 'Space'), 'jump', 'keyboard Jump continues to function inside dungeons');
+assert.equal(resolve('desktop', 'KeyE'), 'interact', 'keyboard Interact remains independent of Jump inside dungeons');
+assert.equal(resolve('controller', 'Button0', { bindings: { Button0: 'action3' } }), 'action3',
+  'a held custom controller mode shift retains priority over the fallback');
+bindings.controller.jump = 'Button3';
+assert.equal(resolve('controller', 'Button0'), 'interact', 'a separately bound controller Jump leaves Interact on A');
+assert.equal(resolve('controller', 'Button3'), 'jump', 'the separate Jump binding works beside dungeon objects');
+bindings.controller.jump = null;
+area = 'wilderness';
+assert.equal(resolve('controller', 'Button0'), 'interact', 'leaving a dungeon restores A interaction');
+
+// Build a single elevator-block scene to ensure the old direct controller-button
+// polling cannot push it, while the normal dungeon action provider still can.
+let frame = null; // Registered before-render callback from the real motion module, invoked by this test.
+let motionArea = 'map_i_dev_random_ruin'; // Area shared by the fake dungeon's discovered root and interaction callback.
+const block = {
+  id: 23,
+  name: 'test-elevator-block',
+  userData: { previewMotion: { type: 'elevatorPushBlock' } },
+  position: { x: .7, y: 0, z: 0 },
+  updateMatrixWorld() {},
+  updateWorldMatrix() {},
+};
+const root = {
+  name: 'dev_v50_ruin_test',
+  scale: { x: 1, y: 1, z: 1 },
+  traverse(callback) { callback(this); callback(block); },
+};
+const scene = { children: [root] };
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+}
+class Box3 {
+  setFromObject(object) {
+    const p = object.position;
+    this.min = { x: p.x - .15, y: p.y - .15, z: p.z - .15 };
+    this.max = { x: p.x + .15, y: p.y + .15, z: p.z + .15 };
+    return this;
+  }
+  isEmpty() { return false; }
+  getCenter(vector) {
+    return vector.set((this.min.x + this.max.x) / 2,
+      (this.min.y + this.max.y) / 2, (this.min.z + this.max.z) / 2);
+  }
+}
+const runtimeWindow = {
+  DynamicSurfaces: {
+    sampleSupport: () => ({ y: 0 }),
+    blockerAt: () => null,
+    addBeforeRenderClient(callback) { frame = callback; },
+  },
+  DevSpawner: { init() {} },
+  DevRandomRuin: { setDebugBadgePart() {}, isSlidingPushBlock: () => true },
+  ControllerInput: { frame: () => ({ isDown: () => true }) }, // Pressed controller A must never be polled as a push.
+};
+const runtimeDocument = { addEventListener() {}, getElementById: () => null };
+vm.runInNewContext(read('docs/js/dev-random-ruin-motion-runtime.js'), {
+  window: runtimeWindow,
+  document: runtimeDocument,
+  THREE: { Box3, Vector3 },
+  setTimeout(callback) { callback(); return 1; },
+});
+runtimeWindow.DevSpawner.init({
+  getCurrentArea: () => motionArea,
+  getActiveScene: () => scene,
+  player: { x: 0, y: 0 },
+  TILE: 1,
+  playerMesh: { position: { y: 0 } },
+});
+runtimeWindow.DevRandomRuinMotionRuntime.rebuild();
+assert.equal(typeof frame, 'function', 'dungeon motion runtime registers its original before-render callback');
+frame();
+assert.equal(block.position.x, .7, 'pressing controller A does not directly push the nearby block');
+const controls = runtimeWindow.DevRandomRuinMotionRuntime.getInteractionControls();
+assert.equal(controls.length, 1, 'the nearby block is published to the normal dungeon interaction provider');
+assert.equal(controls[0].claimAction1, true, 'pushing the block uses the separate Action 1 control');
+assert.equal(controls[0].kind, 'elevatorPushBlock', 'published action identifies its world-object type');
+assert.equal(controls[0].onPress(), true, 'the normal dungeon action can still move the block');
+assert.ok(block.position.x > .7, 'the action moved the block');
+motionArea = 'wilderness';
+assert.equal(controls[0].onPress(), false, 'a stale dungeon action cannot push the block after leaving');
+frame();
+assert.equal(runtimeWindow.DevRandomRuinMotionRuntime.getInteractionControls().length, 0,
+  'exiting the ruin clears its block interaction');
+
+console.log('Dungeon Jump is independent of all dungeon world-object controls.');
