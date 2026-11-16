@@ -8,6 +8,7 @@ const vm = require('node:vm'); // Executes the real attachment config so grip sc
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Guards the attached-pet look-around path embedded in the main game closure.
 const rigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the instantaneous horizontal mirror bridge and refreshed shoulder anchors.
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible size/curiosity diagnostic added for shoulder pets.
+const authoredHeadRigSource = fs.readFileSync('docs/js/animal-head-rig-authored.js', 'utf8'); // Verifies Drenkirra's always-on shoulder-rest bend independently of temporary idle rolls.
 
 const storage = { getItem() { return null; }, setItem() {}, removeItem() {} }; // Minimal browser storage stub required by the attachment master bootstrap.
 const rigSandbox = {
@@ -193,5 +194,28 @@ assert.match(rigSource,
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,650}Shoulder pose:[\s\S]{0,180}inwardChance=/,
   'the mobile pixel probe reports sustained pose, hold time, and unbiased inward chance alongside genotype scale');
+
+// Drenkirra's always-visible body angle comes from the authored shoulder spline, not the 3°-7° curiosity roll.
+function authoredShoulderRest(kind) {
+  const line = authoredHeadRigSource.split('\n').find(row => row.trimStart().startsWith(`'${kind}': {`)); // Locates one independently authored species entry without changing the game rig registry.
+  assert.ok(line, kind + ' has an authored shoulder rest');
+  return JSON.parse(line.slice(line.indexOf(':') + 1).trim().replace(/,$/, ''));
+}
+const drenkirraRest = authoredShoulderRest('drenkirra'); // Must bend the upturned Drenkirra tail upward in image coordinates.
+const puktukRest = authoredShoulderRest('puktuk'); // Reference for the original downward-bending curve whose magnitude remains unchanged.
+assert.deepEqual(drenkirraRest.beforePoints, puktukRest.beforePoints, 'Drenkirra retains the existing undeformed bind spine');
+assert.equal(drenkirraRest.useSpline, true, 'Drenkirra shoulder deformation stays active');
+assert.equal(drenkirraRest.afterPoints[0].y, drenkirraRest.beforePoints[0].y, 'root of the shoulder bend remains fixed');
+for (let index = 1; index < 7; index++) {
+  const drenkirraSignedY = drenkirraRest.afterPoints[index].y - drenkirraRest.beforePoints[index].y; // Confirms each segment rises instead of falling.
+  const puktukSignedY = puktukRest.afterPoints[index].y - puktukRest.beforePoints[index].y; // Ensures the reverse bend has identical magnitude, not an arbitrary new pose.
+  assert.ok(drenkirraSignedY < 0, 'Drenkirra segment ' + index + ' bends upward');
+  assert.ok(puktukSignedY > 0 && Math.abs(drenkirraSignedY + puktukSignedY) < 1e-10,
+    'Drenkirra segment ' + index + ' mirrors the original Puktuk-style bend');
+  assert.equal(drenkirraRest.afterPoints[index].x, puktukRest.afterPoints[index].x,
+    'Drenkirra horizontal shape and shoulder anchor do not drift');
+}
+assert.equal(drenkirraRest.separatorRotationDeg, puktukRest.separatorRotationDeg, 'the sprite separator does not rotate');
+assert.equal(drenkirraRest.useRun1, puktukRest.useRun1, 'perched frame choice stays unchanged');
 
 console.log('Shoulder-pet curiosity regression checks passed.');
