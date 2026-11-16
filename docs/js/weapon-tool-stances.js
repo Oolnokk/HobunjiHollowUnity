@@ -574,7 +574,7 @@
             const grip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('torch', 'melee'); // Same grip-anchored scale pivot as the Attack Editor.
             SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
           }
-          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
+          if (activeSlot === 'weapon' || torchIdle) deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Torch idle and weapon idle share the same final shoulder-derived orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
