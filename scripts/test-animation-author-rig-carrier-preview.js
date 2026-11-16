@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const source = fs.readFileSync('docs/js/animation-author-rig-carrier-preview.js', 'utf8'); // Test the production inverse carrier math.
 const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Guard the browser-facing integration.
+const avatarSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // The real NPC builder's +Z front and -Z back planes define correct portrait orientation.
 class V { // Minimal Three.Vector3 stand-in for planar world poses.
   constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}
   multiplyScalar(s){this.x*=s;this.y*=s;this.z*=s;return this;}
@@ -12,6 +13,7 @@ class V { // Minimal Three.Vector3 stand-in for planar world poses.
 }
 class Q { // Planar quaternion-angle adapter; composition and inversion preserve yaw-equivalent rotations.
   constructor(){this.angle=0;}
+  setFromAxisAngle(axis,radians){assert.equal(axis.y,1,'portrait yaw rotates around world up');this.angle=radians;return this;}
   invert(){this.angle=-this.angle;return this;}
   multiply(q){this.angle+=q.angle;return this;}
 }
@@ -31,19 +33,20 @@ function near(a,b,msg){assert(Math.abs(a-b)<1e-9,msg+': '+a+' vs '+b);}
 const w={};new Function('window',source)(w);
 const solve=w.AnimationAuthorRigCarrierPreview.placeNpcAtGrip;
 assert.equal(solve({THREE:{}}),false);
-function check(grip,basis,body,perch){ // The pet stays fixed; only the NPC may move or change reciprocal perch scale.
+function check(grip,basis,body,perch,camera={position:{x:grip.x,z:5}}){ // The pet stays fixed; the NPC moves and aims its +Z portrait at the camera.
  const fixed=grip.clone(),worldParent={matrixWorld:basis,updateWorldMatrix(){}};
  const root={parent:worldParent,matrixAutoUpdate:true,matrix:new M(),
    updateMatrixWorld(){this.matrixWorld=worldParent.matrixWorld.clone().multiply(this.matrix);}};
  const visualOffset={matrix:body,updateMatrix(){}};
  const shoulderPerch={matrix:perch,scale:{x:Math.hypot(perch.a,perch.b)},updateMatrix(){}};
  const creatureGrip={matrixWorld:grip,updateWorldMatrix(){}};
- assert.equal(solve({THREE:{Matrix4:M,Quaternion:Q,Vector3:V},root,visualOffset,shoulderPerch,creatureGrip}),true);
+ assert.equal(solve({THREE:{Matrix4:M,Quaternion:Q,Vector3:V},root,visualOffset,shoulderPerch,creatureGrip,camera}),true);
  assert.equal(root.matrixAutoUpdate,false);
  const matched=root.matrixWorld.clone().multiply(body).multiply(perch);
  near(matched.x,grip.x,'fixed shoulder contact X');
  near(matched.y,grip.y,'fixed shoulder contact Y');
- near(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),0,'NPC stays world front-facing (+X) instead of inheriting animal grip yaw');
+ const expectedYaw=Math.atan2(camera.position.x-grip.x,camera.position.z); // In the 2D fixture all grip Z values are zero.
+ near(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),expectedYaw,'NPC front (+Z) follows viewport camera, never pet grip yaw');
  const localShoulder=body.clone().multiply(perch); // Socket rotation still belongs to the NPC, independently of the pet's chosen grip rotation.
  near(Math.atan2(matched.b,matched.a),Math.atan2(localShoulder.b,localShoulder.a),'socket orientation is independent of pet grip yaw');
  near(Math.hypot(root.matrixWorld.a,root.matrixWorld.b),1/shoulderPerch.scale.x,'NPC root uses reciprocal perch scale');
@@ -55,8 +58,13 @@ const fixture={basis:t(1,2,.2,1.2,.9),body:t(0,.1,.15,1.4,1.4),perch:t(-.2,.6,1.
 const one=check(t(.2,-.3,.4,.35,.28),fixture.basis,fixture.body,fixture.perch);
 const smallAgain=check(t(.2,-.3,.4,.15,.12),fixture.basis,fixture.body,fixture.perch);
 for(const k of ['a','b','c','d','x','y'])near(one[k],smallAgain[k],'creature size cannot change NPC scale/pose '+k);
-const turnedGrip=check(t(.2,-.3,.4+Math.PI,.35,.28),fixture.basis,fixture.body,fixture.perch); // Turning the animal halfway around must NOT flip its temporary NPC owner.
+const turnedGrip=check(t(.2,-.3,.4+Math.PI,.35,.28),fixture.basis,fixture.body,fixture.perch); // Pet grip yaw must never affect carrier facing or contact.
 for(const k of ['a','b','c','d','x','y'])near(one[k],turnedGrip[k],'animal grip rotation cannot rotate or relocate the owner '+k);
+for(const [side,camera] of [['front',{position:{x:.2,z:4}}],['back',{position:{x:.2,z:-4}}],['right',{position:{x:4,z:0}}],['left',{position:{x:-4,z:0}}]]) {
+ const turned=check(t(.2,-.3,1.4,.35,.28),fixture.basis,fixture.body,fixture.perch,camera);
+ const facing=Math.atan2(turned.b,turned.a),expected=Math.atan2(camera.position.x-.2,camera.position.z); // Matches the NPC builder's painted +Z front normal.
+ near(facing,expected,'front portrait faces '+side+' camera instead of showing a flipped rear canvas');
+}
 const two=check(t(-.4,.8,-1.1,.3,.3),t(-1,.7,.8,.7,1.15),t(0,.12,-.2,.9,.9),t(-.13,.4,-.5,1.3,1.3));
 assert.notDeepEqual(one,two,'switching species/gender changes the NPC placement');
 assert.match(html,/applyCreatureSizeClass\(actor, 'small', \{ announce: false, render: false \}\)/,'grip selects Small size automatically');
@@ -67,8 +75,11 @@ assert.match(html,/perch\.rotation\.order = 'YXZ'/,'gameplay rotation order pres
 assert.match(html,/rigWorldAxesV1553\.quaternion\.identity\(\)/,'world axes ignore local grip rotation');
 assert.match(html,/controls\.setSpace\('world'\)/,'actual gizmo is world aligned');
 assert.match(html,/window\.AnimationAuthorRigCarrierPreview\?\.placeNpcAtGrip/,'solver integrated');
-assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier2/,'changed browser helper must bust the cached flipped NPC solver');
-assert.match(html,/NPC front facing: world \+X/,'mobile status must report the neutral-facing comparison contract');
+assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier3/,'changed browser helper must invalidate cached wrong-face solver');
+assert.match(html,/camera: state\.three\.camera/,'editor passes live orbit camera to carrier portrait solver');
+assert.match(html,/NPC portrait front \(\+Z\) faces camera/,'mobile status reports actual NPC plane orientation');
+assert.match(avatarSource,/function createSinglePlaneAssembly[\s\S]*?frontMesh\.position\.z = config\.anchorZ;[\s\S]*?backMesh\.rotation\.y = Math\.PI;/,'the normal NPC front plane looks toward +Z; only the back is 180° rotated');
+assert.match(avatarSource,/frontMesh\.rotation\.y = Math\.PI \/ 2;/,'animal face plane uses a different +X orientation, not the NPC orientation');
 assert.match(html,/setAnimationAuthorMode = async function\(mode, \.\.\.args\)/,'mode exit clears temporary preview');
 assert.doesNotMatch(html.slice(html.indexOf('// V15.53')),/animationAuthor\.actors\.push\(/,'carrier does not join selectable actors');
 console.log('Animation Author inverse grip carrier regression passed');
