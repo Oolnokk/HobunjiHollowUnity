@@ -17,6 +17,9 @@ let staminaSpent = []; // Detects the independent mounted-training discount on t
 let legacy = 0; // Counts inappropriate ordinary weapon fallback attacks.
 let lunges = 0; // Counts inappropriate rider lunges.
 let alignmentRequests = 0; // Counts on-foot target alignment attempted while seated.
+let bursts = []; // Actual mounted quick/heavy movement bursts requested by their production abilities.
+let holdCancelled = 0; // Ensures dismounting cancels the charged visual, not an on-foot release.
+let regenBlocked = false; // Checks that the heavy hold removes its stamina-regeneration blocker.
 
 const player = { x: 0, y: 0, stamina: 100, angle: 0 };
 const foe = { health: 1000, areaId: 'field', x: 36, y: 0, def: { label: 'target' } };
@@ -37,6 +40,10 @@ const deps = {
   getCurrentArea: () => 'field',
   getPlayerMeleeAimPitch: () => 0,
   setCombatSwingCone() {}, triggerWeaponSwingVisual() {},
+  triggerWeaponHoldVisual() {},
+  releaseWeaponSwingHold() {},
+  cancelWeaponSwingHold: () => { holdCancelled++; },
+  getWeaponSwingWindupPoseProgress: () => 0.8,
   clearVegetationInAttackCone: () => 0,
   fireLegacyWeaponAction: () => { legacy++; },
   beginCombatLunge: () => { lunges++; },
@@ -54,6 +61,7 @@ const deps = {
 const Combat = {
   deps, isStaggered: () => false, update() {}, meleeHit: () => true,
   playerMeleeThreat: () => ({}),
+  setWindupProgressTransform() {},
   beginStagedAction(action) {
     strikes.push(action);
     return { phase: 'windup' };
@@ -66,6 +74,7 @@ const window = {
     get rideEntity() { return riding === 'mounted' ? mount : null; },
     mountedMeleeDamageMultiplier: () => momentum,
     mountedMeleeStaminaMultiplier: () => 0.8,
+    beginMountedCombatBurst: (multiplier, seconds) => { bursts.push({ multiplier, seconds }); return true; },
   },
   __hobunjiPlayerProfile: profile,
   MeleePoseSpacing: {}, WeaponToolStances: { init() {} },
@@ -81,6 +90,7 @@ const window = {
   ResourceSystem: {
     spendStamina(_actor, cost) { staminaSpent.push(cost); return { spent: cost, excess: 0 }; },
     getExhaustionSpeed: () => 1,
+    setStaminaRegenBlocked(_actor, _source, blocked) { regenBlocked = blocked; },
   },
   CombatAttackEvents: {
     prepare: options => ({ ...options, modifiers: { damage: 1, affliction: 1, knockback: 1, footingDamage: 1 } }),
@@ -98,7 +108,9 @@ const context = vm.createContext({
 for (const file of [
   'docs/js/combat/combat-loadout.js',
   'docs/js/combat/combat-combo.js',
+  'docs/js/combat/combat-quickattacks.js',
   'docs/js/combat/combat-mounted.js',
+  'docs/js/combat/combat-charged-breaker.js',
   'docs/js/combat/combat-input.js',
 ]) vm.runInContext(read(file), context, { filename: file });
 
@@ -144,7 +156,7 @@ assert.equal(lunges, 0);
 assert.equal(Combat.loadout.getSlot('tap1'), 'pokeCombo', 'on-foot combo restored');
 
 // Slot choices are independent and persist per weapon without mutating tap1/hold1.
-Combat.abilities.register('exhaustCutter', { category: 'quickAttack', slotFamily: 'tap', onTap() {} });
+assert.equal(Combat.abilities.get('exhaustCutter').category, 'quickAttack', 'real quick-attack ability is available');
 assert.equal(Combat.loadout.setSlot('tap2', 'exhaustCutter', 'mounted'), true);
 assert.equal(Combat.loadout.getSlot('tap2', 'mounted'), 'exhaustCutter');
 assert.equal(Combat.loadout.getSlot('tap2', 'foot'), 'exhaustCutter'); // Existing foot defaults are unchanged.
@@ -152,4 +164,45 @@ assert.equal(store.characters[0].combatLoadout.__mountedCombatLoadouts['test-hat
 const saved = Combat.loadout.serialize();
 Combat.loadout.load(saved);
 assert.equal(Combat.loadout.getSlot('tap2', 'mounted'), 'exhaustCutter');
-console.log('mounted combat loadout, runtime combo mastery, input, damage and dismount regression passed');
+// Quick Attack tap reuses its real mastery and swaps rider lunge for a mount burst.
+riding = 'mounted';
+const quick = Combat.abilities.get('exhaustCutter'); // Production Quick Attack (not a fake registered ability).
+const quickStagesBefore = strikes.length;
+const quickBurstsBefore = bursts.length;
+quick.onTap();
+assert.equal(strikes.length, quickStagesBefore + 1, 'mounted quick uses production staged attack timeline');
+assert.equal(bursts.length, quickBurstsBefore + 1, 'mounted quick replaces its lunge with a speed burst');
+assert.equal(lunges, 0, 'mounted quick does not move the player with a lunge');
+const hitsBeforeQuickDismount = hits.length; // Delayed strike must be harmless after dismounting.
+riding = 'none';
+strikes[quickStagesBefore].onStrike();
+strikes[quickStagesBefore].onComplete?.();
+assert.equal(hits.length, hitsBeforeQuickDismount, 'mounted quick cannot hit as a phantom foot strike after dismount');
+
+// Charged Breaker remains the original heavy ability, with its mastery and
+// visible charge, but the release accelerates the mount rather than the rider.
+riding = 'mounted';
+const heavy = Combat.abilities.get('chargedBreaker'); // Locked mounted hold1 resolves to the production heavy ability.
+const heavyStagesBefore = strikes.length;
+const heavyBurstsBefore = bursts.length;
+heavy.onHoldStart();
+assert.equal(regenBlocked, true, 'heavy hold blocks stamina regeneration while charging');
+heavy.onHoldEnd();
+assert.equal(regenBlocked, false, 'heavy release restores stamina regeneration');
+assert.equal(strikes.length, heavyStagesBefore + 1, 'charged mounted strike is still scheduled');
+assert.equal(bursts.length, heavyBurstsBefore + 1, 'charged heavy releases the mount gallop multiplier');
+assert(bursts.at(-1).multiplier >= 2.4, 'charged heavy surge is stronger than ordinary cruise');
+assert.equal(lunges, 0, 'mounted heavy release never calls the player lunge');
+
+heavy.onHoldStart();
+assert.equal(regenBlocked, true);
+riding = 'none';
+const heavyStrikesBeforeDismount = strikes.length;
+const heavyBurstsBeforeDismount = bursts.length;
+heavy.onHoldEnd();
+assert.equal(strikes.length, heavyStrikesBeforeDismount, 'dismounted heavy hold cannot release a phantom foot strike');
+assert.equal(bursts.length, heavyBurstsBeforeDismount, 'dismount cannot trigger a stale mount burst');
+assert.equal(lunges, 0, 'dismounted heavy hold cannot produce an on-foot lunge');
+assert(holdCancelled > 0, 'dismounted heavy cancels its held weapon pose');
+assert.equal(regenBlocked, false, 'dismount fully releases heavy stamina regeneration block');
+console.log('mounted combat loadout, real combo/quick/heavy abilities, momentum and dismount safety passed');
