@@ -37,6 +37,7 @@
     if (progressPatch && typeof progressPatch === 'object' && !Array.isArray(progressPatch)) Object.assign(record.progress, progressPatch);
     if (status === 'completed' && !record.completedAt) record.completedAt = Date.now();
     let saved = false; // A rejected or throwing serializer must not advance the live quest log.
+    lastSaveError = null; // Clear an older failure before reporting this attempt's result.
     try { saved = deps?.saveMemberWorldData?.() !== false; }
     catch (error) { lastSaveError = String(error?.message || error); }
     if (!saved) {
