@@ -25,6 +25,8 @@
   let playerLifeT = 0;
   let playerLifePending = false;
   let npcLifePending = false; // Serializes nearby NPC composites so crowded festival stations cannot launch a batch together.
+  const readyNpcQueue = []; // FIFO makes a crowd take turns instead of letting the first walker in the update loop monopolize expression rendering.
+  const MAX_QUEUED_NPCS = 64; // Bounds transient walker references if a festival fills the visible radius faster than expressions can composite.
   let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
   let playerCombatExpressionVersion = 0; // Incremented whenever combat expression intent changes so an older async breathing render cannot upload over the new face.
   let playerCombatExpressionApplied = false; // True only after the current player avatar's live texture actually contains the combat frown.
@@ -70,7 +72,29 @@
     if (distanceSquared > cfg.farTiles ** 2) { stats.npcDistanceSkips++; return; }
     if (distanceSquared > cfg.nearTiles ** 2) interval *= cfg.midIntervalMul;
     if (walker._portraitLifeT < interval) return;
+    if (!walker._portraitLifeQueued && readyNpcQueue.length < MAX_QUEUED_NPCS) {
+      walker._portraitLifeQueued = true;
+      readyNpcQueue.push(walker);
+    }
     if (npcLifePending) { stats.npcBudgetSkips++; return; }
+    let nextWalker = null; // Only launch an eligible queued walker; old area/outfit/visibility entries cannot block the queue.
+    while (readyNpcQueue.length) {
+      const candidate = readyNpcQueue.shift();
+      candidate._portraitLifeQueued = false;
+      const candidatePos = candidate.root?.position;
+      const candidatePlayer = deps.getPlayerTile();
+      if (candidate.area === deps.getCurrentArea() && !candidate._portraitLifePending
+          && candidate.avatarGroup?.userData?.frontTexture && candidate.avatarFrontCanvas && candidate.profile
+          && candidatePos && candidatePlayer
+          && Number.isFinite(candidatePos.x) && Number.isFinite(candidatePos.z)
+          && Number.isFinite(candidatePlayer.x) && Number.isFinite(candidatePlayer.y)
+          && (candidatePos.x - candidatePlayer.x) ** 2 + (candidatePos.z - candidatePlayer.y) ** 2 <= cfg.farTiles ** 2) {
+        nextWalker = candidate;
+        break;
+      }
+    }
+    if (!nextWalker) return;
+    walker = nextWalker;
     const composer = window.portraitBreathingComposer;
     if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
@@ -243,6 +267,6 @@
     setPlayerCombatExpression,
     getPlayerAvatar: () => deps?.getPlayerAvatar?.() || null, // Canonical live player portrait/profile for composite grapples; no clone of game.js state.
     isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
-    snapshot: () => ({ ...stats, npcLifePending, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
+    snapshot: () => ({ ...stats, npcLifePending, npcQueueLength: readyNpcQueue.length, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };
 })();
