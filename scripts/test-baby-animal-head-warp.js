@@ -65,8 +65,10 @@ assert.notEqual(warp.applyToCanvas(input, 'grehlr'), input, 'species-specific pr
 assert.equal(warp.applyToCanvas(input, 'grehlr', 1), input, 'editor preview 100% overrides any authored scale without mutating it');
 writes.delete('hobunji_animal_head_rigs_v1');
 assert.equal(warp.scaleForKind('grehlr'), 1.33, 'clearing preview restores committed species setting');
-assert.equal(warp.setScale(1), 1, 'experiment can be turned off');
-assert.equal(warp.applyToCanvas(input, 'grehlr'), input, 'disabled effect does not allocate new textures');
+assert.equal(warp.setScale(1), 1, 'global experimental scale can be turned off');
+assert.notEqual(warp.applyToCanvas(input, 'grehlr'), input, 'authored species scales remain active independently of global default');
+windowStub.HobunjiAuthoredAnimalHeadRigs = null;
+assert.equal(warp.applyToCanvas(input, 'grehlr'), input, 'global 100% disables an animal without its own authored scale');
 assert.equal(warp.setScale(7), warp.MAX_SCALE, 'setter safely clamps extreme values');
 assert.equal(warp.debugSnapshot().scale, warp.MAX_SCALE, 'diagnostics report current effect strength');
 assert(warp.debugSnapshot().applied > 0, 'diagnostics report actual use');
