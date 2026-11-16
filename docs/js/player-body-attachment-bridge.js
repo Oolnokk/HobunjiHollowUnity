@@ -204,7 +204,9 @@
         if (idleUrl) mask = await warp?.ensureIdleMask?.(kind, await loadFrameImage(idleUrl));
       }
       if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
-      const composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false);
+      let composed = null;
+      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false); }
+      catch (error) { smallPetHeadDebug.lastError = 'Genotype pose unavailable, using raw sprite: ' + String(error?.message || error); }
       if (composed) return composed; // Final compositor includes eyes, recolors and coat patterns whenever supported.
       const rawUrl = (frameName === 'run1' ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps)).url;
       return loadFrameImage(rawUrl); // Unsupported species still get head growth on their uncomposited source PNG.
