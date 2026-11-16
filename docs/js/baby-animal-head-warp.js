@@ -116,12 +116,10 @@
       || window.CreatureGeneticsRender?.headRigForKind?.(base);
     const chathead = validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame);
     if (chathead) return chathead; // The authored dialogue frame strictly bounds which IDLE opaque pixels belong to the source head mask.
-    const painted = frameFromRig(savedRig) || frameFromRig(committed);
-    if (painted) return painted; // No chathead frame? Preserve custom/unpainted species' authored head crop.
-    // Unpainted birds and other registered creatures still deserve baby proportions. Reuse the existing dialogue-frame solver
-    // rather than silently skipping them; newly painted rigs automatically supersede this fallback.
     const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
-    if (dialogue) return dialogue;
+    if (dialogue) return dialogue; // Dynamic/solved chathead frames also outrank head deformation paint.
+    const painted = frameFromRig(savedRig) || frameFromRig(committed);
+    if (painted) return painted; // Preserve custom species without any authored chathead frame.
     const knownSpecies = window.CreatureGeneticsRender?.SPECIES?.[base];
     return knownSpecies ? { x: 0.32, y: 0.17, width: 0.36, height: 0.36,
       coordinateSpace: 'sprite-normalized-top-left' } : null; // Only known sprite species get a conservative fallback; unknown IDs still skip.
@@ -219,6 +217,7 @@
     const id = sourceId + '|' + frameKey(frame);
     const previous = idleMasks.get(key);
     if (previous?.id === id) return previous.mask;
+    idleMasks.delete(key); // A newly imported transparent/invalid sprite must not inherit the previous image's mask.
     try {
       const source = sourcePixels(image);
       const mask = source && buildIdleMask(source.data, source.width, source.height, frame);
