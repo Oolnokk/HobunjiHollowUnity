@@ -134,7 +134,7 @@ function buildContext({ search = '' } = {}) {
 // --- Behavioral equivalence: each subscriber's callback still does exactly
 // what the old combined scheduledFrame() did once actually invoked. --------
 {
-  const { registered, elements } = buildContext();
+  const { context, registered, elements } = buildContext();
   const syncGulletVisual = registered.get('fishing-presentation-gullet').fn;
   const updateWaterDebug = registered.get('fishing-presentation-water-debug').fn;
 
