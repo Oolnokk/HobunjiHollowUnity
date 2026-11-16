@@ -201,9 +201,15 @@
       return request;
     }
 
-    if (!isAutoTargetEnabled() || window.Combat.loadout?.isMounted?.()) {
+    if (!isAutoTargetEnabled()) {
       const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
       lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
+      callback();
+      return null;
+    }
+    if (window.Combat.loadout?.isMounted?.()) {
+      const bypassedAtMs = performance.now(); // Mounted strikes retain direct rider steering, with no on-foot alignment requests.
+      lastAlignmentHandoff = { phase: 'mounted-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
       callback();
       return null;
     }
