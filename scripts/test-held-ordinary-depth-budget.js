@@ -40,6 +40,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     lastBaseStencilBits: tint ? 1 : 0, replayScissorEnabled: false, replayCullEnabled: false,
     buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => wildernessGround ? new Set([groundMaterial]) : [], hasOverlappingHeldCover: () => tint,
+    forEachMaterial(material, visit) { for (const member of Array.isArray(material) ? material : [material]) if (member) visit(member); }, // Exercise the renderer's actual ground selection against ordinary and x-ray groups.
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
