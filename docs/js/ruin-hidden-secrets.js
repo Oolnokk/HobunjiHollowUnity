@@ -262,9 +262,12 @@
         if(netSkin){
           netSkin.name='secret-rope-long-net-cover-'+rec.id;
           netSkin.userData.devRuinFootprintIgnore=true;
-          rec.cover.add(netSkin); // The real rope_long.png net atlas hangs from four solid carved-stone columns.
+          rec.cover.add(netSkin);
+          rec.netSkin=netSkin; // The real rope_long.png atlas hangs from four solid carved-stone columns.
         } // Without the sprite module, the supported stone enclosure remains visible, never a floating bare net.
       }
+      blocker('cache-cover',center.x,center.z,1.3,1.3,()=>!rec.unlocked);
+      // A visible ice/net enclosure also physically blocks approach until the shared projectile clasp is struck.
       targetAt(center.x+sx*.95,floor+1.11,center.z+sz*.35,unlock); // Clasp rests on the stone plinth, not unsupported air.
     }
     const cameraForBrood=()=>root.DevRandomRuinInteractions?.activeCamera?.()
@@ -362,6 +365,10 @@
     }
     rec.snapshot=()=>({id:rec.id,kind:rec.kind,trigger:rec.kind==='closet'?rec.trigger:rec.suspension,
       tier:rec.tier,unlocked:rec.unlocked,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
+      art:{stone:'carved_smooth.png',mapped:!!root.HobunjiSurfaceStretchUV?.mapMesh,
+        cover:rec.icePlacement?.iceLayer?'authored-ice-growth'
+          :rec.netSkin?.userData?.dungeonNetAtlas|| (spec.kind==='suspended'?'textured-stone-fallback':null)},
+      // Mobile Pixel Probe can identify texture-fallback cases without opening browser developer tools.
       chestOpened:rec.chest?.opened??null,babies:rec.babies,nestLoaded:rec.nest?.loaded||0,
       eggsRemaining:rec.nest?.eggsRemaining??0,
       nestDiscovered:rec.discovered});
