@@ -150,14 +150,14 @@ assert.equal(queued.length, 1, 'left summary resize still schedules presentation
 flushFrames();
 assert.equal(styleWrites, writesBeforeLeftResize, 'left summary resize does not rerun the font fitting');
 assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.reusedDetailFits, 2);
-assert.equal(layoutReads, 1, 'explicit mobile diagnostics still read the actual detail-panel width');
+assert.equal(layoutReads, 2, 'each explicit mobile diagnostic snapshot reads the actual detail-panel width');
 
 
 // The menu panel remains mounted and measurable while it is opacity-hidden.
 menu.open = false;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 1, 'closing the main menu never reads hidden Gear geometry');
+assert.equal(layoutReads, 2, 'closing the main menu never reads hidden Gear geometry');
 const closedMenuWrites = styleWrites; // Tracks CSS work while Gear is selected but no longer visible.
 observer.notify([mutation(info, 'characterData')]);
 flushFrames();
@@ -165,12 +165,12 @@ assert.equal(styleWrites, closedMenuWrites, 'Gear remains idle while its parent 
 menu.open = true;
 observer.notify([mutation(menu)]);
 flushFrames();
-assert.equal(layoutReads, 1, 'reopening the menu does not run diagnostics-only geometry');
+assert.equal(layoutReads, 2, 'reopening the menu does not run diagnostics-only geometry');
 
 pane.gear = false;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 1, 'leaving Gear does not read the hidden detail panel');
+assert.equal(layoutReads, 2, 'leaving Gear does not read the hidden detail panel');
 assert(disconnects >= 1, 'leaving Gear disconnects layout resize targets');
 const hiddenWrites = styleWrites; // Compares real mutation bursts with hidden Gear to the no-work baseline.
 observer.notify([mutation(info, 'characterData'), mutation(irrelevant)]);
@@ -180,13 +180,13 @@ assert.equal(styleWrites, hiddenWrites, 'hidden Gear changes never run CSS font 
 pane.gear = true;
 observer.notify([mutation(pane)]);
 flushFrames();
-assert.equal(layoutReads, 1, 'reopening Gear fits without diagnostics-only geometry');
+assert.equal(layoutReads, 2, 'reopening Gear fits without diagnostics-only geometry');
 const debug = window.InventoryGearCompactEffects.debugSnapshot();
 assert.equal(debug.gearActive, true);
 assert.equal(debug.fitStats.passes, 6);
 assert.equal(debug.fitStats.detailFits, 4, 'first open, detail change, and both reopens require a real fit');
 assert.equal(debug.fitStats.reusedDetailFits, 2, 'left-rail mutation and resize both skip the real fit');
-assert.equal(layoutReads, 2, 'on-demand diagnostics retain the measured item-detail width');
+assert.equal(layoutReads, 3, 'on-demand diagnostics retain the measured item-detail width');
 assert(debug.fitStats.ignoredMutations >= 2);
 assert(debug.fitStats.inactiveSkips >= 3);
 
@@ -202,5 +202,5 @@ assert(styleWrites > preResizeWrites, 'Gear resize reruns the fit');
 assert(currentInfoFontPx <= 4 && currentInfoFontPx > 3.9, 'resize recomputes the fitting font for new geometry');
 assert.equal(afterResize.fitStats.detailFits, 5, 'resizing forces fresh content measurements');
 assert.equal(afterResize.fitStats.passes, 7);
-assert.equal(layoutReads, 3, 'only explicit diagnostics produce layout width reads');
+assert.equal(layoutReads, 4, 'only explicit diagnostics produce layout width reads');
 console.log('Gear layout idle-cadence tests passed');
