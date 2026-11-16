@@ -172,3 +172,31 @@ assert.equal(input.queueSnapshot().length,1,'press after the Strike pose queues'
 gruntDelay=0; input.update(0.01); input.update(0.01);
 assert.equal(tapCount,tapsBeforeWindow+1,'queued press fires at the hold midpoint');
 console.log('attack inputs queue only after the Strike pose: ok');
+
+// A fixed mounted loadout has an intentionally empty Action 2 tap slot.
+// Empty must mean no attack, not a fallback to the ordinary melee swing.
+let mountActive = true; // Simulates the mount-owned input context independently of the melee ability registry.
+let legacySwingCount = 0; // Detects whether an unslotted mounted Action 2 accidentally falls through to ordinary melee.
+const originalSlotGetter = context.window.Combat.loadout.getSlot;
+context.window.Combat.loadout.isMounted = () => mountActive;
+context.window.Combat.loadout.getSlot = slot => slot === 'tap2' ? null : originalSlotGetter(slot); // Action 2 is empty in both contexts; only on-foot input may use its legacy fallback.
+context.window.Combat.deps.fireLegacyWeaponAction = () => { legacySwingCount++; };
+input.setAutoTargetEnabled(true, { persist: false });
+alignment = null;
+input.fireTap(2);
+assert.equal(legacySwingCount, 0, 'an empty mounted Action 2 tap never fires the on-foot legacy swing');
+const mountedTapBefore = tapCount;
+input.fireTap(1);
+assert.equal(tapCount, mountedTapBefore + 1, 'fixed mounted Action 1 tap fires its assigned attack');
+assert.equal(alignment, null, 'mounted attacks bypass on-foot target-alignment requests');
+hold(1);
+assert.equal(holdActive, true, 'fixed mounted heavy hold starts immediately instead of waiting for on-foot alignment');
+assert.equal(alignment, null, 'mounted heavy holds never request on-foot target alignment');
+input.cancelPress(1);
+mountActive = false;
+input.setAutoTargetEnabled(false, { persist: false }); // On-foot fallback executes immediately only when the optional alignment assist is disabled.
+input.fireTap(2);
+assert.equal(legacySwingCount, 1, 'ordinary on-foot legacy fallback remains available outside mounted context');
+delete context.window.Combat.loadout.isMounted;
+context.window.Combat.loadout.getSlot = originalSlotGetter;
+console.log('mounted empty slot and alignment bypass checks passed');

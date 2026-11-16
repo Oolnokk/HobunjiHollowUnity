@@ -25959,20 +25959,6 @@
               Number.isFinite(player.physicalFeetY) ? player.physicalFeetY : Infinity) ?? activeSurfaceYAtWorld(wx, wz))
           : physicalSurfaceY; // Shadows remain on the actual floor instead of following airborne feet or sinking beneath bridge decking.
         playerGroundShadow.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
-        // Ground-projected Health/Stamina ring HUD — replaces the flat
-        // vitals bar (see #vitalsBar in style.css). Sits just above the
-        // ground shadow, tracking the same smoothed XZ. Uses the actually
-        // active scene (farm/town/interior/zone/building), not the base
-        // farm `scene` — the player mesh itself gets reparented between
-        // those as the player travels (see e.g. the transition-spot code
-        // around fromScene.remove(playerMesh)/toScene.add(playerMesh)), so
-        // hardcoding `scene` here left the ring parented into a scene that
-        // wasn't the one actually being rendered.
-        if (window.ResourceRings) {
-          const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
-          ringHud.position.set(playerMesh.position.x, shadowSurfaceY + characterGroundShadowSurfaceOffset(), playerMesh.position.z); // Ground HUD and player shadow share the same true floor.
-        }
-
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
         // the camera, and this recompute runs every frame regardless of fishing state, so
