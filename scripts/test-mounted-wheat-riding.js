@@ -332,9 +332,10 @@ assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'legacy timed combat 
 
 // A funded windup changes actual movement's desired speed, never the post-strike
 // boost timer, and does not spend any of the six wheat acceleration charges.
+const wheatBeforeWindup = win.Mounts.ridingDebug.wheatRemaining; // Snapshot AFTER earlier riding/recovery tests, immediately before the windup grant.
 assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.2, 0), true);
 assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'zero paid stamina means zero acceleration');
-assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeCombatWheat, 'windup spends no wheat');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, wheatBeforeWindup, 'windup spends no wheat');
 assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.2, 0.4), true);
 const partialWindup = win.Mounts.ridingDebug.windupMultiplier; // Recorded target of an intermediate payment.
 assert(partialWindup > 1 && partialWindup < 3.2, 'partial payment yields a partial speed multiplier');
