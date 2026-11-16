@@ -256,10 +256,12 @@
   }
 
   // ---------------------------------------------------------------- runtime
-  function platformSlabBlocksAt(platforms,x,z,half,feet){
+  function platformSlabBlocksAt(platforms,x,z,half,feet,verticalRadius=null){
     if(!Number.isFinite(feet))return false;
-    const radius=Math.max(0,Number(half)||0); // Shared mover half-width; preserves canOccupyAt's square body footprint.
-    const bottom=feet+.055,top=feet+1.25; // Test the body ABOVE the feet, not the slab the player is legitimately standing on.
+    const radius=Math.max(0,Number(half)||0); // Shared mover half-width, also used by point/projectile probes.
+    const pointHalf=verticalRadius==null?null:Math.max(.025,Number(verticalRadius)||0); // Height-aware callers are small volumes, not full-height bodies.
+    const bottom=pointHalf===null?feet+.055:feet-pointHalf;
+    const top=pointHalf===null?feet+1.25:feet+pointHalf; // A grounded actor can stand ON a slab; a projectile can clear it from below.
     for(const p of platforms||[]){
       if(bottom>=p.y-.001||top<=p.y-THICKNESS+.001)continue;
       if(x+radius<=p.x-p.w/2||x-radius>=p.x+p.w/2
@@ -338,9 +340,10 @@
       area:'map_i_dev_random_ruin',
       enabled:()=>!disposed,
       blocksBox:(x,z,half,worldY)=>{
-        const supportY=Number(deps.getPlayerY?.()); // Ground moves with no explicit height use the current shaft story.
-        const feet=worldY!=null&&Number.isFinite(Number(worldY))?Number(worldY):supportY;
-        return platformSlabBlocksAt(plan.platforms,x,z,half,feet);
+        const explicitY=worldY!=null?Number(worldY):NaN; // Ranged shots use the supplied point height instead of the player's story.
+        if(Number.isFinite(explicitY))return platformSlabBlocksAt(plan.platforms,x,z,half,explicitY,half);
+        const supportY=Number(deps.getPlayerY?.()); // Heightless forced movement uses the actual current player support.
+        return platformSlabBlocksAt(plan.platforms,x,z,half,supportY);
       },
     });
     const pillarRecords = [], attachedPillars = new Set(), attachedPlasm = new Set(); // Retry an incomplete theme mount without duplicating hazards.
@@ -422,6 +425,7 @@
   return Object.freeze({
     TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles, platformSlabBlocksAt, // Pure helper is also used by platform regression tests.
     isIceAt: (x, z, y) => !!active?.isIceAt?.(x, z, y),
+    flightBlockedAt:(x,z,radius,y)=>!!active&&platformSlabBlocksAt(active.plan.platforms,x,z,radius,y,radius), // Skeeri hit the same real slab volume as other flying projectiles.
     senseTargets: () => [],
   });
 });
