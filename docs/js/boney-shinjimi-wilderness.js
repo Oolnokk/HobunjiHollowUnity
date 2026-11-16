@@ -523,7 +523,10 @@
       if(state.phase==='roam'&&visiblePlayer())beginFlight();
       else if(state.phase==='roam') {
         const other=nearbyOtherNpc();
-        if(other)pickChore({x:other.root.position.x,z:other.root.position.z});
+        if(other&&planTimer>=1.2) { // Avoidance route replans must not perform dozens of NPC path searches every 240 ms while another NPC stays nearby.
+          planTimer=0;
+          pickChore({x:other.root.position.x,z:other.root.position.z});
+        }
       }
     }
     if(state.phase==='flee')updateFlee(dt);
