@@ -175,6 +175,10 @@ async function main() {
     folderStatus.lastWriterProvenance = { version: 1, lastWriterDeviceId: 'device-other-installation', writtenAt: 123457 };
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on a different device/);
     assert.ok(!context.window.FolderSaveDeviceProvenance.sourceLine().includes('device-other-installation'), 'UI must not expose the anonymous device id itself');
+    folderStatus.lastWriterProvenance = null; // An empty/older folder must not borrow the current browser's stale identity.
+    assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last-save device unknown/,
+      'connected folders without provenance show unknown rather than copying a browser-only writer');
+    assert.equal(browserMetaReads, 0, 'even unknown connected-folder provenance avoids reading unrelated browser metadata');
     console.log('OK  Resume provenance shows folder source and same/different-device status without naming devices');
   }
 
