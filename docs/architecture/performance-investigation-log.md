@@ -1,5 +1,59 @@
 # Performance investigation log
 
+## 15 Nov 2026 (applied): avoid redundant Spear Bridge fish SVG style writes
+
+`fish-catalog.js` runs a presentation callback on each animation frame after a cast.
+It used to assign `transformBox`, `transformOrigin` and `transform` to
+`#fishDeformedImage` on every tick, even though the first two are constants and
+the scale only changes with the selected fish. On browsers, same-value inline
+style assignments can still invalidate style and queue mutation records.
+The existing href observer already avoided duplicate image attribute writes.
+
+The callback now compares each serialized inline value before writing and keeps
+the original immediate correction when another writer changes a value, the fish's
+authored scales change, or Fishing replaces the image element. Collision-mask
+rendering, the animated href update and frame cadence are untouched.
+`FishCatalog.getPresentationStyleDebug()` returns cumulative `writes`/`skips`
+and `running` for phone-side A/B inspection. The existing `?fishingDebug=1`
+panel now displays those counters once per second, and skips same-value water status
+writes. The executable fake-DOM/RAF test
+covers 120 unchanged frames, real scale changes, external overrides, image
+replacement and a stop/restart cast. **Unmeasured:** on-device style-recalc and
+FPS changes; this removes redundant mutation work, not a measured FPS claim.
+
+
+## 15 Nov 2026 (applied): skip unrelated Gear detail-panel fitting and debug-only layout reads
+
+The 9 Nov user-run browser trace had shown intermittent `inventory-gear-compact-effects.js`
+`refreshPresentation` layout/style cost (5–12 ms per call, with 1.56 s cumulative style
+recalculation in one trace), but did not isolate the cause. Code inspection found an
+unnecessary part: every left-summary Gear rebuild caused the unrelated right-hand
+item-detail panel's font fitter to reset six CSS variables and potentially run the
+9-step overflow/binary-search measurement sequence, followed by four synchronous
+geometry reads only needed for the debug snapshot.
+
+The Gear module now reuses the last fitted result when only the left summary/inventory
+mutates; item-detail changes, pane replacement, open/reopen, ResizeObserver,
+orientation and window resize still invalidate it. Geometry for the debug snapshot is
+read on demand instead of in each scheduled frame callback. The public `refresh()`
+still returns those measurements explicitly. `InventoryGearCompactEffects.debugSnapshot()`
+reports `fitStats.detailFits` and `fitStats.reusedDetailFits` for mobile A/B checks.
+The Gear idle-cadence regression covers left-panel reuse, real info mutations, menu
+hide/show, resize invalidation and lazy debug-only reads. A review follow-up made
+ResizeObserver track content-box dimensions: first notifications and unchanged sizes
+do not double-fit, left summary/owned-gear resizes only schedule maintenance, and
+right-detail/section resizes still invalidate the cached font. When EquipmentPanel
+replaces either inner Gear region without replacing its parent, the new nodes are
+reobserved. The executable fitting fixture checks that item-detail mutations and
+right-panel resizes still shrink text, while left-only updates do not refit.
+A direct module smoke test confirmed 6 CSS-var writes on open, 0 additional writes
+for a summary rebuild, 6 for an item-detail change, and 6 for resize (simple fitting fixture).
+
+**Not yet measured on real hardware:** frame-time change, or what fraction of the
+original style-recalculation trace was actually from this specific redundant fitting.
+This is removal of provably redundant synchronous-layout work, not an FPS claim.
+
+
 ## 15 Nov 2026 (applied): vitals-bar affliction animations off by default, affliction names printed on the segments
 
 Acting on the entry below: `player-vitals.js` now has two preferences (Settings > Visual Effects, persisted in

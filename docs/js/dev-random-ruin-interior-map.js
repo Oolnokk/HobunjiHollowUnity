@@ -845,12 +845,22 @@
     root.traverse(object=>{if(sourceStoneMaterial||!object?.isMesh||!object.userData?.ruinInteriorWall)return;sourceStoneMaterial=Array.isArray(object.material)?object.material[0]:object.material;});
 
     let stoneMeshes=0,convertedMaterials=0,totalMeshes=0;
+    const materialAliases=new WeakMap(); // Maps each V50 mesh's original decal materials to its final render materials, including stone and mixed-material walls.
+    const wholeStoneConverted=new WeakSet(); // Tracks only conversions performed in THIS pass; V50 preview roots retain userData across rerolls.
+    const rememberMaterial=(mesh,source,target)=>{
+      if(!source||!target||source===target)return;
+      let aliases=materialAliases.get(mesh);
+      if(!aliases){aliases=new Map();materialAliases.set(mesh,aliases);}
+      aliases.set(source,target);
+    };
     if(typeof natural?.naturalizeMesh==='function'){
       root.traverse(object=>{
         if(!object?.isMesh)return;
         const materials=Array.isArray(object.material)?object.material:[object.material];
         if(!materials.length||!materials.every(material=>isLegacyV50StoneMaterial(material,sourceStoneMaterial)))return;
-        object.material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+        const stone=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+        object.material=stone;wholeStoneConverted.add(object);
+        for(const original of materials)rememberMaterial(object,original,stone); // The decoration pass still names the original V50 surface material.
         window.HobunjiSurfaceStretchUV?.mapMesh?.(object,{label:'ruin-stone',maxPatchWorldSize:6});
         object.userData=Object.assign({},object.userData,{devRandomRuinDenMaterial:true,devRandomRuinStoneMaterial:true,devRandomRuinUnlitMaterial:true});
         stoneMeshes++;
@@ -863,7 +873,7 @@
       totalMeshes++;
       const list=Array.isArray(object.material)?object.material:[object.material];
       const next=list.map((material,index)=>{
-        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function') {
+        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function' && !wholeStoneConverted.has(object)) {
           object.userData.devRandomRuinStoneMaterial=true;
           return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
         }
@@ -876,20 +886,35 @@
       });
       if(Array.isArray(object.material))object.material=next;
       else if(next[0])object.material=next[0];
+      list.forEach((material,index)=>rememberMaterial(object,material,next[index])); // Catch mixed stone/non-stone material arrays that skip the initial whole-mesh conversion.
       if(next.some(material=>material?.userData?.devRandomRuinUnlitMaterial||material?.userData?.naturalSurfaceUnlit))object.userData=Object.assign({},object.userData,{devRandomRuinUnlitMaterial:true});
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
     });
 
-    root.traverse(object=>{ // V50's prepareRuntimeWallPlanes makes walls double-sided so both faces render; the stone/unlit swap above must not undo that.
-      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
-      for(const material of Array.isArray(object.material)?object.material:[object.material]){
-        if(material&&material.side!==THREE.DoubleSide){material.side=THREE.DoubleSide;material.needsUpdate=true;}
+    const wallMaterials=new Map(); // Reused by V50 vertical walls only, so shared roof/floor material culling remains unchanged.
+    const twoSidedWallMaterial=source=>{
+      if(!source?.clone)return source;
+      if(!wallMaterials.has(source)){
+        const wall=window.RuinWallFaces?.visibleWallMaterial?.(THREE,source)||source.clone();
+        wall.side=THREE.DoubleSide;wall.needsUpdate=true;
+        wallMaterials.set(source,wall);
       }
+      return wallMaterials.get(source);
+    };
+    root.traverse(object=>{ // Ground vestibule and independently generated upper V50 stories share this material-isolation path.
+      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
+      object.material=Array.isArray(object.material)
+        ?object.material.map(twoSidedWallMaterial):twoSidedWallMaterial(object.material);
     });
 
-    root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
+    root.traverse(node=>{ // Engraved walls must keep pointing to their real material after both unlit and wall-only conversion.
       const list=node.userData?.decalMaterials;
-      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
+      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>{
+        const aliases=materialAliases.get(node);
+        let converted=aliases?.get(material)||replaced.get(material)||material;
+        for(let i=0;i<3&&aliases?.has(converted);i++)converted=aliases.get(converted); // Follow an intermediate stone/unlit replacement without another scene traversal.
+        return node.userData?.ruinInteriorWall?(wallMaterials.get(converted)||converted):converted;
+      });
     });
     window.DevRandomRuinFurniturePieces?.hidePlaceholderItems?.(root); // V50's gold treasure-diamond placeholders (a letter on a diamond) are never real loot; hidden, not removed, because the sanctum finds pedestals through them.
     window.DevRandomRuinDoorSlabs?.normalize?.(root); // V50 door slabs stop 0.45 above the floor; stretch them down to it (js/dev-random-ruin-door-slabs.js).

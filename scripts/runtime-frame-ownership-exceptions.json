@@ -312,7 +312,7 @@
     "function": "scheduleFit",
     "reason": "Guarded single RAF re-fits the compact gear panel layout after a resize/DOM mutation; fires once per schedule.",
     "migrationStage": "not-planned",
-    "line": 429
+    "line": 498
   },
   {
     "file": "docs/js/inventory-ui.js",

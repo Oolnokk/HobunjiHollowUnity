@@ -75,7 +75,8 @@ const enemy={areaId:ruin,health:10,x:34*TILE,y:14*TILE,homeX:35*TILE,homeY:14*TI
 const hostiles=new Set([enemy]);
 const walker={area:ruin,root:{visible:true,position:{x:34,y:0,z:14}}};
 const walkers=[walker]; // A civilian NPC's update loop follows the same area guard as hostiles.
-const session=Rooms.mount({layout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
+const hronalLayout={...layout,rooms:layout.rooms.map(room=>({...room,theme:'hronal'}))}; // Hronal keeps its room-local clip; Tothal is tested separately below.
+const session=Rooms.mount({layout:hronalLayout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
   getHostiles:()=>hostiles,getWalkers:()=>walkers,mapId:ruin,tile:TILE});
 session.addRooms(v50);
 session.tick(.31);
@@ -191,4 +192,17 @@ assert.equal(walker.area,'__ruin_room_sleep__:'+ruin,'civilian NPCs also stop wh
 session.dispose();
 assert.equal(enemy.areaId,ruin,'disposing a dungeon never leaves stale sleeping actors');
 assert.equal(walker.area,ruin,'no NPC remains assigned to a sleeping synthetic area after cleanup');
+const tothalSession=Rooms.mount({layout,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
+  getHostiles:()=>new Set(),getWalkers:()=>[],mapId:ruin,tile:TILE});
+player.x=34;player.z=14;tothalSession.tick(.31);
+let diffuseDraws=0;
+const noTothalClip={save(){throw Error('Tothal cannot create a hard projected light frame');},
+  clip(){throw Error('Tothal cannot clip its overcast light');}};
+assert.equal(tothalSession.withLightRegion(noTothalClip,()=>{throw Error('Tothal must not project a room hull');},()=>{diffuseDraws++;}),true);
+assert.equal(diffuseDraws,1,'Tothal ceiling/wall illumination draws once without a room-shaped cutout');
+assert.equal(tothalSession.lightAllowed({x:14,y:1,z:14}),false,'unclipped Tothal still rejects light in another room');
+assert.equal(tothalSession.lightAllowed({x:34,y:1,z:14}),true,'Tothal keeps light in the active room');
+assert.deepEqual(tothalSession.snapshot().localLightBoundary,
+  {mode:'unclipped-tothal-overcast',active:false,canvasPasses:0},'mobile diagnostics distinguish the Tothal path');
+tothalSession.dispose();
 console.log('ruin-room-system: enclosure, door IDs, floor holes, lighting and enemy resets OK');
