@@ -126,6 +126,7 @@
   });
   const staleCreatureShoulderGrips = Object.freeze({
     pingdort: Object.freeze([Object.freeze([0, -0.14842300556586271, 0])]), // Previous native-foot grip; replace this exact old default, not independently authored grip positions.
+    'skeeri-medium': Object.freeze([Object.freeze([0, -0.16357451915740964, 0])]), // Retired Medium Skeeri stock grip; never replace a separately authored socket.
     'gar-wolf': Object.freeze([Object.freeze([0.01,-0.26545210788556156,0.07486897921502367])]), // Exact old master grip; user-authored positions remain untouched.
     'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
     'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
@@ -153,6 +154,10 @@
   });
   const staleCreatureGroundOffsets = Object.freeze({
     pingdort: Object.freeze({ large: 0.14842300556586271, medium: 0.14842300556586271, small: 0.14842300556586271 }), // Exact previous floor table; the newly authored Small offset is 0.07.
+    skeeri: Object.freeze({ large: 0, medium: 0, small: 0 }), // Old automatic floor sentinel from uncalibrated domestic Skeeri editor data.
+    'skeeri-small': Object.freeze({ large: 0, medium: 0, small: 0 }), // Old automatic floor sentinel from the Small variant.
+    'skeeri-medium': Object.freeze({ large: 0, medium: 0, small: 0 }), // Exact previous Medium Skeeri export.
+    'skeeri-large': Object.freeze({ large: 0, medium: 0, small: 0 }), // Old automatic floor sentinel from the Large variant.
     uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }), // Old master defaults; used for narrowly scoped autosave migration.
     nelk: Object.freeze({ large: 0, medium: 0, small: 0 }),
     nazgraku: Object.freeze({ large: 0, medium: 0, small: 0 }),
@@ -298,10 +303,15 @@
     shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
   };
 
-  const skeeriMediumRig = { // Medium Skeeri's authored rig; other Skeeri variants only borrow its chathead crop, not its attachments or size settings.
+  const skeeriSmallGroundY = masterCreatures.pingdort.groundOffsets.small; // Pingdort's approved Small 0.07 floor calibration is the shared Skeeri baseline.
+  const skeeriGroundOffsets = { // Scale the source floor Y by the actual native Skeeri widths: Small .65, Medium 1.15, Large 2.2.
+    large: skeeriSmallGroundY * (2.2 / 0.65), medium: skeeriSmallGroundY * (1.15 / 0.65), small: skeeriSmallGroundY,
+  };
+  const skeeriShoulderGrip = clone(masterCreatures.pingdort.anchors.shoulderGrip); // All Skeeri variants inherit only Pingdort's approved grip, not its saddle or size scales.
+  const skeeriMediumRig = { // Preserve Medium Skeeri's independent saddle, size scales and all unrelated rig fields.
     kind: 'skeeri-medium',
-    anchors: { saddle: identityAnchor([0, 0.12801484107971195, 0.02]), shoulderGrip: identityAnchor([0, -0.16357451915740964, 0]) },
-    groundOffsets: { large: 0, medium: 0, small: 0 },
+    anchors: { saddle: identityAnchor([0, 0.12801484107971195, 0.02]), shoulderGrip: clone(skeeriShoulderGrip) },
+    groundOffsets: { ...skeeriGroundOffsets },
     saddleRule: {},
     shoulderGripRule: {},
     sizeScales: { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } },
@@ -310,6 +320,25 @@
     sizeScalePercentages: {},
   };
   masterCreatures['skeeri-medium'] = { ...skeeriMediumRig, chatheadFrame: { ...creatureChatheadFrames['skeeri-medium'] } };
+  const skeeriUnscaledSizeClasses = { // Native-width ruin varieties must not also apply Medium Skeeri's unrelated size multipliers.
+    large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 },
+  };
+  const skeeriDomesticSizeClasses = { // Domestic Skeeri use the Small native .65-width body, so inherited Medium/Large Size must grow with its ground lift.
+    large: { x: 2.2 / 0.65, y: 2.2 / 0.65 }, medium: { x: 1.15 / 0.65, y: 1.15 / 0.65 }, small: { x: 1, y: 1 },
+  };
+  for (const kind of ['skeeri', 'skeeri-small', 'skeeri-large']) {
+    masterCreatures[kind] = { // Domestic Skeeri and the other two ruin varieties get independent grip/floor data without borrowing Medium's saddle.
+      kind,
+      chatheadFrame: { ...creatureChatheadFrames['skeeri-medium'] },
+      anchors: { saddle: identityAnchor([0, 0, 0]), shoulderGrip: clone(skeeriShoulderGrip) },
+      groundOffsets: { ...skeeriGroundOffsets },
+      saddleRule: {}, shoulderGripRule: {},
+      sizeScales: clone(kind === 'skeeri' ? skeeriDomesticSizeClasses : skeeriUnscaledSizeClasses),
+      sizeScaleRule: { ...skeeriMediumRig.sizeScaleRule },
+      shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
+      sizeScalePercentages: {},
+    };
+  }
 
   // One NPC lower half, not a wildlife species: standalone animal-style rig data.
   const isStaleDrenkirraShoulderGripYaw = (kind, grip) => kind === 'drenkirra'
