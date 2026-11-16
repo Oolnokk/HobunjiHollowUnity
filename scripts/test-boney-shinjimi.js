@@ -43,10 +43,11 @@ assert.match(travellers,/BoneyShinjimiWilderness\?\.restore/);
 const W={GameRandom:{random:()=>0},ArtifactCollection:{ARTIFACTS:{
   artifactLow:{label:'Low',sellPrice:30},artifactHigh:{label:'High',sellPrice:900}}},
   WorldMetaStore:{loadArtifactCollection:()=>({donated:['artifactLow']})},
-  EnchantmentSystem:{DEFINITIONS:{locked:{id:'locked',type:'Base'},learned:{id:'learned',type:'Base'}},
+  EnchantmentSystem:{DEFINITIONS:{locked:{id:'locked',type:'Base',alignment:'Fey'},learned:{id:'learned',type:'Base',alignment:'Fey'},
+    ruin:{id:'ruin',type:'Base',alignment:'Hronal'}},
     BASE_LIMIT:2,isBaseUnlocked:id=>id==='learned',isFlourishUnlocked:()=>false},
-  HarlyaoRelics:{makeRelic:()=>({shape:'longsword',uid:'u1',enchantments:{base:['learned'],flourishes:{}}}),
-    grantBoundRelic:()=> 'bound-u1'},
+  HarlyaoRelics:{makeFeyRelic:()=>({shape:'dagger',origin:'Fey',uid:'u1',enchantments:{base:['learned'],flourishes:{}}}),
+    grantBoundRelic:()=> 'feyBound_dagger_u1'},
   TrinketSystem:{DEFINITIONS:{first:{displayName:'First'},second:{displayName:'Second'}},
     ownedEntries:()=>[{id:'first'}],grant:id=>'trinket-'+id}};
 const pack=[]; // Real clothing belongs to Pack, not to a bag item counter.
@@ -60,11 +61,13 @@ const rewards=W.BoneyShinjimiRewards;
 assert.equal(rewards.artifactChoice(['artifactLow'],()=>0).key,'artifactHigh');
 assert.equal(rewards.artifactChoice(['artifactLow','artifactHigh'],()=>0).key,'artifactHigh');
 assert.equal(rewards.relicWithUnlearnedEnchantment(()=>0).enchantments.base[0],'locked');
+assert(rewards.lockedEnchantments().every(entry=>W.EnchantmentSystem.DEFINITIONS[entry.id].alignment==='Fey'),
+  'Boney never teaches ruin-origin enchantments');
 const deps={inventory:{},ITEM_DEFS:{['cosmetic:'+hat]:{label:'Kasa'}},
   tothalWorldId:()=> 'w',buildInventoryGrid(){},saveMemberWorldData(){},showToast(){}};
 assert.equal(rewards.grant('valuable',deps,()=>0).key,'artifactHigh');
 assert.equal(deps.inventory.artifactHigh,1);
-assert.equal(rewards.grant('useful',deps,()=>0).key,'bound-u1');
+assert.equal(rewards.grant('useful',deps,()=>0).key,'feyBound_dagger_u1');
 delete W.EnchantmentSystem.DEFINITIONS.locked;
 assert.equal(rewards.grant('apologize',deps,()=>0).id,'second');
 const hatPrize=rewards.grant('hat',deps,()=>0);
