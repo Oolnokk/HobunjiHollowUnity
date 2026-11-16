@@ -1124,11 +1124,13 @@
   }
 
   function enterSanctum() {
-    if (!s?.entry) return;
+    const owner=s, entry=owner?.entry; // A delayed transition must never use the next ruin's state after teardown.
+    if (!entry) return;
     fadeThen(() => {
-      teleport(s.entry);
-      for (const fire of s.arenaFires || []) igniteFire(fire);
-      s.inSanctum = true;
+      if (s!==owner || deps?.getCurrentArea?.()!==MAP_ID) return;
+      teleport(entry);
+      for (const fire of owner.arenaFires || []) igniteFire(fire);
+      owner.inSanctum = true;
       if (!s.boss && !s.bossDefeated && !s.bossPending) {
         s.bossPending = true;
         const owner=s, revision=owner.encounterRevision; // Timers must not resurrect a guardian after death or a return-door exit.
@@ -1143,7 +1145,8 @@
     if (!door) return;
     const front=door.front; // Capture the original door anchor before a delayed fade or teardown.
     resetSanctumEncounter('leave');
-    fadeThen(() => { if(s?.door===door)teleport(front); });
+    const owner=s; // Return fade cannot pull the player back into a departed or rebuilt dungeon.
+    fadeThen(() => { if(s===owner && owner?.door===door && !owner.inSanctum && deps?.getCurrentArea?.()===MAP_ID)teleport(front); });
   }
 
   async function spawnBoss(owner=s,revision=owner?.encounterRevision) {
@@ -1155,7 +1158,14 @@
     const x = (arena.minX + arena.maxX) / 2 + 1.5, z = zc; // One and a half tiles toward the rear, clear of the coffins.
     const tile = deps.TILE || 64;
     const ruinLich = !s.isSpecialBoss ? window.DevRandomRuin?.getLichName?.() : null; // The ruin's title names this lich: the same person rises in the sanctum.
-    const creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, nameOverride:ruinLich || undefined, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
+    let creature=null; // A failed async portrait should release the pending state instead of permanently blocking re-entry.
+    try {
+      creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, nameOverride:ruinLich || undefined, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
+    } catch (error) {
+      if (s===owner && owner.encounterRevision===revision) { owner.bossPending=false; owner.lastEncounterEvent='spawn-failed'; }
+      window.__farmLog?.('[random-ruin] sanctum lich spawn failed: '+(error?.message||error),'warn');
+      return;
+    }
     if(s===owner && owner.encounterRevision===revision)owner.bossPending = false;
     if (!creature || s!==owner || !owner.inSanctum || owner.encounterRevision!==revision || deps?.getCurrentArea?.() !== MAP_ID) { disposeActor(creature); return; }
     const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));
@@ -1164,6 +1174,7 @@
     creature.isRuinSanctumBoss = true;
     creature.lichRaiseDead = { canRaise:() => deadSkeletons().length > 0, raise:lich => raiseDead(lich) }; // Instead of summoning new minions.
     s.boss = creature; // Keep the prepared avatar visible without enrolling its AI until the introduction finishes.
+    window.SpecialHarlyaoLiches?.tick?.(creature,0); // Establish head flames/weapon visuals for the frozen cinematic without running the hostile AI.
     const label = (s.isSpecialBoss && window.SpecialHarlyaoLiches?.defFor?.(s.bossType)?.name) || ruinLich || combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
     beginBossIntro(owner,creature,label);
     window.__farmLog?.(`[random-ruin] sanctum boss ${s.bossType} spawned hp=${max}`, 'world');
