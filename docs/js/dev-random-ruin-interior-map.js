@@ -845,12 +845,21 @@
     root.traverse(object=>{if(sourceStoneMaterial||!object?.isMesh||!object.userData?.ruinInteriorWall)return;sourceStoneMaterial=Array.isArray(object.material)?object.material[0]:object.material;});
 
     let stoneMeshes=0,convertedMaterials=0,totalMeshes=0;
+    const materialAliases=new WeakMap(); // Maps each V50 mesh's original decal materials to its final render materials, including stone and mixed-material walls.
+    const rememberMaterial=(mesh,source,target)=>{
+      if(!source||!target||source===target)return;
+      let aliases=materialAliases.get(mesh);
+      if(!aliases){aliases=new Map();materialAliases.set(mesh,aliases);}
+      aliases.set(source,target);
+    };
     if(typeof natural?.naturalizeMesh==='function'){
       root.traverse(object=>{
         if(!object?.isMesh)return;
         const materials=Array.isArray(object.material)?object.material:[object.material];
         if(!materials.length||!materials.every(material=>isLegacyV50StoneMaterial(material,sourceStoneMaterial)))return;
-        object.material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+        const stone=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+        object.material=stone;
+        for(const original of materials)rememberMaterial(object,original,stone); // The decoration pass still names the original V50 surface material.
         window.HobunjiSurfaceStretchUV?.mapMesh?.(object,{label:'ruin-stone',maxPatchWorldSize:6});
         object.userData=Object.assign({},object.userData,{devRandomRuinDenMaterial:true,devRandomRuinStoneMaterial:true,devRandomRuinUnlitMaterial:true});
         stoneMeshes++;
@@ -863,7 +872,7 @@
       totalMeshes++;
       const list=Array.isArray(object.material)?object.material:[object.material];
       const next=list.map((material,index)=>{
-        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function') {
+        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function' && !object.userData?.devRandomRuinStoneMaterial) {
           object.userData.devRandomRuinStoneMaterial=true;
           return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
         }
@@ -876,6 +885,7 @@
       });
       if(Array.isArray(object.material))object.material=next;
       else if(next[0])object.material=next[0];
+      list.forEach((material,index)=>rememberMaterial(object,material,next[index])); // Catch mixed stone/non-stone material arrays that skip the initial whole-mesh conversion.
       if(next.some(material=>material?.userData?.devRandomRuinUnlitMaterial||material?.userData?.naturalSurfaceUnlit))object.userData=Object.assign({},object.userData,{devRandomRuinUnlitMaterial:true});
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
     });
@@ -899,7 +909,9 @@
     root.traverse(node=>{ // Engraved walls must keep pointing to their real material after both unlit and wall-only conversion.
       const list=node.userData?.decalMaterials;
       if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>{
-        const converted=replaced.get(material)||material;
+        const aliases=materialAliases.get(node);
+        let converted=aliases?.get(material)||replaced.get(material)||material;
+        for(let i=0;i<3&&aliases?.has(converted);i++)converted=aliases.get(converted); // Follow an intermediate stone/unlit replacement without another scene traversal.
         return node.userData?.ruinInteriorWall?(wallMaterials.get(converted)||converted):converted;
       });
     });
