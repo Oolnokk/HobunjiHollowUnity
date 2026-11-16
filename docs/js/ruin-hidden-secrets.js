@@ -95,9 +95,11 @@
       mesh.userData.devRuinFootprintIgnore=true;
       mesh.userData.ruinSecretTexturedStone=true; // Pixel Probe/scene inspection can distinguish authored PNG stone from geometry-only placeholders.
       group.add(mesh);
+      const initialGeometry=mesh.geometry; // Dispose a replaced primitive if the shared surface mapper rebuilds its UV mesh.
       root.HobunjiSurfaceStretchUV?.mapMesh?.(mesh,{
         label:'ruin-side-treasure-stone',maxPatchWorldSize:6,
       }); // Match the main puzzle's connected-face UV mapping even on tall columns and narrow gates.
+      if(mesh.geometry!==initialGeometry)initialGeometry.dispose?.();
       return mesh;
     };
     const registerControl=control=>{if(!control)return;addControl?.(control);controls.push(control);};
@@ -245,21 +247,23 @@
           rec.icePlacement=placement;
         }
       }else{
-        rec.cover.position.set(center.x,floor+1.75,center.z); // The net's top edge sits on the grounded enclosure's height.
+        rec.cover.position.set(center.x,floor+1.75,center.z); // Its entire net descends to the same real floor as the chest.
+        const coverStone=(name,w,h,d,dx,dy,dz,material=mat)=>{
+          const stone=box(name,w,h,d,center.x+dx,floor+1.75+dy,center.z+dz,material);
+          group.remove(stone);rec.cover.add(stone);
+          stone.position.set(dx,dy,dz); // Reparent from world space to the net's shared local support frame.
+          return stone;
+        }; // Stone props use the same PNG and UV pipeline as the main dungeon's pillars and gates.
+        for(const dx of [-.65,.65])for(const dz of [-.65,.65])
+          coverStone('secret-net-grounded-column-'+rec.id,.15,1.75,.15,dx,-.875,dz);
+        for(const dz of [-.65,.65])
+          coverStone('secret-net-top-crossbeam-'+rec.id,1.45,.14,.14,0,-.035,dz,dark);
         const netSkin=root.DungeonRopeArt?.createNetFrustum?.(1.36,1.36,1.75);
         if(netSkin){
           netSkin.name='secret-rope-long-net-cover-'+rec.id;
           netSkin.userData.devRuinFootprintIgnore=true;
-          rec.cover.add(netSkin); // Shared rope_long.png atlas and transparent strand silhouettes, not untextured rod boxes.
-        }else{
-          // Missing sprite module must never turn the prize into an invisible puzzle. Use authored stone posts as a visible fallback.
-          for(const dx of [-.57,.57])for(const dz of [-.57,.57]){
-            const post=box('secret-net-fallback-stone-post-'+rec.id,.1,1.75,.1,
-              center.x+dx,floor+.875,center.z+dz,dark);
-            group.remove(post);rec.cover.add(post);
-            post.position.x-=center.x;post.position.y-=floor+1.75;post.position.z-=center.z;
-          }
-        }
+          rec.cover.add(netSkin); // The real rope_long.png net atlas hangs from four solid carved-stone columns.
+        } // Without the sprite module, the supported stone enclosure remains visible, never a floating bare net.
       }
       targetAt(center.x+sx*.95,floor+1.11,center.z+sz*.35,unlock); // Clasp rests on the stone plinth, not unsupported air.
     }
