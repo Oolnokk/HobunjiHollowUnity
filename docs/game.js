@@ -8026,6 +8026,8 @@
       // the shoulder coordinate itself orbit around the neck pivot.
       const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
       const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
+      const SHOULDER_PET_LEAN_AXIS = new THREE.Vector3(1, 0, 0); // Maps the front/back sprite planes' opposite Z rolls into one shared pet-local X lean.
+      const SHOULDER_PET_LEAN_QUATERNION = new THREE.Quaternion(); // Reused by the final perch/grip solver to avoid allocating a quaternion each animation frame.
       function _shoulderPetSurfaceTransform(perch, grip, pet) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
@@ -8090,6 +8092,10 @@
           worldQuaternion.multiply(authoredRotationOffset);
           if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
         }
+        const shoulderLeanDeg = Number(pet?.shoulderCuriosity?.currentLeanDeg); // The root lean must participate in the grip-offset solve, not rotate sprite planes around their centers.
+        if (Number.isFinite(shoulderLeanDeg) && shoulderLeanDeg !== 0) {
+          worldQuaternion.multiply(SHOULDER_PET_LEAN_QUATERNION.setFromAxisAngle(SHOULDER_PET_LEAN_AXIS, THREE.MathUtils.degToRad(shoulderLeanDeg)));
+        }
         const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
         const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
         const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
@@ -8110,6 +8116,7 @@
           rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
           facingTowardPlayerCenter,
           shoulderFacingTurnDeg,
+          shoulderLeanDeg: Number.isFinite(shoulderLeanDeg) ? shoulderLeanDeg : 0, // Exposed to mobile diagnostics alongside the pinned grip error.
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -8335,8 +8342,6 @@
           targetPitchDeg: 0,
           currentYawDeg: 0,
           targetYawDeg: 0,
-          baseFrontRoll: null,
-          baseBackRoll: null,
         });
         state.timer -= dt;
         if (state.timer <= 0) {
@@ -8370,18 +8375,9 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
-        if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
-        if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
-        // updateCreatureMesh owns the attachment root and will be followed by
-        // updateShoulderPetMeshPin. A local Y turn on the whole plane
-        // foreshortens these flat side-view planes and used to look exactly
-        // like the small pet was randomly becoming medium-sized. Roll the
-        // mirrored planes within their own image instead; the authored head
-        // rig's own Y-axis bone (below) supplies the real independent
-        // curious head-turn without disturbing genotype scale or plane width.
-        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
-        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
+        // updateShoulderPetMeshPin applies this state to the pet root around the
+        // authored grip. Rotating the two image cards here would pivot each
+        // around its image center and then get cleared by the final pin.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
@@ -9282,6 +9278,7 @@
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
           facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
           shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
+          shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Reports the local X lean solved around the grip instead of either sprite center.
           spriteMirrored: false,
         };
         let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;
