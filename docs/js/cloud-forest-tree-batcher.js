@@ -15,6 +15,7 @@
   const DEFAULT_NEAR_RADIUS_TILES = 10;
   const MOVE_REFRESH_TILES = 0.35;
   const STATIC_REFRESH_MS = 1500; // Limits periodic dead-tree validation when the player is stationary.
+  const ROOT_RETRY_MS = 3000; // Rechecks a not-yet-populated Cloud Forest scene without traversing it every frame.
   const FRUSTUM_PADDING_TILES = 3; // Keeps animated foliage and camera-edge canopies inside the view bounds.
   const BATCHABLE_SPECIES = new Set(['crowned_pine', 'shadewood']);
 
@@ -64,10 +65,31 @@
 
   function collectRoots(scene) {
     const roots = [];
-    scene?.traverse?.(object => {
-      if (isBatchableTreeRoot(object)) roots.push(object);
-    });
+    const pending = scene ? [scene] : []; // Used to stop at the outermost tagged gameplay tree; its GLB/LOD children carry the same tags.
+    while (pending.length) {
+      const object = pending.pop();
+      if (isBatchableTreeRoot(object)) {
+        roots.push(object);
+        continue; // A baked tree's inner near/far GLBs must not be registered as separate trees.
+      }
+      const children = object?.children || [];
+      for (let i = children.length - 1; i >= 0; i--) pending.push(children[i]);
+    }
     return roots;
+  }
+
+  function batchVisualRoot(treeRoot) {
+    const lod = treeRoot.children?.find(child => child?.isLOD && child.userData?.treeLodController);
+    return lod?.levels?.[lod.levels.length - 1]?.object || treeRoot; // Use only the most distant authored GLB for far instances.
+  }
+
+  function isInVisualRoot(mesh, visualRoot) {
+    let node = mesh;
+    while (node) {
+      if (node === visualRoot) return true;
+      node = node.parent;
+    }
+    return false;
   }
 
   function restoreSourceMeshes(state) {
@@ -117,6 +139,7 @@
         status: 'no-baked-roots',
         entries: [], chunks: [], treeCount: 0, sourceMeshCount: 0,
         instancedMeshCount: 0, lastRefreshMs: performance.now(),
+        lastRootProbeMs: performance.now(), // Retry after async tree scene construction finishes.
         lastPlayerX: NaN, lastPlayerZ: NaN, lastCullRadius: NaN,
       };
     }
@@ -163,11 +186,11 @@
       chunk.minZ = Math.min(chunk.minZ, entry.z);
       chunk.maxZ = Math.max(chunk.maxZ, entry.z);
 
+      const farVisual = batchVisualRoot(treeRoot); // GLB LODs contain separate near/far meshes, never batch both.
       treeRoot.traverse(object => {
         if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return;
         if (!object.geometry || !object.material || object.userData?.cloudForestTreeBatch) return;
         object.updateWorldMatrix?.(true, false);
-        const bucket = makeBucket(chunk.buckets, object.geometry, object.material, object);
         const source = {
           mesh: object,
           originalVisible: object.visible !== false,
@@ -175,8 +198,11 @@
           batchMesh: null,
           batchIndex: -1,
         };
-        entry.sources.push(source);
-        // Transform the baked mesh's actual bounds once. Root positions alone miss tall tree crowns.
+        entry.sources.push(source); // Both near and far meshes still need hiding/restoring as the player approaches.
+        sourceMeshCount++;
+        if (!isInVisualRoot(object, farVisual)) return;
+        const bucket = makeBucket(chunk.buckets, object.geometry, object.material, object);
+        // Only the selected far-detail GLB contributes to camera bounds or instanced draw calls.
         const geometryBounds = object.geometry.boundingBox || (object.geometry.computeBoundingBox?.(), object.geometry.boundingBox);
         if (geometryBounds && !geometryBounds.isEmpty()) {
           chunk.renderBounds.union(geometryBounds.clone().applyMatrix4(source.matrix));
@@ -184,7 +210,6 @@
           chunk.canFrustumCull = false;
         }
         bucket.slots.push({ entry, source });
-        sourceMeshCount++;
       });
     }
 
@@ -354,7 +379,14 @@
       || Math.hypot(playerX - state.lastVisibilityX, playerZ - state.lastVisibilityZ) >= MOVE_REFRESH_TILES;
     const radiusChanged = !Number.isFinite(state.lastVisibilityRadius)
       || Math.abs(cullRadiusTiles - state.lastVisibilityRadius) >= 0.05;
-    if (!cameraChanged && !moved && !radiusChanged) return;
+    if (!cameraChanged && !moved && !radiusChanged) {
+      // The general wilderness vegetation pass can toggle group.visible independently.
+      // Preserve the last camera decision without recomputing frustum planes every frame.
+      for (const chunk of state.chunks) {
+        if (chunk.group.visible !== chunk.visible) chunk.group.visible = chunk.visible;
+      }
+      return;
+    }
 
     state.lastVisibilityX = playerX;
     state.lastVisibilityZ = playerZ;
@@ -394,7 +426,11 @@
 
   function ensureState(scene) {
     let state = states.get(scene);
-    if (state && !state.disposed) return state;
+    if (state && !state.disposed) {
+      if (state.status !== 'no-baked-roots') return state;
+      const now = performance.now(); // Used to retry a scene that was first visited before its baked trees were attached.
+      if (now - state.lastRootProbeMs < ROOT_RETRY_MS) return state;
+    }
     state = buildState(scene);
     if (state) states.set(scene, state);
     return state;
