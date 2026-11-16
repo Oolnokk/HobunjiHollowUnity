@@ -92,54 +92,46 @@ actor. Farther portrait planes temporarily defer depth writes so they cannot
 cut across the closer actor. Opaque world geometry still depth-tests against
 each portrait. The weapon stencil uses the same actor ordering.
 
-## Shoulder pets share the owner-front compositor
+## Shoulder pets are part of the owner's portrait occlusion
 
-`docs/game.js` only identifies the live shoulder pet and samples the player's
-logical front/back facing. `HeldObjectRenderOrder.setShoulderPetLayering()`
-owns the actual material `depthWrite` and `renderOrder` decisions for both
-player portrait faces and both pet faces. The policy is reasserted immediately
-before every real base-world render, after other actor depth arbitration.
-Replacing or detaching a pet restores the old pet's material/order and the
-player's ordinary front/rear portrait order.
+Only the active pet and the existing inward/outward animation state are supplied
+by `docs/game.js`. The camera's front/back view does not select an additional
+pet mode. `HeldObjectRenderOrder.setShoulderPetLayering()` preserves the owner's
+front/back portrait draw orders and puts **each pet face** in the corresponding
+owner portrait stage:
 
-The shipped `shoulderPet.presentation = authored` mode preserves the existing
-front/back camera inversion and inward/outward authored pose. The X-ray
-Dev Companion **Diagnostic presets** dropdown offers three reversible probes:
-**Shoulder pet: player over pet**, **pet over player**, and **legacy depth
-writes**. These are variants of ONE central compositor rule, not additional
-standalone settings. The latter is a diagnosis only: turning ordinary depth
-writing back on can cause the two overlapping sprites to clip into each other.
-Restoring the pre-test configuration restores the original shoulder policy.
+| Shoulder pet orientation | Pet front vs. owner front | Pet back vs. owner back |
+| --- | --- | --- |
+| Facing the owner's midline | Above owner front sprites | Behind owner back sprites |
+| Facing away from the owner's midline | Behind owner front sprites | Above owner back sprites |
 
-Crucially, the pet's no-depth-write mode must not disable the **player
-front-art owner stencil**. The player front mesh is registered for the stencil
-even when its ordinary color material does not write depth, and the selective
-held overlay runs the stencil even when the current map has no classified
-ground, floors or water. When the pet itself is visually *in front* of its
-carrier, its front, rear and split-overlay silhouette parts receive that
-same carrier's stencil ID. When the authored pose or diagnostic preset puts
-the pet behind the carrier, those parts do **not** mask the carrier's tools.
-This follows the composed draw order rather than imposing a physical-depth
-test between two overlapping portrait cards. A failing/missing stencil
-requires a targeted compositor fix, never simply elevating the weapon's
-draw order.
+An active pet and its owner remain a single depth-tested,
+depth-write-free portrait stack, preventing the intersecting cards from clipping
+one another. The rest of the world keeps normal physical depth occlusion.
+The pet front/rear cards and their authored split-mesh helpers are always assigned
+together within each face stage; a split helper tracks its base card's priority
+and material flags. There is no `shoulderPet.presentation` setting or competing
+player-over/pet-over/world-depth diagnostic mode.
 
-The private camera layer is shared by **all** automatically registered front
-portraits, including unrelated or unarmed NPCs. A stencil submission must
-temporarily disable that private layer on unselected portraits and restore
-it afterward, including on render failure; otherwise those unrelated
-portraits draw normal **color** again in the owner-mask pass. Shoulder split
-overlays never inherit private-stencil camera membership from their source
-unless the foreground pet policy explicitly enrolls them. All eligible
-portraits' stencil material state is restored after the private pass.
+The player front portrait remains part of the owner's private held-item stencil
+even when the portrait does not write normal color-pass depth. **Only the pet
+face above its matching owner face**, and its same-face split copy, joins this
+stencil: front when looking inward, back when looking away. The other face
+never masks the owner's held gear. The mask still runs on maps without
+classified nearby ground, floors or water, and respects the foreground world's
+physical depth. Stencil owner IDs are not shared with unrelated NPCs.
 
-The mobile X-ray panel and Pixel Probe report the active pet mode,
-`frontPortraitGearCandidates`, `frontPortraitMaskedGear` and
-`frontPortraitMaskReason` so a `0/0` result can be distinguished from
-a real failed owner assignment. Regression guards:
-`scripts/test-shoulder-pet-layering.js`,
-`scripts/test-xray-hierarchy.js`, and
-`scripts/test-hat-xray-facing.js`.
+Replacing or detaching a shoulder pet restores the previous pet's ordinary
+depth and draw order, cleans up its private stencil participation, and restores
+the owner's unchanged portrait orders and normal depth writes.
+The compositor reasserts this once more before each base world draw after other
+depth writers have run.
+
+The mobile X-ray panel and Pixel Probe show which pet face is in front,
+the individual stage orders and the owner stencil coverage/candidate counts.
+Regression guards: `scripts/test-shoulder-pet-layering.js`,
+`scripts/test-held-front-portrait-mask.js`,
+`scripts/test-xray-hierarchy.js`, and `scripts/test-hat-xray-facing.js`.
 
 ## Elevation-aware ground x-ray
 

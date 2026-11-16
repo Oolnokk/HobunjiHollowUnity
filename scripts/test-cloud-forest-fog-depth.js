@@ -40,14 +40,14 @@ assert.match(
 
 assert.match(game, /HeldObjectRenderOrder\?\.setShoulderPetLayering\?\.\(/,
   'gameplay forwards the live shoulder pet to the shared compositor');
-assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.frontMaterial, writesDepth\);/,
-  'shared compositor disables player front-portrait depth writes in authored shoulder mode');
-assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.backMaterial, writesDepth\);/,
-  'shared compositor handles both player portrait faces');
-assert.match(heldCompositor, /setShoulderPartDepthWrite\(mesh\.material, writesDepth\);/,
-  'the active pet portrait receives the same explicit depth-write decision');
-assert.match(heldCompositor, /const writesDepth = mode === 'world-depth'/,
-  'normal authored pose disables intersecting depth while legacy depth is a diagnostic preset');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.frontMaterial, false\);/,
+  'active shoulder pets keep player front portrait depth-write-free');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(state\.backMaterial, false\);/,
+  'active shoulder pets keep player back portrait depth-write-free');
+assert.match(heldCompositor, /setShoulderPartDepthWrite\(mesh\.material, false\);/,
+  'both live pet faces share the depth-write-free owner portrait stack');
+assert.doesNotMatch(heldCompositor, /const writesDepth = mode === 'world-depth'/,
+  'legacy depth-write override is retired; world mist is still handled by its own depth helper');
 
 assert.match(avatarDepth, /const DEPTH_RENDER_ORDER = 889/,
   'attached-avatar depth helpers must render immediately before mist 890-892');

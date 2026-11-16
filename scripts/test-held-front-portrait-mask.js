@@ -24,6 +24,7 @@ const scene = { isScene: true, name: 'world' }; // Owner lookup stops before the
 const root = (name,parent=scene,tag={}) => ({ name, parent, userData:tag }); // Shared player/NPC hierarchy matching production actor roots.
 const player = root('player_avatar');
 const playerHands = root('player_hands',scene);
+let activePetRoot = null; // Simulates the real player's external shoulder-pet root in PlayerBodyTransformComposer.
 const npc = root('npc_walker_fisher');
 const npcRig = root('npc_rig',npc,{ hobunjiCharacterRigScaleRoot:true });
 const bandit = root('bandit_avatar_group');
@@ -31,7 +32,7 @@ const banditHands = root('bandit_hands_pivot',bandit,{hobunjiCharacterRigScaleRo
 const banditWorldHolder = root('banditToolHolder',scene,{hobunjiHeldPortraitOwner:bandit}); // Hostile held gear is a scene sibling in real combat-bandit.js.
 const otherNpc = root('npc_walker_unarmed');
 const windowObject = { HobunjiSpritePngSurface: { maskAlphaTest:()=>0.35 },
-  PlayerBodyTransformComposer: {getPlayerMesh:()=>player,getVisualRoots:()=>[playerHands]} };
+  PlayerBodyTransformComposer: {getPlayerMesh:()=>player,getVisualRoots:()=>activePetRoot ? [playerHands,activePetRoot] : [playerHands]} };
 const observations = []; // Snapshots only during actual mask draw.
 const registeredFronts = []; // The shared private layer includes unarmed fronts, which must NEVER draw color into an owner's mask.
 let failRender = false; // Simulates WebGL exceptions to verify state restoration.
@@ -45,9 +46,10 @@ const runtime = new Function('THREE','window','rawRender','registeredFronts',[
   'const hasLayer=(o,layer)=>!!(o.layers.mask & (1<<layer));',
   'const forEachMaterial=(materials,fn)=>{for(const m of Array.isArray(materials)?materials:[materials])if(m)fn(m);};',
   'let frontPortraitMaskPassCount=0;',production,
-  'return {isFrontPortraitMesh,isPortraitMaskedGear,portraitStencilOwner,assignPortraitStencilOwners,',
+  'return {isFrontPortraitMesh,isPortraitMaskedGear,portraitStencilOwner,actorRootForXrayMesh,assignPortraitStencilOwners,',
   'prepareFrontPortraitStencilMaterials,stampFrontPortraitStencil,preparePortraitGearStencilMaterials,',
-  'prepareSubmergedOverlayStencilMaterials,restoreMaterialStates, getCount:()=>frontPortraitMaskPassCount};',
+  'prepareSubmergedOverlayStencilMaterials,restoreMaterialStates, getCount:()=>frontPortraitMaskPassCount,',
+  'setPetForeground(meshes) { petForegroundStencilParts.clear(); for (const mesh of meshes) petForegroundStencilParts.add(mesh); }};',
 ].join('\n'))(THREE,windowObject,function(_scene,camera){
   observations.push({mask:camera.layers.mask,playerRef:playerFront.stencilRef,npcRef:npcFront.stencilRef,
     playerDraw:playerFront.stencilWrite,playerAlpha:playerFront.alphaTest,npcDraw:npcFront.stencilWrite,
@@ -137,45 +139,74 @@ assert.equal(playerFront.stencilWrite,false,'material restored on exception');
 assert.ok(unarmedPortrait.layers.mask & (1<<24),'unselected actor private layer restored even after a stencil render exception');
 failRender=false;
 
-// Foreground shoulder pets share the player's stencil ID, including their back/split artwork.
-// The same pet behind the player must not hide a tool in front of it.
+// The shoulder pet is always the owner's composite portrait, but only the
+// *above-owner* face (and its split half) can cover owner tools in the late stencil.
 const petRoot=root('shoulder_pet',scene,{
-  hobunjiShoulderPetLayering:{active:true,playerDrawsOnTop:false},
+  hobunjiShoulderPetLayering:{active:true,frontForeground:true,backForeground:false},
 });
+activePetRoot = petRoot; // The pet is in the owner's external root list while its own face mask must still be selective.
 const petFront=mesh('npc_avatar_front_plane',mat('pet_front'),petRoot,{
   tags:{hobunjiShoulderPetStencilForeground:true},
 });
-const petBack=mesh('npc_avatar_back_plane',mat('pet_back'),petRoot,{
-  tags:{hobunjiShoulderPetStencilForeground:true},
+const petBack=mesh('npc_avatar_back_plane',mat('pet_back'),petRoot);
+const petSplitFront=mesh('shoulder_split_front',[mat('npc_avatar_skinned_front_material'),mat('split_rear')],petRoot,{
+  skinned:true,tags:{hobunjiShoulderSplitOverlay:true,hobunjiPlaneFace:'front',hobunjiShoulderPetStencilForeground:true},
 });
-const petSplit=mesh('shoulder_split',[mat('npc_avatar_skinned_front_material'),mat('pet_split_rear')],petRoot,{
-  skinned:true,tags:{hobunjiShoulderSplitOverlay:true,hobunjiShoulderPetStencilForeground:true},
+const petSplitBack=mesh('shoulder_split_back',[mat('npc_avatar_skinned_front_material'),mat('split_rear')],petRoot,{
+  skinned:true,tags:{hobunjiShoulderSplitOverlay:true,hobunjiPlaneFace:'back'},
 });
-assert.equal(runtime.isFrontPortraitMesh(petSplit),true,'active shoulder split overlay qualifies for player owner mask');
-assert.equal(runtime.portraitStencilOwner(petBack,scene),player,'foreground pet rear sprite shares carrier stencil owner');
-const shoulderAssigned=runtime.assignPortraitStencilOwners([playerWeapon],
-  [playerPortrait,petFront,petBack,petSplit],scene);
-assert.equal(shoulderAssigned.portraits.length,4,
-  'player weapon is covered by player portrait plus foreground pet front, back and split cards');
+const bothFaces=[playerPortrait,petFront,petBack,petSplitFront,petSplitBack];
+runtime.setPetForeground([petFront,petSplitFront]);
+assert.equal(runtime.isFrontPortraitMesh(petSplitFront),true,'active front split participates in owner mask');
+assert.equal(runtime.isFrontPortraitMesh(petSplitBack),false,'background split is not a front-mask candidate');
+assert.equal(runtime.portraitStencilOwner(petFront,scene),player,'front foreground shares carrier stencil owner');
+assert.equal(runtime.actorRootForXrayMesh(petBack,scene)?.isPlayer,true,
+  'body composer recognizes the entire attached pet as an external player visual root');
+assert.equal(runtime.portraitStencilOwner(petBack,scene),null,
+  'background pet cannot inherit the owner through that external-root fallback');
+let shoulderAssigned=runtime.assignPortraitStencilOwners([playerWeapon],bothFaces,scene);
+assert.equal(shoulderAssigned.portraits.length,3,
+  'owner tool uses player plus foreground pet front and split, never the background pet back');
 assert.equal(shoulderAssigned.gearIds.get(playerWeapon),shoulderAssigned.ownerIds.get(player),
-  'shoulder art and player gear use exactly one stencil ID');
-const petStates=runtime.prepareFrontPortraitStencilMaterials(shoulderAssigned.portraits,
-  shoulderAssigned.ownerIds,scene);
+  'the carrier and selected foreground pet face use one stencil owner ID');
+let petStates=runtime.prepareFrontPortraitStencilMaterials(shoulderAssigned.portraits,shoulderAssigned.ownerIds,scene);
 assert.equal(petFront.material.stencilWrite,true,'foreground pet front stamps owner pixels');
-assert.equal(petBack.material.stencilWrite,true,'foreground pet back stamps owner pixels');
-assert.equal(petSplit.material[0].stencilWrite,true,'foreground split front stamps owner pixels');
-assert.equal(petSplit.material[1].stencilWrite,true,'foreground split rear stamps owner pixels');
-assert.equal(petSplit.material[1].colorWrite,false,'foreground split stencil is colorless');
+assert.equal(petBack.material.stencilWrite,false,'background pet back does not stamp owner pixels');
+assert.equal(petSplitFront.material[0].stencilWrite,true,'foreground split front stamps owner pixels');
+assert.equal(petSplitFront.material[1].stencilWrite,true,'foreground split rear material also stamps its foreground pixels');
+assert.equal(petSplitBack.material[0].stencilWrite,false,'background split never stamps owner pixels');
 runtime.restoreMaterialStates(petStates);
-petRoot.userData.hobunjiShoulderPetLayering.playerDrawsOnTop=true;
-delete petSplit.userData.hobunjiShoulderPetStencilForeground;
-assert.equal(runtime.isFrontPortraitMesh(petSplit),false,
-  'background split overlay is excluded from automatic front-mask registration');
-assert.notEqual(runtime.portraitStencilOwner(petBack,scene),player,
-  'background pet is no longer mapped to the player weapon owner');
-const behindAssigned=runtime.assignPortraitStencilOwners([playerWeapon],
-  [playerPortrait,petFront,petBack,petSplit],scene);
-assert.equal(behindAssigned.portraits.length,1,'pet behind the player does not erase player-held weapon pixels');
+
+// Looking away swaps only the stencil faces; the owner and animation stay put.
+petRoot.userData.hobunjiShoulderPetLayering.frontForeground=false;
+petRoot.userData.hobunjiShoulderPetLayering.backForeground=true;
+delete petFront.userData.hobunjiShoulderPetStencilForeground;
+delete petSplitFront.userData.hobunjiShoulderPetStencilForeground;
+petBack.userData.hobunjiShoulderPetStencilForeground=true;
+petSplitBack.userData.hobunjiShoulderPetStencilForeground=true;
+runtime.setPetForeground([petBack,petSplitBack]);
+assert.equal(runtime.isFrontPortraitMesh(petSplitFront),false,'front split excluded when pet faces away');
+assert.equal(runtime.isFrontPortraitMesh(petSplitBack),true,'back split included when pet faces away');
+assert.equal(runtime.portraitStencilOwner(petFront,scene),null,
+  'background pet front stays excluded despite external player-root classification');
+assert.equal(runtime.portraitStencilOwner(petBack,scene),player,'foreground pet back shares carrier owner');
+shoulderAssigned=runtime.assignPortraitStencilOwners([playerWeapon],bothFaces,scene);
+assert.equal(shoulderAssigned.portraits.length,3,
+  'owner tool uses player plus foreground pet back and split, never the background pet front');
+petStates=runtime.prepareFrontPortraitStencilMaterials(shoulderAssigned.portraits,shoulderAssigned.ownerIds,scene);
+assert.equal(petBack.material.stencilWrite,true,'foreground pet back stamps owner pixels');
+assert.equal(petSplitBack.material[0].stencilWrite,true,'foreground back split stamps owner pixels');
+assert.equal(petFront.material.stencilWrite,false,'background front cannot mask owner gear');
+runtime.restoreMaterialStates(petStates);
+
+// Detached/replaced pet carries no owner's tool mask.
+runtime.setPetForeground([]);
+delete petBack.userData.hobunjiShoulderPetStencilForeground;
+delete petSplitBack.userData.hobunjiShoulderPetStencilForeground;
+petRoot.userData.hobunjiShoulderPetLayering.active=false;
+activePetRoot = null; // The composer no longer registers a detached pet as an external player root.
+const behindAssigned=runtime.assignPortraitStencilOwners([playerWeapon],bothFaces,scene);
+assert.equal(behindAssigned.portraits.length,1,'detached pet cannot erase owner-held tool pixels');
 
 const hand=mesh('hand',mat('hand'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralHand:true}});
 const foot=mesh('foot',mat('foot'),playerHands,{tags:{hobunjiHeldObjectPlane:true,hobunjiProceduralFoot:true}});
