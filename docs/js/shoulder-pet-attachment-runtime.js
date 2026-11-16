@@ -82,10 +82,8 @@
       const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
       const shoulderFacingTurnDeg = facingTowardPlayerCenter ? 180 : 0; // Inward/front is the outward authored local transform plus one exact half-turn, never a quaternion inversion or sprite mirror.
       const worldQuaternion = selectedRotationQuaternion.clone();
-      if (!s_cancelShoulderPetRotationalOffset) {
-        worldQuaternion.multiply(authoredRotationOffset);
-        if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
-      }
+      if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(authoredRotationOffset);
+      if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Observation owns its 180° local turn even when the legacy authored-offset override is active.
       const shoulderLeanDeg = Number(pet?.shoulderCuriosity?.currentLeanDeg); // The root lean must participate in the grip-offset solve, not rotate sprite planes around their centers.
       if (Number.isFinite(shoulderLeanDeg) && shoulderLeanDeg !== 0) {
         worldQuaternion.multiply(SHOULDER_PET_LEAN_QUATERNION.setFromAxisAngle(SHOULDER_PET_LEAN_AXIS, THREE.MathUtils.degToRad(shoulderLeanDeg)));

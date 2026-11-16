@@ -930,7 +930,7 @@
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
       const pose = d.lastPose
-        ? `${d.lastPose.creatureKey}:${d.lastPose.facingInward ? 'inward/front-180deg' : 'outward/behind-0deg'}`
+        ? `${d.lastPose.creatureKey}:${d.lastPose.facingInward ? 'inward/180deg/back-foreground' : 'outward/0deg/front-foreground'}`
         : 'none';
       const chance = d.lastPose ? `${Math.round((Number(d.lastPose.inwardChance) || 0) * 100)}%inward` : 'none';
       const hold = Number.isFinite(d.lastPose?.holdSeconds) ? d.lastPose.holdSeconds.toFixed(1) + 's' : '-';
