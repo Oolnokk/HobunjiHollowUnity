@@ -85,6 +85,7 @@ load('docs/js/perk-system.js');
 load('docs/js/combat/companion-offense.js');
 load('docs/js/combat/combat-attack-events.js');
 load('docs/js/combat/combat-enchantments.js');
+load('docs/js/combat/fey-illusions.js'); // Test real neutral Fey effects against ResourceSystem, not a mocked status API.
 context.__hobunjiPlayerProfile = { abilityProgression: { plain: { chargedBreaker: { 1: 0 } }, magic: { chargedBreaker: { 1: 0 } } } }; // CombatProgression loads its saved choices from the profile at startup.
 load('docs/js/combat/combat-progression.js');
 delete context.__hobunjiPlayerProfile;
@@ -577,3 +578,76 @@ assert.equal(trinkets.onAction('grant', { value: choice.value }).ok, true);
 assert.equal(TS.ownedEntries().length, 1);
 assert.equal(trinkets.onAction('grant', { value: 'invalid' }).ok, false);
 assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
+
+
+// ── Fey origin: neutral Immundanity, actual on-hit afflictions,
+// four bound weapon shapes, real time-limited debuffs, and no magical injury. ──
+{
+  reset();weapon='fey-testing-blade';
+  const fey= context.FeyIllusions;
+  assert(fey&&fey.EFFECTS.feyPhantomWound&&fey.EFFECTS.feyMazeStep);
+  const allFeyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
+  same([...allFeyIds].sort(),['feyPhantomWound','feyFalseBleeding','feyNeedlePain','feyMazeStep','feyEchoDread'].sort());
+  assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
+  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
+  for(const id of ['feyPhantomWound','feyFalseBleeding'])assert.equal(ES.addBase('fey-testing-blade',id),true);
+  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyMazeStep'),true);
+  assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0,'only Fey enchantments are neutral');
+  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
+  const feyOpposed=ES.cleanWeaponState({base:['feyPhantomWound','burning'],flourishes:{tap1:'feyMazeStep'}});
+  gear.weaponEnchantments['fey-mixed']=feyOpposed;
+  assert.equal(ES.getWeaponImmundanity('fey-mixed'),1,'Fey adds no imbalance, while Hronal still does');
+  assert.equal(fey.potency('fey-mixed'),1,'positive Immundanity must not boost the Fey effect');
+  const victim=makeEntity({name:'Illusion-only test target',health:75,footing:64,stamina:83});
+  const before={health:victim.health,footing:victim.footing,stamina:victim.stamina,
+    maxHealth:RS.getEffectiveMax(victim,'health'),maxFooting:RS.getEffectiveMax(victim,'footing')};
+  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyFalseBleeding',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyNeedlePain',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyMazeStep',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyEchoDread',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert(RS.getAffliction(victim,'phantomWoundsHealth')>0);
+  assert(RS.getAffliction(victim,'phantomBloodHealth')>0);
+  assert(RS.getAffliction(victim,'phantomPainFooting')>0);
+  for(const [stat,value] of Object.entries(before)) {
+    const current=stat==='maxHealth'?RS.getEffectiveMax(victim,'health'):stat==='maxFooting'?RS.getEffectiveMax(victim,'footing'):victim[stat];
+    assert.equal(current,value,'Fey has no physical resource change: '+stat);
+  }
+  for(const debuff of ['disoriented','sapped','trembling','startled','enfeebled'])
+    assert(RS.hasTimedDebuff(victim,debuff),'Fey applies real timed behavioral debuff: '+debuff);
+  assert(RS.timedDebuffModifier(victim,'moveSpeed')<1,'Fey disorientation actually modifies movement');
+  assert(RS.timedDebuffModifier(victim,'outgoingDamage')<1,'Fey fear actually reduces offensive confidence');
+  assert(RS.timedDebuffModifier(victim,'attackSpeed')<1,'Fey pain actually causes hesitation');
+  const originalES=context.EnchantmentSystem; // Swap only the power accessor in this test realm to exercise a true externally-imposed 0% enchantment-effects gate.
+  context.EnchantmentSystem={...originalES,getEnchantmentPowerMultiplier:()=>0};
+  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),false,'0% effect gate suppresses even Fey magic');
+  context.EnchantmentSystem=originalES;
+  assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
+
+  // A Fey Flourish bound to a defensive slot cannot report a fake effect.
+  ES.setFlourish('fey-testing-blade','hold2','feyEchoDread');
+  const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
+  assert(feyDefensiveScope.includes("def.alignment === 'Fey') return false"),'defensive Fey handlers explicitly fail closed');
+
+  // The loaded Harlyao bound relic authority supports both origins, and
+  // neither the ordinary boss chest nor Boney's Fey roll can borrow the other's shapes.
+  const feyShapes=new Set(['dagger','daggersword','fishingspear','hatchet']);
+  const ruinShapes=new Set(['longsword','warhammer','broadsword']);
+  for(let n=0;n<50;n++) {
+    const relic=HR.makeFeyRelic();
+    assert(feyShapes.has(relic.shape));
+    const ids=[...relic.enchantments.base,...Object.values(relic.enchantments.flourishes)];
+    assert(ids.length>=1,'Fey loot cannot be empty');
+    assert(ids.every(id=>ES.DEFINITIONS[id].alignment==='Fey'),'Boney loot cannot learn non-Fey ruin enchantments');
+    const key=HR.encodeBoundKey(relic);
+    assert(key.startsWith('feyBound_'));
+    const decoded=HR.decodeBoundKey(key);
+    assert.equal(decoded.shape,relic.shape);
+    assert.equal(decoded.origin,'Fey');
+    assert(ruinShapes.has(HR.makeRelic().shape),'Harlyao boss relic shapes stay separate');
+    assert(HR.rollEnchantments().base.every(id=>ES.DEFINITIONS[id].alignment!=='Fey'));
+  }
+  assert.equal(HR.decodeBoundKey('feyBound_longsword_abcd_BfeyPhantomWound_F'),null,'Fey key cannot impersonate Harlyao sword');
+  assert.equal(HR.decodeBoundKey('feyBound_dagger_abcd_Bburning_F'),null,'Fey key cannot smuggle another origin');
+}
+console.log('Fey Immundanity, nonlethal afflictions, timed debuffs, bound relic codec and origin separation passed');
