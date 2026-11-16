@@ -46,7 +46,7 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
-assert.match(String(api.version), /uploads/, 'uploaded rig layer reports its data version');
+assert.match(String(api.version), /moot-painted-baby-pets1/, 'authored rig layer reports its current Moot-paint release');
 
 const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six species retain the original Puktuk shoulder pose.
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
