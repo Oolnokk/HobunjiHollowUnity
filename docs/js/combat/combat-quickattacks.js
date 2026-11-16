@@ -291,6 +291,7 @@
         strikeS,
         recoverS: 0,
         onStrike: () => {
+          if (mounted && window.Mounts?.rideState !== 'mounted') return; // A dismount mid-windup cannot turn the scheduled mounted jab into a foot strike.
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '', conditionalHits = 0, bonusEffectProcs = 0, conditionalText = '';
           const ordinaryHitTargets = new Set(); // Used by Living Gust after real Quick Attack hit validity has already been resolved.
