@@ -49,14 +49,14 @@
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/ruin-hidden-secrets-native.js?v=20261116groundedSidePuzzles1"></scr' + 'ipt>'); // Optional caches and broods occupy unclaimed native V50 rooms after authored puzzles.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
-  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261114heartAudit4"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261116sanctumIntro1"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
   document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody4"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261109hachutuGate1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
-  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261115fastBombPlasm1"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
+  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261116sanctumReset1"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261116shortfire1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261116dungeonJump1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');
