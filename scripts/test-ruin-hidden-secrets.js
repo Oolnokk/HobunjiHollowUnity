@@ -47,11 +47,13 @@ global.DungeonDoorIceCoverage={create({parent,groundY,seed}){
   const authoredLayer=new Mesh(new Geometry(),new Material({artSource:'IceStalagmiteCoverage'}));
   parent.add(authoredLayer);return {iceLayer:authoredLayer,ownsLayer:true};
 }};
-global.DungeonRopeArt={createNetFrustum(w,d,drop){
+global.DungeonRopeArt={createNetFrustum(w,d,drop,bottomScale){
   ropeNetCount++;
   assert(w>1&&d>1&&Math.abs(drop-1.75)<1e-8);
+  assert.equal(bottomScale,1,'a floor-standing net must not taper through its treasure chest');
   const net=new Mesh(new Geometry(),new Material({artSource:'assets/objectsprites/rope_long.png'}));
   net.userData.dungeonNetAtlas='assets/objectsprites/rope_long.png';
+  net.userData.dungeonNetBottomScale=bottomScale;
   return net;
 }};
 global.DynamicSurfaces={
