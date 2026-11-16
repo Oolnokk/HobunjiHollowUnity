@@ -197,9 +197,11 @@ for (const skinned of [true, false]) {
           userData: { hobunjiShoulderSpriteCanonicalized: true },
           localToWorld(v) { return v.multiply(this.scale).applyQuaternion(this.quaternion).add(this.position); },
         }; // Simulates the THREE root, including its real nonuniform width/depth and breathing scale.
-        const fakePlane = () => ({ rotation: { set() {} }, updateMatrix() {}, matrixWorldNeedsUpdate: false }); // Minimal visible front/back plane reset.
+        const fakePlane = () => ({ rotation: { y: NaN, set(x, y, z) { this.y = y; } }, updateMatrix() {}, matrixWorldNeedsUpdate: false }); // Captures actual front/back yaw to verify the shoulder-only face swap.
         const fakePet = { avatarRef: { group: fakeGroup, frontPlane: fakePlane(), backPlane: fakePlane() } }; // Captures actual rendered grip error after the final pin.
         applyFinalTransform(fakePet, pose);
+        assert.equal(fakePet.avatarRef.frontPlane.rotation.y, -Math.PI / 2, 'attached front card faces the reversed shoulder-only direction');
+        assert.equal(fakePet.avatarRef.backPlane.rotation.y, Math.PI / 2, 'attached back card faces the reversed shoulder-only direction');
         closeness(fakeGroup.localToWorld(new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z)),
           perchWorld, 'the production final-render transform preserves the physical grip');
         assert.ok(fakeGroup.userData.hobunjiShoulderPetAttachment.gripPerchError < 1e-9,

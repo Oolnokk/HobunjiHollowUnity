@@ -13,7 +13,7 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 
 assert.match(game, /const SHOULDER_PET_XRAY_ENABLED = false/, 'retired pet-specific x-ray remains off');
 assert.match(attachment, /const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;/,
-  'inward observation still rotates the sprite 180 degrees; the pairing change belongs in the compositor');
+  'inward observation keeps its original 180-degree root turn; only the attached sprite-plane normals are reversed');
 assert.match(game, /function updatePetLayering\(active, pet\)[\s\S]*?HeldObjectRenderOrder\?\.setShoulderPetLayering\?\.\(/,
   'gameplay delegates player/pet visual decisions to the shared compositor');
 assert.doesNotMatch(game, /function _setLayerDepthWrite\(/, 'gameplay no longer writes shoulder-pet depth independently');
@@ -100,14 +100,14 @@ function testFacing(inward) {
   for (const material of [front.material, back.material, a.frontPlane.material, a.backPlane.material]) {
     assert.equal(material.depthWrite, false, 'attached owner/pet remain depth-write-free');
   }
-  assert.equal(a.frontPlane.renderOrder, inward ? api.orders.frontBehind : api.orders.frontAbove);
-  assert.equal(a.backPlane.renderOrder, inward ? api.orders.backAbove : api.orders.backBehind);
-  assert.equal(a.frontPlane.renderOrder > front.renderOrder, !inward, 'front plane swaps across owner front');
-  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-front')), inward ? 1 : -1,
-    'front pet must x-ray over EVERY owner front sprite in its outward pose');
-  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-back', 'pet-back')), inward ? -1 : 1,
-    'rear pet must x-ray over EVERY owner rear sprite in its inward pose');
-  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-back')), inward ? -1 : 1,
+  assert.equal(a.frontPlane.renderOrder, !inward ? api.orders.frontBehind : api.orders.frontAbove);
+  assert.equal(a.backPlane.renderOrder, !inward ? api.orders.backAbove : api.orders.backBehind);
+  assert.equal(a.frontPlane.renderOrder > front.renderOrder, inward, 'front plane swaps across owner front');
+  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-front')), !inward ? 1 : -1,
+    'front pet must x-ray over EVERY owner front sprite in its inward pose');
+  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-back', 'pet-back')), !inward ? -1 : 1,
+    'rear pet must x-ray over EVERY owner rear sprite in its outward pose');
+  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-back')), !inward ? -1 : 1,
     'cross-face ordering remains consistent while observation flips the pet');
   assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'owner-back')), -1,
     'one skinned owner still has stable front-before-back face priority');
@@ -117,7 +117,7 @@ function testFacing(inward) {
   assert.equal(api.shoulderPetDrawFace({object:ownerHatBack,material:ownerHatBack.material}), 'owner-back');
   assert.equal(ownerHatFront.material.depthWrite, false, 'hat front cannot depth-occlude paired pet');
   assert.equal(ownerHatBack.material.depthWrite, false, 'hat back cannot depth-occlude paired pet');
-  assert.equal(a.backPlane.renderOrder > back.renderOrder, inward, 'back plane swaps across owner back');
+  assert.equal(a.backPlane.renderOrder > back.renderOrder, !inward, 'back plane swaps across owner back');
   assert.equal(a.splitFront.renderOrder, a.frontPlane.renderOrder + 0.01, 'split front inherits front stage');
   assert.equal(a.splitBack.renderOrder, a.backPlane.renderOrder + 0.01, 'split back inherits back stage');
   assert.equal(a.splitFront.userData.hobunjiShoulderPortraitFace, 'front', 'split front inherits manual-sort portrait category');
@@ -125,15 +125,15 @@ function testFacing(inward) {
   assert.equal(a.frontPlane.userData.hobunjiShoulderPortraitFace, 'front');
   assert.equal(a.backPlane.userData.hobunjiShoulderPortraitFace, 'back');
   for (const [mesh, shouldMask] of [
-    [a.frontPlane, !inward], [a.splitFront, !inward],
-    [a.backPlane, inward], [a.splitBack, inward],
+    [a.frontPlane, inward], [a.splitFront, inward],
+    [a.backPlane, !inward], [a.splitBack, !inward],
   ]) {
     assert.equal(masks.has(mesh), shouldMask, 'only the above-owner face joins the held stencil');
     assert.equal(mesh.userData.hobunjiShoulderPetStencilForeground === true, shouldMask);
   }
   assert.equal(api.state.mode, 'owner-portrait-stages');
-  assert.equal(api.state.frontForeground, !inward);
-  assert.equal(api.state.backForeground, inward);
+  assert.equal(api.state.frontForeground, inward);
+  assert.equal(api.state.backForeground, !inward);
   assert.equal(a.group.userData.hobunjiShoulderPetLayering.xrayEnabled, true);
   assert.equal(api.state.pairedFaceSort, true);
   assert.ok(masks.has(front), 'owner front portrait remains eligible for the private stencil');
@@ -154,18 +154,18 @@ assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPort
 testFacing(false);
 pet.__hobunjiShoulderFacingInward = true; // Observation pose changes without rebuilding or reassigning the active pet.
 api.syncShoulderPetLayering(); // The base-world render calls this directly every frame.
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontBehind,
-  'an observation transition moves the live pet front behind the owner without reattachment');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backAbove,
-  'the back face simultaneously moves above the owner after the same observation transition');
-assert.equal(pet.avatarRef.splitFront.renderOrder, api.orders.frontBehind + 0.01,
+assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove,
+  'an observation transition moves the live pet front above the owner without reattachment');
+assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backBehind,
+  'the back face simultaneously moves behind the owner after the same observation transition');
+assert.equal(pet.avatarRef.splitFront.renderOrder, api.orders.frontAbove + 0.01,
   'split overlay follows the observation transition before transparent sorting');
 pet.__hobunjiShoulderFacingInward = false;
 api.syncShoulderPetLayering();
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove,
-  'the reverse observation transition returns the live front to the foreground stage');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backBehind,
-  'the reverse observation transition brings the live back behind the owner');
+assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontBehind,
+  'the reverse observation transition returns the live front to the background stage');
+assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backAbove,
+  'the reverse observation transition brings the live back above the owner');
 testFacing(true);
 
 // Exercise the common skinned owner, where one mesh has two material-group
@@ -222,10 +222,10 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
     assert.equal(typeof sorterRenderer.sort, 'function', 'paired x-ray installs a sorter even without a nearby NPC');
     const frontPair = sorterRenderer.sort(drawItem(pet.avatarRef.frontPlane), drawItem(ownerHatFront));
     const backPair = sorterRenderer.sort(drawItem(pet.avatarRef.backPlane), drawItem(ownerHatBack));
-    assert.equal(Math.sign(frontPair), inward ? -1 : 1, 'front face ordering survives owner hat and manual sort');
-    assert.equal(Math.sign(backPair), inward ? 1 : -1, 'rear face ordering survives owner hat and manual sort');
+    assert.equal(Math.sign(frontPair), !inward ? -1 : 1, 'front face ordering survives owner hat and manual sort');
+    assert.equal(Math.sign(backPair), !inward ? 1 : -1, 'rear face ordering survives owner hat and manual sort');
     const splitPair = sorterRenderer.sort(drawItem(pet.avatarRef.splitFront), drawItem(ownerHatFront));
-    assert.equal(Math.sign(splitPair), inward ? -1 : 1, 'split face follows foreground under both sort modes');
+    assert.equal(Math.sign(splitPair), !inward ? -1 : 1, 'split face follows foreground under both sort modes');
   });
 }
 // Pairwise checks cannot detect a non-transitive sorter: Three sorts all
@@ -250,10 +250,10 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
       const indexOf = mesh => positions.get(mesh);
       const petFront = indexOf(pet.avatarRef.frontPlane), petBack = indexOf(pet.avatarRef.backPlane);
       const ownerFront = indexOf(front), ownerBack = indexOf(back);
-      assert.equal(petFront > ownerFront, !inward, 'observation flip swaps the pet front across its owner (full sort)');
-      assert.equal(petFront > indexOf(ownerHatFront), !inward, 'front pet crosses its owner hat even when the hat sort order is late');
-      assert.equal(petBack > ownerBack, inward, 'observation flip swaps the pet back across its owner (full sort)');
-      assert.equal(petBack > indexOf(ownerHatBack), inward, 'back pet crosses its owner hat even when the hat sort order is late');
+      assert.equal(petFront > ownerFront, inward, 'observation flip swaps the pet front across its owner (full sort)');
+      assert.equal(petFront > indexOf(ownerHatFront), inward, 'front pet crosses its owner hat even when the hat sort order is late');
+      assert.equal(petBack > ownerBack, !inward, 'observation flip swaps the pet back across its owner (full sort)');
+      assert.equal(petBack > indexOf(ownerHatBack), !inward, 'back pet crosses its owner hat even when the hat sort order is late');
       assert.ok(indexOf(pet.avatarRef.splitFront) > petFront, 'front split follows its parent front card');
       assert.ok(indexOf(pet.avatarRef.splitBack) > petBack, 'back split follows its parent back card');
     }
@@ -280,10 +280,10 @@ for (const inward of [false, true]) {
     const petBackItem = items.find(item => item.object === pet.avatarRef.backPlane);
     const hatFrontItem = items.find(item => item.object === ownerHatFront);
     const hatBackItem = items.find(item => item.object === ownerHatBack);
-    assert.equal(position(petFrontItem) > position(ownerFrontItem), !inward, 'skinned owner front flips relative to pet');
-    assert.equal(position(petFrontItem) > position(hatFrontItem), !inward, 'skinned owner hat front respects pet pose');
-    assert.equal(position(petBackItem) > position(ownerBackItem), inward, 'skinned owner back flips relative to pet');
-    assert.equal(position(petBackItem) > position(hatBackItem), inward, 'skinned owner hat back respects pet pose');
+    assert.equal(position(petFrontItem) > position(ownerFrontItem), inward, 'skinned owner front flips relative to pet');
+    assert.equal(position(petFrontItem) > position(hatFrontItem), inward, 'skinned owner hat front respects pet pose');
+    assert.equal(position(petBackItem) > position(ownerBackItem), !inward, 'skinned owner back flips relative to pet');
+    assert.equal(position(petBackItem) > position(hatBackItem), !inward, 'skinned owner hat back respects pet pose');
   });
 }
 // A second visible actor activates the game's ranked-portrait draw path.
@@ -315,9 +315,9 @@ for (const inward of [false, true]) for (const manual of [false, true]) for (con
       const indexOf = mesh => ordered.findIndex(item => item.object === mesh); // Reads the actual sorted list, including the external actor.
       assert.equal(indexOf(nearbyNpcPortrait) < indexOf(front), npcDepth > ownerRank.depth,
         'all actor portraits keep far-to-near order while the shoulder pet flips');
-      assert.equal(indexOf(pet.avatarRef.frontPlane) > indexOf(ownerHatFront), !inward,
+      assert.equal(indexOf(pet.avatarRef.frontPlane) > indexOf(ownerHatFront), inward,
         'nearby NPC and manual ranks must not prevent the front observation face swap');
-      assert.equal(indexOf(pet.avatarRef.backPlane) > indexOf(ownerHatBack), inward,
+      assert.equal(indexOf(pet.avatarRef.backPlane) > indexOf(ownerHatBack), !inward,
         'nearby NPC and manual ranks must not prevent the rear observation face swap');
       assert.ok(indexOf(pet.avatarRef.splitFront) > indexOf(pet.avatarRef.frontPlane),
         'front split overlays follow the observed orientation under ranked-actor sorting');
@@ -364,13 +364,13 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
       const petBack = ordered.find(item => item.object === pet.avatarRef.backPlane);
       const hatFront = ordered.find(item => item.object === ownerHatFront);
       const hatBack = ordered.find(item => item.object === ownerHatBack);
-      assert.equal(position(petFront) > position(frontItem), !inward,
+      assert.equal(position(petFront) > position(frontItem), inward,
         'the real skinned front material must swap relative to the pet front on observation');
-      assert.equal(position(petBack) > position(backItem), inward,
+      assert.equal(position(petBack) > position(backItem), !inward,
         'the real skinned back material must swap relative to the pet back on observation');
-      assert.equal(position(petFront) > position(hatFront), !inward,
+      assert.equal(position(petFront) > position(hatFront), inward,
         'skinned front-owner hats remain in the same pet orientation stage');
-      assert.equal(position(petBack) > position(hatBack), inward,
+      assert.equal(position(petBack) > position(hatBack), !inward,
         'skinned back-owner hats remain in the same pet orientation stage');
     }
   });
@@ -378,8 +378,8 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
 use(pet, true); // Restore the original rigid owner for detachment assertions.
 testFacing(true);
 use(pet, false);
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontBehind, 'camera side must not flip the pose');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backAbove);
+assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove, 'camera side must not flip the pose');
+assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backBehind);
 testFacing(false);
 
 front.material.depthWrite = true;
@@ -395,7 +395,7 @@ assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.front, 'old pet jo
 assert.equal(pet.avatarRef.frontPlane.userData.hobunjiShoulderPortraitFace, undefined);
 assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined);
 assert.equal(masks.has(pet.avatarRef.backPlane), false, 'old pet cannot mask owner tools');
-assert.equal(masks.has(replacement.avatarRef.frontPlane), true, 'new outward pet masks only its front');
+assert.equal(masks.has(replacement.avatarRef.backPlane), true, 'new outward pet masks only its back');
 
 use(null, false);
 assert.equal(front.material.depthWrite, true, 'detaching restores owner front depth');
@@ -404,7 +404,7 @@ assert.equal(front.renderOrder, api.orders.front);
 assert.equal(back.renderOrder, api.orders.back);
 assert.equal(replacement.avatarRef.frontPlane.material.depthWrite, true);
 assert.equal(replacement.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined);
-assert.equal(masks.has(replacement.avatarRef.frontPlane), false);
+assert.equal(masks.has(replacement.avatarRef.backPlane), false);
 assert.equal(ownerHatFront.material.depthWrite, true, 'detachment restores original front hat depth');
 assert.equal(ownerHatBack.material.depthWrite, true, 'detachment restores original back hat depth');
 assert.equal(api.state.active, false);

@@ -110,11 +110,11 @@ assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fak
 assert.equal(plane.scale.x, 1.5, 'canonical restore removes stale X mirroring instead of applying it');
 assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical restore returns the original plane position without pivot-translation tricks');
 rigSandbox.window.ShoulderPetObservationFlip.recordPose(fakePet, { facingInward: true, inwardChance: 0.5, holdSeconds: 2 }); // Confirms the mobile pose log follows the corrected sprite/x-ray combination.
-assert.match(rigSandbox.window.ShoulderPetObservationFlip.formatDebug(), /inward\/180deg\/back-foreground/,
-  'inward observation reports its back-foreground x-ray pairing');
+assert.match(rigSandbox.window.ShoulderPetObservationFlip.formatDebug(), /inward\/root180\/front-foreground\/face-swapped/,
+  'inward observation reports restored front-foreground x-ray and swapped plane normals');
 rigSandbox.window.ShoulderPetObservationFlip.recordPose(fakePet, { facingInward: false, inwardChance: 0.5, holdSeconds: 2 }); // Checks the opposing pose independently.
-assert.match(rigSandbox.window.ShoulderPetObservationFlip.formatDebug(), /outward\/0deg\/front-foreground/,
-  'outward observation reports its front-foreground x-ray pairing');
+assert.match(rigSandbox.window.ShoulderPetObservationFlip.formatDebug(), /outward\/root0\/back-foreground\/face-swapped/,
+  'outward observation reports restored back-foreground x-ray and swapped plane normals');
 
 const applyCuriositySource = source.slice(source.indexOf('function _applyShoulderPetCuriosity'), source.indexOf('function _isPlayerGenuinelyIdle')); // Used below to forbid perspective-changing Y rotation in this one pose function.
 assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.rotation\.y/,
