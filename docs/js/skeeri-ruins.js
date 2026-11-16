@@ -248,7 +248,10 @@
     const unit=Number(deps?.TILE)||64;
     return {x:location.x*unit,y:location.z*unit,worldY:location.y};
   }
-  function lineClear(a,b){return window.DevRandomRuin?.flightClear?.(a.x,a.y,a.z,b.x,b.y,b.z)!==false;}
+  function lineClear(a,b){
+    const clear=window.DevRandomRuin?.flightClear; // Missing/unready voxel collision must not authorize a Skeeri wall-crossing flight.
+    return typeof clear==='function'&&clear(a.x,a.y,a.z,b.x,b.y,b.z)===true;
+  }
   function flightTo(session,state,to,phase,speed) {
     const actor=state.actor,start=actorLocation(actor,session);
     if(!lineClear(start,to)){ // Never fly through stone: attacks wait for a clear line; a retreat backtracks along the line the bird came by.
