@@ -1,5 +1,5 @@
 'use strict';
-// Verify fixed shoulder-perch authoring against full-rig X/Y defaults; no runtime auto-scaling added.
+// Verify fixed shoulder-pet scales against world-space portrait-plane width/height, without runtime auto-scaling.
 const assert = require('node:assert/strict'); // Validates runtime profiles and authoring ratios.
 const fs = require('node:fs'); // Reads the shipped modules used by this regression.
 const vm = require('node:vm'); // Executes species installers against a minimal browser host.
@@ -15,14 +15,15 @@ const host = { // In-memory profile and appearance registries consumed by every 
   HobunjiSpeciesPoseScale: { resolveScale() { return 1; }, setScale() { return true; } },
   getPortraitFighters() { return []; },
 };
-const donorPerches = { // Current canonical anchor multipliers remain independent of body dimensions.
-  'tletingan::male': 0.5, 'tletingan::female': 0.47,
-  'engh-sho::male': 0.7, 'engh-sho::female': 0.65,
-  'mashtzarr::male': 0.8, 'mashtzarr::female': 0.65,
+const donorPerches = { // Canonical authored default scales of the three donor species, independent of orbit size.
+  'tletingan::male': 0.5, 'tletingan::female': 0.530831,
+  'engh-sho::male': 0.540542, 'engh-sho::female': 0.527572,
+  'mashtzarr::male': 0.894, 'mashtzarr::female': 0.816568,
 };
+const donorPortraitScales = { tletingan: 0.85, 'engh-sho': 0.95, mashtzarr: 1.18 }; // Latest authored portraitScale, consumed when constructing each donor fixture.
 for (const [id, size] of Object.entries(donorPerches)) {
   const [species, gender] = id.split('::'); // Builds exact donor fixtures for the same-gender inheritance paths.
-  host.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[id] = { species, gender, anatomy: { portraitScale: 1 },
+  host.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[id] = { species, gender, anatomy: { portraitScale: donorPortraitScales[species] },
     anchors: { shoulderPerch: { position: { x: -0.25, y: 0.6, z: 0 }, scale: { x: size, y: size, z: size } },
       rightHandShoulder: { position: { x: -0.25, y: 0.6, z: 0 } } } };
   host.SCRATCHBONES_CONFIG.game.appearanceEditor.species[species] = { label: species, genders: ['male', 'female'] };
@@ -36,11 +37,11 @@ for (const path of ['docs/js/nuhongan-species-runtime.js', 'docs/js/longoran-spe
   'docs/js/harlyao-species-runtime.js', 'docs/js/mammakhbuur-species-runtime.js',
   'docs/js/skeleton-species-runtime.js', 'docs/js/harlyao-skeleton-species-runtime.js']) run(path);
 const expected = { // Explicit six-decimal pet scales must be authored, not calculated by the running game.
-  nuhongan: ['tletingan', 0.387298, 0.364060],
-  longoran: ['tletingan', 0.852434, 0.801288],
-  harlyao: ['engh-sho', 0.84, 0.78],
-  mammakhbuur: ['mashtzarr', 0.930776, 0.756247],
-  'harlyao-skeleton': ['engh-sho', 0.84, 0.78],
+  nuhongan: ['tletingan', 0.387298, 0.411180],
+  longoran: ['tletingan', 0.852434, 0.904997],
+  harlyao: ['engh-sho', 0.648650, 0.633087],
+  mammakhbuur: ['mashtzarr', 1.040143, 0.950042],
+  'harlyao-skeleton': ['engh-sho', 0.648650, 0.633087],
 };
 for (const [species, [donorSpecies, male, female]] of Object.entries(expected)) {
   for (const [gender, size] of [['male', male], ['female', female]]) {
@@ -50,10 +51,13 @@ for (const [species, [donorSpecies, male, female]] of Object.entries(expected)) 
     assert.deepEqual(JSON.parse(JSON.stringify(profile.anchors.shoulderPerch.position)),
       JSON.parse(JSON.stringify(donor.anchors.shoulderPerch.position)), 'Perch position must not move');
     for (const axis of ['x', 'y', 'z']) assert.equal(profile.anchors.shoulderPerch.scale[axis], size);
-    const body = host.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender); // Authored width/height checked offline.
-    const donorBody = host.HobunjiCharacterRigScaleDefaults.scaleFor(donorSpecies, gender); // Reference proportions.
-    const predicted = donor.anchors.shoulderPerch.scale.x
-      * Math.sqrt(body.x / donorBody.x * body.y / donorBody.y); // Test-only geometric mean; no in-game calculation.
+    const body = host.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender); // Static whole-rig X/Y used only in this test's world-plane calculation.
+    const reference = host.HobunjiCharacterRigScaleDefaults.scaleFor('tletingan', 'male'); // Shared world-portrait baseline, not the species' donor.
+    const modelWidth = 0.9; // Actual square portrait model width in world units.
+    const portraitScale = Number(profile.anatomy.portraitScale); // Donor-inherited portrait-plane multiplier, independent of whole-rig X/Y.
+    const baselineArea = (modelWidth * donorPortraitScales.tletingan) ** 2 * reference.x * reference.y; // Tletingan male portrait world-space area.
+    const worldPortraitArea = (modelWidth * portraitScale) ** 2 * body.x * body.y; // World-space portrait-plane area, not opaque pixels or limb geometry.
+    const predicted = 0.5 * Math.sqrt(worldPortraitArea / baselineArea); // Offline-only world portrait dimensions; gameplay uses authored fixed constants.
     assert(Math.abs(predicted - size) < 0.000001, `Unexpected authored size for ${species}::${gender}: ${predicted}`);
   }
 }
@@ -84,4 +88,4 @@ assert.match(gameSource, /\(grip\.y \|\| 0\) \* perchScaleY/,
 assert.match(gameSource, /perch\.y - grip\.y \* gripScaleY/,
   'The initial shoulder pet location must honor the scaled grip until final pose positioning');
 
-console.log('Fixed body-proportional shoulder-perch scale tests passed.');
+console.log('Fixed world-portrait shoulder-perch scale tests passed.');
