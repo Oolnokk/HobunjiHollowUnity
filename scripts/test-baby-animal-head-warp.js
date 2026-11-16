@@ -109,7 +109,7 @@ assert.equal(sparse.opaquePixels, 25, 'only truly opaque IDLE pixels within the 
 assert.equal(sparse.coverage[20 * width + 20], 1, 'opaque idle-head pixels receive full deformation strength');
 assert(sparse.coverage[20 * width + 26] < 1, 'transparent space inside the rectangular frame is no longer treated as full-strength head');
 assert.equal(sparse.coverage[0], 0, 'distant transparent and torso pixels have no effect');
-assert.notEqual(warp.warpPixels(layeredArt, width, height, head, 1.32, mask), layeredArt,
+assert.notEqual(warp.warpPixels(pixels, width, height, head, 1.32, mask), pixels,
   'any pose samples the original idle silhouette but warps its own final texture');
 const layeredArt = Uint8ClampedArray.from(pixels);
 const eye = (19 * width + 23) * 4, pattern = (22 * width + 25) * 4; // Distinct final-composite colors: eye and painted coat pattern.
