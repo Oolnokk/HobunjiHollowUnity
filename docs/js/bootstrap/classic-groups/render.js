@@ -9,7 +9,9 @@
     "js/actor-render-occlusion.js?v=20261114farCull1",
     "js/outline-composite-material.js?v=20261114composite1",
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
-    "js/farm-tile-render-batches.js?v=20261114farmBatch1"
+    "js/farm-tile-render-batches.js?v=20261114farmBatch1",
+    "js/zone-prop-render-batches.js?v=20261116zoneProps1",
+    "js/zone-tree-fade.js?v=20261116treeFade1"
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

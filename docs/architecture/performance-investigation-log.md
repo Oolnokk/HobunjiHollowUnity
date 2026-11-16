@@ -1,5 +1,33 @@
 # Performance investigation log
 
+## 16 Nov 2026: wilderness props drawn as merged batches; pants skinned on the GPU (headless)
+
+**What spawns in the wilderness and what it costs.** Draw census of one frame per zone (headless, outlines on, every
+pass counted): Western Slope 456, Eastern Mire 333-587, Cloud Forest ~430, Northern Cliffs 1,700-2,400 (NPC count
+varies run to run). Game JS in a zone is ~1 s per 25 s of CPU profile, the rest is software GL, so on a real device the
+cost is draw submission, as in the 14 Nov device data. Ground, mesas, bedrock, path ground, grass/rich foliage and the
+Cloud Forest dense forest were already chunked or instanced. The spawned props were not: a bandit/Porakaneki tent is 8
+two-triangle panels (80 draws per pass for a camp), a root totem ~7 meshes and all 12 are drawn zone-wide, reagent herbs
+2 quads each, berry bushes 3 meshes, camp furniture (campfires, crate stacks, pedestals) and cliff-door puzzle caves
+dozens each. Farm shrub wind sway (the one JS-animated foliage) is 20 groups: not worth moving.
+
+- **`js/zone-prop-render-batches.js`:** same contract as the farm tile batches. Prop meshes under an owner tag
+  (`projectileCoverKind`, `berryKey`, `reagentKey`, `rootTotemWorldVisual`, `authoredFurnitureKey`, `tzatzulNest`,
+  `puzzle-cave-cliff-door-puzzle*`) that have held still for 1 s are hidden for the world render and drawn as one
+  world-space merged mesh per 8x8-tile cell and identical render state. Moving meshes (flames, camera-facing parts,
+  harvest animations) drop out until they settle. Transparent materials stay per-object (portraits are depth-sorted
+  per actor; a merged batch would sort as one object), as do render hooks, array materials and custom shaders unless
+  marked `userData.hobunjiWorldBakeSafe` (reagent herbs are). Northern Cliffs: **2,435 -> 1,756 draws** in the same
+  view; batched vs unbatched frames differ by 13,114 px against 36,285 px between two unbatched frames (animation
+  noise). Remaining rejections per kind are in `ZonePropRenderBatches.snapshot().rejectReasons`; the largest is
+  transparent furniture art (~110 meshes). `setEnabled(false)` is the A/B switch. Test:
+  `scripts/test-zone-prop-render-batches.js` (needs three r128).
+- **Pants garment** (`js/pants-garment-renderer.js`): the per-vertex linear-blend skin that ran in JS every frame the
+  legs moved (65x65 grid for the player, 33x33 per NPC, plus a full buffer upload) now runs in the vertex shader; the
+  CPU computes 4 bone transforms and 2 ankle-ring shifts. `PantsGarmentRenderer.setGpuSkinning(false)` is the A/B switch.
+
+**Not measured:** real-device FPS for either change.
+
 ## 15 Nov 2026 (applied): vitals-bar affliction animations off by default, affliction names printed on the segments
 
 Acting on the entry below: `player-vitals.js` now has two preferences (Settings > Visual Effects, persisted in
