@@ -43,7 +43,9 @@ function check(grip,basis,body,perch){ // The pet stays fixed; only the NPC may 
  const matched=root.matrixWorld.clone().multiply(body).multiply(perch);
  near(matched.x,grip.x,'fixed shoulder contact X');
  near(matched.y,grip.y,'fixed shoulder contact Y');
- near(Math.atan2(matched.b,matched.a),Math.atan2(grip.b,grip.a),'fixed shoulder contact facing');
+ near(Math.atan2(root.matrixWorld.b,root.matrixWorld.a),0,'NPC stays world front-facing (+X) instead of inheriting animal grip yaw');
+ const localShoulder=body.clone().multiply(perch); // Socket rotation still belongs to the NPC, independently of the pet's chosen grip rotation.
+ near(Math.atan2(matched.b,matched.a),Math.atan2(localShoulder.b,localShoulder.a),'socket orientation is independent of pet grip yaw');
  near(Math.hypot(root.matrixWorld.a,root.matrixWorld.b),1/shoulderPerch.scale.x,'NPC root uses reciprocal perch scale');
  near(Math.hypot(matched.a,matched.b),Math.hypot(body.a,body.b),'carrier body retains species size (not Small animal size)');
  for(const k of ['a','b','c','d','x','y'])near(grip[k],fixed[k],'animal grip unchanged '+k);
@@ -53,6 +55,8 @@ const fixture={basis:t(1,2,.2,1.2,.9),body:t(0,.1,.15,1.4,1.4),perch:t(-.2,.6,1.
 const one=check(t(.2,-.3,.4,.35,.28),fixture.basis,fixture.body,fixture.perch);
 const smallAgain=check(t(.2,-.3,.4,.15,.12),fixture.basis,fixture.body,fixture.perch);
 for(const k of ['a','b','c','d','x','y'])near(one[k],smallAgain[k],'creature size cannot change NPC scale/pose '+k);
+const turnedGrip=check(t(.2,-.3,.4+Math.PI,.35,.28),fixture.basis,fixture.body,fixture.perch); // Turning the animal halfway around must NOT flip its temporary NPC owner.
+for(const k of ['a','b','c','d','x','y'])near(one[k],turnedGrip[k],'animal grip rotation cannot rotate or relocate the owner '+k);
 const two=check(t(-.4,.8,-1.1,.3,.3),t(-1,.7,.8,.7,1.15),t(0,.12,-.2,.9,.9),t(-.13,.4,-.5,1.3,1.3));
 assert.notDeepEqual(one,two,'switching species/gender changes the NPC placement');
 assert.match(html,/applyCreatureSizeClass\(actor, 'small', \{ announce: false, render: false \}\)/,'grip selects Small size automatically');
@@ -63,6 +67,8 @@ assert.match(html,/perch\.rotation\.order = 'YXZ'/,'gameplay rotation order pres
 assert.match(html,/rigWorldAxesV1553\.quaternion\.identity\(\)/,'world axes ignore local grip rotation');
 assert.match(html,/controls\.setSpace\('world'\)/,'actual gizmo is world aligned');
 assert.match(html,/window\.AnimationAuthorRigCarrierPreview\?\.placeNpcAtGrip/,'solver integrated');
+assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier2/,'changed browser helper must bust the cached flipped NPC solver');
+assert.match(html,/NPC front facing: world \+X/,'mobile status must report the neutral-facing comparison contract');
 assert.match(html,/setAnimationAuthorMode = async function\(mode, \.\.\.args\)/,'mode exit clears temporary preview');
 assert.doesNotMatch(html.slice(html.indexOf('// V15.53')),/animationAuthor\.actors\.push\(/,'carrier does not join selectable actors');
 console.log('Animation Author inverse grip carrier regression passed');
