@@ -321,7 +321,7 @@ async function main() {
   const recoveryCatchup = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(recoveryCatchup.lastError, null, 'regular full autosave can follow the fast lock save');
   assert.equal(recoveryCatchup.recoveryRefreshPending, false, 'deferred recovery work is complete');
-  assert.equal(recoveryCatchup.saveFileWork.written, 1, 'acknowledging the browser lock flag rewrites only the character file');
+  assert.equal(recoveryCatchup.saveFileWork.written, 0, 'the acknowledged lock progress is already durable; full recovery refresh need not rewrite canonical files');
 
   // Even same-size, same-timestamp external edits to the CHARACTER file must
   // be rejected rather than silently overwritten by the targeted path.
