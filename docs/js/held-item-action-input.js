@@ -20,7 +20,7 @@
   function init(injectedDeps) { deps = injectedDeps || {}; }
 
   function holdThresholdS() {
-    return Number(window.Combat?.input?.HOLD_THRESHOLD_S) || 0.16;
+    return Number(window.Combat?.input?.HOLD_THRESHOLD_S) || 0.24;
   }
 
   function now() {
