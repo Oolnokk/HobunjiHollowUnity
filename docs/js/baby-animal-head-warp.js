@@ -28,6 +28,22 @@
     return scale;
   }
 
+  const RIG_PREVIEW_STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // The head-rigger's same-origin Save Preview store; read only when composing new baby art.
+  function scaleForKind(kind) {
+    const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Resolves the same species IDs used by the head-rigger export.
+    const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Variants inherit the underlying authored head setting.
+    let previewRig = null; // A saved browser preview overrides the committed rig for this species, without changing game save data.
+    try {
+      const saved = JSON.parse(window.localStorage?.getItem(RIG_PREVIEW_STORAGE_KEY) || '{}');
+      previewRig = saved?.[normalized] || saved?.[base] || null;
+    } catch (_) {}
+    const authoredRig = window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)
+      || window.CreatureGeneticsRender?.headRigForKind?.(base)
+      || null; // Full exported head rigs can independently author baby proportions.
+    const configured = previewRig?.babyHeadScale ?? authoredRig?.babyHeadScale;
+    return typeof configured === 'number' && Number.isFinite(configured) ? clampScale(configured) : scale;
+  }
+
   function frameForKind(kind) {
     const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for attachment-rig head boxes.
     const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Allows registered species variants to share their authored parent frame.
@@ -73,15 +89,16 @@
     return output;
   }
 
-  function applyToCanvas(canvas, kind) {
-    if (!canvas || scale <= 1) { debug.skipped++; return canvas; }
+  function applyToCanvas(canvas, kind, previewScale = null) {
+    const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale); // Editor may override the strength without mutating stored gameplay settings.
+    if (!canvas || selectedScale <= 1) { debug.skipped++; return canvas; }
     const frame = frameForKind(kind);
     if (!frame) { debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'no authored head frame'; return canvas; }
     try {
       const w = canvas.width, h = canvas.height; // Same native resolution for all genotypes and run poses.
       const src = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, w, h);
       if (!src) return canvas;
-      const warped = warpPixels(src.data, w, h, frame);
+      const warped = warpPixels(src.data, w, h, frame, selectedScale);
       if (!warped) return canvas;
       const output = document.createElement('canvas'); // Separate surface avoids changing any cached adult/shared genotype composite.
       output.width = w; output.height = h;
@@ -98,7 +115,7 @@
   }
 
   window.BabyAnimalHeadWarp = Object.freeze({
-    DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale,
+    DEFAULT_SCALE, MAX_SCALE, getScale: () => scale, setScale, scaleForKind,
     frameForKind, warpPixels, applyToCanvas,
     debugSnapshot: () => ({ ...debug, scale, defaultScale: DEFAULT_SCALE, falloffRadius: FALLOFF_RADIUS }),
   });
