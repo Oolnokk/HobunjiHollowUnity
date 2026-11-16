@@ -60,4 +60,28 @@ for (const [species, [donorSpecies, male, female]] of Object.entries(expected)) 
 assert.equal(JSON.stringify(Object.fromEntries(
   Object.keys(donorPerches).map(key => [key, host.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[key]]))),
 donorSnapshot, 'Derived species installers may not modify the donor profiles');
+
+const gameSource = read('docs/game.js'); // Verify the live game, not only editor rig profiles, actually consumes authored size.
+const anchorStart = gameSource.indexOf('function _computePlayerAttachmentAnchor(anchorName) {'); // Private gameplay resolver extracted without starting WebGL.
+const anchorEnd = gameSource.indexOf('function creatureAttachmentAnchor(', anchorStart); // Delimits only this function and its return shape.
+assert(anchorStart > 0 && anchorEnd > anchorStart, 'Game must expose an authored player attachment resolver');
+const anchorResolver = new Function('window', '_playerData', 'playerAvatarModelHeight', 'playerToolBaseY',
+  gameSource.slice(anchorStart, anchorEnd) + '; return _computePlayerAttachmentAnchor("shoulderPerch");'); // Exercises exact production scale propagation.
+for (const [species, [, male, female]] of Object.entries(expected)) {
+  for (const [gender, scale] of [['male', male], ['female', female]]) {
+    const anchor = anchorResolver(host, { appearance: { speciesId: species, gender } }, 0.9, 0.45); // Uses the actual saved species/gender key.
+    assert.equal(anchor.scale.x, scale, species + ' ' + gender + ' X scale must reach gameplay');
+    assert.equal(anchor.scale.y, scale, species + ' ' + gender + ' Y scale must reach gameplay');
+    assert.equal(anchor.scale.z, scale, species + ' ' + gender + ' Z scale must reach gameplay');
+  }
+}
+assert.match(gameSource, /const authoredPetPerchScale = c\.stableRole === 'shoulderPet'/,
+  'Only a shoulder pet should adopt the authored carrier perch size during creature rendering');
+assert.match(gameSource, /x: c\.visualScaleX \* petScaleX, y: c\.visualScaleY \* petScaleY/,
+  'Runtime size must multiply existing genotype size without overwriting it or accumulating each frame');
+assert.match(gameSource, /\(grip\.y \|\| 0\) \* perchScaleY/,
+  'The final foot-grip offset must use the same authored scale as the rendered sprite');
+assert.match(gameSource, /perch\.y - grip\.y \* gripScaleY/,
+  'The initial shoulder pet location must honor the scaled grip until final pose positioning');
+
 console.log('Fixed body-proportional shoulder-perch scale tests passed.');
