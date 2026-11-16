@@ -285,7 +285,8 @@
       });
       if (mounted) {
         const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Converts Quick Attack lunge mastery/enchantment bonuses into the mount's replacement speed surge.
-        window.Mounts?.beginMountedCombatBurst?.(1.95 * burstScale, Math.max(1.05, windupS + strikeS + 0.45));
+        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Higher-ranked lunge mastery still extends speed when the burst hits the mount speed cap.
+        window.Mounts?.beginMountedCombatBurst?.(1.95 * burstScale, Math.max(1.05, windupS + strikeS + 0.45) * durationScale);
       } // Speed follows real mount steering, rock collision and inertia.
       else deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
