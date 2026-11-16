@@ -855,7 +855,7 @@
       const latest = latestByCharacter.get(String(previous?.id));
       for (const [worldId, locks] of Object.entries(previous?.chestLockProgress || {})) {
         for (const [lockId, saved] of Object.entries(locks || {})) {
-          if (saved?.version !== 2 || saved.folderUnsynced !== true) continue; // Only guard progress made durable by the fast path.
+          if (saved?.version !== 2) continue; // All recorded lock penalties remain monotonic until the deferred recovery checkpoint finishes.
           const incoming = latest?.chestLockProgress?.[worldId]?.[lockId];
           if (incoming?.version !== 2 || Number(incoming.stage) < Number(saved.stage)
             || Number(incoming.misses) < Number(saved.misses)
@@ -1087,6 +1087,7 @@
         throw new Error('Lock progress record is invalid.');
       }
       const safeRecord = JSON.parse(JSON.stringify(record)); // Detached tiny payload cannot change during asynchronous folder I/O.
+      safeRecord.folderUnsynced = false; // A completed canonical character-file write is sufficient to acknowledge this specific lock penalty after reload.
       const known = _lastKnownFolderMeta.characters.find(character => String(character?.id) === String(characterId)); // Same character catalog used to construct the canonical filename.
       const filename = slugify(known.nickname) + '-' + known.id + '.json';
       const key = fileKey(CHARACTERS_DIR, filename);
