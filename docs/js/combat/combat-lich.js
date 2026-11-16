@@ -1980,6 +1980,13 @@
     for (const projectile of [...projectiles]) if (projectile.owner === owner) disposeProjectile(projectile);
     for (const erupt of [...eruptions]) if (erupt.owner === owner) disposeHronalEruption(erupt);
     for (const puddle of [...puddles]) if (puddle.owner === owner) disposePetroleumPuddle(puddle);
+    for (const actor of [deps?.player,...(deps?.hostileObjects||[])]) {
+      if (!actor || (owner.areaId && actor.areaId && owner.areaId !== actor.areaId)) continue;
+      if (actor._entrancedCommandState?.source === owner) clearEntrancedNow(actor); // Retiring the controlling lich must also release its affliction and command overlay.
+      if (actor._kanthicGooSlow) clearGooSlowNow(actor); // Restore movement immediately instead of retaining the boss's final slows outside the arena.
+      if (actor._kanthicPuddleSink) clearPuddleSink(actor); // The old oil surface no longer owns the player's render height after a retreat.
+    }
+    if (entrancerMarkerSource === owner) disposeEntrancerMarker(); // A vanished guardian cannot leave a world aura or camera-edge warning.
     lastEvent='sanctum-boss-effects-cleared';
   }
 
