@@ -54,7 +54,13 @@
   const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
   let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
-  let mountBoostS = 0; // Remaining surge time; read by movement and the exertion scheduler.
+  let mountBoostS = 0; // Remaining wheat surge; read by movement and exertion scheduling.
+  let mountedCombatBoostS = 0; // Remaining charge/quick-attack speed burst, independent of wheat spending.
+  let mountedCombatBoostMultiplier = 1; // Active mounted melee burst multiplier applied to forward riding speed.
+  let mountedOrbitTarget = null; // Cached ranged auto-target used to steer the carrier in a circle.
+  let mountedOrbitRadiusPx = 0; // Initial target distance retained as the desired orbit radius.
+  let mountedOrbitScanS = 0; // Limits ranged target-acquisition work to about five checks per second.
+  let mountedOrbitClockwise = true; // Keeps a consistent circling side until the selected target changes.
   let mountBreathClockS = 0; // Cadence timer for one animal exertion clip at a time.
   let mountRockScanS = 0; // Throttles short-rock lookahead to avoid repeated tile and collision probes every frame.
   const MOUNT_ROCK_SCAN_INTERVAL_S = 0.07; // Fast enough to catch rocks at boosted speed without a per-frame radius scan.
@@ -113,7 +119,7 @@
     if (!document.getElementById('mountWheatHudStyle')) {
       const style = document.createElement('style');
       style.id = 'mountWheatHudStyle';
-      style.textContent = '#mountWheatHud{position:fixed;right:16px;bottom:152px;display:none;gap:5px;align-items:center;z-index:110;pointer-events:none;padding:8px 10px;border-radius:12px;background:rgba(12,17,12,.62)}#mountWheatHud .wheat-charge{display:block;width:23px;height:23px;background:#6bc36f;-webkit-mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;transition:background .14s,opacity .14s}#mountWheatHud .wheat-charge.empty{background:#737675;opacity:.6}#mountWheatHud .wheat-charge.boosting:not(.empty){background:#f1cc63}@media(max-width:640px){#mountWheatHud{right:8px;bottom:205px;gap:3px}#mountWheatHud .wheat-charge{width:20px;height:20px}}';
+      style.textContent = '#mountWheatHud{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);display:none;gap:5px;align-items:center;justify-content:center;z-index:110;pointer-events:none;padding:8px 10px;border-radius:12px;background:rgba(12,17,12,.62);white-space:nowrap}#mountWheatHud .wheat-charge{display:block;width:23px;height:23px;background:#6bc36f;-webkit-mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;mask:url("assets/hud/generic_icons/icon_wheat.png") center/contain no-repeat;transition:background .14s,opacity .14s}#mountWheatHud .wheat-charge.empty{background:#737675;opacity:.6}#mountWheatHud .wheat-charge.boosting:not(.empty){background:#f1cc63}@media(max-width:640px){#mountWheatHud{gap:3px;padding:5px 8px}#mountWheatHud .wheat-charge{width:20px;height:20px}}';
       document.head?.appendChild(style);
     }
     mountWheatHud = document.createElement('div');
@@ -125,7 +131,13 @@
       charge.className = 'wheat-charge';
       mountWheatHud.appendChild(charge);
     }
-    document.body.appendChild(mountWheatHud);
+    const vitals = document.getElementById('vitalsBar'); // Anchors wheat to the real bottom-center player bars, even when their number/height changes.
+    (vitals || document.body).appendChild(mountWheatHud);
+    if (!vitals) { // Fallback for headless test harnesses or pages without the player HUD.
+      mountWheatHud.style.position = 'fixed';
+      mountWheatHud.style.left = 'var(--play-center, 50%)';
+      mountWheatHud.style.bottom = 'max(15dvh, 80px)';
+    }
     lastHudSignature = '';
     refreshMountWheatHud();
   }
@@ -234,6 +246,11 @@
     wheatRemaining = WHEAT_MAX;
     wheatRecoveryS = 0;
     mountBoostS = 0;
+    mountedCombatBoostS = 0;
+    mountedCombatBoostMultiplier = 1;
+    mountedOrbitTarget = null;
+    mountedOrbitRadiusPx = 0;
+    mountedOrbitScanS = 0;
     mountBreathClockS = 0;
     mountRockScanS = 0;
     refreshMountWheatHud();
@@ -250,8 +267,39 @@
     return true;
   }
 
+  function mountedTrainingModifiers() {
+    return window.StableAnimalProgression?.mountRidingModifiers?.() || {}; // Existing stable perk API; combat uses the same rider's training as movement.
+  }
+
+  function mountedMeleeStaminaMultiplier() {
+    return Math.max(0.55, Number(mountedTrainingModifiers().meleeStamina) || 1); // Training discounts only mounted melee actions.
+  }
+
+  function mountedMeleeDamageMultiplier() {
+    if (mountRideState !== 'mounted' || !mountRideEntity) return 1;
+    const currentSpeed = Math.hypot(Number(mountRideEntity.vx) || 0, Number(mountRideEntity.vy) || 0); // Actual carrier displacement, not an intended or visually boosted speed.
+    const baseSpeed = (mountRideEntity.def?.mountSpeed || deps?.MOVE_SPEED || 1) *
+      (deps?.getAlchemySpeedMul?.() || 1) * (deps?.getDevGlobalSpeedMul?.() || 1) *
+      (window.PerceptionMode?.speedMultiplier?.() ?? 1) * (Number(mountedTrainingModifiers().baseSpeed) || 1);
+    const ratio = currentSpeed / Math.max(1, baseSpeed); // Preserves extra damage from genuinely high boosted velocity, and zero bonus against collisions.
+    return (1 + Math.min(1.8, Math.max(0, ratio) * 0.65)) * (Number(mountedTrainingModifiers().meleeDamage) || 1);
+  }
+
+  function beginMountedCombatBurst(multiplier, seconds) {
+    if (mountRideState !== 'mounted' || !mountRideEntity) return false;
+    const mul = Number(multiplier); // Requested quick/heavy technique boost, independently clamped from wheat.
+    const duration = Number(seconds); // Authored duration before the mount training extension.
+    if (!Number.isFinite(mul) || mul <= 1 || !Number.isFinite(duration) || duration <= 0) return false;
+    mountedCombatBoostMultiplier = Math.max(mountedCombatBoostMultiplier, Math.min(3.5, mul));
+    mountedCombatBoostS = Math.max(mountedCombatBoostS, Math.min(6, duration * (Number(mountedTrainingModifiers().combatBurstDuration) || 1)));
+    ridingDebug.lastCombatBurst = { multiplier: mountedCombatBoostMultiplier, durationS: mountedCombatBoostS, at: Date.now() }; // Mobile-visible proof of which burst fired.
+    return true;
+  }
+
   function updateWheatAndBreathing(m, dt, traveledPx) {
     mountBoostS = Math.max(0, mountBoostS - dt);
+    mountedCombatBoostS = Math.max(0, mountedCombatBoostS - dt);
+    if (mountedCombatBoostS <= 0) mountedCombatBoostMultiplier = 1;
     if (mountBoostS <= 0 && wheatRemaining < WHEAT_MAX) {
       wheatRecoveryS += dt;
       if (wheatRecoveryS >= WHEAT_RECOVER_S) {
@@ -936,6 +984,48 @@
     return true;
   }
 
+  // Ranged auto-aim steers the mount around the currently aimed enemy, retaining the
+  // acquired distance or closing just enough to get within projectile range.
+  // No steering input is stolen when the rider is actively using reins.
+  function mountedRangedOrbit(m, dt, topSpeed) {
+    const key = window.RangedWeapons?.equippedRangedKey?.();
+    if (!key || !window.Combat?.input?.isAutoTargetEnabled?.()) {
+      mountedOrbitTarget = null;
+      mountedOrbitScanS = 0;
+      return null;
+    }
+    mountedOrbitScanS -= dt;
+    if (mountedOrbitScanS <= 0 || !mountedOrbitTarget || mountedOrbitTarget.health <= 0) {
+      mountedOrbitScanS = 0.2;
+      const target = window.RangedWeapons?.playerAimSolution?.(key)?.reticleTarget
+        || window.RangedWeapons?.focusedHostile?.()?.candidate?.data
+        || null; // Camera-reticle target has priority; fallback stays inside ranged's existing focus selector.
+      if (target !== mountedOrbitTarget) {
+        mountedOrbitTarget = target;
+        const distance = target ? Math.hypot(target.x - m.x, target.y - m.y) : 0;
+        const range = window.RangedWeapons?.playerLockRangePx?.(key) || deps.TILE * 7;
+        mountedOrbitRadiusPx = Math.max(deps.TILE * 1.1, Math.min(distance, range * 0.85));
+        const toTarget = Math.atan2((target?.y || 0) - m.y, (target?.x || 0) - m.x);
+        mountedOrbitClockwise = Math.sin(mountAngle - toTarget) <= 0; // Follow whichever tangent requires the smaller heading change.
+      }
+    }
+    const target = mountedOrbitTarget;
+    if (!target || target.health <= 0 || target.areaId !== deps.getCurrentArea() || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
+    const dx = m.x - target.x, dy = m.y - target.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 0.001) return null;
+    const outwardX = dx / distance, outwardY = dy / distance;
+    const sign = mountedOrbitClockwise ? 1 : -1;
+    const tangentX = -outwardY * sign, tangentY = outwardX * sign;
+    const excess = Math.max(0, distance - mountedOrbitRadiusPx); // Never intentionally increase the original orbit radius.
+    const inward = Math.min(1.25, excess / Math.max(deps.TILE, mountedOrbitRadiusPx * 0.3));
+    const length = Math.hypot(tangentX - outwardX * inward, tangentY - outwardY * inward) || 1;
+    ridingDebug.orbitTarget = target.id || target.name || target.def?.label || 'hostile';
+    ridingDebug.orbitDistancePx = distance;
+    ridingDebug.orbitRadiusPx = mountedOrbitRadiusPx;
+    return { x: (tangentX - outwardX * inward) / length, y: (tangentY - outwardY * inward) / length };
+  }
+
   // Replaces game.js's normal on-foot updateMovement while mounted.
   function updateMountedMovement(dt) {
     const m = mountRideEntity;
@@ -972,7 +1062,8 @@
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Training perks still wrap the authored mount speed and acceleration.
     const stepStartX = m.x, stepStartY = m.y;
     const boosting = mountBoostS > 0;
-    const desiredSpeed = boosting ? topSpeed * BOOST_SPEED_RATIO : topSpeed * CRUISE_SPEED_RATIO;
+    const desiredSpeed = topSpeed * Math.max(boosting ? BOOST_SPEED_RATIO : CRUISE_SPEED_RATIO,
+      mountedCombatBoostS > 0 ? mountedCombatBoostMultiplier : 0); // Combat bursts replace lunge displacement with real, collision-tested mount velocity.
     // Backward reins brake only when substantially opposed to the current heading.
     // Releasing controls does not stop the mount: it continues along its heading.
     const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
@@ -993,8 +1084,9 @@
       if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
       const rockPlan = scanRocks ? planMountHop(m, currentArea) : null;
       const autoHopped = !!rockPlan && beginMountHop(m, rockPlan, true);
-      const steerX = inputStrength > 0.01 ? ix : Math.cos(mountAngle);
-      const steerY = inputStrength > 0.01 ? iy : Math.sin(mountAngle);
+      const orbit = inputStrength <= 0.01 ? mountedRangedOrbit(m, dt, topSpeed) : null; // User steering always wins; auto orbit only uses free-cruise heading.
+      const steerX = inputStrength > 0.01 ? ix : (orbit?.x ?? Math.cos(mountAngle));
+      const steerY = inputStrength > 0.01 ? iy : (orbit?.y ?? Math.sin(mountAngle));
       if (!m._mountHop?.overRock) {
         const assisted = autoHopped ? null : window.GroundObstacleAvoidance?.steer('mounted', currentArea, m.x, m.y, steerX, steerY, deps.TILE, deps.canPlayerOccupy, dt);
         const desiredAngle = Math.atan2(assisted?.y ?? steerY, assisted?.x ?? steerX);
@@ -1066,7 +1158,8 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
+    beginMountedCombatBurst, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
 })();
