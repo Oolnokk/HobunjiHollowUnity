@@ -254,7 +254,7 @@
     if (device !== 'controller' || !button || heldShift?.bindings?.[button]) return false;
     const bindings = getCurrentBindings()?.controller; // Used to reserve the shared controller Interact/Jump button for movement only in ruins.
     return window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin'
-      && !bindings?.jump && bindings?.interact === button;
+      && (bindings?.jump === button || (!bindings?.jump && bindings?.interact === button)); // An imported same-button Jump/Interact mapping still grants Jump priority in ruins.
   }
 
   function resolveActionForButton(device, button, heldShift = null) {
