@@ -128,7 +128,6 @@
           source: object.userData.hobunjiPlaneFace === 'back' ? sourceAvatar.backPlane : sourceAvatar.frontPlane,
         }); // The split foreground follows the same size-class scaling as its corresponding background card.
       });
-      syncPlaneScale();
       if (Array.isArray(viewportCreaturePlanes)) {
         for (const plane of posedPlanes) {
           if (!plane || viewportCreaturePlanes.some(entry => entry.object === plane)) continue;
@@ -138,6 +137,7 @@
         }
       }
       posedAvatar = avatar;
+      syncPlaneScale(); // The posed model is now owned, so synchronize its skinned planes with live direct-mesh scale.
       syncVisibility();
       onChange(status());
       return avatar;
