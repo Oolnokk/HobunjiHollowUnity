@@ -140,3 +140,76 @@ assert.equal(C.__test.lunarDay(14),14);
 assert.equal(C.__test.lunarDay(28),28);
 assert(saved>=2,'moon spawn and stable site save through existing world save adapter');
 console.log('Boney Shinjimi assets, moon spawn, home collision, reward branches, work/regrowth and persistence passed.');
+
+
+// Full encounter flow: actual module state; asynchronous walker materialization,
+// two-way cover gating, flight to the house, four cutscene choices, no duplicate
+// reward on an interrupted save, disappearance, and next full-moon reroll.
+async function testRealEncounterFlow() {
+  const prior = C.serialize(); // Existing moon fixture is reused instead of inventing a second save/calendar format.
+  const center = {c:prior.home.c, r:prior.home.r}; // Stable house origin for all chase/door/choice assertions.
+  const npc={root:{position:{x:center.c+1.5,y:0,z:center.r+3.5},parent:{remove(){}}},
+    area:'map_western_slope',rec:{id:'boney_shinjimi'},resetRouteState(){},update(){}};
+  const spawned=[],despawned=[];
+  let visible=false, where='map_western_slope';
+  game.npcWalkers=[];
+  game.getCurrentArea=()=>where;
+  game.makeNpcWalker=async rec=>{npc.rec=rec;spawned.push(rec.id);return npc;}; // Same asynchronous construction contract as the real trader walker.
+  game.despawnNpcWalker=w=>{despawned.push(w); const at=game.npcWalkers.indexOf(w);if(at>=0)game.npcWalkers.splice(at,1);return true;};
+  moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
+  const rewards=[];
+  let savedDuringGrant=null;
+  moonWindow.BoneyShinjimiRewards={grant(kind){
+    rewards.push(kind); return {kind:'boundRelic',key:'feyBound_dagger_123'};
+  }};
+  moonWindow.AuthoredCutsceneRuntime={async run(scene,handlers){
+    const demand=scene.stages.find(stage=>stage.id==='demand');
+    assert.equal(demand.options.length,4);
+    assert.deepEqual(Array.from(demand.options,x=>x.text),
+      ['Something valuable!','Something useful!','-apologize-','Your hat!']);
+    assert(scene.stages.some(stage=>stage.id==='hat_confusion'&&/My hat\?/.test(stage.text)));
+    assert(scene.stages.some(stage=>stage.id==='dismiss'&&/leave my house/.test(stage.text)));
+    handlers.onDialogueContinue({id:'useful_grant'});
+    savedDuringGrant=C.serialize();
+    // Simulates an interrupted scene after the reward enters the inventory.
+  }};
+  game.player.x=(center.c+1.5)*64;
+  game.player.y=(center.r+3.5)*64;
+  C.update(.05);
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(spawned.length,1,'single NPC materialization');
+  assert.equal(npc.rec.equippedCosmetics.includes(hat),true,'Boney starts wearing the real kasa');
+  assert.equal(npc.rec.appearance.cosmetics.facialHair,beard,'Boney has the authored Grand Beard');
+  for(let i=0;i<4;i++)C.update(.10);
+  assert.equal(C.debugSnapshot().phase,'roam','cover blocks Boney from detecting the player');
+  visible=true;
+  for(let i=0;i<4;i++)C.update(.10);
+  assert.equal(C.debugSnapshot().phase,'flee','mutual LOS starts the chase');
+  assert.equal(C.debugSnapshot().escaped,1);
+  npc.root.position.x=center.c+1.5;npc.root.position.z=center.r+1.5;
+  C.update(.1);
+  assert.equal(C.debugSnapshot().phase,'home','Boney reaches his hiding place');
+  game.player.y=(center.r+1.5)*64;
+  C.update(.1);
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(rewards.length,1,'entering while Boney is home grants exactly one chosen prize');
+  assert.equal(rewards[0],'useful');
+  assert.equal(savedDuringGrant.phase,'leaving','an immediate mid-cutscene save must not revive the gift dialogue');
+  assert.equal(C.serialize().phase,'leaving');
+  C.restore({...C.serialize(),phase:'home'});
+  assert.equal(C.debugSnapshot().phase,'leaving','old inconsistent saves with an awarded prize are upgraded to departure');
+  for(let i=0;i<4;i++)C.update(.10);
+  assert.equal(rewards.length,1,'reloading in a gifted house never awards another item');
+  where='town';C.update(.1);
+  assert.equal(C.debugSnapshot().phase,'complete','exiting zone makes the enchanted house vanish');
+  assert.equal(C.debugSnapshot().collision,false);
+  const finished=C.serialize();
+  assert.equal(finished.completedCycle,finished.cycle,'moon cycle recorded as claimed');
+  where='town';liveDay.day=42;C.update(.1);
+  assert.equal(C.debugSnapshot().cycle,1,'next full moon starts a new encounter');
+  assert.equal(C.debugSnapshot().phase,'roam');
+  assert.equal(C.debugSnapshot().reward,null,'next encounter begins without an old reward');
+  assert.equal(C.serialize().hatTaken,false,'kasa resets for subsequent moons');
+}
+testRealEncounterFlow().then(()=>console.log('Boney chase, scene, reward-idempotence and next-moon integration passed.'))
+  .catch(error=>{console.error(error);process.exitCode=1;});
