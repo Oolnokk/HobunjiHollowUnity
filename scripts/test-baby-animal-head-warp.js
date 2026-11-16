@@ -131,6 +131,11 @@ assert(layeredWarp.some((_, i) => i % 4 === 0 && layeredWarp[i] === 252 && layer
   'red eye artwork stays in the enlarged texture');
 assert(layeredWarp.some((_, i) => i % 4 === 0 && layeredWarp[i] === 19 && layeredWarp[i+1] === 155),
   'blue coat-pattern artwork remains in the same enlarged texture');
+const rgbaAt = (bytes, x, y) => Array.from(bytes.slice((y * width + x) * 4, (y * width + x) * 4 + 4)); // Compare exactly the repositioned overlay, not just existence somewhere.
+assert.deepEqual(rgbaAt(layeredWarp, 24, 19), [252, 22, 75, 255],
+  'the eye actually moves outward inside the enlarged head instead of remaining at its old position');
+assert.deepEqual(rgbaAt(layeredWarp, 26, 22), [19, 155, 235, 255],
+  'the colored coat pattern actually moves outward with the same head pixels');
 assert.equal(warp.applyToCanvas(input, 'missing'), input, 'unsupported baby species retain their original appearance');
 const paintedRig = { width: 4, height: 4, encoding: 'rle-u9', data: [5, 0, 2, 255, 2, 0, 2, 255, 5, 0] };
 windowStub.HobunjiAuthoredAnimalHeadRigs = { get: kind => kind === 'grehlr' ? { babyHeadScale: 1.33, weightMap: paintedRig } : null };
