@@ -8,6 +8,7 @@
   const MOUNT_SPEED_PER_RANK = 0.04;
   const MOUNT_ACCEL_PER_RANK = 0.10;
   const MOUNT_MANEUVER_PER_RANK = 0.08;
+  const MOUNT_CLIMB_PER_RANK = 0.10; // Cliff Runner still improves the existing mounted cliff-leap; it is not obsolete.
   const MOUNT_MELEE_DAMAGE_PER_RANK = 0.06; // Battle Saddle enhances damage after real mounted speed is measured.
   const MOUNT_MELEE_STAMINA_PER_RANK = 0.05; // Weapon Discipline discounts mounted melee stamina cost only.
   const MOUNT_BURST_DURATION_PER_RANK = 0.08; // Sustained Gallop extends both charged and quick-attack mount bursts.
@@ -44,6 +45,7 @@
     { id: 'mountSpeed', name: 'Fleet Stride', maxRank: 5, desc: '+4% base riding speed per rank.' },
     { id: 'mountAcceleration', name: 'Quick Start', maxRank: 5, desc: '+10% riding acceleration per rank.' },
     { id: 'mountManeuverability', name: 'Sure Turning', maxRank: 5, desc: '+8% mounted turning rate per rank.' },
+    { id: 'mountCliffClimb', name: 'Cliff Runner', maxRank: 5, desc: '+10% mounted cliff-climb speed per rank.' },
     { id: 'mountMeleeDamage', name: 'Battle Saddle', maxRank: 5, desc: '+6% mounted melee damage per rank, including momentum-scaled hits.' },
     { id: 'mountMeleeStamina', name: 'Weapon Discipline', maxRank: 5, desc: '-5% stamina spent on mounted melee abilities per rank.' },
     { id: 'mountCombatBurst', name: 'Sustained Gallop', maxRank: 5, desc: '+8% mounted Quick Attack and Charged Breaker speed-burst duration per rank.' },
@@ -64,6 +66,7 @@
       baseSpeed: 1 + progression.perkRank(entry, 'mountSpeed') * MOUNT_SPEED_PER_RANK,
       acceleration: 1 + progression.perkRank(entry, 'mountAcceleration') * MOUNT_ACCEL_PER_RANK,
       maneuverability: 1 + progression.perkRank(entry, 'mountManeuverability') * MOUNT_MANEUVER_PER_RANK,
+      cliffClimbSpeed: 1 + progression.perkRank(entry, 'mountCliffClimb') * MOUNT_CLIMB_PER_RANK,
       meleeDamage: 1 + progression.perkRank(entry, 'mountMeleeDamage') * MOUNT_MELEE_DAMAGE_PER_RANK,
       meleeStamina: 1 - progression.perkRank(entry, 'mountMeleeStamina') * MOUNT_MELEE_STAMINA_PER_RANK,
       combatBurstDuration: 1 + progression.perkRank(entry, 'mountCombatBurst') * MOUNT_BURST_DURATION_PER_RANK,
@@ -116,6 +119,15 @@
           mountDeps.clamp = oldClamp;
           ride.def = oldDef;
         }
+      };
+    }
+
+    if (typeof api.updateMountRide === 'function') {
+      const originalRideUpdate = api.updateMountRide.bind(api);
+      api.updateMountRide = function stableAnimalCliffSpeedUpdate(dt, ...rest) {
+        const modifiers = mountRidingModifiers(); // Cliff Runner still scales the existing scripted mount cliff leap, not ordinary ride ticks.
+        const scaledDt = api.rideState === 'climbLeap' ? Number(dt) * modifiers.cliffClimbSpeed : dt;
+        return originalRideUpdate(scaledDt, ...rest);
       };
     }
 
