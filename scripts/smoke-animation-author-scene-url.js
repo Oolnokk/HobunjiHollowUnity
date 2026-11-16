@@ -8,6 +8,7 @@ const PAGE = 'http://127.0.0.1:8000/tools/animation-author/index.html?scene=pahu
 const ROOT = path.resolve(__dirname, '..');
 const DOCS = path.join(ROOT, 'docs');
 const RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUnity\/[^/]+\/(.+)$/;
+const JSDELIVR_RE = /^https:\/\/cdn\.jsdelivr\.net\/gh\/Oolnokk\/HobunjiHollowUnity@[^/]+\/(docs\/.+)$/; // Same fixed fixture ref may be fetched from either GitHub Raw or its CDN fallback.
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 980, height: 620 }, hasTouch: true, isMobile: true });
@@ -51,15 +52,23 @@ async function main() {
       route.fulfill({ status: 200, contentType: 'text/html', body: instrumentedHtml }));
     await page.route('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/commits/**', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'scene-smoke-fixture' }) }));
-    await page.route(RAW_RE, route => {
-      const match = RAW_RE.exec(route.request().url());
-      const relative = decodeURIComponent(match[1]);
-      const local = path.resolve(ROOT, relative);
-      if (!local.startsWith(DOCS + path.sep) || !fs.existsSync(local) || !fs.statSync(local).isFile())
-        return route.fulfill({ status: 404, body: 'Missing checkout asset ' + relative });
+    const serveCheckoutFixture = (route, relative) => {
+      const safe = String(relative || '').replace(/[?#].*$/, ''); // The local browser fixture must not attempt external CDN requests for new cosmetics.
+      const local = path.resolve(ROOT, safe); // Maps CDN and raw origin assets onto the exact current checkout.
+      if (!safe.startsWith('docs/') || !local.startsWith(DOCS + path.sep) || !fs.existsSync(local) || !fs.statSync(local).isFile()) {
+        return route.fulfill({ status: 404, body: 'Missing checkout asset ' + safe });
+      }
       const mime = local.endsWith('.json') ? 'application/json' : local.endsWith('.js') ? 'application/javascript'
         : local.endsWith('.png') ? 'image/png' : local.endsWith('.html') ? 'text/html' : 'application/octet-stream';
       return route.fulfill({ status: 200, contentType: mime, body: fs.readFileSync(local) });
+    };
+    await page.route(RAW_RE, route => {
+      const match = RAW_RE.exec(route.request().url());
+      return serveCheckoutFixture(route, decodeURIComponent(match?.[1] || ''));
+    });
+    await page.route(JSDELIVR_RE, route => {
+      const match = JSDELIVR_RE.exec(route.request().url());
+      return serveCheckoutFixture(route, decodeURIComponent(match?.[1] || ''));
     });
     await page.addInitScript(() => {
       // Explicit URL must win over even a broken previously saved project.
