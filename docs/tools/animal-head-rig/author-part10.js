@@ -49,13 +49,10 @@ function paintedBabyHeadFrame() {
 
 function resolveBabyPreviewFrame() {
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-'); // Species whose source image is loaded in the editor.
-  const canonical = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[species]?.chatheadFrame;
-  const authored = babyHeadWarp?.validateFrame?.(canonical); // Existing manually authored chathead frame always wins.
-  if (authored) return { frame: authored, source: 'authored chathead frame' };
-  const painted = paintedBabyHeadFrame(); // Newly authored or custom species use the rigger's existing painted head region.
+  const painted = paintedBabyHeadFrame(); // The exact head Influence currently visible in the painter wins over an unrelated dialogue-portrait crop.
   if (painted) return { frame: painted, source: 'painted Head influence' };
-  const saved = babyHeadWarp?.frameForKind?.(species); // Allows previewing earlier custom exports without repainting.
-  if (saved) return { frame: saved, source: 'saved custom head frame' };
+  const fromRig = babyHeadWarp?.frameForKind?.(species); // Saved/committed Head paint, then chathead fallback for paintless animals.
+  if (fromRig) return { frame: fromRig, source: 'saved rig or authored chathead fallback' };
   return { frame: null, source: 'none' };
 }
 
@@ -102,13 +99,10 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   if (authoredBabyHeadScale != null) {
     rig.babyHeadScale = authoredBabyHeadScale; // A per-species value is included in normal exports and Save rig for game preview.
     const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
-    const canonical = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[species]?.chatheadFrame;
-    if (!babyHeadWarp?.validateFrame?.(canonical)) {
-      const paintedFrame = paintedBabyHeadFrame(); // Custom animals must export a usable frame, not just a scale.
-      const savedFrame = state.baseRecord?.headRig?.babyHeadFrame;
-      const frame = paintedFrame || babyHeadWarp?.validateFrame?.(savedFrame);
-      if (frame) rig.babyHeadFrame = frame;
-    }
+    const paintedFrame = paintedBabyHeadFrame(); // Preserve the live painted head crop for baby size even when an older dialogue crop exists.
+    const savedFrame = state.baseRecord?.headRig?.babyHeadFrame;
+    const frame = paintedFrame || babyHeadWarp?.validateFrame?.(savedFrame);
+    if (frame) rig.babyHeadFrame = frame;
   } else {
     delete rig.babyHeadScale;
     delete rig.babyHeadFrame; // Unedited species inherit the game's existing authored chathead frame.
