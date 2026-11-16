@@ -33,6 +33,26 @@
       label: 'Harlyao Broadsword', sprite: 'assets/toolsprites/harlyao_broadsword.png', icon: '🗡️',
       animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
     }),
+    dagger: Object.freeze({
+      label: 'Fey Dagger', origin: 'Fey', shapeKey: 'dagger',
+      sprite: 'assets/toolsprites/dagger.png', icon: '🗡️',
+      animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light',
+    }),
+    daggersword: Object.freeze({
+      label: 'Fey Dagger-Sword', origin: 'Fey', shapeKey: 'daggerSword',
+      sprite: 'assets/toolsprites/dagger-sword_sweep.png', icon: '🗡️',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
+    }),
+    fishingspear: Object.freeze({
+      label: 'Fey Fishing Spear', origin: 'Fey', shapeKey: 'fishingspear',
+      sprite: 'assets/toolsprites/harpoon_fishingspear.png', icon: '🔱',
+      animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light',
+    }),
+    hatchet: Object.freeze({
+      label: 'Fey Hatchet', origin: 'Fey', shapeKey: 'hatchet',
+      sprite: 'assets/toolsprites/axe_hatchet.png', icon: '🪓',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
+    }),
   });
 
   const TUNING = Object.freeze({
@@ -47,7 +67,9 @@
   });
 
   const BOUND_PREFIX = 'harlyaoBound_';
+  const FEY_BOUND_PREFIX = 'feyBound_'; // Boney's Fey relics are distinguishable in the inventory and never enter Harlyao boss-loot rolls.
   const RELIC_TOOL_PREFIX = 'harlyaoRelic_';
+  const FEY_TOOL_PREFIX = 'feyRelic_'; // Keeps unbound Fey equipment identity separate from excavated Harlyao tools.
   const SLOT_IDS = ['tap1', 'tap2', 'hold1', 'hold2']; // Mirrors Combat.loadout.SLOT_IDS when that module is absent (tests).
 
   let deps = null;
@@ -95,25 +117,32 @@
   function encodeBoundKey(relic) {
     const base = (relic.enchantments?.base || []).join('-');
     const flourishes = Object.entries(relic.enchantments?.flourishes || {}).map(([slot, id]) => `${slot}.${id}`).join('-');
-    return `${BOUND_PREFIX}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}`;
+    const prefix = SHAPES[relic?.shape]?.origin === 'Fey' ? FEY_BOUND_PREFIX : BOUND_PREFIX; // The origin is an explicit, save-stable bound-key distinction.
+    return `${prefix}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}`;
   }
 
   function decodeBoundKey(key) {
-    const match = /^harlyaoBound_([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
-    if (!match || !SHAPES[match[1]]) return null;
+    const match = /^(harlyaoBound_|feyBound_)([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
+    if (!match || !SHAPES[match[2]]) return null;
+    const origin = match[1] === 'feyBound_' ? 'Fey' : 'Harlyao'; // Self-contained codec also works in the GH minion/ghoul isolated-serialization harness. // A malformed item cannot claim the wrong shape/origin.
+    if ((SHAPES[match[2]].origin || 'Harlyao') !== origin) return null;
     const flourishes = {};
-    for (const pair of match[4] ? match[4].split('-') : []) {
+    for (const pair of match[5] ? match[5].split('-') : []) {
       const [slot, id] = pair.split('.');
       if (slot && id) flourishes[slot] = id;
     }
-    const raw = { base: match[3] ? match[3].split('-') : [], flourishes };
+    const raw = { base: match[4] ? match[4].split('-') : [], flourishes };
     const enchantments = ES()?.cleanWeaponState ? ES().cleanWeaponState(raw) : raw;
-    const visual = match[5] != null ? decodeVisual(match[5], match[6], match[7], match[8]) : null;
-    return { shape: match[1], uid: match[2], enchantments, ...(visual ? { visual } : {}) };
+    if (origin === 'Fey' && (
+      enchantments.base.some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')
+      || Object.values(enchantments.flourishes).some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')
+    )) return null;
+    const visual = match[6] != null ? decodeVisual(match[6], match[7], match[8], match[9]) : null;
+    return { shape: match[2], uid: match[3], origin, enchantments, ...(visual ? { visual } : {}) };
   }
 
   function isBoundKey(key) {
-    return String(key || '').startsWith(BOUND_PREFIX) && !!decodeBoundKey(key);
+    return !!decodeBoundKey(key); // Both Harlyao and Fey bound prefixes are validated by the same codec.
   }
 
   function enchantmentCount(enchantments) {
@@ -133,8 +162,8 @@
   }
 
   // ── Rolling ─────────────────────────────────────────────────────
-  function rollEnchantments() {
-    const defs = Object.values(ES()?.DEFINITIONS || {});
+  function rollEnchantments(origin = 'Harlyao') {
+    const defs = Object.values(ES()?.DEFINITIONS || {}).filter(def => origin === 'Fey' ? def.alignment === 'Fey' : def.alignment !== 'Fey'); // Harlyao boss-vault relics never roll Boney's Fey illusions.
     const baseIds = defs.filter(def => def.type === 'Base').map(def => def.id);
     const flourishIds = defs.filter(def => def.type === 'Flourish').map(def => def.id);
     const pick = list => list[Math.floor(rnd() * list.length)];
@@ -155,9 +184,14 @@
     return { base, flourishes };
   }
 
-  function makeRelic(shape) {
-    const shapes = Object.keys(SHAPES);
-    return { shape: SHAPES[shape] ? shape : shapes[Math.floor(rnd() * shapes.length)], uid: newUid(), enchantments: rollEnchantments() };
+  function makeRelic(shape, origin = 'Harlyao') {
+    const shapes = Object.keys(SHAPES).filter(id => (SHAPES[id].origin || 'Harlyao') === origin); // Boss-vault and Boney shape pools never overlap.
+    if (!shapes.length) return null;
+    const selected = shapes.includes(shape) ? shape : shapes[Math.floor(rnd() * shapes.length)];
+    return { shape: selected, origin, uid: newUid(), enchantments: rollEnchantments(origin) };
+  }
+  function makeFeyRelic(shape) {
+    return makeRelic(shape, 'Fey'); // Boney-specific reward generator; still uses real inventory, unbinding, gear and mastery.
   }
 
   // ── World-inventory (bound) side ────────────────────────────────
@@ -172,8 +206,8 @@
       cat: 'material',
       sellPrice: 90 + 30 * enchantmentCount(relic.enchantments), // Recovered bound relics can be sold without paying to unbind them.
       spriteIcon: '../toolsprites/' + shape.sprite.split('/').pop(), // applyItemSpriteIcon resolves under assets/objectsprites/.
-      tags: ['Harlyao', 'Relic', 'Bound'],
-      desc: `An ancient ${shape.label.replace('Harlyao ', '').toLowerCase()} still bound to its long-dead Harlyao owner — it cannot be wielded. Garanki Gabu can unbind it (${unbindPrice(relic.enchantments)}g). Enchantments: ${lines.join('; ') || 'none'}.`,
+      tags: [relic.origin || 'Harlyao', 'Relic', 'Bound'], // Distinguishes Fey treasures from ordinary ruin artifacts.
+      desc: `${relic.origin === 'Fey' ? 'A Fey-touched' : 'An ancient'} ${shape.label.replace(/^Harlyao |^Fey /, '').toLowerCase()} ${relic.origin === 'Fey' ? 'whose illusions unsettle the senses' : 'still bound to its long-dead Harlyao owner'} — it cannot be wielded. Garanki Gabu can unbind it (${unbindPrice(relic.enchantments)}g). Enchantments: ${lines.join('; ') || 'none'}.`,
       harlyaoBoundRelic: true,
     };
     if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(entry => entry.key === key)) {
@@ -183,11 +217,15 @@
   }
 
   function ensureInventoryItemDefs(inventory = deps?.inventory) {
-    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX)) ensureBoundItemDef(key);
+    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX)) ensureBoundItemDef(key);
   }
 
   function grantBoundRelic(relic = makeRelic()) {
-    if (!deps?.inventory) return null;
+    if (!deps?.inventory || !relic || !SHAPES[relic.shape]) return null;
+    if (relic.origin === 'Fey') {
+      const ids=[...(relic.enchantments?.base || []), ...Object.values(relic.enchantments?.flourishes || {})]; // Fey items cannot smuggle planar enchantments into the bound-codec.
+      if (!ids.length || ids.some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')) return null;
+    }
     const key = encodeBoundKey(relic);
     ensureBoundItemDef(key);
     deps.inventory[key] = 1;
@@ -206,14 +244,14 @@
 
   function boundRelicsInInventory() {
     return Object.keys(deps?.inventory || {})
-      .filter(key => (deps.inventory[key] || 0) > 0 && key.startsWith(BOUND_PREFIX))
+      .filter(key => (deps.inventory[key] || 0) > 0 && (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX)))
       .map(key => ({ key, ...decodeBoundKey(key) }))
       .filter(entry => entry.shape);
   }
 
   // ── Gear (unbound) side ─────────────────────────────────────────
   function relicToolKey(relic) {
-    return `${RELIC_TOOL_PREFIX}${relic.shape}_${relic.uid}`;
+    return `${relic.origin === 'Fey' ? FEY_TOOL_PREFIX : RELIC_TOOL_PREFIX}${relic.shape}_${relic.uid}`;
   }
 
   function registerRelicTool(toolKey, record) {
@@ -228,7 +266,7 @@
         animStyle: shape.animStyle,
         dmgType: shape.dmgType,
         weaponIdleClass: shape.weaponIdleClass,
-        shapeKey: record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : 'harlyaoBroadsword',
+        shapeKey: shape.shapeKey || (record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : 'harlyaoBroadsword'),
         metalKey: 'tinBronze', // Uses the shared mastery-driven bronze/verdigris renderer after unbinding.
         harlyaoRelic: true,
         itemKey: toolKey,
@@ -308,7 +346,7 @@
     const toolKey = relicToolKey(relic);
     delete deps.inventory[boundKey];
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object') g.harlyaoRelics = {};
-    g.harlyaoRelics[toolKey] = { shape: relic.shape, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
+    g.harlyaoRelics[toolKey] = { shape: relic.shape, origin: relic.origin, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
     if (relic.visual) { // A looted enemy weapon keeps its random particle color/effect (WeaponEnchantmentVFX validates the choice on use).
       if (!g.weaponEnchantmentVisuals || typeof g.weaponEnchantmentVisuals !== 'object') g.weaponEnchantmentVisuals = {};
       g.weaponEnchantmentVisuals[toolKey] = { ...relic.visual };
@@ -470,10 +508,10 @@
     window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
     // Bound relics
-    list.appendChild(heading('Bound Harlyao relics'));
+    list.appendChild(heading('Bound relics · Harlyao and Fey'));
     if (!window.ArtifactCollection?.unlocked?.('unbind')) list.appendChild(note('Donate your first artifact to unlock weapon unbinding.'));
     const bound = boundRelicsInInventory();
-    if (!bound.length) list.appendChild(note('Bring Garanki a bound relic from a Harlyao ruin’s boss vault and he will break its old owner’s claim.'));
+    if (!bound.length) list.appendChild(note('Bring Garanki a bound relic from a Harlyao boss vault or Boney Shinjimi and he will release its enchantments.'));
     for (const relic of bound) {
       const price = unbindPrice(relic.enchantments);
       const shape = SHAPES[relic.shape];
@@ -569,6 +607,7 @@
     cursedCircletsInPack,
     DISPEL_PRICE,
     makeRelic,
+    makeFeyRelic,
     rollEnchantments,
     encodeBoundKey,
     decodeBoundKey,

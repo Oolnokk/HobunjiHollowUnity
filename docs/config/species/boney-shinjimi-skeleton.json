@@ -1,0 +1,143 @@
+{
+  "speciesId": "boney-shinjimi-skeleton",
+  "label": "Boney Shinjimi (Mao'ao Skeleton)",
+  "parentSpecies": "mao-ao",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "mao-ao",
+    "wardrobeSpecies": "mao-ao",
+    "appearanceCosmetics": true,
+    "bodyColorCustomization": false,
+    "extremityColor": "#BDBDB3",
+    "rigScaleMultiplier": 1
+  },
+  "male": {
+    "armLength": 0.558,
+    "headSprite": "fightersprites/mao-ao-m/head_maoskel_m.png",
+    "headUrLayers": [],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "baseBodyTint": false,
+    "bodyColorRanges": {
+      "fixedHex": "#BDBDB3"
+    },
+    "allowedCosmetics": [
+      "ragged_hood",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "bandolier1",
+      "appearance::Mao-ao_M::mao-ao_grandbeard",
+      "appearance::hat::old_highlands_kasa"
+    ],
+    "cosmeticWeights": {
+      "hood": {
+        "none": 70,
+        "ragged_hood": 30
+      },
+      "overwear": {
+        "none": 40,
+        "tankan_bodywrap": 30,
+        "rugged_poncho": 30
+      },
+      "facialHair": {
+        "appearance::Mao-ao_M::mao-ao_grandbeard": 100
+      }
+    },
+    "forcedCosmetics": {
+      "eyes": "none",
+      "upperFace": "none",
+      "hairFront": "none",
+      "hairBack": "none",
+      "hairSide": "none",
+      "hairSideL": "none"
+    },
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none",
+        "appearance::Mao-ao_M::mao-ao_grandbeard"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none",
+        "appearance::hat::old_highlands_kasa"
+      ]
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
+  }
+}

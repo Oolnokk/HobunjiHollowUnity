@@ -37,6 +37,19 @@
     return Object.freeze(ids.concat(neutrals));
   }
 
+  function feySaturatedDyeIds(catalog = window.DyeSystem?.getCatalog?.()
+    || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []) {
+    // The live SCRATCHBONES_CONFIG dye catalog defines "Bright" at 60% HSV
+    // saturation. Read that actual threshold instead of hardcoding HSL or
+    // fitting parameters from the offline color-authoring tool.
+    const bright = catalog.filter(dye => !dye.neutral && dye.variantId === 'bright'
+      && Number.isFinite(Number(dye.saturationPercent))); // Authoritative Bright reference swatches.
+    const minimum = bright.length ? Math.min(...bright.map(dye => Number(dye.saturationPercent))) : 60; // Fallback only for isolated tools without the live catalog.
+    return Object.freeze(catalog.filter(dye => !dye.neutral && typeof dye.id === 'string'
+      && Number.isFinite(Number(dye.saturationPercent))
+      && Number(dye.saturationPercent) >= minimum).map(dye => dye.id));
+  }
+
   const ALIGNMENTS = Object.freeze({
     Tothal: Object.freeze({
       id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.9,
@@ -84,6 +97,17 @@
         Object.freeze({ id: 'veil-shard', label: 'Veil Shards', motion: 'veil', shape: 'veil', blend: 'normal', size: 0.058, life: 1.18, speed: 0.026 }),
       ]),
       lore: 'The spirit world: comforting to the dead, hostile to living intruders, rendered as ghostly semi-transparent color.',
+    }),
+    Fey: Object.freeze({
+      id: 'Fey', label: 'Fey · Illusion / Perception', opacity: 0.72,
+      dyeIds: feySaturatedDyeIds(), // Any chromatic hue whose runtime HSV saturation meets the Bright-family minimum; neutrals never qualify.
+      effects: Object.freeze([
+        Object.freeze({ id: 'fey-mirage', label: 'Mirage Wisps', motion: 'wisp', shape: 'veil', blend: 'normal', size: 0.058, life: 1.30, speed: 0.023 }),
+        Object.freeze({ id: 'fey-afterimage', label: 'Afterimage Flecks', motion: 'orbit', shape: 'ring', blend: 'additive', size: 0.052, life: 1.02, speed: 0.031 }),
+        Object.freeze({ id: 'fey-false-blood', label: 'False Blood Glimmers', motion: 'splash', shape: 'drop', blend: 'normal', size: 0.047, life: 0.82, speed: 0.038 }),
+        Object.freeze({ id: 'fey-fireflies', label: 'Tiny Fireflies', motion: 'firefly', shape: 'firefly', blend: 'additive', size: 0.020, life: 1.55, speed: 0.018, opacity: 1, toneMapped: false }), // Intensely luminous, compact motes; shares pooled sprites and the Bright-or-higher Fey palette.
+      ]),
+      lore: 'Fey enchantments alter what a mind thinks it sees and feels, never inflicting direct magical injury.',
     }),
   });
 
@@ -407,7 +431,15 @@
     context.strokeStyle = '#ffffff';
     context.lineCap = 'round';
     context.lineJoin = 'round';
-    if (shape === 'orb') {
+    if (shape === 'firefly') {
+      const glow = context.createRadialGradient(0, 0, 1, 0, 0, 26); // One hot white core with a faint outer halo; the shared alpha texture takes its hue from the selected Fey dye.
+      glow.addColorStop(0, 'rgba(255,255,255,1)');
+      glow.addColorStop(0.32, 'rgba(255,255,255,1)');
+      glow.addColorStop(0.50, 'rgba(255,255,255,0.43)');
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = glow;
+      context.beginPath(); context.arc(0, 0, 26, 0, Math.PI * 2); context.fill();
+    } else if (shape === 'orb') {
       const gradient = context.createRadialGradient(0, 0, 2, 0, 0, 23); // Used to make Tothal's slow blizzard mote read as a hazy orb.
       gradient.addColorStop(0, 'rgba(255,255,255,1)'); gradient.addColorStop(0.45, 'rgba(255,255,255,.72)'); gradient.addColorStop(1, 'rgba(255,255,255,0)');
       context.fillStyle = gradient; context.beginPath(); context.arc(0, 0, 24, 0, Math.PI * 2); context.fill();
@@ -528,12 +560,16 @@
     const texture = shapeTexture(effect); // Used as the white-alpha attack-inspired particle silhouette.
     if (!texture) return;
     const blending = effect.blend === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending;
+    const effectOpacity = Number.isFinite(effect.opacity) ? effect.opacity : alignment.opacity; // Fireflies override the Fey translucency with full additive brightness.
+    const toneMapped = effect.toneMapped !== false; // Fireflies stay luminous where world tone mapping darkens normal sprite effects.
     let sprite = emitter.pool.pop() || null; // Reuses a retired mote (sprite + its own material) when one is parked.
     if (sprite) {
       const material = sprite.material;
-      if (material.map !== texture || material.blending !== blending) { material.map = texture; material.blending = blending; material.needsUpdate = true; }
+      if (material.map !== texture || material.blending !== blending || material.toneMapped !== toneMapped) {
+        material.map = texture; material.blending = blending; material.toneMapped = toneMapped; material.needsUpdate = true;
+      }
       material.color.set(dyeHex(state.dyeId));
-      material.opacity = alignment.opacity;
+      material.opacity = effectOpacity;
       material.rotation = 0;
       sprite.visible = true;
     } else {
@@ -541,9 +577,10 @@
         map: texture,
         color: dyeHex(state.dyeId),
         transparent: true,
-        opacity: alignment.opacity,
+        opacity: effectOpacity,
         depthWrite: false,
         blending,
+        toneMapped,
       }); // Per-particle material is intentionally owned because opacity is animated independently.
       sprite = new THREE.Sprite(material); // Used as a camera-legible mote whose position still follows the weapon's local plane transform.
     }
@@ -580,7 +617,7 @@
       baseSize: particleSize,
       effectId: effect.id,
       motion: effect.motion,
-      maxOpacity: Math.max(0.6, alignment.opacity * (0.85 + random() * 0.15)),
+      maxOpacity: Math.max(0.6, effectOpacity * (effect.opacity === 1 ? 1 : (0.85 + random() * 0.15))), // Fireflies retain full brightness; other particles retain their variation.
     });
   }
 
@@ -619,6 +656,9 @@
     } else if (particle.motion === 'thread') {
       x += wave * particle.speed * 0.18;
       y -= particle.speed * particle.age * 0.48;
+    } else if (particle.motion === 'firefly') {
+      x += particle.vx * particle.age * 0.30 + wave * particle.speed * 0.25; // Slowly fluttering points, not flames or broad wisps.
+      y += particle.vy * particle.age * 0.30 + Math.cos(particle.phase + particle.age * 13) * particle.speed * 0.18;
     } else if (particle.motion === 'wisp') {
       x += wave * particle.speed * 0.36;
       y += particle.speed * particle.age * 0.55;
@@ -632,8 +672,11 @@
     }
     sprite.position.x = x;
     sprite.position.y = y;
-    sprite.material.opacity = Math.max(0.6, particle.maxOpacity * Math.sin(Math.PI * t)); // Keep live particles at least 60% opaque; scale still eases their birth/death.
-    const scalePulse = 0.65 + 1.65 * Math.sin(Math.PI * t); // Used to bloom well beyond the source pixel without clipping to the metal mask.
+    const firefly = particle.motion === 'firefly'; // Very small points avoid ordinary particle bloom and keep a separate twinkle curve.
+    sprite.material.opacity = firefly
+      ? particle.maxOpacity * (0.83 + 0.17 * Math.sin(particle.phase + particle.age * 22)) * Math.min(1, t * 16, (1 - t) * 16) // Luminous, gently blinking, with short birth/death fades.
+      : Math.max(0.6, particle.maxOpacity * Math.sin(Math.PI * t)); // Existing particle opacity unchanged.
+    const scalePulse = firefly ? (0.90 + 0.10 * Math.sin(particle.phase + particle.age * 18)) : 0.65 + 1.65 * Math.sin(Math.PI * t); // Used to bloom well beyond the source pixel without clipping to the metal mask.
     const stretchX = particle.motion === 'crosswind' ? 1.25 + 1.2 * t : (particle.motion === 'thread' || particle.motion === 'wisp' ? 0.66 : 1); // Used to lengthen traveling streaks and thin spectral trails.
     const stretchY = particle.motion === 'crosswind' ? 0.62 : (particle.motion === 'thread' || particle.motion === 'wisp' ? 1.35 + 0.7 * t : 1); // Used to stretch threads and wisps vertically as they drift.
     sprite.scale.set(particle.baseSize * scalePulse * stretchX, particle.baseSize * scalePulse * stretchY, 1);
@@ -899,9 +942,11 @@
 
       const preview = document.createElement('div'); // Used as an immediate readable color/opacity sample beneath browser-native selects.
       preview.className = 'loadout-slot-combo-note';
-      const swatch = document.createElement('span'); // Used to show the exact dye hex at the plane's authored transparency.
-      swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${alignmentDef.opacity};`;
-      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity (60% minimum)`));
+      const previewEffect = styleFor(state); // VFX effect-level opacity overrides the plane's base (Tiny Fireflies are fully luminous).
+      const previewOpacity = Number.isFinite(previewEffect?.opacity) ? previewEffect.opacity : alignmentDef.opacity; // Reflect the actual SpriteMaterial opacity in mobile/controller previews.
+      const swatch = document.createElement('span'); // Used to show the exact dye hex at the selected effect opacity.
+      swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${previewOpacity};`;
+      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${previewEffect?.label || state.effectId} · ${Math.round(previewOpacity * 100)}% effect opacity${previewEffect?.blend === 'additive' ? ' · additive glow' : ''}`));
       section.appendChild(preview);
     }
 
@@ -952,7 +997,10 @@
       weaponKey: key,
       activeAlignments: activeAlignments(key),
       counts,
-      visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
+      visual: state ? { ...state, colorHex: dyeHex(state.dyeId),
+        opacity: styleFor(state)?.opacity ?? ALIGNMENTS[state.alignment]?.opacity ?? null,
+        blend: styleFor(state)?.blend || 'normal', toneMapped: styleFor(state)?.toneMapped !== false,
+        particleSize: styleFor(state)?.size ?? null } : null, // Mobile diagnostics show actual chosen effect brightness and size, not only origin defaults.
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
       currentHeldVisualMatchesSnapshot: !!activeSnapshot?.heldVisual && activeSnapshot.heldVisual === heldVisualForWeapon(key), // True only when a real current visual matches a live snapshot.
