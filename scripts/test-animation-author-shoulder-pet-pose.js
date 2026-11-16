@@ -25,6 +25,8 @@ assert.match(html, /value="perched">Perched · gameplay shoulder deformation/, '
 assert.match(html, /value="source">Source · undeformed sprite/, 'the original art is available for visual comparison');
 assert.match(html, /actor\.shoulderGripPosePreviewControllerV1549\?\.dispose\?\.\(\)/,
   'clearing actors disposes skinned shoulder-pet preview resources');
+assert.match(html, /actorById\(id\)\?\.shoulderGripPosePreviewControllerV1549\?\.dispose\?\.\(\)/,
+  'removing one rig actor also releases its skinned shoulder pose and split overlays');
 assert.doesNotMatch(adapter, /profile\.anchors\.shoulderGrip\s*=|rigAnchors\.shoulderGrip\.position\.(?:set|copy)/,
   'displaying a posed preview must not rewrite the authored attachment grip');
 
