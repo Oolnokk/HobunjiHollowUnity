@@ -468,16 +468,26 @@
     return overlay ? 'owner-' + overlay[1].toLowerCase() : null; // Same-owner hat/portrait helpers; never unrelated NPCs.
   }
 
+  // Four-way portrait stage rank shared by every transparent-sort comparison.
+  // No per-comparison closure: large towns sort thousands of transparent items.
+  function shoulderPetFaceSortRank(face, inward) {
+    switch (face) {
+      case 'owner-front': return SHOULDER_PET_RENDER_ORDERS.front;
+      case 'owner-back': return SHOULDER_PET_RENDER_ORDERS.back;
+      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontAbove : SHOULDER_PET_RENDER_ORDERS.frontBehind;
+      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backBehind : SHOULDER_PET_RENDER_ORDERS.backAbove;
+      default: return null;
+    }
+  }
+
   function compareShoulderPetDrawFaces(a, b) {
     if (!a || !b) return 0;
-    const aPet = a.startsWith('pet-'), bPet = b.startsWith('pet-');
-    if (aPet === bPet) return 0;
-    const aFace = a.endsWith('front') ? 'front' : 'back';
-    const bFace = b.endsWith('front') ? 'front' : 'back';
-    if (aFace !== bFace) return 0; // No new global front-vs-back or camera ordering rule.
+    // Use one consistent order for BOTH portrait faces. Pair-only overrides
+    // violated transitivity when a skinned owner, split pet and hat overlays
+    // were sorted together, so Array.sort could leave the pet on the old side.
     const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true;
-    const petAbove = aFace === 'front' ? inward : !inward;
-    return aPet ? (petAbove ? 1 : -1) : (petAbove ? -1 : 1);
+    const first = shoulderPetFaceSortRank(a, inward), second = shoulderPetFaceSortRank(b, inward);
+    return first === null || second === null ? 0 : first - second;
   }
 
   const ownerOverlayMaterialDepths = new Map(); // Restores the real depthWrite setting of owner hat overlays on detachment.
@@ -625,7 +635,7 @@
       avatar.group.userData.hobunjiShoulderPetLayering = {
         ...lastShoulderPetDecision, xrayEnabled: true,
         depthMode: 'depth-tested-owner-portrait-stage-xray',
-        recentChange: 'The paired portrait sorter enforces pet-to-owner face overlap (including skinned material groups and hat overlays) without disabling physical world depth.',
+        recentChange: 'A consistent four-face sort follows each sustained observation flip, including skinned owner and split/hat overlays; physical world depth is unchanged.',
       };
     }
   }
@@ -817,23 +827,71 @@
     if (!renderer.setTransparentSort) return draw();
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
     const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
+    const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
+    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
+    const activePetPortrait = !!shoulderPetPresentation?.pet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
     const pairFace = item => {
       if (!pairCache.has(item)) pairCache.set(item, shoulderPetDrawFace(item));
       return pairCache.get(item);
     };
-    const shoulderPetPairOrder = (a, b) => {
-      const first = pairFace(a);
-      if (!first) return 0;
-      const second = pairFace(b);
-      return second ? compareShoulderPetDrawFaces(first, second) : 0;
+    const drawOrder = item => {
+      if (!orderCache.has(item)) {
+        const face = pairFace(item);
+        const stage = face ? shoulderPetFaceSortRank(face, inward) : null;
+        let value = Number(item.renderOrder) || 0; // All unrelated transparent objects keep their ordinary order.
+        if (stage !== null) {
+          const mesh = item.object;
+          const split = mesh?.userData?.hobunjiShoulderSplitOverlay === true;
+          const owner = face === 'owner-front' || face === 'owner-back';
+          const ownerBase = face === 'owner-front' ? shoulderPetPresentation?.frontMesh : shoulderPetPresentation?.backMesh;
+          // Hat and auxiliary portrait layers follow their owner's stage before a foreground pet.
+          value = stage + (split ? 0.01 : owner && mesh !== ownerBase ? (face === 'owner-front' ? 0.5 : 1) : 0);
+        }
+        orderCache.set(item, value);
+      }
+      return orderCache.get(item);
     };
+    const petManualRankAnchor = manual ? Math.min(
+      window.XrayHierarchy.layerRank('actor.front'), window.XrayHierarchy.layerRank('actor.rear')) : 0; // Reserve one manual-rank slot for the owner/pet composite.
     const rank = item => {
-      if (!rankCache.has(item)) rankCache.set(item, window.XrayHierarchy.layerRank(visualLayerFor(item)));
+      if (!rankCache.has(item)) {
+        const value = pairFace(item)
+          ? petManualRankAnchor + drawOrder(item) * 0.001
+          : window.XrayHierarchy.layerRank(visualLayerFor(item));
+        rankCache.set(item, value);
+      }
       return rankCache.get(item);
     };
-    const legacyTransparent = (a, b) => shoulderPetPairOrder(a, b) || (portraitOrder
-      ? comparePortraitDraws(a, b, portraitOrder.ranks, portraitOrder.extras)
-      : a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || b.z - a.z || a.id - b.id);
+    const playerActorRank = portraitOrder?.ranks?.get(shoulderPetPresentation?.frontMesh)
+      || portraitOrder?.ranks?.get(shoulderPetPresentation?.backMesh) || null; // All attached pet/owner portrait faces must share this rank near other actors.
+    const actorRankCache = new Map(); // Reuses actor lookup across pair comparisons without traversing the pet hierarchy.
+    const actorRank = item => {
+      if (!actorRankCache.has(item)) {
+        const face = pairFace(item);
+        actorRankCache.set(item, (activePetPortrait && face && playerActorRank ? playerActorRank : null)
+          || portraitOrder?.ranks?.get(item.object) || portraitOrder?.extras?.get(item.object) || null);
+      }
+      return actorRankCache.get(item);
+    };
+    const legacyTransparent = (a, b) => portraitOrder
+      ? comparePortraitDraws(a, b, portraitOrder.ranks, portraitOrder.extras, drawOrder, actorRank)
+      : a.groupOrder - b.groupOrder || drawOrder(a) - drawOrder(b) || b.z - a.z || a.id - b.id;
+    const actorSortKeyCache = new Map(); // One stable key per transparent item while actor-depth sorting and manual layers coexist.
+    const actorSortKey = item => {
+      if (!actorSortKeyCache.has(item)) {
+        const actor = actorRank(item);
+        const face = pairFace(item);
+        const category = window.XrayHierarchy.layerRank(visualLayerFor(item));
+        actorSortKeyCache.set(item, actor && Number.isFinite(actor.depth)
+          ? {
+              primary: petManualRankAnchor, depth: -actor.depth,
+              owner: Number(actor.owner?.id) || 0,
+              stage: face ? drawOrder(item) : category,
+            }
+          : { primary: category, depth: 0, owner: 0, stage: drawOrder(item) });
+      }
+      return actorSortKeyCache.get(item);
+    };
     const legacyOpaque = (a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder
       || (a.material?.id || 0) - (b.material?.id || 0) || a.z - b.z || a.id - b.id;
     if (manual && renderer.setOpaqueSort) renderer.setOpaqueSort((a, b) => {
@@ -848,11 +906,20 @@
           const boundary = a.groupOrder - b.groupOrder || phaseA - phaseB;
           if (boundary) return boundary;
           if (phaseA) return legacyTransparent(a, b); // Depth masks, pose sentinels and final overlays cannot move by a UI rank.
-          const pairOrder = shoulderPetPairOrder(a, b);
-          if (pairOrder) return pairOrder; // Mandatory owner/pet relationship beats user-configured category ranks.
-          // Prioritize actor-to-actor depth before editable intra-actor layers.
-          // Otherwise a distant NPC hand ranked above a front portrait paints
-          // over the nearby player's body even with ordinary depth protected.
+          if (activePetPortrait && portraitOrder) {
+            // The previous conditional actor-vs-actor override caused non-transitive
+            // cycles with a shoulder pet, a nearby NPC and a third transparent item.
+            // A shared tuple orders EVERY render item the same way: manual category,
+            // then camera depth between actors, then the pet/owner's local face stage.
+            const first = actorSortKey(a), second = actorSortKey(b);
+            return first.primary - second.primary
+              || first.depth - second.depth
+              || first.owner - second.owner
+              || first.stage - second.stage
+              || a.id - b.id;
+          }
+          // Without a shoulder pet, retain the established actor-aware manual
+          // category behavior; this patch must not globally reorder NPC gear.
           const actorA = portraitOrder?.ranks?.get(a.object) || portraitOrder?.extras?.get(a.object);
           const actorB = portraitOrder?.ranks?.get(b.object) || portraitOrder?.extras?.get(b.object);
           if (actorA && actorB && actorA.owner !== actorB.owner) return legacyTransparent(a, b);
@@ -920,17 +987,20 @@
     return { ranks, extras, nearest, count };
   }
 
-  function comparePortraitDraws(a, b, ranks, extras = null) {
-    const actorA = ranks.get(a.object) || extras?.get(a.object), actorB = ranks.get(b.object) || extras?.get(b.object);
+  function comparePortraitDraws(a, b, ranks, extras = null, effectiveOrder = null, resolveActorRank = null) {
+    const actorA = resolveActorRank ? resolveActorRank(a) : ranks.get(a.object) || extras?.get(a.object);
+    const actorB = resolveActorRank ? resolveActorRank(b) : ranks.get(b.object) || extras?.get(b.object);
+    const aOrder = effectiveOrder ? effectiveOrder(a) : a.renderOrder;
+    const bOrder = effectiveOrder ? effectiveOrder(b) : b.renderOrder;
     // Three r128 compares group, render order, projected Z, then object ID.
     // A ranked portrait substitutes the actor's depth and keeps the original
     // front/back/shoulder layer order within that one actor. Garments ranked
     // with their wearer draw right after that wearer's portrait (renderOrder).
     return (actorA ? 0 : a.groupOrder) - (actorB ? 0 : b.groupOrder)
-      || (actorA ? PORTRAIT_SORT_ORDER : a.renderOrder) - (actorB ? PORTRAIT_SORT_ORDER : b.renderOrder)
+      || (actorA ? PORTRAIT_SORT_ORDER : aOrder) - (actorB ? PORTRAIT_SORT_ORDER : bOrder)
       || (actorB?.depth ?? b.z) - (actorA?.depth ?? a.z)
       || (actorA?.owner.id ?? a.id) - (actorB?.owner.id ?? b.id)
-      || a.renderOrder - b.renderOrder
+      || aOrder - bOrder
       || a.id - b.id;
   }
 
