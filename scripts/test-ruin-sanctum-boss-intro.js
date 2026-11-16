@@ -9,15 +9,19 @@ let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,e
 const timers=new Map(),nodes=[],enemies=new Set();
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
+async function settleMicrotasks(){
+  // VM-created actors resolve across realms; two microtask turns are not reliably sufficient in real Node.
+  for(let i=0;i<12;i++) await Promise.resolve();
+}
 async function advance(ms){
   const end=clock+ms;
   for(let n=0;n<100;n++){
     const due=[...timers].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];
     if(!due)break;
     clock=due[1].at;timers.delete(due[0]);due[1].fn();
-    await Promise.resolve();await Promise.resolve();
+    await settleMicrotasks(); // Drain the nested boss/portrait continuations before selecting the next fake timer.
   }
-  clock=end;await Promise.resolve();await Promise.resolve();
+  clock=end;await settleMicrotasks(); // Avoid jumping past callbacks queued by a still-unsettled async spawn.
 }
 const document={
   createElement(tag){return {tag,style:{},offsetWidth:1,setAttribute(){},remove(){this.removed=true;}};},
@@ -116,8 +120,10 @@ async function run(){
   assert.equal(discarded,4,'stale async spawns also use the canonical entity disposer');
   slowSpawn=null;
   win.DevRandomRuinSanctum.enter();
-  await advance(2600);
-  const dyingTitle=nodes.filter(node=>node.id==='ruin-sanctum-boss-title').at(-1);
+  await advance(1750);
+  assert(state.intro,'re-entered sanctum must begin a fresh cinematic after the cancelled spawn');
+  await advance(850);
+  const dyingTitle=state.intro?.title; // Read the active cinematic owner, not a previously removed DOM title.
   assert(dyingTitle&&!dyingTitle.removed,'new title appears before death during a cinematic');
   composer.onPlayerDeath();
   assert.equal(dyingTitle.removed,true,'death in the reveal removes the banner');
