@@ -44,7 +44,11 @@
     }, true);
   }
 
-  // Fetch each tiny manifest fresh; its component URLs retain their own cache-bust versions.
-  const manifestUrl = 'js/bootstrap/classic-groups/' + group + '.js?load=' + Date.now(); // Per-navigation manifest URL.
+  // Preloader fetches the manifests ahead of time without evaluating them. Use its exact
+  // URL to reuse the preloaded response, preserving synchronous parser ordering here.
+  const preload = typeof window !== 'undefined' ? window.HobunjiClassicScriptPreload : null; // Shared state from classic-script-preload.js; absent on standalone/test pages.
+  if (preload) { preload.reached += 1; preload.lastGroup = group; } // User-visible slow-startup progress, no per-frame work.
+  const manifestToken = preload && /^[a-z0-9]+$/i.test(String(preload.token)) ? preload.token : Date.now(); // Fall back to the historical fresh request when no preloader ran.
+  const manifestUrl = 'js/bootstrap/classic-groups/' + group + '.js?load=' + manifestToken; // Same query as the parallel preload.
   document.write('<script src="' + manifestUrl + '"><\/script>');
 })();

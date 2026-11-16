@@ -13,6 +13,7 @@
        the document parser is still loading the main module list. -->
   <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
   <script src="js/storage-quota-guard.js?v=20261022h4715074"></script>
+  <script src="js/bootstrap/classic-script-preload.js?v=20261116startup1"></script> <!-- Prewarm ordered manifests without evaluating their children. -->
   <!-- Quota guard installs first; it does not access saved values. The preview now intercepts
        Storage and IndexedDB before any actual game or save writer is loaded. -->
   <script src="js/precreator-arena.js?v=20261115nativeArena2"></script>
@@ -113,8 +114,8 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm"></script> <!-- Ordered farm editor, plot and farmwork UI modules; their cache versions live in farm.js. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="world-surface"></script> <!-- Terrain geometry, grass/crop rendering and active-area accessors extracted from game.js -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="farm"></script> <!-- Ordered farm editor, plot and farmwork UI modules; their cache versions live in farm.js. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="world-surface"></script> <!-- Terrain geometry, grass/crop rendering and active-area accessors extracted from game.js -->
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -275,7 +276,7 @@
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <!-- Shared seclusion scorer, procedural generation and terrain-aware authored locales. Script versions live in the feature manifest, with parser-blocking ordering. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-generation"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="wilderness-generation"></script>
   <script src="js/foliage-furniture-renderer.js?v=20261107h509318a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20261110cloneaudit2"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -334,7 +335,7 @@
   <script src="js/weapon-sprite-assemblies.js?v=20261115flailXray2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="combat-main"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261107jump-rebased2"></script>
@@ -346,7 +347,7 @@
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <!-- Ranged combat and HUD reticles, bandits, ghouls, minions, maskbound guardians and liches. Edit js/bootstrap/classic-groups/combat-enemies.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-enemies"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="combat-enemies"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -360,7 +361,7 @@
   <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-config"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="combat-config"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -374,14 +375,14 @@
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
   <script src="js/cooking-data.js?v=20261115terminalRecipes1"></script>
   <script src="js/food-processing.js?v=20261115terminalFood3"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cooking-runtime"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="cooking-runtime"></script>
   <script src="js/key-item-system.js?v=20261114heartAudit4"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="alchemy-runtime"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="alchemy-runtime"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
@@ -413,7 +414,7 @@
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
   <!-- The controller/touch chest lock and buried rewards are parser-loaded together by wilderness-treasure. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-treasure"></script> <!-- Buried treasure code and cache versions live in its own manifest. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="wilderness-treasure"></script> <!-- Buried treasure code and cache versions live in its own manifest. -->
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -425,7 +426,7 @@
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261109rarityMain1"></script>
   <script src="js/farm-animals.js?v=20261115skeeriEgg2"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -554,13 +555,13 @@
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261114roomEnclosure1"></script>
   <!-- Timed melodies, ruin challenges, V50 floors, shaft connections and checkpoint travel. Edit js/bootstrap/classic-groups/ruin-puzzles.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="ruin-puzzles"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="ruin-puzzles"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-navigation"></script> <!-- Fog/discovery maps must load before the navigation compass and game.js. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="wilderness-navigation"></script> <!-- Fog/discovery maps must load before the navigation compass and game.js. -->
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -706,7 +707,7 @@
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="weather-surfaces"></script> <!-- Rain sheets (which load the sky dome) and outdoor snow/slush surfaces -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="weather-surfaces"></script> <!-- Rain sheets (which load the sky dome) and outdoor snow/slush surfaces -->
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
@@ -833,7 +834,7 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cave-sites"></script> <!-- Wilderness cave sites, cliff-mounted puzzle cave entrances and cave traps -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="cave-sites"></script> <!-- Wilderness cave sites, cliff-mounted puzzle cave entrances and cave traps -->
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -860,7 +861,7 @@
   <script src="js/ruin-composer-playable.js?v=20261108witchBombExtern1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261115h8eb889f"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
   <script src="js/zone-den-totem-features.js?v=20261115ikmcLadderAlias1"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2763,10 +2764,10 @@
 
   <!-- Feature-owned pre-game startup manifests, preserving the original parser order.
        Each group owns its own module cache versions; keep individual URLs out of index.html. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-render"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-item-art"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-services"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="pre-game-diagnostics"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="pre-game-render"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="pre-game-item-art"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="pre-game-services"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="pre-game-diagnostics"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2775,13 +2776,13 @@
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
   <!-- Cinematic and dialogue cameras, authored dialogue content, rich text and voice ownership. Edit js/bootstrap/classic-groups/dialogue.js instead of this entrypoint. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="dialogue"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="dialogue"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
   <!-- Festival scripts are maintained in their manifest. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="festival"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="festival"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261112townProgressReadOnly1"></script>
@@ -2829,7 +2830,7 @@
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
   <!-- NPC scheduling, social policy, and pathing scripts are maintained in their manifest. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="npc-schedule"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="npc-schedule"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -2873,7 +2874,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="ruin-runtime"></script> <!-- Full ruin runtime bootstrap owned by a feature manifest. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="ruin-runtime"></script> <!-- Full ruin runtime bootstrap owned by a feature manifest. -->
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2900,8 +2901,8 @@
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261109fullrig7"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261116tapHoldAudit2"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
@@ -2910,11 +2911,11 @@
   <script src="js/farm-access.js?v=20261114potionStacks2"></script>
   <!-- Parser-ordered feature groups; edit their manifests rather than this shared entrypoint.
        See architecture/classic-script-groups.md. -->
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="qol"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="guild"></script>
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
+  <script src="js/bootstrap/classic-script-group-loader.js?v=20261116classicPreload1" data-classic-group="render"></script>
   <script src="game.js?v=20261116torchinput1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
