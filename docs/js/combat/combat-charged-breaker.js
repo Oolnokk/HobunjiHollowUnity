@@ -324,7 +324,8 @@
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
       if (mounted) {
         const burstScale = Math.max(0, (1 + (Number(effects.stats.lungeMul) || 0)) * (attackContext.modifiers?.lunge ?? 1)); // Preserves Charged Breaker's existing lunge mastery as extra mounted acceleration instead of discarding it.
-        window.Mounts?.beginMountedCombatBurst?.((2.4 + poseCharge * 0.8) * burstScale, 2.1 + poseCharge * 0.5); // Charged heavy strike becomes a sustained gallop; collision and reins still apply.
+        const durationScale = 1 + Math.min(1.5, Math.max(0, Number(effects.stats.lungeMul) || 0)) * 0.35; // Mastery remains useful beyond the mounted speed cap by lengthening the gallop.
+        window.Mounts?.beginMountedCombatBurst?.((2.4 + poseCharge * 0.8) * burstScale, (2.1 + poseCharge * 0.5) * durationScale); // Charged heavy strike becomes a sustained gallop; collision and reins still apply.
       } else {
         deps.beginCombatLunge(lungePx, strikeS, LUNGE_HOP_UNITS, {
           rangePx, halfConeRad, pitchDistanceResistance, directFlightStrength,
