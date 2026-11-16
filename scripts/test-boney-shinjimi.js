@@ -128,6 +128,11 @@ liveDay.day=14;C.update(0.016);
 const active=C.debugSnapshot();
 assert.equal(active.phase,'roam');
 assert.equal(active.zone,'map_western_slope');
+const levelSurface=map.tiles; // Intentionally varied authored cliff tiers must not be accepted as a 3×3 level house foundation.
+map.tiles=levelSurface.map((tile,index)=>({...tile,elevTier:Math.floor(index/map.cols)%2}));
+assert.equal(C.__test.chooseHouseSite('map_western_slope',active.cycle),null,
+  'the Highland house cannot span alternating cliff/mesa tiers');
+map.tiles=levelSurface;
 assert.equal(active.collision,true);
 assert.equal(registered.length,1);
 assert.equal(C.__test.wallHit(active.home.c+0.05,active.home.r+1),true,'hidden house remains solid');
