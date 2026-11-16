@@ -1,8 +1,9 @@
 (() => {
   'use strict';
   // combat-main: feature-owned classic scripts in the original parser execution order.
+  // Player tap/hold timing is loaded before combat input. The array stays JSON-compatible for the classic-group validator.
   const scriptUrls = [
-    "js/input-hold-timing.js?v=20261116tapHoldAudit2", // Shared player preference runs before combat and other input consumers.
+    "js/input-hold-timing.js?v=20261116tapHoldAudit2",
     "js/combat/weapon-shape-stats.js?v=20261109grappledonor1",
     "js/combat/combat-core.js?v=20261115h07ca528",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
