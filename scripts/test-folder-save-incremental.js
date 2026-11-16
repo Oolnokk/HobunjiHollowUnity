@@ -376,7 +376,41 @@ async function main() {
   assert.match(rejected.lastError, /changed outside this session/i);
   assert.equal(await (await largeCharacterFile.getFile()).text(), externallyEditedCharacter, 'outside edits are preserved');
 
-  console.log('OK  incremental saves, lock-progress fast commits, quota rollback protection, no-op autosaves, protected farm layouts, external edits, recovery transitions, retries and large-farm stress');
+  // A pre-manifest-provenance folder must use the writers recorded in its
+  // canonical disk entities, not a different device's stale browser metadata.
+  const legacyFolder = directory('older-folder', counters); // Independent simulated folder with only legacy per-entity provenance.
+  async function seedLegacy(dir, filename, value) {
+    const handle = await dir.getFileHandle(filename, { create: true });
+    const stream = await handle.createWritable();
+    await stream.write(JSON.stringify(value));
+    await stream.close();
+  }
+  const legacyCharacters = await legacyFolder.getDirectoryHandle('characters', { create: true });
+  const legacyWorlds = await legacyFolder.getDirectoryHandle('worlds', { create: true });
+  await seedLegacy(legacyCharacters, 'farmer-legacy-char.json', {
+    id: 'legacy-char', nickname: 'Farmer',
+    folderSaveProvenance: { version: 1, lastWriterDeviceId: 'legacy-world-device', writtenAt: 1200 },
+  });
+  await seedLegacy(legacyWorlds, 'legacy-world.json', {
+    id: 'legacy-world', label: 'Legacy',
+    folderSaveProvenance: { version: 1, lastWriterDeviceId: 'legacy-older-device', writtenAt: 1000 },
+  });
+  const legacyManifest = { version: 1, portableSaveVersion: 1, savedAt: 1300, characterCount: 1, worldCount: 1 };
+  await seedLegacy(legacyFolder, 'manifest.json', legacyManifest);
+  window.showDirectoryPicker = async () => legacyFolder;
+  const olderStatus = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(olderStatus.state, 'ready', 'older save folder can be selected safely');
+  assert.equal(olderStatus.lastWriterProvenance.lastWriterDeviceId, 'legacy-world-device',
+    'old-folder Resume provenance uses the newest on-disk entity writer, not the stale browser mirror');
+
+  await seedLegacy(legacyFolder, 'manifest.json', {
+    ...legacyManifest, writerProvenance: { version: 1, lastWriterDeviceId: 'manifest-writer', writtenAt: 1400 },
+  });
+  const newFormatStatus = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(newFormatStatus.lastWriterProvenance.lastWriterDeviceId, 'manifest-writer',
+    'the manifest writer wins over legacy entity stamps when both exist');
+
+  console.log('OK  incremental saves, cross-device provenance, legacy disk fallback, lock-progress fast commits, quota rollback, single-pass no-op serialization, guarded layouts, external edits, recovery and large-farm stress');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
