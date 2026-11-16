@@ -30,6 +30,8 @@
     <div class="grid3"><label>Min °<input id="minDeg" type="number" step="1" value="-30"></label><label>Rest °<input id="restDeg" type="number" step="1" value="0"></label><label>Max °<input id="maxDeg" type="number" step="1" value="30"></label></div>
     <label>Turn speed °/sec<input id="turnSpeedDeg" type="number" min="0" step="5" value="120"></label>
     <label>Preview neck angle <span id="previewAngleLabel">0°</span><input id="previewAngle" type="range" min="-90" max="90" step="1" value="0"></label>
+    <label>Baby head enlargement <span id="babyHeadScaleLabel">122% · inherited default</span><input id="babyHeadScale" type="range" min="100" max="145" step="1" value="122"></label>
+    <div class="hint">Live baby-only texture preview. Paint coordinates remain unchanged; the value is stored per species in the exported head rig and Save rig for game preview. 100% disables it.</div>
     <label class="row" style="justify-content:flex-start"><input id="showWeights" type="checkbox" checked> Show active paint overlay</label>
     <div class="hint">Preview neck angle is temporary and is the one motion control that is not saved into the rig.</div>
 
@@ -50,6 +52,8 @@
 </section>
 </div>
 <script src="../../js/creature-genetics-render.js?v=20261104nelkRig1"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261116shoulderParity2"></script> <!-- Match the game's authored chathead boxes in baby-size previews. -->
+<script src="../../js/baby-animal-head-warp.js?v=20261116babyRig1"></script>
 <script src="../../js/creature-genetics.js"></script>
 <script src="../../js/grehlr-head-rig-correction.js?v=20260917uploads1"></script>
 <script src="../../js/animal-head-rig-authored.js?v=20261115mootVoorgNeck1"></script>
@@ -67,6 +71,7 @@
 <script src="./author-part7.js"></script>
 <script src="./author-part8.js"></script>
 <script src="./author-part9.js"></script>
+<script src="./author-part10.js?v=20261116babyRig1"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
 <script src="../../js/modular-weapon-bridge-fill.js?v=20261115hatTab1"></script>
 <script src="./hat-tab.js?v=20261115hatTab1"></script>
 </body>
