@@ -116,6 +116,8 @@
       || window.CreatureGeneticsRender?.headRigForKind?.(base);
     const chathead = validateFrame(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame);
     if (chathead) return chathead; // The authored dialogue frame strictly bounds which IDLE opaque pixels belong to the source head mask.
+    const explicitlyPainted = validateFrame(savedRig?.babyHeadFrame) || validateFrame(committed?.babyHeadFrame);
+    if (explicitlyPainted) return explicitlyPainted; // Moot/custom species without a chathead profile keep their explicitly exported baby source box.
     const dialogue = validateFrame(window.AnimalChatheadFrame?.frameForKind?.(base));
     if (dialogue && (savedRig || committed || window.CreatureGeneticsRender?.SPECIES?.[base])) return dialogue;
     // The dialogue solver has a generic fallback even for unknown species. Only registered creatures can inherit that frame.
