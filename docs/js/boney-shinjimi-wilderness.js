@@ -33,7 +33,7 @@
 
   function initialState() {
     return { phase:'waiting', cycle:-1, completedCycle:-1, zone:null, home:null, target:null,
-      activity:'wander', workLeft:0, fleeTime:0, boostedFor:0, boostCooldown:0,
+      activity:'wander', resourceTarget:null, workLeft:0, fleeTime:0, boostedFor:0, boostCooldown:0,
       catches:0, escaped:0, chores:0, lastSight:'unobserved', lastEvent:'awaiting full moon',
       reward:null, hatTaken:false };
   }
@@ -298,29 +298,40 @@
       ||window.NpcPathfinding?.canNpcBeeline?.(state.zone,x,z,c,r)===true;
   }
   function pickChore(avoid=null) {
-    const h=homeCenter(),p=position(),map=layout();
-    if(!h||!p||!map)return;
+    const h=homeCenter(),p=position();
+    if(!h||!p)return;
+    const resources=window.ZoneRegrowth?.npcResourceTargets?.(state.zone,h.x,h.z,WORK_RADIUS_TILES)||[];
     let result=null,best=-Infinity;
-    for(let attempt=0;attempt<50;attempt++) {
-      const angle=rnd()*Math.PI*2,rad=3+rnd()*WORK_RADIUS_TILES;
-      const c=Math.floor(h.x+Math.cos(angle)*rad),r=Math.floor(h.z+Math.sin(angle)*rad);
-      if(!candidateRoute(c,r)||Math.abs(c-state.home.c)<4&&Math.abs(r-state.home.r)<4)continue;
-      const tile=map.tiles?.[r*map.cols+c]||map.tiles?.[r]?.[c]||null;
-      const tag=String(tile?.type||tile?.feature||tile?.kind||'').toLowerCase();
-      const work=/rock|ore|stone|boulder/.test(tag)?'rock':'tree';
-      const separation=avoid?dist({x:c,z:r},avoid):5;
-      const score=Math.min(separation,10)-0.06*dist({x:c,z:r},{x:p.x,z:p.z})+rnd();
-      if(score>best){best=score;result={c,r,work};}
+    for(const resource of resources) {
+      // Trees and ores are often solid: target a navigable adjacent work station.
+      for(const [dc,dr] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const c=resource.col+dc,r=resource.row+dr;
+        if(!candidateRoute(c,r)||Math.abs(c-state.home.c)<4&&Math.abs(r-state.home.r)<4)continue;
+        const separation=avoid?dist({x:c,z:r},avoid):5;
+        const score=Math.min(separation,10)-0.075*dist({x:c,z:r},{x:p.x,z:p.z})+rnd()*2;
+        if(score>best){best=score;result={c,r,work:resource.kind,resource};}
+      }
     }
-    if(result) {
-      state.workLeft=2.5+rnd()*6.5;
-      setTarget(result.c,result.r,result.work);
-      bumpEvent('Working near '+result.c+','+result.r+' ('+result.work+')');
+    if(!result) {
+      // A temporarily exhausted local resource patch leaves him wandering,
+      // not pretending to cut nonexistent trees/rocks.
+      for(let attempt=0;attempt<35;attempt++) {
+        const angle=rnd()*Math.PI*2,rad=3+rnd()*WORK_RADIUS_TILES;
+        const c=Math.floor(h.x+Math.cos(angle)*rad),r=Math.floor(h.z+Math.sin(angle)*rad);
+        if(!candidateRoute(c,r))continue;
+        result={c,r,work:'wander',resource:null};break;
+      }
     }
+    if(!result)return;
+    state.resourceTarget=result.resource;
+    state.workLeft=result.resource?2.5+rnd()*6.5:1.5+rnd()*3;
+    setTarget(result.c,result.r,result.work);
+    bumpEvent(result.resource?'Working on '+result.work+' at '+result.resource.col+','+result.resource.row
+      :'Searching for more wilderness timber and rocks');
   }
   function beginFlight() {
     if(state.phase==='flee'||!walker)return;
-    state.phase='flee';state.fleeTime=0;state.workLeft=0;state.escaped++;
+    state.phase='flee';state.fleeTime=0;state.workLeft=0;state.resourceTarget=null;state.escaped++;
     setTarget(state.home.c+1,state.home.r+3,'flee');
     bumpEvent('Spotted player; sprinting home and breaking line of sight');
   }
@@ -487,7 +498,10 @@
         planTimer=0;pickChore();
       }else if(nearTarget(1.2)) {
         state.workLeft-=dt;
-        if(state.workLeft<=0){state.chores++;pickChore();}
+        if(state.workLeft<=0){
+          if(state.resourceTarget&&window.ZoneRegrowth?.npcCompleteResourceWork?.(state.zone,state.resourceTarget))state.chores++;
+          state.resourceTarget=null;pickChore();
+        }
       }
     }else if(state.phase==='home') {
       setTarget(state.home.c+1,state.home.r+1,'hide');
@@ -516,7 +530,7 @@
     return {version:SAVE_VERSION,phase:state.phase==='scene'?'home':state.phase,
       cycle:state.cycle,completedCycle:state.completedCycle,zone:state.zone,
       home:state.home&&{...state.home},target:state.target&&{...state.target},
-      activity:state.activity,workLeft:state.workLeft,chores:state.chores,
+      activity:state.activity,resourceTarget:state.resourceTarget,workLeft:state.workLeft,chores:state.chores,
       escaped:state.escaped,catches:state.catches,reward:state.reward,hatTaken:state.hatTaken};
   }
   function restore(raw) {
@@ -533,6 +547,9 @@
     if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
     state.activity=['tree','rock','wander','flee','hide'].includes(raw.activity)?raw.activity:'wander';
     state.workLeft=clamp(finite(raw.workLeft),0,30);
+    const t=raw.resourceTarget; // A resumed chore must still point at the same authored tree/rock tile.
+    state.resourceTarget=Number.isInteger(t?.col)&&Number.isInteger(t?.row)&&['tree','rock'].includes(t?.kind)
+      ?{col:t.col,row:t.row,kind:t.kind}:null;
     state.chores=Math.max(0,Math.floor(finite(raw.chores)));
     state.escaped=Math.max(0,Math.floor(finite(raw.escaped)));
     state.catches=Math.max(0,Math.floor(finite(raw.catches)));
