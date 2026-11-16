@@ -106,6 +106,7 @@ async function main(){
               if(d.pushable)counts.pushable=(counts.pushable||0)+1;
               if(d.pushPuzzle?.totalPushes>=6&&d.pushPuzzle?.directionChanges>=2)counts.routedPush=(counts.routedPush||0)+1; // Must be the deliberate multi-turn push course, not a trivial pressure plate.
               if(d.requiresCarriedTorch)counts.requiresCarriedTorch=(counts.requiresCarriedTorch||0)+1;
+              if(d.fireHazard===true)counts.fireHazard=(counts.fireHazard||0)+1; // Verifies the torch-lighting source rather than the removed projectile-arming Action 1 control.
             });
             return {area:window.GridTileAccessors?.getCurrentArea?.(),trial,
               rooms:meta.rooms?.length,noLoot:runtime?.noLoot===true,shaftHub:!!runtime?.shaftHub,
@@ -125,7 +126,8 @@ async function main(){
             nativePushBlock:'pressurePlate'}[kind];
           row.ok=s.rooms===1&&s.noLoot&&!s.trial.error&&s.trial.kind===kind&&s.trial.ready===true
             &&(!needsLink||(s.trial.linked===true&&s.targets>0))
-            &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls>0))
+            &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls===0
+               &&(s.counts.fireHazard||0)>0)) // A lit fire-hazard brazier replaces the old projectile-arming control.
             &&(kind!=='timedMelody'||s.trial.noteCount>=2)
             &&(kind!=='ropeChain'||(s.trial.ropeLinked===true&&s.ropes>0))
             &&(!native||(s.mechanism?.gated===true&&s.mechanism.rootPresent===true
