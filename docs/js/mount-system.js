@@ -621,13 +621,13 @@
     window.WorldActionInputClaims?.clearClaims?.('mount-riding');
     mountActionsClaimed = false;
     window.Combat?.input?.abortAllPresses?.(); // Dismount cancels any mounted hold/queued swing before the carrier begins leaving.
-    refreshMountWheatHud(); // Dismount immediately discards stored obstacle waypoints.
-    if (!mountRideEntity) { mountRideState = 'none'; return; }
+    if (!mountRideEntity) { mountRideState = 'none'; refreshMountWheatHud(); return; }
     // Dismounting while a low-rock jump is still active must not leave the mount
     // permanently in an airborne hop or carry its visual lift into rush-out.
     mountRideEntity._mountHop = null;
     mountRideEntity._banditLungeHopCurrent = 0;
     mountRideState = 'dismountingDown';
+    refreshMountWheatHud(); // Hide the mounted-only wheat override immediately, not one frame after the dismount starts.
     mountTransitionT = 0;
     mountTransitionFromX = deps.player.x; mountTransitionFromY = deps.player.y;
     // Dismount to the mount's side (perpendicular to its heading) rather
