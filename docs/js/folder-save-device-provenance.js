@@ -46,9 +46,10 @@
     try { return JSON.parse(raw); } catch { return null; }
   }
 
-  function latestProvenance(meta = readMeta()) {
+  function latestProvenance(meta = null) {
     const status = save.getStatus?.(); // The durable manifest is authoritative even when the optional browser mirror is unavailable.
     if (status?.state === 'ready' && status.lastWriterProvenance?.lastWriterDeviceId) return { ...status.lastWriterProvenance };
+    meta ??= readMeta(); // Avoid parsing a multi-megabyte browser save when the manifest already supplies the writer.
     let latest = null; // Most recent portable overwrite stamp found among entities in the currently loaded save.
     const consider = value => {
       const stamp = value?.[PROVENANCE_KEY];
