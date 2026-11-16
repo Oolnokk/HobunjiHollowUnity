@@ -989,7 +989,9 @@
   // No steering input is stolen when the rider is actively using reins.
   function mountedRangedOrbit(m, dt, topSpeed) {
     const key = window.RangedWeapons?.equippedRangedKey?.();
-    if (!key || !window.Combat?.input?.isAutoTargetEnabled?.()) {
+    const activeTool = window.Combat?.deps?.getActiveTool?.(); // A slotted bow does not count as drawn when melee, tools, or an item is held.
+    const heldMode = window.Combat?.deps?.getHeldMode?.(); // Ranged encircling is a fired-weapon stance, not a passive mount autopilot.
+    if (!key || activeTool !== 'ranged' || heldMode !== 'tool' || !window.Combat?.input?.isAutoTargetEnabled?.()) {
       mountedOrbitTarget = null;
       mountedOrbitScanS = 0;
       return null;
