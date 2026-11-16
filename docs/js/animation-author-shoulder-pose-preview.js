@@ -36,6 +36,7 @@
     let buildTask = null; // Coalesces repeated sync calls while an authored sprite is compositing.
     let buildError = null; // Displayed in the existing editor inspector for mobile debugging.
     let disposed = false; // Prevents asynchronous builders from attaching to a removed actor.
+    const addedViewportPlanes = []; // Tracks posed front/back and split-overlay cards so cleanup removes references from the existing camera-yaw list.
 
     const status = () => ({
       requestedPose,
@@ -96,11 +97,18 @@
       }
       avatar.group.visible = false; // Remains hidden until the user selects Perched.
       sourceAvatar.group.add(avatar.group); // Inherit all existing actor/size transforms without changing the grip's local origin.
-      for (const plane of [avatar.frontPlane, avatar.backPlane]) {
-        if (plane && Array.isArray(viewportCreaturePlanes)) {
-          viewportCreaturePlanes.push({ object: plane, baseRotationY: plane.rotation.y });
+      const posedPlanes = [avatar.frontPlane, avatar.backPlane]; // Both rendered PNG faces must share the editor's viewport-facing behavior.
+      avatar.group.traverse?.(object => {
+        if (object?.userData?.hobunjiShoulderSplitOverlay) posedPlanes.push(object); // Grehlr's left foreground must rotate exactly with the deformed right background.
+      });
+      if (Array.isArray(viewportCreaturePlanes)) {
+        for (const plane of posedPlanes) {
+          if (!plane || viewportCreaturePlanes.some(entry => entry.object === plane)) continue;
+          const entry = { object: plane, baseRotationY: plane.rotation.y }; // Existing viewport deadzone rotates all visible animal cards together.
+          viewportCreaturePlanes.push(entry);
+          addedViewportPlanes.push(entry);
         }
-      } // Keep existing viewport-facing correction usable for the second pair of rendered planes.
+      }
       posedAvatar = avatar;
       syncVisibility();
       onChange(status());
@@ -131,6 +139,13 @@
 
     function dispose() {
       disposed = true;
+      if (Array.isArray(viewportCreaturePlanes)) {
+        for (const entry of addedViewportPlanes) {
+          const index = viewportCreaturePlanes.indexOf(entry); // Remove only the additional posed card references; retain preexisting original planes.
+          if (index >= 0) viewportCreaturePlanes.splice(index, 1);
+        }
+      }
+      addedViewportPlanes.length = 0;
       sourceAvatar.frontPlane && (sourceAvatar.frontPlane.visible = true);
       sourceAvatar.backPlane && (sourceAvatar.backPlane.visible = true);
       if (posedAvatar) {
