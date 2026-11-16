@@ -452,6 +452,8 @@
       const names = ['idle', 'run1', 'run2'];
       const canvases = await Promise.all(names.map(name => renderer.composeFrame(entry.kind, name, entry.genotype, false)));
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
+      if (canvases[0]) await window.BabyAnimalHeadWarp?.ensureIdleMask?.(entry.kind, canvases[0]); // Seed once from the true idle composition, not a later run pose.
+      if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
       for (let i = 0; i < names.length; i++) {
         if (canvases[i]) {
           const babyCanvas = window.BabyAnimalHeadWarp?.applyToCanvas(canvases[i], entry.kind) || canvases[i]; // Baby head warp follows genotype, never changes the shared adult source.
