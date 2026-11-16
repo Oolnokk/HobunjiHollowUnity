@@ -85,6 +85,19 @@
       ]),
       lore: 'The spirit world: comforting to the dead, hostile to living intruders, rendered as ghostly semi-transparent color.',
     }),
+    Fey: Object.freeze({
+      id: 'Fey', label: 'Fey · Illusion / Perception', opacity: 0.72,
+      dyeIds: Object.freeze([
+        'dye:CLOTH:muted_green', 'dye:CLOTH:pure_green', 'dye:CLOTH:muted_green_blue',
+        'dye:CLOTH:muted_violet', 'dye:CLOTH:pure_violet', 'dye:CLOTH:white',
+      ]),
+      effects: Object.freeze([
+        Object.freeze({ id: 'fey-mirage', label: 'Mirage Wisps', motion: 'wisp', shape: 'veil', blend: 'normal', size: 0.058, life: 1.30, speed: 0.023 }),
+        Object.freeze({ id: 'fey-afterimage', label: 'Afterimage Flecks', motion: 'orbit', shape: 'ring', blend: 'additive', size: 0.052, life: 1.02, speed: 0.031 }),
+        Object.freeze({ id: 'fey-false-blood', label: 'False Blood Glimmers', motion: 'splash', shape: 'drop', blend: 'normal', size: 0.047, life: 0.82, speed: 0.038 }),
+      ]),
+      lore: 'Fey enchantments alter what a mind thinks it sees and feels, never inflicting direct magical injury.',
+    }),
   });
 
   function random() {
