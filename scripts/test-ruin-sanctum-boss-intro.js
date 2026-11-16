@@ -5,7 +5,7 @@ const vm=require('node:vm');
 
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
-let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null;
+let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0;
 const timers=new Map(),nodes=[],enemies=new Set();
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
@@ -30,10 +30,13 @@ function actor(options){
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   DevRandomRuin:{setPlayerWorldPoint:()=>true,getSeed:()=>77},
+  BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}}, // Use the canonical teardown path in the real encounter.
+  MinionCombat:{makeEntity:async options=>({id:'skeleton'+(++skeletons),x:options.x,y:options.y,health:50,avatarRef:{dispose(){skeletonDisposals++;}}})},
+
   HarlyaoLichCombat:{allowArea(){},TYPE_DEFS:{kanthic:{label:'Kanthic Lich'}},
     makeEntity:options=>slowSpawn?slowSpawn(options):Promise.resolve(actor(options)),
     clearBossEffects(){effects++;}},
-  SpecialHarlyaoLiches:{defFor:()=>({name:'Imlao the Sightless'}),applyPlasmSkin(){},clear(){}},
+  SpecialHarlyaoLiches:{defFor:()=>({name:'Imlao the Sightless'}),applyPlasmSkin(){},releaseWarhammer(){warhammers++;},clear(){}}, 
   DevRandomRuinLichThemes:{resetBossHazards(){hazards++;}},
   CinematicCameraRuntime:{activate:(area,shot,options)=>active={area,shot,reason:options.reason},
     activeRecord:()=>active,deactivate(){active=null;}},
@@ -57,6 +60,7 @@ async function run(){
   assert.equal(enemies.size,0,'boss cannot simulate during the reveal');
   assert.equal(state.boss.x/64,18.5,'one-and-a-half tiles behind arena center');
   assert.equal(state.coffins[0].open,false,'coffins must remain closed during reveal');
+  assert.equal(skeletons,0,'intro may not summon coffin skeletons');
   assert.equal(active.reason,'ruin-sanctum-boss-intro');
   assert.equal(active.shot.blendSeconds,.95);
   await advance(850);
@@ -70,10 +74,16 @@ async function run(){
   assert.equal(state.intro,null);
   assert(enemies.has(state.boss),'hostile simulation begins after reveal');
   assert.equal(state.coffins[0].open,true);
+  assert.equal(skeletons,1,'the first coffin guard spawns only when combat starts');
+  assert(enemies.has(state.coffins[0].skeleton),'coffin guard participates in real combat');
   assert.equal(active,null);
   composer.onPlayerDeath();
   assert.equal(state.boss,null);
   assert.equal(state.coffins[0].open,false);
+  assert.equal(state.coffins[0].skeleton,null);
+  assert.equal(skeletonDisposals,1,'the existing coffin skeleton avatar must be retired');
+  assert.equal(discarded,2,'boss and skeleton must use canonical entity teardown');
+  assert.equal(warhammers,1,'boss weapon-specific textures need an explicit reset');
   assert.equal(enemies.size,0);
   assert.equal(title.removed,true);
   assert.equal(effects,1);assert.equal(hazards,1);
@@ -98,6 +108,23 @@ async function run(){
   assert.equal(state.boss,null,'delayed spawn cannot resurrect a reset boss');
   assert.equal(enemies.size,0);
   assert.equal(disposed,before+1,'delayed avatars must be disposed');
-  console.log('PASS: cinematic, title, deferred combat, death/exit, async cancellation');
+  assert.equal(discarded,4,'stale async spawns also use the canonical entity disposer');
+  slowSpawn=null;
+  win.DevRandomRuinSanctum.enter();
+  await advance(2600);
+  const dyingTitle=nodes.filter(node=>node.id==='ruin-sanctum-boss-title').at(-1);
+  assert(dyingTitle&&!dyingTitle.removed,'new title appears before death during a cinematic');
+  composer.onPlayerDeath();
+  assert.equal(dyingTitle.removed,true,'death in the reveal removes the banner');
+  assert.equal(state.intro,null,'death during the reveal cancels camera ownership');
+  assert.equal(active,null);
+  assert.equal(locks,releases,'death during reveal releases player controls');
+  assert.equal(enemies.size,0);
+  state.bossDefeated=true;
+  state.rearDoor={open:true,progress:1,closedY:1,panel:{position:{y:0},visible:true}};
+  win.DevRandomRuinSanctum.resetEncounter('completed-tomb');
+  assert.equal(state.bossDefeated,true,'permanent authored-victory progress cannot be undone');
+  assert.equal(state.rearDoor.open,true,'defeated guardian keeps vault accessible');
+  console.log('PASS: reveal, all-caps outlined title, timed combat, skeleton teardown, death/exit, stale spawns, persistent victory');
 }
 run().catch(err=>{console.error(err);process.exitCode=1;});
