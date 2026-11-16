@@ -304,6 +304,8 @@ async function main() {
   const largeCharacterFile = largeFolder.folders.get('characters').files.get('farmer-char.json');
   assert.equal(JSON.parse(await (await largeCharacterFile.getFile()).text()).chestLockProgress.world['chest-a'].misses, 1,
     'reloading canonical character bytes preserves the first-try failure');
+  assert.equal(JSON.parse(await (await largeCharacterFile.getFile()).text()).chestLockProgress.world['chest-a'].folderUnsynced, false,
+    'reloading a successfully committed lock does not demand a redundant retry');
   assert.equal(JSON.parse(await (await largeFolder.folders.get('farm-layouts').files.get('world.json').getFile()).text()).layout.tiles.length,
     20000, 'character-only save preserves the entire farm');
 
