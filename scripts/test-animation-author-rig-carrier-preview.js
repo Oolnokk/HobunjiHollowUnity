@@ -78,7 +78,7 @@ assert.match(html,/controls\.setSpace\('world'\)/,'actual gizmo is world aligned
 assert.match(html,/window\.AnimationAuthorRigCarrierPreview\?\.placeNpcAtGrip/,'solver integrated');
 assert.match(html,/animation-author-rig-carrier-preview\.js\?v=20261116carrier3/,'changed browser helper must invalidate cached wrong-face solver');
 assert.match(html,/camera: state\.three\.camera/,'editor passes live orbit camera to carrier portrait solver');
-assert.match(html,/NPC portrait front \(\+Z\) faces camera/,'mobile status reports actual NPC plane orientation');
+assert.match(html,/normal NPC skinned portrait \(not horizontally mirrored\)[^']*front \(\+Z\) faces camera/,'mobile status reports the standard front-facing skinned portrait');
 assert.match(avatarSource,/function createSinglePlaneAssembly[\s\S]*?frontMesh\.position\.z = config\.anchorZ;[\s\S]*?backMesh\.rotation\.y = Math\.PI;/,'the normal NPC front plane looks toward +Z; only the back is 180° rotated');
 assert.match(avatarSource,/frontMesh\.rotation\.y = Math\.PI \/ 2;/,'animal face plane uses a different +X orientation, not the NPC orientation');
 assert.match(avatarSource,/let portraitsFlipped = true/,'the base PNGPlaneAvatar begins horizontally mirrored by default; it cannot substitute for a normal author NPC');
