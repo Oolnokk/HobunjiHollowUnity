@@ -152,4 +152,26 @@ api._test.faceEmittersTowardCamera([facing]);
 assert.strictEqual(facing.group.scale.z, -1, 'back view mirrors particles onto the -Z face');
 assert.ok(facing.group.position.z < 0, 'mirrored emitter sits in front of the back face');
 
-console.log('weapon enchantment VFX pooling tests passed');
+// Each head sprite of a modular flail owns its own post-occlusion metal mask.
+// Test the actual preview emitter, not only the Loadout viewport's VFX stub.
+const previewHaft = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.5, height: 1.2 } } }); // No head pixels belong to the bare shaft.
+const previewHeadA = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 0.4 } } }); // First metal head layer.
+const previewHeadB = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.3, height: 0.4 } } }); // Second metal head layer.
+const headMasks = [
+  { plane: previewHeadA, mask: { width: 2, height: 2, indices: [0, 1], matchedMetalPixels: 2 } },
+  { plane: previewHeadB, mask: { width: 2, height: 2, indices: [2], matchedMetalPixels: 1 } },
+]; // The two distinct source masks must never collapse onto the shaft.
+assert.equal(api.createPreviewEmitter(previewHaft, 'dagger_copper', []), null, 'an unfinished flail cannot enchant an empty haft');
+const flailPreview = api.createPreviewEmitter(previewHaft, 'dagger_copper', headMasks);
+assert.ok(flailPreview, 'both finished metal head layers have preview emitters');
+for (let i = 0; i < 12; i++) flailPreview.update(0.05); // Advance the same bounded production cadence used in the menu.
+assert.equal(flailPreview.debugSnapshot().emitterPlanes, 2, 'one independent emitter follows each head layer');
+assert.equal(flailPreview.debugSnapshot().matchedMetalPixels, 3, 'the debug count aggregates both visible metal masks');
+assert.ok(previewHeadA.children[0]?.children.length > 0, 'first layer emits motes on its own plane');
+assert.ok(previewHeadB.children[0]?.children.length > 0, 'second layer emits motes on its own plane');
+assert.equal(previewHaft.children.length, 0, 'the bare shaft receives no flail enchantment particles');
+flailPreview.dispose();
+assert.equal(previewHeadA.children.length, 0, 'closing the preview releases the first head emitter');
+assert.equal(previewHeadB.children.length, 0, 'closing the preview releases the second head emitter');
+
+console.log('weapon enchantment VFX pooling and multilayer flail preview tests passed');
