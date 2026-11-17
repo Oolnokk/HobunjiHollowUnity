@@ -131,7 +131,7 @@
 
   function replaySpecial(c, aa, deps) {
     const hype = aa.hyped;
-    if (!hype || hype.phase !== 0 || !(Number(c.health) > 0) || !targetPresent(c, aa.ctx?.target)
+    if (!hype || hype.phase !== 0 || (Number.isFinite(Number(c.health)) && Number(c.health) <= 0) || !targetPresent(c, aa.ctx?.target)
       || (hype.area && c.areaId !== hype.area)) return false;
     c.scaleY = 1; c._banditLungeHopCurrent = 0; // The first leap/burrow cannot leave a vertical offset behind before the new authored stage starts.
     hype.phase = 1;

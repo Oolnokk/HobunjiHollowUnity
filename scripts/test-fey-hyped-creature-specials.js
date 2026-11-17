@@ -122,6 +122,22 @@ const close = (got, want, msg) => assert(Math.abs(got - want) < .00001, msg + ':
   close(creature._lastHypedCreatureAttack.ratio, .16, 'last status available to mobile diagnostics');
 }
 
+// Health-less authored preview actors are valid, not dead. Their paid Hyped
+// special must still execute its full second stage, matching start/update.
+{
+  events.length = 0;
+  const creature = makeCreature();
+  const victim = makeTarget();
+  RS.addEnhancedResource(creature, 'hypedStamina', 5);
+  pay(creature, 5);
+  delete creature.health; // The editor preview intentionally has no Health field.
+  assert.equal(attacks.start(creature, 'hypedTestSpecial', { target: victim }), true);
+  run(creature);
+  assert.equal(events.length, 2, 'a health-less preview creature must not silently lose its paid second strike');
+  close(events[1].amount, 3, '5 Hyped still scales the second preview hit by 10%');
+  assert.equal(creature._animalAttack, null, 'health-less preview clears transient Hyped references');
+}
+
 // Hyped is charged for an eligible special's generic cost AND its authored
 // extra stamina top-up; the replay must not repeat either expenditure.
 {
