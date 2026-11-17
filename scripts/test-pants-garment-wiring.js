@@ -103,9 +103,12 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  const model={matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},updateMatrixWorld(){}};
  const handle={model,depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // Synthetic avatar and garment using the production callback.
  let revision=0,lift=.2,measures=0;
- const pushes=[],foot={name:'replacement GLB foot'};
- const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value),group:{getObjectByName:()=>foot}};
- const footFrontLift=()=>{measures++;return lift;}; // A scan only when the actual foot geometry changes.
+ const pushes=[],loadedFeet={left:{name:'new left GLB'},right:{name:'new right GLB'}}; // Detect if the refresh mistakenly reuses attached fallback references.
+ const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value),group:{getObjectByName:name=>name==='left_foot'?loadedFeet.left:loadedFeet.right}};
+ const footFrontLift=(_three,_model,feet)=>{ // The production bounds scanner must receive the CURRENT meshes after async replacement.
+   assert.equal(feet[0],loadedFeet.left);assert.equal(feet[1],loadedFeet.right);
+   measures++;return lift;
+ }; // A scan only when the actual foot geometry changes.
  vm.runInNewContext(source.slice(start,end),{handle,legHandle,footFrontLift,THREE:{},avatarGroup:model,footObjects:null});
  assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
@@ -119,7 +122,17 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  handle.setDepthBiasLimit('close-contact',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.1);
  handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.2,'release restores the recalibrated value');
  assert.equal(pushes.at(-1),.2,'leg owner receives the updated foot depth push');
+ loadedFeet.left={name:'subsequent left GLB'};
+ loadedFeet.right={name:'subsequent right GLB'};
  lift=.3;revision++;assert.equal(handle.refreshFootDepthBias(),true);
  assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'subsequent GLB replacements also work');
  assert.equal(handle.getFootDepthBiasDebug().anatomyRevision,2);
+ assert.equal(measures,2,'only anatomy revisions should trigger expensive 3D foot scans');
+}
+{
+ const pixelProbe=fs.readFileSync('docs/js/pixel-probe.js','utf8'); // Guards the existing mobile copyable report, not a DevTools-only console API.
+ const probeBoot=fs.readFileSync('docs/js/bootstrap/classic-groups/pre-game-diagnostics.js','utf8');
+ assert.match(pixelProbe,/Pants\/feet depth:/,'render-only pants depth is shown in the mobile Pixel Probe');
+ assert.match(pixelProbe,/getFootDepthBiasDebug/,'Pixel Probe reads the real garment handle rather than a stale cosmetic cache');
+ assert.match(probeBoot,/pixel-probe\.js\?v=20261117pantsFootDepthProbe1/,'mobile bundle loads the repaired Pixel Probe');
 }
