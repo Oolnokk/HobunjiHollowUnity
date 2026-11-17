@@ -6,6 +6,9 @@
   let decorateQueued = false; // Coalesces mutation bursts into one presentation pass.
   let menuReadabilityObserver = null; // Re-applies menu readability rules after dynamic menu content/state changes.
   let menuReadabilityQueued = false; // Coalesces menu mutation/click refreshes into one computed-style pass.
+  const menuReadabilityScopes = new Set(); // Dirty subtrees prevent each Pack rebuild from rescanning every other menu tab.
+  let menuReadabilityFullScan = false; // Opening the menu or an explicit refresh still checks all visible menu content.
+  const menuReadabilityStats = { passes: 0, fullPasses: 0, elementsLastPass: 0, lastMs: 0 }; // Exposed by the existing mobile Inventory debug snapshot.
   let lastControllerPackPreview = null; // Exposed by debugSnapshot() to diagnose controller Pack highlighting on mobile.
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
@@ -218,11 +221,10 @@
     const roots = document.querySelectorAll(MENU_READABILITY_ROOTS);
     if (!roots.length) return;
     menuReadabilityObserver = new MutationObserver((records) => {
-      const relevant = records.some((record) => {
-        const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
-        return !!target?.closest?.(MENU_READABILITY_ROOTS);
-      });
-      if (relevant) scheduleMenuReadability();
+      for (const record of records) {
+        const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement; // Class changes and rebuilt children both belong to their nearest live subtree.
+        if (target?.closest?.(MENU_READABILITY_ROOTS)) scheduleMenuReadability(target);
+      }
     });
     roots.forEach((root) => {
       menuReadabilityObserver.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['class','hidden','disabled','aria-selected','aria-pressed'] });
@@ -231,37 +233,52 @@
     });
   }
 
-  function scheduleMenuReadability() {
+  function scheduleMenuReadability(eventOrElement = null) {
+    const candidate = eventOrElement?.target || eventOrElement; // A click/input event and a mutation record both name their changed DOM subtree.
+    const scope = candidate?.nodeType === 1 ? candidate : candidate?.parentElement;
+    if (!scope?.closest?.(MENU_READABILITY_ROOTS)) {
+      menuReadabilityFullScan = true;
+      menuReadabilityScopes.clear();
+    } else if (!menuReadabilityFullScan) {
+      menuReadabilityScopes.add(scope);
+    }
     if (menuReadabilityQueued) return;
     menuReadabilityQueued = true;
     requestAnimationFrame(() => {
       menuReadabilityQueued = false;
-      enforceMenuReadability();
+      const scopes = menuReadabilityFullScan ? null : [...menuReadabilityScopes]; // Null requests the historical whole-menu refresh.
+      menuReadabilityFullScan = false;
+      menuReadabilityScopes.clear();
+      enforceMenuReadability(scopes);
     });
   }
 
-  function enforceMenuReadability() {
-    document.querySelectorAll(MENU_READABILITY_ROOTS).forEach((root) => {
-      // Closed panels sit at opacity:0 rather than display:none (see #menuPanel.open
-      // in style.css), so they stay mounted and keep matching every click/mutation
-      // this observer watches. Nothing in them is visible while closed, so skip the
-      // full-tree scan below until the panel actually opens again.
-      if (!root.classList.contains('open')) return;
-      // Gear mode's item detail is sized by InventoryGearCompactEffects' own
-      // fitter, which deliberately goes below MENU_MIN_FONT_PX so the whole
-      // detail fits without scrolling. Flooring it here made the two fight:
-      // the fitter released the floor, this pass re-applied it, and the text
-      // flipped between the two sizes.
-      const gearInfo = root.querySelector('#mpInventory.inv-mode-gear #invInfo');
-      const elements = [root, ...root.querySelectorAll('*')];
+  function enforceMenuReadability(scopes = null) {
+    const startedAt = performance.now(); // Measures just this pass for mobile Inventory diagnostics.
+    const requested = scopes || [...document.querySelectorAll(MENU_READABILITY_ROOTS)]; // Initial/menu-open checks still visit every visible section.
+    const requestedSet = new Set(requested); // Ancestor detection stays linear in the number of changed nodes rather than comparing every pair.
+    const targets = requested.filter(candidate => {
+      for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
+        if (requestedSet.has(parent)) return false;
+      }
+      return true;
+    }); // Ancestor scopes already cover nested dirty elements.
+    const gearInfoByRoot = new Map(); // Resolves the gear detail exception once for each actual menu root, not per changed tile.
+    let elementsVisited = 0; // Counts candidate DOM elements inspected this pass, including invisible wrappers.
+    targets.forEach((scope) => {
+      const root = scope.closest?.(MENU_READABILITY_ROOTS);
+      // Closed panels sit at opacity:0 rather than display:none (see #menuPanel.open).
+      // Nothing in them needs computed-style work until the panel opens again.
+      if (!root?.classList.contains('open')) return;
+      // Gear's detail fitter deliberately manages its own font size.
+      if (!gearInfoByRoot.has(root)) gearInfoByRoot.set(root, root.querySelector('#mpInventory.inv-mode-gear #invInfo'));
+      const gearInfo = gearInfoByRoot.get(root);
+      const elements = [scope, ...scope.querySelectorAll('*')]; // Only the mutated subtree, never unrelated open menu pages.
+      elementsVisited += elements.length;
       elements.forEach((element) => {
         if (gearInfo && gearInfo.contains(element)) return;
-        // Inactive tabs (.mp-pane without .active) stay display:none while their tab
-        // isn't selected, so their content has no layout box — offsetParent is a cheap
-        // way to detect that and skip it, instead of paying for getComputedStyle()
-        // (below) on every element from every tab a player has ever visited this session.
+        if (!isMenuTextCarrier(element)) return; // Avoid forcing layout for wrapper divs, icons and pictures with no text.
         if (element !== root && element.offsetParent === null) return;
-        if (!isMenuTextCarrier(element)) return;
 
         // Include the nearest interactive owner's state so child text is recalculated when its parent becomes selected/active.
         const stateOwner = element.closest('button,[role="button"],.mp-tab,.inv-item-box,.inv-equip-slot');
@@ -297,6 +314,10 @@
         }
       });
     });
+    menuReadabilityStats.passes++;
+    if (!scopes) menuReadabilityStats.fullPasses++;
+    menuReadabilityStats.elementsLastPass = elementsVisited;
+    menuReadabilityStats.lastMs = Math.round((performance.now() - startedAt) * 100) / 100;
   }
 
   function isMenuTextCarrier(element) {
@@ -357,13 +378,18 @@
 
   function decorate() {
     decorateModeTabs();
-    syncPackClothingTiles();
-    decoratePackSlots();
-    buildGearLayout();
-    decorateGearSlots();
+    const gearActive = document.getElementById('mpInventory')?.classList.contains('inv-mode-gear'); // Hidden Gear work can wait until its tab is shown.
+    if (gearActive) {
+      buildGearLayout();
+      decorateGearSlots();
+    } else {
+      syncPackClothingTiles();
+      decoratePackSlots();
+    }
     decorateInfoPanel();
     updateDebugButton();
-    scheduleMenuReadability();
+    // The observer already schedules readability work for changed DOM nodes. An
+    // unconditional request here turned every Pack click back into a full-menu scan.
   }
 
   function decorateModeTabs() {
@@ -404,6 +430,7 @@
     if (needsRebuild) {
       existing.forEach((node) => node.remove());
       const firstEmpty = grid.querySelector('.inv-item-box.empty');
+      const clothingFragment = document.createDocumentFragment(); // Groups newly cloned clothing tiles into one grid insertion.
       sourceButtons.forEach((sourceButton, index) => {
         const tile = document.createElement('button'); // Clothing uses the exact same box role/geometry as ordinary Pack items.
         tile.type = 'button';
@@ -420,9 +447,10 @@
           document.querySelectorAll('#invGrid .pack-clothing-tile.selected').forEach((other) => other.classList.remove('selected'));
           tile.classList.add('selected');
         });
-        if (firstEmpty?.parentNode === grid) grid.insertBefore(tile, firstEmpty);
-        else grid.appendChild(tile);
+        clothingFragment.appendChild(tile);
       });
+      if (firstEmpty?.parentNode === grid) grid.insertBefore(clothingFragment, firstEmpty);
+      else grid.appendChild(clothingFragment);
       grid.dataset.packClothingFingerprint = fingerprint;
     }
 
@@ -443,7 +471,8 @@
     const emptySlots = showClothing ? [...grid.querySelectorAll('.inv-item-box.empty')] : []; // Reclaims only slots occupied by currently visible clothing.
     const visibleClothingCount = [...grid.querySelectorAll('.pack-clothing-tile')].filter(tile => tile.style.display !== 'none').length; // Keeps search-filtered clothing from reserving phantom slots.
     const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - visibleClothingCount));
-    for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
+    const nextReservedSet = new Set(nextReservedEmpty); // Membership checks stay linear with large Pack grids.
+    for (const empty of reservedEmpty) if (!nextReservedSet.has(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
     for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }
 
@@ -967,6 +996,7 @@
       },
       boundsVisible: !!document.getElementById('menuPanel')?.classList.contains('inv-debug'),
       menuMinFontPx: MENU_MIN_FONT_PX,
+      menuReadability: { ...menuReadabilityStats, pendingScopes: menuReadabilityScopes.size, fullScanQueued: menuReadabilityFullScan }, // Performance profile available inside the Inventory debug overlay on mobile.
     };
   }
 

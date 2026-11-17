@@ -17753,6 +17753,13 @@
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(boxStacks.length, 1) / 7) * 7);
 
         const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
+        const equipBadgesByKey = new Map(); // Reuses each equipped slot's short badge across all visible stacks of that item.
+        for (const [slot, key] of Object.entries(equipmentSlots)) {
+          if (!key) continue;
+          if (!equipBadgesByKey.has(key)) equipBadgesByKey.set(key, []);
+          equipBadgesByKey.get(key).push(_slotAbbr[slot] || slot.charAt(0).toUpperCase());
+        }
+        const gridFragment = document.createDocumentFragment(); // Inserts the complete Pack grid once, rather than triggering connected-DOM work per tile.
         boxStacks.forEach(stack => {
           const { key, count, stars } = stack; // One independently selectable quality/genotype box.
           const def   = ITEM_DEFS[key];
@@ -17765,9 +17772,7 @@
             `<span class="iib-icon">${itemIconForKey(key)}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
-          const badges = Object.entries(equipmentSlots)
-            .filter(([, v]) => v === key)
-            .map(([s]) => _slotAbbr[s] || s.charAt(0).toUpperCase());
+          const badges = equipBadgesByKey.get(key) || [];
           if (badges.length) {
             const badge = document.createElement('span');
             badge.className = 'iib-equip-badge';
@@ -17776,9 +17781,10 @@
           }
           box.addEventListener('click', () => selectInventoryItem(key, false, stack));
           box.addEventListener('hobunji-controller-focus', () => selectInventoryItem(key, true, stack)); // Passive controller preview preserves the actual selection and exact item variant.
-          applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
-          window.InventoryStacks.applyHeadIcon(box.querySelector('.iib-icon'), LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
-          grid.appendChild(box);
+          const icon = box.querySelector('.iib-icon'); // Shared by the sprite and genotype renderers for this tile.
+          applyItemSpriteIcon(icon, def, key);
+          window.InventoryStacks.applyHeadIcon(icon, LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
+          gridFragment.appendChild(box);
         });
 
         for (let i = boxStacks.length; i < visibleSlotCount; i++) {
@@ -17787,8 +17793,9 @@
           box.type = 'button';
           box.disabled = true;
           box.setAttribute('aria-label', 'Empty inventory slot');
-          grid.appendChild(box);
+          gridFragment.appendChild(box);
         }
+        grid.appendChild(gridFragment);
 
         // Refresh wallet
         const wd = document.getElementById('invWalletAmount');

@@ -240,13 +240,17 @@ const clothingGrid = {
   dataset: {}, tiles: [],
   querySelectorAll(selector) { return selector === '.pack-clothing-tile' ? this.tiles : []; },
   querySelector() { return null; },
-  appendChild(tile) { tile.parentNode = this; this.tiles.push(tile); },
+  appendChild(tile) {
+    if (tile.isFragment) { for (const child of tile.children) this.appendChild(child); return; } // The Pack renderer commits all clothing clones at once.
+    tile.parentNode = this; this.tiles.push(tile);
+  },
 };
 const clothingDocument = {
   getElementById(id) { return id === 'invPackClothing' ? clothingSource : id === 'invGrid' ? clothingGrid : null; },
   querySelector() { return { dataset:{ cat:activeCategory } }; },
   querySelectorAll() { return []; },
   createElement() { return new ClothingTile(); },
+  createDocumentFragment() { return { isFragment:true, children:[], appendChild(tile) { this.children.push(tile); } }; }, // Mirrors real DOM fragment insertion for the updated Pack renderer.
 };
 const clothingWindow = { InventorySearch:{
   get query() { return clothingSearch; },
