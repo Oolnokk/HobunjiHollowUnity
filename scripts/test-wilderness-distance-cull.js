@@ -26,7 +26,16 @@ class Box3 {
 }
 const logs = []; // Captures fail-open diagnostics without a DevTools console.
 const window = {
-  THREE: { Box3, Object3D: function Object3D() {} },
+  THREE: { Box3, Sphere: class Sphere { constructor() { this.center = { x: 0, y: 0, z: 0 }; this.radius = 0; } }, Object3D: function Object3D() {} },
+  InstancedMeshBounds: {
+    worldSphere(mesh, target) {
+      const spec = mesh.userData?.testSphere; // Same conservative world-sphere contract as the game's instance bounds owner.
+      if (!spec) return null;
+      target.center.x = spec.x; target.center.y = 0; target.center.z = spec.z;
+      target.radius = spec.radius;
+      return target;
+    },
+  },
   __farmLog: message => logs.push(message),
 };
 vm.runInNewContext(source, { window, performance: { now: () => clock.now } }, { filename: 'wilderness-distance-cull.js' });
@@ -62,6 +71,9 @@ const farGrass = attach(chunk, mesh('grass_tuft', 162));
 const farHooked = attach(chunk, mesh('rock_with_hook', 166, {}, { onBeforeRender() {} }));
 const farSkinned = attach(chunk, mesh('rigged_rock', 171, {}, { isSkinnedMesh: true }));
 const farInstanced = attach(chunk, mesh('instanced_rock', 171, {}, { isInstancedMesh: true }));
+const taggedInstancedWall = attach(scene, mesh('wall_bricks', 171, {
+  hobunjiInstanceBounds: true, testSphere: { x: 171, z: 0, radius: 4 },
+}, { isInstancedMesh: true, frustumCulled: false })); // Only authoritative bounded instances may be distance-culled.
 const farWater = attach(chunk, mesh('water_surface', 172));
 const nearEdge = attach(chunk, mesh('long_cliff', 175, {}, { minX: -100, maxX: 1 }));
 const invisibleGroup = attach(chunk, group('invisible_group'));
@@ -82,6 +94,7 @@ release = render();
 assert.equal(farRock.visible, false, 'distant chunk mesh culled');
 assert.equal(batch.visible, false, 'post-batching mesh culled');
 assert.equal(standalone.visible, false, 'independent mesa culled');
+assert.equal(taggedInstancedWall.visible, false, 'authoritatively bounded wall instances culled');
 for (const [object, message] of [
   [nearRock, 'near geometry'], [farTree, 'tree vegetation'], [farGrass, 'grass vegetation'],
   [farHooked, 'render-hook mesh'], [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
@@ -89,11 +102,13 @@ for (const [object, message] of [
   [invisibleChild, 'hidden ancestor'], [plantBatch, 'reagent vegetation batch'],
   [actor, 'actor'], [untagged, 'untagged unrelated mesh'],
 ]) assert.equal(object.visible, true, message + ' must not be altered');
-assert.equal(api.snapshot().hidden, 3, 'only three actually drawable distant meshes are suppressed');
+assert.equal(api.snapshot().hidden, 4, 'only four actually drawable distant meshes are suppressed');
+assert.equal(api.snapshot().hiddenInstanced, 1, 'tagged instanced meshes are measured separately');
 assert.equal(typeof release, 'function', 'scope returns a restore callback');
 release();
 assert.equal(farRock.visible, true, 'first render restores static object before simulation');
 assert.equal(batch.visible, true, 'first render restores batch before prop rendering tears it down');
+assert.equal(taggedInstancedWall.visible, true, 'first render restores instanced structure');
 
 camera.matrixWorld = matrixAt(160);
 release = render();
