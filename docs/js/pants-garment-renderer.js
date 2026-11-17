@@ -63,7 +63,8 @@
     const authoredCenter = (leftX + rightX) / 2; // Follows an asymmetrical torso instead of assuming portrait x=.5.
     const centerPixel = Math.max(0, Math.min(width - 1, Math.floor(authoredCenter * width))); // Seed for the connected alpha run.
     const authoredY = authored.reduce((sum, p) => sum + p.y, 0) / authored.length; // Waist's original vertical position remains authoritative.
-    const ctx = canvas.getContext('2d', { willReadFrequently: true }); // Read only small rows, not a whole 200x200 portrait.
+    let ctx; // Portrait data source may be an image-backed or otherwise unreadable canvas; keep the authored fit in that case.
+    try { ctx = canvas.getContext('2d', { willReadFrequently: true }); } catch (_) { return null; } // Read only small rows, not a whole 200x200 portrait.
     if (!ctx?.getImageData) return null;
     for (const offset of [0, 0.012, 0.025, 0.04, 0.06, 0.08]) { // A waist at the bottom image edge may require moving up to find connected torso pixels.
       const y = Math.max(0, Math.min(height - 1, Math.floor((authoredY - offset) * height))); // Search just above the authored belt, not near the head or arms.
@@ -1144,6 +1145,6 @@
     fitBeltToVisibleTorso, // Pure portrait-alpha fitting entry for the in-file mobile diagnostics and regression harness.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Feet-overlap depth recalibrates after imported foot replacements; paired-action overrides remain scoped.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Waist now matches readable torso-alpha silhouette; near-horizontal belts no longer shear the legs; cuff and foot-depth rules remain independent.' }),
   });
 })(window);
