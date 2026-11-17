@@ -3518,7 +3518,11 @@
           );
           swept.knockbackLedgeStarted = true;
         }
-        return swept;
+        // Ordinary walking remains non-solid to other actors. Only a forced shove into
+        // an actively burning actor or corpse acquires the shared Fire Hazard impact profile.
+        return window.BurningEntityHazards?.resolveSweptImpact?.(entity, desiredX, desiredY, radiusPx, TILE, {
+          area: currentArea, player, hostileObjects, companionObjects, animalObjects, corpseObjects,
+        }, swept) || swept;
       }
 
       function beginKnockbackLedgeFall(entity) {
@@ -7026,6 +7030,7 @@
       }
       function tickCorpses(dt) {
         window.CreatureDeath.updateCorpses(dt);
+        window.BurningEntityHazards?.tickCorpses?.(dt, corpseObjects); // Only active corpse flames tick; all other old bodies remain dormant.
         updateCorpseVisualLod();
         window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
       }
