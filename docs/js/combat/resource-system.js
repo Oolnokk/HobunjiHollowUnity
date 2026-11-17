@@ -211,7 +211,8 @@
     moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
     hypedStamina: Object.freeze({
       resource: "stamina", conversionRate: 1, normalPriority: 10, beneficialPriority: 110,
-      benefitsTransaction: tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponFire|combatWeaponAttack)$/.test(String(tx?.actionKind || '')),
+      requiresBeneficialTransaction: true, // Hyped is NEVER burned by walking, loading, dodging or other unrelated Stamina actions.
+      benefitsTransaction: tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack)$/.test(String(tx?.actionKind || '')),
     }),
     resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
@@ -885,6 +886,7 @@
 
     for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
       if (!(remaining > 0)) break;
+      if (entry.def.requiresBeneficialTransaction && !entry.benefitsTransaction) continue; // Protects authored action-conditional enhancements until their eligible action.
       const rate = Math.max(0.0001, Number(entry.def.conversionRate) || 1);
       const effectiveAvailable = entry.amount * rate;
       const effectivePaid = Math.min(remaining, effectiveAvailable);
