@@ -310,6 +310,7 @@ context.FarmPanel.init({
 });
 assert.equal(stableList.children.some, undefined, 'Stable DOM fixture models HTMLCollection without Array.some');
 context.FarmPanel.renderStablePanel();
+assert.match(allText(stableList), /2 in this category · Available: 2 · Optional storage: 0/, 'Companion availability summary excludes the Mount category');
 
 const roleButtons = descendantsByClass(stableList, 'stable-role-tab'); // Actual native page controls, shared with controller bumper actions.
 assert.equal(roleButtons.length, 3, 'Stable exposes Companion, Mount and Shoulder Pet pages');
@@ -387,6 +388,7 @@ assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAt
 stablePane.scrollTop = 250;
 descendantsByClass(stableList, 'stable-role-tab').find(button => button.dataset.stableRole === 'mount').listeners.click(); // Same action used by touch and controller navigation.
 assert.equal(context.FarmPanel.stableTrainingDebug().selectedRole, 'mount', 'role page button changes the actual visible list');
+assert.match(allText(stableList), /1 in this category · Available: 1 · Optional storage: 0/, 'Mount availability summary excludes the Companion category');
 assert.equal(stablePane.scrollTop, 0, 'switching roles from deep in a roster reveals the top of the new page');
 assert.equal(stableRowById(stableList, 'mount1').hidden, false, 'mount becomes visible on its own page');
 assert.equal(stableRowById(stableList, 'hound2').hidden, true, 'companion is hidden without removing its entry');
@@ -442,6 +444,7 @@ let mountRowForStowing = stableRowById(stableList, 'mount1'); // Used to prove t
 descendantsByClass(mountRowForStowing, 'stable-stow-btn')[0].listeners.click({ stopPropagation() {} });
 assert.equal(stable.find(entry => entry.id === 'mount1').stowed, true, 'the Stable action moves an animal into stowage');
 assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'stowing one animal only changes its availability');
+assert.match(allText(stableList), /7 in this category · Available: 6 · Optional storage: 1/, 'Mount summary reflects only accessible/stowed mounts after storage');
 let stowageToggle = descendantsByClass(stableList, 'stable-inventory-toggle').find(button => String(button.textContent).includes('Stowed Animals'));
 stowageToggle.listeners.click();
 let stowedMountRow = stableRowById(stableList, 'mount1');

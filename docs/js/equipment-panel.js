@@ -190,7 +190,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261116optionalArchive1';
+    script.src = 'js/inventory-ui.js?v=20261116postStorageAudit1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -959,7 +959,7 @@
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
     if (emptyEl)  emptyEl.style.display  = 'none';
-    if (detailEl) detailEl.style.display  = '';
+    if (detailEl) { detailEl.style.display = ''; detailEl.dataset.gearToolKey = key; } // Canonical selected tool survives duplicate visible labels in the mastery panel.
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     set('iiIcon',  def.icon);
     const iiIconEl2 = document.getElementById('iiIcon');
