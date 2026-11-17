@@ -42,29 +42,29 @@ quest.bindInventoryDeps({
 });
 quest.bindQuestDeps({ getQuestProgress: () => profile.questProgress });
 
-assert.equal(es.addBase('unownedWeapon', 'feyPhantomWound'), true);
+assert.equal(es.addBase('unownedWeapon', 'feyDementedStamina'), true);
 assert.equal(quest.debugSnapshot().status, 'not-started', 'enchanting an unowned weapon must not start a quest');
 assert.equal(saves, 0);
 
 assert.equal(es.addBase('sword', 'burning'), true);
 assert.equal(quest.debugSnapshot().status, 'not-started', 'ordinary planar enchanting must not start the Fey quest');
 assert.equal(saves, 0);
-assert.equal(es.addBase('hoe', 'feyPhantomWound'), true);
+assert.equal(es.addBase('hoe', 'feyDementedStamina'), true);
 assert.equal(quest.debugSnapshot().status, 'not-started', 'Fey magic on a non-weapon must not start a weapon quest');
 assert.equal(saves, 0);
 
-assert.equal(es.setFlourish('sword', 'tap1', 'feyMazeStep'), true);
+assert.equal(es.setFlourish('sword', 'tap1', 'feyHypedPulse'), true);
 assert.equal(quest.debugSnapshot().stage, 0, 'a newly acquired Fey Flourish starts the quest');
 assert.equal(saves, 1, 'the new quest immediately persists to the member profile');
 assert.equal(quest.ownedFeyWeaponKeys().includes('sword'), true);
 
-assert.equal(es.setFlourish('sword', 'hold2', 'feyEchoDread'), true);
+assert.equal(es.setFlourish('sword', 'hold2', 'feyDreadPulse'), true);
 assert.equal(saves, 1, 'further Fey enchantments never restart or re-save the quest');
 
 profile.questProgress = {}; // Simulates a different member who hasn't encountered Fey magic.
 profile.worldId = 'second-fey-world'; // Checks the quest remains member/world-local instead of a module-global achievement.
 gear = { tools: { sword: true, hoe: true }, weaponEnchantments: {} }; // The second member owns a different clean sword.
-assert.equal(es.addBase('sword', 'feyPhantomWound'), true);
+assert.equal(es.addBase('sword', 'feyDementedStamina'), true);
 assert.equal(quest.debugSnapshot().stage, 0, 'acquiring a Fey Base enchantment also starts the quest');
 assert.equal(saves, 2);
 assert(gearSaves >= 5, 'gear writes are still handled by EnchantmentSystem');
