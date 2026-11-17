@@ -33,7 +33,8 @@
   const DEG_TO_RAD = Math.PI / 180; // Used by the one-degree-per-Stamina disorientation rule.
   const DEFAULT_ACTION_S = 0.22; // Easing fallback for stamina spends with no authored action duration.
   const HYPED_REPLAY_DELAY_MS = 55; // Used for the rapid secondary impact after a real strike, never for its initial hit.
-  const activeTurns = new WeakMap(); // Actor -> uncommitted angular drift, advanced by the shared Combat.update hook.
+  const activeTurns = new WeakMap(); // Actor -> uncommitted angular drift, advanced by ResourceSystem.tick.
+  const perceivedYaw = new WeakMap(); // Player -> accumulated camera and movement-basis offset without rewriting the user's own camera controls.
   const panicRolls = new WeakMap(); // Actor -> one in-flight roll, including its collision/ally hit deduplication.
   const hypedCredits = new WeakMap(); // Attacker -> Hyped Stamina actually spent on their next attack context.
   let registered = false; // Prevents multiple providers in tool previews.
@@ -186,15 +187,21 @@
     return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
   }
 
-  function onDodgeBlocked(entity) {
-    const roll = entity && panicRolls.get(entity); // Handles enemy swept-move collisions that cancel the dodge before its next resource tick.
+  function onDodgeBlocked(entity, collision = {}) {
+    const roll = entity && panicRolls.get(entity); // Handles the actual rejected swept move, rather than detecting a fake wall from a slowing movement.
     if (!roll || roll.collided) return false;
     roll.collided = true;
     const tilePx = Math.max(1, finite(window.Combat?.deps?.TILE, 64)); // Existing resource collision owner expects an impact deficit in tile units.
-    window.KnockbackCollisionImpact?.resolveStrength?.(entity, {
-      kind: 'fallback', label: 'Panicked roll blocked by terrain',
-    }, roll.spent * 0.1, tilePx, {}, { mode: 'fey-panicked-roll' });
-    lastEffect = { id: 'panicWallCollision', panicSpent: roll.spent, traveled: roll.traveled };
+    const strengthTiles = collision.remainingPx > 0
+      ? collision.remainingPx / tilePx : roll.spent * 0.1; // Missing caller metadata retains the documented legacy test fallback.
+    const descriptor = collision.descriptor || { kind: 'stone', label: 'Panicked roll blocked by terrain' }; // A real sweep can identify wood, stone or fire.
+    window.KnockbackCollisionImpact?.resolveStrength?.(
+      entity, descriptor, strengthTiles, tilePx, collision.hooks || {}, { mode: 'fey-panicked-roll' }
+    ); // Uses the same physical Health/Footing/affliction profiles and hooks as knocked-back movement.
+    entity.dodgeT = 0; // A solid collision stops the rest of the uncontrolled roll, as ordinary blocked knockback does.
+    if (entity._enemyDodge) entity._enemyDodge.remainingS = 0;
+    lastEffect = { id: 'panicWallCollision', panicSpent: roll.spent, traveled: roll.traveled,
+      material: descriptor.kind || 'stone', impactTiles: strengthTiles };
     return true;
   }
 
@@ -232,11 +239,8 @@
         lastEffect = { id: 'panicAllyCollision', ally: ally.name || ally.id || 'companion', panicSpent: roll.spent };
       }
     }
-    if (roll.peakStep > tilePx * 0.015 && step < roll.peakStep * 0.06) roll.stalledS += dt;
-    else roll.stalledS = 0;
-    if (!roll.collided && roll.elapsedS > 0.075 && roll.stalledS >= 0.06) {
-      onDodgeBlocked(entity); // Same collision effect used by enemy swept dodges; exactly once per roll.
-    }
+    // Blocked movement is reported synchronously by the authoritative swept
+    // collision owner. A slow roll or an animation pause is not a wall impact.
     roll.lastX = nextX;
     roll.lastY = nextY;
   }
@@ -250,13 +254,34 @@
       const delta = state.remainingRad * fraction; // Linear interpolation distributes each earned degree across the action.
       state.remainingRad -= delta;
       state.remainingS = Math.max(0, state.remainingS - deltaS);
-      const angle = finite(entity.angle, finite(entity.facing, 0)) + delta;
-      entity.angle = angle;
-      if ('facing' in entity) entity.facing = angle;
-      if (entity === player()) window.Combat?.deps?.setFacingAngle?.(angle);
+      if (entity === player()) {
+        perceivedYaw.set(entity, finite(perceivedYaw.get(entity)) + delta); // Camera and movement add the same drift through their independent gameplay basis.
+      } else {
+        const angle = finite(entity.angle, finite(entity.facing, 0)) + delta;
+        entity.angle = angle;
+        if ('facing' in entity) entity.facing = angle;
+      }
       if (state.remainingS <= 0.001) activeTurns.delete(entity);
     }
+    // Perceptual distortion fades smoothly after the hallucination clears;
+    // it never changes or permanently overwrites the player's camera setting.
+    if (entity === player() && !activeTurns.has(entity) && !(finite(rs()?.getAffliction?.(entity, 'dementedStamina')) > 0)) {
+      const currentYaw = finite(perceivedYaw.get(entity));
+      if (Math.abs(currentYaw) > 0.00001) {
+        const nextYaw = currentYaw * Math.exp(-deltaS * 5);
+        if (Math.abs(nextYaw) <= 0.00001) perceivedYaw.delete(entity);
+        else perceivedYaw.set(entity, nextYaw);
+      }
+    }
     updatePanicRoll(entity, deltaS);
+  }
+
+  function movementRotationRad(entity) {
+    return entity === player() ? finite(perceivedYaw.get(entity)) : 0; // Used after cardinal bias, before publishing authoritative movement intent.
+  }
+
+  function cameraYawDeg(entity) {
+    return -movementRotationRad(entity) / DEG_TO_RAD; // The camera's azimuth is opposite to its world-space forward bearing.
   }
 
   function playerSymptoms() {
@@ -286,10 +311,13 @@
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
     onStaminaSpent, prepareHypedAttack, replayHypedHit, onDodgeBlocked, update,
-    hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)), // Used by ResourceSystem.tick to skip unmodified actors.
+    movementRotationRad, cameraYawDeg,
+    hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
+      || (entity === player() && Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
       registered, lastEffect, lastSecondaryStrike, replayCount,
       playerTurnRadiansRemaining: activeTurns.get(player())?.remainingRad || 0,
+      cameraMovementYawDeg: cameraYawDeg(player()), // Mobile probe confirms the actual additive gameplay-camera and locomotion basis.
       activePanicRoll: panicRolls.get(player()) ? {
         spent: panicRolls.get(player()).spent, multiplier: panicRolls.get(player()).multiplier,
         traveled: panicRolls.get(player()).traveled, collided: panicRolls.get(player()).collided,
