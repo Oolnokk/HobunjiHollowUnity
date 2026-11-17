@@ -146,4 +146,8 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  for(const path of ['docs/index.html','docs/tools/enemy-loadout-editor/preview.js','docs/tools/live-root-growth/index.html','docs/tools/attack-animation-editor/index.html','docs/js/procedural-pants-rig-author.js']){
    assert(fs.readFileSync(path,'utf8').includes(version),path+' must load the current pants renderer');
  }
+ const enemyApp=fs.readFileSync('docs/tools/enemy-loadout-editor/app.js','utf8'); // An editor module is cached independently of the script it imports.
+ const enemyHtml=fs.readFileSync('docs/tools/enemy-loadout-editor/index.html','utf8'); // A returning user's HTML entry must load the revised module URL.
+ assert.match(enemyApp,/\.\/preview\.js\?v=20261117pantsFootDepthPreview2/,'enemy app refreshes the edited preview module');
+ assert.match(enemyHtml,/tools\/enemy-loadout-editor\/app\.js\?v=20261117pantsFootDepthApp2/,'enemy editor HTML refreshes its importer');
 }
