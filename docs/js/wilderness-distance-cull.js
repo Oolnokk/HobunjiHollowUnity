@@ -106,6 +106,15 @@
     return record.box;
   }
 
+  function actuallyVisibleInScene(mesh, scene) {
+    // Another render system may have hidden a parent; such meshes cost no draw calls.
+    for (let node = mesh; node; node = node.parent) {
+      if (node.visible === false) return false;
+      if (node === scene) return true;
+    }
+    return false;
+  }
+
   function nearestXZ(box, x, z) {
     const dx = Math.max(box.min.x - x, 0, x - box.max.x);
     const dz = Math.max(box.min.z - z, 0, z - box.max.z);
@@ -125,19 +134,25 @@
     if (!enabled || !isZone || !scene?.isScene || !camera?.isCamera
       || !Number.isFinite(playerPosition?.x) || !Number.isFinite(playerPosition?.z)) return null;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const record = records.get(scene);
-    const candidates = !record || now - record.lastScanAt >= RESCAN_MS ? scan(scene, now) : record.candidates;
-    stats.frames++;
-    stats.candidates = candidates.length;
-    camera.updateMatrixWorld?.(true); // The view may be a cutscene camera unrelated to the player's tile.
-    const elements = camera.matrixWorld?.elements;
-    const cameraX = elements?.[12] ?? camera.position?.x;
-    const cameraZ = elements?.[14] ?? camera.position?.z;
+    let candidates, cameraX, cameraZ; // Scan and camera sampling must fail open before any earlier culler can leak visibility.
+    try {
+      const record = records.get(scene);
+      candidates = !record || now - record.lastScanAt >= RESCAN_MS ? scan(scene, now) : record.candidates;
+      stats.frames++;
+      stats.candidates = candidates.length;
+      camera.updateMatrixWorld?.(true); // The view may be a cutscene camera unrelated to the player's tile.
+      const elements = camera.matrixWorld?.elements;
+      cameraX = elements?.[12] ?? camera.position?.x;
+      cameraZ = elements?.[14] ?? camera.position?.z;
+    } catch (error) {
+      window.__farmLog?.('Wilderness distance cull scan failed open: ' + String(error), 'warn', 'performance');
+      return null;
+    }
     if (!Number.isFinite(cameraX) || !Number.isFinite(cameraZ)) return null;
     const changed = []; // Only logical-true meshes; never unhide something another system intentionally hid.
     try {
       for (const { mesh, kind } of candidates) {
-        if (!mesh.visible || !mesh.parent) continue;
+        if (!actuallyVisibleInScene(mesh, scene)) continue;
         const box = boundsFor(mesh);
         if (!box) { stats.skippedUnknownBounds++; continue; }
         stats.tested++;
