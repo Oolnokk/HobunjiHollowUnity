@@ -10500,7 +10500,8 @@
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
-        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Compose perceived yaw at the shared camera-bearing owner, without mutating the player's camera settings.
       }
       // The world direction the camera is actually looking (as opposed to
       // activeCameraAzimuthRad(), which is where the camera SITS relative to
@@ -18981,6 +18982,14 @@
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          if (dodgeSwept.blockedX || dodgeSwept.blockedY) {
+            const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // First rejected swept center is the same obstacle sample used by real knockback.
+            const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
+            window.FeyIllusions?.onDodgeBlocked?.(player, {
+              descriptor, hooks: knockbackImpactHooks(player, descriptor, player.dodgeDirX, player.dodgeDirY),
+              remainingPx: DODGE_SPEED_PX * Math.max(0, player.dodgeT) * heavyDistanceMul,
+            }); // Only a Panicked roll reacts; ordinary dodges still slide exactly as before.
+          }
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * dodgeSpeedPx;
           player.vy = player.dodgeDirY * dodgeSpeedPx;
@@ -19160,6 +19169,16 @@
           const rIx = -ix * s - iy * c;
           const rIy =  ix * c - iy * s;
           ix = rIx; iy = rIy;
+        } else if (ix !== 0 || iy !== 0) {
+          // Non-shoulder modes use world-relative input. Shoulder mode already
+          // inherits this shift from cameraFacingAngleRad, so do not rotate twice.
+          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composed with ordinary input only while Demented perception remains active.
+          if (drift) {
+            const cos = Math.cos(drift), sin = Math.sin(drift);
+            const movedX = ix * cos - iy * sin;
+            iy = ix * sin + iy * cos;
+            ix = movedX;
+          }
         }
 
         // Resolved per-frame movement intent, read by ordinary dodge and
@@ -22771,7 +22790,8 @@
         const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
         let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
-        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Visual camera and movement bearing receive the same hallucinated additive offset.
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
