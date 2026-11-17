@@ -172,6 +172,56 @@ Quat.prototype.setFromEuler = function setFromEuler(e) {
   near(root.position.y, 2);
 }
 
+// Paired absolute sessions detect takeover at the parent, not just an unchanged local neck.
+class XYZ {
+  constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  clone() { return new XYZ(this.x, this.y, this.z); }
+  copy(v) { return this.set(v.x, v.y, v.z); }
+}
+{
+  const root = { name: 'paired-root', position: new XYZ(), quaternion: new Quat(), parent: { name: 'scene' } };
+  const neck = { name: 'paired-neck', position: new XYZ(0, 1, 0), quaternion: new Quat(), parent: root };
+  const first = layers.createAbsoluteSession('first-paired-animation');
+  assert(first.capture(root, ['position', 'quaternion']));
+  assert(first.capture(neck, ['position', 'quaternion']));
+  const concurrent = layers.createAbsoluteSession('other-action');
+  assert.equal(concurrent.capture(root, ['position']), false, 'a second action cannot seize the same live position');
+  root.position.x = .5;
+  neck.quaternion.copy(aroundX(.3));
+  assert(first.stamp());
+  assert(first.owns());
+  root.position.x = 1.8; // New animation took over root, without rewriting the nested neck's local values.
+  assert.equal(first.owns(), false, 'out-of-band root movement invalidates the old scoped action');
+  const rollback = first.release();
+  assert.equal(rollback.skipped, 3, 'root position and both nested neck properties are preserved for the new owner');
+  assert.equal(rollback.restored, 1, 'untouched root orientation still releases normally');
+  near(root.position.x, 1.8);
+  near(angleX(neck.quaternion), .3);
+  assert.equal(first.wasRestored(neck, 'quaternion'), false, 'parent takeover blocks descendant restoration');
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+  assert(concurrent.capture(root, ['position']), 'a new action can capture the fully released node');
+  root.position.x = 2.4;
+  concurrent.stamp();
+  concurrent.release();
+  near(root.position.x, 1.8);
+}
+{
+  const root = { ...rig(), userData: {} };
+  const sink = sandbox.window.ActorBodySink; // Multiple independent actors may both own body sink on the same rig.
+  const legs = { modelHeight: 10, drop: 0, setStanceDrop(v) { this.drop = v; },
+    getStanceDrop() { return this.drop; }, setStanceYawDeg() {} };
+  const kiss = { ownerId: 'spouse-kiss-npc-sink', legs, lower: [{ obj: root }] };
+  const watch = { ownerId: 'watchman-idle-sink', legs, lower: [{ obj: root }] };
+  sink.apply(kiss, 10, 0, true);
+  sink.apply(watch, 15, 0, true);
+  near(root.position.y, -.5); // Sum of independent contributions, no destructive base overwrite.
+  sink.release(kiss);
+  near(root.position.y, .5); // The kiss releases only its own 1-unit contribution.
+  sink.release(watch);
+  near(root.position.y, 2);
+}
+
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
