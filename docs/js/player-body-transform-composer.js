@@ -477,10 +477,23 @@
     // Weapon stance after a 40° deadzone clamp can leave the PNG exactly
     // edge-on. The logical gameplay facing is only a directional fallback for
     // choosing a stable edge when the stance passes through the deadzone.
-    // This private state has no real movement tracker: lastMovementYaw is
-    // explicitly the priority system's fallback hint, not a claimed velocity.
-    renderFacingState.lastMovementYaw = Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
-      ? renderDebug.baseFacingYaw : null;
+    // Mirror the GAMEPLAY deadzone's real direction hints. game.js authors
+    // player.perpState using movement/headtrack priority before this render;
+    // feeding a second private clamp invented movement state can select the
+    // opposite edge on a fast turn. Never mutate the gameplay's own state:
+    // secondary depth renders must not change next frame's facing decisions.
+    const gameplayFacing = !renderDebug.authoredAbsoluteYaw
+      ? window.Combat?.deps?.player?.perpState : null; // The live player's prior simulation-frame deadzone authority.
+    renderFacingState.movementYaw = Number.isFinite(gameplayFacing?.movementYaw)
+      ? gameplayFacing.movementYaw : null;
+    renderFacingState.headtrackYaw = Number.isFinite(gameplayFacing?.headtrackYaw)
+      ? gameplayFacing.headtrackYaw : null;
+    renderFacingState.headtrackAtMs = renderFacingState.headtrackYaw !== null
+      ? gameplayFacing.headtrackAtMs : null;
+    renderFacingState.lastMovementYaw = Number.isFinite(gameplayFacing?.lastMovementYaw)
+      ? gameplayFacing.lastMovementYaw
+      : Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
+        ? renderDebug.baseFacingYaw : null; // Standalone editors retain a stable non-velocity fallback.
     const rawYaw = composedYaw;
     const solved = api.perpClamp(renderFacingState, rawYaw, perps);
     const correction = wrapSignedAngle(solved.effectiveTarget - composedYaw);
@@ -488,7 +501,9 @@
       rawYaw, baseYaw: renderDebug.baseFacingYaw, composedYaw,
       renderedYaw: solved.effectiveTarget, correction,
       logicalHeadingFallback: renderFacingState.lastMovementYaw,
-      latestChange: 'Clamp the composed stance/body yaw; use logical heading only to stabilize deadzone side selection.',
+      gameplayFacingHints: !!gameplayFacing,
+      correctiveSource: renderFacingState.pixelProbeDebug?.correctiveSource || 'nearest-edge',
+      latestChange: 'Final composed yaw stays out of the camera deadzone; actual gameplay movement hints select the side.',
     };
     if (Math.abs(correction) < 1e-8) return;
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
