@@ -65,12 +65,12 @@ function fixture({ supported = true } = {}) {
     sourceURL: url, forcedStyleAndLayoutDuration: forced,
   }); // The browser provides script attribution only for some long frames.
   observer.fire([{ duration: 95, startTime: 100, styleAndLayoutStart: 155, scripts: [
-    makeScript('https://test.invalid/docs/js/inventory-ui.js?v=old', 11),
-    makeScript('https://test.invalid/docs/js/held-object-render-order.js?v=old', 0),
+    makeScript('https://test.invalid/docs/js/inventory-ui.js?probe=old', 11),
+    makeScript('https://test.invalid/docs/js/held-object-render-order.js?probe=old', 0),
   ] }]);
   f.setMenuOpen(true);
   observer.fire([{ duration: 126, startTime: 200, styleAndLayoutStart: 260, scripts: [
-    makeScript('https://test.invalid/docs/js/inventory-ui.js?v=new', 7),
+    makeScript('https://test.invalid/docs/js/inventory-ui.js?probe=new', 7),
     makeScript('https://test.invalid/docs/js/action-arch-icons.js', 4),
   ] }]);
   const snap = f.api.snapshot().longFrames;
