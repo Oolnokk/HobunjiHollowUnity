@@ -4,6 +4,9 @@
 // The source paint, head-rig weight maps, adult sprites, and normal game saves stay unchanged.
 const babyHeadScaleSlider = $('babyHeadScale'); // Percentage slider placed next to the animal picker for mobile and desktop.
 const babyHeadScaleLabel = $('babyHeadScaleLabel'); // Shows saved override vs inherited Nursery default.
+const babyHeadShorteningSlider = $('babyHeadShortening'); // Brachycephalic front-to-back shortening, independent of enlargement.
+const babyHeadShorteningLabel = $('babyHeadShorteningLabel'); // Displays inherited or authored skull-depth change.
+const babyHeadUsePaintedCheckbox = $('babyHeadUsePainted'); // Restores the earlier painted-Head rectangle selection.
 const babyHeadCompareButton = $('babyHeadCompare'); // Before/after comparison without changing the authored value.
 const babyHeadPreviewState = $('babyHeadPreviewState'); // Mobile-readable preview state and missing-frame explanation.
 const babyHeadWarp = window.BabyAnimalHeadWarp; // Reuses the baby's exact nearest-neighbor runtime pixel warp.
@@ -16,6 +19,8 @@ const babyHeadComparisonCanvas = $('babyHeadComparisonCanvas'); // On-screen rig
 const babyHeadPixelDelta = $('babyHeadPixelDelta'); // Reports actual pixel changes so mobile testing never relies on the console.
 const babyHeadDebug = { hits: 0, misses: 0, lastSpecies: null, lastError: null, splitsAfterWarp: 0, comparisonPixelChanges: 0 }; // Captured by the in-editor mobile diagnostics.
 let authoredBabyHeadScale = null; // Null inherits the Nursery's experimental global default.
+let authoredBabyHeadShortening = null; // Null inherits the game's global brachycephalic shortening.
+let authoredBabyHeadUsePainted = false; // Existing rigs default to the newer idle-opacity selection.
 let babyPreviewFrame = null; // Frame resolved once per editor draw, not once per mesh triangle.
 let babyPreviewFrameSource = 'none'; // Helps distinguish authored chathead boxes from painted-head fallbacks.
 let comparingBabyOriginal = false; // Temporary visual toggle; never enters exported rig data.
@@ -33,10 +38,24 @@ function syncBabyHeadScaleControl() {
   babyHeadScaleLabel.textContent = percent + '%' + (authoredBabyHeadScale == null ? ' · inherited default' : ' · species override');
 }
 
+function syncBabyHeadShorteningControl() {
+  const inherited = babyHeadWarp?.getShortening?.() ?? 0.20; // Universal head-depth reduction when no species override is authored.
+  const percent = Math.round((authoredBabyHeadShortening ?? inherited) * 100);
+  babyHeadShorteningSlider.value = String(percent);
+  babyHeadShorteningLabel.textContent = percent + '% shorter' + (authoredBabyHeadShortening == null ? ' · inherited default' : ' · species override');
+  babyHeadUsePaintedCheckbox.checked = authoredBabyHeadUsePainted;
+}
+
 function setAuthoredBabyHeadScale(raw) {
   const percent = Number(raw); // UI percentages are converted to the runtime's unit multiplier.
   authoredBabyHeadScale = Number.isFinite(percent) ? clamp(percent / 100, 1, babyHeadWarp?.MAX_SCALE || 1.45) : null;
   syncBabyHeadScaleControl();
+}
+
+function setAuthoredBabyHeadShortening(raw) {
+  const percent = Number(raw);
+  authoredBabyHeadShortening = Number.isFinite(percent) ? clamp(percent / 100, 0, babyHeadWarp?.MAX_SHORTENING ?? 0.45) : null;
+  syncBabyHeadShorteningControl();
 }
 
 function paintedBabyHeadFrame() {
@@ -56,6 +75,10 @@ function paintedBabyHeadFrame() {
 
 function resolveBabyPreviewFrame() {
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-'); // Species whose source image is loaded in the editor.
+  if (authoredBabyHeadUsePainted) {
+    const painted = paintedBabyHeadFrame() || babyHeadWarp?.frameForKind?.(species, true);
+    if (painted) return { frame: painted, source: 'earlier painted Head rectangle' };
+  }
   const chathead = babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[species]?.chatheadFrame);
   if (chathead) return { frame: chathead, source: 'opaque idle pixels inside chathead frame' }; // Actual mask excludes transparent cells, even within the box.
   const painted = paintedBabyHeadFrame(); // Custom species without a chathead box may use their authored Head paint fallback.
@@ -68,7 +91,8 @@ function resolveBabyPreviewFrame() {
 function updateBabyPreviewFeedback() {
   const species = String($('animalId').value || '').trim();
   const percent = Number(babyHeadScaleSlider.value);
-  const original = comparingBabyOriginal || percent <= 100;
+  const shorteningPercent = Number(babyHeadShorteningSlider.value);
+  const original = comparingBabyOriginal || (percent <= 100 && shorteningPercent <= 0);
   const message = !babyHeadWarp
     ? 'The baby head warp script is missing.'
     : !state.image
@@ -77,13 +101,13 @@ function updateBabyPreviewFeedback() {
         ? 'No head frame: paint Head influence first.'
         : comparingBabyOriginal
           ? 'Showing original · tap again to see the enlarged head.'
-          : percent <= 100
-            ? 'Showing unmodified 100% artwork.'
-            : 'Showing ' + percent + '% baby head · ' + babyPreviewFrameSource + '.';
+          : percent <= 100 && shorteningPercent <= 0
+            ? 'Showing unmodified artwork.'
+            : 'Showing ' + percent + '% size, ' + shorteningPercent + '% shorter head · ' + babyPreviewFrameSource + '.';
   babyHeadPreviewState.textContent = message;
   babyHeadCompareButton.textContent = comparingBabyOriginal ? 'Show enlarged version' : 'Show original for comparison';
   babyHeadCompareButton.setAttribute('aria-pressed', String(comparingBabyOriginal));
-  $('previewBadge').textContent = Math.round(numberOr($('previewAngle').value, 0)) + '° · ' + (original ? 'Original' : 'Baby ' + percent + '%');
+  $('previewBadge').textContent = Math.round(numberOr($('previewAngle').value, 0)) + '° · ' + (original ? 'Original' : 'Baby ' + percent + '% / −' + shorteningPercent + '% depth');
   if (!species && state.image) babyHeadPreviewState.textContent = 'Enter an animal ID to preview this head.';
 }
 
@@ -95,8 +119,13 @@ applyRecord = function applyRecordWithBabyHeadScale(record, index = -1) {
   const configured = saved?.babyHeadScale ?? record?.headRig?.babyHeadScale;
   authoredBabyHeadScale = typeof configured === 'number' && Number.isFinite(configured)
     ? clamp(configured, 1, babyHeadWarp?.MAX_SCALE || 1.45) : null;
+  const savedShortening = saved?.babyHeadShortening ?? record?.headRig?.babyHeadShortening;
+  authoredBabyHeadShortening = typeof savedShortening === 'number' && Number.isFinite(savedShortening)
+    ? clamp(savedShortening, 0, babyHeadWarp?.MAX_SHORTENING ?? 0.45) : null;
+  authoredBabyHeadUsePainted = (saved?.babyHeadUsePaintedFrame ?? record?.headRig?.babyHeadUsePaintedFrame) === true;
   comparingBabyOriginal = false;
   syncBabyHeadScaleControl();
+  syncBabyHeadShorteningControl();
   requestDraw(); // Update both the enlarged sprite and the comparison status when species changes.
   return result;
 };
@@ -107,9 +136,14 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   if (!rig) return rig;
   if (authoredBabyHeadScale != null) rig.babyHeadScale = authoredBabyHeadScale; // Percent and source region are independent authoring settings.
   else delete rig.babyHeadScale; // Inherit 123% without discarding the actual authored head mask source.
+  if (authoredBabyHeadShortening != null) rig.babyHeadShortening = authoredBabyHeadShortening;
+  else delete rig.babyHeadShortening; // An empty shortening override inherits the global default.
+  if (authoredBabyHeadUsePainted) rig.babyHeadUsePaintedFrame = true;
+  else delete rig.babyHeadUsePaintedFrame; // Default preserves original idle opacity-mask behavior.
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
   const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
-  const frame = babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
+  const frame = (authoredBabyHeadUsePainted ? paintedBabyHeadFrame() : null)
+    || babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
     || babyHeadWarp?.validateFrame?.(state.baseRecord?.headRig?.babyHeadFrame)
     || babyHeadWarp?.validateFrame?.(window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)?.babyHeadFrame)
     || paintedBabyHeadFrame(); // Preserve Moot/custom source frames even while the numeric scale inherits.
@@ -120,16 +154,21 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
 
 const captureHistoryBeforeBabyHead = captureHistoryState;
 captureHistoryState = function captureHistoryWithBabyHeadScale() {
-  return { ...captureHistoryBeforeBabyHead(), babyHeadScale: authoredBabyHeadScale };
+  return { ...captureHistoryBeforeBabyHead(), babyHeadScale: authoredBabyHeadScale,
+    babyHeadShortening: authoredBabyHeadShortening, babyHeadUsePaintedFrame: authoredBabyHeadUsePainted };
 };
 const historySignatureBeforeBabyHead = historySignature;
 historySignature = function historySignatureWithBabyHeadScale(snapshot) {
-  return historySignatureBeforeBabyHead(snapshot) + '|babyHeadScale=' + (snapshot?.babyHeadScale ?? 'inherit');
+  return historySignatureBeforeBabyHead(snapshot) + '|babyHeadScale=' + (snapshot?.babyHeadScale ?? 'inherit')
+    + '|shorten=' + (snapshot?.babyHeadShortening ?? 'inherit') + '|painted=' + !!snapshot?.babyHeadUsePaintedFrame;
 };
 const restoreHistoryBeforeBabyHead = restoreHistoryState;
 restoreHistoryState = function restoreHistoryWithBabyHeadScale(snapshot) {
   authoredBabyHeadScale = snapshot?.babyHeadScale ?? null;
+  authoredBabyHeadShortening = snapshot?.babyHeadShortening ?? null;
+  authoredBabyHeadUsePainted = snapshot?.babyHeadUsePaintedFrame === true;
   syncBabyHeadScaleControl();
+  syncBabyHeadShorteningControl();
   return restoreHistoryBeforeBabyHead(snapshot);
 };
 
@@ -138,17 +177,18 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
   if (!image || !babyHeadWarp || prewarpedSplitLayers.has(image) || (comparingBabyOriginal && !forceComparison)) return image;
   const species = String($('animalId').value || '').trim(); // Species key for the cache and debug feedback.
   const amount = Number(babyHeadScaleSlider.value) / 100;
-  if (!species || amount <= 1 || !babyPreviewFrame) return image;
+  const shorten = Number(babyHeadShorteningSlider.value) / 100;
+  if (!species || (amount <= 1 && shorten <= 0) || !babyPreviewFrame) return image;
   const width = Math.floor(Number(image.naturalWidth || image.width));
   const height = Math.floor(Number(image.naturalHeight || image.height));
   if (!(width > 0 && height > 0)) return image;
   const frameKey = [babyPreviewFrame.x, babyPreviewFrame.y, babyPreviewFrame.width, babyPreviewFrame.height]
     .map(value => value.toFixed(5)).join(',');
-  const cacheKey = species + ':' + amount.toFixed(2) + ':' + width + 'x' + height + ':' + frameKey;
+  const cacheKey = species + ':' + amount.toFixed(2) + ':' + shorten.toFixed(2) + ':' + authoredBabyHeadUsePainted + ':' + width + 'x' + height + ':' + frameKey;
   const cached = babyPreviewTextureCache.get(image);
   const idleMask = babyHeadWarp?.maskForKind?.(species, babyPreviewFrame); // Reimporting idle art changes the silhouette even at the same head percentage.
   if (cached?.key === cacheKey && cached?.mask === idleMask) { babyHeadDebug.hits++; return cached.image; }
-  if (typeof babyHeadWarp.maskForKind === 'function' && !idleMask) {
+  if (!authoredBabyHeadUsePainted && typeof babyHeadWarp.maskForKind === 'function' && !idleMask) {
     // A missing/blocked idle alpha mask must not allocate a full-resolution canvas once for EVERY mesh triangle.
     babyHeadDebug.lastError = readableBabyError(babyHeadWarp.debugSnapshot?.()?.lastMaskError || 'Idle head opacity mask unavailable.');
     return image;
@@ -163,7 +203,7 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
     if (!context) throw new Error('No canvas context available for baby-head preview.');
     context.imageSmoothingEnabled = false;
     context.drawImage(image, 0, 0, previewW, previewH);
-    const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame);
+    const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame, shorten, authoredBabyHeadUsePainted);
     if (warped === source) throw new Error(babyHeadWarp.debugSnapshot?.()?.lastError || 'Baby head warp returned the original pixels.');
     babyPreviewTextureCache.set(image, { key: cacheKey, mask: idleMask, image: warped });
     babyHeadDebug.misses++;
@@ -248,7 +288,7 @@ function drawBabyHeadTextureComparison() {
   ctx.fillStyle = '#d6dbde';
   ctx.fillRect(half - 1, 0, 2, height);
   let count = 0; // Number of actually changed visible RGBA pixels in the exact shown head crop, not theoretical geometry.
-  if (babyHeadDebug.lastError && enlarged === source && Number(babyHeadScaleSlider.value) > 100) {
+  if (babyHeadDebug.lastError && enlarged === source && (Number(babyHeadScaleSlider.value) > 100 || Number(babyHeadShorteningSlider.value) > 0)) {
     babyHeadDebug.comparisonPixelChanges = 0;
     babyHeadPixelDelta.textContent = babyHeadDebug.lastError; // The runtime compositor swallowed a security error; never report false "0 pixels".
     return;
@@ -330,7 +370,7 @@ draw = function drawWithBabyHeadPreview() {
   const resolved = resolveBabyPreviewFrame(); // Resolve painted bounds once per redraw; mesh triangles reuse the frame.
   babyPreviewFrame = resolved.frame;
   babyPreviewFrameSource = resolved.source;
-  if (state.image && babyPreviewFrame) babyHeadWarp?.primeIdleMask?.($('animalId').value, state.image, babyPreviewFrame); // Mask is authored ONLY from the loaded idle sprite; never sample run1.
+  if (state.image && babyPreviewFrame && !authoredBabyHeadUsePainted) babyHeadWarp?.primeIdleMask?.($('animalId').value, state.image, babyPreviewFrame); // Mask is authored ONLY from the loaded idle sprite; never sample run1.
   drawBeforeBabyHead();
   updateBabyPreviewFeedback(); // Original draw sets the angle badge; append baby scale afterward.
   drawBabyHeadTextureComparison(); // Two head crops bypass all head/shoulder poses and confirm actual changed RGBA pixels.
@@ -345,6 +385,21 @@ babyHeadScaleSlider?.addEventListener('input', () => {
   comparingBabyOriginal = false; // Moving the slider always previews the enlarged result immediately.
   requestDraw();
 });
+babyHeadShorteningSlider?.addEventListener('pointerdown', () => checkpointHistory());
+babyHeadShorteningSlider?.addEventListener('keydown', event => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) checkpointHistory();
+});
+babyHeadShorteningSlider?.addEventListener('input', () => {
+  setAuthoredBabyHeadShortening(babyHeadShorteningSlider.value);
+  comparingBabyOriginal = false;
+  requestDraw();
+});
+babyHeadUsePaintedCheckbox?.addEventListener('change', () => {
+  checkpointHistory(); // Source mode participates in undo/redo and saved species rigs.
+  authoredBabyHeadUsePainted = !!babyHeadUsePaintedCheckbox.checked;
+  comparingBabyOriginal = false;
+  requestDraw();
+});
 babyHeadCompareButton?.addEventListener('click', () => {
   comparingBabyOriginal = !comparingBabyOriginal; // Comparison never changes the stored scale or head-rig JSON.
   requestDraw();
@@ -352,10 +407,13 @@ babyHeadCompareButton?.addEventListener('click', () => {
 window.__animalHeadRigBabyPreview = Object.freeze({
   debugSnapshot: () => ({
     ...babyHeadDebug, species: String($('animalId').value || ''),
-    scale: Number(babyHeadScaleSlider.value) / 100, explicit: authoredBabyHeadScale !== null,
+    scale: Number(babyHeadScaleSlider.value) / 100, shortening: Number(babyHeadShorteningSlider.value) / 100,
+    maskMode: authoredBabyHeadUsePainted ? 'legacy-frame' : 'idle-alpha',
+    explicit: authoredBabyHeadScale !== null,
     comparingOriginal: comparingBabyOriginal, frame: babyPreviewFrame, frameSource: babyPreviewFrameSource,
     idleMaskPixels: babyHeadWarp?.maskForKind?.($('animalId').value, babyPreviewFrame)?.opaquePixels || 0,
   }),
 });
 syncBabyHeadScaleControl();
+syncBabyHeadShorteningControl();
 requestDraw();
