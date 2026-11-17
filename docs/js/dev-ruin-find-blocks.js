@@ -42,6 +42,7 @@
     let disposed=false,solved=false,sinking=false,pillarHeight=initialPillarHeight,pillarBroken=false,pillarLowered=false;
     let melody=null,netChallenge=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     let bombTargetSignal=null,bombTargetFlash=0; // The reusable projectile switch briefly glows when it requests a bomb.
+    let sourceFlameVisual=null,sourceBowl=null,sourceFireContact=null; // The emitter, bowl and collision-only ignition target are scoped to this room.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
     const mat=(color,emissive=0,surface='carved')=>{
@@ -123,19 +124,28 @@
     }
     function fireSource(){
       const x=cx,z=cz-3;
-      const asset=root.DevRandomRuinFurniturePieces?.build?.('ruinStandingBrazier');
-      const bowl=asset||cylinder('find-blocks-brazier',x,z,floorY,.48,.67,0x655345);
-      if(asset){asset.position.set(x,floorY,z);asset.userData.devRuinFootprintIgnore=true;group.add(asset);}
-      const flame=newMesh('find-blocks-brazier-flame',new THREE.ConeGeometry(.18,.49,7),
-        new THREE.MeshBasicMaterial({color:COLOR.fire,transparent:true,opacity:.9}),x,floorY+1.05,z);
-      control({kind:'findBlocksBrazier',object:bowl,promptRoot:bowl,point:{x,y:floorY,z},
-        range:1.6,priority:36,claimAction1:true,touchIcon:'🔥',label:'Ignite Next Shot',
-        onPress:()=>{
-          if(!alive())return;
-          const ready=fire?.armNextProjectile?.()===true;
-          kit.deps?.showToast?.(ready?'Your next shot is aflame.':'Equip a ranged weapon first.',ready);
-        }});
-      return {bowl,flame};
+      const source=new THREE.Group(); // Permanent low fire hazard, not an Action 1 ammo-arming station.
+      source.name='find-blocks-low-bowl-brazier';
+      source.position.set(x,floorY,z);
+      source.userData.devRuinFootprintIgnore=true; // Decorative bowl/flame geometry must not widen the ignition hitbox.
+      group.add(source);
+      const bowl=root.DevRandomRuinFurniturePieces?.build?.('ruinBlueBrazierBowl')
+        ||new THREE.Mesh(new THREE.CylinderGeometry(.5,.35,.24,10),mat(COLOR.stone)); // Fallback remains an actual low stone bowl.
+      bowl.name=bowl.name||'find-blocks-brazier';
+      bowl.position.y=.16;source.add(bowl);
+      const contact=new THREE.Mesh(new THREE.CylinderGeometry(.52,.44,.84,10),
+        new THREE.MeshBasicMaterial({visible:false})); // Low bowl's flame-height contact is reachable by the normal torch forehand.
+      contact.name='find-blocks-brazier-fire-contact';
+      contact.position.y=.42;
+      contact.userData.devRuinFootprintIgnore=true;
+      contact.userData.fireHazard=true; // Only this fixed flame-height collider counts, never particle extents.
+      source.add(contact);sourceFireContact=contact;
+      const flameRoot=new THREE.Group(); // Campfire emitter replaces the old solid flame cone.
+      flameRoot.name='find-blocks-brazier-campfire';
+      flameRoot.position.y=.32;source.add(flameRoot);
+      sourceFlameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flameRoot,{scale:.84,rateScale:.68})||null;
+      sourceBowl=source;
+      return {bowl:source,flame:flameRoot};
     }
     function registerBurn(idSuffix,object,onBurn){
       const targetId=id+'-'+idSuffix; // Unregistered when the lab is rerolled or left.
@@ -387,6 +397,7 @@
       netChallenge?.dispose?.();
       for(const burn of burnIds)fire?.unregisterTarget?.(burn);
       for(const stop of disposers)stop();
+      sourceFlameVisual?.dispose?.();sourceFlameVisual=null;sourceBowl=null;sourceFireContact=null; // Release every owned source reference on exit or partial failure.
       releaseControls();
       for(const block of blocks)game.unregisterLabPushBlock?.(block.mesh); // Release native V50 block collision and interactions, including partially installed rooms.
       occupancy?.clearSolids?.(solidOwner);
@@ -410,6 +421,7 @@
       tick(dt){
         if(!alive())return;
         const step=Math.max(0,Math.min(.05,Number(dt)||0));
+        sourceFlameVisual?.update?.(step); // Reuse authored campfire particles instead of custom cone animation.
         melody?.tick?.(step);
         melody?.animate?.(step);
         netChallenge?.tick?.(step);
@@ -481,13 +493,17 @@
           root.RuinInteractionAudio?.watchMovement?.(gate,(gate.position.y-gateStart)/3.2); // Rumble on the physical gate's rise, not every solved frame.
         }
       },
+      animate(dt) {
+        if(disposed||!solved)return;
+        sourceFlameVisual?.update?.(Math.max(0,Math.min(.05,Number(dt)||0))); // A revisited completed room animates its permanent fire without ticking puzzle logic.
+      },
       snapshot(){return {id,variant,netVariant,stairMirror,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
         melody:melody?{notes:melody.notes?.slice(),attempts:melody.attempts,
           heardNotes:melody.heardNotes?.slice(),inscription:melody.inscription?.diagnostics?.()}:null, // Mobile snapshot reveals manual input and plate-visible carved notes.
-        iceMelt,fireReady:!!fire,witchBombReady:!!bombs,
+        iceMelt,fireReady:!!fire,sourceFireHazard:sourceFireContact?.userData?.fireHazard===true,witchBombReady:!!bombs,
          bombTarget:{present:!!bombTube,hittable:!!bombTube&&alive()&&!solved,flashing:bombTargetFlash>0}};},
       dispose:teardown, // Both normal teardown and failed initialization use identical scoped cleanup.
     };

@@ -5,8 +5,12 @@
   let lastStrike = null; // Copied by Pixel Probe on mobile when checking reach and ignition.
   let deps = null, lit = false, lastEvent = 'ready'; // Hand-held torch state is session-only, unlike future tool unlocks.
   let torchThrowHold = null; // The input owner that pairs exactly one held press with its release or cancellation.
+  let torchThrowPending = null; // Released throws wait for the real Strike pose before spawning a projectile.
+  let torchThrowRecovering = false; // Keeps the authored Strike/Return sequence alive even if the held mesh was temporarily unavailable.
+  let torchThrowHeldHidden = false; // Only restore the previously hidden in-hand copy when its visibility toggle succeeded.
+  let lastThrowOrigin='none'; // Pixel Probe/mobile debug identifies whether a launch sampled the held torch plane.
   function init(injected) {
-    deps = injected; lit = false; torchThrowHold = null; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
+    deps = injected; lit = false; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; torchThrowHeldHidden = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
     for (const key of (deps.getUnlocked?.() || [])) if (tools.has(key)) unlocked.add(key);
   }
   function register(def) { if (!def?.id || !def.label || typeof def.onSelect !== 'function') return false; tools.set(def.id,def); return true; }
@@ -137,7 +141,7 @@
     return { ok: true, message: '' };
   }
   function beginThrow(source = 'input', pointerId = null) {
-    if (torchThrowHold || !canThrow() || window.GameplayInputRouter?.isAttackBlocked?.()) return false;
+    if (isThrowSequenceActive() || !canThrow() || window.GameplayInputRouter?.isAttackBlocked?.()) return false;
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) return false;
     const animation = window.HeldActionAnimations?.weaponThrowSpin; // The same authored throw gestures as ordinary thrown weapons.
     const poses = animation?.poses || window.HobunjiRangedWeaponArchetypes?.animations?.thrown?.();
@@ -150,55 +154,89 @@
       holdFrac: animation?.holdFrac ?? 0.82,
     };
     if (deps?.beginThrowVisual?.(durationS, options) !== true) return false;
+    window.ProceduralHandGripRuntime?.beginHeld?.('palm-parallel'); // Match the thrown hatchet's grip for the full held Windup and Strike.
     torchThrowHold = { source, pointerId, startedAt: performance.now() };
     lastEvent = 'torch throw: windup held';
     deps?.refreshActionBar?.();
     return true;
   }
 
+  function isThrowSequenceActive() {
+    return !!torchThrowHold || !!torchThrowPending || torchThrowRecovering;
+  }
+  function restoreThrownTorch() {
+    if (!torchThrowRecovering) return;
+    torchThrowRecovering = false;
+    if (torchThrowHeldHidden) deps?.setHeldTorchVisible?.(true); // Restore only after a successful hide, like a ranged hatchet.
+    torchThrowHeldHidden = false;
+    window.ProceduralHandGripRuntime?.clear?.();
+  }
   function cancelThrow(reason = 'cancel') {
-    if (!torchThrowHold) return false;
-    torchThrowHold = null;
-    deps?.cancelThrowVisual?.();
+    if (!isThrowSequenceActive()) return false;
+    const hadWindup = !!torchThrowHold || !!torchThrowPending; // Only unlaunched throws need to cancel their animation.
+    torchThrowHold = null;torchThrowPending = null;
+    if (hadWindup) deps?.cancelThrowVisual?.();
+    restoreThrownTorch();
+    window.ProceduralHandGripRuntime?.clear?.();
     lastEvent = 'torch throw canceled: ' + reason;
     deps?.refreshActionBar?.();
     return true;
   }
-
   function releaseThrow(source = 'release') {
     if (!torchThrowHold) return {ok:false,message:''};
     torchThrowHold = null;
     if (!canThrow() || window.GameplayInputRouter?.isAttackBlocked?.()) {
       deps?.cancelThrowVisual?.();
+      window.ProceduralHandGripRuntime?.clear?.();
       lastEvent = 'torch throw blocked: ' + source;
       return {ok:false,message:''};
     }
-    const progress = Number(deps?.getThrowPoseProgress?.()); // Release exactly at the currently displayed held windup.
+    const progress = Number(deps?.getThrowPoseProgress?.()); // The held partial windup is preserved by the shared animation compositor.
     const poseProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
-    const result = throwLit(); // Preserve existing aimed torch physics, ruin fire contact and unlit replacement.
-    if (result.ok) {
-      deps?.releaseThrowVisual?.({ poseProgress });
-      lastEvent = 'torch throw released at ' + Math.round(poseProgress * 100) + '%: ' + source;
-    } else {
-      deps?.cancelThrowVisual?.();
+    torchThrowPending = { source, area: deps?.getCurrentArea?.() }; // Input-release only schedules the hit; the first actual Strike frame launches it.
+    deps?.releaseThrowVisual?.({ poseProgress });
+    lastEvent = 'torch throw entering strike at ' + Math.round(poseProgress * 100) + '%: ' + source;
+    return {ok:true,message:''};
+  }
+  function updateThrow({active=false,progress=0,strikeFrac=1}={}) {
+    if (!torchThrowPending && !torchThrowRecovering) return;
+    if (!active || !isHoldingTorch() ||
+        window.CharacterActionLocks?.isLocked?.('player','actions') ||
+        window.CharacterActionLocks?.isLocked?.('player','tools') ||
+        (torchThrowPending && (deps?.getCurrentArea?.() !== torchThrowPending.area ||
+          window.GameplayInputRouter?.isAttackBlocked?.()))) {
+      cancelThrow('strike-interrupted');
+      return;
     }
-    return result;
+    const poseProgress = Math.max(0,Math.min(1,Number(progress)||0)); // The same normalized animation clock used to place the held torch mesh.
+    const releaseFrac = Math.max(0,Math.min(1,Number(strikeFrac)||0)); // Shared Strike event boundary, not the initial button-up time.
+    if (torchThrowPending && poseProgress >= releaseFrac) {
+      const result=throwLit(deps?.getTorchProjectileVisual?.() || null);
+      if (!result.ok) { cancelThrow('projectile-unavailable');return; }
+      torchThrowPending=null;
+      torchThrowHeldHidden = deps?.setHeldTorchVisible?.(false) === true; // Hide the held sprite at projectile launch, not at input release.
+      torchThrowRecovering = true; // Even if no mesh loaded, the pose and mobile aim must persist through recovery.
+      lastEvent = 'torch thrown from strike at ' + Math.round(poseProgress*100) + '%';
+    }
+    if (poseProgress >= 1 - 1e-6) restoreThrownTorch(); // An animation completed on this frame; never leave the replacement invisible.
   }
 
-  function throwLit() {
+  function throwLit(projectileVisual = null) {
     if (!canThrow()) return {ok:false,message:'The torch must be lit before you throw it.'};
-    if (!window.RangedWeapons?.throwAdventuringTorch?.()) return {ok:false,message:'Cannot throw the torch here.'};
+    const sampled = projectileVisual || deps?.getTorchProjectileVisual?.() || null; // Direct/dev throws use the same release-frame sample.
+    if (!window.RangedWeapons?.throwAdventuringTorch?.(sampled)) return {ok:false,message:'Cannot throw the torch here.'};
+    lastThrowOrigin = sampled?.sourceTransform?.position ? 'held-plane' : 'fallback';
     lit=false; lastEvent='thrown: unlit torch replaced'; deps?.refreshActionBar?.();
     return {ok:true,message:''};
   }
   window.AdventuringTools=Object.freeze({
     init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,forehandSwingVisual,swingAtAim,
-    beginThrow,releaseThrow,cancelThrow,throwLit,
+    beginThrow,releaseThrow,cancelThrow,throwLit,updateThrow,isThrowSequenceActive,
     get debug() {
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
       return {
-        lit, held, throwCharging: !!torchThrowHold, throwSource: torchThrowHold?.source || null,
+        lit, held, throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,

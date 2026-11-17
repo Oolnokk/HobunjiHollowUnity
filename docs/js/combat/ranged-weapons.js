@@ -134,8 +134,9 @@
   const CONFIG = {
     torch: { // The adventuring throw uses the ordinary swept projectile/ruin-fire route, not separate physics.
       label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
-      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'weapon', projectileVisualWidthWorld:.5, // Keep the full torch silhouette rather than arrow-sized default art.
+      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.5, // Spin the full torch end-over-end exactly like a thrown hatchet.
       projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
+      heldSpin:true,heldSpinRevolutions:2.5,gripMode:'palm-parallel', // Reuse the hatchet's in-hand spin/flourish and throwing grip; flight spin is independent.
       projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
       projectileDropStartTiles:3,projectileGravityWorldS2:10,
       projectileEmbedOnTerrain:false,toolEndFlip:false,
@@ -1128,15 +1129,22 @@
     return p;
   }
 
-  function throwAdventuringTorch() {
+  function throwAdventuringTorch(visual = null) {
     if (!deps?.player) return null;
-    const aim = playerAimSolution('torch'); // The same camera-to-projectile convergence as every thrown weapon.
+    const sourceTransform = visual?.sourceTransform || null; // The live adventuring torch plane is sampled at release like a ranged hatchet.
+    const textureSource = visual?.textureSource || null; // Preserve the actual equipped tool art in the projectile.
+    window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Hatchet parity: use the current reticle, not the throttled pre-windup aim result.
+    const aim = playerAimSolution('torch',sourceTransform?.position); // Match the launch-frame origin to the same reticle solution.
     if (!aim?.origin || !aim?.direction) return null;
     const dir=aim.direction;
     const angle=Math.atan2(dir.z,dir.x);
     const pitch=Math.atan2(dir.y,Math.hypot(dir.x,dir.z));
-    return spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
-      angle,'player',deps.player,null,pitch,{dungeonFire:true});
+    const projectile=spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
+      angle,'player',deps.player,null,pitch,{
+        textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true,
+      }); // Same swept collision, launch pose, spin and ballistic arc as the thrown hatchet, with an always-lit fire payload.
+    if (projectile) playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike, not input release.
+    return projectile;
   }
 
   function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {

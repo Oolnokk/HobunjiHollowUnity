@@ -18733,14 +18733,15 @@
         // animation. Keep the release yaw latched until that animation stops being
         // an active shot so projectile and held-weapon visuals cannot snap back to
         // the camera between finger-up and the actual fire frame. Loads clear now.
-        if (mobileArchCombatAim.tool !== 'ranged' || !window.RangedWeapons?.isPlayerAttacking?.()) {
-          clearMobileArchCombatAim(pointerId, 'release-complete');
-        }
+        const holdRangedAim = mobileArchCombatAim.tool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Ordinary ranged weapons keep the camera-stick direction until their true release.
+        const holdTorchAim = mobileArchCombatAim.tool === 'adventuring' && window.AdventuringTools?.isThrowSequenceActive?.(); // Torch now fires on Strike, so mobile aim must survive finger-up too.
+        if (!holdRangedAim && !holdTorchAim) clearMobileArchCombatAim(pointerId, 'release-complete');
       }
 
       function updateMobileArchCombatAimLifecycle() {
         if (!mobileArchCombatAim?.released) return;
         if (mobileArchCombatAim.tool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.()) return;
+        if (mobileArchCombatAim.tool === 'adventuring' && window.AdventuringTools?.isThrowSequenceActive?.()) return; // Preserve the original throw reticle throughout Windup, Strike and return.
         clearMobileArchCombatAim(null, 'release-complete');
       }
 
@@ -25322,7 +25323,7 @@
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
           // authored yaw delta while the tool path itself inherits reticle pitch.
-          const reticleAligned = combatSwingAlignToReticle && (activeTool === 'ranged' || activeTool === 'harpoon');
+          const reticleAligned = combatSwingAlignToReticle && (activeTool === 'ranged' || activeTool === 'harpoon' || activeTool === 'adventuring'); // A thrown torch follows the same pitched camera-reticle orbit as the hatchet.
           const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame(combatSwingAimTargetOverride) : null; // Fishing pins this to anchorWorld; combat ranged actions pass null and keep the live reticle frame.
           const aimBaseYaw = reticleFrame?.yawRad ?? θ;
           const aimPitchRad = -(reticleFrame?.pitchRad ?? 0); // Visual pose pitch is sign-corrected independently from the actual reticle/projectile aim ray.
@@ -25651,9 +25652,10 @@
               : progress >= HF ? Math.min(1, (progress - HF) / Math.max(0.0001, 1 - HF)) : 0)
             : 0; // Smoothly cancels the sweep's 90° PNG basis at the beginning/end of tool strokes.
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 + workNeutralWeight * Math.PI / 2 : 0;
-          const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
-            ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
-            : null;
+          const rangedThrowDef = combatSwingAnim === 'ranged'
+            ? (activeTool === 'ranged' ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
+              : (activeTool === 'adventuring' && equipmentSlots.adventuring === 'torch' ? window.RangedWeapons?.config?.torch : null))
+            : null; // Torch Spin Throw now uses the same held-sprite flourish/grip pivot as a ranged hatchet.
           const rangedThrowSpins = rangedThrowDef?.rangedType === 'thrown' && rangedThrowDef?.heldSpin === true; // Held throw spin is independent from projectile tumbling: fishing spear spins during the throw but freezes its sampled 90°-offset alignment in flight.
           const rangedThrowSpinBasisRad = rangedThrowSpins
             ? THREE.MathUtils.degToRad(Number(rangedThrowDef?.heldSpinBasisDeg) || 0)
@@ -25727,6 +25729,12 @@
           const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
           if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
+        }
+        if (window.AdventuringTools?.isThrowSequenceActive?.()) {
+          window.AdventuringTools.updateThrow({ // Sample after the final tool/PNG transform on the actual Strike frame, as the ranged hatchet does.
+            active: activeTool === 'adventuring' && heldMode === 'tool' && combatSwingAnim === 'ranged',
+            progress, strikeFrac: SF,
+          });
         }
         if (combatSwingAnim && toolSwingT <= 0) {
           const finishedFishingThrow = fishingThrowSpinVisual !== null; // Used to clear the temporary palm-parallel fishing grip only after Strike/return finishes.
@@ -27048,6 +27056,11 @@
         // Tools and held bag items render and animate in every playable map.
         // Ordinary interiors still omit combat/reticle updates below; this
         // visual pass does not enable farm or combat actions there.
+        if (window.AdventuringTools?.isThrowSequenceActive?.() &&
+            (activeTool !== 'adventuring' || heldMode !== 'tool' || !toolHolder.visible ||
+              window.CharacterActionLocks?.isLocked?.('player','tools'))) {
+          window.AdventuringTools.cancelThrow('tool-lost-during-strike'); // Reject a cancelled throw before a different tool inherits the old pose.
+        }
         updateToolMesh(dt);
         window.HeldItemActionInput?.update();
         // Combat and targeting remain limited to exterior maps and den caverns.
@@ -32542,8 +32555,31 @@
         beginThrowVisual: (durationS, options) => toolSwingT > 0 || pendingAction?.tool === 'adventuring'
           ? false : triggerPoseDrivenToolVisual('adventuring', durationS, options), // Reuse the shared held Windup→Strike timeline.
         getThrowPoseProgress: getWeaponSwingWindupPoseProgress,
+        getTorchProjectileVisual: () => {
+          if (heldMode !== 'tool' || activeTool !== 'adventuring' || equipmentSlots.adventuring !== 'torch') return null;
+          const mesh = toolMeshMap.adventuring; // Same equipped assembly that owns the torch's actual hand stance.
+          const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null; // Live PNG plane, not a guessed world origin.
+          if (!plane) return null;
+          plane.updateWorldMatrix(true, false);
+          const geometry = plane.geometry?.parameters || {}; // Reused by the projectile builder to preserve the actual torch silhouette.
+          return {
+            textureSource: plane.material?.map || toolTextures.torch || null,
+            sourceTransform: {
+              position: plane.getWorldPosition(new THREE.Vector3()),
+              quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
+              scale: plane.getWorldScale(new THREE.Vector3()),
+              planeWidth: Number(geometry.width) || TOOL_MODEL_WIDTH,
+              planeHeight: Number(geometry.height) || TOOL_MODEL_WIDTH,
+            },
+          };
+        },
         releaseThrowVisual: releaseWeaponSwingHold,
         cancelThrowVisual: cancelWeaponSwingHold,
+        setHeldTorchVisible: visible => {
+          if (equipmentSlots.adventuring !== 'torch' || !toolMeshMap.adventuring) return false;
+          toolMeshMap.adventuring.visible = !!visible; // The hatchet's hide-on-spawn/restore-on-recovery contract on the adventuring slot.
+          return true;
+        },
         refreshActionBar,
         selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
       };
