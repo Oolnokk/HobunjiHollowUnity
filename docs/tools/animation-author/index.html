@@ -14444,6 +14444,9 @@ async function installAnimationUrlSceneV1547(scene) {
     await addNpcAnimationActor(npc.id || npc.name, {
       skipDefaultPlacement: true, preserveMultiScene: true,
     }); // Shareable scenes retain earlier actors if an unrelated workspace briefly becomes active.
+    if (animationAuthor.mode !== 'multi') {
+      await setAnimationAuthorMode('multi'); // Callers/await continuations may switch modes immediately after addNpc resolves.
+    }
     if (animationAuthor.mode !== 'multi' || animationAuthor.actors.length !== index + 1 ||
         String(animationAuthor.actors[index]?.source?.id || '').toLowerCase() !== scene.actorIds[index]) {
       throw new Error('URL scene actor setup interrupted at ' + scene.actorIds[index] +

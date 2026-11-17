@@ -33,8 +33,20 @@ async function main() {
       };
       // Force the formerly intermittent background-mode interruption after Pahu loads.
       const addNpcBeforeModeSwitch = addNpcAnimationActor;
-      let modeSwitchInjected = false; // The test must perform one interruption, not recursively switch on a default single preview.
+      const buildAvatarBeforeModeSwitch = buildAvatarRender;
+      let modeSwitchInjected = false; // Records the switch after Pahu is added but before the URL loader resumes.
+      let leafBuildModeSwitchInjected = false; // Records a second switch while Leaf's portrait is still awaiting construction.
+      let armLeafBuildInterrupt = false; // Only the URL scene's second actor may trigger the inner-build switch.
+      buildAvatarRender = async function(npc, ...args) {
+        const avatar = await buildAvatarBeforeModeSwitch(npc, ...args);
+        if (armLeafBuildInterrupt && npc?.id === 'leaf' && !leafBuildModeSwitchInjected) {
+          leafBuildModeSwitchInjected = true;
+          await setAnimationAuthorMode('single');
+        }
+        return avatar;
+      };
       addNpcAnimationActor = async function(id, options = {}) {
+        if (id === 'leaf' && options.preserveMultiScene) armLeafBuildInterrupt = true;
         const actor = await addNpcBeforeModeSwitch(id, options);
         if (!modeSwitchInjected && id === 'pahu' && options.preserveMultiScene) {
           modeSwitchInjected = true;
@@ -50,6 +62,7 @@ async function main() {
         return {
           mode: animationAuthor.mode,
           modeSwitchInjected,
+          leafBuildModeSwitchInjected,
           selectedActorId: animationAuthor.selectedActorId,
           activeActors: summarize(animationAuthor.actors),
           savedModeActors: Object.fromEntries(Object.entries(animationAuthor.modeStates)
@@ -112,7 +125,8 @@ async function main() {
       return actors.length > 0 && /Loaded \d+ NPCs/.test(status);
     }, null, { timeout: 45000 });
     const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
-    if (!sceneBuild.modeSwitchInjected || sceneBuild.mode !== 'multi' ||
+    if (!sceneBuild.modeSwitchInjected || !sceneBuild.leafBuildModeSwitchInjected ||
+        sceneBuild.mode !== 'multi' ||
         sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
       throw Error('URL scene creation lost an actor or failed to initialize: ' + JSON.stringify(sceneBuild));
     }
