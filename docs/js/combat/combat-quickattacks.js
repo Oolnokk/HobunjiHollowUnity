@@ -373,6 +373,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: impactDamage, feyPrimaryKnockback: knockbackPxS }, // A conditionally empowered quick strike carries its actual first-hit magnitude for Hyped.
               afflictionBonuses: hitAfflictions,
               quickConditionalBonus: hitTech.conditionMatched, // Raw authored condition state remains observable even while its bonus is cooling down.
               quickBonusEffectProc: conditionBonusUsed, // Cross-cutting effects such as Flourishes follow the same cooldown gate as the Quick Attack bonus package.
