@@ -205,6 +205,7 @@
     finishLoad(key, cx, cz, bounds, group, payload, buildMs) {
       const record = { key, cx, cz, bounds, group, payload: payload || {}, buildMs, loadedAt: performance.now(), debugCage: null };
       this.loaded.set(key, record);
+      residencyVersion++;
       this.failedUntil.delete(key);
       this.builds++;
       this.lastBuildMs = buildMs;
@@ -218,6 +219,7 @@
       const { key, cx, cz, bounds, group } = ctx; // Preserves partial payloads for the normal registry/resource cleanup owner.
       const record = this.loaded.get(key) || { key, cx, cz, bounds, group, payload: ctx.payload || {}, debugCage: null }; // Also handles an integration hook throwing after finishLoad registered the chunk.
       this.loaded.delete(key);
+      residencyVersion++;
       this.queue.delete(key);
       this.failedUntil.set(key, performance.now() + 5000);
       try { this.onChunkUnloaded?.(record); } catch (cleanupError) { console.error('[wilderness-chunks] failed-build detach', cleanupError); }
@@ -313,6 +315,7 @@
       this.scene.remove(record.group);
       record.group.clear?.();
       this.loaded.delete(key);
+      residencyVersion++;
       this.unloads++;
       return true;
     }
@@ -578,6 +581,8 @@
     refreshDebugText(false);
   }
 
+  let residencyVersion = 0; // Bumped on any chunk load/unload; lets render-only caches rescan on change instead of by timer.
+
   function snapshot() {
     return {
       chunkTiles: CHUNK_TILES,
@@ -807,6 +812,7 @@
     attachObject,
     update,
     snapshot,
+    residencyVersion: () => residencyVersion,
     toggleDebug,
     auditResidency,
     formatResidencyAudit,
