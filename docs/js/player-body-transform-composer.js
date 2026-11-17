@@ -446,7 +446,7 @@
     return () => externalRootProviders.delete(String(name));
   }
 
-  let renderFacingState = {}; // Final body deadzone includes weapon/channel yaw after ordinary gameplay facing.
+  let renderFacingState = {}; // The body deadzone follows the logical base facing; cosmetic idle-stance yaw must not steer its snap side.
   const renderFacingForward = new THREE.Vector3(); // Reused by final quaternion-to-yaw conversion.
   const renderFacingUp = new THREE.Vector3(0, 1, 0); // World yaw axis for body and owned held visuals.
   const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
@@ -472,10 +472,12 @@
     const perps = api.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
     if (!perps) return;
     renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
-    const rawYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Actual composed portrait direction, after every stance/animation channel.
+    const composedYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Used only to diagnose the composed stance/body orientation.
+    const rawYaw = Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
+      ? renderDebug.baseFacingYaw : composedYaw; // Clamp the gameplay-facing root, not the idle weapon yaw added during this render.
     const solved = api.perpClamp(renderFacingState, rawYaw, perps);
     const correction = wrapSignedAngle(solved.effectiveTarget - rawYaw);
-    renderDebug.bodyDeadzone = { rawYaw, renderedYaw: solved.effectiveTarget, correction, latestChange: 'Final body clamp follows stance yaw; seated feet retain chair facing.' };
+    renderDebug.bodyDeadzone = { rawYaw, composedYaw, renderedYaw: solved.effectiveTarget, correction, latestChange: 'Base-heading deadzone preserves additive stance yaw while feet retain their movement-facing basis.' };
     if (Math.abs(correction) < 1e-8) return;
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
@@ -586,11 +588,17 @@
         baseWorldEulerDeg: null,
         composedWorldEulerDeg: null,
         neckYaw: null,
+        baseFacingYaw: null, // Gameplay root yaw sampled before any render-only attack/idle-stance contributions.
+        authoredAbsoluteYaw: false, // Crawl/bed author a complete heading and still need the final composed-yaw clamp.
       }; // Persisted below before temporary transforms are restored.
       renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
       renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       try {
+      if (playerMesh) {
+        renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
+        renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
+      }
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
       if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
@@ -600,6 +608,7 @@
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
+          renderDebug.authoredAbsoluteYaw = Number.isFinite(bodyDelta.absoluteYaw); // A complete authored crawl/bed yaw intentionally replaces the gameplay heading.
           applyAbsoluteYaw(bodyDelta, baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
           const legsTranslation = playerLegRoot ? resolveAbsoluteLegsTranslation() : null;
