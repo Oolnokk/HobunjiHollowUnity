@@ -1007,19 +1007,13 @@
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
     if ((!order && xrayRule('layers.manualOrder') !== 'on' && !shoulderPetPresentation?.pet?.avatarRef) || !renderer.setTransparentSort) return draw();
-    const changed = new Set(); // Only the farther portraits near the player defer depth writes during the ordinary color draw.
-    if (protectNearPortrait && order) {
-      for (const [mesh, rank] of order.ranks) {
-        if (rank === order.nearest || rank.close === false) continue;
-        forEachMaterial(mesh.material, material => {
-          if (!material.depthWrite) return;
-          material.depthWrite = false;
-          changed.add(material);
-        });
-      }
-    }
-    try { return withVisualSort(renderer, order, draw); }
-    finally { for (const material of changed) material.depthWrite = true; }
+    // The actor-aware painter order is still essential when two portrait cards cross. But NEVER turn off
+    // a portrait's ordinary depth write in the base pass: worn pants are drawn after its owner's portrait,
+    // and a depth-write-free PNG cannot occlude the garment (or another actor's garment) even when it
+    // is physically in front. Feet retain their independent pants-only camera-depth push.
+    // protectNearPortrait remains an accepted argument for existing replay call sites; physical portrait
+    // occlusion now takes precedence over the old temporary far-portrait depth-write suppression.
+    return withVisualSort(renderer, order, draw);
   }
 
   function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {
