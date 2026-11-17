@@ -77,7 +77,14 @@
         || data.hobunjiInstanceBounds === true
         || data.hobunjiWildernessDistanceCull === true
         || (!isChunk && WORLD_NAME.test(String(node.name || '')));
-      const skip = excluded || (node !== scene && prohibited(node)); // A zone scene named "River" is not itself a water-effects subtree.
+      // Scene/chunk/source names often contain map IDs such as "Cloud Forest"
+      // or "River". They are structural wilderness owners, not effect/plant
+      // subtrees; only explicit no-cull flags may prune their descendants.
+      const isStructuralOwner = node === scene || data.wildernessChunk === true
+        || data.terrainRenderChunkSource === true;
+      const skip = excluded || data.hobunjiNeverDistanceCull === true
+        || data.hobunjiDistanceCullNever === true
+        || (!isStructuralOwner && prohibited(node));
       if (skip) continue; // Prune complete tree/actor/weather subtrees instead of walking their many meshes on every scan.
       if (meshEligible(node, isChunk, taggedWorld)) {
         candidates.push({ mesh: node, kind: isBatch ? 'batch' : isChunk ? 'chunk' : 'scenery' });
