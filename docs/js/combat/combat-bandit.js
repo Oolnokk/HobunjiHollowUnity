@@ -1046,19 +1046,23 @@
     const banditFlaskLoadout = isFlasker ? rollBanditFlaskLoadout(cfg) : []; // Per-entity definition; uses never decrement it.
     const flaskerTuning = isFlasker ? banditFlaskerTuning(cfg) : null; // Shared AI/loot tuning stored with this spawned hostile.
     const shapeStats = window.WeaponShapeStats?.forShape?.(weapon.shapeKey) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
+    const weaponEfficiency = Number(shapeStats.efficiency); // Validate the shape's stamina efficiency before using it for both attack cost and capacity.
+    const attackStaminaCost = BANDIT_ATTACK_STAMINA_COST / (Number.isFinite(weaponEfficiency) && weaponEfficiency > 0 ? weaponEfficiency : 1); // The opening-attack gate and capacity floor must use the same final cost.
+    const minimumAttacks = cfg?._preserveMineEnemyTiers ? 1 : 2; // Keep the original mine stamina curve wherever viable; new danger-tier bandits need two affordable openings.
+    const maxStamina = Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul), Math.ceil(attackStaminaCost * minimumAttacks)); // Do not scale a fighter's attack budget below the stamina cost of its own weapon.
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier * shapeStats.power;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
     return {
       label: BANDIT_RANK_LABEL[rank] || 'Bandit',
       hostile: true, liveBirth: true,
       maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
-      maxStamina: Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul)),
+      maxStamina,
       moveSpeed: 118 + tier * (cfg?._preserveMineEnemyTiers ? 4 : 2), // Existing ten-floor ghoul movement stays as before.
       chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * (cfg?._preserveMineEnemyTiers ? 5 : 2.5), // Ghoul mine movement remains on its independent floor scale.
       attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
       attackRangePx: deps.TILE * BANDIT_ATTACK_RANGE_TILES * shapeStats.range,
       attackHalfConeRad: Math.min(Math.PI, BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range),
-      attackStaminaCost: BANDIT_ATTACK_STAMINA_COST / shapeStats.efficiency,
+      attackStaminaCost,
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
