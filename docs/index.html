@@ -64,10 +64,10 @@
   <!-- Canonical gameplay input router (legacy WorldActionInputClaims API): world claims, contextual attack suppression and interrupted hold ownership across all devices. -->
   <script src="js/world-action-input-claims.js?v=20261113inputrouter1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
-  <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
+  <!-- Shared contextual prompt, controller binding hints, and physical action-arch layout extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
-  <script src="js/action-prompt-ui.js?v=20261117worldPromptInputs1"></script>
+  <script src="js/action-prompt-ui.js?v=20261117promptDecouple1"></script>
   <!-- Cutscene Director preview standalone helpers extracted out of
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
@@ -847,7 +847,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261117worldPromptInputs1"></script>
+  <script src="js/shattercasks.js?v=20261117promptDecouple1"></script>
   <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
   <script src="js/pingdort-flocks.js?v=20261117hypedCreatureBoulder6"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
@@ -2922,7 +2922,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261117worldPromptInputs1"></script>
+  <script src="game.js?v=20261117promptDecouple1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
