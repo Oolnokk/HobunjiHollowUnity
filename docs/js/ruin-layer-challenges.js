@@ -345,11 +345,12 @@
       // DungeonFire still owns thrown-lit-torch collision with the ice seal and its gate.
       const source=authored('ruinBlueBrazierBowl',cx-2.3,y+.16,cz)
         ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.5,.35,.24,10),stone,cx-2.3,y+.28,cz); // Low, wide stone bowl replaces the elevated station.
-      source.userData.fireHazard=true; // Physical torch contact ignites it without arming ordinary ammunition.
-      source.userData.devRuinFootprintIgnore=true;
+      source.userData.devRuinFootprintIgnore=true; // Decorative bowl and particles do not enlarge the fixed ignition hitbox.
       const contact=new THREE.Mesh(new THREE.CylinderGeometry(.52,.44,.84,10),
         new THREE.MeshBasicMaterial({visible:false})); // Flame-height contact reaches torch swings without blocking player movement.
-      contact.position.y=.30;contact.userData.devRuinFootprintIgnore=true;source.add(contact);
+      contact.position.y=.30;contact.userData.devRuinFootprintIgnore=true;
+      contact.userData.fireHazard=true; // Torch ignition uses this flame-height collider, not a particle bounding box.
+      source.add(contact);
       const flameRoot=new THREE.Group(); // Reuse the actual campfire emitter, not a separate solid-cone flame.
       flameRoot.name='ruin-fire-flame-'+id;
       flameRoot.position.set(cx-2.3,y+.42,cz);group.add(flameRoot);
