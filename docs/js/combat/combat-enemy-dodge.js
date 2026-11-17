@@ -135,6 +135,7 @@
     entity.invulnUntil = performance.now() + tuning.iframeMs * efficacy;
     entity._enemyDodgeCooldownT = tuning.cooldownS;
     entity._enemyDodge = { threatId: threat.id, durationS, remainingS: durationS, spinSign: direction.sign || 1, source: threat.source };
+    window.FeyIllusions?.onDodgeStarted?.(entity); // Apply the complete panic distance multiplier before the first real NPC dodge sweep.
     entity._enemyDodgePending = null;
     window.CombatVocalizations?.playDodge?.(entity);
     dodgeCount += 1;
