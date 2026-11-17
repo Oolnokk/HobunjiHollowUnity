@@ -685,6 +685,7 @@
     // Comparing each joint and orientation component avoids cancellations between opposing legs.
     // A tiny tolerance ignores matrix round-off from a render-only turn of the entire avatar.
     const POSE_EPSILON = 1e-6; // Used by poseChanged to ignore numerical noise, not visible motion.
+    const LEG_AXES = ['x', 'y', 'z']; // Reused for six joint reads per frame instead of allocating six axis lists.
     const poseComponents = new Float64Array(54); // Scratch for this garment's 18 joint coordinates and 36 orientation entries.
     const lastPoseComponents = new Float64Array(54); // Last skin-uploaded pose, compared against poseComponents.
     let hasLastPose = false; // First frame must skin even if every live bone is in its rest orientation.
@@ -694,7 +695,7 @@
       for (const side of LEG_SIDES) {
         const leg = aim[side], frames = handle.scratch.frames[side];
         for (const joint of LEG_JOINTS) {
-          for (const axis of ['x', 'y', 'z']) {
+          for (const axis of LEG_AXES) {
             const value = leg[joint][axis]; // Joint coordinate used by bone transforms and the pose-change test.
             poseComponents[index] = value;
             if (!Number.isFinite(value) || Math.abs(value - lastPoseComponents[index]) > POSE_EPSILON) moved = true;
@@ -825,9 +826,9 @@
       if (!renderOnly && legHandle.getRestStance && handle.lastStance && (moved || handle.dirty || --handle.restRecheckIn <= 0)) {
         handle.restRecheckIn = REST_RECHECK_FRAMES;
         const stance = restStanceBones(handle);
-        let moved = 0, k = 0;
-        for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
+        let stanceDelta = 0, k = 0; // Max change in the standing bind joints, separate from the moving-pose flag.
+        for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; stanceDelta = Math.max(stanceDelta, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
+        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
