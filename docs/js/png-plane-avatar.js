@@ -615,7 +615,7 @@
       tracked++;
       triangles += (mesh.geometry.getAttribute?.('position')?.count || 0) / 3;
     }
-    return { percent: portraitDensityPercent, player: portraitGrid('full'), npc: portraitGrid('npc'),
+    return { percent: portraitDensityPercent, player: portraitGrid(playerBudgetMode), npc: portraitGrid('npc'),
       hostileMask: portraitGrid('npc', true), tracked, triangles, lastRebuilt: lastPortraitRebuilds };
   }
 
