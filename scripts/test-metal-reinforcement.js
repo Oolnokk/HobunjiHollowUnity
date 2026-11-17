@@ -100,6 +100,21 @@ near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime),
 assert.match(shop, /MetalReinforcement\?\.next\(current/, 'smith looks up one next stage');
 assert.doesNotMatch(shop, /mc-reinforce-select/, 'arbitrary metal-tier selection is removed');
 assert.match(shop, /setToolReinforcement\(itemKey, metalKey, 0\)/, 'ordinary new tools begin at grade I');
+assert.match(shop, /if \(deps\.getGearInventory\(\)\?\.tools\?\.\[itemKey\]\)/, 'existing owned tool cannot be forged again');
+const smithFunction = shop.slice(shop.indexOf('  function craftMetalTool('), shop.indexOf('  // choice:', shop.indexOf('  function craftMetalTool('))); // Exercise early duplicate protection without DOM or gold costs.
+const ownedItem = 'hatchet_nativeCopper';
+let smithWrites = 0;
+const smithDeps = { // Browser-like adapters: owned item, enough materials, all registration data.
+ UNLOCKED_TOOL_SHAPES: ['hatchet'], VERDIGRIS_METAL_KEYS: keys, METAL_DEFS: metalDefs,
+ craftedToolItemKey: (shape, metal) => shape + '_' + metal, getGearInventory: () => ({ tools: { [ownedItem]: true } }),
+ inventory: {bar_nativeCopper: 100, gold: 100}, showToast() {}, setToolReinforcement() {smithWrites++}
+};
+const smithScope = { deps: smithDeps, window: {MetalReinforcement: reinforcement, WeaponTrustVisits: {}}, CRAFT_BAR_COST: 3, CRAFT_LABOR_GOLD: 15 };
+const craftExisting = new Function('scope', 'with(scope) { ' + smithFunction + '; return craftMetalTool; }')(smithScope); // Uses production purchase body.
+craftExisting('hatchet', 'nativeCopper');
+assert.equal(smithDeps.inventory.bar_nativeCopper, 100, 'smith cannot charge bars on a duplicate tool');
+assert.equal(smithDeps.inventory.gold, 100, 'smith cannot charge gold on a duplicate tool');
+assert.equal(smithWrites, 0, 'duplicate forge cannot erase or replace reinforcement grades');
 assert.match(foundry, /setToolReinforcement\(key, metal, 0\)/, 'modular new tools begin at grade I');
 assert.match(game, /toolReinforcement: Object\.fromEntries\(/, 'new game characters start at actual grade I (0.75×)');
 assert.match(onboarding, /toolReinforcement: Object\.fromEntries\(/, 'new onboarding characters start at actual grade I (0.75×)');
