@@ -170,9 +170,13 @@ paintedCheckbox.checked = false;
 listeners.get('babyHeadUsePainted:change')[0]();
 ctx.draw();
 assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, undefined, 'unchecking restores the new idle-opacity default');
+const shortenedPreview = ctx.previewImageForAnimal(image); // The first cached result used the earlier 20% shortening.
 listeners.get('babyHeadCompare:click')[0]();
 ctx.draw();
-assert.equal(ctx.previewImageForAnimal(image), first, 'switching back immediately restores cached enlarged preview');
+assert.equal(ctx.previewImageForAnimal(image), image, 'comparison still returns unmodified artwork after shortening and mode edits');
+listeners.get('babyHeadCompare:click')[0]();
+ctx.draw();
+assert.equal(ctx.previewImageForAnimal(image), shortenedPreview, 'switching back restores the cached shortened/enlarged preview');
 ctx.drawGuides({ x: 0, y: 0, width: 100, height: 100 });
 assert.equal(guides, 1, 'source canvas outlines the actual head frame as a guide only');
 ctx.restoreHistoryState({ basic: true, babyHeadScale: 1.35, babyHeadShortening: 0.15, babyHeadUsePaintedFrame: true });
