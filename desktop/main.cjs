@@ -5,6 +5,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { GAME_SCHEME, GAME_URL, getGameAsset, isGameUrl, localizeGameHtml } = require('./game-protocol.cjs');
+const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
 
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
 protocol.registerSchemesAsPrivileged([{ scheme: GAME_SCHEME, privileges: {
@@ -22,27 +23,7 @@ let mainWindow = null; // Single game window.
 let closeAllowed = false; // Avoid recursive interception after a successful save.
 let closeInProgress = false; // Serialize repeated close requests.
 
-// Execute only in the trusted renderer; no preload or Node.js access is exposed to the game.
-const CLOSE_SAVE_SCRIPT = [
-  '(async () => {',
-  '  const save = window.LocalSaveFolder;',
-  '  const before = save?.getStatus?.();',
-  '  if (window.HobunjiAutosavePause?.isPaused?.()) return { ok: true, mode: "paused" };',
-  '  if (before?.state === "ready" && before.autoSyncArmed && !window.HobunjiAutosavePause?.isPaused?.()) {',
-  '    const result = await save.syncNow({ reason: "desktop-window-close" });',
-  '    const action = String(result?.lastAction || "");',
-  '    if (/error|blocked|risk/i.test(action) || result?.dataLossRisk) {',
-  '      return { ok: false, error: result?.lastError || action || "Folder sync failed" };',
-  '    }',
-  '    return { ok: true, mode: "folder", action };',
-  '  }',
-  '  if (window.__hobunjiGameStarted === true && typeof window.HobunjiRuntimeSave?.flushNow === "function") {',
-  '    const result = await window.HobunjiRuntimeSave.flushNow({ reason: "desktop-window-close" });',
-  '    if (result?.ok === false) return { ok: false, error: result.error || "Browser save failed" };',
-  '  }',
-  '  return { ok: true, mode: "browser" };',
-  '})()',
-].join('\n');
+// Close-save policy is isolated in close-save.cjs, with no access to Node APIs.
 
 function vendorAsset(filename) {
   if (app.isPackaged) return path.join(VENDOR_ROOT, filename);
