@@ -1015,6 +1015,13 @@
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
     if (playerAppearanceDebug) lines.push('Player appearance: ' + JSON.stringify(playerAppearanceDebug));
+    const wornPants = window.PantsGarmentRenderer?.liveHandles?.() || []; // Probe-only inventory; never iterate every garment in the game loop.
+    const playerPants = wornPants.find(handle => { // A garment may be nested under the player's portrait or body-scale pivots.
+      for (let node = handle?.model; node; node = node.parent) if (node === playerMesh) return true;
+      return false;
+    });
+    const pantsDepth = playerPants?.getFootDepthBiasDebug?.(); // The render-only foot offset, including active paired-animation overrides.
+    if (window.PantsGarmentRenderer) lines.push(`Pants/feet depth: player=${playerPants ? 'attached' : 'none'} live=${wornPants.length} camera=${camera?.isPerspectiveCamera ? 'perspective' : 'other'} base=${Number(pantsDepth?.base || 0).toFixed(4)}u applied=${Number(pantsDepth?.applied || 0).toFixed(4)}u anatomyRevision=${pantsDepth?.anatomyRevision ?? '-'} scopes=${pantsDepth?.scopes?.join(',') || 'none'}`);
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
