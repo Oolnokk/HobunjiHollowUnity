@@ -28,6 +28,7 @@
   let playerPosteriorY = 0;
   let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
+  let unrelatedSceneSkips = 0; // Counts editor/preview render passes whose scenes do not contain the live player rig.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
   const headAimTarget = new THREE.Vector3(); // Copied from gameplay's shared interaction/fishing target before render.
   const headAimOrigin = new THREE.Vector3(); // Reused for the neck's position after all body lean has been composed.
@@ -605,6 +606,15 @@
     const proto = THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
     proto.render = function composedPlayerBodyRender(scene, camera) {
+      // WebGLRenderer is shared by the main world and standalone preview
+      // scenes. An unrelated scene's camera must never advance the player's
+      // private deadzone history, run post-head hooks, or consume the next
+      // live-world transform dump. The real world scene still uses the full
+      // composition path, including secondary renders of that same scene.
+      if (playerMesh?.isObject3D && scene?.isScene && !isDescendantOf(playerMesh, scene)) {
+        unrelatedSceneSkips++;
+        return originalRender.call(this, scene, camera);
+      }
       const undo = [];
       const renderDebug = {
         sequence: ++renderSequence,
@@ -761,6 +771,7 @@
       const neckJoint = currentPlayerNeckJoint(); // Used below so the mobile/debug report can show the currently clamped local neck yaw without console access.
       return {
         playerAttached: !!playerMesh,
+        unrelatedSceneSkips, // Existing mobile compositor debug can identify secondary render contamination avoided.
         posteriorY: playerPosteriorY,
         headMaxYawDeg: PLAYER_HEAD_MAX_YAW_DEG,
         currentNeckYawDeg: neckJoint ? THREE.MathUtils.radToDeg(neckJoint.rotation.y) : null,
