@@ -95,6 +95,13 @@ faced=true;assert.equal(pickup()[0].inputAction,'toolSelect','touch offers its r
 device='desktop';assert.equal(pickup()[0].inputAction,'interact','keyboard pickup remains E');
 
 const ruin=read('docs/js/dev-random-ruin-interactions.js'); // Separate V50 popup bridge.
+const ruinTouchLabels=new Function('window','bindingFor',
+  between(ruin,'  const TOUCH_PROMPT_LABELS = Object.freeze(','  const INPUT_CLAIM_OWNER')
+  +between(ruin,'  function bindingLabel(action,','  function inputColor(')+'return bindingLabel;')(
+  win, action=>action==='interact'?'Button0':'Button2'); // Real direct-ruin label helper, not a copied mapping.
+assert.equal(ruinTouchLabels('action3','touch'),'Action 3','direct ruin touch input must name its physical third button');
+assert.equal(ruinTouchLabels('interact','touch'),'','no standalone touch Interact button should be suggested');
+assert.equal(ruinTouchLabels('interact','controller'),'','ruin controller A cannot be an Interact hint');
 let result=null; // Captures real bridge output without rendering a scene.
 const deps={window:{...win,AdventuringTools:{isHoldingTorch:()=>torch},WorldPopupText:{syncInteractionPrompts:o=>{result=o;}}},
   actionButtonsFromRows:rows=>rows.map(r=>({action:r.action,inputAction:r.inputAction||'action1',worldInteraction:true})),
