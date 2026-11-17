@@ -86,7 +86,11 @@
   // harpoon's 🎣 fallback in _openToolArc).
   function actionPromptGlyph(actionId, touchIcon) {
     const lastInputDevice = getLastInputDevice();
-    if (lastInputDevice === 'controller') return window.InputBindings.buttonLabel(deps.inputBindings.controller[actionId]);
+    if (lastInputDevice === 'controller') {
+      const binding = deps.inputBindings.controller[actionId]; // The live controller binding checked before displaying an interaction hint.
+      if (actionId === 'interact' && binding && window.InputBindings.resolveActionForButton?.('controller', binding) === 'jump') return ''; // Ruin A currently jumps; never advertise it as an Interact pickup.
+      return window.InputBindings.buttonLabel(binding);
+    }
     if (lastInputDevice === 'touch') return touchIcon || '👆';
     return window.InputBindings.buttonLabel(deps.inputBindings.desktop[actionId]);
   }
