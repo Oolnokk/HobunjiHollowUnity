@@ -104,7 +104,7 @@ assert.match(foundry, /setToolReinforcement\(key, metal, 0\)/, 'modular new tool
 assert.match(game, /toolReinforcement: Object\.fromEntries\(/, 'new game characters start at actual grade I (0.75×)');
 assert.match(onboarding, /toolReinforcement: Object\.fromEntries\(/, 'new onboarding characters start at actual grade I (0.75×)');
 assert.match(shop, /forgeBarCost\(CRAFT_BAR_COST, metalKey/, 'the ordinary smith uses scaled forging costs');
-assert.match(foundry, /forgeBarCost\(cost.bars, metal, deps.METAL_DEFS\)/, 'the foundry uses the same scaled forging costs');
+assert.match(foundry, /forgeBarCost\?\.\(cost.bars, metal, deps.METAL_DEFS\)/, 'the foundry uses the same scaled forging costs');
 const inventoryUI = read('docs/js/inventory-ui.js'); // Equipment detail cards expose the reinforcement grade when CombatDeps provides it.
 assert.match(inventoryUI, /toolReinforcementProgress\?\.\(itemKey\)/, 'Pack shows the actual graded reinforcement');
 assert(html.indexOf('js/metal-reinforcement.js') < html.indexOf('js/metal-craft-shop.js'), 'progression module loads before shop');
