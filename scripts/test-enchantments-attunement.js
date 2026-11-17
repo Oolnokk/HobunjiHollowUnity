@@ -808,6 +808,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   const npcOptions={
     windupS:.2,strikeS:.1,recoverS:0,
     data:{isBandit:true,attacker:npc,voiceAbilityId:'opportunistJab'},
+    feyHypedNpcTarget:npcTarget, // NPC stage must reject a target that changed map before the second contact.
     onFeyHypedNpcEchoStart(ratio){npcEchoStarts++;npcEchoMovementRatio=ratio;}, // Actual bandit owner uses the same callback to launch its second independently swept lunge.
     onStrike(){
       npcStrikeCount++;
@@ -857,6 +858,22 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(npcResults.length,1,'second NPC strike can catch a target that dodged the original');
   assert(Math.abs(npcResults[0].damage-4)<.00001,'a fresh second NPC hit is 10% power with 5 Hyped points');
 
+  // A target changed to another map after a valid first strike is never
+  // damaged by the still-scheduled independent second collision check.
+  RS.addEnhancedResource(npc,'hypedStamina',2);
+  RS.spendStamina(npc,2,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  npcResults.length=0;npcStrikeCount=0;npcComplete=0;npcCanHit=true;
+  const leftAreaNpc=nHype.beginNpcMelee(npc,npcOptions,nHype.claimNpcMelee(npc));
+  npc._banditAction=leftAreaNpc;
+  leftAreaNpc.onStrike(leftAreaNpc);
+  leftAreaNpc.onComplete(leftAreaNpc);
+  npcTarget.areaId='different-area';
+  npc._banditAction.onStrike();
+  npc._banditAction.onComplete();
+  assert.equal(npcStrikeCount,1,'the second NPC strike cannot run on a target removed to another area');
+  assert.equal(npcResults.length,1,'cross-area Hyped does not create ghost hits');
+  npcTarget.areaId='arena'; // Restore shared fixture for subsequent cancel and ordinary combat tests.
+
   // NPC staggers/death cancel the pending echo without leaking stale status.
   RS.addEnhancedResource(npc,'hypedStamina',3);
   RS.spendStamina(npc,3,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
@@ -864,7 +881,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   const beforeNpcCancel=hypedStages.length;
   interruptedNpc.onCancel(interruptedNpc);
   assert.equal(hypedStages.length,beforeNpcCancel,'cancelled NPC action schedules no extra strike');
-  assert.equal(npcEchoStarts,2,'a cancelled third NPC attack never starts another lunge'); // The first two completed NPC pairs each issued one separate echo-lunge request.
+  assert.equal(npcEchoStarts,3,'a cancelled NPC attack never starts another lunge'); // Three completed NPC pairs (including map-change whiff) each requested one echo-lunge.
   assert.equal(npc._feyHypedNpcSequence,undefined,'NPC cancellation cleans paid state');
   assert.equal(nHype.npcDamagePayload(npc,npcTarget,5,10),null,'ordinary later hits get no stale Hyped multiplier');
   assert.equal(nHype.debugSnapshot().npcReplayCount>=2,true,'mobile diagnostics count independently tested NPC second contacts');
