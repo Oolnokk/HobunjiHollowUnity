@@ -691,6 +691,10 @@
         ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS +
         ' pace=' + data.streamBuildIntervalMs + 'ms',
     ];
+    const distance = window.WildernessDistanceCull?.snapshot?.(); // Copyable A/B counts from the render-only non-vegetation distance culler.
+    if (distance) lines.push('non-veg distance: ' + (distance.enabled ? distance.distanceTiles + ' tiles' : 'OFF')
+      + ' hidden=' + distance.hidden + ' (chunk ' + distance.hiddenChunk + ', batch ' + distance.hiddenBatch
+      + ', scenery ' + distance.hiddenScenery + ') candidates=' + distance.candidates);
     const persisted = window.__wildernessChunkPersistenceDebug?.(); // Adds save-state coverage to the mobile status panel.
     if (persisted) {
       lines.push('saved year=' + persisted.year + ' chunks=' + persisted.chunks + ' editedTiles=' + persisted.editedTiles);
