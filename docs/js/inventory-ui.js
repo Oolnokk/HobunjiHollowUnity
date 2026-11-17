@@ -6,6 +6,7 @@
   let decorateQueued = false; // Coalesces mutation bursts into one presentation pass.
   let menuReadabilityObserver = null; // Re-applies menu readability rules after dynamic menu content/state changes.
   let menuReadabilityQueued = false; // Coalesces menu mutation/click refreshes into one computed-style pass.
+  const menuReadabilityOverrides = new WeakMap(); // Remembers each authored inline declaration temporarily replaced by a readability correction.
   const menuReadabilityScopes = new Set(); // Dirty subtrees prevent each Pack rebuild from rescanning every other menu tab.
   let menuReadabilityFullScan = false; // Opening the menu or an explicit refresh still checks all visible menu content.
   const menuReadabilityStats = { passes: 0, fullPasses: 0, elementsLastPass: 0, lastMs: 0 }; // Exposed by the existing mobile Inventory debug snapshot.
@@ -280,44 +281,57 @@
         if (!isMenuTextCarrier(element)) return; // Avoid forcing layout for wrapper divs, icons and pictures with no text.
         if (element !== root && element.offsetParent === null) return;
 
-        // Include the nearest interactive owner's state so child text is recalculated when its parent becomes selected/active.
-        const stateOwner = element.closest('button,[role="button"],.mp-tab,.inv-item-box,.inv-equip-slot');
-        const ownerState = stateOwner && stateOwner !== element
-          ? `${stateOwner.className}|${stateOwner.getAttribute('aria-selected') || ''}|${stateOwner.getAttribute('aria-pressed') || ''}`
-          : '';
-        const readabilityState = `${element.className}|${element.getAttribute('aria-selected') || ''}|${element.getAttribute('aria-pressed') || ''}|${element.hasAttribute('disabled') ? 'disabled' : ''}|${ownerState}`;
-        if (element.dataset.menuReadabilityState !== readabilityState) {
-          if (element.dataset.menuFontFloor === '1') {
-            element.style.removeProperty('font-size');
-            delete element.dataset.menuFontFloor;
-          }
-          if (element.dataset.menuGrayText === '1') {
-            element.style.removeProperty('color');
-            delete element.dataset.menuGrayText;
-          }
-          element.dataset.menuReadabilityState = readabilityState;
-        }
-
+        // Remove only our own prior overrides before measuring. A previously
+        // written inline !important must never mask new ancestor CSS, and an
+        // authored inline value/priority must be restored byte-for-byte.
+        restoreMenuReadabilityOverrides(element);
         const computed = getComputedStyle(element);
+        const overrides = {}; // Holds authored declarations for corrections made during this pass only.
         const fontPx = Number.parseFloat(computed.fontSize);
-        if (Number.isFinite(fontPx) && fontPx < MENU_MIN_FONT_PX - 0.01 && element.dataset.menuFontFloor !== '1') {
-          element.style.setProperty('font-size', `${MENU_MIN_FONT_PX}px`, 'important');
+        if (Number.isFinite(fontPx) && fontPx < MENU_MIN_FONT_PX - 0.01) {
+          applyMenuReadabilityOverride(element, overrides, 'font-size', `${MENU_MIN_FONT_PX}px`);
           element.dataset.menuFontFloor = '1';
         }
 
         const color = parseCssColor(computed.color);
-        if (color && isGrayMenuText(color) && element.dataset.menuGrayText !== '1') {
+        if (color && isGrayMenuText(color)) {
           const alpha = Math.max(0, Math.min(1, color.a));
           const mutedGreen = alpha < 0.995 ? `rgba(138,173,143,${alpha})` : 'rgb(138,173,143)';
-          element.style.setProperty('color', mutedGreen, 'important');
+          applyMenuReadabilityOverride(element, overrides, 'color', mutedGreen);
           element.dataset.menuGrayText = '1';
         }
+        if (overrides['font-size'] || overrides.color) menuReadabilityOverrides.set(element, overrides);
       });
     });
     menuReadabilityStats.passes++;
     if (!scopes) menuReadabilityStats.fullPasses++;
     menuReadabilityStats.elementsLastPass = elementsVisited;
     menuReadabilityStats.lastMs = Math.round((performance.now() - startedAt) * 100) / 100;
+  }
+
+  function restoreMenuReadabilityOverrides(element) {
+    const overrides = menuReadabilityOverrides.get(element); // Scoped per DOM node so detached nodes are garbage-collected.
+    if (!overrides) return;
+    for (const [property, original] of Object.entries(overrides)) {
+      // Another subsystem may have changed this declaration since our pass.
+      // In that case its newer value wins; do not restore an obsolete snapshot.
+      if (element.style.getPropertyValue(property) !== original.applied ||
+          element.style.getPropertyPriority(property) !== 'important') continue;
+      if (original.value) element.style.setProperty(property, original.value, original.priority);
+      else element.style.removeProperty(property);
+    }
+    menuReadabilityOverrides.delete(element);
+    delete element.dataset.menuFontFloor;
+    delete element.dataset.menuGrayText;
+  }
+
+  function applyMenuReadabilityOverride(element, overrides, property, applied) {
+    overrides[property] = {
+      value: element.style.getPropertyValue(property),
+      priority: element.style.getPropertyPriority(property),
+      applied,
+    }; // Exact inline declaration to restore when an ancestor class or CSS variable changes.
+    element.style.setProperty(property, applied, 'important');
   }
 
   function isMenuTextCarrier(element) {
