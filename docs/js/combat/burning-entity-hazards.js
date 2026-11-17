@@ -8,7 +8,7 @@
   const CORPSE_FIRE_MAX_SECONDS = 12; // Caps corpse lifetime even when the victim had a large remaining Burning buildup.
   const CORPSE_RADIUS_TILES = 0.22; // Used by knockback sweeps for a lying body, independent of visual particles.
   const ACTOR_RADIUS_TILES = 0.28; // Used by knockback sweeps for standing characters without authored physical radii.
-  const HEIGHT_TOLERANCE = 1.15; // Prevents hazards on distant ruin floors from catching a different elevation.
+  const HEIGHT_TOLERANCE = 0.65; // Keeps a shove on one ruin floor from touching flames on another floor.
   const corpseFlames = new WeakMap(); // Per-corpse temporary fire state, not persisted with creature saves.
   const activeCorpses = new Set(); // The only corpses ticked; old lootable bodies never incur a per-frame scan.
   let lastContact = null; // Exposed through debugSnapshot for mobile knockback and torch-ignition diagnosis.
@@ -70,8 +70,13 @@
 
   function heightFor(entity) {
     if (Number.isFinite(entity?.physicalFeetY)) return entity.physicalFeetY;
-    if (Number.isFinite(entity?.avatarRef?.group?.position?.y)) return entity.avatarRef.group.position.y;
-    return Number.isFinite(entity?.surfaceY) ? entity.surfaceY : null;
+    if (Number.isFinite(entity?.surfaceY)) return entity.surfaceY;
+    const rootY = entity?.avatarRef?.group?.position?.y; // Gameplay compares floor level rather than the portrait's raised center.
+    if (!Number.isFinite(rootY)) return null;
+    const lift = isCorpse(entity)
+      ? (Number(entity.halfHeight) || 0) * (entity.deathRecorded ? 0.82 : 0.12)
+      : Number(entity.groundLift ?? entity.halfHeight) || 0; // Living avatar roots include the creature's body height.
+    return rootY - lift;
   }
 
   function sameHeight(a, b) {
