@@ -636,6 +636,18 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(RS.getAffliction(victim,'panickedStamina'),0,'no double spending of panic');
   fey.update(.016,victim);
   assert(victim.dodgeT>.35,'panic adds 10% roll duration per panic point');
+  const ally=makeEntity({name:'Roll-path companion',x:32,y:0,footing:100}); // Existing companion roster resolves panic collisions by swept path.
+  companionObjects.push(ally);
+  victim.x=64;fey.update(.016,victim);
+  assert(ally.footing<100,'panic roll damages an intersected ally’s Footing');
+  assert(knockbacks.some(k=>k.target===ally&&k.meta?.source==='fey-panicked-roll'),'panic roll uses the shared ally knockback seam');
+  companionObjects.pop();
+  const wallImpacts=[];
+  context.KnockbackCollisionImpact={resolveStrength:(actor,desc,strength)=>{wallImpacts.push({actor,desc,strength});}};
+  assert.equal(fey.onDodgeBlocked(victim),true,'blocked panic rolls resolve through knockback collision owner');
+  assert.equal(fey.onDodgeBlocked(victim),false,'one blocked dodge gets only one wall impact');
+  assert.equal(wallImpacts.length,1);
+  assert.equal(wallImpacts[0].strength,.9,'wall impact strength is proportional to Panicked Stamina');
   victim.dodging=false;fey.update(.016,victim);
   randomQueue=[0];
   assert.equal(fey.apply('feyTurnabout',victim,{weaponKey:'fey-testing-blade'}),true);
