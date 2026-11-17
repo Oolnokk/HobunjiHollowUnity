@@ -367,6 +367,7 @@
   }
 
   function applySelfExhaustion(creature) {
+    if (creature?._animalAttack?.hyped?.phase === 1) return; // The paid Hyped replay repeats the burrow attack, not its 80% Footing and 90% Stamina self-cost.
     const maxFooting = Number.isFinite(creature.maxFooting) ? creature.maxFooting : 100; // Used to convert the 80% self-footing cost into points.
     const currentFooting = Number.isFinite(creature.footing) ? creature.footing : maxFooting; // Used as the starting footing value for the raw self-drain.
     creature.footing = Math.max(0, currentFooting - maxFooting * tuning.SELF_FOOTING_DRAIN_FRACTION);
