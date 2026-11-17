@@ -51,8 +51,11 @@
   }
   function sameScale(current, expected) {
     if (!expected) return true;
-    return !!current && ['x', 'y', 'z'].every(axis =>
-      Number.isFinite(current[axis]) && Math.abs(current[axis] - expected[axis]) <= 1e-7);
+    return !!current && ['x', 'y', 'z'].every(axis => {
+      if (current[axis] == null && expected[axis] == null) return true; // Sparse isolated tool/test vectors still compare their authored axes.
+      return Number.isFinite(current[axis]) && Number.isFinite(expected[axis])
+        && Math.abs(current[axis] - expected[axis]) <= 1e-7;
+    });
   }
 
   function sameOrientation(current, expected) {
@@ -101,7 +104,12 @@
     }
     const orientationOwned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
     const scaleOwned = sameScale(pose.group.scale, pose.scale); // A new scale owner must also defeat stale talon reset.
-    let owned = orientationOwned && scaleOwned;
+    const staleTalonScale = !scaleOwned && sameScale(pose.group.scale, pose.lastDecomposedScale); // A precisely recognized late replay of the bird's intermediate matrix scale is not a new native scale owner.
+    if (orientationOwned && staleTalonScale && pose.scale) {
+      pose.group.scale.copy(pose.scale); // Correct ONLY the known talon intermediate scale before shared owner validation.
+      debug.staleCarryCorrections++;
+    }
+    let owned = orientationOwned && (scaleOwned || staleTalonScale);
     if (pose.poseSession) {
       pose.poseSession.release(); // Restores only this talon owner's quaternion/scale; an externally displaced rig keeps its newer pose.
       owned = !!pose.lastAlignedQuaternion && pose.poseSession.wasRestored(pose.group, 'quaternion')
@@ -257,7 +265,8 @@
       }
       const newOwner = window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'quaternion')
         || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'scale'); // A resumed fall/locomotion action takes precedence over stale talon replay.
-      if (newOwner || !sameScale(reset.group.scale, reset.scale)) {
+      if (newOwner || (!sameScale(reset.group.scale, reset.scale)
+        && !sameScale(reset.group.scale, reset.lastDecomposedScale))) {
         releasedPoseChecks.delete(prey);
         debug.captiveHandoffs++;
         continue;
@@ -367,6 +376,8 @@
     if (captivePose?.group === group) {
       if (captivePose.lastAlignedQuaternion) captivePose.lastAlignedQuaternion.copy(group.quaternion);
       else captivePose.lastAlignedQuaternion = group.quaternion.clone(); // Allocate once per capture, not per animated flight frame.
+      if (captivePose.lastDecomposedScale) captivePose.lastDecomposedScale.copy(group.scale);
+      else captivePose.lastDecomposedScale = group.scale.clone(); // Recognize a delayed bird-matrix scale replay without overriding unrelated growth.
     }
     group.scale.copy(payload.scale);
     captivePose?.poseSession?.stamp(); // Stamp the exact flight-frame quaternion and size without claiming the new world position.
