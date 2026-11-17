@@ -1895,10 +1895,7 @@
   function promptButtons() {
     if(held||!promptClaim)return null;
     const device=window.ActionPromptUI?.getLastInputDevice?.()||'desktop'; // The displayed Shattercask pickup binding follows the active keyboard, controller, or touch input.
-    const controllerBindings=window.InputBindings?.getCurrentBindings?.()?.controller||null; // Live controller settings, used only when the controller owns the prompt.
-    const controllerInteractUnavailable=device==='controller'&&(!controllerBindings?.interact
-      ||(window.InputBindings?.resolveActionForButton?.('controller',controllerBindings.interact)||'interact')!=='interact'); // Includes the ruin Jump override and an explicitly unbound Interact.
-    const toolSelectPickup=device==='touch'||controllerInteractUnavailable; // Touch and controller pickups with no working Interact must show Tool Select instead.
+    const toolSelectPickup=window.ActionPromptUI.requiresInteractFallback(device); // Shared controller Jump and touch input policy.
     if(!toolSelectPickup&&window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
     if(promptClaim.startsWith('crate:')){
       const p=playerPosition(),crate=p&&window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
@@ -1907,8 +1904,7 @@
     const vase=promptClaim.startsWith('vase:')?records.get(area())?.vases.get(promptClaim.slice(5)):null;
     if(!vase||vase.exploded||vase.carried)return null;
     if(!toolSelectPickup)return vase.promptButtons||null;
-    if(device==='controller'&&(!controllerBindings?.toolSelect
-      ||window.InputBindings?.resolveActionForButton?.('controller',controllerBindings.toolSelect)!=='toolSelect'))return null; // Do not suggest a remapped selector key that Jump or another action actually consumes.
+    if(device==='controller'&&!window.ActionPromptUI.controllerActionAvailable('toolSelect',true))return null; // Require real Tool Select dispatch, not just a labeled controller binding.
     if(facedShattercask()!==vase)return null; // The tool selector only picks up the faced target, not any nearby vase.
     if(!vase.toolSelectPromptButtons)vase.toolSelectPromptButtons=Object.freeze([Object.freeze({
       ...vase.promptButtons[0],inputAction:'toolSelect',touchInputLabel:'Tool Select',
