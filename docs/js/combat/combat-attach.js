@@ -105,9 +105,12 @@
     const amount = Math.max(0, (Number(c.def.attackDamage) || 0) * (t.damageScale ?? 1) * (isPlayer(host) ? (t.playerScale ?? 1) : 1)); // playerScale softens a creature's ticks against the player (a hive defender is a deterrent, not an executioner).
     const afflictionBonuses = t.afflictionBonuses || window.ResourceSystem?.afflictionBonusesForTag(tag) || null;
     const opts = { tag, afflictionBonuses, attacker: c, noStagger: true, attachTick: true, footingDamageMultiplier: 0 };
-    if (isPlayer(host)) d.damagePlayer(amount, c.x, c.y, 0, opts);
-    else if (c.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(d.damageCreature, c, host, amount, c.x, c.y, 0, opts);
-    else d.damageCreature(host, amount, c.x, c.y, 0, opts);
+    const hype = window.FeyHypedAttacks?.creatureDamagePayload?.(c, amount, 0, opts); // Long-lived attachment ticks use Combat.deps directly, not the per-special damage view.
+    const tickDamage = hype ? hype.damage : amount; // Each second-stage Swarm tick carries reduced physical and sensory effects.
+    const tickOptions = hype ? hype.opts : opts;
+    if (isPlayer(host)) d.damagePlayer(tickDamage, c.x, c.y, 0, tickOptions);
+    else if (c.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(d.damageCreature, c, host, tickDamage, c.x, c.y, 0, tickOptions);
+    else d.damageCreature(host, tickDamage, c.x, c.y, 0, tickOptions);
   }
 
   // The host swats at what is on it. The swat is aimed at the attacker, which
