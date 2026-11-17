@@ -111,6 +111,28 @@ class Quat {
 }
 function aroundX(radians) { return new Quat(Math.sin(radians / 2), 0, 0, Math.cos(radians / 2)); }
 function angleX(q) { return 2 * Math.atan2(q.x, q.w); }
+
+class EulerX {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; this.order = 'XYZ'; }
+  clone() { return new EulerX(this.x, this.y, this.z); }
+  setFromQuaternion(q) { this.x = angleX(q); this.y = 0; this.z = 0; return this; }
+}
+Quat.prototype.setFromEuler = function setFromEuler(e) {
+  return this.set(Math.sin(e.x / 2), 0, 0, Math.cos(e.x / 2));
+};
+{
+  const node = { ...rig(), quaternion: new Quat(), rotation: new EulerX() };
+  layers.setAxis(node, 'npc-yawn-neck', 'rotation', 'x', -0.3);
+  layers.setQuaternion(node, 'drunk-npc-body', aroundX(0.1));
+  near(angleX(node.quaternion), -0.2);
+  assert.equal(layers.setAbsoluteBase(node, 'rotation', 'x', 0.4), true,
+    'authorized absolute Euler handoff updates the quaternion owner store');
+  near(angleX(node.quaternion), 0.4);
+  layers.clear(node, 'npc-yawn-neck');
+  layers.clear(node, 'drunk-npc-body');
+  near(angleX(node.quaternion), 0.4); // The now-released older poses cannot reappear.
+}
+
 {
   const node = { ...rig(), quaternion: new Quat(), name: 'npc_composed_chest' };
   layers.setAxis(node, 'npc-yawn-body', 'rotation', 'x', -0.2);
