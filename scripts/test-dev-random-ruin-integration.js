@@ -118,7 +118,9 @@ assert(interactions.includes('const slotActions=SLOT_ACTIONS'), 'nearby ruin int
 assert(simplePuzzles.includes("claimAction1:true") && simplePuzzles.includes("label:'Grab Rope'"), 'rope grab must be able to replace weapon Action 1 while nearby');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("claimAction1:true"), 'hallway doors must be able to replace weapon Action 1 while nearby');
 assert(game.includes("window.DevRandomRuinInteractions?.getActionButtons?.()"), 'normal building-interior action resolution must consume ruin context actions before held attacks/items');
-assert(game.includes("const actionId = button.inputAction ||"), 'normal WorldPopupText prompts must honor the exact physical input assigned by the ruin provider');
+assert(game.includes('const promptInputs = promptButtons.map(button =>') && game.includes('button.inputAction')
+  && game.includes('window.ActionPromptUI.actionPromptGlyph(actionId, touchLabel)'),
+  'normal WorldPopupText prompts must resolve semantic inputs through the live action-arch mapping (behavior covered by test-interaction-prompt-input-colors.js)');
 assert(interactions.includes('normalActionBarProvider:true') && interactions.includes('function syncWorldPopup(rows)') && interactions.includes('syncWorldPopup(rows)'), 'ruin interactions must keep the floating WorldPopupText list synchronized directly with proximity/claim updates while the normal action bar owns physical arch layout');
 assert(game.includes("!window.WorldActionInputClaims?.hasClaim?.('action3')") && game.includes("!window.WorldActionInputClaims?.hasClaim?.('action2')"), 'potion/ammo selectors must yield their physical buttons while a nearby world interaction claims those slots');
 assert(inputClaims.includes('hasClaim:isClaimed'), 'shared claim registry must expose the hasClaim semantic consumed by early potion/ammo selector arbitration');
