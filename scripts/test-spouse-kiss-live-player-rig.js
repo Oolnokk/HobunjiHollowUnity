@@ -165,8 +165,22 @@ for (const cameraX of [-3, 3]) {
   assert(Math.abs(playerNeck.rotation.y-camera.x) > .001, 'partner-directed head is independent of camera yaw');
 }
 assert(kiss.diagnostics().session.renderPoseCount === renderCount, 'mobile diagnostics reveal true renderer ownership count');
-kiss.stop('test-ended');
-assert(!poseLockActive && lastRenderHook === null && hookReleased === 1, 'stop unregisters the final renderer owner');
+// Real gameplay interleaves simulation and final rendering. Mouth reprojection after
+// .82 seconds changes the captured neck joints AFTER the simulation checkpoint;
+// an uncheckpointed render pass must not falsely cancel the following tick.
+for (let frame = 0; frame < 24 && kiss.diagnostics().active; frame++) {
+  assert.equal(typeof lastRenderHook, 'function', 'render ownership lasts until the clip finishes');
+  lastRenderHook([], {}, camera);
+  renderCount++;
+  update({ deltaMs: 70 });
+  assert(kiss.diagnostics().active || kiss.diagnostics().lastResult?.reason === 'completed',
+    'interleaved late render must not cancel a live kiss: ' + kiss.diagnostics().lastResult?.reason);
+}
+assert.equal(kiss.diagnostics().lastResult?.reason, 'completed', 'entire 2.4-second kiss completes naturally after repeated render passes');
+assert.equal(kiss.diagnostics().lastResult?.touched, true, 'contact occurs before natural recovery');
+assert.equal(kiss.diagnostics().lastResult?.renderPoseCount, renderCount, 'final mobile diagnostic retains all render checkpoints');
+assert.equal(kiss.stop('test-ended'), false, 'completed clip already released its pose once');
+assert(!poseLockActive && lastRenderHook === null && hookReleased === 1, 'completion unregisters the final renderer owner');
 assert(Math.abs(playerModel.position.y) < .00001 && Math.abs(playerModel.rotation.x) < .00001,
   'canceled/finished kiss returns the player torso to its original transform');
 assert.equal(playerHands.provider, null, 'hand rig is no longer owned by the kiss');
@@ -223,9 +237,18 @@ playerNeck.rotation.set(.9, 1.2, .4);
 lastRenderHook([], {}, {position:{x:100,y:100,z:100}});
 assert(Math.abs(player.rotation.y - shortPlayerYaw) < 1e-7, 'short-player yaw ignores camera/weapon transforms');
 assert(reverse.hands?.applied, 'short-player hand pose survives the final rendering pass');
-const previousHookReleases = hookReleased; // Earlier takeover tests legitimately release their own scoped renderer hooks.
-kiss.stop('reverse-ended');
+const previousHookReleases = hookReleased; // Count only the reverse-height session's final release.
+for (let frame = 0; frame < 24 && kiss.diagnostics().active; frame++) {
+  assert.equal(typeof lastRenderHook, 'function', 'short-player kiss still owns the final render hook');
+  lastRenderHook([], {}, camera);
+  update({ deltaMs: 70 });
+  assert(kiss.diagnostics().active || kiss.diagnostics().lastResult?.reason === 'completed',
+    'short-player lip and gaze recomposition must not cancel the action: ' + kiss.diagnostics().lastResult?.reason);
+}
+assert.equal(kiss.diagnostics().lastResult?.reason, 'completed', 'reverse-height clip also finishes after repeated render passes');
+assert.equal(kiss.diagnostics().lastResult?.touched, true, 'reverse-height contact happens before release');
+assert.equal(kiss.stop('reverse-ended'), false, 'natural completion already performed reverse-height cleanup');
 assert(!poseLockActive && lastRenderHook === null && hookReleased === previousHookReleases + 1,
-  'reverse-height exit releases exactly one renderer owner regardless of preceding interrupted sessions');
+  'reverse-height completion releases exactly one renderer owner regardless of preceding interrupted sessions');
 assert.equal(playerHands.provider, null, 'short-player hands regain tool/idle ownership');
-console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, knees, hands, pants, camera-independent facing/head, late render and restoration.');
+console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, full interleaved 2.4s clips, contact, knees, hands, pants, camera-independent facing/head, late-render ownership, takeover and restoration.');
