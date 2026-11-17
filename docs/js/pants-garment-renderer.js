@@ -686,8 +686,9 @@
     // A tiny tolerance ignores matrix round-off from a render-only turn of the entire avatar.
     const POSE_EPSILON = 1e-6; // Used by poseChanged to ignore numerical noise, not visible motion.
     const LEG_AXES = ['x', 'y', 'z']; // Reused for six joint reads per frame instead of allocating six axis lists.
-    const poseComponents = new Float64Array(54); // Scratch for this garment's 18 joint coordinates and 36 orientation entries.
-    const lastPoseComponents = new Float64Array(54); // Last skin-uploaded pose, compared against poseComponents.
+    const POSE_COMPONENT_COUNT = LEG_SIDES.length * (LEG_JOINTS.length * LEG_AXES.length + BONE_NAMES.length * 9); // Both legs' joint positions and bone orientation matrices.
+    const poseComponents = new Float64Array(POSE_COMPONENT_COUNT); // Scratch for the garment's live joint and orientation components.
+    const lastPoseComponents = new Float64Array(POSE_COMPONENT_COUNT); // Last skin-uploaded pose, compared against poseComponents.
     let hasLastPose = false; // First frame must skin even if every live bone is in its rest orientation.
     const poseChanged = aim => {
       let index = 0; // Same component order in both buffers, across left/right limbs.
