@@ -96,6 +96,10 @@ terrainChunk.geometry.computeBoundingBox = function () {
 }; // Actual THREE computes every vertex in the shared buffer, ignoring the chunk's drawRange.
 const protectedChunk = attach(scene, group('WildernessChunk_rain_99', { wildernessChunk: true, hobunjiNeverDistanceCull: true }));
 const protectedRock = attach(protectedChunk, mesh('rock', 190)); // Explicit exclusions must still win over geographic names.
+const unsplitTerrain = attach(scene, mesh('terrain_far', 190, { terrainRenderChunkEligible: true }));
+const unsplitEdgeFloor = attach(scene, mesh('zone_floor', 190, { hobunjiTerrainEdgeIdColor: { r: 1 } }));
+// TerrainRenderChunks runs its first spatial split after this cull begins;
+// source.visible must stay true or its newly created children inherit false forever.
 const actor = attach(scene, mesh('npc_walker_01', 190));
 const untagged = attach(scene, mesh('ordinary_debug_mesh', 195));
 const camera = { isCamera: true, matrixWorld: matrixAt(0), updateMatrixWorld() {} };
@@ -117,7 +121,9 @@ for (const [object, message] of [
   [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
   [farWater, 'water surface'], [nearEdge, 'large bounds intersect near space'],
   [invisibleChild, 'hidden ancestor'], [plantBatch, 'reagent vegetation batch'],
-  [actor, 'actor'], [protectedRock, 'explicitly no-cull chunk'], [untagged, 'untagged unrelated mesh'],
+  [actor, 'actor'], [protectedRock, 'explicitly no-cull chunk'],
+  [unsplitTerrain, 'unpartitioned explicit terrain source'], [unsplitEdgeFloor, 'unpartitioned edge-ID floor source'],
+  [untagged, 'untagged unrelated mesh'],
 ]) assert.equal(object.visible, true, message + ' must not be altered');
 assert.equal(api.snapshot().hidden, 5, 'only five actually drawable distant meshes are suppressed');
 assert.equal(api.snapshot().hiddenInstanced, 1, 'tagged instanced meshes are measured separately');
@@ -225,4 +231,4 @@ const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
 const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
 assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
   'distance cull is restored by renderWorldPasses finally before wall/prop restore');
-console.log('PASS wilderness distance cull: terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
+console.log('PASS wilderness distance cull: pre-split terrain sources, terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
