@@ -140,6 +140,12 @@ async function spritePng(page, animal) {
       name: 'grehlr-baby-fixture.png', mimeType: 'image/png', buffer: await spritePng(page, true),
     });
     await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame?.width > 0);
+    assert.equal(await page.locator('#babyHeadUsePainted').isChecked(), true,
+      'old painted Head selection is checked by default for every species');
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).maskMode,
+      'legacy-frame', 'runtime and editor agree on the painted Head default');
+    await page.locator('#babyHeadUsePainted').uncheck(); // Exercise optional idle-alpha selection in the mask-specific tests.
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha');
     await page.locator('#babyHeadScale').evaluate(input => {
       input.value = '145'; // Highest setting makes invisible overrides easy to diagnose.
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -293,11 +299,15 @@ async function spritePng(page, animal) {
       source: window.HobunjiAuthoredAnimalHeadRigs.get('moot').shoulderRest,
       target: currentShoulderRest(),
     }));
-    for (const field of ['useRun1', 'splitFrame', 'splitRightUsesIdle', 'followFrameShiftX', 'frameShiftX', 'separatorRotationDeg']) {
+    for (const field of ['useRun1', 'splitFrame', 'splitRightUsesIdle', 'followFrameShiftX']) {
       assert.equal(importedShoulder.target[field], importedShoulder.source[field],
         'copying a shoulder pose imports the authored ' + field + ' setting');
     }
-    assert.match(await page.locator('#shoulderCopyStatus').textContent(), /Copied complete shoulder pose/);
+    for (const field of ['frameShiftX', 'separatorRotationDeg']) {
+      assert.equal(importedShoulder.target[field], shoulderBeforeCopy[field],
+        'copying a shoulder pose preserves the destination frame divider ' + field);
+    }
+    assert.match(await page.locator('#shoulderCopyStatus').textContent(), /Destination divider X and angle preserved/);
     await page.evaluate(rest => { applyShoulderRestConfig(rest); draw(); }, shoulderBeforeCopy);
 
     const largeSprite = await page.evaluate(() => {
