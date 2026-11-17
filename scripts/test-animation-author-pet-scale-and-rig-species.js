@@ -105,4 +105,4 @@ assert.match(author, /carrier\.add\(actor\.root\)/, 'THREE parent transform comp
 
 const inheritedScale = 0.6 * 0.35; // Example: a 0.6x species shoulder grip multiplies a 0.35x small animal without replacing its genotype scale.
 assert.ok(Math.abs(inheritedScale - 0.21) < 1e-12);
-console.log('PASS: 13 new rig species/variants, native art, default perch selection, validated persisted shoulder multiplier and author JS syntax (' + present.size + ' PNGs).');
+console.log('PASS: 14 new rig species/variants, native art, default perch selection, validated persisted shoulder multiplier and author JS syntax (' + present.size + ' PNGs).');
