@@ -219,6 +219,9 @@
 
   function syncNpc(walker, target, dt, mattress) {
     if (!walker || walker.animalDef) return;
+    const participantId = window.NpcCharacterState?.participantId?.(walker.rec?.id)
+      || 'npc:' + String(walker.rec?.id || 'unknown'); // Identical NPC lock participant used by spouse-kiss and festival paired choreography.
+    if (window.CharacterActionLocks?.isLocked?.(participantId, 'pose')) return; // Preserve a claimed run-lean/torso frame; background bed settling must not rotate or relocate a kissing/dancing partner.
     const rig = walker._npcCharacterRigRoot;
     const root = walker.root;
     if (!rig?.isObject3D || !root?.isObject3D) return;
