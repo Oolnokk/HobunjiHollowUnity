@@ -125,6 +125,16 @@ model.updateMatrixWorld(true);
 handle.update(true);
 assert.strictEqual(position.version, beforeCameraOnlyTurn,
   'returning to the original model orientation also leaves skinning untouched');
+model.scale.x = -1; // An X-reflected portrait must not masquerade as a newly rotated thigh.
+model.updateMatrixWorld(true);
+handle.update(true);
+assert.strictEqual(position.version, beforeCameraOnlyTurn,
+  'a reflected whole-avatar matrix does not change avatar-local pants bone transforms');
+model.scale.x = 1;
+model.updateMatrixWorld(true);
+handle.update(true);
+assert.strictEqual(position.version, beforeCameraOnlyTurn,
+  'restoring a reflected avatar does not upload the same neutral pants pose again');
 
 // Opposing legs can cancel in a weighted scalar pose hash. Every bone must
 // still contribute independently so simultaneous left/right motion updates the garment.
