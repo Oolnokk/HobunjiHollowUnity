@@ -35,14 +35,25 @@ async function main() {
       const exerciseUrlModeRace = new URLSearchParams(location.search).get('scene') === 'pahu-leaf-kiss'; // Other URL-order cases must remain independent of this deliberate interruption.
       const addNpcBeforeModeSwitch = addNpcAnimationActor;
       const buildAvatarBeforeModeSwitch = buildAvatarRender;
+      let deferSinglePreview = false; // Holds the default single-avatar NPC until after the URL kiss scene finishes loading.
+      let deferredPreviewEntered = false; // Confirms the asynchronous preview was actually held, rather than being silently skipped.
+      let deferredPreviewFinished = false; // Confirms the held preview resumed and its obsolete actor request was discarded.
+      let releaseDeferredPreview = null; // Called explicitly by the outer browser regression after it sees both kiss actors.
+      let pendingSingleSwitch = null; // Allows the test to await the canceled single-avatar switch and its final UI work.
+      let delayedPreviewNpcId = null; // Resolved from the real NPC registry when the single-avatar preview starts.
       let modeSwitchInjected = false; // Records the switch after Pahu is added but before the URL loader resumes.
       let leafBuildModeSwitchInjected = false; // Records a second switch while Leaf's portrait is still awaiting construction.
       let armLeafBuildInterrupt = false; // Only the URL scene's second actor may trigger the inner-build switch.
       buildAvatarRender = async function(npc, ...args) {
         const avatar = await buildAvatarBeforeModeSwitch(npc, ...args);
+        if (exerciseUrlModeRace && deferSinglePreview && npc?.id === delayedPreviewNpcId && !deferredPreviewEntered) {
+          deferredPreviewEntered = true;
+          await new Promise(resolve => { releaseDeferredPreview = resolve; }); // Simulates a late response from the abandoned single-avatar portrait loader.
+          deferredPreviewFinished = true;
+        }
         if (armLeafBuildInterrupt && npc?.id === 'leaf' && !leafBuildModeSwitchInjected) {
           leafBuildModeSwitchInjected = true;
-          await setAnimationAuthorMode('single');
+          await setAnimationAuthorMode('rig'); // Rig mode has no auto-created NPC, unlike the intentionally delayed single-avatar preview above.
         }
         return avatar;
       };
@@ -51,9 +62,21 @@ async function main() {
         const actor = await addNpcBeforeModeSwitch(id, options);
         if (exerciseUrlModeRace && !modeSwitchInjected && id === 'pahu' && options.preserveMultiScene) {
           modeSwitchInjected = true;
-          await setAnimationAuthorMode('single');
+          delayedPreviewNpcId = animationAuthor.single.preferredNpcId || state.npcs[0]?.id || state.npcs[0]?.name;
+          deferSinglePreview = true;
+          pendingSingleSwitch = setAnimationAuthorMode('single'); // Intentionally do NOT await; it is held inside its default NPC build.
+          for (let attempt = 0; !deferredPreviewEntered && attempt < 400; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 15));
+          }
+          if (!deferredPreviewEntered) throw Error('Single-avatar preview did not reach the deliberate async hold');
         }
         return actor;
+      };
+      window.MultiAvatarAnimationAuthor.__testReleaseDeferredPreview = async () => {
+        if (!deferredPreviewEntered || !releaseDeferredPreview || !pendingSingleSwitch) throw Error('No delayed single-avatar preview to release');
+        releaseDeferredPreview();
+        await pendingSingleSwitch; // Exposes late creation AND any stale UI update after the default preview's promise resolves.
+        return deferredPreviewFinished;
       };
       window.MultiAvatarAnimationAuthor.__testSceneBuild = () => {
         const summarize = actors => (actors || []).map(actor => ({
@@ -64,6 +87,9 @@ async function main() {
           mode: animationAuthor.mode,
           modeSwitchInjected,
           leafBuildModeSwitchInjected,
+          deferredPreviewEntered,
+          deferredPreviewFinished,
+          requestedModeRevision: animationAuthor.modeRevision,
           selectedActorId: animationAuthor.selectedActorId,
           activeActors: summarize(animationAuthor.actors),
           savedModeActors: Object.fromEntries(Object.entries(animationAuthor.modeStates)
@@ -127,9 +153,20 @@ async function main() {
     }, null, { timeout: 45000 });
     const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
     if (!sceneBuild.modeSwitchInjected || !sceneBuild.leafBuildModeSwitchInjected ||
+        !sceneBuild.deferredPreviewEntered || sceneBuild.deferredPreviewFinished ||
         sceneBuild.mode !== 'multi' ||
         sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
       throw Error('URL scene creation lost an actor or failed to initialize: ' + JSON.stringify(sceneBuild));
+    }
+    const latePreview = await page.evaluate(async () => {
+      const resolved = await window.MultiAvatarAnimationAuthor.__testReleaseDeferredPreview();
+      const state = window.MultiAvatarAnimationAuthor.__testSceneBuild();
+      return { resolved, state, visibleMode: document.body.dataset.animationAuthorMode };
+    }); // The abandoned single-avatar network load must not insert Garanki into the successful Pahu/Leaf scene.
+    if (!latePreview.resolved || latePreview.state.mode !== 'multi' || latePreview.visibleMode !== 'multi' ||
+        latePreview.state.activeActors.map(actor => actor.sourceId).join(',') !== 'pahu,leaf' ||
+        latePreview.state.savedModeActors.single.some(actor => actor.sourceId === 'pahu' || actor.sourceId === 'leaf')) {
+      throw Error('Late single-avatar preview contaminated the finished URL scene: ' + JSON.stringify(latePreview));
     }
     const result = await page.evaluate(() => {
       const api = window.MultiAvatarAnimationAuthor;
