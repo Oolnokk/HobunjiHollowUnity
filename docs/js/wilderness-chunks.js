@@ -716,6 +716,15 @@
     if (!force && now - lastDebugRefreshAt < DEBUG_REFRESH_MS) return;
     lastDebugRefreshAt = now;
     const text = debugLines();
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Mobile A/B control beside the existing wilderness grid button.
+    const cullState = window.WildernessDistanceCull?.snapshot?.(); // Reuse the same authoritative state as the diagnostic line.
+    if (cullButton && cullState) {
+      const title = 'Distance Cull: ' + (cullState.enabled ? 'ON' : 'OFF');
+      if (cullButton.textContent !== title) cullButton.textContent = title;
+      if (cullButton.getAttribute('aria-pressed') !== String(cullState.enabled)) {
+        cullButton.setAttribute('aria-pressed', String(cullState.enabled));
+      }
+    }
     // Compare first: an unchanged textContent write still replaces the text node
     // and wakes every body-wide MutationObserver on this periodic refresh.
     const status = document.getElementById('wildernessChunkStatus');
@@ -747,6 +756,17 @@
     if (button && !button.dataset.wildernessChunksBound) {
       button.dataset.wildernessChunksBound = 'true';
       button.addEventListener('click', () => toggleDebug());
+    }
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Touch-friendly way to compare wilderness draw performance without DevTools.
+    if (cullButton && !cullButton.dataset.wildernessCullBound) {
+      cullButton.dataset.wildernessCullBound = 'true';
+      cullButton.addEventListener('click', () => {
+        const culler = window.WildernessDistanceCull;
+        if (!culler?.setEnabled || !culler.snapshot) return;
+        const enabled = culler.setEnabled(culler.snapshot().enabled === false);
+        window.__farmLog?.('Non-vegetation distance culling ' + (enabled ? 'enabled' : 'disabled'), 'info', 'performance');
+        refreshDebugText(true);
+      });
     }
     const auditButton = document.getElementById('wildernessChunkAuditBtn'); // Used to expose the residency scan on mobile without DevTools.
     if (auditButton && !auditButton.dataset.wildernessChunkAuditBound) {
