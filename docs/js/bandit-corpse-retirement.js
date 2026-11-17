@@ -165,6 +165,8 @@
     };
     c._banditCorpseRetired = true; // Existing actor occlusion and retirement consumers recognize this flag.
     c._corpseVisualRetired = true; // Generic wildlife/humanoid marker for other corpse consumers.
+    c._wildlifeVisualLodHidden = false; // A retired marker must not retain its former hidden-rig state.
+    c._wildlifeDormantSinceMs = null; // The wildlife streamer no longer owns this settled presentation.
     window.BurningAfflictionVfx?.syncEntity?.(c, group); // Keep finite corpse flames alive above the new body.
     stats.retired++;
     if (!c.isBandit) stats.wildlifeRetired++;
