@@ -606,18 +606,6 @@
         const size = bounds ? bounds.getSize(new THREE.Vector3()) : null;
         const worldPos = plane.getWorldPosition ? plane.getWorldPosition(new THREE.Vector3()) : plane.position;
         planeDetails.push({ label, plane, localScale, worldScale, params, size, worldPos });
-        const expectedLocalYawDeg = label === 'front' ? -90 : 90; // Attached face normal expected by the restored pet foreground policy.
-        const actualLocalYawDeg = Number(plane.rotation?.y) * 180 / Math.PI; // Live local face rotation, not the player's root observation turn.
-        const yawDifferenceDeg = Number.isFinite(actualLocalYawDeg)
-          ? Math.atan2(Math.sin((actualLocalYawDeg - expectedLocalYawDeg) * Math.PI / 180),
-              Math.cos((actualLocalYawDeg - expectedLocalYawDeg) * Math.PI / 180)) * 180 / Math.PI
-          : NaN; // Wrap-safe mismatch check prevents a false alarm at equivalent ±180° representations.
-        lines.push('Plane ' + label + ' local yaw: ' + (Number.isFinite(actualLocalYawDeg) ? actualLocalYawDeg.toFixed(1) + '°' : 'unavailable')
-          + '; attached expected=' + expectedLocalYawDeg + '°');
-        if (liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetAttachment?.authoritativeRootTransform
-            && Number.isFinite(yawDifferenceDeg) && Math.abs(yawDifferenceDeg) > 0.25) {
-          lines.push('>>> SHOULDER PLANE ORIENTATION MISMATCH: ' + label + ' differs by ' + yawDifferenceDeg.toFixed(1) + '°');
-        }
         lines.push('Plane ' + label + ': localScale=(' + [localScale.x, localScale.y, localScale.z].map(v => v.toFixed(4)).join(',') + ') worldScale=(' + (worldScale ? [worldScale.x, worldScale.y, worldScale.z].map(v => v.toFixed(4)).join(',') : '-') + ') geometry=' + (Number.isFinite(params.width) ? params.width.toFixed(4) : '-') + '×' + (Number.isFinite(params.height) ? params.height.toFixed(4) : '-') + ' bounds=' + (size ? [size.x, size.y, size.z].map(v => v.toFixed(4)).join('×') : '-') + ' worldPos=(' + [worldPos.x, worldPos.y, worldPos.z].map(v => v.toFixed(4)).join(',') + ')');
       }
       if (planeDetails.length === 2) {
