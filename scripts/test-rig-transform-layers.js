@@ -354,6 +354,43 @@ class Position3 {
   assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
 }
 
+// A late NPC dance overlay must neither discard a NEW additive effect nor
+// preserve one that was removed while the hand was claimed.
+{
+  const node = { name: 'npc-overlay-handoff', parent: {}, position: new Position3(0, 1, 0),
+    quaternion: new Quat() }; // Reuses the same actual hand-socket types as the renderer registration tests.
+  const apply = (socket, pos, quat) => {
+    socket.position.y = pos.y + .7;
+    socket.quaternion.copy(quat).multiply(aroundX(.2));
+  }; // Visible dance pose, not a second absolute idle baseline.
+  assert(layers.applyPoseOverlay(node, 'npc-dance-hand:overlap:left', apply));
+  near(node.position.y, 1.7);
+  assert(layers.setAxis(node, 'late-yawn-wrist', 'position', 'y', .25));
+  assert(layers.setQuaternion(node, 'late-drunk-wrist', aroundX(.1)));
+  near(node.position.y, 1.7); // New optional effects are deferred beneath the held dance.
+  near(angleX(node.quaternion), .2);
+  assert(layers.releasePoseOverlay(node, 'npc-dance-hand:overlap:left'));
+  near(node.position.y, 1.25); // Restore the clean wrist and only the newly live additive effect.
+  near(angleX(node.quaternion), .1);
+  layers.clear(node, 'late-yawn-wrist');
+  layers.clear(node, 'late-drunk-wrist');
+  near(node.position.y, 1);
+  near(angleX(node.quaternion), 0);
+
+  layers.setAxis(node, 'existing-wrist-sway', 'position', 'y', .3);
+  layers.setQuaternion(node, 'existing-wrist-roll', aroundX(.15));
+  assert(layers.applyPoseOverlay(node, 'npc-dance-hand:overlap:left', apply));
+  near(node.position.y, 2); // The already composed sway remains the baseline of the visible dance.
+  near(angleX(node.quaternion), .35);
+  assert(layers.releasePoseOverlay(node, 'npc-dance-hand:overlap:left'));
+  near(node.position.y, 1.3); // Existing sway returns once, not twice or zero times.
+  near(angleX(node.quaternion), .15);
+  layers.clear(node, 'existing-wrist-sway');
+  layers.clear(node, 'existing-wrist-roll');
+  near(node.position.y, 1);
+  near(angleX(node.quaternion), 0);
+}
+
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
