@@ -10,6 +10,7 @@ class Vector3 {
   constructor() { this.x = 0; this.z = 0; }
 }
 const scene = { isScene: true, children: [], name: 'zone' }; // First visible scene used to test root ownership and provider invalidation.
+let activeScene = scene; // Simulates a scene being retired or replaced without toggling Sense off.
 const player = { x: 0.1, z: 0.5 }; // Continuous tile-space position used for exact sense-range checks.
 let banditProviderCalls = 0; // Counts scans of static landmark owners to detect redundant work.
 let staticRoot = makeRoot(24.5, 0.5); // A borderline camp only becomes visible as the player moves within the same tile.
@@ -38,7 +39,7 @@ vm.runInContext(fs.readFileSync('docs/js/player-tile-events.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('docs/js/perception-mode.js', 'utf8'), ctx);
 ctx.PerceptionMode.init({
   THREE: ctx.THREE,
-  getActiveScene: () => scene,
+  getActiveScene: () => activeScene,
   getPlayerTile: () => player,
   getSources: () => ({ creatures: [{ root: creatureRoot, health: 10, def: { hostile: false } }] }),
 });
@@ -91,5 +92,18 @@ ctx.PerceptionMode.setActive(true);
 ctx.PerceptionMode.update(2000);
 assert.strictEqual(banditProviderCalls, 5, 'reopening Sense Mode forces a fresh static provider scan');
 assert.ok(ctx.PerceptionMode.debugSnapshot().landmarkCache.rebuilds >= 5);
+
+// Area loading can temporarily have no current THREE.Scene while Sense stays
+// enabled; the old zone must be released without waiting for another toggle.
+activeScene = null;
+ctx.PerceptionMode.update(2200);
+assert.strictEqual(ctx.PerceptionMode.debugSnapshot().landmarkCache.holdingScene, false,
+  'missing active scene immediately releases the previously cached wilderness');
+assert.strictEqual(ctx.PerceptionMode.debugSnapshot().byCategory.landmark || 0, 0,
+  'no stale landmark targets remain visible while the scene is absent');
+activeScene = scene;
+ctx.PerceptionMode.update(2400);
+assert.strictEqual(ctx.PerceptionMode.debugSnapshot().byCategory.landmark, 1,
+  'Sense re-collects stationary landmarks after a temporary scene transition');
 
 console.log('Stationary Perception landmark caching and moving-actor tests passed.');
