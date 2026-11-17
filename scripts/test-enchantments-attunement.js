@@ -636,7 +636,8 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(RS.getAffliction(victim,'panickedStamina'),0,'no double spending of panic');
   fey.update(.016,victim);
   assert(victim.dodgeT>.35,'panic adds 10% roll duration per panic point');
-  const ally=makeEntity({name:'Roll-path companion',x:32,y:0,footing:100}); // Existing companion roster resolves panic collisions by swept path.
+  victim.isCompanion=true;victim.master=player; // Models a real player-side actor rather than assuming an unaffiliated enemy can friendly-fire the player's pets.
+  const ally=makeEntity({name:'Roll-path companion',x:32,y:0,footing:100,isCompanion:true,master:player}); // Existing companion roster resolves panic collisions by swept path.
   companionObjects.push(ally);
   victim.x=64;fey.update(.016,victim);
   assert(ally.footing<100,'panic roll damages an intersected ally’s Footing');
