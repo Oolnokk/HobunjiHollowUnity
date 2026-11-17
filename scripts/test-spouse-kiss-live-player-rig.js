@@ -100,6 +100,15 @@ const composer = {
 };
 const window = {
   THREE, PlayerBodyTransformComposer: composer,
+  SharedAttackPose: {
+    createHeadFrame(Three) { return { position: new Three.Vector3() }; }, // Reused production mouth-frame contract.
+    headFrame(frame, model) {
+      const neck = model?.userData?.neckRig?.neckJoint; // Real Three.js head pivot supplies the test lip landmark.
+      if (!neck?.parent) return false;
+      neck.getWorldPosition(frame.position);
+      return true;
+    },
+  }, // Unlike the old fixture, this exercises the skinned mouth reprojection that caused a late ownership mismatch.
   WorldPortraitLife: { getPlayerAvatar() { return { group: playerModel }; } },
   RuntimeFrameScheduler: { register(name, cb, options) {
     assert.equal(name, 'spouse-kiss'); assert.equal(options.phase, 'pre-render'); update = cb;
@@ -146,6 +155,8 @@ assert.equal(buffTriggers, 1, 'contact fires once after the shared pose reaches 
 const authorYaw = player.rotation.y, authorDrop = playerModel.position.y; // Expected author-directed facing and torso sink at current clip time.
 const originalKnee = playerLegs.getStanceDrop(); // Used to verify the late renderer overwrites an interfering weapon stance.
 const camera = { x: -3, y: 10, z: 13 }; // An intentionally irrelevant orbit camera.
+const npcHeadBeforeLateReprojection = npcNeck.position.clone(); // Detect render-only lip movement after the simulation checkpoint.
+npcModel.position.y += .024; // A late visual mouth-anchor adjustment under a non-claimed portrait parent.
 for (const cameraX of [-3, 3]) {
   camera.x = cameraX;
   player.rotation.set(.4, .6, -.5); // Simulates a tool/aim stack rewriting the root in a late game pass.
@@ -165,12 +176,50 @@ for (const cameraX of [-3, 3]) {
   assert(Math.abs(playerNeck.rotation.y-camera.x) > .001, 'partner-directed head is independent of camera yaw');
 }
 assert(kiss.diagnostics().session.renderPoseCount === renderCount, 'mobile diagnostics reveal true renderer ownership count');
-kiss.stop('test-ended');
-assert(!poseLockActive && lastRenderHook === null && hookReleased === 1, 'stop unregisters the final renderer owner');
+assert(npcNeck.position.distanceTo(npcHeadBeforeLateReprojection) > 1e-5,
+  'the final render really changed a captured lip joint after simulation; this is not a vacuous ownership test');
+// Real gameplay interleaves simulation and final rendering. Mouth reprojection after
+// .82 seconds changes the captured neck joints AFTER the simulation checkpoint;
+// an uncheckpointed render pass must not falsely cancel the following tick.
+for (let frame = 0; frame < 24 && kiss.diagnostics().active; frame++) {
+  assert.equal(typeof lastRenderHook, 'function', 'render ownership lasts until the clip finishes');
+  lastRenderHook([], {}, camera);
+  renderCount++;
+  const projectedMouth = npcNeck.position.clone(); // Renderer hand sentinel runs after post-head hooks in actual Three.js.
+  playerHands.applyOwnedPose();
+  assert(npcNeck.position.distanceTo(projectedMouth) < 1e-6,
+    'late hand-driver mouth reapplication is idempotent after the final pose checkpoint');
+  update({ deltaMs: 70 });
+  assert(kiss.diagnostics().active || kiss.diagnostics().lastResult?.reason === 'completed',
+    'interleaved late render must not cancel a live kiss: ' + kiss.diagnostics().lastResult?.reason);
+}
+assert.equal(kiss.diagnostics().lastResult?.reason, 'completed', 'entire 2.4-second kiss completes naturally after repeated render passes');
+assert.equal(kiss.diagnostics().lastResult?.touched, true, 'contact occurs before natural recovery');
+assert.equal(kiss.diagnostics().lastResult?.renderPoseCount, renderCount, 'final mobile diagnostic retains all render checkpoints');
+assert.equal(kiss.stop('test-ended'), false, 'completed clip already released its pose once');
+assert(!poseLockActive && lastRenderHook === null && hookReleased === 1, 'completion unregisters the final renderer owner');
 assert(Math.abs(playerModel.position.y) < .00001 && Math.abs(playerModel.rotation.x) < .00001,
   'canceled/finished kiss returns the player torso to its original transform');
 assert.equal(playerHands.provider, null, 'hand rig is no longer owned by the kiss');
 assert.equal(kiss.diagnostics().active, false);
+
+// A different NPC movement/pose owner can arrive between the paired simulation
+// stamp and the final player render hook. The hook must never silently adopt
+// the moved spouse root into the kiss's authoritative checkpoint.
+assert(kiss.start(walker, () => buffTriggers++), 'takeover fixture starts a new paired kiss');
+update({ deltaMs: 70 });
+const movedSpouse = walkerRoot.position.clone().add(new THREE.Vector3(.39, .14, -.16)); // Deliberate new NPC root writer not reauthored by the kiss render callback.
+walkerRoot.position.copy(movedSpouse);
+lastRenderHook([], {}, camera);
+assert.equal(kiss.diagnostics().active, false, 'late NPC root takeover stops the obsolete kiss during the render callback');
+assert.equal(kiss.diagnostics().lastResult?.reason, 'pose-owner-replaced-during-render');
+assert(walkerRoot.position.distanceTo(movedSpouse) < 1e-8, 'render takeover cleanup preserves the newer spouse position');
+assert(kiss.diagnostics().lastResult?.poseRelease?.skipped > 0, 'late renderer takeover is reported as a skipped restore');
+assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'failed late render releases all captured pose claims');
+walkerRoot.position.set(.30, 0, .38); // Return the simulated externally moved spouse to the unchanged starting position for subsequent scenarios.
+npcModel.quaternion.identity(); // Clear the test-only tilted body after the deliberate takeover kept its newer root.
+npcNeck.quaternion.identity(); // Reset the test-only gaze that was deliberately not restored under the displaced root.
+npcNeck.position.set(0, .68, .02); // Neutral physical neck height for the next independent test.
 
 // External authors can take over a root or head before cancellation. The old
 // paired session must not overwrite those replacement transforms.
@@ -194,6 +243,7 @@ kiss.stop('newer-gaze');
 assert(npcNeck.quaternion.angleTo(otherGaze) < 1e-7, 'spouse cleanup never overwrites a newer head rotation');
 assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'explicit cancel leaves no scoped claims');
 npcNeck.quaternion.identity(); // Restore the fixture's authored standing neck before the reverse-height scenario.
+npcModel.position.y = 0; // Undo the test-only late mouth-anchor offset before swapping species heights.
 
 // Reverse the stature assignment on the very same live objects: now the player reaches
 // for a taller spouse first, before the recipient kneels. This is the historically broken
@@ -223,9 +273,22 @@ playerNeck.rotation.set(.9, 1.2, .4);
 lastRenderHook([], {}, {position:{x:100,y:100,z:100}});
 assert(Math.abs(player.rotation.y - shortPlayerYaw) < 1e-7, 'short-player yaw ignores camera/weapon transforms');
 assert(reverse.hands?.applied, 'short-player hand pose survives the final rendering pass');
-const previousHookReleases = hookReleased; // Earlier takeover tests legitimately release their own scoped renderer hooks.
-kiss.stop('reverse-ended');
+const previousHookReleases = hookReleased; // Count only the reverse-height session's final release.
+for (let frame = 0; frame < 24 && kiss.diagnostics().active; frame++) {
+  assert.equal(typeof lastRenderHook, 'function', 'short-player kiss still owns the final render hook');
+  lastRenderHook([], {}, camera);
+  const shortProjectedMouth = npcNeck.position.clone(); // Simulate the native renderer's last hand-sync sentinel in both height directions.
+  playerHands.applyOwnedPose();
+  assert(npcNeck.position.distanceTo(shortProjectedMouth) < 1e-6,
+    'short-player kiss head remains steady across the late procedural hand sync');
+  update({ deltaMs: 70 });
+  assert(kiss.diagnostics().active || kiss.diagnostics().lastResult?.reason === 'completed',
+    'short-player lip and gaze recomposition must not cancel the action: ' + kiss.diagnostics().lastResult?.reason);
+}
+assert.equal(kiss.diagnostics().lastResult?.reason, 'completed', 'reverse-height clip also finishes after repeated render passes');
+assert.equal(kiss.diagnostics().lastResult?.touched, true, 'reverse-height contact happens before release');
+assert.equal(kiss.stop('reverse-ended'), false, 'natural completion already performed reverse-height cleanup');
 assert(!poseLockActive && lastRenderHook === null && hookReleased === previousHookReleases + 1,
-  'reverse-height exit releases exactly one renderer owner regardless of preceding interrupted sessions');
+  'reverse-height completion releases exactly one renderer owner regardless of preceding interrupted sessions');
 assert.equal(playerHands.provider, null, 'short-player hands regain tool/idle ownership');
-console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, knees, hands, pants, camera-independent facing/head, late render and restoration.');
+console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, full interleaved 2.4s clips, late hand sentinel, render-time takeover rejection, contact, knees, hands, pants, camera-independent facing/head, late-render ownership, takeover and restoration.');

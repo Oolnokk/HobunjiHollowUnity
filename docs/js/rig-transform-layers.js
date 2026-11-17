@@ -481,18 +481,25 @@
       return true;
     }
 
-    function stamp() {
+    function stamp(allowedChangedNodes = null) {
       if (released || !valid) return false;
+      // Rendering can legitimately rewrite only an explicit subset of a paired
+      // pose. Refuse to adopt an unrelated NPC/root takeover during that pass.
+      // Normal simulation still calls stamp() with no restriction after its own solver.
       for (const entry of entries) {
         const value = propertyState(entry.node, entry.property);
         if (!value || absoluteClaims.get(entry.node)?.get(entry.property) !== entry
-          || (entry.node.parent || null) !== entry.parent) {
+          || (entry.node.parent || null) !== entry.parent
+          || (allowedChangedNodes && !allowedChangedNodes.has(entry.node)
+            && !entryStillOwned(entry, false))) {
           valid = false;
           absoluteStats.invalidated++;
           return false;
         }
-        entry.applied.copy(value); // Constant-allocation frame sampling: retain one mutable snapshot per property.
       }
+      // Check every claim before updating ANY checkpoint: otherwise a failed
+      // late render could partially publish the very transforms it must reject.
+      for (const entry of entries) entry.applied.copy(entry.node[entry.property]);
       return true;
     }
 

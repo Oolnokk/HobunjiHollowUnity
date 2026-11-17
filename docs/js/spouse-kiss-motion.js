@@ -597,7 +597,7 @@
       window.WorldActionInputClaims?.clearClaims?.(SOURCE);
     }
     lastResult = { reason, npcId: old.walker?.rec?.id || null, touched: old.touched, height: old.height, elapsedS: old.elapsed,
-      poseRelease }; // Skipped restores identify a newer owner in the game's existing diagnostic view.
+      renderPoseCount: old.renderPoseCount, poseRelease }; // Mobile evidence includes render checkpoints and skipped restores after a takeover.
     return true;
   }
 
@@ -718,10 +718,14 @@
         return false;
       }
     }
+    const renderReauthoredNodes = poseSession ? new Set([player, playerModel, playerNeck, npcNeck]) : null; // Only these claimed nodes receive kiss-owned writes in the last-render hook.
+    if (renderReauthoredNodes && playerHands.group && !isWithinRig(playerHands.group, playerModel)) {
+      renderReauthoredNodes.add(playerHands.group); // The separate GLB hand parent also follows the player torso at render time.
+    }
     const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
-      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer, poseSession,
+      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer, poseSession, renderReauthoredNodes,
       playerParent: player.parent, // A rebuild or scene switch invalidates this exact paired character.
       originalPlayerPosition: { x: player.position.x, y: player.position.y, z: player.position.z }, // Festival-style root staging restores this on exit.
       originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
@@ -786,6 +790,13 @@
         session.lastHandContact = applyInitiatorShoulderHands(session.playerHands, session.npcHands,
           session.elapsed, session.height.taller === 'second', session.shoulderScratch);
         session.playerLegs?.pants?.update?.();
+        // The render hook is a second intentional pose writer: mutual gaze and skinned-mouth
+        // reprojection can move captured neck quaternions/positions after the simulation stamp.
+        // Publish that finished authored pose or the next tick mistakes our own render for a takeover.
+        if (session.poseSession && !session.poseSession.stamp(session.renderReauthoredNodes)) {
+          clearMotion('pose-owner-replaced-during-render'); // Unrelated NPC root/torso changes cannot be adopted as the kiss's own render output.
+          return;
+        }
         session.renderPoseCount++; // Report actual render-boundary ownership in Pixel Probe instead of guessing from an animation timer.
       });
     }
