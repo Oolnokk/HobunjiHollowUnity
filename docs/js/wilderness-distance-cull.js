@@ -8,7 +8,9 @@
 
   const DEFAULT_DISTANCE_TILES = 112; // Objects outside this distance from both player and camera may be hidden.
   const HYSTERESIS_TILES = 12; // A previously hidden mesh reappears this many tiles before the hide threshold.
-  const RESCAN_MS = 750; // Scene candidates are rebuilt at most this often, accommodating newly streamed chunks.
+  const RESCAN_MS = 750; // Fallback cadence when no chunk-residency version is available.
+  const RESCAN_MIN_MS = 250; // With a residency version, a chunk load/unload rescans at most this often.
+  const RESCAN_IDLE_MS = 5000; // Safety net for non-chunk scenery attached without a residency change; missing one only means it is not culled.
   const VEGETATION_NAME = /(?:^|[_\s-])(tree|trees|grass|shrub|bush|berry|berries|reagent|herb|foliage|plant|vine|leaf|leaves|weed|moss)(?:[_\s-]|$)/i;
   const ACTOR_NAME = /^(npc[_-]|player(?:[_-]|$)|animal[_-]|creature[_-]|hostile[_-]|companion[_-]|mount[_-]|portrait[_-]|shoulder[_-]|held[_-])/i;
   const WORLD_NAME = /(?:^|[_\s-])(mesa|cliff|ruin|terrain|rock|floor|campfire|crate|tent|totem)(?:[_\s-]|$)/i;
@@ -75,9 +77,10 @@
   function scan(scene, now) {
     const start = now;
     const candidates = []; // Derived from authoritative wilderness chunk/prop owners, never from scene-wide arbitrary actors.
-    const stack = [{ node: scene, chunk: false, excluded: false }];
-    while (stack.length) {
-      const { node, chunk, excluded } = stack.pop();
+    // Parallel stacks avoid allocating one record per scene node on every scan.
+    const nodeStack = [scene], chunkStack = [false];
+    while (nodeStack.length) {
+      const node = nodeStack.pop(), chunk = chunkStack.pop(), excluded = false;
       const data = node.userData || {};
       const isChunk = chunk || data.wildernessChunk === true;
       const isBatch = data.hobunjiZonePropBatch === true && !EXCLUDED_BATCH_KINDS.has(data.hobunjiZonePropKind);
@@ -97,11 +100,12 @@
       if (meshEligible(node, isChunk, taggedWorld)) {
         candidates.push({ mesh: node, kind: isBatch ? 'batch' : isChunk ? 'chunk' : 'scenery' });
       }
-      for (const child of node.children || []) stack.push({ node: child, chunk: isChunk, excluded: false });
+      const kids = node.children;
+      if (kids) for (let i = 0; i < kids.length; i++) { nodeStack.push(kids[i]); chunkStack.push(isChunk); }
     }
     stats.scans++;
     stats.scanMs = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : now) - start);
-    records.set(scene, { candidates, lastScanAt: now });
+    records.set(scene, { candidates, lastScanAt: now, version: residencyVersion() });
     return candidates;
   }
 
@@ -167,6 +171,26 @@
     return Math.hypot(dx, dz);
   }
 
+  function residencyVersion() {
+    const v = window.WildernessChunks?.residencyVersion?.(); // Bumped by WildernessChunks on every chunk load/unload.
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function needsRescan(record, now) {
+    if (!record) return true;
+    const age = now - record.lastScanAt;
+    const version = residencyVersion();
+    if (version === null) return age >= RESCAN_MS;
+    return (version !== record.version && age >= RESCAN_MIN_MS) || age >= RESCAN_IDLE_MS;
+  }
+
+  const frameChanged = []; // Reused every frame; emptied by release().
+  function release() {
+    for (let i = 0; i < frameChanged.length; i++) frameChanged[i].visible = true;
+    frameChanged.length = 0;
+    if (activeRestore === release) activeRestore = null;
+  } // Restores exactly the render-only changes in the caller's finally.
+
   function restore() {
     const closure = activeRestore;
     if (closure) closure();
@@ -177,13 +201,14 @@
     stats.hidden = stats.hiddenChunk = stats.hiddenBatch = stats.hiddenScenery = stats.hiddenInstanced = 0;
     stats.tested = stats.skippedUnknownBounds = 0;
     stats.candidates = 0;
+    if (!isZone && scene?.isScene) records.delete(scene); // Do not retain unloaded chunk meshes while outside the zone.
     if (!enabled || !isZone || !scene?.isScene || !camera?.isCamera
       || !Number.isFinite(playerPosition?.x) || !Number.isFinite(playerPosition?.z)) return null;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let candidates, cameraX, cameraZ; // Scan and camera sampling must fail open before any earlier culler can leak visibility.
     try {
       const record = records.get(scene);
-      candidates = !record || now - record.lastScanAt >= RESCAN_MS ? scan(scene, now) : record.candidates;
+      candidates = needsRescan(record, now) ? scan(scene, now) : record.candidates;
       stats.frames++;
       stats.candidates = candidates.length;
       camera.updateMatrixWorld?.(true); // The view may be a cutscene camera unrelated to the player's tile.
@@ -195,7 +220,7 @@
       return null;
     }
     if (!Number.isFinite(cameraX) || !Number.isFinite(cameraZ)) return null;
-    const changed = []; // Only logical-true meshes; never unhide something another system intentionally hid.
+    const changed = frameChanged; // Only logical-true meshes; never unhide something another system intentionally hid.
     try {
       for (const { mesh, kind } of candidates) {
         if (!actuallyVisibleInScene(mesh, scene)) continue;
@@ -219,17 +244,12 @@
         else stats.hiddenScenery++;
       }
     } catch (error) {
-      for (const mesh of changed) mesh.visible = true;
+      release();
       stats.hidden = 0;
       window.__farmLog?.('Wilderness distance cull failed open: ' + String(error), 'warn', 'performance');
       return null;
     }
     if (!changed.length) return null;
-    const release = () => {
-      for (const mesh of changed) mesh.visible = true;
-      changed.length = 0;
-      if (activeRestore === release) activeRestore = null;
-    }; // Restores exactly the render-only changes in the caller's finally.
     activeRestore = release;
     return release;
   }

@@ -101,7 +101,7 @@
   const DRENKIRRA_SHOULDER_GRIP_YAW_DEG = 61; // The shoulder solver inverts grip yaw; Drenkirra needs the reverse signed full-plane offset.
   const creatureRecords = [
     ['drenkirra',[0,0.030605877381859603,0.02],'built-in-approved-rig-json-v1524',null,null,null,[-0.0036970156287619823,-0.11914729549653388,0.09707381568917758],[[4,4],[2,2],[0.9,0.9]],null],
-    ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
+    ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[511.5,287.9],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
     ['gar-wolf',[0,0.15973815894365057,0.3293044388176616],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.14097888312228624,0.07486897921502367],[[1.5,1.5],[1,1],[0.28,0.34]],null],
     ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[-0.16036566987282258,-0.12636677592420467,0.12410100452746164],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.24,0.24]],null],
