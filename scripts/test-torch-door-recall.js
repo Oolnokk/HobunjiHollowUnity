@@ -173,7 +173,7 @@ const floatingContext = vm.createContext({
   currentDevice: () => 'keyboard',
   inRuin: () => true, activeScene: () => ({}),
 }); // Run the actual extracted ActionPromptUI alongside the native ruin popup, not a hand-written glyph stub.
-vm.runInContext(source('docs/js/action-prompt-ui.js'), floatingContext);
+vm.runInContext(read('docs/js/action-prompt-ui.js'), floatingContext);
 floatingContext.window.ActionPromptUI.init({ getLastInputDevice: () => 'desktop', inputBindings: popupDesktopBindings });
 const syncDoorPopup = vm.runInContext(floatingPopup + '\nsyncWorldPopup', floatingContext);
 syncDoorPopup(nativeRows);
