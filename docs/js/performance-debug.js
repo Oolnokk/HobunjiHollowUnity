@@ -1195,7 +1195,7 @@
       const densityStatus = document.createElement('div');
       densityStatus.style.cssText = 'font-size:10px;line-height:1.4;opacity:.75';
       const densityHelp = document.createElement('div');
-      densityHelp.textContent = 'Retessellates existing player, town NPC and enemy skinned portraits without resetting bones or changing textures. Pants and animal meshes are unchanged. Drag to compare; resets to 100% when Dev Mode is turned off.';
+      densityHelp.textContent = `Retessellates existing player, town NPC and enemy skinned portraits without resetting bones or changing textures. Pants and animal meshes are unchanged. Drag to compare; resets to the ${portraitBudget.defaultPortraitDensityPercent}% production default when Dev Mode is turned off.`;
       densityHelp.style.cssText = 'font-size:10px;line-height:1.4;opacity:.7;margin-top:4px';
       let pendingDensityUpdate = 0; // Debounces potentially expensive live GPU geometry swaps during touch dragging.
       function updateDensityLabel() {
