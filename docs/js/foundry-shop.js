@@ -12,7 +12,7 @@
   function craft(shaft, head, metal) {
     const available = choices(); // Unlocks are checked again rather than trusting select elements.
     const cost = global.ModularWeapons.getConfig().craftCost; // Central foundry labor/material tuning.
-    const forgeBars = global.MetalReinforcement.forgeBarCost(cost.bars, metal, deps.METAL_DEFS); // Same higher-metal surcharge as the standard smith.
+    const forgeBars = global.MetalReinforcement?.forgeBarCost?.(cost.bars, metal, deps.METAL_DEFS) ?? cost.bars; // Same higher-metal surcharge as the standard smith.
     const key = global.ModularWeapons.itemKey(shaft, head, metal); // Ordinary gear key, carrying the full recipe.
     const barKey = deps.metalBarItemKey(metal); // Existing metal-tier material.
     if (!global.TownMine?.hasImprovement('foundry') || !available.shafts.includes(shaft) || !available.heads.includes(head)
@@ -89,7 +89,7 @@
     const item = global.ModularWeapons.itemKey(selection.shaft, selection.head, selection.metal); // Preview and purchase refer to the same saved key.
     const definition = deps.TOOL_ITEM_DEFS[item]; // Registered combined head/haft abilities, including canonical equipment slots and mastery policies.
     const cost = config.craftCost; // Authored new-weapon cost.
-    const forgeBars = global.MetalReinforcement.forgeBarCost(cost.bars, selection.metal, deps.METAL_DEFS); // Matches the forge's purchase-time higher-metal surcharge.
+    const forgeBars = global.MetalReinforcement?.forgeBarCost?.(cost.bars, selection.metal, deps.METAL_DEFS) ?? cost.bars; // Matches the forge's purchase-time higher-metal surcharge.
     const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
     const shortages = []; // Human-readable missing-resource status below the Forge action, rather than an invisible disabled button.
     if (count('gold') < cost.gold) shortages.push(`${cost.gold - count('gold')} bronze`);
