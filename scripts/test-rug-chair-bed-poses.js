@@ -87,7 +87,20 @@ const player={x:64,y:160}; // Player and walkers share the same occupancy regist
 const playerRoot={position:new V(2,0,5),children:[]};
 W.PlayerBodyTransformComposer={setChannel(){},clearChannel(){}};
 W.BedLiePose.init({THREE:W.THREE,player:()=>player,playerRoot:()=>playerRoot,tileSize:()=>32,area:()=>'bedroom',sleep:()=>({ok:true})});
+let playerPairedPoseLocked = true; // Exclusive paired kiss/dance pose owner used to verify bed animation handoff.
+W.CharacterActionLocks = { isLocked: (id, channel) => playerPairedPoseLocked && id === 'player' && channel === 'pose' };
+assert.equal(W.BedLiePose.begin({key:'doubleBed',mesh:bedRoot,id:'bed'}).ok,false,
+  'cannot begin bed approach while another animation owns the player root');
+assert.equal(W.BedLiePose.debug().active,false,'rejected bed approach must not reserve a mattress');
+playerPairedPoseLocked = false;
 assert.equal(W.BedLiePose.begin({key:'doubleBed',mesh:bedRoot,id:'bed'}).ok,true);
+playerPairedPoseLocked = true;
+const bedStartX = player.x, bedStartY = player.y; // Paused bed approach must not teleport the player during an exclusive kiss.
+W.BedLiePose.update(.1);
+assert.equal(player.x,bedStartX,'bed approach does not overwrite paired player x');
+assert.equal(player.y,bedStartY,'bed approach does not overwrite paired player y');
+assert.equal(W.BedLiePose.debug().elapsed,0,'bed approach does not advance during paired pose ownership');
+playerPairedPoseLocked = false;
 assert.equal(W.BedLiePose.debug().last.slot,0,'player takes the side the other sleeper left open');
 assert.equal(registry.lieTransform('bedroom',scheduledTarget,thirdOwner).occupied,true,'the player reserves the side during the lie-down animation');
 W.BedLiePose.cancel();
