@@ -589,78 +589,92 @@ assert.equal(trinkets.onAction('grant', { value: 'invalid' }).ok, false);
 assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
 
 
-// ── Fey origin: neutral Immundanity, actual on-hit afflictions,
-// four bound weapon shapes, real time-limited debuffs, and no magical injury. ──
+// ── Fey illusions: real exertion responses, resource reservations,
+// enhanced second strikes, seeded turns, save migration and neutral origin. ──
 {
   reset();weapon='fey-testing-blade';
-  const fey= context.FeyIllusions;
-  assert(fey&&fey.EFFECTS.feyPhantomWound&&fey.EFFECTS.feyMazeStep);
-  assert.equal(fey.debugSnapshot().registered,false,'Fey combat script loads before the actual EffectBuffBar owner');
-  let feyBuffProvider=null; // Tests the late-loaded shared HUD registration seam using the production FeyIllusions module.
-  context.EffectBuffBar={registerProvider(id,callback){
-    assert.equal(id,'fey-illusions');
-    feyBuffProvider=callback;return true;
-  },refresh(){}};
-  assert.equal(fey.ensureBuffProvider(),true,'lazy registration succeeds once EffectBuffBar is loaded');
-  assert.equal(fey.ensureBuffProvider(),true,'repeated registration is idempotent');
-  assert.equal(typeof feyBuffProvider,'function','Fey symptoms participate in the existing buff icon owner');
-  assert.equal(fey.debugSnapshot().registered,true);
-  const allFeyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
-  same([...allFeyIds].sort(),['feyPhantomWound','feyFalseBleeding','feyNeedlePain','feyMazeStep','feyEchoDread'].sort());
+  const fey=context.FeyIllusions;
+  assert(fey?.EFFECTS.feyDementedStamina&&fey?.EFFECTS.feyHypedPulse);
+  assert.equal(fey.debugSnapshot().registered,false,'Fey defers HUD registration until shared owner is ready');
+  let feyBuffProvider=null;
+  context.EffectBuffBar={registerProvider(id,callback){assert.equal(id,'fey-illusions');feyBuffProvider=callback;return true;},refresh(){}};
+  assert.equal(fey.ensureBuffProvider(),true);
+  assert.equal(fey.ensureBuffProvider(),true,'HUD registration stays idempotent');
+  assert.equal(typeof feyBuffProvider,'function');
+  const feyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
+  same(feyIds.sort(),['feyDementedStamina','feyPanickedStamina','feyTurnabout','feyHypedPulse','feyDreadPulse'].sort());
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
-  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
-  for(const id of ['feyPhantomWound','feyFalseBleeding'])assert.equal(ES.addBase('fey-testing-blade',id),true);
-  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyMazeStep'),true);
-  assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0,'only Fey enchantments are neutral');
-  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
-  const feyOpposed=ES.cleanWeaponState({base:['feyPhantomWound','burning'],flourishes:{tap1:'feyMazeStep'}});
-  gear.weaponEnchantments['fey-mixed']=feyOpposed;
-  assert.equal(ES.getWeaponImmundanity('fey-mixed'),1,'Fey adds no imbalance, while Hronal still does');
-  assert.equal(fey.potency('fey-mixed'),1,'positive Immundanity must not boost the Fey effect');
-  const victim=makeEntity({name:'Illusion-only test target',health:75,footing:64,stamina:83});
-  const before={health:victim.health,footing:victim.footing,stamina:victim.stamina,
-    maxHealth:RS.getEffectiveMax(victim,'health'),maxFooting:RS.getEffectiveMax(victim,'footing')};
-  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyFalseBleeding',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyNeedlePain',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyMazeStep',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyEchoDread',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert(RS.getAffliction(victim,'phantomWoundsHealth')>0);
-  assert(RS.getAffliction(victim,'phantomBloodHealth')>0);
-  assert(RS.getAffliction(victim,'phantomPainFooting')>0);
-  for(const [stat,value] of Object.entries(before)) {
-    const current=stat==='maxHealth'?RS.getEffectiveMax(victim,'health'):stat==='maxFooting'?RS.getEffectiveMax(victim,'footing'):victim[stat];
-    assert.equal(current,value,'Fey has no physical resource change: '+stat);
-  }
-  for(const debuff of ['disoriented','sapped','trembling','startled','enfeebled'])
-    assert(RS.hasTimedDebuff(victim,debuff),'Fey applies real timed behavioral debuff: '+debuff);
-  assert(RS.timedDebuffModifier(victim,'moveSpeed')<1,'Fey disorientation actually modifies movement');
-  assert(RS.timedDebuffModifier(victim,'outgoingDamage')<1,'Fey fear actually reduces offensive confidence');
-  assert(RS.timedDebuffModifier(victim,'attackSpeed')<1,'Fey pain actually causes hesitation');
-  const originalES=context.EnchantmentSystem; // Swap only the power accessor in this test realm to exercise a true externally-imposed 0% enchantment-effects gate.
-  context.EnchantmentSystem={...originalES,getEnchantmentPowerMultiplier:()=>0};
-  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),false,'0% effect gate suppresses even Fey magic');
-  context.EnchantmentSystem=originalES;
+  for(const id of ['feyDementedStamina','feyPanickedStamina'])assert.equal(ES.addBase('fey-testing-blade',id),true);
+  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyDreadPulse'),true);
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
+  const migrated=ES.cleanWeaponState({base:['feyPhantomWound','burning'],flourishes:{tap1:'feyMazeStep'}});
+  same(migrated.base,['feyDementedStamina','burning'],'old Fey Base remaps on load');
+  assert.equal(migrated.flourishes.tap1,'feyHypedPulse','old Fey Flourish remaps on load');
+  gear.weaponEnchantments['fey-mixed']=migrated;
+  assert.equal(ES.getWeaponImmundanity('fey-mixed'),1,'ordinary Hronal still counts');
+  assert.equal(fey.potency('fey-mixed'),1,'Fey ignores positive Immundanity');
 
-  // Cross the actual CombatAttackEvents -> EnchantmentSystem.onHit() path:
-  // direct Fey strikes still use the ordinary collision pipeline, but the
-  // magical add-ons never write Health or Footing.
-  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyEchoDread'),true);
+  const victim=makeEntity({name:'Illusion-only target',health:75,footing:64,stamina:83,angle:0,facing:0});
+  assert.equal(fey.apply('feyDementedStamina',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyPanickedStamina',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(RS.getAffliction(victim,'dementedStamina'),9);
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9);
+  assert.equal(victim.health,75,'an illusory sensation is not actual injury');
+  assert.equal(victim.footing,64,'an illusory sensation does not instantly damage footing');
+  randomQueue=[0.99]; // Chooses positive signed drift once per actual payment.
+  RS.spendStamina(victim,10,'ordinary exertion',{durationS:.22});
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9,'other stamina goes first');
+  fey.update(.11,victim);
+  assert(victim.angle>0 && victim.angle<10*Math.PI/180,'direction interpolates across action');
+  fey.update(.11,victim);
+  assert(Math.abs(victim.angle-10*Math.PI/180)<.00001,'10 stamina causes exactly 10° of rotation');
+  RS.spendStamina(victim,4,'ordinary exertion');
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9,'ordinary exertion does not immediately spend panic reserve');
+  victim.dodging=true;victim.dodgeT=.2;
+  const payment=RS.spendStamina(victim,3,'roll dodge',{actionKind:'combatDodge'});
+  assert.equal(payment.panicSpent,9,'dodge burns full panic reserve as a surcharge');
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),0,'no double spending of panic');
+  fey.update(.016,victim);
+  assert(victim.dodgeT>.35,'panic adds 10% roll duration per panic point');
+  victim.dodging=false;fey.update(.016,victim);
+  randomQueue=[0];
+  assert.equal(fey.apply('feyTurnabout',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert(Math.abs(Math.abs(victim.facing-victim.angle))<.000001,'turn proc changes both facing sources');
+  randomQueue=[.99];
+  assert.equal(fey.apply('feyTurnabout',victim,{weaponKey:'fey-testing-blade'}),false,'90% proc miss does nothing');
+  const originalES=context.EnchantmentSystem;
+  context.EnchantmentSystem={...originalES,getEnchantmentPowerMultiplier:()=>0};
+  assert.equal(fey.apply('feyDementedStamina',victim,{weaponKey:'fey-testing-blade'}),false,'explicit 0% gate suppresses Fey');
+  context.EnchantmentSystem=originalES;
+
+  // Verify actual hit event uses the two on-hit afflictions and the new Panic Surge.
   const feyImpactTarget=makeEntity({name:'Fey combat-event target',health:77,footing:55});
   const feyImpact=CAE.prepare({attacker:player,abilityId:'swingCombo',comboStep:3,comboFinisher:true});
   CAE.hit(feyImpact,{target:feyImpactTarget,actualDamage:0});
-  assert(RS.getAffliction(feyImpactTarget,'phantomWoundsHealth')>0,
-    'actual melee hit events apply Fey Base illusions');
-  assert(RS.getAffliction(feyImpactTarget,'phantomBloodHealth')>0,
-    'actual melee hit events also apply the second Fey Base illusion');
-  assert(RS.hasTimedDebuff(feyImpactTarget,'startled'),
-    'qualifying combo-finisher melee hit triggers the Fey Echo Dread Flourish');
-  assert.equal(feyImpactTarget.health,77,'magical Fey on-hit events cannot deal real damage');
-  assert.equal(feyImpactTarget.footing,55,'magical Fey on-hit events cannot affect real Footing');
+  assert(RS.getAffliction(feyImpactTarget,'dementedStamina')>0,'Base applies Demented on real hits');
+  assert(RS.getAffliction(feyImpactTarget,'panickedStamina')>9,'Flourish adds panic beyond Base');
+  assert.equal(feyImpactTarget.health,77,'Fey magical component cannot directly injure');
+  assert.equal(feyImpactTarget.footing,55,'Fey magical component cannot directly remove footing');
+
+  // Hyped pays through central stamina owner, then arms one scaled echo impact.
+  assert.equal(fey.apply('feyHypedPulse',player,{weaponKey:'fey-testing-blade',attacker:player}),true);
+  const hypedPayment=RS.spendStamina(player,8,'combo attack',{actionKind:'combatCombo'});
+  assert(hypedPayment.consumed.some(x=>x.id==='hypedStamina'&&x.rawConsumed===8));
+  const echo=CAE.prepare({attacker:player,abilityId:'swingCombo',damage:25,rangePx:40,halfConeRad:1,knockbackPxS:100});
+  assert.equal(echo.metadata.feyHypedUsed,8);
+  const echoTarget=makeEntity({name:'Echo target',health:90,x:10});
+  let secondary=null;
+  context.Combat.meleeHit=()=>true; // Existing gameplay hit authority, not an invented cone test.
+  context.Combat.deps.damageCreature=(target,damage,x,y,knockback,opts)=>{secondary={target,damage,knockback,opts};};
+  context.setTimeout=callback=>{callback();return 1;}; // Deterministically run deferred second impact.
+  CAE.hit(echo,{target:echoTarget,actualDamage:0});
+  assert(secondary,'Hyped paid attack repeats the hit');
+  assert.equal(secondary.damage,4,'8 Hyped stamina produces a 16%-power second strike');
+  assert.equal(secondary.knockback,16,'secondary knockback scales with the same factor');
+  assert.equal(CAE.prepare({attacker:player,abilityId:'swingCombo'}).metadata.feyHypedUsed,undefined,'echo credit spent once');
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
-  ES.setFlourish('fey-testing-blade','hold2','feyEchoDread');
+  ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
   assert(feyDefensiveScope.includes("def.alignment === 'Fey') return false"),'defensive Fey handlers explicitly fail closed');
 
@@ -685,4 +699,4 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(HR.decodeBoundKey('feyBound_longsword_abcd_BfeyPhantomWound_F'),null,'Fey key cannot impersonate Harlyao sword');
   assert.equal(HR.decodeBoundKey('feyBound_dagger_abcd_Bburning_F'),null,'Fey key cannot smuggle another origin');
 }
-console.log('Fey Immundanity, nonlethal afflictions, timed debuffs, bound relic codec and origin separation passed');
+console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrations and bound relics passed');
