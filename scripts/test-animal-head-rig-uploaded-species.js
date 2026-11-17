@@ -46,9 +46,9 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
-assert.match(String(api.version), /moot-painted-baby-pets1/, 'authored rig layer reports its current Moot-paint release');
+assert.equal(api.version, '2026-11-17-gar-wolf-grehlr-rigs1', 'authored rig layer reports the uploaded Gar-wolf and Grehlr release');
 
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six species retain the original Puktuk shoulder pose.
+const targets = ['puktuk', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Five species retain the original Puktuk pose; Gar-wolf is now independent.
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
 assert.equal(puktuk.pivot.x, .484375, 'Puktuk retains its original head pivot');
 assert.equal(puktuk.pivot.y, .5);
@@ -97,13 +97,33 @@ assert.notStrictEqual(moot.compressibilityMap.data, voorg.compressibilityMap.dat
 assert.notStrictEqual(uumkaoii.shoulderRest, puktuk.shoulderRest, 'Uumkao’ii stays independent of Puktuk');
 const gar = renderer.ANIMAL_HEAD_RIGS['gar-wolf'];
 assert.equal(gar.pivot.x, .328125, 'Gar-wolf keeps its original head pivot');
+assert.equal(gar.shoulderRest.frameShiftX, .43, 'Gar-wolf adopts its new independent shoulder pose');
+assert.equal(gar.shoulderRest.separatorRotationDeg, -28);
+assert.equal(gar.babyHeadShortening, .24);
+assert.equal(gar.babyHeadUsePaintedFrame, false);
 const dabinggi = renderer.ANIMAL_HEAD_RIGS['dabinggi-hound'];
 assert.equal(dabinggi.ownHeadMarker, 'dabinggi-head-stays-dabinggi', 'Dabinggi keeps its own head rig');
 assert.equal(renderer.ANIMAL_HEAD_RIGS.nazgraku.weightMap.marker, 'nazgraku-head', 'Nazgraku keeps its own painted neck');
 assert.equal(renderer.ANIMAL_HEAD_RIGS.uumkaoii.weightMap.width, 128, 'Uumkao\'ii retains its own original detailed head paint');
 const grehlr = renderer.ANIMAL_HEAD_RIGS.grehlr;
 assert.equal(grehlr.pivot.x, .3615050095996143);
-assert.equal(grehlr.shoulderRest.frameShiftX, .54, 'Grehlr remains unchanged');
+
+assert.equal(grehlr.shoulderRest.frameShiftX, .55, 'Grehlr uses its uploaded shoulder pose');
+assert.equal(grehlr.shoulderRest.useRun1, false);
+assert.equal(grehlr.shoulderRest.separatorRotationDeg, 0);
+assert.equal(grehlr.weightMap.width, 128);
+assert.equal(grehlr.compressibilityMap.height, 96);
+assert.equal(grehlr.stretchabilityMap.height, 96);
+assert.equal(grehlr.babyHeadScale, 1.15);
+assert.equal(grehlr.babyHeadShortening, .06);
+assert.equal(grehlr.babyAbdomenEnabled, false);
+const storedBestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json', 'utf8')); // Assert the editor's full species records agree with runtime head rigs.
+for (const kind of ['gar-wolf', 'grehlr']) {
+  const bestiaryRig = storedBestiary.creatures.find(creature => creature.id === kind)?.headRig;
+  assert.deepEqual(JSON.parse(JSON.stringify(api.get(kind))), bestiaryRig, kind + ' runtime and bestiary head rigs must agree');
+}
+const garAvatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'gar-wolf_idle.png', {creatureId:'gar-wolf'}); // Verify the live avatar builder receives the revised shoulder pose.
+assert.equal(garAvatar.options.headRig.shoulderRest.frameShiftX, .43);
 const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
 assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
