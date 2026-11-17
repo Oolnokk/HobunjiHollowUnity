@@ -750,6 +750,7 @@
     setPortraitDensityPercent,
     portraitDensityDebug,
     wireframeEnabled: () => portraitWireframeEnabled,
+    originalPortraitMaterial: mesh => portraitWireframeOriginals.get(mesh)?.original || mesh?.material, // Split animal overlay clones need the real texture even if their source is temporarily wireframed.
     setPortraitWireframeEnabled,
     registerExternalSkinnedPortrait,
     trackSkinnedClone,
