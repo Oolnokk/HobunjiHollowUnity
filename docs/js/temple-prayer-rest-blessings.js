@@ -10,6 +10,12 @@
   const RESTED_DURATION_HOURS = 3; // Short sleep or seated Wait postpones yawns for three game hours without granting Well Rested stat bonuses.
   const WELL_RESTED_MIN_SLEEP_HOURS = 8; // Enforces real eight-hour sleep, including the legacy animated-bed path.
   const SLEEP_HOUR_EPSILON = 1e-6; // Absorbs raw calendar-fraction rounding at exact 8h, not genuine short sleep.
+  const RESTED_DESCRIPTION = 'Prevents hourly fatigue yawns. Does not grant the additional Well Rested stat bonuses.'; // The Rested preview and HUD use one explanation.
+  const WELL_RESTED_DESCRIPTION = '+8% movement speed; +30% Stamina recovery; food and potion strength gains 1 extra stack per 3 stacks (rounded down); prevents hourly fatigue yawns.'; // The Well Rested preview and HUD use one explanation.
+  const RESTED_PREVIEW_DESCRIPTION = 'Prevents hourly fatigue yawns.'; // Short UI wording; the HUD retains its complete tooltip.
+  const WELL_RESTED_PREVIEW_DESCRIPTION = 'Prevents fatigue yawns; +8% movement speed; +30% stamina recovery; +1/3 food and potion buff strength (whole stacks round down).'; // All effects fit below the hour count without displacing the slider.
+  const RESTED_BENEFIT = Object.freeze({ label: 'Rested', durationHours: RESTED_DURATION_HOURS, description: RESTED_DESCRIPTION, previewDescription: RESTED_PREVIEW_DESCRIPTION }); // Both the UI and HUD read one source of rest-tier values.
+  const WELL_RESTED_BENEFIT = Object.freeze({ label: 'Well Rested', durationHours: WELL_RESTED_DURATION_HOURS, description: WELL_RESTED_DESCRIPTION, previewDescription: WELL_RESTED_PREVIEW_DESCRIPTION }); // Bed-exclusive buff details stay with their gameplay owner.
   const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew on Anan.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
@@ -404,8 +410,8 @@
         const prayer = PRAYERS[state.prayer.id];
         if (prayer) entries.push({ id: `temple-prayer-${prayer.id}`, icon: prayer.icon, label: prayer.name, sourceLabel: 'Temple Prayer', description: prayer.description, durationS: PRAYER_DURATION_HOURS * 3600, remainingS: (state.prayer.expiresAtGameHour - now) * 3600 });
       }
-      if (state.rested) entries.push({ id: 'rested', icon: '💤', label: 'Rested', sourceLabel: 'Sleep or seated Wait', description: 'Prevents hourly fatigue yawns. Does not grant the additional Well Rested stat bonuses.', durationS: RESTED_DURATION_HOURS * 3600, remainingS: (state.rested.expiresAtGameHour - now) * 3600 });
-      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: 'Well Rested', sourceLabel: 'Sleep', description: '+8% movement speed; +30% Stamina recovery; food and potion strength gains 1 extra stack per 3 stacks (rounded down); prevents hourly fatigue yawns.', durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
+      if (state.rested) entries.push({ id: 'rested', icon: '💤', label: RESTED_BENEFIT.label, sourceLabel: 'Sleep or seated Wait', description: RESTED_BENEFIT.description, durationS: RESTED_DURATION_HOURS * 3600, remainingS: (state.rested.expiresAtGameHour - now) * 3600 });
+      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: WELL_RESTED_BENEFIT.label, sourceLabel: 'Sleep', description: WELL_RESTED_BENEFIT.description, durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
       return entries;
     });
     hudProviderInstalled = true;
@@ -461,6 +467,13 @@
     if (!token || token.source !== 'player-bed') return false;
     lastRestSource = token.source;
     return true;
+  }
+
+  function previewTimePassageRest(kind, hours) {
+    const duration = Number(hours); // Only valid, positive selections can preview an earned rest buff.
+    if ((kind !== 'sleep' && kind !== 'wait') || !Number.isFinite(duration) || duration <= 0) return null;
+    const fromPlayerBed = kind === 'sleep' && window[OWNED_BED_SLEEP_PENDING_KEY]?.source === 'player-bed'; // Matches the actual bed-owned token check without consuming it.
+    return fromPlayerBed && duration + SLEEP_HOUR_EPSILON >= WELL_RESTED_MIN_SLEEP_HOURS ? WELL_RESTED_BENEFIT : RESTED_BENEFIT;
   }
 
   function onTimePassage(event) {
@@ -549,6 +562,7 @@
     activePrayer,
     isWellRested,
     isRested,
+    previewTimePassageRest,
     skillStackBonus,
     foodBonusStacks,
     movementSpeedMultiplier,

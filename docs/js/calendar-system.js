@@ -417,7 +417,10 @@
         .time-passage-arrow{align-self:center;font-size:26px;opacity:.72}
         .time-passage-live{display:none;min-height:72px;width:100%;align-items:center;justify-content:center;text-align:center;padding:8px 12px;font-family:inherit;font-size:clamp(18px,4.6vw,29px);line-height:1.3;overflow-wrap:anywhere}
         .time-passage-duration{margin:18px 0 8px;text-align:center}
-        .time-passage-hours{font-size:clamp(25px,6vw,42px);line-height:1;margin-bottom:12px}
+        .time-passage-hours{font-size:clamp(25px,6vw,42px);line-height:1;margin-bottom:10px}
+        .time-passage-benefit{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;margin:0 auto 13px;padding:8px 12px;max-width:620px;min-height:52px;line-height:1.4;overflow-wrap:anywhere;background:rgba(8,9,12,.48);border-radius:9px}
+        .time-passage-benefit-name{color:#f3da9c;font-size:clamp(16px,3vw,20px)}
+        .time-passage-benefit-description{color:#f4efe4;font-size:clamp(12px,2.1vw,15px);opacity:.95}
         .time-passage-slider-row{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;gap:10px}
         .time-passage-slider{width:100%;accent-color:#d8b36e}
         .time-passage-step,.time-passage-btn{border:1px solid rgba(235,210,158,.52);border-radius:9px;background:rgba(18,16,14,.62);color:#fff;font:400 18px "KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;min-height:44px;cursor:pointer;text-shadow:0 2px 3px rgba(0,0,0,.9)}
@@ -425,12 +428,13 @@
         .time-passage-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;margin-top:16px}
         .time-passage-btn.primary{background:rgba(112,85,46,.82);border-color:#d9b873}
         .time-passage-debug{display:block;margin:12px auto 0;border:0;background:transparent;color:rgba(255,255,255,.7);font:400 12px "KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;text-decoration:underline;cursor:pointer;text-shadow:0 2px 3px rgba(0,0,0,.9)}
-        .time-passage-backdrop.transitioning .time-passage-dates{display:none}
+        .time-passage-backdrop.transitioning .time-passage-dates,.time-passage-backdrop.transitioning .time-passage-benefit{display:none}
         .time-passage-backdrop.transitioning .time-passage-live{display:flex}
         .time-passage-backdrop.transitioning .time-passage-slider-row,.time-passage-backdrop.transitioning .time-passage-actions,.time-passage-backdrop.transitioning .time-passage-debug{opacity:.5}
         .time-iris-overlay{position:fixed;inset:0;z-index:2147483645;display:none;pointer-events:auto}
         .time-iris-overlay svg{display:block;width:100%;height:100%}
-        @media(max-width:520px){.time-passage-dates{grid-template-columns:1fr}.time-passage-arrow{transform:rotate(90deg);justify-self:center}.time-passage-actions{grid-template-columns:1fr}}
+        @media(max-height:480px){.time-passage-panel{max-height:calc(142vh - 32px);overflow-y:auto;overflow-x:hidden;transform:scale(.7)}.time-passage-title{margin-bottom:7px}.time-passage-dates{min-height:0;gap:5px}.time-passage-date-card{padding:5px 7px}.time-passage-duration{margin:7px 0 5px}.time-passage-hours{margin-bottom:5px}.time-passage-benefit{gap:2px;margin-bottom:7px;min-height:0}.time-passage-actions{margin-top:7px}.time-passage-debug{margin-top:6px}}
+        @media(max-width:520px){.time-passage-dates{grid-template-columns:1fr;gap:2px}.time-passage-arrow{transform:rotate(90deg);justify-self:center}.time-passage-date-card{padding:6px 7px}.time-passage-title{margin-bottom:8px}.time-passage-duration{margin-top:9px}.time-passage-benefit{margin-bottom:8px}.time-passage-actions{grid-template-columns:1fr;margin-top:9px}.time-passage-debug{margin-top:6px}}
       `;
       document.head.appendChild(style);
     }
@@ -450,6 +454,10 @@
         <div class="time-passage-live" id="timePassageLive" aria-live="polite"></div>
         <div class="time-passage-duration">
           <div class="time-passage-hours" id="timePassageHours">1 hour</div>
+          <div class="time-passage-benefit" id="timePassageBenefit" aria-live="polite" aria-atomic="true">
+            <div class="time-passage-benefit-name" id="timePassageBenefitName"></div>
+            <div class="time-passage-benefit-description" id="timePassageBenefitDescription"></div>
+          </div>
           <div class="time-passage-slider-row">
             <button type="button" class="time-passage-step" id="timePassageMinus" aria-label="One hour less">−</button>
             <input class="time-passage-slider" id="timePassageSlider" type="range" min="1" max="${MAX_PASSAGE_HOURS}" step="1" value="1" aria-label="Hours to pass">
@@ -481,6 +489,8 @@
       preview: backdrop.querySelector('#timePassagePreview'),
       live: backdrop.querySelector('#timePassageLive'),
       hours: backdrop.querySelector('#timePassageHours'),
+      benefitName: backdrop.querySelector('#timePassageBenefitName'), // Displays the chosen rest tier and its in-game duration.
+      benefitDescription: backdrop.querySelector('#timePassageBenefitDescription'), // Displays the actual buff-system description.
       slider: backdrop.querySelector('#timePassageSlider'),
       minus: backdrop.querySelector('#timePassageMinus'),
       plus: backdrop.querySelector('#timePassagePlus'),
@@ -560,15 +570,28 @@
       _timePassageUi.hours.textContent = `${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
       const verb = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait'; // Used in the confirm button's contextual label.
       _timePassageUi.confirm.textContent = `${verb} ${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
+      updateTimePassageBenefitPreview();
     }
     refreshTimePassagePreview();
   }
 
+  function updateTimePassageBenefitPreview() {
+    if (!_timePassageUi || !_timePassageKind) return;
+    const benefit = window.TemplePrayerRestBlessings?.previewTimePassageRest?.(_timePassageKind, _selectedPassageHours); // The rest authority checks the bed token and eight-hour threshold.
+    const name = benefit ? `${benefit.label} · Lasts ${benefit.durationHours} in-game hours` : 'Rest benefit loading…'; // Keeps the buff's name and fixed duration together above the selection bar.
+    const description = benefit?.previewDescription || benefit?.description || ''; // Compact copy remains owned by the actual rest-buff module.
+    if (_timePassageUi.benefitName.textContent !== name) _timePassageUi.benefitName.textContent = name;
+    if (_timePassageUi.benefitDescription.textContent !== description) _timePassageUi.benefitDescription.textContent = description;
+  }
+
   function refreshTimePassagePreview() {
     if (!_timePassageUi || !_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.backdrop.classList.contains('transitioning')) return;
+    updateTimePassageBenefitPreview(); // Refresh if the independently loaded rest module just became available.
     const target = previewAfterHours(_selectedPassageHours); // Used to render the live target date/time card.
-    _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
-    _timePassageUi.preview.textContent = formatCalendarDateTimeFull(target.day, target.time01);
+    const currentText = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01); // Only changes when the actual calendar advances while this modal remains open.
+    const afterText = formatCalendarDateTimeFull(target.day, target.time01); // Updated by the hour selector or a genuine time change, not every 250ms polling tick.
+    if (_timePassageUi.current.textContent !== currentText) _timePassageUi.current.textContent = currentText;
+    if (_timePassageUi.preview.textContent !== afterText) _timePassageUi.preview.textContent = afterText;
   }
 
   function renderTimePassageTick(remainingHours) {

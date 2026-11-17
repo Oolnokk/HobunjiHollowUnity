@@ -155,4 +155,64 @@ handle.update(true);
 assert.strictEqual(position.version, beforeStillFrame,
   'unchanged asymmetric leg pose does not upload on every render-only pass');
 
+// November 14's uniform extremity size changes the actual foot width independently of body-X
+// (e.g. male Longoran: X 1.05, Y 2). The same ratio must stretch BOTH fitted pant openings,
+// with the pant belt, bone centres, and static authored rig staying intact.
+const scaledRoots = { x: 1, y: 1 }; // Mock existing character-rig scale owner: updated after garment attachment.
+win.HobunjiCharacterRigScale = { bodyScaleFactorsFor: () => scaledRoots }; // Same API the real foot and pants renderers consult.
+const atSample = (sample, axis, vertices) => {
+  const j = sample.i * 3 + axis, rowStride = (handle.segments + 1) * 3;
+  const top = vertices[j] * (1 - sample.fx) + vertices[j + 3] * sample.fx;
+  const bottom = vertices[j + rowStride] * (1 - sample.fx) + vertices[j + rowStride + 3] * sample.fx;
+  return top * (1 - sample.fy) + bottom * sample.fy;
+}; // Reads one point on the fitted five-point ankle spline from the actual skinned rest grid.
+const spanFor = side => {
+  const samples = handle.splineSpec[`${side}Ankle`].samples;
+  const start = samples[0], end = samples[samples.length - 1];
+  return Math.hypot(...[0, 1, 2].map(axis => atSample(end, axis, handle.basePositions) - atSample(start, axis, handle.basePositions)));
+}; // Measures the final 3D spline opening, rather than merely checking its configuration multiplier.
+const initialSpans = { left: spanFor('left'), right: spanFor('right') }; // The existing species-authored pant openings.
+const originalGrid = Float32Array.from(handle.basePositions); // Source garment/waist snapshot before the new foot compensation.
+const originalVersion = handle.baseVersion; // Rest-grid rebind should only happen when body proportions actually change.
+scaledRoots.x = 1.05; scaledRoots.y = 2;
+handle.update(true);
+assert(Math.abs(handle.openingWidthScale - (1.05 + 2) / (2 * 1.05)) < 1e-9,
+  'Longoran-male pants follow the same 45.2% width compensation used by the foot meshes');
+assert.strictEqual(handle.baseVersion, originalVersion + 1, 'changing body proportions rebuilds the fitted garment exactly once');
+for (const side of ['left', 'right']) assert(spanFor(side) > initialSpans[side] * 1.12,
+  `${side} hem spline visibly widens along its measured 3D chord`);
+for (let i = 0; i < (handle.segments + 1) * 3; i++) assert(Math.abs(handle.basePositions[i] - originalGrid[i]) < 1e-6,
+  'the upper row of the garment remains exactly anchored to the portrait');
+const afterExpansion = handle.baseVersion; // Guard against accidental per-frame rest recalculation.
+handle.update(true); handle.update(true);
+assert.strictEqual(handle.baseVersion, afterExpansion, 'unchanged body scale does not re-fit pants on extra render passes');
+
+// A GPU-worn pair and the CPU fallback must deform the exact same enlarged hem.
+Renderer.setGpuSkinning(false);
+handle.update(true);
+const expandedCPU = Float32Array.from(position.array); // Ground truth CPU-skinned widened garment.
+Renderer.setGpuSkinning(true);
+handle.update(true);
+assert.strictEqual(handle.gpuSkinActive, true, 'foot-sized hem retains the default GPU skinning path');
+for (let i = 0; i < expandedCPU.length / 3; i += 7) {
+  const pt = new THREE.Vector3().fromArray(position.array, i * 3), skinned = new THREE.Vector3(), temporary = new THREE.Vector3();
+  const weights = [w0[i * 4 + 1], w0[i * 4 + 2], w0[i * 4 + 3], w1[i]]; // Four moving bone channels, besides rigid belt.
+  skinned.copy(pt).multiplyScalar(w0[i * 4]);
+  for (let bone = 0; bone < 4; bone++) skinned.addScaledVector(temporary.copy(pt).applyMatrix3(u.uPantsBoneM.value[bone]).add(u.uPantsBoneT.value[bone]), weights[bone]);
+  skinned.addScaledVector(u.uPantsRingShift.value[0], ring[i * 2]);
+  skinned.addScaledVector(u.uPantsRingShift.value[1], ring[i * 2 + 1]);
+  skinned.x += spine[i * 3]; skinned.y += spine[i * 3 + 1]; skinned.z += spine[i * 3 + 2];
+  assert(skinned.distanceTo(new THREE.Vector3().fromArray(expandedCPU, i * 3)) < 1e-5,
+    'GPU and CPU match on the newly lengthened pant-leg spline');
+}
+
+// Refit from the ORIGINAL art, never the previous enlarged grid, so live scale changes are reversible.
+scaledRoots.x = 1; scaledRoots.y = 1;
+handle.update(true);
+assert(Math.abs(handle.openingWidthScale - 1) < 1e-9);
+for (const side of ['left', 'right']) assert(Math.abs(spanFor(side) - initialSpans[side]) < 1e-5,
+  `${side} opening returns to the original authored fit with no accumulated stretch`);
+for (let i = 0; i < originalGrid.length; i++) assert(Math.abs(handle.basePositions[i] - originalGrid[i]) < 1e-5,
+  'neutral body X/Y completely restores original pants rest grid');
+
 console.log(`ok pants GPU skin parity (${cpu.length / 3} vertices, max error ${worst.toExponential(2)})`);
