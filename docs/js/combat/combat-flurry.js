@@ -83,7 +83,8 @@
         { actionKind: 'offensiveHeldFlurry', abilityId: 'acceleratingFlurry' },
       ) || { tempoMultiplier: 1 };
       const fundedTempo = Math.max(1, Number(spendResult.tempoMultiplier) || 1); // Furious Stamina accelerates only the effective-cost portion it actually funded.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
+      const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, 'acceleratingFlurry') || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const windupS = WINDUP_S * timeScale / fundedTempo;
       const strikeS = STRIKE_S * timeScale / fundedTempo;
       const dirSign = count % 2 === 0 ? -1 : 1;
