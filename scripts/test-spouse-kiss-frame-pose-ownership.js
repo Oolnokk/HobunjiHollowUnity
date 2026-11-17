@@ -131,10 +131,19 @@ assert.equal(legUpdates, 6, 'only the NPC locked-walker knee path runs, never no
 const released = absolute.release(); // Restore the saved transform once the paired action ends.
 assert.equal(released.skipped, 0, 'untouched captured transforms return cleanly on kiss completion');
 locked = false;
-assert.equal(ordinaryFrame(
-  windowFrame, player, { group: { rotation: { y: 0 } }, update() { legUpdates++; } },
+// Evaluate the same production position, mount and facing statements on
+// release. Other normal gameplay calls (combat, gait and camera) need their
+// full live game context and are intentionally not mocked here.
+windowFrame.Fishing = { state: { phase: 'caught' } }; // Selects the normal authored fishing-facing branch without requiring unrelated map state.
+const releasedFrame = new Function(
+  'window', 'playerMesh', 'playerLegs', 'dt', 'wx', 'wz', 'targetY', 'player',
+  'playerFacing', 'mountSeatLift', 'performance',
+  lockSource + moveSource + mountSource + facingSource + '\\nreturn pairedPoseLocked;'
+);
+assert.equal(releasedFrame(
+  windowFrame, player, { group: { rotation: { y: 0 } } },
   .016, 9, 11, 0, { lunging: false },
-  normalFacing, 20, .5, 10, 1, performance
+  normalFacing, .5, performance
 ), false, 'ordinary movement/facing resumes as soon as the action releases');
 assert(player.position.x > 2 && player.position.z > 3, 'player movement smoothing resumes outside kiss');
 assert.equal(player.rotation.y, normalFacing, 'ordinary gameplay restores camera-relative facing ownership');
