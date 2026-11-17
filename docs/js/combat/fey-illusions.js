@@ -268,6 +268,7 @@
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
     onStaminaSpent, prepareHypedAttack, replayHypedHit, update,
+    hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
       registered, lastEffect, lastSecondaryStrike, replayCount,
       playerTurnRadiansRemaining: activeTurns.get(player())?.remainingRad || 0,
