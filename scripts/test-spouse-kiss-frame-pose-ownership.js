@@ -66,16 +66,17 @@ Object.defineProperty(player, 'rotation', { value: {
 } }); // Real Three Euler updates Object3D.quaternion automatically on direct yaw writes.
 
 const npc = { position: new Vec(2.4, .1, 3.3), quaternion: new Quat(), parent: {} }; // NPC must retain its kiss leap/bow root height.
-const npcLean = { position: new Vec(), quaternion: new Quat(), parent: npc }; // Kiss captures this separately so idle sprint-lean cleanup cannot reset it.
+const npcLean = { position: new Vec(), quaternion: new Quat().yaw(.14), parent: npc }; // A pre-kiss running lean must be preserved for scoped restoration, then cleaned once the lock releases.
 const lockWindow = { }; // Shared global namespace required by production modules.
 const performance = { now: () => 1000 }; // Deterministic time avoids accidental test lease expiry.
 vm.runInNewContext(rigSrc, { window: lockWindow, performance, console }, { filename: 'rig-transform-layers.js' });
 const compositor = lockWindow.ActorRigCompositor;
 assert(compositor && typeof compositor.createAbsoluteSession === 'function');
 let locked = true; // Simulated CharacterActionLocks acquisition for the real paired kiss.
+let movementOnlyLock = false; // An unrelated post-kiss movement hold exercises deferred sprint-lean cleanup.
 lockWindow.CharacterActionLocks = {
   isLocked(id, channel) { return locked && channel === 'pose' && (id === 'player' || id === 'npc:leaf')
-    || locked && channel === 'movement' && id === 'npc:leaf'; },
+    || (locked || movementOnlyLock) && channel === 'movement' && id === 'npc:leaf'; },
 };
 lockWindow.SpouseKissMotion = { isPartner: walker => walker.root === npc }; // Actual NPC movement lock needs moving knees, not gait suppression.
 vm.runInNewContext(npcSrc, { window: lockWindow, console }, { filename: 'npc-character-state.js' });
@@ -106,19 +107,21 @@ const ordinaryFrame = new Function(
   lockSource + moveSource + mountSource + facingSource + bobSource + gaitSource
     + '\nreturn pairedPoseLocked;'
 );
+const heldWalker = {
+  rec: { id: 'leaf' }, root: npc, legs: { update() { legUpdates++; } },
+  _npcRunLeanActive: true, _npcRunLeanPivot: npcLean, area: 'farm',
+}; // Persist real walker lean flags across every locked tick, not a new walker per frame.
+const surfaceOptions = { surfaceY() { return 0; }, shadowSurfaceOffset() { return 0; } }; // Far-below-ground fixture exposes any accidental hop snap.
 for (let frame = 0; frame < 6; frame++) {
   assert.equal(ordinaryFrame(
     windowFrame, player, { group: { rotation: { y: 0 } }, update() { legUpdates++; } },
     .016, 9, 11, 0, { lunging: false },
     normalFacing, 20, .5, 10, 1, performance
   ), true, 'ordinary simulation respects the currently held pose channel');
-  const walker = {
-    rec: { id: 'leaf' }, root: npc, legs: { update() { legUpdates++; } },
-    _npcRunLeanActive: true, _npcRunLeanPivot: npcLean, area: 'farm',
-  }; // Real NPC hold code may update knees but must not reset the claimed root or lean.
-  assert(lockWindow.NpcCharacterState.update(walker, .016, {
-    surfaceY() { return 0; }, shadowSurfaceOffset() { return 0; },
-  }), 'locked NPC movement path executed');
+  assert(lockWindow.NpcCharacterState.update(heldWalker, .016, surfaceOptions),
+    'locked NPC movement path executed');
+  assert.equal(heldWalker._npcRunLeanActive, true,
+    'paired lock defers old running-lean cleanup until the actor can safely restore its rig');
   assert(absolute.owns(), 'kiss pose still owned after regular player and NPC update, frame ' + frame);
   assert.deepEqual(player.position, initial.playerPosition, 'player root remains at authored kiss position');
   assert.deepEqual(player.quaternion, initial.playerQuaternion, 'player root retains authored kiss yaw');
@@ -131,6 +134,16 @@ assert.equal(legUpdates, 6, 'only the NPC locked-walker knee path runs, never no
 const released = absolute.release(); // Restore the saved transform once the paired action ends.
 assert.equal(released.skipped, 0, 'untouched captured transforms return cleanly on kiss completion');
 locked = false;
+assert(Math.abs(npcLean.quaternion.y - new Quat().yaw(.14).y) < 1e-9,
+  'scoped release restores the pre-kiss running lean rather than stranding the authored bow');
+movementOnlyLock = true;
+assert(lockWindow.NpcCharacterState.update(heldWalker, .016, surfaceOptions),
+  'a subsequent movement-only lock performs deferred NPC lean cleanup');
+assert.equal(heldWalker._npcRunLeanActive, false,
+  'lean cleanup clears its running flag only after applying the pending reset');
+assert.deepEqual(npcLean.quaternion, new Quat(),
+  'no stale running lean remains after the paired pose hands the rig back');
+movementOnlyLock = false;
 // Evaluate the same production position, mount and facing statements on
 // release. Other normal gameplay calls (combat, gait and camera) need their
 // full live game context and are intentionally not mocked here.
