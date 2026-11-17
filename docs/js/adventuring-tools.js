@@ -5,8 +5,9 @@
   let lastStrike = null; // Copied by Pixel Probe on mobile when checking reach and ignition.
   let deps = null, lit = false, lastEvent = 'ready'; // Hand-held torch state is session-only, unlike future tool unlocks.
   let torchThrowHold = null; // The input owner that pairs exactly one held press with its release or cancellation.
+  let lastThrowOrigin='none'; // Pixel Probe/mobile debug identifies whether a launch sampled the held torch plane.
   function init(injected) {
-    deps = injected; lit = false; torchThrowHold = null; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
+    deps = injected; lit = false; torchThrowHold = null; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
     for (const key of (deps.getUnlocked?.() || [])) if (tools.has(key)) unlocked.add(key);
   }
   function register(def) { if (!def?.id || !def.label || typeof def.onSelect !== 'function') return false; tools.set(def.id,def); return true; }
@@ -175,7 +176,8 @@
     }
     const progress = Number(deps?.getThrowPoseProgress?.()); // Release exactly at the currently displayed held windup.
     const poseProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
-    const result = throwLit(); // Preserve existing aimed torch physics, ruin fire contact and unlit replacement.
+    const projectileVisual = deps?.getTorchProjectileVisual?.() || null; // Capture the real held plane before strike/rest moves it.
+    const result = throwLit(projectileVisual); // Preserve the shared thrown-weapon projectile and unlit replacement.
     if (result.ok) {
       deps?.releaseThrowVisual?.({ poseProgress });
       lastEvent = 'torch throw released at ' + Math.round(poseProgress * 100) + '%: ' + source;
@@ -185,9 +187,11 @@
     return result;
   }
 
-  function throwLit() {
+  function throwLit(projectileVisual = null) {
     if (!canThrow()) return {ok:false,message:'The torch must be lit before you throw it.'};
-    if (!window.RangedWeapons?.throwAdventuringTorch?.()) return {ok:false,message:'Cannot throw the torch here.'};
+    const sampled = projectileVisual || deps?.getTorchProjectileVisual?.() || null; // Direct/dev throws use the same release-frame sample.
+    if (!window.RangedWeapons?.throwAdventuringTorch?.(sampled)) return {ok:false,message:'Cannot throw the torch here.'};
+    lastThrowOrigin = sampled?.sourceTransform?.position ? 'held-plane' : 'fallback';
     lit=false; lastEvent='thrown: unlit torch replaced'; deps?.refreshActionBar?.();
     return {ok:true,message:''};
   }
@@ -198,7 +202,7 @@
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
       return {
-        lit, held, throwCharging: !!torchThrowHold, throwSource: torchThrowHold?.source || null,
+        lit, held, throwCharging: !!torchThrowHold, throwSource: torchThrowHold?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
