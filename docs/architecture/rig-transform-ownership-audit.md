@@ -101,3 +101,24 @@ position/quaternion/scale at identical baseline points in the existing
 `RigTransformDump`/Pixel Probe capture. Ensure no unowned transform survives
 after each transition. Do not move the player render-composer or impact-pose
 sampling into the ledger: those already have stronger ownership contracts.
+
+## Implemented ownership hardening (17 November 2026)
+
+This is a **first implementation tranche**, not certification that every runtime rig writer uses one compositor. The preceding inventory remains a list of migrations and verification work.
+
+- `js/rig-transform-layers.js` now exposes both `ActorRigCompositor` and the backwards-compatible `RigTransformLayers` name. Euler rotation owners on Three.js rigs and named quaternion owners share one per-node rotation store; translations keep their existing named-axis API.
+- An out-of-band write *while an effect owns the node* is reported and **rejected as canonical baseline**. The last clean pre-effect transform is restored and competing claims removed. Known absolute animators can instead explicitly hand off with `setAbsoluteBase`. When no effect is active, new absolute solver output remains eligible to establish the next clean base.
+- `setQuaternion(node, owner, delta, {leaseMs})` provides removable, time-bounded local body/foot sway. The player compositor drives `expireStale` at its render boundary and shares the same channel registry through `channelStore('player-body')`.
+- NPC/bandit `ActorBodySink` uses a named additive Y layer in normal gameplay, preserving the original fallback for isolated previews. NPC drunk body tilt and both foot twists use expiring named quaternion layers instead of manual inverses.
+- Pixel Probe and Full Rig Dump now expose counters for out-of-band writes, the last conflicting node/owners, expired leases and remaining active layers on mobile. The enemy workshop loads the owner registry before either body or gait composer.
+
+### Remaining work before the original goal can be called complete
+
+- Migrate paired wheel dance and spouse kiss away from whole-pose historical-snapshot teardown; use action-scoped absolute claims that cannot overwrite a newer action.
+- Move late player-yawn and NPC-dance hand presentation from private baseline/equality checks into a compositor-owned hand phase shared by all render passes.
+- Make impact/ragdoll reparenting generation-safe (or use permanently installed neutral pivots); migrate Tzatzul capture/release to explicit ownership handoff.
+- Register authoritative absolute neck look, player facing, leg IK, hand grips and root travel with safe precedence relative to additive effects; keep physics locomotion as the source of world position.
+- Extend actor-generation binding, disposable multi-node action owners and absolute/scale/quaternion claims to all NPCs, enemies and creatures. Persistent stance sinks still require their existing explicit release; do not assign a short lease without proving their refresh cadence.
+- Run the repository-wide transform-writer AST census and headless scene interruption matrix (including rebuild, seat, dance, grapple, knockdown and secondary render passes). No complete runtime coverage or successful gameplay soak has yet been demonstrated.
+
+Tests: `scripts/test-rig-transform-layers.js` executes independent node-layer composition, unknown-write rejection, explicit baseline handoff, quaternion/Euler overlap, lease expiry and body-sink cleanup. `scripts/test-drunk-locomotion-footing-source.js` now executes the real named NPC body quaternion path and verifies disposal. Run them and the fast suite in a full checkout before merging.
