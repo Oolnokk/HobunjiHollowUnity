@@ -193,7 +193,7 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.ok(w.mod.config().intervalMs <= 100);
   w.player.x = 100 * TILE; w.player.y = 100 * TILE;
   const bandit = w.corpse('bandit');
-  const animal = w.corpse('animal', { isBandit: false, streamVisuals: true });
+  const animal = w.corpse('animal', { isBandit: false, streamVisuals: true, _wildlifeVisualLodHidden: true, _wildlifeDormantSinceMs: 5000 });
   const additional = [w.corpse('a2', { isBandit: false }), w.corpse('b2'), w.corpse('b3')];
   const protectedBodies = [
     w.corpse('companion', { isBandit: false, isCompanion: true }),
@@ -211,6 +211,8 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.equal(animal.avatarRef.group.userData.corpseNoSecondaryPasses, true);
   assert.equal(animal.avatarRef.group.children[0].userData.noOutline, true);
   assert.equal(animal._corpseVisualRetired, true);
+  assert.equal(animal._wildlifeVisualLodHidden, false, 'old wildlife hidden flag is cleared');
+  assert.equal(animal._wildlifeDormantSinceMs, null, 'old stream timer is cleared');
   assert.equal(w.mod.stats.wildlifeRetired, 2);
   assert.ok(w.flameEvents.includes('dispose:animal'), 'old flame presenter removed with rig');
   assert.ok(w.flameEvents.includes('sync:animal:wildlife_corpse_marker'), 'corpse flame reattached to static root');
