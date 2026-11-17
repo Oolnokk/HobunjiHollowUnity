@@ -7,9 +7,8 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const LADDER_RANGE = 1.7;
   const SEMANTIC_RESCAN_MS = 250;
-  const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
+  const SLOT_ACTIONS = window.ActionPromptUI?.archActions || ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2']; // Reuse canonical five-slot order; fallback supports isolated dev probes.
   const TOUCH_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2'];
-  const TOUCH_PROMPT_LABELS = Object.freeze({action1:'Action 1',action2:'Action 2',action3:'Action 3',itemAction1:'Item Action 1',itemAction2:'Item Action 2',jump:'Jump',dodge:'Dodge',toolSelect:'Tool Select'}); // Each touch prompt names its actual arch control, not a generic hand pictogram.
   const INPUT_CLAIM_OWNER = 'dev-random-ruin'; // Shared input-ownership registry key; explicit Action 1 interactions can suppress combat without hardcoding ruin logic into the weapon system.
   const GridTileAccessors = window.GridTileAccessors;
   const DS = window.DynamicSurfaces;
@@ -571,24 +570,6 @@
     return 'desktop';
   }
 
-  function bindingFor(action, device = currentDevice()) {
-    if (device === 'touch') return '';
-    const bindings = window.InputBindings?.getCurrentBindings?.();
-    return bindings?.[device]?.[action] || '';
-  }
-
-  function bindingLabel(action, device = currentDevice(), touchIcon = '✋') {
-    if (device === 'touch') return TOUCH_PROMPT_LABELS[action] || (action === 'interact' ? '' : touchIcon); // Interact has no standalone touch button, and numbered arches must be identified by number.
-    const binding = bindingFor(action, device); // Current device's live remapping, not a default/hardcoded prompt.
-    if (device === 'controller' && action === 'interact' && binding
-        && window.InputBindings?.resolveActionForButton?.('controller', binding) === 'jump') return ''; // Never advertise ruin controller A as Interact while it owns Jump.
-    return window.InputBindings?.buttonLabel?.(binding, device) || binding || '';
-  }
-
-  function inputColor(action) {
-    return window.ActionArchSlotColors?.inputColors?.[action] || '#B8C5C0';
-  }
-
   function syncInputClaims(rows) {
     const registry=window.WorldActionInputClaims;
     if(!registry)return;
@@ -645,11 +626,7 @@
       return { ...button, inputAction: device === 'controller' || device === 'touch' ? archAction : 'interact' }; // Keyboard keeps E, while touch/controller use the visible third arch slot.
     });
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
-    const promptInputs=buttons.map(button=>({
-      actionId:button.inputAction||'',
-      label:button.inputAction?bindingLabel(button.inputAction,device,button.icon):'',
-      color:button.inputAction?inputColor(button.inputAction):'#B8C5C0',
-    }));
+    const promptInputs=window.ActionPromptUI.resolveWorldPromptInputs(buttons,null,device); // Shared remap, Jump priority, and arch-color hints for native rows.
     popup.syncInteractionPrompts({
       buttons,
       root,
@@ -763,7 +740,7 @@
         customPromptBridgeInstalled:false,
         providerCount:[window.DevRandomRuin, window.DevRandomRuinMotionRuntime, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
-        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
+        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:window.ActionPromptUI.worldPromptLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:lastRows.length>0,
