@@ -30,6 +30,7 @@ assert.match(html, /Content-Security-Policy/);
 assert.match(html, /Install &amp; Restart/);
 assert.match(ui, /textContent/, 'Errors/remote release text must not be injected as HTML');
 assert.ok(!ui.includes('innerHTML'), 'Update UI must never render untrusted HTML');
+assert.match(ui, /\['saving', 'installing'\]\.includes\(phase\)/, 'Later is disabled while saving or restarting');
 assert.match(preload, /contextBridge.exposeInMainWorld/);
 assert.match(main, /prepareUpdateRestart/);
 assert.match(main, /CLOSE_SAVE_SCRIPT/);
@@ -80,13 +81,18 @@ async function checkUpdater() {
   };
   updater.quitAndInstall = () => { calls.push('install'); };
   let allowRestart = false; // First restart is cancelled to verify no premature installation.
+  let holdSave = false; // Simulates a long-running Google Drive folder write.
+  let releaseSave = null; // Test control resolves the simulated save operation.
   const updates = createDesktopUpdates({
     app: { getVersion: () => '0.1.0', isPackaged: true },
     BrowserWindow: FakeWindow,
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     shell: { openExternal: url => { assert.equal(url, RELEASES_URL); calls.push('releases'); } },
     autoUpdater: updater, getGameWindow: () => null,
-    prepareRestart: async () => { calls.push('save'); return allowRestart; },
+    prepareRestart: () => {
+      calls.push('save');
+      return holdSave ? new Promise(resolve => { releaseSave = resolve; }) : Promise.resolve(allowRestart);
+    },
     cancelPreparedRestart: () => calls.push('rearm-close'),
     logger: { error: () => {} },
   });
@@ -121,7 +127,17 @@ async function checkUpdater() {
   assert.equal(win.visible, true);
   assert.equal((await handlers.get(CHANNELS.status)({ sender: win.webContents })).percent, 100);
 
-  await updates.install();
+  holdSave = true;
+  const pendingInstall = updates.install(); // Save is held pending while user attempts to dismiss the window.
+  assert.equal(updates.snapshot().phase, 'saving');
+  const prematureClose = { prevented: false, preventDefault() { this.prevented = true; } }; // Simulates the native close event.
+  win.emit('close', prematureClose);
+  assert.equal(prematureClose.prevented, true, 'Closing update window cannot cancel a running save');
+  await handlers.get(CHANNELS.later)({ sender: win.webContents });
+  assert.equal(win.visible, true, 'Later is ignored while saving');
+  releaseSave(false);
+  await pendingInstall;
+  holdSave = false;
   assert.equal(updates.snapshot().phase, 'downloaded', 'Cancelled saves must preserve the downloaded update');
   assert.deepEqual(calls, ['check', 'save']);
   allowRestart = true;
