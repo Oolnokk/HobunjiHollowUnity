@@ -115,8 +115,20 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       camera.lookAt(cx, cy, 0);
       camera.updateProjectionMatrix();
       const back = read();
+      // A DIFFERENT actor's solid portrait is just 0.004 units in front of this actor's
+      // pants. The previous +0.012 pants placement defeated that nearer silhouette.
+      portrait.visible = false;
+      const otherActor = new T.Group(); // Independent scene actor, not a child of the pants wearer.
+      scene.add(otherActor);
+      const otherPortrait = portrait.clone();
+      otherPortrait.position.z = 0.004;
+      otherActor.add(otherPortrait);
+      camera.position.set(cx, cy, 3);
+      camera.lookAt(cx, cy, 0);
+      const other = read();
+      scene.remove(otherActor);
       const result = {
-        revision: T.REVISION, unoccluded, front, back, restZ: pants.basePositions[2],
+        revision: T.REVISION, unoccluded, front, back, other, restZ: pants.basePositions[2],
         material: { depthTest: mat.depthTest, depthWrite: mat.depthWrite,
           offset: mat.polygonOffset, factor: mat.polygonOffsetFactor, units: mat.polygonOffsetUnits },
         bodyBounds: [box.min.toArray(), box.max.toArray()],
@@ -131,12 +143,14 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       'front portrait blocks every coplanar pants pixel: ' + JSON.stringify(result));
     assert(result.back.red > 50 && result.back.cyan === 0,
       'rear-facing portrait blocks every coplanar pants pixel: ' + JSON.stringify(result));
+    assert(result.other.red > 50 && result.other.cyan === 0,
+      'an independent actor portrait 0.004 nearer to the camera blocks another actor\'s pants: ' + JSON.stringify(result));
     assert(Math.abs(result.restZ) < 1e-6, 'neutral garment has no +0.012 portrait penetration');
     assert(result.material.depthTest && result.material.depthWrite && result.material.offset
       && result.material.factor > 0 && result.material.units > 0,
     'pants use real depth and a rearward camera-independent coplanar offset');
     assert.equal(pageErrors.length, 0, 'browser render/shader errors: ' + pageErrors.join('\n'));
-    console.log('Pants portrait depth WebGL front/back: PASS ' + JSON.stringify(result));
+    console.log('Pants portrait depth WebGL front/back/other-actor: PASS ' + JSON.stringify(result));
   } finally {
     if (browser) await browser.close();
   }
