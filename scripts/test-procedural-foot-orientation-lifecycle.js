@@ -75,34 +75,23 @@ const hierarchySource = between(composerSource,
   '  function hierarchyWorldQuaternion(node, target = new THREE.Quaternion()) {',
   '\n  function quaternionEulerDegrees(quaternion) {');
 const composerWorldQ = new Function('THREE', hierarchySource + '\nreturn hierarchyWorldQuaternion;')({ Quaternion: Q });
-const counterSource = between(composerSource,
-  '  function counterRotateLegRootForRender(legRoot, worldCorrection, undo) {',
-  '\n  function applyRenderedFacingDeadzone(camera, undo, renderDebug) {');
-const counterLegs = new Function(
-  'hierarchyWorldQuaternion', 'legFacingParentWorld', 'legFacingLocalCorrection', 'legFacingWorldInverse',
-  counterSource + '\nreturn counterRotateLegRootForRender;'
-)(composerWorldQ, new Q(), new Q(), new Q());
+// The camera-facing body adjustment must carry the entire leg rig, not add
+// an independent inverse yaw that points the knees behind the portrait.
+assert(!composerSource.includes('counterRotateLegRootForRender'), 'no inverse leg-only facing correction');
 for (const correction of [-Math.PI * 0.85, 0.7, Math.PI * 0.95]) {
-  const world = { isObject3D: true, quaternion: pitch(-0.31), parent: null };
-  const body = { isObject3D: true, quaternion: yaw(1.2), parent: world, scale: { x: -1, y: 1, z: 1 } };
-  const leg = { isObject3D: true, quaternion: pitch(0.22).multiply(yaw(-0.15)), parent: body };
+  const world = {isObject3D:true, quaternion:pitch(-0.31), parent:null};
+  const body = {isObject3D:true, quaternion:yaw(1.2), parent:world, scale:{x:-1,y:1,z:1}};
+  const leg = {isObject3D:true, quaternion:pitch(0.22).multiply(yaw(-0.15)), parent:body};
   const initialBody = body.quaternion.clone(), initialLeg = leg.quaternion.clone();
-  const initialWorldFoot = composerWorldQ(leg, new Q()).clone();
-  const visualDelta = yaw(correction); // Render-only camera clamp turns the avatar body.
-  // Apply the same WORLD-space body correction as the production composer's applyWorldDelta:
-  // a pitched scene-root means it cannot be premultiplied directly in body LOCAL space.
-  const worldParent = composerWorldQ(body.parent, new Q());
-  const bodyLocalCorrection = worldParent.clone().invert().multiply(visualDelta).multiply(worldParent);
-  body.quaternion.premultiply(bodyLocalCorrection);
-  const undo = [];
-  counterLegs(leg, visualDelta, undo);
-  assert(equalOrientation(composerWorldQ(leg, new Q()), initialWorldFoot),
-    'camera/weapon body yaw leaves leg world orientation unchanged under mirrored and tilted ancestors');
-  for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+  const initialWorldLeg = composerWorldQ(leg, new Q()).clone();
+  const visualDelta = yaw(correction);
+  const parentWorld = composerWorldQ(body.parent, new Q());
+  const localDelta = parentWorld.clone().invert().multiply(visualDelta).multiply(parentWorld);
+  body.quaternion.premultiply(localDelta);
+  assert(equalOrientation(composerWorldQ(leg, new Q()), visualDelta.clone().multiply(initialWorldLeg)), 'legs inherit the exact body world turn');
+  assert(equalOrientation(leg.quaternion, initialLeg), 'no additive local half-turn');
   body.quaternion.copy(initialBody);
-  assert(equalOrientation(leg.quaternion, initialLeg), 'render undo restores exact authored foot stance quaternion');
-  assert(equalOrientation(composerWorldQ(leg, new Q()), initialWorldFoot),
-    'next simulation frame starts without a retained half-turn');
+  assert(equalOrientation(composerWorldQ(leg, new Q()), initialWorldLeg), 'rollback preserves the whole original rig');
 }
 
 // Exercise the production render wrapper, including the case where pose composition
@@ -116,10 +105,11 @@ let failDuringDraw = false; // Also checks the existing WebGL error path.
 let failDuringRollback = false; // Simulates a stale attachment whose undo throws before the feet can be restored.
 let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
 const wrappedPlayer = {}; // Mutable fixture: unrelated scenes can be tested as real Object3D scenes without changing normal rollback tests.
+const pantsCalls = []; // Captures visible skinning updates and their rollback in the test renderer.
 const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
-  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf',
-  'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
+  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf', 'pantsCalls', 'readYaw',
+  'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const playerLegHandle = { pants: { update(renderOnly) { pantsCalls.push({ renderOnly, yaw: readYaw() }); } } }; const proto = {};'
     + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; proto.render.getSkipCount = () => unrelatedSceneSkips; return proto.render;'
 )(
   () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
@@ -130,18 +120,21 @@ const renderWrapper = new Function(
     if (failDuringPose) throw new Error('synthetic pose failure');
   },
   () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
-  { now: () => 1000 }, () => 0, [], () => false // The offscreen fixture uses a separate scene not containing the live player.
+  { now: () => 1000 }, () => 0, [], () => false, pantsCalls, () => temporaryYaw // The offscreen fixture uses a separate scene not containing the live player.
 );
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal render completes');
 assert.equal(temporaryYaw, 0, 'normal render restores the temporary orientation');
+assert.deepEqual(pantsCalls.slice(0,2), [{renderOnly:true,yaw:1},{renderOnly:true,yaw:0}], 'garment skins final turn and restores the base');
 failDuringPose = true;
 assert.throws(() => renderWrapper({}, {}), /synthetic pose failure/);
 assert.equal(temporaryYaw, 0, 'pre-render pose failure rolls back temporary orientation');
+assert.equal(pantsCalls.at(-1).yaw, 0, 'pose error restores clean garment');
 assert.equal(drawCalls, 1, 'render was never reached after the pose failure');
 failDuringPose = false;
 failDuringDraw = true;
 assert.throws(() => renderWrapper({}, {}), /synthetic render failure/);
 assert.equal(temporaryYaw, 0, 'renderer failure rolls back temporary orientation');
+assert.equal(pantsCalls.at(-1).yaw, 0, 'renderer error restores clean garment');
 assert.equal(drawCalls, 2, 'renderer was reached before the draw failure');
 assert.match(renderWrapper.getDebug().renderError, /synthetic render failure/,
   'mobile composer diagnostics retain a render-stage exception');
@@ -195,21 +188,18 @@ const turnForward = {
 const turnPivot = { set() { return this; } }; // Fixed posterior pivot in the independent render fixture.
 const turnPlayer = { visible: true, position: { x: 0, z: 0 }, localToWorld: p => p }; // Player root drawn with the active weapon.
 const turnPet = { name: 'shoulder-pet' }; // Scene-sibling shoulder attachment.
-const turnLegs = { name: 'player-legs' }; // Procedural leg counter-rotation, tested mathematically above.
 const turnApplied = []; // Records correction distribution across the player and its owned attachments.
 const applyTurnClamp = new Function(
   'window', 'playerMesh', 'renderFacingForward', 'hierarchyWorldQuaternion',
   'renderFacingState', 'wrapSignedAngle', 'renderFacingRotation', 'renderFacingUp',
   'renderFacingPivot', 'playerPosteriorY', 'currentOwnedRootEntries',
-  'applyWorldDelta', 'renderFacingTranslation', 'playerLegRoot',
-  'counterRotateLegRootForRender', 'currentPlayerNeckJoint',
+  'applyWorldDelta', 'renderFacingTranslation', 'currentPlayerNeckJoint',
   facingSource + '\nreturn applyRenderedFacingDeadzone;'
 )(
   renderWindow, turnPlayer, turnForward, () => ({ yaw: composedYaw }),
   turnState, signed, turnDelta, AXIS_Y,
   turnPivot, 0, () => [{ root: turnPlayer }, { root: turnPet }],
   root => { turnApplied.push({ root: root.name || 'player', angle: turnDelta.angle }); },
-  {}, turnLegs, () => { turnApplied.push({ root: 'legs-inverse', angle: turnDelta.angle }); },
   () => null
 );
 const camera = { position: { x: 0, z: 10 } }; // World camera normal; edge-on player planes lie at +/-90°.
@@ -233,10 +223,9 @@ for (const stanceYaw of [-1.1, -0.2, 0, 0.2, 1.1]) {
   assert(Math.abs(signed(debug.bodyDeadzone.renderedYaw - (composedYaw + debug.bodyDeadzone.correction))) < 1e-9,
     'correction exactly resolves to the rendered yaw, not a stale baseline');
   if (Math.abs(debug.bodyDeadzone.correction) > 1e-8) {
-    assert.deepEqual(turnApplied.map(entry => entry.root), ['player', 'shoulder-pet', 'legs-inverse'],
-      'the same correction is distributed to body and pet, and its inverse to the procedural legs');
-    assert(turnApplied.every(entry => Math.abs(entry.angle - debug.bodyDeadzone.correction) < 1e-9),
-      'the leg compensation uses the same correction quaternion which the production helper then inverts');
+    assert.deepEqual(turnApplied.map(entry => entry.root), ['player', 'shoulder-pet'], 'legs inherit visual yaw from the body');
+    assert(turnApplied.every(entry => Math.abs(entry.angle - debug.bodyDeadzone.correction) < 1e-9), 'pet shares body turn');
+    assert.equal(debug.bodyDeadzone.legFacing, 'follows-body', 'mobile reports inherited leg facing');
   }
 }
 // A 40-degree idle Light Weapon yaw exactly cancels the old base-only clamp
@@ -334,4 +323,4 @@ const shoulderWithoutLegApi = new Function('THREE', 'window',
 assert(equalOrientation(shoulderWithoutLegApi(mirroredNeck), expectedPetOrientation),
   'independent attachment editor composes the same physical orientation without the leg runtime');
 
-console.log('PASS: mirrored foot contacts, stance/climb reset, and render-only body yaw preserve foot facing and rollback failed renders');
+console.log('PASS: mirrored leg facing, pants render sync, and interrupted-frame recovery');
