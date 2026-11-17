@@ -1108,6 +1108,9 @@
 
   function hideTentActionHud() {
     ensureTentActionHud();
+    // Called every frame while no tent is in reach; once hidden, rewriting the
+    // same attribute/width still queued a DOM mutation and a style recalc per frame.
+    if (_tentActionHudEl && !_tentActionHudEl.classList.contains('visible') && _tentActionHudEl.getAttribute('aria-hidden') === 'true') return;
     _tentActionHudEl?.classList.remove('visible');
     _tentActionHudEl?.setAttribute('aria-hidden', 'true');
     if (_tentActionFillEl) _tentActionFillEl.style.width = '0%';

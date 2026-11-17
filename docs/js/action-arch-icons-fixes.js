@@ -317,8 +317,11 @@
     actionButtons().forEach(button => {
       const host = actionIconHost(button);
       if (!host) return;
-      if (isDedicatedHost(host)) host.style.visibility = 'visible';
-      else if (!['cut', 'slash', 'potion_select', 'ammo_select'].includes(button.dataset.action)) host.style.visibility = '';
+      // Compare before writing: an identical inline-style write still queues a
+      // mutation record for action-arch-icons.js's observer (and a style recalc).
+      const visibility = isDedicatedHost(host) ? 'visible'
+        : (!['cut', 'slash', 'potion_select', 'ammo_select'].includes(button.dataset.action) ? '' : null);
+      if (visibility !== null && host.style.visibility !== visibility) host.style.visibility = visibility;
     });
   }
 
