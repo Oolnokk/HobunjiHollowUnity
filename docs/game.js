@@ -27056,12 +27056,12 @@
         // Tools and held bag items render and animate in every playable map.
         // Ordinary interiors still omit combat/reticle updates below; this
         // visual pass does not enable farm or combat actions there.
-        updateToolMesh(dt);
         if (window.AdventuringTools?.isThrowSequenceActive?.() &&
             (activeTool !== 'adventuring' || heldMode !== 'tool' || !toolHolder.visible ||
               window.CharacterActionLocks?.isLocked?.('player','tools'))) {
-          window.AdventuringTools.cancelThrow('tool-lost-during-strike'); // Interrupted/hidden poses cannot strand a queued projectile or invisible replacement.
+          window.AdventuringTools.cancelThrow('tool-lost-during-strike'); // Reject a cancelled throw before a different tool inherits the old pose.
         }
+        updateToolMesh(dt);
         window.HeldItemActionInput?.update();
         // Combat and targeting remain limited to exterior maps and den caverns.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
