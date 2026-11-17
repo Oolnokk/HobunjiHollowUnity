@@ -300,6 +300,60 @@ class Position3 {
   assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
 }
 
+// Regression: a leased additive layer must never erase an absolute kiss,
+// capture, or cinematic pose when it expires under the action's ownership.
+{
+  const node = { name: 'overlap-hip', parent: {}, position: new Position3(0, 1, 0),
+    quaternion: new Quat() }; // One shared joint is deliberately affected by both pose systems.
+  layers.setAxis(node, 'drunk-hip', 'position', 'y', .4, { leaseMs: 100 });
+  near(node.position.y, 1.4);
+  const absolute = layers.createAbsoluteSession('scripted-cinematic-pose'); // The scripted pose suspends the named offset.
+  assert(absolute.capture(node, ['position']));
+  node.position.y = 3;
+  assert(absolute.stamp());
+  const expired = layers.expireStale(Date.now() + 10000);
+  assert(expired >= 1, 'suspended additive lease expires during the scripted pose');
+  near(node.position.y, 3);
+  assert(absolute.owns(), 'lease expiry cannot invalidate an unrelated absolute owner');
+  absolute.release();
+  near(node.position.y, 1); // Expired offset stays expired: the clean pre-action baseline returns.
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+}
+{
+  const node = { name: 'overlap-shoulder', parent: {}, position: new Position3(0, 1, 0),
+    quaternion: new Quat() }; // The same joint receives a fresh additive value during its held action.
+  layers.setQuaternion(node, 'drunk-shoulder', aroundX(.15), { leaseMs: 500 });
+  near(angleX(node.quaternion), .15);
+  const absolute = layers.createAbsoluteSession('paired-dance-shoulder');
+  assert(absolute.capture(node, ['quaternion']));
+  node.quaternion.copy(aroundX(.9));
+  assert(absolute.stamp());
+  assert(layers.setQuaternion(node, 'drunk-shoulder', aroundX(.3), { leaseMs: 500 }));
+  near(angleX(node.quaternion), .9); // Refresh is registered but never overwrites the authored action.
+  assert(absolute.owns());
+  absolute.release();
+  near(angleX(node.quaternion), .3); // Current additive value reappears exactly once above clean IK.
+  layers.clear(node, 'drunk-shoulder');
+  near(angleX(node.quaternion), 0);
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+}
+{
+  const node = { name: 'overlap-new-owner', parent: {}, position: new Position3(0, 1, 0),
+    quaternion: new Quat() }; // A later physics/impact author must take precedence over stale deferred offsets.
+  layers.setAxis(node, 'old-sway', 'position', 'y', .4);
+  const absolute = layers.createAbsoluteSession('interrupted-action');
+  assert(absolute.capture(node, ['position']));
+  node.position.y = 3;
+  assert(absolute.stamp());
+  layers.setAxis(node, 'old-sway', 'position', 'y', .8);
+  node.position.y = 9; // An external, newer solver displaced the old action.
+  absolute.release();
+  near(node.position.y, 9);
+  layers.clear(node, 'old-sway');
+  near(node.position.y, 9); // Clearing an obsolete named effect must never resurrect the old IK baseline.
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+}
+
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
