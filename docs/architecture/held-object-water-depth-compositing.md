@@ -88,9 +88,12 @@ The existing renderer debug snapshot and mobile log expose
 Nearby player and NPC portrait planes can intersect at oblique camera angles.
 The base transparent draw sorts those actors by their root positions in camera
 space and keeps the existing front, back and shoulder draw order within an
-actor. Farther portrait planes temporarily defer depth writes so they cannot
-cut across the closer actor. Opaque world geometry still depth-tests against
-each portrait. The weapon stencil uses the same actor ordering.
+actor. Portrait cards **retain their normal depth writes**: otherwise pants
+(rendered immediately after their owner) could show through the owner's or
+another actor's opaque portrait pixels. Physical depth testing decides
+intersections even when the actor-root painter order differs. Opaque world
+geometry still depth-tests against each portrait; the weapon stencil uses
+the same actor ordering.
 
 ## Shoulder pets are part of the owner's portrait occlusion
 
@@ -376,8 +379,10 @@ The Dev Companion's editable draw-order ranks affect color sorts only within a c
 `withPortraitDrawOrder()` installs that as the renderer's transparent sort. Worn pants are separate meshes at
 `renderOrder` 28, so they are ranked with the actor that wears them (`extras`) and draw right after that actor's
 portrait. Leaving them out meant they drew after *every* portrait and relied on depth alone, which fails for any
-portrait whose depth write is deferred (a close, non-nearest actor) - far NPCs' pants then show through the player.
-Only actors within `PORTRAIT_SORT_DISTANCE` of the player take part in the depth-write deferral. Other worn parts
+portrait that does not write depth - far NPCs' pants then show through the player.
+The base pass therefore no longer suppresses portrait depth writes for close actor crossings;
+`PORTRAIT_SORT_DISTANCE` is retained for the optional near-only actor ranking rule.
+Shoulder-pet portrait stacks still have a separate intentional depth-write-free mode. Other worn parts
 that draw after portraits (hats, overlays) need the same treatment if they show the same symptom.
 
 ## Portrait water tint: the actor's own tile must be wet
