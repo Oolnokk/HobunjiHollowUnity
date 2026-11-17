@@ -706,6 +706,51 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(context.FeyHypedAttacks.debugSnapshot().replayCount,1,'second impact is recorded once');
   assert.equal(CAE.prepare({attacker:player,abilityId:'swingCombo'}).metadata.feyHypedUsed,undefined,'echo credit spent once');
 
+  const hypeReserved=RS.getAffliction(player,'hypedStamina');
+  RS.spendStamina(player,2,'walking',{actionKind:'walking'});
+  RS.spendStamina(player,2,'thrown spear',{actionKind:'offensiveHeldCharge',abilityId:'thrownWeapon'});
+  assert.equal(RS.getAffliction(player,'hypedStamina'),hypeReserved,'Hyped stamina is not consumed by walking or the separate projectile/ammo pipeline');
+
+  // The real player's hallucination rotates the camera and movement basis,
+  // not their persistent facing angle or customized camera setting.
+  RS.addAffliction(player,'dementedStamina',8);
+  const playerAngleBefore=player.angle;
+  randomQueue=[.99]; // Consistent random sign for one action in this harness.
+  RS.spendStamina(player,4,'normal movement',{durationS:.2});
+  fey.update(.1,player);
+  const yaw=fey.movementRotationRad(player);
+  assert(Math.abs(Math.abs(yaw)-2*Math.PI/180)<.0001,'half action rotates the gameplay movement basis by half its 4° total');
+  assert(Math.abs(fey.cameraYawDeg(player)+yaw*180/Math.PI)<.0001,'camera and movement use one additive yaw with correct camera azimuth sign');
+  assert.equal(player.angle,playerAngleBefore,'Demented illusion cannot overwrite the player body facing/camera settings');
+  fey.update(.1,player);
+  assert(Math.abs(Math.abs(fey.movementRotationRad(player))-4*Math.PI/180)<.0001,'full movement-camera interpolation ends at precisely 4°');
+  const gameFeyHooks=fs.readFileSync('docs/game.js','utf8'); // Uses real closure-owned gameplay seam, not a duplicate mock camera.
+  assert(gameFeyHooks.includes('window.FeyIllusions?.cameraYawDeg?.(player)'), 'real gameplay camera azimuth consumes Fey yaw');
+  assert(gameFeyHooks.includes('window.FeyIllusions?.movementRotationRad?.(player)'), 'non-shoulder movement consumes the same yaw');
+  assert(gameFeyHooks.includes('window.FeyIllusions?.isPanickedRolling?.(player)'), 'ordinary dodge hot path skips Fey-only collision work');
+
+  // A Hyped first swing that misses still makes its paid second swing, with its
+  // own present-time hit test rather than requiring a first-hit target ledger.
+  RS.addEnhancedResource(player,'hypedStamina',3);
+  RS.spendStamina(player,3,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  const whiff=CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:10,rangePx:40,halfConeRad:1,knockbackPxS:50});
+  context.Combat.deps.triggerWeaponSwingVisual(.2,{anim:'thrust'});
+  const whiffStage=context.Combat.beginStagedAction({windupS:.1,strikeS:.1,recoverS:0});
+  secondary=null;
+  whiffStage.onComplete(whiffStage); // No CAE.hit from first swing, by construction.
+  hypedStages.at(-1).onStrike(); // Target is now in range and can be struck by the second attack.
+  assert(secondary&&secondary.damage>0,'an independently aimed second swing can hit when the first swing missed');
+  hypedStages.at(-1).onComplete?.();
+
+  RS.addEnhancedResource(player,'hypedStamina',2);
+  RS.spendStamina(player,2,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:10,rangePx:40,halfConeRad:1});
+  const countBeforeCancel=hypedStages.length;
+  const interrupted=context.Combat.beginStagedAction({windupS:.3,strikeS:.1,recoverS:0});
+  interrupted.onCancel(interrupted);
+  assert.equal(hypedStages.length,countBeforeCancel+1,'cancelled primary cannot create an extra Hyped attack');
+  assert.equal(context.FeyHypedAttacks.debugSnapshot().activeHypedAttacks,0,'cancelled actions release their strong target references');
+
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
   ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
