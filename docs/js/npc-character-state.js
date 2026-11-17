@@ -34,7 +34,8 @@
 
   function holdAtCurrentSurface(walker, dt, options, poseLocked = false) {
     const root = walker.root;
-    walker.legs?.update?.(dt, 0, !window.SpouseKissMotion?.isPartner?.(walker)); // A spouse kiss locks walking, not the knees needed for its visible kneel.
+    const kissNeedsKnees = window.SpouseKissMotion?.isPartner?.(walker) === true; // Spouse kisses explicitly refresh their real IK before the paired solver bends both knees.
+    if (!poseLocked || kissNeedsKnees) walker.legs?.update?.(dt, 0, !kissNeedsKnees); // Other exclusive pose owners keep their own authored legs; ordinary movement-only holds still show a neutral stance.
     walker._legsPrevX = root.position.x;
     walker._legsPrevZ = root.position.z;
     walker._moveSpeedTiles = 0;
