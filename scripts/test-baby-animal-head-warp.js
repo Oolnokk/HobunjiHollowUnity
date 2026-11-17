@@ -38,6 +38,8 @@ const documentStub = {
 vm.runInNewContext(source, { window: windowStub, document: documentStub, Uint8ClampedArray }, { filename: 'baby-animal-head-warp.js' });
 const warp = windowStub.BabyAnimalHeadWarp;
 assert.equal(warp.getScale(), 1.23, 'every species defaults to the new 123% scale');
+assert.equal(warp.getShortening(), 0.20, 'baby and genetically Small pet head depth defaults to 20% shorter');
+assert.equal(warp.maskModeForKind('grehlr'), 'idle-alpha', 'existing animals default to opaque idle-sprite head selection');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
 windowStub.AnimalChatheadFrame = { frameForKind: () => ({ ...head, source: 'animal-head-rig-fallback' }) }; // The dialogue module returns a generic crop even for non-species.
@@ -116,7 +118,7 @@ assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1.32)),
   'without an established idle mask no rectangular fallback is permitted');
 
 const input = { width, height, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
-const output = warp.applyToCanvas(input, 'grehlr', 1.32); // Match the existing exact pixel-position fixture's explicit 132% comparison scale.
+const output = warp.applyToCanvas(input, 'grehlr', 1.32, null, 0); // Match the existing exact pixel-position fixture's explicit 132% comparison scale.
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
@@ -157,17 +159,34 @@ assert.equal(warp.frameFromRig({ weightMap: { ...paintedRig, data: [1, 255, -2, 
 assert.equal(warp.scaleForKind('grehlr'), 1.33, 'a committed species head-rig overrides the global Nursery default');
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: { babyHeadScale: 1.4 } }));
 assert.equal(warp.scaleForKind('grehlr'), 1.4, 'a saved head-rigger preview overrides the committed species rig');
+writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: {
+  babyHeadScale: 1.4, babyHeadShortening: 0.35, babyHeadUsePaintedFrame: true,
+  weightMap: paintedRig,
+} }));
+assert.equal(warp.shorteningForKind('grehlr'), 0.35, 'per-species shortening overrides the inherited global amount');
+assert.equal(warp.maskModeForKind('grehlr'), 'legacy-frame', 'painted-selection checkbox reaches the live runtime');
+assert.notEqual(warp.frameForKind('grehlr').width, head.width, 'legacy mode uses painted Head bounds rather than the chathead frame');
+const legacyPixels = warp.warpPixels(pixels, width, height, warp.frameForKind('grehlr'), 1.23, null, 0.25, 'legacy-frame');
+assert(legacyPixels.some((pixel, i) => pixel !== pixels[i]), 'legacy painted selection runs without an idle alpha mask');
+assert.notEqual(warp.applyToCanvas(input, 'grehlr', null, null, null, true), input,
+  'legacy mode stays functional when idle opacity has not been primed for its painted frame');
+
 assert.notEqual(warp.applyToCanvas(input, 'grehlr'), input, 'species-specific preview produces a warped baby canvas');
-assert.equal(warp.applyToCanvas(input, 'grehlr', 1), input, 'editor preview 100% overrides any authored scale without mutating it');
+assert.equal(warp.applyToCanvas(input, 'grehlr', 1, null, 0), input, 'editor preview 100% size and 0% shortening yields the original');
+assert.notEqual(warp.applyToCanvas(input, 'grehlr', 1), input, 'brachycephaly remains independently active even at 100% enlargement');
 writes.delete('hobunji_animal_head_rigs_v1');
 assert.equal(warp.scaleForKind('grehlr'), 1.33, 'clearing preview restores committed species setting');
 assert.equal(warp.setScale(1), 1, 'global experimental scale can be turned off');
+assert.equal(warp.setShortening(0), 0, 'global head shortening can be independently disabled');
 assert.notEqual(warp.applyToCanvas(input, 'grehlr'), input, 'authored species scales remain active independently of global default');
 windowStub.HobunjiAuthoredAnimalHeadRigs = null;
 assert.equal(warp.applyToCanvas(input, 'grehlr'), input, 'global 100% disables an animal without its own authored scale');
 assert.equal(warp.setScale(7), warp.MAX_SCALE, 'setter safely clamps extreme values');
+assert.equal(warp.setShortening(7), warp.MAX_SHORTENING, 'head shortening has a safe upper bound');
+assert.equal(warp.setShortening(-7), 0, 'head shortening cannot invert the skull');
 assert.equal(warp.debugSnapshot().masksCached >= 1, true, 'mobile diagnostics expose established cached idle masks');
 assert.equal(warp.debugSnapshot().scale, warp.MAX_SCALE, 'diagnostics report current effect strength');
+assert.equal(warp.debugSnapshot().shortening, 0, 'mobile debug includes independent shortening amount');
 assert(warp.debugSnapshot().applied > 0, 'diagnostics report actual use');
 
 // Grehlr's source PNG is 3000×2250: the old 4MP sourcePixels ceiling rejected it outright.
