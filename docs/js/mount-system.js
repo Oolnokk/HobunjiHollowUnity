@@ -51,6 +51,8 @@
   const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
   const CRUISE_SPEED_RATIO = 0.66; // Hands-free forward riding speed, below the maximum gallop.
   const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
+  const MOUNT_COAST_DECEL_RATIO = 0.25; // Passive slowdown after wheat/combat acceleration, without weakening deliberate braking or collision stops.
+  const MOUNT_COAST_SOFT_BAND_RATIO = 0.3; // Fade passive drag as excess speed approaches ordinary cruise, avoiding a hard-feeling final slowdown.
   const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
   let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
@@ -1107,6 +1109,7 @@
     // Backward reins brake only when substantially opposed to the current heading.
     // Releasing controls does not stop the mount: it continues along its heading.
     const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
+    ridingDebug.coasting = !braking && mountCurrentSpeedPxS > desiredSpeed + 0.5; // Readable on mobile: passive momentum is active, not a lingering attack-speed grant.
     if (braking && !m._mountHop?.overRock) {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
       window.GroundObstacleAvoidance?.reset('mounted');
@@ -1118,7 +1121,12 @@
       }
     } else {
       if (mountCurrentSpeedPxS < desiredSpeed) mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      else mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
+      else if (mountCurrentSpeedPxS > desiredSpeed) {
+        const excessSpeed = mountCurrentSpeedPxS - desiredSpeed; // Existing physical momentum above the current wheat/combat/cruise target.
+        const softBandPxS = Math.max(1, topSpeed * MOUNT_COAST_SOFT_BAND_RATIO); // Species-relative range over which coasting settles gently into cruise.
+        const coastEase = 0.3 + 0.7 * deps.clamp(excessSpeed / softBandPxS, 0, 1); // Gradually reduce drag near target without asymptotic stalling.
+        mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * MOUNT_COAST_DECEL_RATIO * coastEase);
+      }
       mountRockScanS -= dt;
       const scanRocks = !m._mountHop && mountRockScanS <= 0;
       if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
