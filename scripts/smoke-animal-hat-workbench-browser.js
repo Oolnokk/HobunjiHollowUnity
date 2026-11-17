@@ -220,7 +220,8 @@ async function spritePng(page, animal) {
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
     await page.waitForFunction(() => /Showing 145% size, 20% shorter head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     await page.locator('#babyHeadUsePainted').check(); // Exercise the older painted-Head selector in a real mobile Chromium render.
-    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'legacy-frame');
+    await page.waitForFunction(() => { const debug = window.__animalHeadRigBabyPreview?.debugSnapshot?.();
+      return debug?.maskMode === 'legacy-frame' && debug?.frameSource === 'earlier painted Head rectangle'; });
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
       'earlier painted Head rectangle', 'checked selection uses the original painted Head region');
     await page.locator('#babyHeadUsePainted').uncheck();
@@ -229,7 +230,8 @@ async function spritePng(page, animal) {
       input.value = '35';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.35);
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.35
+      && /35% shorter head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     assert.match(await page.locator('#babyHeadPreviewState').textContent(), /35% shorter head/,
       'live preview communicates brachycephaly, not just the enlargement percentage');
     await page.locator('#babyHeadShortening').evaluate(input => {
