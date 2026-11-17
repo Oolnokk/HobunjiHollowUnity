@@ -21,6 +21,7 @@ let fireContacts = 0, tentContacts = 0, ruinContacts = 0, throws = 0, persisted 
 let covered = false;
 let throwBeginCount = 0, throwCancelCount = 0, throwReleasePose = null; // Track press/release/cancel against the shared held pose.
 let heldTorchVisible = true; // Test the hatchet's hide-at-strike and restore-at-recovery ownership.
+let heldTorchMeshAvailable = true; // Exercises the throw recovery path before a torch PNG has loaded.
 let lastThrowOptions = null; // Confirms that a real release provides its tool-plane sample to the projectile owner.
 const torchVisual = { textureSource: {key:'torch-png'}, sourceTransform: {position:{x:1,y:2,z:3},quaternion:{},planeWidth:.5,planeHeight:1} }; // Test-only held torch visual passed through unchanged.
 const player = { x: 0, y: 0 };
@@ -78,7 +79,7 @@ const deps = {
   getTorchProjectileVisual: () => torchVisual, // Mirrors the game-owned visual snapshot at actual release.
   releaseThrowVisual(opts) { throwReleasePose = opts.poseProgress; },
   cancelThrowVisual() { throwCancelCount++; },
-  setHeldTorchVisible(visible) { heldTorchVisible=visible;return true; }, // Models the same runtime toolMeshMap.adventuring visibility toggle.
+  setHeldTorchVisible(visible) { if (!heldTorchMeshAvailable) return false; heldTorchVisible=visible;return true; }, // Same runtime toolMeshMap visibility toggle; absent sprite is a supported fallback.
 };
 torch.init(deps);
 const forehand = world.AttackPoseTemplates.poseFor('hatchet_swing');
@@ -168,6 +169,17 @@ torch.updateThrow({active:true,progress:.7,strikeFrac:.57});
 assert.equal(throws, 1, 'stowing after input release but before strike cancels the deferred projectile');
 assert.equal(torch.isThrowSequenceActive(), false);
 assert.equal(heldTorchVisible,true);
+heldTorchMeshAvailable=false;
+torch.light();
+assert.equal(torch.beginThrow('test-no-held-sprite'),true);
+assert.equal(torch.releaseThrow('test-sprite-release').ok,true);
+torch.updateThrow({active:true,progress:.57,strikeFrac:.57});
+assert.equal(throws,2,'projectile still launches without a loaded held torch mesh');
+assert.equal(torch.debug.throwRecovering,true,'an unavailable sprite must not prematurely end the throw sequence');
+assert.equal(torch.debug.throwHeldHidden,false,'the missing sprite is not marked as hidden');
+torch.updateThrow({active:true,progress:1,strikeFrac:.57});
+assert.equal(torch.debug.throwRecovering,false);
+heldTorchMeshAvailable=true;
 assert.equal(torch.register({ id:'lantern',label:'Lantern',onSelect() {} }), true);
 assert.equal(torch.entries().length, 1); // Registered is not synonymous with unlocked.
 assert.equal(torch.unlock('lantern'), true);
@@ -225,6 +237,7 @@ assert.match(rangedCode, /projectileSprite:'assets\/toolsprites\/torch\.png', pr
 assert.match(rangedCode, /textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true/,
   'torch shares the thrown-weapon projectile launch with a permanent burning payload');
 assert.match(rangedCode, /heldSpin:true,heldSpinRevolutions:2\.5/, 'torch now shares the thrown hatchet in-hand spin');
+assert.match(rangedCode, /invalidateAimTarget\?\.\('torch-strike-release', true\)/, 'torch samples a fresh strike-frame reticle like the hatchet');
 assert.match(game, /AdventuringTools\.updateThrow\(\{/, "torch projectile commits only from the active pose's strike frame");
 assert.match(game, /holdTorchAim/, 'touch keeps its throw aim after input release through the actual strike');
 assert.match(game, /torchThrowActionPresses\.delete\(actionId\)/, 'controller and keyboard release preserve throw input ownership');
