@@ -102,8 +102,7 @@ async function main() {
         (actors.length > 0 && /Loaded \\d+ NPCs/.test(status));
     }, null, { timeout: 45000 });
     const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
-    if (sceneBuild.activeActors.length !== 2 ||
-        document.getElementById('maaPresetSelect') === null) {
+    if (sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
       throw Error('URL scene creation lost an actor or failed to initialize: ' + JSON.stringify(sceneBuild));
     }
     const result = await page.evaluate(() => {
