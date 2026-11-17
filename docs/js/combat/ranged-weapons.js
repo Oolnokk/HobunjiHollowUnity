@@ -1133,6 +1133,7 @@
     if (!deps?.player) return null;
     const sourceTransform = visual?.sourceTransform || null; // The live adventuring torch plane is sampled at release like a ranged hatchet.
     const textureSource = visual?.textureSource || null; // Preserve the actual equipped tool art in the projectile.
+    window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Hatchet parity: use the current reticle, not the throttled pre-windup aim result.
     const aim = playerAimSolution('torch',sourceTransform?.position); // Match the launch-frame origin to the same reticle solution.
     if (!aim?.origin || !aim?.direction) return null;
     const dir=aim.direction;
