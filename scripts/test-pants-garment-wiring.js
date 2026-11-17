@@ -98,36 +98,26 @@ assert.strictEqual(Renderer.ensureNpcPants(hybrid),false,'hybrid lower body does
 assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does not mutate its wardrobe');
 // Execute the production scoped-depth owner without constructing WebGL garments.
 {
- const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // The same closure installed on each real garment handle.
+ const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // Exercise the actual garment callback, independent of WebGL.
  const start=source.indexOf('    const depthBiasLimits=new Map();'),end=source.indexOf('    const createMesh =',start);
- const model={matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},updateMatrixWorld(){}};
- const handle={model,depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // Synthetic avatar and garment using the production callback.
- let revision=0,lift=.2,measures=0;
- const pushes=[],loadedFeet={left:{name:'new left GLB'},right:{name:'new right GLB'}}; // Detect if the refresh mistakenly reuses attached fallback references.
- const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value),group:{getObjectByName:name=>name==='left_foot'?loadedFeet.left:loadedFeet.right}};
- const footFrontLift=(_three,_model,feet)=>{ // The production bounds scanner must receive the CURRENT meshes after async replacement.
-   assert.equal(feet[0],loadedFeet.left);assert.equal(feet[1],loadedFeet.right);
-   measures++;return lift;
- }; // A scan only when the actual foot geometry changes.
- vm.runInNewContext(source.slice(start,end),{handle,legHandle,footFrontLift,THREE:{},avatarGroup:model,footObjects:null});
+ assert(start>=0 && end>start,'found scoped-depth owner in production source');
+ let revision=0; // Simulates replacing placeholder feet with final GLBs after attaching the pants.
+ const pushes=[]; // Records the actual draw-only offsets sent to the leg animator.
+ const handle={depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // The original attach-time depth bias must remain unchanged.
+ const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value)};
+ vm.runInNewContext(source.slice(start,end),{handle,legHandle});
  assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert.equal(handle.setDepthBiasLimit('other',NaN),false);assert.equal(handle.setDepthBiasLimit('other',-1),false);
  revision++;
- assert.equal(handle.refreshFootDepthBias(),true,'final foot GLBs trigger recalibration');
- assert.equal(handle.depthBiasBase,.2);
- assert.equal(handle.maskUniforms.uPantsDepthBias.value,0,'paired pose limit survives foot replacement');
- assert.equal(handle.refreshFootDepthBias(),false,'ordinary frames do not rescan foot geometry');
- assert.equal(measures,1);assert.equal(pushes.at(-1),0);
+ assert.equal(handle.refreshFootDepthBias,undefined,'final GLB swap must not recalculate or move feet through the deleted refresh hook');
+ assert.equal(handle.depthBiasBase,.3,'original attach-time depth bias remains the baseline after GLB replacement');
+ assert.equal(handle.getFootDepthBiasDebug().anatomyRevision,1,'mobile diagnostics still report the current GLB anatomy revision');
+ assert.equal(pushes.at(-1),0,'GLB replacement alone cannot change the foot-depth offset');
  handle.setDepthBiasLimit('close-contact',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.1);
- handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.2,'release restores the recalibrated value');
- assert.equal(pushes.at(-1),.2,'leg owner receives the updated foot depth push');
- loadedFeet.left={name:'subsequent left GLB'};
- loadedFeet.right={name:'subsequent right GLB'};
- lift=.3;revision++;assert.equal(handle.refreshFootDepthBias(),true);
- assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'subsequent GLB replacements also work');
- assert.equal(handle.getFootDepthBiasDebug().anatomyRevision,2);
- assert.equal(measures,2,'only anatomy revisions should trigger expensive 3D foot scans');
+ handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'last release restores the original attach-time pull');
+ assert.equal(pushes.at(-1),.3,'original paired-animation scope behavior remains intact');
+ assert(!source.slice(start,end).includes('footFrontLift'),'GLB bounds rescans are removed from the scoped-depth owner');
 }
 {
  const pixelProbe=fs.readFileSync('docs/js/pixel-probe.js','utf8'); // Guards the existing mobile copyable report, not a DevTools-only console API.
@@ -137,11 +127,9 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  assert.match(probeBoot,/pixel-probe\.js\?v=[A-Za-z0-9_-]+/,'mobile bundle loads the repaired Pixel Probe');
 }
 {
- const pants=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // Verify the recalibration is genuinely called by the live animation loop.
- const legs=fs.readFileSync('docs/js/procedural-leg-animation.js','utf8'); // The async GLB replacement is responsible for signaling a changed foot shape.
+ const pants=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // Ensure foot GLB replacement no longer triggers depth recalibration.
  const inUpdate=pants.slice(pants.indexOf('    handle.update = (renderOnly = false) => {'),pants.indexOf('    handle.dispose = () => {'));
- assert.match(inUpdate,/handle\.refreshFootDepthBias\(\)/,'leg animation updates perform revision-aware depth refresh');
- assert.match(legs,/state\.anatomyRevision\+\+/,'final GLB rig installation signals the revision to the pants renderer');
+ assert.doesNotMatch(inUpdate,/refreshFootDepthBias/,'leg animation updates must not shift foot GLBs after replacement');
  assert(inUpdate.includes('!renderOnly && legHandle.getRestStance'), 'render-only pose must not rebind neutral stance');
  const version=/pants-garment-renderer\.js\?v=[A-Za-z0-9_-]+/; // One exact renderer cache key must be used by game and preview entry points.
  for(const path of ['docs/index.html','docs/tools/enemy-loadout-editor/preview.js','docs/tools/live-root-growth/index.html','docs/tools/attack-animation-editor/index.html','docs/js/procedural-pants-rig-author.js']){
