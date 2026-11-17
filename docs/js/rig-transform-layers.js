@@ -8,6 +8,7 @@
   if (global.RigTransformLayers) return;
 
   const records = new WeakMap(); // Per-node records never keep a disposed rig alive.
+  const axisDeltaScratch = new WeakMap(); // Reused local axis-angle quaternions avoid per-frame allocations.
   const leased = new Set(); // Only active leased slots are held for interruption recovery.
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
   const stats = {
@@ -102,8 +103,8 @@
   }
 
   function reconcile(node, slot) {
-    const current = captureValue(node, slot);
     if (!slot.owners.size) {
+      const current = captureValue(node, slot); // Refresh the clean base only when an absolute solver has no competing layer.
       // Without an active effect, the ordinary absolute solver may advance its
       // pose. That clean solved pose is the base for subsequent contributions.
       slot.base = current;
@@ -144,8 +145,10 @@
   }
 
   function trackLease(slot) {
-    if (Array.from(slot.owners.values()).some(value => value.expiresAtMs !== null)) leased.add(slot);
-    else leased.delete(slot);
+    for (const layer of slot.owners.values()) {
+      if (layer.expiresAtMs !== null) { leased.add(slot); return; }
+    }
+    leased.delete(slot);
   }
 
   function commitLayer(node, slot, owner, value, options) {
@@ -157,7 +160,13 @@
     if (isIdentity) {
       if (slot.owners.delete(owner)) stats.activeLayers--;
     } else {
-      slot.owners.set(owner, { value, expiresAtMs: leaseDeadline(options) });
+      if (hadOwner && slot.quaternion) {
+        const existing = slot.owners.get(owner);
+        existing.value.copy(value); // A frequently refreshed joint sway does not allocate a quaternion every frame.
+        existing.expiresAtMs = leaseDeadline(options);
+      } else {
+        slot.owners.set(owner, { value: slot.quaternion ? value.clone() : value, expiresAtMs: leaseDeadline(options) });
+      }
       if (!hadOwner) stats.activeLayers++;
     }
     trackLease(slot);
@@ -177,7 +186,8 @@
       && typeof node.quaternion.clone === 'function' && typeof node.quaternion.set === 'function') {
       const h = offset / 2; // Local axis-angle half-angle for a quaternion contribution.
       const s = Math.sin(h); // Rotation component about the chosen local axis.
-      const delta = node.quaternion.clone(); // Reused only as the immutable value cloned by setQuaternion.
+      let delta = axisDeltaScratch.get(node); // Same scratch reused across successive authored axis contributions.
+      if (!delta) { delta = node.quaternion.clone(); axisDeltaScratch.set(node, delta); }
       delta.set(axis === 'x' ? s : 0, axis === 'y' ? s : 0, axis === 'z' ? s : 0, Math.cos(h));
       return setQuaternion(node, owner, delta, options);
     }
@@ -213,7 +223,7 @@
       stats.invalidInputs++;
       return false;
     }
-    return commitLayer(node, slot, owner, delta.clone(), options);
+    return commitLayer(node, slot, owner, delta, options);
   }
 
   // An absolute solver that intentionally takes over a managed axis must use
@@ -278,7 +288,7 @@
 
   function expireStale(timeMs = nowMs()) {
     let removed = 0;
-    for (const slot of Array.from(leased)) {
+    for (const slot of leased) {
       let slotRemoved = 0; // Only recomposes this node if one of its own owners expired.
       reconcile(slot.node, slot);
       for (const [owner, layer] of slot.owners) {
