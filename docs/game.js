@@ -7387,9 +7387,11 @@
                   const triggerRangePx = def.attackRangePx || TILE * 0.85;
                   if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
                     if (defensiveKick && !isCreatureSwimming(c) && c.stamina >= def.attackStaminaCost) {
-                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick');
+                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick',
+                        { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' }); // Fund the committed Voorg-Ass special from the creature's own Hyped reserve.
                       c.attackCooldownT = def.attackCooldownS || 1.0;
                       if (window.Combat?.animalAttacks?.start(c, 'rearKick', { target: prey })) aimAngle = c.facing;
+                      else window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial'); // A rejected special cannot buff a later action.
                     } else if (defensiveKick) {
                       c._voorgRearKickSpent = true; // No Stamina or unsuitable water: flee instead of repeatedly trying to kick.
                       c._voorgRearKickThreat = null;
@@ -7473,11 +7475,15 @@
                   return false;
                 }
                 c.facing = alignment.desiredFacing;
-                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
+                const creatureSpecialId = def.attacks?.length ? def.attacks[Math.floor(rnd() * def.attacks.length)] : null; // Selection precedes payment so ordinary bites cannot burn Hyped.
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack',
+                  creatureSpecialId ? { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' } : {});
                 c.attackCooldownT = def.attackCooldownS;
-                return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
+                const startedCreatureSpecial = !!(creatureSpecialId && window.Combat?.animalAttacks?.start(
+                  c, creatureSpecialId, { target: targetPlayer }
                 ));
+                if (!startedCreatureSpecial) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
+                return startedCreatureSpecial;
               });
               aimAngle = result.aimAngle;
               moving = result.moving;
@@ -7494,12 +7500,15 @@
                   if (alignment.eligible) { c.facing = alignment.nextFacing; aimAngle = alignment.nextFacing; }
                 } else {
                 c.facing = alignment.desiredFacing;
-                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
-                c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
-                const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
+                const creatureSpecialId = hadNamedAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : null; // Keep the original random selection, now committed before paying its cost.
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack',
+                  creatureSpecialId ? { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' } : {});
+                c.attackCooldownT = def.attackCooldownS;
+                const startedModular = creatureSpecialId && window.Combat?.animalAttacks?.start(
+                  c, creatureSpecialId, { target: targetPlayer }
                 );
+                if (!startedModular) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
                   if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against opponent (fallback: plain bite telegraph).`, 'wildlife');
@@ -8920,7 +8929,6 @@
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
                   if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
                   if (!tacticalAttack?.waiting) {
-                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack');
                     c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
                     // Saved tactics choose the action for trained companions;
                     // legacy actors retain their existing species cadence.
@@ -8930,7 +8938,10 @@
                     const attackId = tacticalAttack?.id || (kickSpecies
                       ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
                       : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge')); // Legacy cadence remains the fallback for enemy pets or unavailable training.
+                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack',
+                      { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' }); // Named companion moves and Guard Charge may spend Hyped only once.
                     const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                    if (!startedModular) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
                     if (startedModular) {
                       aimAngle = c.facing;
                     } else {
@@ -10122,6 +10133,7 @@
         window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
+        window.FeyIllusions?.onDodgeStarted?.(player); // Panic multiplies the full authored roll time before the first swept movement step.
         player.dodgeDirX = dirX;
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
@@ -10507,7 +10519,8 @@
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
-        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Perceptual yaw composes into shared camera-bearing without overwriting customized camera settings.
       }
       // The world direction the camera is actually looking (as opposed to
       // activeCameraAzimuthRad(), which is where the camera SITS relative to
@@ -19044,7 +19057,19 @@
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
-          player.x = dodgeSwept.x; player.y = dodgeSwept.y;
+          player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
+          if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
+            const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
+            const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
+            if (window.FeyIllusions?.onDodgeBlocked?.(player, {
+              descriptor, hooks: knockbackImpactHooks(player, descriptor, player.dodgeDirX, player.dodgeDirY),
+              remainingPx: DODGE_SPEED_PX * Math.max(0, player.dodgeT) * heavyDistanceMul,
+            })) {
+              player.dodging = false; player.dodgeT = 0;
+              player.vx = 0; player.vy = 0;
+              return; // The physical impact owner may already have killed/respawned the actor; do not overwrite that state.
+            }
+          }
           player.vx = player.dodgeDirX * dodgeSpeedPx;
           player.vy = player.dodgeDirY * dodgeSpeedPx;
           if (player.dodgeT <= 0) {
@@ -19223,6 +19248,15 @@
           const rIx = -ix * s - iy * c;
           const rIy =  ix * c - iy * s;
           ix = rIx; iy = rIy;
+        } else if (ix !== 0 || iy !== 0) {
+          // Shoulder mode already inherits the hallucinated yaw from camera bearing; world-space input receives it once here.
+          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composes after cardinal bias, preserving user input strength.
+          if (drift) {
+            const cos = Math.cos(drift), sin = Math.sin(drift);
+            const movedX = ix * cos - iy * sin;
+            iy = ix * sin + iy * cos;
+            ix = movedX;
+          }
         }
 
         // Resolved per-frame movement intent, read by ordinary dodge and
@@ -22834,7 +22868,8 @@
         const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
         let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
-        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Rendered camera and movement bearing share the same hallucinated turn.
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
@@ -30982,6 +31017,11 @@
         damageCreature,
         damagePlayer,
         applyKnockback,
+        describeFeyDodgeCollision: (actor, swept, radiusPx, dirX, dirY) => {
+          const contact = swept?.blockedAt || { x: actor?.x || 0, y: actor?.y || 0 }; // Physical swept rejection shared with knockback.
+          const descriptor = knockbackCollisionDescriptorAt(contact.x, contact.y, radiusPx, dirX, dirY);
+          return { descriptor, hooks: knockbackImpactHooks(actor, descriptor, dirX, dirY) }; // Reuse material hazards and lethal impact hooks.
+        },
         weaponAbility,
         combatConfig,
         resolveWeaponHit,

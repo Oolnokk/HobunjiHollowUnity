@@ -62,9 +62,9 @@
         resoluteFooting: '#f1d27a',
         resoluteHealth: '#8fd0ff',
         mirroredHealth: '#d9f0ff',
-        phantomWoundsHealth: '#fa69b6', // Nonlethal Fey phantom injury: bright pink distinct from dark real Bruising.
-        phantomBloodHealth: '#ff557b', // Perceived bleeding: luminous false blood distinct from real Bleeding's crimson.
-        phantomPainFooting: '#d977ff' // Perceived pain: spectral violet band on Footing, never actual Footing damage.
+        dementedStamina: '#d977ff', // Purple vertigo segment: every spent Stamina point affects navigation.
+        panickedStamina: '#ff557b', // Panic reserve segment: surged dodge draws this buildup as additional cost.
+        hypedStamina: '#fa69b6' // Bright augmented Stamina that powers rapid echo attacks.
       }),
       neon: Object.freeze({
         minSourceSaturation: 0.12,

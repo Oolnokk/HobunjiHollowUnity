@@ -174,7 +174,7 @@
         || { afflictions: {}, stats: {} };
     }
 
-    function commitStaminaCostToPose(poseCharge, effects, reason) {
+    function commitStaminaCostToPose(poseCharge, effects, reason, durationS = 0.22) {
       const shape = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Reuses the active weapon's authored efficiency at every payment.
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
@@ -186,7 +186,7 @@
       if (!(delta > 1e-6)) return null;
       const payment = window.ResourceSystem?.spendStamina?.(
         window.Combat.deps.player, delta, reason,
-        { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
+        { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker', durationS }, // The paid hold slice rotates perceived direction over its actual frame duration.
       ) || null;
       paidChargeBaseline = target;
       paidChargeCost += payment
@@ -259,11 +259,13 @@
       debugState.poseCharge = poseCharge;
 
       if (window.Combat.isStaggered(deps.player)) {
+        window.FeyHypedAttacks?.clearCredit?.(deps.player, 'chargedBreaker'); // A canceled charge cannot lend already-spent Hyped Stamina to the next unrelated weapon action.
         clearGlow();
         deps.cancelWeaponSwingHold();
         return;
       }
       if (poseCharge < MIN_READY_POSE) {
+        window.FeyHypedAttacks?.clearCredit?.(deps.player, 'chargedBreaker'); // An early release has no attack to double.
         clearGlow();
         deps.cancelWeaponSwingHold();
         const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
@@ -299,6 +301,7 @@
       const baseLungePx = deps.TILE
         * lerp(LUNGE_TILE_MUL_MIN, LUNGE_TILE_MUL_MAX, poseCharge)
         * (1 + (effects.stats.lungeMul || 0));
+      const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, 'chargedBreaker') || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
         weaponKey: deps.currentWeaponKey(),
@@ -328,8 +331,9 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const strikeS = STRIKE_S * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, strikeS); // Final paid pose slice follows the actual partial-Windup→Strike timeline.
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
       if (!mounted) {
@@ -390,6 +394,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: impactDamage, feyPrimaryKnockback: knockbackPxS }, // The mounted/unmounted committed damage informs Hyped's second strike.
               afflictionBonuses: attackAfflictions,
               chargePercentage: poseCharge,
               fullCharge: isFullChargePose(poseCharge),
@@ -442,7 +447,7 @@
       setGlow(poseCharge);
 
       const effects = currentEffects(); // Single mastery snapshot funds this hold step and determines its mounted speed ceiling.
-      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)'); // Unchanged pose spends nothing.
+      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)', Math.max(0.001, dt)); // Per-frame paid charge slices rotate the camera as gradually as Stamina is expended. // Unchanged pose spends nothing.
       if (startedMounted) {
         const efficiency = Math.max(0.05, Number(shapeStats.efficiency) || 1); // Mirror the payment's authored cost denominator.
         const fullCost = chargeCostForPose(1, 1 + (Number(effects.stats.staminaCostMul) || 0)) / efficiency
@@ -476,6 +481,7 @@
       setHoldStaminaRegenBlocked(false); // Cancellation releases only this action's blocker.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);
       clearGlow();
+      window.FeyHypedAttacks?.clearCredit?.(window.Combat.deps?.player, 'chargedBreaker'); // Stagger, dismount and input cancellation abandon the paid attack.
       window.Combat.deps.cancelWeaponSwingHold();
     }
 

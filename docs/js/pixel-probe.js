@@ -1015,12 +1015,12 @@
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
     if (playerAppearanceDebug) lines.push('Player appearance: ' + JSON.stringify(playerAppearanceDebug));
-    const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
-    if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
+    const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
+    if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     try {
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
@@ -1051,6 +1051,10 @@
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
+    const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Copyable mobile proof for player perception, panic impacts and Hyped follow-ups.
+    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.hype?.lastNpcEcho || feyIllusionDebug.hype?.lastCreatureEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
+      lines.push('Fey illusions: ' + JSON.stringify(feyIllusionDebug));
+    }
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);
     const dialogueCameraDebug = window.CinematicCameraRuntime?.debugSnapshot?.(); // Mobile-verifiable live camera/face target after removing the screen-space portrait.

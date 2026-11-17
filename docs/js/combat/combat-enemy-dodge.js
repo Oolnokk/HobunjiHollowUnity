@@ -135,6 +135,7 @@
     entity.invulnUntil = performance.now() + tuning.iframeMs * efficacy;
     entity._enemyDodgeCooldownT = tuning.cooldownS;
     entity._enemyDodge = { threatId: threat.id, durationS, remainingS: durationS, spinSign: direction.sign || 1, source: threat.source };
+    window.FeyIllusions?.onDodgeStarted?.(entity); // Apply the complete panic distance multiplier before the first real NPC dodge sweep.
     entity._enemyDodgePending = null;
     window.CombatVocalizations?.playDodge?.(entity);
     dodgeCount += 1;
@@ -180,6 +181,12 @@
     deps.tickCreatureFootsteps?.(entity, stepPx);
     const progress = state.durationS > 0 ? 1 - state.remainingS / state.durationS : 1; // Full-body roll progress for the readable dodge animation.
     if (entity.avatarRef?.group?.rotation) entity.avatarRef.group.rotation.z = progress * Math.PI * 2 * state.spinSign;
+    if ((swept.blockedX || swept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(entity)) {
+      const collision = window.Combat?.deps?.describeFeyDodgeCollision?.(entity, swept, deps.TILE * 0.32, entity.dodgeDirX, entity.dodgeDirY) || {};
+      window.FeyIllusions?.onDodgeBlocked?.(entity, {
+        ...collision, remainingPx: Math.max(0, state.remainingS) * dodgeSpeedPxS,
+      }); // Only actual blocked swept movement triggers the same material-specific KnockbackCollisionImpact as player rolls.
+    }
     if (state.remainingS <= 0 || stepPx < 0.01) finishDodge(entity);
     return { handled: true, moving: !!entity._enemyDodge, aimAngle: Math.atan2(targetPlayer.y - entity.y, targetPlayer.x - entity.x) };
   }

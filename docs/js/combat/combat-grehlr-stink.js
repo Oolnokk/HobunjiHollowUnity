@@ -230,7 +230,8 @@
     const resourceSystem = window.ResourceSystem; // Used to apply the live affliction that replaced the older Choked Stamina name.
     if (!resourceSystem?.AFFLICTIONS?.windedStamina) return 0;
     const multiplier = window.CompanionOffense?.getModifiers?.(creature, target)?.affliction ?? 1; // Direct status moves share training, Whistle, Sicced and tactical buildup scaling.
-    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT * multiplier) || 0;
+    const echoScale = window.FeyHypedAttacks?.creatureEffectRatio?.(creature) ?? 1; // Direct Grehlr spray sensations bypass damageCreature, so apply the 2%-per-Hyped-point rule here.
+    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT * multiplier * echoScale) || 0;
     resourceSystem.enforceCaps?.(target);
     return amount;
   }
