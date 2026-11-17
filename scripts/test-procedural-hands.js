@@ -13,6 +13,10 @@ const shoulderPointConfigSource = read('docs/config/hand-shoulder-points.js');
 const shoulderPoseProfilesSource = read('docs/config/hand-shoulder-pose-profiles.js');
 const handSource = read('docs/js/procedural-hand-attachments.js');
 const handOutlineSource = read('docs/js/procedural-hand-outline-parity.js');
+assert.match(handOutlineSource, /const MAX_SNAPSHOT_AGE_MS = 1000;/, 'hand outline snapshots must survive up to one second of slow rendering');
+const outlinePassClassifier = handOutlineSource.match(/function secondaryPassKind\([\s\S]*?\n  function isVisibleHandDraw/)?.[0] || ''; // Used to constrain the following assertions to the hand depth-pass classifier.
+assert.match(outlinePassClassifier, /material\?\.colorWrite === false/, 'colorless hand depth draws must replay the visible pose');
+assert.doesNotMatch(outlinePassClassifier, /camera\?\.layers\?\.mask/, 'full-camera-mask hand depth replays must not be excluded');
 const gltfLoaderSource = read('docs/js/GLTFLoader.js');
 const driverSource = read('docs/js/procedural-hand-frame-driver.js');
 const gripConfigSource = read('docs/js/hand-tool-grips.js');
