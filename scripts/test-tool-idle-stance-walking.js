@@ -58,9 +58,9 @@ const equipmentSlots = {
 };
 const defs = {
   hatchet: { shapeKey: 'hatchet', animStyle: 'sweep' },
-  bronzehoe: { shapeKey: 'hoe', animStyle: 'thrust' },
+  bronzehoe: { shapeKey: 'hoe', animStyle: 'chop' },
   pickshovel: { shapeKey: 'pickshovel', animStyle: 'thrust' },
-  fishingspear: { shapeKey: 'fishingspear', animStyle: 'sweep' },
+  fishingspear: { shapeKey: 'fishingspear', animStyle: 'thrust' },
 };
 let slot = 'axe'; // Selection read by WeaponToolStances through the real injected EquipmentPanel dependency.
 let now = 1000; // Advances per rendered frame to catch the old 650ms angular-motion cooldown.
