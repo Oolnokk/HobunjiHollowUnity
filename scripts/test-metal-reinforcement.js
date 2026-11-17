@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const read = name => fs.readFileSync(name, 'utf8'); // Reuses production files instead of copying their formulas into tests.
 const source = read('docs/js/metal-reinforcement.js');
 const game = read('docs/game.js');
+const onboarding = read('docs/onboarding-core.js'); // Both startup paths must explicitly initialize Copper-I, not legacy ungraded strength.
 const shop = read('docs/js/metal-craft-shop.js');
 const foundry = read('docs/js/foundry-shop.js');
 const html = read('docs/index.html');
@@ -100,6 +101,8 @@ assert.match(shop, /MetalReinforcement\?\.next\(current/, 'smith looks up one ne
 assert.doesNotMatch(shop, /mc-reinforce-select/, 'arbitrary metal-tier selection is removed');
 assert.match(shop, /setToolReinforcement\(itemKey, metalKey, 0\)/, 'ordinary new tools begin at grade I');
 assert.match(foundry, /setToolReinforcement\(key, metal, 0\)/, 'modular new tools begin at grade I');
+assert.match(game, /toolReinforcement: Object\.fromEntries\(/, 'new game characters start at actual grade I (0.75×)');
+assert.match(onboarding, /toolReinforcement: Object\.fromEntries\(/, 'new onboarding characters start at actual grade I (0.75×)');
 assert.match(shop, /forgeBarCost\(CRAFT_BAR_COST, metalKey/, 'the ordinary smith uses scaled forging costs');
 assert.match(foundry, /forgeBarCost\(cost.bars, metal, deps.METAL_DEFS\)/, 'the foundry uses the same scaled forging costs');
 const inventoryUI = read('docs/js/inventory-ui.js'); // Equipment detail cards expose the reinforcement grade when CombatDeps provides it.
