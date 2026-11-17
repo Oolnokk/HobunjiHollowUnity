@@ -142,6 +142,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  const inUpdate=pants.slice(pants.indexOf('    handle.update = (renderOnly = false) => {'),pants.indexOf('    handle.dispose = () => {'));
  assert.match(inUpdate,/handle\.refreshFootDepthBias\(\)/,'leg animation updates perform revision-aware depth refresh');
  assert.match(legs,/state\.anatomyRevision\+\+/,'final GLB rig installation signals the revision to the pants renderer');
+ assert(inUpdate.includes('!renderOnly && legHandle.getRestStance'), 'render-only pose must not rebind neutral stance');
  const version=/pants-garment-renderer\.js\?v=[A-Za-z0-9_-]+/; // One exact renderer cache key must be used by game and preview entry points.
  for(const path of ['docs/index.html','docs/tools/enemy-loadout-editor/preview.js','docs/tools/live-root-growth/index.html','docs/tools/attack-animation-editor/index.html','docs/js/procedural-pants-rig-author.js']){
    assert.match(fs.readFileSync(path,'utf8'),version,path+' must load the versioned pants renderer');
