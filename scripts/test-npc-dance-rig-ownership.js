@@ -101,6 +101,22 @@ sentinel.onBeforeRender();
 locked=true;sentinel.onBeforeRender();
 assert.equal(compositor.getDebug().activeAbsoluteClaims,0,'exclusive paired pose suppresses NPC dance hand ownership');
 locked=false;
+const newRigGroup=new Node('replacement-hands'); // A rebuild temporarily leaves the old hand rig reachable under the NPC root.
+root.add(newRigGroup);
+const newLeft=new Node('left_hand_socket'),newRight=new Node('right_hand_socket');
+newLeft.position.set(-.25,1.2,0);newRight.position.set(.25,1.2,0);
+newRigGroup.add(newLeft);newRigGroup.add(newRight);
+walker.avatarGroup.userData.proceduralHandRig={
+  group:newRigGroup,armLengthForSide(){return .3;},
+};
+root.remove(handGroup);root.add(handGroup); // Put the OLD rig last to catch an unfiltered root.traverse lookup.
+sentinel.onBeforeRender();
+assert.equal(compositor.absoluteOwner(newLeft,'position'),'npc-dance-hand:npc1:left',
+  'NPC dance targets current hand rig even when a stale copy would be found last');
+assert.equal(compositor.absoluteOwner(left,'position'),null,'old hand rig can no longer hold the presentation claim');
+walker.currentScheduleTarget=null;
+sentinel.onBeforeRender();
+assert.equal(compositor.getDebug().activeAbsoluteClaims,0,'new hand generation releases cleanly on cancellation');
 tick(); // A spawned/simulated NPC keeps only its active rig generation.
 assert.equal(window.NpcDancePresentationRuntime.getDebug('npc1').compositorOwner,'legacy-preview');
 walkers=[];tick();
