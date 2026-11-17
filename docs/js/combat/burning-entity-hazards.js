@@ -49,10 +49,11 @@
     if (!(step > 0) && activeCorpses.size === 0) return;
     for (const entity of activeCorpses) {
       const flame = corpseFlames.get(entity);
-      if (!flame || (corpseRegistry && !corpseRegistry.has(entity))) {
+      if (!flame || !isCorpse(entity) || (corpseRegistry && !corpseRegistry.has(entity))) {
         activeCorpses.delete(entity);
         corpseFlames.delete(entity);
-        window.BurningAfflictionVfx?.disposeEntity?.(entity);
+        // A revived actor may still have a real Burning affliction; only its corpse-specific flames expire.
+        if (!(afflictionAmount(entity) > 0)) window.BurningAfflictionVfx?.disposeEntity?.(entity);
         continue;
       }
       // Corpse fire obeys the same water extinguishing rule as living Burning Health.
@@ -83,7 +84,7 @@
 
   function sameHeight(a, b) {
     const first = heightFor(a), second = heightFor(b);
-    return first == null || second == null || Math.abs(first - second) <= HEIGHT_TOLERANCE;
+    return first != null && second != null && Math.abs(first - second) <= HEIGHT_TOLERANCE; // Unknown heights must never allow a cross-floor ghost collision.
   }
 
   function visitSources(world, excluded, callback) {
