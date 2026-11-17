@@ -200,7 +200,7 @@ const applyTurnClamp = new Function(
   turnState, signed, turnDelta, AXIS_Y,
   turnPivot, 0, () => [{ root: turnPlayer }, { root: turnPet }],
   root => { turnApplied.push({ root: root.name || 'player', angle: turnDelta.angle }); },
-  () => null
+  {}, () => null
 );
 const camera = { position: { x: 0, z: 10 } }; // World camera normal; edge-on player planes lie at +/-90°.
 const perps = turnApi.cameraRelativePerpsAtWorldPosition(turnPlayer.position, camera.position);
