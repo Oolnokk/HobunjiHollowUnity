@@ -446,7 +446,7 @@
     return () => externalRootProviders.delete(String(name));
   }
 
-  let renderFacingState = {}; // The body deadzone follows the logical base facing; cosmetic idle-stance yaw must not steer its snap side.
+  let renderFacingState = {}; // Final-facing deadzone uses the composed body yaw, with stable logical heading as its fallback side hint.
   const renderFacingForward = new THREE.Vector3(); // Reused by final quaternion-to-yaw conversion.
   const renderFacingUp = new THREE.Vector3(0, 1, 0); // World yaw axis for body and owned held visuals.
   const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
@@ -473,11 +473,23 @@
     if (!perps) return;
     renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
     const composedYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Used only to diagnose the composed stance/body orientation.
-    const rawYaw = Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
-      ? renderDebug.baseFacingYaw : composedYaw; // Clamp the gameplay-facing root, not the idle weapon yaw added during this render.
+    // The actual composed yaw MUST be clamped: adding the default -40° Light
+    // Weapon stance after a 40° deadzone clamp can leave the PNG exactly
+    // edge-on. The logical gameplay facing is only a directional fallback for
+    // choosing a stable edge when the stance passes through the deadzone.
+    // This private state has no real movement tracker: lastMovementYaw is
+    // explicitly the priority system's fallback hint, not a claimed velocity.
+    renderFacingState.lastMovementYaw = Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
+      ? renderDebug.baseFacingYaw : null;
+    const rawYaw = composedYaw;
     const solved = api.perpClamp(renderFacingState, rawYaw, perps);
-    const correction = wrapSignedAngle(solved.effectiveTarget - rawYaw);
-    renderDebug.bodyDeadzone = { rawYaw, composedYaw, renderedYaw: solved.effectiveTarget, correction, latestChange: 'Base-heading deadzone preserves additive stance yaw while feet retain their movement-facing basis.' };
+    const correction = wrapSignedAngle(solved.effectiveTarget - composedYaw);
+    renderDebug.bodyDeadzone = {
+      rawYaw, baseYaw: renderDebug.baseFacingYaw, composedYaw,
+      renderedYaw: solved.effectiveTarget, correction,
+      logicalHeadingFallback: renderFacingState.lastMovementYaw,
+      latestChange: 'Clamp the composed stance/body yaw; use logical heading only to stabilize deadzone side selection.',
+    };
     if (Math.abs(correction) < 1e-8) return;
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
