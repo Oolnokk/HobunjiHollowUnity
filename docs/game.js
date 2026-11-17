@@ -18569,48 +18569,19 @@
       // facingAngle is what the reticle and sprite actually use.
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
       let facingAngle = -Math.PI / 2;   // starts facing north
-      const characterViewMode = {
-        enabled: false,
-        lockedFacingAngle: facingAngle,
-        lockedPlayerAngle: facingAngle,
-        lockedPlayerFacing: 0,
-        lockedNeckX: 0,
-        lockedNeckY: 0,
-        lastChangeReason: 'boot',
-        changedAtMs: 0,
-      }; // Used by the utility-wheel viewer to pin logical facing, rendered body yaw, and neck aim while the camera orbits independently.
-      function publishCharacterViewStatus() {
-        window.HOBUNJI_CHARACTER_VIEW_STATUS = {
-          enabled: characterViewMode.enabled,
-          lastChangeReason: characterViewMode.lastChangeReason,
-          changedAtMs: characterViewMode.changedAtMs,
-          facingAngleDeg: characterViewMode.lockedFacingAngle * 180 / Math.PI,
-          bodyYawDeg: characterViewMode.lockedPlayerFacing * 180 / Math.PI,
-          neckYawDeg: characterViewMode.lockedNeckY * 180 / Math.PI,
-        }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
-      }
-      function setCharacterViewMode(enabled, reason = 'utility-wheel') {
-        const nextEnabled = Boolean(enabled);
-        if (nextEnabled === characterViewMode.enabled) return;
-        if (nextEnabled) {
-          characterViewMode.lockedFacingAngle = facingAngle;
-          characterViewMode.lockedPlayerAngle = player.angle;
-          characterViewMode.lockedPlayerFacing = playerFacing;
-          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
-          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
-        }
-        characterViewMode.enabled = nextEnabled;
-        if (nextEnabled) {
-          requestShoulderSurfPointerLock();
-        } else if (!cursorlessMouseAimRequested()) {
-          releaseShoulderSurfPointerLock();
-        }
-        characterViewMode.lastChangeReason = reason;
-        characterViewMode.changedAtMs = Date.now();
-        publishCharacterViewStatus();
-        showToast(nextEnabled ? 'Character View: On' : (reason === 'movement' ? 'Character View: Off — movement' : 'Character View: Off'), true, false);
-      }
-      publishCharacterViewStatus();
+      // Character View state/toggle/status publishing now lives in js/character-view-mode.js
+      const characterViewMode = window.CharacterViewMode.state; // Alias: utility-wheel viewer pins logical facing, rendered body yaw, and neck aim while the camera orbits independently.
+      function setCharacterViewMode(enabled, reason = 'utility-wheel') { window.CharacterViewMode.set(enabled, reason); }
+      window.CharacterViewMode.init({
+        getFacingAngle: () => facingAngle,
+        getPlayerAngle: () => player.angle,
+        getPlayerFacing: () => playerFacing,
+        getNeckJoint: () => playerNeckJoint,
+        requestPointerLock: () => requestShoulderSurfPointerLock(),
+        releasePointerLock: () => releaseShoulderSurfPointerLock(),
+        cursorlessMouseAimRequested: () => cursorlessMouseAimRequested(),
+        showToast,
+      });
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
       const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60° neck allowance used by idle body/root catch-up below.

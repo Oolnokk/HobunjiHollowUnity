@@ -36,10 +36,17 @@ assert.match(game, /function releaseShoulderSurfPointerLock\(\) \{ window\.Shoul
   'existing game.js call sites delegate releases to the module');
 assert(index.indexOf('js/shoulder-cam-pointer-lock.js?v=') > -1 && index.indexOf('js/shoulder-cam-pointer-lock.js?v=') < index.indexOf('"game.js?v='),
   'pointer-lock module loads before game.js calls its init()');
+// Character View's toggle lives in js/character-view-mode.js; game.js wires it to the pointer-lock wrappers.
+const characterView = fs.readFileSync('docs/js/character-view-mode.js', 'utf8');
+assert.match(
+  characterView,
+  /state\.enabled = nextEnabled;\s*if \(nextEnabled\) \{\s*deps\.requestPointerLock\(\);\s*\} else if \(!deps\.cursorlessMouseAimRequested\(\)\) \{\s*deps\.releasePointerLock\(\);\s*\}/,
+  'Character View explicitly enters and exits cursor-less mouse aim',
+);
 assert.match(
   game,
-  /characterViewMode\.enabled = nextEnabled;\s*if \(nextEnabled\) \{\s*requestShoulderSurfPointerLock\(\);\s*\} else if \(!cursorlessMouseAimRequested\(\)\) \{\s*releaseShoulderSurfPointerLock\(\);\s*\}/,
-  'Character View explicitly enters and exits cursor-less mouse aim',
+  /CharacterViewMode\.init\(\{[\s\S]{0,400}requestPointerLock: \(\) => requestShoulderSurfPointerLock\(\),\s*releasePointerLock: \(\) => releaseShoulderSurfPointerLock\(\),\s*cursorlessMouseAimRequested: \(\) => cursorlessMouseAimRequested\(\),/,
+  'game.js hands Character View the shared pointer-lock wrappers',
 );
 assert.match(
   game,
