@@ -40,7 +40,8 @@ assert.ok(start > 0 && end > start, 'shoulder presentation and stencil setup res
 let mode = 'unused';
 const masks = new Set();
 let synced = 0;
-const windowStub = { HobunjiShoulderSplitLayerParity: { syncAvatar(avatar) { synced++; for (const split of avatar?.group?.children || []) { if (!split.userData?.hobunjiShoulderSplitOverlay) continue; const source = split.userData.hobunjiPlaneFace === 'front' ? avatar.frontPlane : avatar.backPlane; split.renderOrder = source.renderOrder + 0.01; split.material.depthWrite = source.material.depthWrite; } } } };
+const restoredAvatars = []; // Records compositor-driven attachment cleanup for swapped and unequipped pets.
+const windowStub = { ShoulderPetAttachmentRuntime: { restoreDetachedAvatar(avatar) { restoredAvatars.push(avatar); if (avatar.group?.userData) delete avatar.group.userData.hobunjiShoulderPetAttachment; } }, HobunjiShoulderSplitLayerParity: { syncAvatar(avatar) { synced++; for (const split of avatar?.group?.children || []) { if (!split.userData?.hobunjiShoulderSplitOverlay) continue; const source = split.userData.hobunjiPlaneFace === 'front' ? avatar.frontPlane : avatar.backPlane; split.renderOrder = source.renderOrder + 0.01; split.material.depthWrite = source.material.depthWrite; } } } };
 const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh), delete: mesh => masks.delete(mesh) };
 const api = new Function('window', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
   'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER',
@@ -389,7 +390,10 @@ assert.equal(front.material.depthWrite, false, 'late depth-write changes are rep
 assert.equal(front.renderOrder, api.orders.front, 'owner front priority is restored before draw');
 
 const replacement = makePet();
+pet.avatarRef.group.userData.hobunjiShoulderPetAttachment = { authoritativeRootTransform: true }; // Simulates the live pin that must be discarded when changing pets.
 use(replacement, true);
+assert.equal(restoredAvatars.includes(pet.avatarRef), true, 'switching equipped pets invokes orientation and pin cleanup');
+assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetAttachment, undefined, 'replaced pet no longer retains the shoulder pin marker');
 assert.equal(pet.avatarRef.frontPlane.material.depthWrite, true, 'old pet depth restored');
 assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.front, 'old pet joins regular actor sort');
 assert.equal(pet.avatarRef.frontPlane.userData.hobunjiShoulderPortraitFace, undefined);
@@ -397,7 +401,10 @@ assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined)
 assert.equal(masks.has(pet.avatarRef.backPlane), false, 'old pet cannot mask owner tools');
 assert.equal(masks.has(replacement.avatarRef.backPlane), true, 'new outward pet masks only its back');
 
+replacement.avatarRef.group.userData.hobunjiShoulderPetAttachment = { authoritativeRootTransform: true }; // Tests directly clearing the final equipped slot.
 use(null, false);
+assert.equal(restoredAvatars.includes(replacement.avatarRef), true, 'clearing equipped pet slot restores the detached avatar');
+assert.equal(replacement.avatarRef.group.userData.hobunjiShoulderPetAttachment, undefined, 'cleared slot removes the stale authoritative pin');
 assert.equal(front.material.depthWrite, true, 'detaching restores owner front depth');
 assert.equal(back.material.depthWrite, true, 'detaching restores owner back depth');
 assert.equal(front.renderOrder, api.orders.front);

@@ -548,6 +548,7 @@
     if (!pet) return;
     const avatar = pet.avatarRef;
     if (avatar?.group?.userData) delete avatar.group.userData.hobunjiShoulderPetLayering;
+    window.ShoulderPetAttachmentRuntime?.restoreDetachedAvatar?.(avatar); // Undo shoulder-only plane normals and stale authoritative pin state before free-roaming presentation resumes.
     for (const mesh of [avatar?.frontPlane, avatar?.backPlane]) {
       if (!mesh) continue;
       setShoulderPartDepthWrite(mesh.material, true);

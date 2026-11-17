@@ -151,6 +151,28 @@ const applyFinalTransform = new Function('THREE', 'window',
   THREE, { ShoulderPetObservationFlip: null }); // Exercises actual module pin against a THREE-compatible root.
 assert.match(runtimeSource, /gripPositionSource: finalTransform\.gripLocalPosition \? 'rendered-group-matrix'/,
   'mobile grip error identifies actual rendered-matrix measurement');
+const restoreDetachedAvatar = new Function('window', runtimeSource
+  + '\nreturn window.ShoulderPetAttachmentRuntime.restoreDetachedAvatar;')({}); // Exercises the actual public detach helper without reproducing its yaw logic.
+const detachedPlane = () => ({
+  matrixAutoUpdate: false, matrixWorldNeedsUpdate: false,
+  rotation: { y: NaN, set(x, y, z) { this.y = y; } },
+  updateMatrix() { this.matrixUpdated = true; },
+}); // Stand-in for a previously shoulder-attached animal plane retaining a stale yaw.
+const detachedFront = detachedPlane(); // Tests restoration to the ordinary animal front-facing orientation.
+const detachedBack = detachedPlane(); // Tests restoration to the ordinary animal rear-facing orientation.
+const detachedAvatar = {
+  group: { userData: { hobunjiShoulderPetAttachment: { authoritativeRootTransform: true } } },
+  frontPlane: detachedFront, backPlane: detachedBack,
+}; // Simulates a pet removed from the shoulder before regular creature rendering resumes.
+assert.equal(restoreDetachedAvatar(detachedAvatar), true);
+assert.equal(detachedFront.rotation.y, Math.PI / 2, 'detachment restores the free animal front plane');
+assert.equal(detachedBack.rotation.y, -Math.PI / 2, 'detachment restores the free animal back plane');
+assert.equal(detachedFront.matrixAutoUpdate, true);
+assert.equal(detachedBack.matrixAutoUpdate, true);
+assert.equal(detachedFront.matrixWorldNeedsUpdate, true);
+assert.equal(detachedBack.matrixWorldNeedsUpdate, true);
+assert.equal(detachedAvatar.group.userData.hobunjiShoulderPetAttachment, undefined,
+  'detached pets must not retain a marker that suppresses ordinary animal yaw');
 
 for (const skinned of [true, false]) {
   const windowFixture = {
