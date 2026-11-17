@@ -92,6 +92,9 @@
       if (!entity || entity === excluded || visited.has(entity)) return false;
       visited.add(entity);
       if (entity.areaId != null && entity.areaId !== world.area) return false;
+      const worldCorpses = world.corpseObjects; // Active flame bookkeeping must not resurrect a corpse already removed from this world's registry.
+      if (isCorpse(entity) && worldCorpses
+          && !(worldCorpses.has?.(entity) || worldCorpses.includes?.(entity))) return false;
       if (entity._denHidden || entity._wildlifeVisualsReleased || !isBurning(entity)) return false;
       return callback(entity) === true;
     };
