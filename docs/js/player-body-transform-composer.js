@@ -453,19 +453,8 @@
   const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
   const renderFacingPivot = new THREE.Vector3(); // Reused posterior pivot for final facing correction.
   const renderFacingRotation = new THREE.Quaternion(); // Reused collision-free billboard yaw delta.
-  const legFacingParentWorld = new THREE.Quaternion(); // Scale-free parent orientation used to translate the visual yaw correction into leg-local space.
-  const legFacingLocalCorrection = new THREE.Quaternion(); // Reused correction so foot stance keeps its logical heading under pitch, roll and mirrored scale.
-  const legFacingWorldInverse = new THREE.Quaternion(); // Reused inverse render yaw; avoid allocating a new quaternion per frame.
-  function counterRotateLegRootForRender(legRoot, worldCorrection, undo) {
-    const originalLegQuaternion = legRoot.quaternion.clone(); // Restore all axes, not only Euler yaw, when the frame completes.
-    hierarchyWorldQuaternion(legRoot.parent, legFacingParentWorld);
-    legFacingWorldInverse.copy(worldCorrection).invert();
-    legFacingLocalCorrection.copy(legFacingParentWorld).invert()
-      .multiply(legFacingWorldInverse)
-      .multiply(legFacingParentWorld); // Scale-free world-to-local conjugation also supports a leaned or mirrored parent.
-    legRoot.quaternion.premultiply(legFacingLocalCorrection);
-    undo.push(() => { legRoot.quaternion.copy(originalLegQuaternion); });
-  }
+  // The camera's portrait-facing adjustment is a visual rotation of the entire character, including its legs.
+  // Counter-rotating only the leg root made knees face backward relative to the torso at sharp turns.
   function applyRenderedFacingDeadzone(camera, undo, renderDebug) {
     if(window.CharacterActionLocks?.isLocked?.('player','facing'))return; // Paired inward-facing choreography must not be counter-rotated by the ordinary billboard clamp.
     const api = window.PerpRotation; // Shared hysteresis/clamp authority; unavailable in isolated editor fixtures.
@@ -510,7 +499,7 @@
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
     for (const entry of currentOwnedRootEntries()) applyWorldDelta(entry.root, pivot, renderFacingRotation, renderFacingTranslation, undo);
-    if (playerLegRoot) counterRotateLegRootForRender(playerLegRoot, renderFacingRotation, undo);
+    renderDebug.bodyDeadzone.legFacing = 'follows-body'; // The real IK legs share the final portrait facing rather than acquiring its inverse.
     const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
   }
@@ -616,6 +605,7 @@
         return originalRender.call(this, scene, camera);
       }
       const undo = [];
+      const pantsDuringRender = playerLegHandle?.pants || null; // Reskins the player's actual garment after render-only joint transforms and again after rollback.
       const renderDebug = {
         sequence: ++renderSequence,
         timestampMs: performance.now(),
@@ -672,6 +662,10 @@
 
       if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
       lastRenderDebug = renderDebug;
+      if (pantsDuringRender?.update) {
+        try { pantsDuringRender.update(true); renderDebug.pantsPoseResynced = true; }
+        catch (error) { renderDebug.pantsPoseError = String(error?.message || error); } // Garment failure must never block rendering the actor.
+      }
 
         const result = originalRender.call(this, scene, camera);
         // Fires after the real render (so anything that re-syncs itself off
@@ -704,6 +698,10 @@
             catch (nextError) { renderDebug.rollbackErrors.push(String(nextError?.message || nextError)); }
           }
           lastRenderDebug = renderDebug;
+        }
+        if (pantsDuringRender?.update) {
+          try { pantsDuringRender.update(true); } // Restore the exact uncomposed IK garment for the next simulation/depth pass.
+          catch (error) { renderDebug.pantsPoseRestoreError = String(error?.message || error); lastRenderDebug = renderDebug; }
         }
       }
     };

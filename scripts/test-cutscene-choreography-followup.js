@@ -49,7 +49,7 @@ const body={visible:true,position:new V(),rotation:{y:Math.PI/2},localToWorld:v=
 const rendered={window:rotation.window,THREE:{Vector3:V,Quaternion:Q},playerMesh:body,playerLegRoot:feet,playerPosteriorY:.4,wrapSignedAngle:a=>Math.atan2(Math.sin(a),Math.cos(a)),hierarchyWorldQuaternion:(node,out=new Q())=>out.copy(new Q(node?.rotation?.y||0)),currentPlayerNeckJoint:()=>neck,currentOwnedRootEntries:()=>[{root:body},{root:tool}],applyWorldDelta(root,pivot,q,t,undo){const before=root.rotation.y;root.rotation.y+=q.yaw;undo.push(()=>root.rotation.y=before);}};
 vm.runInNewContext(cut(read('docs/js/player-body-transform-composer.js'),'  let renderFacingState','  function registerPlayerRig')+'\nundo=[];debug={};applyRenderedFacingDeadzone({position:{x:0,z:5}},undo,debug);',rendered);
 assert(Math.abs(Math.abs(body.rotation.y-Math.PI/2)-40*Math.PI/180)<1e-8);
-assert.equal(body.rotation.y,tool.rotation.y);assert(Math.abs(body.rotation.y+feet.rotation.y-Math.PI/2)<1e-8);
+assert.equal(body.rotation.y,tool.rotation.y);assert.equal(feet.rotation.y,0,'the legs inherit the same portrait/body turn without a separate inverse yaw');
 assert(Math.abs(body.rotation.y+neck.rotation.y-(Math.PI/2-.4))<1e-8);
 for(const undo of rendered.undo.reverse())undo();assert.equal(body.rotation.y,Math.PI/2);assert.equal(feet.rotation.y,0);assert.equal(neck.rotation.y,-.4);
 // Wind-only loading mutes the existing owners, survives a rejected autoplay request and restores the exact master setting.
