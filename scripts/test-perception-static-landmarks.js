@@ -83,6 +83,10 @@ boostStacks = 1;
 ctx.PerceptionMode.update(1800);
 assert.strictEqual(banditProviderCalls, 4, 'range-changing buffs invalidate the cached landmark radius');
 ctx.PerceptionMode.setActive(false);
+assert.strictEqual(ctx.PerceptionMode.debugSnapshot().landmarkCache.holdingScene, false,
+  'disabled Sense must release the old scene and all its attached wilderness geometry');
+assert.strictEqual(ctx.PerceptionMode.debugSnapshot().landmarkCache.candidates, 0,
+  'disabled Sense must not retain any landmark roots after a zone is unloaded');
 ctx.PerceptionMode.setActive(true);
 ctx.PerceptionMode.update(2000);
 assert.strictEqual(banditProviderCalls, 5, 'reopening Sense Mode forces a fresh static provider scan');
