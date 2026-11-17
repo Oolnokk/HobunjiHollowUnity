@@ -155,3 +155,46 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  assert.match(fs.readFileSync('docs/index.html','utf8'),parityToken,'game loads the versioned foot parity');
  assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js','utf8'),parityToken,'enemy preview loads the versioned foot parity');
 }
+
+{
+  // Execute the production per-component pose detector directly, independently of Three/WebGL.
+  // This deliberately constructs opposing thigh motion whose OLD scalar hash cancels almost exactly.
+  const source = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Keep the fixture tied to the real renderer source.
+  const begin = source.indexOf('    const POSE_EPSILON = 1e-6;'); // Start of the actual live comparison implementation.
+  const end = source.indexOf('    handle.restRecheckIn = REST_RECHECK_FRAMES;', begin); // Avoid duplicating the algorithm in this test.
+  assert(begin >= 0 && end > begin, 'production per-component pose comparison is available');
+  const frames = () => ({ thigh: Array(9).fill(0), calf: Array(9).fill(0) }); // Neutral leg orientation data used by the renderer.
+  const joints = () => ({
+    hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 },
+  }); // Neutral joint positions used to prove signed cancellation.
+  const handle = { scratch: { frames: { left: frames(), right: frames() } } }; // Only dependency of the extracted live comparator.
+  const pose = { left: joints(), right: joints() }; // Two independently animated leg chains.
+  const reader = new Function('handle', 'LEG_SIDES', 'LEG_JOINTS', 'BONE_NAMES',
+    source.slice(begin, end) + '\nreturn { changed: poseChanged, commit() { lastPoseComponents.set(poseComponents); hasLastPose = true; } };')(
+      handle, ['left', 'right'], ['hip', 'knee', 'ankle'], ['thigh', 'calf']);
+  assert(reader.changed(pose), 'first frame must skin even at the neutral pose');
+  reader.commit();
+  assert(!reader.changed(pose), 'unchanged neutral pose should not upload again');
+  pose.left.hip.x = 0.0001;
+  pose.right.hip.x = -0.0001 * (1.0000001 ** 21); // Weighted inverse of the left hip's contribution in the obsolete hash.
+  const oldHash = (() => {
+    let signature = 0; // Reproduce the obsolete one-number reduction to prove the cancellation fixture.
+    for (const side of ['left', 'right']) {
+      for (const joint of ['hip', 'knee', 'ankle']) {
+        const p = pose[side][joint]; // Exact same order and coefficients as the removed hash.
+        signature = signature * 1.0000001 + p.x * 3.1 + p.y * 5.3 + p.z * 7.7;
+      }
+      for (const name of ['thigh', 'calf']) for (let k = 0; k < 9; k++)
+        signature = signature * 1.0000001 + handle.scratch.frames[side][name][k] * (k + 1.7);
+    }
+    return signature;
+  })();
+  assert(Math.abs(oldHash) < 1e-10, 'opposing real bone offsets cancel the prior scalar hash');
+  assert(reader.changed(pose), 'the real renderer detects both opposing leg movements independently');
+  reader.commit();
+  pose.left.hip.x += 5e-8;
+  assert(!reader.changed(pose), 'rounding-scale world transform jitter does not trigger reskinning');
+  pose.left.hip.x += 0.001;
+  assert(reader.changed(pose), 'genuine further leg movement remains detectable');
+  console.log('Pants independent pose-change detection: PASS');
+}
