@@ -518,6 +518,11 @@
     const plane = findPortraitPlane(avatarGroup);
     const nodes = findLegNodes(legHandle);
     if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
+    const openingWidthRatioForFeet = () => { // Mirrors November 14's uniform body-X/Y average for procedural hands and feet.
+      const factors = global.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(legHandle.group?.parent || avatarGroup);
+      const x = Number(factors?.x), y = Number(factors?.y); // Body width/height scales from the existing character-rig owner.
+      return x > 0 && y > 0 && Number.isFinite(x) && Number.isFinite(y) ? (x + y) / (2 * x) : 1;
+    };
     if (!characterRecord && !hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
@@ -530,6 +535,7 @@
       segments: segmentsForBudget(meshBudget), geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
+      openingWidthScale: 1, // Last applied calf-opening span relative to body X; rebuilt only when character proportions change.
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
@@ -557,7 +563,7 @@
       applyFootDepthBias();
       return true;
     };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
@@ -804,6 +810,10 @@
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
+      if (Math.abs(openingWidthRatioForFeet() - handle.openingWidthScale) > 1e-6) {
+        handle.alignToRest(); // A late NPC rig scale or live editor change must resize the hems without stacking stretches.
+        handle.dirty = true;
+      }
       let aim = aimAtLiveLegs();
       // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
       // bones and orientation frames are identical to the last frame's.
@@ -975,6 +985,13 @@
         }
         for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
       }
+      // November 14 changed feet from body-X scaling to the average of body X/Y. Stretch the fitted hem
+      // along each existing ankle spline's 3D span, centred on its bone, without altering the beltline or authored rig.
+      handle.openingWidthScale = openingWidthRatioForFeet();
+      Core.stretchLegOpeningSpans(handle.basePositions, SEGMENTS, handle.rings, handle.splineSpec, handle.openingWidthScale);
+      const restPosition = handle.geometry.getAttribute('position'); // CPU/debug preview also sees the latest rest hem immediately.
+      restPosition.array.set(handle.basePositions);
+      restPosition.needsUpdate = true;
       handle.baseVersion = (handle.baseVersion || 0) + 1; // The GPU path re-uploads the rest grid once per realignment, not per frame.
 
     };

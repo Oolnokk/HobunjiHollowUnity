@@ -433,3 +433,53 @@ console.log('Pants rig bone skinning: PASS');
   assert(fit.a * fit.d - fit.b * fit.c > 0, 'belt affine keeps the garment right way up');
   assert(Core.applyAffine(fit, { x: 0.5, y: 0.65 }).y > Core.applyAffine(fit, { x: 0.5, y: 0.3 }).y, 'the hem stays below the waistband');
 }
+
+{ // November 14: pant hems acquire the same extra width as uniformly averaged hands/feet.
+  const segments = 4, stride = segments + 1; // Small deterministic square garment grid.
+  const rest = new Float32Array(stride * stride * 3); // Belt, thigh, and ankle vertices in avatar-local space.
+  for (let row = 0; row < stride; row++) for (let col = 0; col < stride; col++) {
+    const i = (row * stride + col) * 3; // Rest vertex addressed by the shared renderer's row-major grid.
+    rest[i] = col / segments; rest[i + 1] = row / segments; rest[i + 2] = 0;
+  }
+  const sample = (row, col) => ({ i: row * stride + Math.min(col, segments - 1), fx: col === segments ? 1 : 0, fy: 0 }); // Clamp the final-column sample like the actual garment renderer.
+  const leftWeight = new Float32Array(stride * stride); // Left opening owns its half and fades out toward the belt.
+  const rightWeight = new Float32Array(stride * stride); // Right opening owns its half independently.
+  for (let row = 0; row < stride; row++) for (let col = 0; col < stride; col++) {
+    const weight = row >= 3 ? 1 : row === 2 ? 0.5 : 0;
+    if (col <= 1) leftWeight[row * stride + col] = weight;
+    if (col >= 3) rightWeight[row * stride + col] = weight;
+  }
+  const rings = {
+    left: { anchor: { ...sample(3, 0), fx: 0.5 }, influence: leftWeight },
+    right: { anchor: { ...sample(3, 3), fx: 0.5 }, influence: rightWeight },
+  }; // Hem centres stay pinned to each calf axis.
+  const splines = {
+    leftAnkle: { samples: [sample(3, 0), sample(3, 1)] },
+    rightAnkle: { samples: [sample(3, 3), sample(3, 4)] },
+  }; // Distinct fitted hems begin 0.25 units wide with an untouched central seam.
+  const stretched = rest.slice(); // Source artwork must remain unchanged for repeated fitting.
+  const longoranWidthRatio = (1.05 + 2) / (2 * 1.05); // Same body X/Y average used by November 14 foot meshes.
+  assert(Core.stretchLegOpeningSpans(stretched, segments, rings, splines, longoranWidthRatio));
+  const xAt = (a, row, col) => a[(row * stride + col) * 3];
+  assert(near(xAt(stretched, 3, 1) - xAt(stretched, 3, 0), 0.25 * longoranWidthRatio, 1e-6),
+    'left ankle spline lengthens by the foot-width ratio');
+  assert(near(xAt(stretched, 3, 4) - xAt(stretched, 3, 3), 0.25 * longoranWidthRatio, 1e-6),
+    'right ankle spline gets the same lengthening independently');
+  assert(near((xAt(stretched, 3, 0) + xAt(stretched, 3, 1)) / 2, 0.125, 1e-6) && near((xAt(stretched, 3, 3) + xAt(stretched, 3, 4)) / 2, 0.875, 1e-6),
+    'each opening stays centred on its own knee-to-ankle pole');
+  assert(near(xAt(stretched, 2, 0) - xAt(rest, 2, 0), (xAt(stretched, 3, 0) - xAt(rest, 3, 0)) * 0.5, 1e-6),
+    'the extra width tapers smoothly toward the knee');
+  assert(Array.from(stretched.slice(0, stride * 3)).every((v, i) => near(v, rest[i])),
+    'the whole waistband is undisturbed');
+  assert(!Core.stretchLegOpeningSpans(stretched, segments, rings, splines, 1),
+    'neutral X/Y body proportions do not touch the garment');
+  const shorter = rest.slice(); // Narrower-than-tall body proportions also follow the actual foot formula.
+  assert(Core.stretchLegOpeningSpans(shorter, segments, rings, splines, 0.95));
+  assert(near(xAt(shorter, 3, 1) - xAt(shorter, 3, 0), 0.25 * 0.95, 1e-6),
+    'ratio below one shortens the opening to match the smaller foot width');
+  assert(!Core.stretchLegOpeningSpans(rest, segments, rings, splines, Infinity),
+    'invalid body scaling cannot damage the authored grid');
+  assert(!Core.stretchLegOpeningSpans(rest, segments, null, null, 1.4),
+    'missing spline data leaves geometry intact');
+  console.log('Pants ankle opening vs uniform foot scale: PASS');
+}
