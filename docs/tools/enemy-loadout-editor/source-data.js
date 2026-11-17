@@ -29,7 +29,7 @@
     ['maskbound:headtaker', 'Maskbound Headtaker', 'Maskbound'],
   ].map(([id, label, group]) => ({ id, label, group }));
   const read = async (url) => {
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: 'no-cache' }); // File URL stays testable and normal; browser revalidates updated editor config.
     if (!r.ok) throw Error(`${url}: HTTP ${r.status}`);
     return r.json();
   };
@@ -80,7 +80,7 @@
   async function load() {
     const [gang, porakaneki, omgurku, game, attackValues, index, npcDb] =
       await Promise.all([
-        read('config/bandits/bandit-gang-config.json?v=20261116tier8power075'),
+        read('config/bandits/bandit-gang-config.json'),
         read('config/porakaneki-camp.json'),
         read('config/omgurku-camp.json'),
         fetch('game.js').then((r) => {
