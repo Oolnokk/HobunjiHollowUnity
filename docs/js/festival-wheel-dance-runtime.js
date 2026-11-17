@@ -6,7 +6,7 @@
   const SIDES=['left','right']; // Fixed two-hand/two-leg work, independent of the festival crowd.
   let lastStartFailure=null; // Mobile diagnostics distinguish preparation failures from an actual pose/reach failure.
   function failStart(code,actor=null,details={}){lastStartFailure={code,actor,...details};return false;}
-  let deps=null, session=null, lastStopReason=''; // One scoped pair; no independent frame loop or world scan.
+  let deps=null, session=null, lastStopReason='', lastPoseRelease=null; // One scoped pair and its last compositor rollback result for mobile diagnostics.
   function init(value){deps=value;}
   function sample(seconds,out={}) {
     const progress=((Math.max(0,Number(seconds)||0)%DURATION_S)+DURATION_S)%DURATION_S/DURATION_S; // Simulation time, including exact pause behavior.
@@ -65,6 +65,7 @@
     const old=session;session=null; // Clear before releasing locks or camera selection can reenter gameplay.
     const claimedPose = !!old.poseSession; // Scoped ownership prevents a late dance cleanup from overwriting a newer scene/animation.
     const poseRelease = old.poseSession?.release(); // Restore only transforms still authored by this session, before releasing action locks.
+    lastPoseRelease = poseRelease || null; // Diagnostic count of skipped transforms held by newer owners.
     window.WorldActionInputClaims?.clearClaims?.('paired-dance');
     for(const actor of old.actors) {
       actor.hands.setPoseProvider('paired-dance',null);
@@ -73,7 +74,10 @@
         actor.root.position.copy(actor.initial.position);actor.root.quaternion.copy(actor.initial.quaternion);
         actor.legs.group.quaternion.copy(actor.initial.legRotation);actor.neck.quaternion.copy(actor.initial.neck);
       }
-      if (actor.root.parent && actor.legs.group.parent) {
+      const ordinaryRigRestored = !claimedPose || (
+        old.poseSession.wasRestored(actor.root,'position') && old.poseSession.wasRestored(actor.root,'quaternion')
+        && old.poseSession.wasRestored(actor.legs.group,'quaternion')); // Never invoke idle IK or hand sync on a rig replaced by another action.
+      if (actor.root.parent && actor.legs.group.parent && ordinaryRigRestored) {
         actor.legs.update(0,0,false,null);actor.legs.pants?.update?.();actor.hands.useIdlePose();
       }
     }
@@ -116,7 +120,13 @@
       contacts:[new T.Vector3(),new T.Vector3()],cameraPosition:new T.Vector3(),cameraTarget:new T.Vector3(),cameraState:deps?.captureCamera?.(),
       cameraMode:'follow',orbitAzimuth:0,shoulderOffsetH:0, // Camera mode and angle belong to this dance and pause on its simulation clock.
       supportPoint:new T.Vector3(),lastSupport:null,cameraRecord:null,lock:null}; // Reused vectors and a fixed count of analytic constraints replace per-frame anatomy checks/searches.
-    if(!applyFrame()){stop('anatomical-reach');return failStart('anatomical-reach');}
+    try {
+      if(!applyFrame()){stop('anatomical-reach');return failStart('anatomical-reach');}
+    } catch(error) {
+      stop('pose-solver-exception'); // Even an unexpected IK failure must not strand a captured action rig.
+      window.__farmLog?.('[festival dance] pose solver failed: '+String(error?.message||error),'social');
+      return failStart('pose-solver-exception');
+    }
     const s=session; // Callbacks retain only this action's preallocated pose buffers.
     for(const actor of s.actors)actor.hands.setPoseProvider('paired-dance',()=>applyHands(actor));
     s.lock=window.CharacterActionLocks?.acquire?.({owner:'festival-wheel-dance',reason:'Procedural paired dance',participants:[
@@ -316,12 +326,18 @@
       session.hopHeight=Math.min(...session.actors.map(a=>Math.min(a.legLength*.42,a.reach.left*.35,a.reach.right*.35))); // A late GLB keeps its actual sole height and fixed leg reach.
     }
     if(!paused){const step=Math.max(0,Math.min(.05,Number(dt)||0));session.elapsed+=step;if(session.cameraMode==='orbit')session.orbitAzimuth-=ORBIT_SPEED*step;} // Counter-spin advances only with the dance, never while paused.
-    if(!applyFrame()){stop(session?.poseSession && !session.poseSession.owns()?'pose-owner-taken-over':'anatomical-reach');return;}
+    try {
+      if(!applyFrame()){stop(session?.poseSession && !session.poseSession.owns()?'pose-owner-taken-over':'anatomical-reach');return;}
+    } catch(error) {
+      stop('pose-solver-exception'); // The compositor stamps and releases the partially authored frame before other actions resume.
+      window.__farmLog?.('[festival dance] pose solver failed: '+String(error?.message||error),'social');
+      return;
+    }
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
     return {latestChange:'Paired roots, legs and neck now release only compositor-owned pose transforms after interruptions; paired garments keep physical depth.',
-      active:!!session,lastStopReason,lastStartFailure,poseOwnership:session?.poseSession?'actor-rig-compositor':'legacy-fallback',...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
+      active:!!session,lastStopReason,lastStartFailure,lastPoseRelease,poseOwnership:session?.poseSession?'actor-rig-compositor':'legacy-fallback',...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
         actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,pantsDepthBias:a.pants?.maskUniforms?.uPantsDepthBias?.value??null,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
         cameraMode:session.cameraMode,shoulderOffsetH:session.shoulderOffsetH,orbitAzimuthDeg:session.orbitAzimuth*180/Math.PI,orbitSpeedDegS:-4,
