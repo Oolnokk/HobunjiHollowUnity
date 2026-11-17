@@ -27209,6 +27209,10 @@
         // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
         const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
         const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
+        // Static wilderness objects outside the vegetation corridor can stay GPU-visible deep into the fog.
+        // Hide only far world geometry for this complete render (main + outline + held depth passes).
+        const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender?.(
+          activeScene, camera, { x: player.x / TILE, z: player.y / TILE }, { isZone: _isZoneArea(currentArea) });
         try {
         // Frame-scoped whole-actor suppression; simulation still runs before and
         // after this render. Existing frustum culling handles camera-offscreen
@@ -27344,6 +27348,7 @@
         } finally {
           window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
+          restoreWildernessDistance?.(); // No static-world visual cull may leak into gameplay or the next zone.
           restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
           restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
           restoreFarmTileBatches?.(); // Tile edits, raycasts and other renderers see the per-tile meshes again.
