@@ -38,7 +38,23 @@ const documentStub = {
 vm.runInNewContext(source, { window: windowStub, document: documentStub, Uint8ClampedArray }, { filename: 'baby-animal-head-warp.js' });
 const warp = windowStub.BabyAnimalHeadWarp;
 assert.equal(warp.getScale(), 1.23, 'every species defaults to the new 123% scale');
-assert.equal(warp.getShortening(), 0.20, 'baby and genetically Small pet head depth defaults to 20% shorter');
+assert.equal(warp.getShortening(), 0.08, 'all baby and eligible Small shoulder-pet heads inherit 8% shortening');
+assert.equal(warp.shorteningForKind('grehlr'), 0.08, 'registered Medium species inherit the same 8% shortening');
+assert.equal(warp.shorteningForKind('pingdort'), 0.08, 'naturally Small species babies also inherit 8% shortening');
+const formerDefaultWindow = { localStorage: {
+  getItem: key => key === 'hobunji_baby_head_shortening_v1' ? '0.20' : null,
+} }; // Simulates a returning player whose old 20% Nursery default was stored in localStorage.
+vm.runInNewContext(source, { window: formerDefaultWindow, document: documentStub, Uint8ClampedArray },
+  { filename: 'baby-animal-head-warp.js' });
+assert.equal(formerDefaultWindow.BabyAnimalHeadWarp.getShortening(), 0.08,
+  'migrate an old saved universal 20% default to the new inherited 8%');
+const customDefaultWindow = { localStorage: {
+  getItem: key => key === 'hobunji_baby_head_shortening_v1' ? '0.35' : null,
+} }; // Intentional global settings other than the retired default stay customizable.
+vm.runInNewContext(source, { window: customDefaultWindow, document: documentStub, Uint8ClampedArray },
+  { filename: 'baby-animal-head-warp.js' });
+assert.equal(customDefaultWindow.BabyAnimalHeadWarp.getShortening(), 0.35,
+  'preserve a user-selected global shortening that does not equal the retired default');
 assert.equal(warp.maskModeForKind('grehlr'), 'idle-alpha', 'existing animals default to opaque idle-sprite head selection');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
