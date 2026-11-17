@@ -295,8 +295,11 @@ async function spritePng(page, animal) {
       [...select.options].find(option => option.textContent.trim() === 'Grehlr')?.value);
     assert(grehlrOption, 'Grehlr must appear in the real bestiary');
     await page.locator('#animalSelect').selectOption(grehlrOption);
-    await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000
-      && window.__animalHeadRigBabyPreview?.debugSnapshot()?.idleMaskPixels > 0,
+    await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000,
+      null, { timeout: 60000 });
+    await page.locator('#babyHeadUsePainted').uncheck(); // Species reload resets to painted by default; opt into alpha for this specific large-mask stress test.
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha'
+      && window.__animalHeadRigBabyPreview.debugSnapshot().idleMaskPixels > 0,
     null, { timeout: 60000 });
     const shoulderBeforeCopy = await page.evaluate(() => currentShoulderRest());
     await page.locator('#shoulderCopySource').selectOption('moot');
