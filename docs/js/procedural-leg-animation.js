@@ -1476,8 +1476,7 @@
         hip: chain.hip.position, foot: target, bendDegX, bendDegZ, foldMaxLength: legLength,
       });
       const blend = Math.max(0, Math.min(1, state.hoverStrength)); // Smoothly mixes into the solved hover pose after mode changes.
-      window.ActorRigCompositor?.restoreSolvedBase?.(chain.thigh, 'quaternion');
-      window.ActorRigCompositor?.restoreSolvedBase?.(chain.calf, 'quaternion'); // Blend from the prior CLEAN IK pose, not an accumulated additive effect.
+      // update() already prepared clean thigh/calf baselines before entering hover interpolation.
       chain.thigh.quaternion.slerp(solved.thighQuaternion, blend);
       chain.calf.position.y = damp(chain.calf.position.y, -solved.thighLength, 12, dt);
       chain.calf.quaternion.slerp(solved.calfLocalQuaternion, blend);
