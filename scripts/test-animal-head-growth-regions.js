@@ -95,6 +95,7 @@ for (const id of ['animalId', 'babyHeadUseCustomFrame', 'babyHeadDrawCustom', 'b
   'shoulderCopyFromSpecies', 'shoulderCopyStatus']) control(id);
 let captured = 0, released = 0, checkpoints = 0, previews = 0;
 let currentShoulder = { useSpline: false, splitFrame: false };
+let hasBaseHeadRig = true; // Toggling this simulates a species with no painted neck rig or shoulder pose.
 const targetHeadPaint = { retained: 'specific grehlr head pattern' };
 const state = { image: { width: 100, height: 100 }, baseRecord: {}, selectRecords: [] };
 const paintCanvas = { setPointerCapture: () => captured++, releasePointerCapture: () => released++ };
@@ -121,7 +122,7 @@ const context = {
   splineAllowedForCurrentSpecies: () => true, shoulderProfileApi: { species: ['moot', 'grehlr'] },
   drawGuides: () => {},
   applyRecord(record) { state.baseRecord = record; control('animalId').value = record.id; },
-  normalizedRig: () => ({ headPaint: targetHeadPaint, shoulderRest: currentShoulder }),
+  normalizedRig: () => hasBaseHeadRig ? { headPaint: targetHeadPaint, shoulderRest: currentShoulder } : null,
   captureHistoryState: () => ({ original: true }),
   historySignature: () => 'original', restoreHistoryState: () => {},
   resolveBabyPreviewFrame: () => ({ frame: portrait, source: 'portrait' }),
@@ -172,6 +173,13 @@ control('babyAbdomenScale').handlers.get('input')();
 assert.equal(context.normalizedRig().babyAbdomenScale, 1.6);
 context.restoreHistoryState(old);
 assert.equal(context.normalizedRig().babyAbdomenScale, 1.2, 'undo restores abdomen percentage');
+hasBaseHeadRig = false;
+const standaloneGrowth = context.normalizedRig(); // Growth regions do not require fake neck motion to be exported.
+assert(standaloneGrowth && standaloneGrowth.weightMap && standaloneGrowth.babyAbdomenEnabled,
+  'head and abdomen boxes remain exportable without painted Head Influence or shoulder presentation');
+assert.equal(standaloneGrowth.shoulderRest, undefined, 'region-only neutral rig cannot invent a shoulder pose');
+assert.deepEqual([...standaloneGrowth.weightMap.data], [4, 0], 'neutral weight map leaves adult neck motion unchanged');
+hasBaseHeadRig = true;
 control('babyHeadClearAbdomen').handlers.get('click')();
 assert.equal(context.normalizedRig().babyAbdomenEnabled, false);
 assert.equal(context.normalizedRig().babyHeadUseCustomFrame, true, 'clearing abdomen never clears custom head');
