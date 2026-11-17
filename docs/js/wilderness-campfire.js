@@ -13,6 +13,7 @@
   // Save/Cook/Brew/Return-to-Camp interactions.
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
   const CAMPFIRE_HOLD_MS = 500; // Authored base hold duration; the player's global tap/hold adjustment applies at press time.
+  const POINTER_DRAG_THRESHOLD_PX = 12; // Suppresses touch/mouse jitter before an intentional held campfire arch selection.
   function campfireHoldMs() {
     return window.InputHoldTiming?.thresholdMs?.(CAMPFIRE_HOLD_MS) ?? CAMPFIRE_HOLD_MS; // Shares the player setting without requiring that optional module in older saves/tests.
   }
@@ -27,6 +28,7 @@
   let campfireDataPromise = null;
   let debugHistory = []; // Recent state-changing events for mobile-friendly debug dumps without relying on console access.
   let interactionHold = null; // Current Action 2 owner/timer; exposed in mobile debug and canceled on any scene transition.
+  let lastPointerDown = null; // Captured once at pointerdown so a held HUD button's later pointer moves have a true drag origin.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -280,6 +282,7 @@
     const brewRank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0; // Controls the Brew choice without replacing tool inputs.
     const nearby = action => { // Re-check player distance when the menu choice is committed, not only when the hold started.
       if (!withinInteractionRange()) { deps?.showToast?.('Move closer to the campfire.', false); return; }
+      recordDebug('campfire-action-selected', { action }); // Mobile diagnostics identify which option actually fired, not just that the arch released.
       if (action === 'save') doSave();
       else if (action === 'cook') doCook();
       else if (action === 'brew') doBrew();
@@ -288,15 +291,48 @@
       { id:'save', icon:'💾', label:'Save Game', onSelect:()=>nearby('save') },
       { id:'cook', icon:'🍲', label:cookRank?'Cook Here':'Cook Here (needs Survivalist)', disabled:!cookRank, onSelect:()=>nearby('cook') },
       { id:'brew', icon:'⚗️', label:brewRank?'Make Potions Here':'Make Potions Here (needs Herbalist)', disabled:!brewRank, onSelect:()=>nearby('brew') },
-      { id:'cancel', icon:'✕', label:'Cancel', onSelect:()=>{} },
+      { id:'cancel', icon:'✕', label:'Cancel', initial:true, onSelect:()=>{} }, // Releasing an untouched hold must never accidentally save or open a work menu.
     ];
+  }
+
+  function trackHeldCampfirePointer(hold) {
+    if (typeof document === 'undefined') return;
+    const pointerId = hold.pointerStart?.pointerId ?? (hold.owner.startsWith('touch-arch:')
+      ? Number(hold.owner.slice('touch-arch:'.length)) : null); // The original touch or mouse pointer owns the drag; synthetic touch hosts can still recover by ID.
+    if (!Number.isInteger(pointerId) || pointerId < 0 || typeof document.addEventListener !== 'function') return;
+    const start = hold.pointerStart?.pointerId === pointerId ? hold.pointerStart : null; // Snapshot the original HUD press, not a different finger's later pointerdown.
+    let dragOrigin = start && { x:start.x, y:start.y }; // Retained for the lifetime of this held gesture, even if another finger lands later.
+    const move = event => {
+      if (interactionHold !== hold || event.pointerId !== pointerId) return;
+      if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+      if (!dragOrigin) { dragOrigin = { x:event.clientX, y:event.clientY }; return; } // Graceful fallback for hosts that bypass document pointerdown.
+      const nearStart = Math.hypot(event.clientX - dragOrigin.x, event.clientY - dragOrigin.y) <= POINTER_DRAG_THRESHOLD_PX; // Used to distinguish unintentional jitter from a deliberate drag returning to its origin.
+      if (nearStart && !hold.opened) {
+        hold.dragPoint = null; hold.didDrag = false; // A pre-open drag that returned to the button is not an active choice.
+        return;
+      }
+      if (nearStart && !hold.didDrag) return; // Don't choose anything from minor finger tremors on a newly opened wheel.
+      hold.didDrag = true;
+      hold.dragPoint = { x:event.clientX, y:event.clientY }; // After dragging starts, follow all later moves—including returning toward the original button.
+      if (hold.opened && window._desktopSelectionArc?.currentMode?.() === 'entries:campfire')
+        window._desktopSelectionArc?.movePointer?.(event.clientX, event.clientY);
+    }; // The HUD button retains pointer capture throughout the hold, so its drag never reaches the arch backdrop directly.
+    document.addEventListener('pointermove', move, true);
+    hold.pointerCleanup = () => document.removeEventListener('pointermove', move, true); // Released, canceled, or scene-changed holds remove their own listener.
   }
 
   function beginInteractionHold(source = 'action2') {
     if (interactionHold || !withinInteractionRange()) return false;
     const owner = String(source); // Pairs this exact keyboard/controller or touch pointer with its eventual release.
-    const hold = { owner, timer:null, opened:false, durationMs:campfireHoldMs() }; // Captures this press's chosen hold threshold even if Settings changes during the hold.
+    const hold = { owner, timer:null, opened:false, pointerCleanup:null, pointerStart:null, dragPoint:null, didDrag:false, durationMs:campfireHoldMs() }; // Captures the press threshold, touch/mouse origin and any deliberate pre-open drag.
+    const touchPointerId = owner.startsWith('touch-arch:') ? Number(owner.slice('touch-arch:'.length)) : null; // Touch-arch ownership encodes its physical pointer ID.
+    const recentMousePress = owner.startsWith('desktop-mouse:') && lastPointerDown?.pointerType === 'mouse'
+      && Date.now() - lastPointerDown.at <= 1000; // A desktop mouse hold must follow its own fresh pointerdown, not an old touch.
+    const pointerId = recentMousePress ? lastPointerDown.pointerId : touchPointerId; // Used to pair held drag movement with the actual owner.
+    if (Number.isInteger(pointerId) && pointerId >= 0 && lastPointerDown?.pointerId === pointerId)
+      hold.pointerStart = { ...lastPointerDown }; // Other fingers/buttons cannot change the captured origin later.
     interactionHold = hold;
+    trackHeldCampfirePointer(hold); // Observe the original touch/mouse pointer from press onward, including the interval before the arch opens.
     hold.timer = setTimeout(() => {
       hold.timer = null;
       if (interactionHold !== hold) return;
@@ -306,6 +342,7 @@
       }
       window._desktopSelectionArc.openEntries('campfire', campfireMenuEntries());
       hold.opened = true;
+      if (hold.dragPoint) window._desktopSelectionArc?.movePointer?.(hold.dragPoint.x, hold.dragPoint.y); // Honor a drag that already reached its choice before the menu became visible.
       recordDebug('campfire-hold-menu-open', { owner });
     }, hold.durationMs);
     recordDebug('campfire-hold-start', { owner });
@@ -317,10 +354,18 @@
     if (!hold || hold.owner !== String(source)) return false;
     interactionHold = null;
     if (hold.timer !== null) clearTimeout(hold.timer);
-    if (canceled && hold.opened && window._desktopSelectionArc?.currentMode?.() === 'entries:campfire')
-      window._desktopSelectionArc.close();
+    hold.pointerCleanup?.();
+    const ownsMenu = hold.opened && window._desktopSelectionArc?.currentMode?.() === 'entries:campfire'; // A different selector must never be committed by a late campfire release.
+    const canCommit = ownsMenu && !canceled && withinInteractionRange(); // Recheck range/combat exactly as the ruin shaft brazier does on release.
+    let selectionReleased = false; // Mobile debug distinguishes a valid release handled by the arch from a canceled or unavailable release.
+    if (ownsMenu) {
+      if (canCommit && typeof window._desktopSelectionArc?.releaseSelection === 'function') {
+        selectionReleased = true;
+        window._desktopSelectionArc.releaseSelection();
+      } else window._desktopSelectionArc?.close?.(); // A canceled or stale hold must not activate any choice.
+    }
     recordDebug(canceled ? 'campfire-hold-canceled' : 'campfire-hold-released',
-      { owner:hold.owner, opened:hold.opened });
+      { owner:hold.owner, opened:hold.opened, selectionReleased, dragged:hold.didDrag });
     return true;
   }
 
@@ -388,7 +433,8 @@
 
   function getDebugState() {
     return {
-      interactionHold: interactionHold ? { owner:interactionHold.owner, opened:interactionHold.opened, durationMs:interactionHold.durationMs } : null,
+      interactionHold: interactionHold ? { owner:interactionHold.owner, opened:interactionHold.opened,
+        durationMs:interactionHold.durationMs, dragged:interactionHold.didDrag, pointerCaptured:!!interactionHold.pointerCleanup } : null,
       state: serialize(),
       visualArea,
       hasVisual: !!group,
@@ -398,6 +444,10 @@
     };
   }
 
+  if (typeof document !== 'undefined') document.addEventListener?.('pointerdown', event => {
+    if (Number.isInteger(event.pointerId) && Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+      lastPointerDown = { pointerId:event.pointerId, x:event.clientX, y:event.clientY, pointerType:event.pointerType || '', at:Date.now() };
+  }, true); // Capture the original HUD press before the button's own pointerdown handler starts the hold.
   window.addEventListener?.('blur', () => cancelInteractionHold('window-blur')); // A lost mobile/desktop release must not open a stale menu.
   if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
     if (document.hidden) cancelInteractionHold('page-hidden');
