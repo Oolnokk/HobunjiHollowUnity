@@ -597,7 +597,10 @@
       const mesh = ref.deref();
       if (!mesh) { portraitMeshRefs.delete(ref); continue; }
       const spec = portraitMeshBuilds.get(mesh);
-      if (spec) applyPortraitWireframe(mesh, spec.THREE);
+      if (spec) {
+        applyPortraitWireframe(mesh, spec.THREE);
+        try { spec.onWireframeChanged?.(next); } catch (error) { console.warn('[portrait-wireframe] custom rig sync failed', error); }
+      }
     }
     try { window.dispatchEvent(new Event('hobunji:portrait-wireframe-changed')); } catch (_) { /* no DOM (tests) */ }
     return true;
@@ -653,9 +656,12 @@
   function registerExternalSkinnedPortrait(mesh, config) {
     if (!config?.THREE || typeof config.buildGeometry !== 'function') return false;
     // Animation Author retains its own authored neck-weight builder; only the slider/wireframe lifecycle is shared.
-    return registerSkinnedPortrait(mesh, config.THREE, config.width, config.height, config.neckLocal,
+    const registered = registerSkinnedPortrait(mesh, config.THREE, config.width, config.height, config.neckLocal,
       {}, config.mode || 'full', false,
-      { buildGeometry: config.buildGeometry, afterGeometryChange: config.afterGeometryChange || null });
+      { buildGeometry: config.buildGeometry, afterGeometryChange: config.afterGeometryChange || null,
+        onWireframeChanged: config.onWireframeChanged || null });
+    if (registered) config.onWireframeChanged?.(portraitWireframeEnabled);
+    return registered;
   }
 
   function portraitDensityDebug() {
