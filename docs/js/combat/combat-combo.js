@@ -202,6 +202,7 @@
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, windupS + strikeS + returnS); // Stamina-spend disorientation eases across this exact authored combo, including its recovery.
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const normalRangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range; // Normal third-hit geometry, also used for enemies that missed either setup attack.
