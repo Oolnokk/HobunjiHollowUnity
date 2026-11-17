@@ -169,6 +169,7 @@ vm.runInNewContext(perpSource, {
 perpWindow.PerpRotation.init({ angleDiff: (a, b) => signed(a - b) }); // Real two-angle API: compare heading against each camera perpendicular.
 const turnApi = perpWindow.PerpRotation; // Production clamp, not a synthetic edge-selector.
 const turnState = {}; // Persistent private player deadzone state across successive render passes.
+const renderWindow = { PerpRotation: turnApi, Combat: { deps: { player: { perpState: null } } } }; // Existing game-owned directional authority; injected below without copying the algorithm.
 const facingSource = between(composerSource,
   '  function applyRenderedFacingDeadzone(camera, undo, renderDebug) {',
   '\n  const absoluteLegsParentQuaternion =');
@@ -192,7 +193,7 @@ const applyTurnClamp = new Function(
   'counterRotateLegRootForRender', 'currentPlayerNeckJoint',
   facingSource + '\nreturn applyRenderedFacingDeadzone;'
 )(
-  { PerpRotation: turnApi }, turnPlayer, turnForward, () => ({ yaw: composedYaw }),
+  renderWindow, turnPlayer, turnForward, () => ({ yaw: composedYaw }),
   turnState, signed, turnDelta, AXIS_Y,
   turnPivot, 0, () => [{ root: turnPlayer }, { root: turnPet }],
   root => { turnApplied.push({ root: root.name || 'player', angle: turnDelta.angle }); },
@@ -242,6 +243,34 @@ assert(Math.abs(authoredTurn.bodyDeadzone.rawYaw + 0.8) < 1e-9,
   'authored absolute crawl/bed heading remains the clamp input');
 assert.equal(turnState.lastMovementYaw, null,
   'authored absolute crawl/bed pose never inherits the prior gameplay-facing side hint');
+
+// The actual player simulation already owns the movement/headtrack priority
+// hints. Render composition may READ but must not mutate that authoritative state.
+const gameplayHint = {
+  movementYaw: deg(50), lastMovementYaw: deg(130),
+  headtrackYaw: deg(130), headtrackAtMs: 1000,
+}; // In the center band, movement (50°) must beat headtrack and last movement (130°).
+renderWindow.Combat.deps.player.perpState = gameplayHint;
+const hintsBefore = JSON.stringify(gameplayHint); // Detect any accidental render-time simulation mutation.
+composedYaw = deg(90);
+const realMovementTurn = { baseFacingYaw: deg(130), authoredAbsoluteYaw: false };
+applyTurnClamp(camera, [], realMovementTurn);
+assert(Math.abs(signed(realMovementTurn.bodyDeadzone.renderedYaw - deg(50))) < 1e-9,
+  'gameplay movement hint wins against independently sampled render/body yaw');
+assert.equal(realMovementTurn.bodyDeadzone.correctiveSource, 'movement',
+  'mobile compositor diagnostics expose the actual winning hint source');
+assert.equal(realMovementTurn.bodyDeadzone.gameplayFacingHints, true,
+  'mobile compositor diagnostics distinguish game movement ownership from an editor fallback');
+assert.equal(JSON.stringify(gameplayHint), hintsBefore,
+  'temporary render passes never mutate the gameplay facing state');
+gameplayHint.movementYaw = null;
+const realHeadTurn = { baseFacingYaw: deg(50), authoredAbsoluteYaw: false };
+applyTurnClamp(camera, [], realHeadTurn);
+assert(Math.abs(signed(realHeadTurn.bodyDeadzone.renderedYaw - deg(130))) < 1e-9,
+  'fresh headtrack direction wins when the actual movement hint is absent');
+assert.equal(realHeadTurn.bodyDeadzone.correctiveSource, 'headtrack',
+  'the headtrack priority is preserved from gameplay');
+renderWindow.Combat.deps.player.perpState = null;
 
 // Check the shoulder-pet solver's actual rotation resolver, not a copied
 // implementation, under a negative-scale portrait parent.
