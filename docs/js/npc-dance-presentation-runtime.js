@@ -193,6 +193,7 @@
   function cancelHandPose(entry) {
     releaseHandPose(entry); // Cancel even when the sentinel was not drawn this frame (culled/hidden NPC).
     entry.session = null;
+    entry.lastPresentedFrameId = null; // Next animation/render frame must first recompute the new owner's hand baseline.
   }
   function lateHandPose(entry, target) {
     if (!arrivedForSocialPose(entry.walker, target)) { cancelHandPose(entry); return; }
@@ -308,15 +309,21 @@
       left: null,
       right: null,
       session: null, // Current dance session key; a change invalidates remembered ordinary baselines.
-      handPoseState: { left: null, right: null }, // Per-side ordinary baseline + last applied dance pose used to make repeated render passes idempotent.
+      handPoseState: { left: null, right: null }, // Legacy preview fallback; real gameplay uses compositor-owned hand overlays.
+      lastPresentedFrameId: null, // A secondary outline pass in the same scheduler frame must retain the FINAL forearm-aligned wrist.
     };
-    sentinel.onBeforeRender = () => {
+    sentinel.onBeforeRender = (_renderer, renderScene) => {
       const target = walker.currentScheduleTarget;
       if (!arrivedForSocialPose(walker, target)) {
         cancelHandPose(entry); // Leaving the dance location also releases the hands, not only ending the schedule.
         return;
       }
+      const frameId = global.RuntimeFrameScheduler?.frameId?.(); // Hand/forearm rendering is memoized by the same real frame ID.
+      if (renderScene?.overrideMaterial && frameId != null && entry.lastPresentedFrameId === frameId) {
+        return; // Outline/depth passes must KEEP the final forearm-aligned visible quaternion, not reapply pre-forearm dance.
+      }
       lateHandPose(entry, target);
+      if (entry.useCompositor && frameId != null) entry.lastPresentedFrameId = frameId;
     };
     walker.root.add(sentinel);
     state.sentinels.set(String(walker.rec.id), entry);
