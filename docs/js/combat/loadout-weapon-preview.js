@@ -150,8 +150,9 @@
       const geometry = state.plane.geometry;
       geometry.computeBoundingBox();
       if (!geometry.boundingBox) return;
-      size = geometry.boundingBox.getSize(new THREE.Vector3());
-      center = geometry.boundingBox.getCenter(new THREE.Vector3());
+      size = new THREE.Vector3(); center = new THREE.Vector3();
+      geometry.boundingBox.getSize(size);
+      geometry.boundingBox.getCenter(center);
       state.plane.position.set(-center.x, -center.y, 0);
     }
     const verticalHalfAngle = state.camera.fov * Math.PI / 360;
