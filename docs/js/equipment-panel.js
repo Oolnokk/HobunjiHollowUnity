@@ -23,16 +23,19 @@
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
   const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, lastTrimMs: 0, slowestTrimMs: 0, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
 
-  function finishToolIcon(output, startedAt) {
-    const url = output.toDataURL('image/png');
-    const elapsedMs = Math.round((performance.now() - startedAt) * 10) / 10; // Mobile-visible measurement includes PNG encoding, not just the scan.
-    toolIconDebug.lastTrimMs = elapsedMs;
-    toolIconDebug.slowestTrimMs = Math.max(toolIconDebug.slowestTrimMs, elapsedMs);
-    return url;
-  }
-
   function squareToolIcon(source, options = {}) {
-    const startedAt = performance.now(); // Profiles the cold tool-thumbnail path without per-frame instrumentation.
+    // This function is also extracted standalone by framing tests and tools;
+    // keep profiling self-contained without depending on global performance.
+    const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now() : Date.now();
+    const startedAt = now(); // Cold-path timing only, never a per-frame profiler.
+    function finishToolIcon(output) {
+      const url = output.toDataURL('image/png');
+      const elapsedMs = Math.round((now() - startedAt) * 10) / 10; // Includes PNG encoding.
+      toolIconDebug.lastTrimMs = elapsedMs;
+      toolIconDebug.slowestTrimMs = Math.max(toolIconDebug.slowestTrimMs || 0, elapsedMs);
+      return url;
+    }
     const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
     const width = image.width; // Source dimensions bound the alpha scan.
     const height = image.height; // Source dimensions bound the alpha scan.
@@ -68,12 +71,12 @@
       const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
       const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
       outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
-      return finishToolIcon(output, startedAt);
+      return finishToolIcon(output);
     }
     outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
       0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
     toolIconDebug.lastFrame = { left, top, right, bottom, side };
-    return finishToolIcon(output, startedAt);
+    return finishToolIcon(output);
   }
 
   function renderToolIcon(parent, def) {
