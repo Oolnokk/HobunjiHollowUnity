@@ -178,17 +178,25 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
   const species = String($('animalId').value || '').trim(); // Species key for the cache and debug feedback.
   const amount = Number(babyHeadScaleSlider.value) / 100;
   const shorten = Number(babyHeadShorteningSlider.value) / 100;
-  if (!species || (amount <= 1 && shorten <= 0) || !babyPreviewFrame) return image;
+  const abdomen = window.__animalRigGrowthRegions?.previewAbdomen?.() || null; // Independent per-species body-growth option.
+  const abdomenActive = !!(abdomen?.enabled && abdomen?.frame && abdomen.scale > 1);
+  const headActive = !!(babyPreviewFrame && (amount > 1 || shorten > 0));
+  if (!species || (!headActive && !abdomenActive)) return image;
   const width = Math.floor(Number(image.naturalWidth || image.width));
   const height = Math.floor(Number(image.naturalHeight || image.height));
   if (!(width > 0 && height > 0)) return image;
-  const frameKey = [babyPreviewFrame.x, babyPreviewFrame.y, babyPreviewFrame.width, babyPreviewFrame.height]
-    .map(value => value.toFixed(5)).join(',');
-  const cacheKey = species + ':' + amount.toFixed(2) + ':' + shorten.toFixed(2) + ':' + authoredBabyHeadUsePainted + ':' + width + 'x' + height + ':' + frameKey;
+  const frameKey = babyPreviewFrame ? [babyPreviewFrame.x, babyPreviewFrame.y, babyPreviewFrame.width, babyPreviewFrame.height]
+    .map(value => value.toFixed(5)).join(',') : 'no-head';
+  const abdomenKey = abdomenActive ? [abdomen.scale, abdomen.frame.x, abdomen.frame.y, abdomen.frame.width, abdomen.frame.height]
+    .map(value => Number(value).toFixed(5)).join(',') : 'no-abdomen';
+  const cacheKey = species + ':' + amount.toFixed(2) + ':' + shorten.toFixed(2) + ':' + authoredBabyHeadUsePainted
+    + ':' + width + 'x' + height + ':' + frameKey + ':' + abdomenKey;
   const cached = babyPreviewTextureCache.get(image);
-  const idleMask = babyHeadWarp?.maskForKind?.(species, babyPreviewFrame); // Reimporting idle art changes the silhouette even at the same head percentage.
+  const idleMask = headActive && !authoredBabyHeadUsePainted
+    ? babyHeadWarp?.maskForKind?.(species, babyPreviewFrame) : null; // Reimported idle art invalidates all masked previews.
   if (cached?.key === cacheKey && cached?.mask === idleMask) { babyHeadDebug.hits++; return cached.image; }
-  if (!authoredBabyHeadUsePainted && typeof babyHeadWarp.maskForKind === 'function' && !idleMask) {
+  if (headActive && !abdomenActive && !authoredBabyHeadUsePainted
+      && typeof babyHeadWarp.maskForKind === 'function' && !idleMask) {
     // A missing/blocked idle alpha mask must not allocate a full-resolution canvas once for EVERY mesh triangle.
     babyHeadDebug.lastError = readableBabyError(babyHeadWarp.debugSnapshot?.()?.lastMaskError || 'Idle head opacity mask unavailable.');
     return image;
@@ -203,7 +211,8 @@ previewImageForAnimal = function previewImageWithBabyHeadScale(image, forceCompa
     if (!context) throw new Error('No canvas context available for baby-head preview.');
     context.imageSmoothingEnabled = false;
     context.drawImage(image, 0, 0, previewW, previewH);
-    const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame, shorten, authoredBabyHeadUsePainted);
+    const warped = babyHeadWarp.applyToCanvas(source, species, amount, babyPreviewFrame,
+      shorten, authoredBabyHeadUsePainted, abdomen);
     if (warped === source) throw new Error(babyHeadWarp.debugSnapshot?.()?.lastError || 'Baby head warp returned the original pixels.');
     babyPreviewTextureCache.set(image, { key: cacheKey, mask: idleMask, image: warped });
     babyHeadDebug.misses++;
@@ -262,20 +271,21 @@ function drawBabyHeadTextureComparison() {
     babyHeadDebug.comparisonPixelChanges = 0;
     return;
   }
-  if (!babyPreviewFrame) {
-    ctx.fillText('Paint Head influence or choose', 15, height / 2 - 12);
-    ctx.fillText('a species with a head frame', 15, height / 2 + 12);
-    babyHeadPixelDelta.textContent = 'No head frame. The baby head effect cannot run for this sprite yet.';
+  const abdomen = window.__animalRigGrowthRegions?.previewAbdomen?.() || null;
+  const abdomenFrame = abdomen?.enabled && abdomen?.scale > 1 ? babyHeadWarp?.validateFrame?.(abdomen.frame) : null;
+  if (!babyPreviewFrame && !abdomenFrame) {
+    ctx.fillText('Draw a head or abdomen region', 15, height / 2);
+    babyHeadPixelDelta.textContent = 'No growth frame. Draw a head or abdomen region to preview this sprite.';
     babyHeadDebug.comparisonPixelChanges = 0;
     return;
   }
   const source = state.image, enlarged = previewImageForAnimal(source, true); // Prove the warp independent of head and shoulder mesh transforms.
   const { width: artW, height: artH } = sourceSize();
-  const frame = babyPreviewFrame;
-  const left = clamp(Math.floor((frame.x - frame.width * .45) * artW), 0, artW - 1);
-  const top = clamp(Math.floor((frame.y - frame.height * .45) * artH), 0, artH - 1);
-  const right = clamp(Math.ceil((frame.x + frame.width * 1.45) * artW), left + 1, artW);
-  const bottom = clamp(Math.ceil((frame.y + frame.height * 1.45) * artH), top + 1, artH);
+  const frames = [babyPreviewFrame, abdomenFrame].filter(Boolean); // Both growth targets appear in the on-device comparison.
+  const left = clamp(Math.floor(Math.min(...frames.map(frame => frame.x - frame.width * .45)) * artW), 0, artW - 1);
+  const top = clamp(Math.floor(Math.min(...frames.map(frame => frame.y - frame.height * .45)) * artH), 0, artH - 1);
+  const right = clamp(Math.ceil(Math.max(...frames.map(frame => frame.x + frame.width * 1.45)) * artW), left + 1, artW);
+  const bottom = clamp(Math.ceil(Math.max(...frames.map(frame => frame.y + frame.height * 1.45)) * artH), top + 1, artH);
   const cropW = right - left, cropH = bottom - top;
   const scale = Math.min((half - 14) / cropW, (height - 14) / cropH);
   const drawW = cropW * scale, drawH = cropH * scale;
@@ -288,7 +298,8 @@ function drawBabyHeadTextureComparison() {
   ctx.fillStyle = '#d6dbde';
   ctx.fillRect(half - 1, 0, 2, height);
   let count = 0; // Number of actually changed visible RGBA pixels in the exact shown head crop, not theoretical geometry.
-  if (babyHeadDebug.lastError && enlarged === source && (Number(babyHeadScaleSlider.value) > 100 || Number(babyHeadShorteningSlider.value) > 0)) {
+  if (babyHeadDebug.lastError && enlarged === source && (Number(babyHeadScaleSlider.value) > 100
+      || Number(babyHeadShorteningSlider.value) > 0 || !!abdomenFrame)) {
     babyHeadDebug.comparisonPixelChanges = 0;
     babyHeadPixelDelta.textContent = babyHeadDebug.lastError; // The runtime compositor swallowed a security error; never report false "0 pixels".
     return;
@@ -324,7 +335,8 @@ function drawBabyHeadTextureComparison() {
     }
     babyHeadDebug.comparisonPixelChanges = count;
     babyHeadPixelDelta.textContent = count
-      ? count.toLocaleString() + ' head-region pixels actually changed. Right preview is the enlarged source, before either rig can deform it.'
+      ? count.toLocaleString() + ' head-region pixels actually changed' + (abdomenFrame ? ' (including abdomen)' : '')
+        + '. Right preview is the enlarged source, before either rig can deform it.'
       : '0 visible pixels changed. Check that the frame encloses the actual head, or increase the slider toward 145%.';
   } catch (error) {
     babyHeadDebug.comparisonPixelChanges = 0;
