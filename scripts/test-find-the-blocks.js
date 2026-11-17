@@ -41,6 +41,7 @@ function test(seed,size=24){
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
   let solved=0,playerFloor=16,dispenseCount=0; // Count external glyph activations separately from legacy Action 1 prompts. // Simulates transitions between independently stacked dungeon stories for height-aware blockers.
+  let flameUpdates=0,flameDisposals=0; // Verifies the permanent bowl emitter advances in revisited completed rooms and is released on teardown.
   const env={
     THREE,
     DevRandomRuin:{
@@ -60,6 +61,9 @@ function test(seed,size=24){
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
+    PersistentGroundFire:{attachCampfireFlame(){return {
+      update(){flameUpdates++;},dispose(){flameDisposals++;}
+    };}}, // The attached emitter is room-owned, not an unbounded global campfire.
     DungeonRopeArt:{
       createNetFrustum(){const net=new Object3D();net.userData.ropeAtlas='rope_long.png';return net;}
     }, // Test uses the shared rope atlas instead of a primitive net fallback.
@@ -241,6 +245,9 @@ function test(seed,size=24){
   }
   room.tick(.05);
   assert.equal(room.solved,true);
+  const sourceFlameBeforeRevisit=flameUpdates; // Solved room tick is stopped by the real owner; only animate runs on revisit.
+  room.animate(.016);
+  assert.equal(flameUpdates,sourceFlameBeforeRevisit+1,'completed room animates its low fire bowl on revisit');
   if(room.variant==='witchBomb'){
     const target=projectileTargets.find(t=>t.id.endsWith('-dispenser-projectile-target'));
     const requested=dispenseCount; // Requests at completion establish the baseline for checking disabled post-solve activations.
@@ -254,6 +261,7 @@ function test(seed,size=24){
   room.tick(.05);
   assert.equal(solved,1);
   room.dispose();
+  assert.equal(flameDisposals,1,'teardown disposes the permanent bowl emitter exactly once');
   assert.equal(unregisteredBlocks.length,4,'Every movable block unregisters from the native pusher and V50 occupancy');
   assert.equal(state.controls.length,0,'No ghost interaction controls remain after reroll');
   assert(cleared.some(id=>id.startsWith('find-the-blocks:')),'The specific chamber-owned blocker footprints are released');
