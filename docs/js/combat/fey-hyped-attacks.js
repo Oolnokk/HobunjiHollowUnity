@@ -75,8 +75,8 @@
   }
 
   function creatureDamagePayload(actor, damage, knockback, opts = {}) {
-    const ratio = creatureEffectRatio(actor);
-    if (ratio === 1) return null; // Normal attack/first stage: no maps or extra objects allocated in the hot path.
+    if (actor?._animalAttack?.hyped?.phase !== 1) return null; // Normal attack/first stage: no maps or extra objects allocated in the hot path.
+    const ratio = creatureEffectRatio(actor); // Exactly 50 Hyped points means 100% echo power, but it is STILL a distinct replay for hit counts/proc safety.
     const source = opts || {};
     const scaleMap = map => map && Object.fromEntries(Object.entries(map).map(([key, value]) => [key, Math.max(0, numeric(value)) * ratio]));
     return {
