@@ -71,6 +71,9 @@ jobs:
       - name: Install Chromium for browser regressions
         if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
+      - name: Pants front/rear portrait pixel occlusion in real WebGL r128
+        if: steps.select.outputs.needs_browser == 'true'
+        run: node scripts/test-pants-portrait-depth-browser.js
       - name: Selector arc idle DOM and legacy scroll browser regression
         if: steps.select.outputs.needs_browser == 'true'
         run: node scripts/test-selection-arc-browser.js
