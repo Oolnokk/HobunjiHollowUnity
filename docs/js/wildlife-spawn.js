@@ -1336,6 +1336,19 @@
       visuals.push(baby);
     }
     mother._carriedBabyVisuals = visuals;
+    // The initial idle-sprite opacity scan may finish *after* the babies are cloned.
+    // Match the parent's corrected plane offsets without starting another image scan
+    // (CreatureGroundAnchor shares the cached ratio and queued callbacks by URL).
+    const syncBabyGroundAnchors = () => { // Runs when the mother's plane offsets are ready; guards against retired/replaced rigs.
+      if (mother.avatarRef?.group !== parent || mother._carriedBabyVisuals !== visuals) return;
+      for (const baby of visuals) {
+        if (front.position && baby.children[0]?.position) baby.children[0].position.y = front.position.y;
+        if (back.position && baby.children[1]?.position) baby.children[1].position.y = back.position.y;
+      }
+    };
+    if (mother.def?.sprites?.idle && window.CreatureGroundAnchor?.resolveRatio) {
+      window.CreatureGroundAnchor.resolveRatio(mother.def.sprites.idle, syncBabyGroundAnchors);
+    }
     return visuals.length;
   }
 

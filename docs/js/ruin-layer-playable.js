@@ -391,8 +391,6 @@
             getPlayerPosition,getPlayerY,
             addControl,removeControl,
             showToast:options.showToast, // One shared resolver owns these controls, and this network owns their cleanup.
-            onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
-            onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
             onLink:()=>options.onStateChange?.(), // Report native projectile/fire/defence registration without a dev console.

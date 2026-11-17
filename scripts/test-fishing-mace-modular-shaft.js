@@ -25,8 +25,8 @@ assert.equal(shaft.sprite, 'assets/toolsprites/modular_pieces/weaponshaft_fishin
 assert.equal(fs.existsSync(`docs/${shaft.sprite}`), true, 'Configured Fishing Mace shaft sprite must exist.');
 assert.deepEqual(plain(shaft.mounts.filter(mount => mount.type !== 'rope')),
   [{ type: 'eye', start: { x: 193, y: 850 }, end: { x: 193, y: 770 } },
-    { type: 'tang', start: { x: 173, y: 810 }, end: { x: 213, y: 810 } }],
-  'Hand-authored eye and perpendicular companion tang remain unchanged beneath the optional flail line.');
+    { type: 'tang', start: { x: 213, y: 810 }, end: { x: 173, y: 810 } }],
+  'The sleeve eye stays hand-authored and the corrected companion tang is reversed beneath the unchanged flail line.');
 assert.deepEqual(plain(shaft.mounts.find(mount => mount.type === 'rope')),
   { type: 'rope', start: { x: 193, y: 850 }, end: { x: 0, y: 325 } },
   'Preserve the user-authored flexible connector without replacing the original rigid mounts.');

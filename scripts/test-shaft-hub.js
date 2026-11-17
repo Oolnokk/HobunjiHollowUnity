@@ -464,8 +464,10 @@ const Defense={create:options=>({
   challenge.tick(.05);
   assert(challenge.fireLinked&&targets.has('layer-fire-target-ice-test'));
   assert.equal(controls.length,0,'short fire-source braziers must not claim an action input');
-  assert.equal(challenge.fireSource.userData.fireHazard,true,
-    'the regular low brazier lets a torch acquire fire through physical contact');
+  assert.equal(challenge.fireSource.children.filter(child=>child.userData?.fireHazard===true).length,1,
+    'the low bowl has one precise flame-height torch contact rather than an overbroad particle bounding box');
+  assert.notEqual(challenge.fireSource.userData.fireHazard,true,
+    'the decorative bowl group must not make distant particles count as torch contact');
   currentY=0;
   assert.equal(targets.get('layer-fire-target-ice-test').isActive(),false,
     'the heat target only accepts real DungeonFire contact from its own story elevation');

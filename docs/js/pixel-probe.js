@@ -1015,6 +1015,13 @@
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
     if (playerAppearanceDebug) lines.push('Player appearance: ' + JSON.stringify(playerAppearanceDebug));
+    const wornPants = window.PantsGarmentRenderer?.liveHandles?.() || []; // Probe-only inventory; never iterate every garment in the game loop.
+    const playerPants = wornPants.find(handle => { // A garment may be nested under the player's portrait or body-scale pivots.
+      for (let node = handle?.model; node; node = node.parent) if (node === playerMesh) return true;
+      return false;
+    });
+    const pantsDepth = playerPants?.getFootDepthBiasDebug?.(); // The render-only foot offset, including active paired-animation overrides.
+    if (window.PantsGarmentRenderer) lines.push(`Pants/feet depth: player=${playerPants ? 'attached' : 'none'} live=${wornPants.length} camera=${camera?.isPerspectiveCamera ? 'perspective' : 'other'} base=${Number(pantsDepth?.base || 0).toFixed(4)}u applied=${Number(pantsDepth?.applied || 0).toFixed(4)}u anatomyRevision=${pantsDepth?.anatomyRevision ?? '-'} scopes=${pantsDepth?.scopes?.join(',') || 'none'}`);
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
@@ -1232,7 +1239,7 @@
     }
     const mountedRide = window.Mounts?.ridingDebug; // Mount speed, wheat, jump state and voice cadence are copyable on phones.
     if (mountedRide && window.Mounts?.rideState !== 'none') {
-      lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s combatBurst=${Number(mountedRide.combatBoostSeconds || 0).toFixed(2)}s/x${Number(mountedRide.combatBoostMultiplier || 1).toFixed(2)} windup=${mountedRide.windupOwner || '-'} paid=${Math.round((mountedRide.windupSpentFraction || 0)*100)}% x${Number(mountedRide.windupMultiplier || 1).toFixed(2)} momentumDamage=x${Number(mountedRide.meleeDamageMultiplier || 1).toFixed(2)} orbit=${mountedRide.orbitActive ? (mountedRide.orbitTarget || '-') : '-'} radius=${Number(mountedRide.orbitRadiusPx || 0).toFixed(0)}px recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
+      lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s coasting=${!!mountedRide.coasting} wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s combatBurst=${Number(mountedRide.combatBoostSeconds || 0).toFixed(2)}s/x${Number(mountedRide.combatBoostMultiplier || 1).toFixed(2)} windup=${mountedRide.windupOwner || '-'} paid=${Math.round((mountedRide.windupSpentFraction || 0)*100)}% x${Number(mountedRide.windupMultiplier || 1).toFixed(2)} momentumDamage=x${Number(mountedRide.meleeDamageMultiplier || 1).toFixed(2)} orbit=${mountedRide.orbitActive ? (mountedRide.orbitTarget || '-') : '-'} radius=${Number(mountedRide.orbitRadiusPx || 0).toFixed(0)}px recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
     }
     const mountedMelee = window.Combat?.mountedCombat?.debug; // Mobile diagnostics for fixed one-off strikes and their combo-mastery momentum.
     if (mountedMelee && window.Mounts?.rideState === 'mounted') {

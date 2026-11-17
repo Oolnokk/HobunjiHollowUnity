@@ -105,7 +105,7 @@
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
   <script src="js/action-arc-ui.js?v=20261115torchDoorRecall1"></script>
-  <script src="js/adventuring-tools.js?v=20261115torchRelease2"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/adventuring-tools.js?v=20261117torchStrikeAudit3"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -146,7 +146,7 @@
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261116cfFrustumBoot2"></script>
+  <script src="debug.js?v=20261117loafProbe1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261116boneyKasaCfg1"></script>
@@ -190,7 +190,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
-  <script src="js/rig-transform-layers.js?v=20261117hRigLayers8"></script>
+  <script src="js/rig-transform-layers.js?v=20261117kissRenderClaims9"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
   <script src="js/character-action-locks.js?v=20261117hRigDanceLoader3"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
@@ -209,11 +209,11 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261111h18e3e31"></script>
+  <script src="js/pants-garment-renderer.js?v=20261117pantsFootDepthRefresh1"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/procedural-feet-outline-parity.js?v=20261110eyeFootParity2"></script>
+  <script src="js/procedural-feet-outline-parity.js?v=20261117footRestoreOrder1"></script>
   <!-- Livestock genetics & breeding (fur-color math, pattern layers, Size
        inheritance, sell-value scoring). Must load before game.js, which
        calls window.CreatureGenetics.init(...) during its own setup. Loads
@@ -555,8 +555,8 @@
   <script src="js/ruin-jump-shaft.js?v=20261116slabCollision1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261115twoSided1"></script>
   <script src="js/ruin-layer-plan.js?v=20261114f2apron"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261114adventRuin2"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
-  <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
+  <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
+  <script src="js/dev-ruin-find-blocks.js?v=20261117revisitFire3"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261114roomEnclosure1"></script>
   <!-- Timed melodies, ruin challenges, V50 floors, shaft connections and checkpoint travel. Edit js/bootstrap/classic-groups/ruin-puzzles.js instead of this entrypoint. -->
@@ -630,9 +630,9 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261111modPickShaft1"></script>
+  <script src="config/modular-weapons.js?v=20261117modFitConfig1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261111modToolRuntime1"></script>
+  <script src="js/modular-weapons.js?v=20261117modFitRuntime1"></script>
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
@@ -643,7 +643,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261117mootMother1"></script>
+  <script src="js/wildlife-spawn.js?v=20261117mootMother2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2906,7 +2906,7 @@
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261117kissBedCollision3"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261117kissRenderGuard5"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261116tapHoldAudit2"></script>

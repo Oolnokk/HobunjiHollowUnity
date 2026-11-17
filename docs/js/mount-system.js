@@ -51,6 +51,8 @@
   const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
   const CRUISE_SPEED_RATIO = 0.66; // Hands-free forward riding speed, below the maximum gallop.
   const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
+  const MOUNT_COAST_DECEL_RATIO = 0.25; // Passive slowdown after wheat/combat acceleration, without weakening deliberate braking or collision stops.
+  const MOUNT_COAST_SOFT_BAND_RATIO = 0.3; // Fade passive drag as excess speed approaches ordinary cruise, avoiding a hard-feeling final slowdown.
   const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
   let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
@@ -255,6 +257,7 @@
     mountedWindupOwner = null;
     mountedWindupMultiplier = 0;
     mountedWindupSpentFraction = 0;
+    ridingDebug.coasting = false; // A newly summoned mount must never inherit the previous rider's momentum diagnostic.
     mountedOrbitTarget = null;
     mountedOrbitRadiusPx = 0;
     mountedOrbitScanS = 0;
@@ -1118,7 +1121,12 @@
       }
     } else {
       if (mountCurrentSpeedPxS < desiredSpeed) mountCurrentSpeedPxS = Math.min(desiredSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
-      else mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * 0.5);
+      else if (mountCurrentSpeedPxS > desiredSpeed) {
+        const excessSpeed = mountCurrentSpeedPxS - desiredSpeed; // Existing physical momentum above the current wheat/combat/cruise target.
+        const softBandPxS = Math.max(1, topSpeed * MOUNT_COAST_SOFT_BAND_RATIO); // Species-relative range over which coasting settles gently into cruise.
+        const coastEase = 0.3 + 0.7 * deps.clamp(excessSpeed / softBandPxS, 0, 1); // Gradually reduce drag near target without asymptotic stalling.
+        mountCurrentSpeedPxS = Math.max(desiredSpeed, mountCurrentSpeedPxS - deps.DECEL * dt * MOUNT_COAST_DECEL_RATIO * coastEase);
+      }
       mountRockScanS -= dt;
       const scanRocks = !m._mountHop && mountRockScanS <= 0;
       if (scanRocks) mountRockScanS = MOUNT_ROCK_SCAN_INTERVAL_S;
@@ -1151,6 +1159,7 @@
       if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= collisionBleedRate;
     }
 
+    ridingDebug.coasting = !braking && mountCurrentSpeedPxS > desiredSpeed + 0.5; // Report actual speed after braking/collisions, not the previous frame's prediction.
     const movedDx = m.x - stepStartX;
     const movedDy = m.y - stepStartY;
     const movedPx = Math.hypot(movedDx, movedDy);
@@ -1199,7 +1208,7 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, setMountedCombatWindupBoost, clearMountedCombatWindupBoost, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
