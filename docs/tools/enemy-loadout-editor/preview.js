@@ -84,7 +84,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261110geomMainMerge1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261116tier8a',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
