@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const generatorSource = fs.readFileSync('docs/js/cavern-generator.js', 'utf8');
+const sculptorSource = fs.readFileSync('docs/js/cavern-sculptor.js', 'utf8'); // Worker import must evaluate the real pure-data sculptor successfully.
 const workerSource = fs.readFileSync('docs/js/cavern-generator-worker.js', 'utf8');
 const wildernessSource = fs.readFileSync('docs/js/wilderness-map-generator.js', 'utf8');
 const rngStart = wildernessSource.indexOf('  function hashSeed(text)');
@@ -46,7 +47,12 @@ workerGlobals.self = workerGlobals;
 const workerContext = vm.createContext(workerGlobals);
 workerGlobals.importScripts = (...urls) => {
   for (const url of urls) {
-    if (url.startsWith('cavern-sculptor.js')) workerGlobals.CavernSculptor = sculptFixture(workerSequences);
+    if (url.startsWith('cavern-sculptor.js')) {
+      vm.runInContext(sculptorSource, workerContext, { filename: 'cavern-sculptor.js' });
+      // Replace only the expensive carve with a small fixed mesh. The real
+      // module must still load without DOM/Three.js in a WorkerGlobalScope.
+      workerGlobals.CavernSculptor.carveMazeCavern = sculptFixture(workerSequences).carveMazeCavern;
+    }
     else if (url.startsWith('cavern-generator.js')) vm.runInContext(generatorSource, workerContext);
     else throw new Error('Unexpected worker import ' + url);
   }
@@ -90,6 +96,14 @@ async function verifyAsyncBridge() {
   assert.equal(cached, first, 'future visits use the cached floor');
   assert.equal(requests, 1, 'cached den does not incur another worker carve');
   assert.equal(asyncWindow.CavernGenerator.workerDebug().completed, 1);
+  const uncachedA = asyncWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true, cache: false });
+  const uncachedB = asyncWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true, cache: false });
+  assert.notStrictEqual(uncachedA, uncachedB, 'cache:false disables in-flight deduplication');
+  assert.equal(requests, 3, 'each uncached request starts a separate worker carve');
+  await Promise.all([uncachedA, uncachedB]);
+  assert.equal(requests, 3);
+  assert.strictEqual(await asyncWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true }), first,
+    'uncached jobs do not disturb an earlier cached geometry instance');
 }
 async function verifyFailureFallback() {
   let requests = 0; // A worker-level error must not strand the scene in its loading state.
@@ -120,7 +134,35 @@ async function verifyFailureFallback() {
   assert(warnings.some(entry => String(entry[0]).includes('forced den worker failure')), 'worker failure is recorded in the in-game log');
 }
 
-verifyAsyncBridge().then(verifyFailureFallback).then(
-  () => console.log('cavern worker parity, failure fallback, deduplication and cache lifecycle passed'),
+async function verifyWorkerStartupFailure() {
+  let terminated = 0; // A crashing worker must be destroyed and never used for later requests.
+  const warnings = [];
+  class CrashingWorker {
+    constructor() { this.onmessage = null; this.onerror = null; }
+    postMessage() { queueMicrotask(() => this.onerror({ message: 'simulated worker startup crash' })); }
+    terminate() { terminated++; }
+  }
+  const fallbackWindow = {
+    HobunjiCaveShapeConfig: shape,
+    CavernSculptor: sculptFixture([]),
+    __farmLog: (...args) => warnings.push(args),
+  };
+  vm.runInNewContext(generatorSource, {
+    window: fallbackWindow,
+    Worker: CrashingWorker,
+    performance: { now: () => 20 },
+    WildernessMapGenerator: { makeRng },
+  });
+  const floor = await fallbackWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true });
+  assert.equal(JSON.stringify(floor), JSON.stringify(synchronous), 'worker startup failure retains synchronous generation');
+  assert.equal(terminated, 1, 'crashed worker is terminated');
+  assert.equal(fallbackWindow.CavernGenerator.workerDebug().failures, 1);
+  assert(warnings.some(entry => String(entry[0]).includes('simulated worker startup crash')));
+  assert.strictEqual(await fallbackWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true }), floor,
+    'fallback result is subsequently cached and no worker is recreated');
+}
+
+verifyAsyncBridge().then(verifyFailureFallback).then(verifyWorkerStartupFailure).then(
+  () => console.log('cavern worker imports, cache bypass, startup failure, deterministic fallback and deduplication passed'),
   error => { console.error(error); process.exitCode = 1; }
 );
