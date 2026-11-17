@@ -193,8 +193,8 @@
   <script src="js/rig-transform-layers.js?v=20261117hRigLayers8"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
   <script src="js/character-action-locks.js?v=20261117hRigDanceLoader3"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
-  <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
-  <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
+  <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
+  <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261113playerKoma1"></script>
   <script src="js/player-yawn-stretch-presentation.js?v=20261114playerYawnStretch1"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
@@ -2906,7 +2906,7 @@
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261117hRigKiss2"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261117kissBedCollision3"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261116tapHoldAudit2"></script>
@@ -2919,10 +2919,10 @@
        See architecture/classic-script-groups.md. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
-  <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
+  <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261117deepAuditFeyCreature7"></script>
+  <script src="game.js?v=20261117kissPoseLockFey8"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

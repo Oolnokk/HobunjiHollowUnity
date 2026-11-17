@@ -49,6 +49,40 @@ options.currentArea = 'mine';
 assert.equal(gaze.updateWalker(walker, 0.5, 0.7, options), false);
 assert.equal(walker._npcMotionLookActive, false, 'off-area LOD does not strand the last gait gaze');
 
+// An exclusive kiss/festival claims the NPC neck quaternion through the shared
+// pose session. The ordinary movement gaze must not reset it on a frame where
+// the spouse stopped moving, changed LOD, or still has the previous bed flag.
+walker.rec = { id: 'spouse' }; // Same participant identity acquired by scoped paired choreography.
+window.NpcCharacterState = { participantId: id => 'npc:' + id };
+let lockedChannel = null; // Different action types can acquire head alone or the entire body pose.
+window.CharacterActionLocks = { isLocked(id, channel) {
+  assert.equal(id, 'npc:spouse', 'the gaze guard reads the same character ID as the pair lock');
+  return channel === lockedChannel;
+} };
+const claimedHead = { x: .32, y: -.21, z: .08 }; // Author-directed local head pose, deliberately non-neutral on all axes.
+const restoredWindow = { ...claimedHead }; // Stable comparison proves no motion update mutated the paired neck.
+for (const channel of ['head', 'pose']) {
+  lockedChannel = channel;
+  walker._npcMotionLookActive = true;
+  walker._bedLieActive = true;
+  neck.rotation.set(claimedHead.x, claimedHead.y, claimedHead.z);
+  const clearsBefore = window.clears || 0; // The ordinary walk headtrack hint is retired without changing the authored head.
+  options.currentArea = 'town';
+  assert.equal(gaze.updateWalker(walker, .5, .7, options), false,
+    'scoped paired ' + channel + ' lock suppresses regular movement gaze');
+  assert.deepEqual({ x: neck.rotation.x, y: neck.rotation.y, z: neck.rotation.z }, restoredWindow,
+    'paired ' + channel + ' head orientation survives even a lingering bed flag');
+  assert.equal(walker._npcMotionLookActive, true, 'old movement gaze cleanup stays pending until paired gaze releases');
+  assert.equal(window.clears, clearsBefore + 1, 'stale headtrack hint is cleared without rewriting the bone');
+}
+lockedChannel = null;
+walker._bedLieActive = false;
+walker._npcMotionLookActive = true;
+gaze.updateWalker(walker, walker.root.position.x, walker.root.position.z, options);
+assert.equal(neck.rotation.y, 0, 'ordinary idle head tracking resumes after paired lock release');
+assert.equal(walker._npcMotionLookActive, false, 'the formerly deferred motion-gaze cleanup finally completes');
+delete window.CharacterActionLocks;
+
 // Minimal Three.js quaternion composition; tests actual head orientation,
 // not only whether one local Euler pitch happened to change.
 class MockQuaternion {
