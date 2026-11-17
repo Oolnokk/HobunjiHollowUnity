@@ -89,7 +89,7 @@ class Geometry {
 }
 class Material {
   constructor(map) { this.map = map; }
-  clone() { return new Material(this.map); }
+  clone() { const copy = new Material(this.map); copy.visible = this.visible; return copy; }
   dispose() { gpuDisposals++; }
 }
 class Group {
@@ -101,14 +101,14 @@ class Group {
   add(child) { this.children.push(child); child.parent = this; }
   remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
   updateMatrixWorld() {}
-  clone() { const copy = new Group(); copy.userData = { ...this.userData }; return copy; }
+  clone() { const copy = new Group(); copy.userData = { ...this.userData }; copy.visible = this.visible; copy.name = this.name; return copy; }
 }
 class Mesh extends Group {
   constructor(geometry, material) {
     super(); this.geometry = geometry; this.material = material; this.isMesh = true;
     this.rotation = { set() {} };
   }
-  clone() { const copy = new Mesh(this.geometry, this.material); copy.userData = { ...this.userData }; return copy; }
+  clone() { const copy = new Mesh(this.geometry, this.material); copy.userData = { ...this.userData }; copy.visible = this.visible; copy.name = this.name; return copy; }
 }
 class Camera {
   constructor(fov) { this.fov = fov; this.position = new Vector3(); this.aspect = 1; }
