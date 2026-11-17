@@ -117,6 +117,20 @@ function creature() {
   enemy.avatarRef.frontPlane=replacementFront;enemy.avatarRef.backPlane=replacementBack;
   assert(impact.triggerCreature(enemy,'breakThrow','front')>0);
   assert.notEqual(enemy.avatarRef.impactPivot,oldPivot,'new creature card generation creates a fresh pose pivot');
+  assert.equal(oldPivot.parent,null,'old creature card pivot is retired rather than rendering a ghost of the previous sprite');
+  impact.stopCreature(enemy);
+  const previousAvatar=enemy.avatarRef.group; // Preserve the old group only to verify it cannot be targeted after an avatar rebuild.
+  const previousPivot=enemy.avatarRef.impactPivot; // A valid old sprite pivot must not be reused by the replacement actor.
+  const nextAvatar=new Group(),nextFront=new Group(),nextBack=new Group();
+  nextAvatar.add(nextFront);nextAvatar.add(nextBack);
+  enemy.avatarRef.group=nextAvatar;
+  enemy.avatarRef.frontPlane=nextFront;
+  enemy.avatarRef.backPlane=nextBack;
+  assert(impact.triggerCreature(enemy,'breakThrow','front')>0);
+  assert.equal(enemy.avatarRef.impactPivot.parent,nextAvatar,'new pivot must be attached under the NEW visible avatar root');
+  assert.notEqual(enemy.avatarRef.impactPivot,previousPivot);
+  assert.equal(previousPivot.parent,null,'the previous actor generation is detached from its old avatar root');
+  assert(!previousAvatar.children.includes(previousPivot));
   impact.stopCreature(enemy);
   assert.equal(rig.getDebug().activeAbsoluteClaims,0);
 }
