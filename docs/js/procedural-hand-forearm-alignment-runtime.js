@@ -117,6 +117,10 @@
 
     const delta = new THREE.Quaternion().setFromUnitVectors(base.direction, currentDirection).normalize();
     socket.quaternion.copy(delta.multiply(base.quaternion)).normalize();
+    const compositor = global.ActorRigCompositor; // Register the final free-forearm IK result when no scripted dance/grapple hand owns it.
+    if (!compositor?.absoluteOwner?.(socket, 'quaternion')) {
+      compositor?.setSolvedBase?.(socket, 'quaternion', socket.quaternion);
+    }
     socket.updateMatrix?.();
     socket.updateMatrixWorld?.(true);
     record.alignments[side]++;
