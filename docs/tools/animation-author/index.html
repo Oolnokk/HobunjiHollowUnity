@@ -1619,6 +1619,7 @@ async function loadRepositoryRuntime(settings) {
   state.runtimeKey = key;
   if (!state.creature.genotype) loadCreatureProfile(state.creature.kind);
   refreshCreatureEditor();
+  syncAuthorPortraitMeshControls(); // The editor draws before asynchronous repository scripts load; unlock its portrait controls now.
   log('Portrait and creature runtimes loaded.');
 }
 
@@ -4990,6 +4991,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
       if (rig.hatXrayOverlay?.group) rig.hatXrayOverlay.group.visible = !enabled;
     },
   });
+  syncAuthorPortraitMeshControls(); // Keep the mobile triangle readout current when a new actor or rig-reference preview appears.
   log(`Built one skinned portrait plane for ${npc.name || npc.id}; neck pivot (${detected.pivotPx.x.toFixed(1)}, ${detected.pivotPx.y.toFixed(1)}) px drives bone-weighted upper-plane deformation.`);
   return rig;
 }
@@ -5233,6 +5235,7 @@ function removeAnimationActor(id) {
     animationAuthor.relationLines.delete(id);
   }
   renderAllAnimationUi();
+  syncAuthorPortraitMeshControls();
   updateAnimationSelectionBox();
   attachAnimationGizmo();
   setAnimationRecentChange(`Removed actor “${actor.label}”; its children became roots.`);
@@ -5254,6 +5257,7 @@ function clearAnimationActors() {
   animationAuthor.relationLines.clear();
   animationAuthor.actors = [];
   animationAuthor.selectedActorId = null;
+  syncAuthorPortraitMeshControls();
   updateAnimationSelectionBox();
 }
 
