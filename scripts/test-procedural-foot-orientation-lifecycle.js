@@ -115,21 +115,22 @@ let failDuringPose = false; // Deliberately throws after the visual correction h
 let failDuringDraw = false; // Also checks the existing WebGL error path.
 let failDuringRollback = false; // Simulates a stale attachment whose undo throws before the feet can be restored.
 let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
+const wrappedPlayer = {}; // Mutable fixture: unrelated scenes can be tested as real Object3D scenes without changing normal rollback tests.
 const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
-  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks',
-  'let renderSequence = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
-    + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; return proto.render;'
+  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf',
+  'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const proto = {};'
+    + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; proto.render.getSkipCount = () => unrelatedSceneSkips; return proto.render;'
 )(
   () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
-  {}, (_camera, undo) => {
+  wrappedPlayer, (_camera, undo) => {
     temporaryYaw += 1;
     undo.push(() => { temporaryYaw -= 1; });
     undo.push(() => { if (failDuringRollback) throw new Error('synthetic undo failure'); }); // Runs first during reverse-order rollback.
     if (failDuringPose) throw new Error('synthetic pose failure');
   },
   () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
-  { now: () => 1000 }, () => 0, [] // No leased channels in this isolated render-restoration fixture; real expiry is exercised by test-composer-lease-recovery.js.
+  { now: () => 1000 }, () => 0, [], () => false // The offscreen fixture uses a separate scene not containing the live player.
 );
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal render completes');
 assert.equal(temporaryYaw, 0, 'normal render restores the temporary orientation');
@@ -154,6 +155,17 @@ failDuringRollback = false;
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal rendering recovers after the interrupted rollback');
 assert.equal(temporaryYaw, 0, 'no stale rotation survives the recovery frame');
 
+// A secondary editor/preview scene with its own camera must never advance
+// the player's camera deadzone or consume the first subsequent world pose.
+const renderedBeforePreview = renderWrapper.getDebug(); // Stable post-world snapshot used to detect an unrelated-scene overwrite.
+const drawsBeforePreview = drawCalls; // Unrelated renders still invoke the original renderer exactly once.
+wrappedPlayer.isObject3D = true;
+assert.equal(renderWrapper({ isScene: true }, {}), 'drawn',
+  'unrelated editor scene is rendered by the unmodified renderer');
+wrappedPlayer.isObject3D = false;
+assert.equal(renderWrapper.getSkipCount(), 1, 'offscreen preview is excluded from player composition');
+assert.equal(renderWrapper.getDebug(), renderedBeforePreview, 'unrelated camera does not overwrite the last player render debug');
+assert.equal(drawCalls, drawsBeforePreview + 1, 'skipping player pose does not skip the real preview draw');
 
 // Execute the actual render-facing clamp AND the real PerpRotation deadzone
 // code. A body test that only verifies equal correction calls can miss a final
