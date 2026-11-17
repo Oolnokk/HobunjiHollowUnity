@@ -12,6 +12,9 @@
   const leased = new Set(); // Only active leased slots are held for interruption recovery.
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
   const absoluteClaims = new WeakMap(); // Node -> named absolute position/quaternion/scale owner; action sessions hold their own references.
+  const overlayClaims = new WeakMap(); // Per-node hand overlay records share the absolute claim registry instead of maintaining private dance baselines.
+  const overlayStats = { overlayWrites: 0, overlayBaseRefreshes: 0, overlayBaseReuses: 0, overlayReleases: 0, overlayConflicts: 0 }; // Inspect render-pass ownership without DevTools.
+
   let activeAbsoluteClaims = 0; // Mobile ownership count used to spot an interrupted actor pose that never released.
   const absoluteOwnerCounts = new Map(); // Action name -> active property-claim count, reported by mobile rig diagnostics.
   function changeAbsoluteOwnerCount(owner, delta) {
@@ -483,6 +486,103 @@
     return session;
   }
 
+  // Render-last presentation overlays (NPC dance hands) are a special kind
+  // of named pose owner: the ordinary procedural hand driver may overwrite its
+  // baseline between renders, and the next same-frame outline/depth pass must
+  // NOT add the overlay a second time. The registry stores the last clean
+  // driver output and the last composed output for each owned socket.
+  function applyPoseOverlay(node, owner, apply) {
+    if (!node?.position?.clone || !node?.quaternion?.clone
+      || !node.position.copy || !node.quaternion.copy
+      || typeof owner !== 'string' || !owner || typeof apply !== 'function') {
+      stats.invalidInputs++;
+      return false;
+    }
+    let overlays = overlayClaims.get(node);
+    let entry = overlays?.get(owner);
+    if (entry && (node.parent || null) !== entry.parent) {
+      releasePoseOverlay(node, owner); // A replacement socket's old parent/pose belongs to the previous avatar generation.
+      entry = null;
+    }
+    const claims = absoluteClaims.get(node);
+    for (const property of ['position', 'quaternion']) {
+      const claim = claims?.get(property);
+      if (claim && claim !== entry?.claims[property]) {
+        overlayStats.overlayConflicts++;
+        return false; // A paired scripted action has priority over NPC hand dance presentation.
+      }
+    }
+    if (!entry) {
+      if (!overlays) { overlays = new Map(); overlayClaims.set(node, overlays); }
+      const existing = absoluteClaims.get(node) || new Map();
+      if (!absoluteClaims.has(node)) absoluteClaims.set(node, existing);
+      entry = {
+        node, owner, parent: node.parent || null,
+        basePos: node.position.clone(), baseQuat: node.quaternion.clone(),
+        appliedPos: node.position.clone(), appliedQuat: node.quaternion.clone(),
+        claims: {},
+      }; // One retained baseline and one last output per owned socket, reused for every draw.
+      const session = { owner }; // Shared owner identity permits other scoped sessions to reject conflicting claims.
+      for (const property of ['position', 'quaternion']) {
+        const claim = { session, overlay: true };
+        existing.set(property, claim);
+        entry.claims[property] = claim;
+        activeAbsoluteClaims++;
+        changeAbsoluteOwnerCount(owner, 1);
+      }
+      overlays.set(owner, entry);
+    }
+    const positionRefresh = Math.abs(node.position.x - entry.appliedPos.x) > EPSILON
+      || Math.abs(node.position.y - entry.appliedPos.y) > EPSILON
+      || Math.abs(node.position.z - entry.appliedPos.z) > EPSILON;
+    const rotationRefresh = !rotationMatches(node.quaternion, entry.appliedQuat);
+    if (positionRefresh) entry.basePos.copy(node.position);
+    if (rotationRefresh) entry.baseQuat.copy(node.quaternion);
+    if (positionRefresh || rotationRefresh) overlayStats.overlayBaseRefreshes++;
+    else overlayStats.overlayBaseReuses++;
+    node.position.copy(entry.basePos);
+    node.quaternion.copy(entry.baseQuat);
+    try {
+      apply(node, entry.basePos, entry.baseQuat); // Existing choreography modifies neutral joints without owning another frame loop.
+    } catch (error) {
+      node.position.copy(entry.basePos);
+      node.quaternion.copy(entry.baseQuat);
+      releasePoseOverlay(node, owner);
+      throw error;
+    }
+    entry.appliedPos.copy(node.position);
+    entry.appliedQuat.copy(node.quaternion);
+    overlayStats.overlayWrites++;
+    return true;
+  }
+
+  function releasePoseOverlay(node, owner) {
+    const overlays = node && overlayClaims.get(node);
+    const entry = overlays?.get(owner);
+    if (!entry) return false;
+    const claims = absoluteClaims.get(node);
+    const attached = (node.parent || null) === entry.parent;
+    const ownsPosition = attached && claims?.get('position') === entry.claims.position;
+    const ownsRotation = attached && claims?.get('quaternion') === entry.claims.quaternion;
+    // Position and forearm quaternion can change independently: restore each
+    // property only when no newer driver has authored a different value.
+    if (ownsPosition && Math.abs(node.position.x - entry.appliedPos.x) <= EPSILON
+      && Math.abs(node.position.y - entry.appliedPos.y) <= EPSILON
+      && Math.abs(node.position.z - entry.appliedPos.z) <= EPSILON) node.position.copy(entry.basePos);
+    if (ownsRotation && rotationMatches(node.quaternion, entry.appliedQuat)) node.quaternion.copy(entry.baseQuat);
+    for (const property of ['position', 'quaternion']) {
+      if (claims?.get(property) !== entry.claims[property]) continue;
+      claims.delete(property);
+      activeAbsoluteClaims--;
+      changeAbsoluteOwnerCount(owner, -1);
+    }
+    if (claims && !claims.size) absoluteClaims.delete(node);
+    overlays.delete(owner);
+    if (!overlays.size) overlayClaims.delete(node);
+    overlayStats.overlayReleases++;
+    return true;
+  }
+
   function absoluteOwner(node, property) {
     // Read-only ownership query used by late render guards (such as talon
     // carry release) to avoid replaying an obsolete pose over a newer action.
@@ -498,9 +598,9 @@
 
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
-    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner,
+    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, applyPoseOverlay, releasePoseOverlay,
     getDebug() {
-      return { ...stats, ...absoluteStats, activeAbsoluteClaims,
+      return { ...stats, ...absoluteStats, ...overlayStats, activeAbsoluteClaims,
         absoluteOwners: Array.from(absoluteOwnerCounts, ([owner, claims]) => ({ owner, claims })), // Only enumerated on explicit mobile diagnostics.
         leasedSlots: leased.size };
     },
