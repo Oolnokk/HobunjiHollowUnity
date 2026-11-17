@@ -677,6 +677,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   const echo=CAE.prepare({attacker:player,abilityId:'swingCombo',damage:25,rangePx:40,halfConeRad:1,knockbackPxS:100});
   assert.equal(echo.metadata.feyHypedUsed,8);
   const echoTarget=makeEntity({name:'Echo target',health:90,x:10});
+  hostileObjects.push(echoTarget); // The staged second strike must find this target through the real hostile roster, not invent a hit off-roster.
   let secondary=null;
   const hypedStages=[]; // Actual first/second actions inspected without requiring a browser frame loop.
   const hypedVisuals=[]; // Captures both full authored pose durations for verifying the 2x speed rule.
@@ -689,7 +690,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(context.FeyHypedAttacks.installCombatBridge(),true);
   context.Combat.deps.triggerWeaponSwingVisual=(duration,options)=>hypedVisuals.push({duration,options});
   context.Combat.init(context.Combat.deps);
-  context.Combat.meleeHit=()=>true; // Existing gameplay hit authority, not an invented cone test.
+  context.Combat.meleeHit=(_actor,target)=>target===echoTarget; // The actual collider accepts only this single intersecting creature, not every hostile in the arena.
   context.Combat.deps.damageCreature=(target,damage,x,y,knockback,opts)=>{secondary={target,damage,knockback,opts};};
   context.Combat.deps.triggerWeaponSwingVisual(.30,{anim:'sweep',holdS:.1}); // Initial authored presentation belongs to the original strike.
   const firstStage=context.Combat.beginStagedAction({windupS:.2,strikeS:.1,recoverS:0});
@@ -750,6 +751,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   interrupted.onCancel(interrupted);
   assert.equal(hypedStages.length,countBeforeCancel+1,'cancelled primary cannot create an extra Hyped attack');
   assert.equal(context.FeyHypedAttacks.debugSnapshot().activeHypedAttacks,0,'cancelled actions release their strong target references');
+  hostileObjects.pop(); // Restore the original combat roster before unrelated relic/quest assertions.
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
   ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
