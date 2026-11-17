@@ -155,6 +155,8 @@ assert.equal(buffTriggers, 1, 'contact fires once after the shared pose reaches 
 const authorYaw = player.rotation.y, authorDrop = playerModel.position.y; // Expected author-directed facing and torso sink at current clip time.
 const originalKnee = playerLegs.getStanceDrop(); // Used to verify the late renderer overwrites an interfering weapon stance.
 const camera = { x: -3, y: 10, z: 13 }; // An intentionally irrelevant orbit camera.
+const npcHeadBeforeLateReprojection = npcNeck.position.clone(); // Detect render-only lip movement after the simulation checkpoint.
+npcModel.position.y += .024; // A late visual mouth-anchor adjustment under a non-claimed portrait parent.
 for (const cameraX of [-3, 3]) {
   camera.x = cameraX;
   player.rotation.set(.4, .6, -.5); // Simulates a tool/aim stack rewriting the root in a late game pass.
@@ -174,6 +176,8 @@ for (const cameraX of [-3, 3]) {
   assert(Math.abs(playerNeck.rotation.y-camera.x) > .001, 'partner-directed head is independent of camera yaw');
 }
 assert(kiss.diagnostics().session.renderPoseCount === renderCount, 'mobile diagnostics reveal true renderer ownership count');
+assert(npcNeck.position.distanceTo(npcHeadBeforeLateReprojection) > 1e-5,
+  'the final render really changed a captured lip joint after simulation; this is not a vacuous ownership test');
 // Real gameplay interleaves simulation and final rendering. Mouth reprojection after
 // .82 seconds changes the captured neck joints AFTER the simulation checkpoint;
 // an uncheckpointed render pass must not falsely cancel the following tick.
@@ -217,6 +221,7 @@ kiss.stop('newer-gaze');
 assert(npcNeck.quaternion.angleTo(otherGaze) < 1e-7, 'spouse cleanup never overwrites a newer head rotation');
 assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'explicit cancel leaves no scoped claims');
 npcNeck.quaternion.identity(); // Restore the fixture's authored standing neck before the reverse-height scenario.
+npcModel.position.y = 0; // Undo the test-only late mouth-anchor offset before swapping species heights.
 
 // Reverse the stature assignment on the very same live objects: now the player reaches
 // for a taller spouse first, before the recipient kneels. This is the historically broken
