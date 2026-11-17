@@ -335,6 +335,7 @@
   function createAbsoluteSession(owner) {
     if (typeof owner !== 'string' || !owner) return null;
     const entries = []; // Small, stable set of node/property claims captured once at action start.
+    const restoredByNode = new WeakMap(); // Release-only ownership evidence for avoiding secondary IK/hand resets on displaced actors.
     let released = false; // Guards repeated cancellation and partial-start cleanup.
     let valid = true; // Turns false on unclaimed nodes, parent replacement, or external takeover.
 
@@ -432,6 +433,9 @@
         if (!claims.size) absoluteClaims.delete(entry.node);
         if (owned) {
           entry.node[entry.property].copy(entry.base);
+          let properties = restoredByNode.get(entry.node);
+          if (!properties) { properties = new Set(); restoredByNode.set(entry.node, properties); }
+          properties.add(entry.property);
           restored++;
         } else {
           skipped++; // A newly authored pose or rebuilt parent must keep its current transform.
@@ -443,7 +447,11 @@
       return { restored, skipped };
     }
 
-    const session = Object.freeze({ capture, owns, stamp, release, owner });
+    function wasRestored(node, property) {
+      return released && restoredByNode.get(node)?.has(property) === true;
+    }
+
+    const session = Object.freeze({ capture, owns, stamp, release, wasRestored, owner });
     return session;
   }
 
