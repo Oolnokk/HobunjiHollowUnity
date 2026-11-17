@@ -176,4 +176,17 @@ release?.();
 
 assert(api.snapshot().scans >= 3, 'low-frequency scan count is exposed');
 assert.equal(api.snapshot().renderOnly, true);
-console.log('PASS wilderness distance cull: batches, chunks, exclusions, bounds, streaming, hysteresis, camera, restore, A/B and fail-open');
+
+const loader = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8'); // Ordered parser loader must install the module before game.js.
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Actual renderWorldPasses must wrap ALL outline/replay passes.
+assert(loader.includes('js/wilderness-distance-cull.js?v='), 'classic rendering bootstrap includes the module');
+const batchIndex = game.indexOf('const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender');
+const distanceIndex = game.indexOf('const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender');
+const renderTryIndex = game.indexOf('        try {\n        // Frame-scoped whole-actor suppression', distanceIndex);
+assert(batchIndex >= 0 && distanceIndex > batchIndex && renderTryIndex > distanceIndex,
+  'distance cull begins after prop batching, before every world render pass');
+const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
+const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
+assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
+  'distance cull is restored by renderWorldPasses finally before wall/prop restore');
+console.log('PASS wilderness distance cull: batches, chunks, instances, exclusions, bounds, streaming, hysteresis, camera, restore, A/B and fail-open');
