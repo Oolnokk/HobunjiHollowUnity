@@ -15,7 +15,7 @@ function render(status) {
   byId('progress').value = percent;
   byId('percent').textContent = Math.round(percent) + '%';
   byId('install').hidden = phase !== 'downloaded';
-  byId('check').disabled = ['checking', 'downloading', 'saving', 'installing'].includes(phase);
+  byId('check').disabled = ['checking', 'downloading', 'downloaded', 'saving', 'installing'].includes(phase);
   byId('install').disabled = phase !== 'downloaded';
   byId('later').disabled = phase === 'installing';
 }
