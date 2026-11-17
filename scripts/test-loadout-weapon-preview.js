@@ -70,7 +70,7 @@ class Vector3 {
   set(x, y, z) { this.x = x; this.y = y; this.z = z; }
 }
 class Matrix4 {
-  copy() { return this; }
+  copy(source) { this.copiedFrom = source; return this; }
   invert() { return this; }
   multiply() { return this; }
 }
@@ -221,9 +221,14 @@ flailAssembly = { ready: false, chain, headRoot: head, metalTargets: [] };
 api.sync(equippedKey, 'Flail');
 tick(3500);
 assert.equal(api.debugSnapshot().flail.parts, 0, 'a still-loading flail first displays its ready haft');
+assert.equal(lastPreviewTargets?.length, 0, 'unloaded flails never emit enchantments from their bare haft');
 const maskA = { width: 2, height: 2, indices: Uint32Array.of(0, 2), matchedMetalPixels: 2 };
 const maskB = { width: 2, height: 2, indices: Uint32Array.of(1), matchedMetalPixels: 1 };
-flailAssembly = { ready: true, chain, headRoot: head, metalTargets: [
+const idleChainPose = new Matrix4(); // The cached flail's authored rest pose can be supplied before gameplay has ever simulated its swing.
+const idleHeadPose = new Matrix4();
+flailAssembly = { ready: true, chain, headRoot: head,
+  neutralMatrices: { chain: idleChainPose, headRoot: idleHeadPose },
+  metalTargets: [
   { plane: headLayerA, mask: maskA }, { plane: headLayerB, mask: maskB },
 ] };
 tick(4000);
@@ -234,6 +239,8 @@ assert.notEqual(lastPreviewTargets[0].plane, headLayerA, 'head effect binds to a
 assert.equal(lastPreviewTargets[0].plane.material.map, headMap, 'first head layer retains its live verdigris map');
 assert.equal(lastPreviewTargets[1].plane.material.map, secondHeadMap, 'second head layer retains its own live map');
 assert.equal(lastPreviewTargets[0].mask, maskA, 'authored metal pixel mask survives the preview copy');
+assert.equal(lastPreviewTargets[0].plane.parent.matrix.copiedFrom, idleHeadPose,
+  'head art is positioned using the independent neutral pose, not the unposed gameplay root');
 assert.equal(lastPreviewTargets[1].mask, maskB, 'second layer uses its own metal pixel mask');
 const withHead = creationCount; // Changes within a loaded head must invalidate the copied preview, not the live weapon.
 headLayerB.material = new Material({ id: 'new-head-oxidation-map' });
@@ -242,4 +249,19 @@ assert.equal(creationCount, withHead + 1, 'a replaced head finish rebuilds the p
 api.sync('none', 'No weapon equipped');
 tick(5000);
 assert.equal(api.debugSnapshot().flail.parts, 0, 'leaving the slot disposes the preview-only flail copies');
+// A static layered weapon can load its authored overlay AFTER its base weapon.
+// Rebuild only the viewport copies once the new layer appears.
+equippedKey = 'crafted_sword';
+actualPlane = new Mesh(new Geometry(), new Material({ id: 'ready-sword' }));
+api.sync(equippedKey, 'Crafted Sword');
+tick(5500);
+const beforeOverlay = creationCount; // Late source-art loading must be visible without changing equipment slots.
+const overlay = new Mesh(new Geometry(), new Material({ id: 'late-weapon-overlay' }));
+overlay.userData.hobunjiWeaponAssemblyPart = true;
+actualPlane.add(overlay);
+tick(6000);
+assert.equal(creationCount, beforeOverlay + 1, 'late static weapon artwork triggers one viewport rebuild');
+tick(6500);
+assert.equal(creationCount, beforeOverlay + 1, 'loaded static overlays do not cause repeated rebuilds');
+api.sync('none', 'No weapon equipped');
 console.log('Loadout fixed 3D weapon preview integration/lifecycle + multilayer flail checks passed.');
