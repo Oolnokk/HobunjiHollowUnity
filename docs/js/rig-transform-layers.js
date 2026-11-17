@@ -1,14 +1,26 @@
-// Named additive local-transform layers for procedural rigs.
-// Each axis is recomposed from an unmodified base plus the currently owned
-// offsets. A later absolute writer invalidates the older contributions rather
-// than having their inverse applied to an unrelated pose.
+// Shared per-node transform ownership for actor rigs.
+// Absolute animators (IK, facing, authored stances) supply the base pose; named
+// effects contribute removable local position/Euler or quaternion deltas.
+// The player's body composer shares this authority's channel registry, while
+// retaining its render-only transaction and special world-space body solver.
 (function (global) {
   'use strict';
   if (global.RigTransformLayers) return;
 
-  const records = new WeakMap(); // Per Object3D axis records; the registry cannot retain disposed rigs.
-  const stats = { writes: 0, clears: 0, externalTakeovers: 0, invalidInputs: 0, activeLayers: 0, slotsCreated: 0 }; // Mobile diagnostics expose ownership changes without console access.
-  const EPSILON = 1e-7; // Float tolerance for detecting another animation writer's absolute overwrite.
+  const records = new WeakMap(); // Per-node records never keep a disposed rig alive.
+  const leased = new Set(); // Only active leased slots are held for interruption recovery.
+  const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
+  const stats = {
+    writes: 0, clears: 0, externalTakeovers: 0, outOfBandWrites: 0,
+    invalidInputs: 0, activeLayers: 0, slotsCreated: 0, leasesExpired: 0,
+    quaternionWrites: 0, lastOutOfBand: null,
+  }; // In-game diagnostics distinguish stale-pose protection from ordinary releases.
+  const EPSILON = 1e-7;
+  const MAX_LEASE_MS = 5000;
+
+  function nowMs() {
+    return global.performance?.now?.() ?? Date.now();
+  }
 
   function valid(node, property, axis) {
     return !!node && (property === 'position' || property === 'rotation' || property === 'scale')
@@ -28,41 +40,132 @@
     const key = property + '.' + axis;
     let slot = slots.get(key);
     if (!slot && create) {
-      slot = { key, property, axis, base: node[property][axis], applied: node[property][axis], owners: new Map() };
+      slot = { node, key, property, axis, base: node[property][axis],
+        applied: node[property][axis], owners: new Map(), quaternion: false };
       slots.set(key, slot);
-      stats.slotsCreated++; // Cumulative allocations: frame-by-frame reapplication should reuse these slot records.
+      stats.slotsCreated++;
     }
     return slot;
   }
 
+  function quaternionValid(q) {
+    return !!q && Number.isFinite(q.x) && Number.isFinite(q.y)
+      && Number.isFinite(q.z) && Number.isFinite(q.w);
+  }
+
+  function quaternionSlot(node, create) {
+    if (!quaternionValid(node?.quaternion) || typeof node.quaternion.clone !== 'function'
+      || typeof node.quaternion.copy !== 'function' || typeof node.quaternion.multiply !== 'function') return null;
+    const slots = slotsFor(node, create);
+    if (!slots) return null;
+    let slot = slots.get('quaternion');
+    if (!slot && create) {
+      slot = { node, key: 'quaternion', property: 'quaternion', axis: null,
+        base: node.quaternion.clone(), applied: node.quaternion.clone(),
+        owners: new Map(), quaternion: true };
+      slots.set('quaternion', slot);
+      stats.slotsCreated++;
+    }
+    return slot;
+  }
+
+  // q and -q describe the same physical rotation. Angular distance is not
+  // inferred from Euler values, which can wrap or change representation.
+  function rotationMatches(a, b) {
+    const dot = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+    return Math.abs(1 - dot) <= EPSILON;
+  }
+
+  function matches(node, slot) {
+    return slot.quaternion
+      ? rotationMatches(node.quaternion, slot.applied)
+      : Math.abs(node[slot.property][slot.axis] - slot.applied) <= EPSILON;
+  }
+
+  function captureValue(node, slot) {
+    return slot.quaternion ? node.quaternion.clone() : node[slot.property][slot.axis];
+  }
+
+  function restoreValue(node, slot, value) {
+    if (slot.quaternion) node.quaternion.copy(value);
+    else node[slot.property][slot.axis] = value;
+  }
+
+  function noteOutsideWrite(slot) {
+    stats.externalTakeovers++;
+    stats.outOfBandWrites++;
+    stats.lastOutOfBand = {
+      node: String(slot.node.name || slot.node.type || 'unnamed rig node'),
+      property: slot.key,
+      owners: Array.from(slot.owners.keys()),
+    }; // Shown through RigTransformLayers.getDebug() on mobile.
+  }
+
   function reconcile(node, slot) {
-    const current = node[slot.property][slot.axis];
-    if (slot.owners.size === 0) {
-      // The previous additive owner already released this axis. Even a tiny
-      // subsequent IK/damped step is now the new clean baseline, not rounding.
+    const current = captureValue(node, slot);
+    if (!slot.owners.size) {
+      // Without an active effect, the ordinary absolute solver may advance its
+      // pose. That clean solved pose is the base for subsequent contributions.
       slot.base = current;
-      slot.applied = current;
+      slot.applied = slot.quaternion ? current.clone() : current;
       return;
     }
-    if (Math.abs(current - slot.applied) <= EPSILON) return;
-    // A new pose writer already replaced this axis. Do not subtract our old
-    // offset from its replacement and do not revive other stale owners.
-    stats.externalTakeovers++;
+    if (matches(node, slot)) return;
+    // An unregistered writer changed a node WHILE a layer owned it. Its output
+    // may contain an abandoned additive deformation. Never promote that value
+    // into the clean baseline. Revert to the last known clean pose, drop all
+    // stale claims and report the conflict for migration to an explicit owner.
+    noteOutsideWrite(slot);
     stats.activeLayers -= slot.owners.size;
     slot.owners.clear();
-    slot.base = current;
-    slot.applied = current;
+    leased.delete(slot);
+    restoreValue(node, slot, slot.base);
+    slot.applied = slot.quaternion ? slot.base.clone() : slot.base;
   }
 
   function write(node, slot) {
-    let composed = slot.base;
-    for (const offset of slot.owners.values()) composed += offset;
-    node[slot.property][slot.axis] = composed;
-    slot.applied = composed;
+    if (slot.quaternion) {
+      node.quaternion.copy(slot.base);
+      for (const layer of slot.owners.values()) node.quaternion.multiply(layer.value);
+      slot.applied.copy(node.quaternion);
+      stats.quaternionWrites++;
+    } else {
+      let result = slot.base;
+      for (const layer of slot.owners.values()) result += layer.value;
+      node[slot.property][slot.axis] = result;
+      slot.applied = result;
+    }
     stats.writes++;
   }
 
-  function setAxis(node, owner, property, axis, offset) {
+  function leaseDeadline(options) {
+    const ms = Number(options?.leaseMs);
+    return Number.isFinite(ms) && ms > 0 ? nowMs() + Math.min(ms, MAX_LEASE_MS) : null;
+  }
+
+  function trackLease(slot) {
+    if (Array.from(slot.owners.values()).some(value => value.expiresAtMs !== null)) leased.add(slot);
+    else leased.delete(slot);
+  }
+
+  function commitLayer(node, slot, owner, value, options) {
+    reconcile(node, slot);
+    const hadOwner = slot.owners.has(owner);
+    const isIdentity = slot.quaternion
+      ? rotationMatches(value, { x: 0, y: 0, z: 0, w: 1 })
+      : value === 0;
+    if (isIdentity) {
+      if (slot.owners.delete(owner)) stats.activeLayers--;
+    } else {
+      slot.owners.set(owner, { value, expiresAtMs: leaseDeadline(options) });
+      if (!hadOwner) stats.activeLayers++;
+    }
+    trackLease(slot);
+    write(node, slot);
+    return true;
+  }
+
+  function setAxis(node, owner, property, axis, offset, options) {
     if (!valid(node, property, axis) || typeof owner !== 'string' || !owner || !Number.isFinite(offset)) {
       stats.invalidInputs++;
       return false;
@@ -70,30 +173,53 @@
     let slot = slotFor(node, property, axis, false);
     if (!slot && offset === 0) return true;
     if (!slot) slot = slotFor(node, property, axis, true);
-    reconcile(node, slot);
-    if (!slot.owners.has(owner)) stats.activeLayers++;
-    if (offset === 0) {
-      if (slot.owners.delete(owner)) stats.activeLayers--;
-    } else slot.owners.set(owner, offset);
-    write(node, slot);
-    // Keep an empty slot so the same rig axis reuses its Map next frame.
-    // WeakMap ownership does not keep an otherwise disposed Object3D alive.
-    return true;
+    return commitLayer(node, slot, owner, offset, options);
   }
 
-  function setPosition(node, owner, offset) {
-    const x = Number(offset?.x ?? 0); // Local X contribution, committed only after checking all three writable axes.
-    const y = Number(offset?.y ?? 0); // Local Y contribution, validated together with X/Z to avoid partial poses.
-    const z = Number(offset?.z ?? 0); // Local Z contribution, validated together with X/Y to avoid partial poses.
-    if (!offset || typeof owner !== 'string' || !owner
-        || !valid(node, 'position', 'x') || !valid(node, 'position', 'y') || !valid(node, 'position', 'z')
-        || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+  function setPosition(node, owner, offset, options) {
+    const x = Number(offset?.x ?? 0); // X component of this owner's local translation.
+    const y = Number(offset?.y ?? 0); // Y component of this owner's local translation.
+    const z = Number(offset?.z ?? 0); // Z component of this owner's local translation.
+    if (!offset || typeof owner !== 'string' || !owner || !valid(node, 'position', 'x')
+      || !valid(node, 'position', 'y') || !valid(node, 'position', 'z')
+      || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
       stats.invalidInputs++;
       return false;
     }
-    setAxis(node, owner, 'position', 'x', x);
-    setAxis(node, owner, 'position', 'y', y);
-    setAxis(node, owner, 'position', 'z', z);
+    setAxis(node, owner, 'position', 'x', x, options);
+    setAxis(node, owner, 'position', 'y', y, options);
+    setAxis(node, owner, 'position', 'z', z, options);
+    return true;
+  }
+
+  function setQuaternion(node, owner, delta, options) {
+    if (typeof owner !== 'string' || !owner || !quaternionValid(delta)) {
+      stats.invalidInputs++;
+      return false;
+    }
+    const slot = quaternionSlot(node, true);
+    if (!slot || typeof delta.clone !== 'function') {
+      stats.invalidInputs++;
+      return false;
+    }
+    return commitLayer(node, slot, owner, delta.clone(), options);
+  }
+
+  // An absolute solver that intentionally takes over a managed axis must use
+  // this explicit handoff; no unknown mutation can change a claimed baseline.
+  function setAbsoluteBase(node, property, axis, value) {
+    const slot = property === 'quaternion' ? quaternionSlot(node, true)
+      : slotFor(node, property, axis, true);
+    if (!slot || !(slot.quaternion ? quaternionValid(value) : Number.isFinite(value))) {
+      stats.invalidInputs++;
+      return false;
+    }
+    stats.activeLayers -= slot.owners.size;
+    stats.clears += slot.owners.size;
+    slot.owners.clear();
+    leased.delete(slot);
+    slot.base = slot.quaternion ? value.clone() : value;
+    write(node, slot);
     return true;
   }
 
@@ -101,19 +227,19 @@
     if (!node || typeof owner !== 'string' || !owner) return false;
     const slots = slotsFor(node, false);
     if (!slots) return false;
-    let cleared = false;
-    for (const [key, slot] of slots) {
+    let changed = false;
+    for (const slot of slots.values()) {
       if (!slot.owners.has(owner)) continue;
       reconcile(node, slot);
       if (slot.owners.delete(owner)) {
         stats.activeLayers--;
         stats.clears++;
+        trackLease(slot);
         write(node, slot);
-        cleared = true;
+        changed = true;
       }
-      // Empty records remain cached on this node for repeated gait/pose releases.
     }
-    return cleared;
+    return changed;
   }
 
   function clearAll(node) {
@@ -122,19 +248,50 @@
     let changed = false;
     for (const slot of slots.values()) {
       reconcile(node, slot);
-      if (!slot.owners.size) continue;
-      stats.clears += slot.owners.size;
-      stats.activeLayers -= slot.owners.size;
-      slot.owners.clear();
-      write(node, slot);
-      changed = true;
+      if (slot.owners.size) {
+        stats.clears += slot.owners.size;
+        stats.activeLayers -= slot.owners.size;
+        slot.owners.clear();
+        leased.delete(slot);
+        write(node, slot);
+        changed = true;
+      }
     }
     slots.clear();
     return changed;
   }
 
-  global.RigTransformLayers = Object.freeze({
-    setAxis, setPosition, clear, clearAll,
-    getDebug() { return { ...stats }; },
+  function expireStale(timeMs = nowMs()) {
+    let removed = 0;
+    for (const slot of Array.from(leased)) {
+      reconcile(slot.node, slot);
+      for (const [owner, layer] of slot.owners) {
+        if (layer.expiresAtMs == null || layer.expiresAtMs > timeMs) continue;
+        slot.owners.delete(owner);
+        stats.activeLayers--;
+        stats.clears++;
+        stats.leasesExpired++;
+        removed++;
+      }
+      trackLease(slot);
+      if (removed) write(slot.node, slot);
+    }
+    return removed;
+  }
+
+  function channelStore(name) {
+    const key = String(name || '');
+    if (!key) return null;
+    if (!channelStores.has(key)) channelStores.set(key, new Map());
+    return channelStores.get(key);
+  }
+
+  const compositor = Object.freeze({
+    setAxis, setPosition, setQuaternion, setAbsoluteBase,
+    clear, clearAll, expireStale, channelStore,
+    getDebug() { return { ...stats, leasedSlots: leased.size }; },
   });
+  // Both names are compatibility APIs over ONE ownership authority.
+  global.ActorRigCompositor = compositor;
+  global.RigTransformLayers = compositor;
 })(window);
