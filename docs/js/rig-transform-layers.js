@@ -11,6 +11,10 @@
   const axisDeltaScratch = new WeakMap(); // Reused local axis-angle quaternions avoid per-frame allocations.
   const leased = new Set(); // Only active leased slots are held for interruption recovery.
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
+  const absoluteClaims = new WeakMap(); // Node -> named absolute position/quaternion/scale owner; action sessions hold their own references.
+  let activeAbsoluteClaims = 0; // Mobile ownership count used to spot an interrupted actor pose that never released.
+  const absoluteStats = { captures: 0, restored: 0, skipped: 0, conflicts: 0, invalidated: 0 }; // Debug counters for paired-pose handoffs.
+
   const stats = {
     writes: 0, clears: 0, externalTakeovers: 0, outOfBandWrites: 0,
     invalidInputs: 0, activeLayers: 0, slotsCreated: 0, leasesExpired: 0,
@@ -322,6 +326,127 @@
     return removed;
   }
 
+
+  // Scoped, ABSOLUTE authored pose ownership for paired actions, captures, and
+  // choreography. Unlike additive layers these actors move to complete world
+  // poses. A session keeps the pose before the action, stamps only the values
+  // written by its own solver, and restores only if the rig and its last pose
+  // still match. New owners never get overwritten by late cancellation.
+  function createAbsoluteSession(owner) {
+    if (typeof owner !== 'string' || !owner) return null;
+    const entries = []; // Small, stable set of node/property claims captured once at action start.
+    let released = false; // Guards repeated cancellation and partial-start cleanup.
+    let valid = true; // Turns false on unclaimed nodes, parent replacement, or external takeover.
+
+    function propertyState(node, property) {
+      const value = node?.[property];
+      return value && typeof value.clone === 'function'
+        && typeof value.copy === 'function'
+        && ['position', 'quaternion', 'scale'].includes(property)
+        ? value : null;
+    }
+
+    function equivalent(a, b, property) {
+      if (property === 'quaternion') return rotationMatches(a, b);
+      return Math.abs(a.x - b.x) <= EPSILON
+        && Math.abs(a.y - b.y) <= EPSILON
+        && Math.abs(a.z - b.z) <= EPSILON;
+    }
+
+    function capture(node, properties = ['position', 'quaternion']) {
+      if (released || !valid || !node || !Array.isArray(properties) || !properties.length) return false;
+      const seen = new Set(); // Duplicated property names cannot create duplicate claims.
+      for (const property of properties) {
+        if (seen.has(property)) continue;
+        seen.add(property);
+        const current = propertyState(node, property);
+        if (!current) return false;
+        const claims = absoluteClaims.get(node);
+        const existing = claims?.get(property);
+        if (existing && existing.session !== session) {
+          absoluteStats.conflicts++;
+          return false; // Never silently steal a locked pose from another active action.
+        }
+      }
+      let claims = absoluteClaims.get(node);
+      if (!claims) { claims = new Map(); absoluteClaims.set(node, claims); }
+      for (const property of seen) {
+        if (claims.has(property)) continue;
+        const current = node[property];
+        const entry = {
+          session, node, property, parent: node.parent || null,
+          base: current.clone(), applied: current.clone(),
+        }; // The authored baseline and most recent action output stay separate.
+        entries.push(entry);
+        claims.set(property, entry);
+        activeAbsoluteClaims++;
+        absoluteStats.captures++;
+      }
+      return true;
+    }
+
+    function entryStillOwned(entry) {
+      const claim = absoluteClaims.get(entry.node)?.get(entry.property);
+      if (claim !== entry || (entry.node.parent || null) !== entry.parent) return false;
+      const current = propertyState(entry.node, entry.property);
+      return !!current && equivalent(current, entry.applied, entry.property);
+    }
+
+    function owns() {
+      if (released || !valid) return false;
+      for (const entry of entries) {
+        if (!entryStillOwned(entry)) {
+          valid = false;
+          absoluteStats.invalidated++;
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function stamp() {
+      if (released || !valid) return false;
+      for (const entry of entries) {
+        const value = propertyState(entry.node, entry.property);
+        if (!value || absoluteClaims.get(entry.node)?.get(entry.property) !== entry
+          || (entry.node.parent || null) !== entry.parent) {
+          valid = false;
+          absoluteStats.invalidated++;
+          return false;
+        }
+        entry.applied.copy(value); // Constant-allocation frame sampling: retain one mutable snapshot per property.
+      }
+      return true;
+    }
+
+    function release() {
+      if (released) return { restored: 0, skipped: 0 };
+      released = true;
+      let restored = 0, skipped = 0;
+      for (const entry of entries) {
+        const claims = absoluteClaims.get(entry.node);
+        if (claims?.get(entry.property) !== entry) { skipped++; continue; }
+        const owned = entryStillOwned(entry); // Test before dropping the claim.
+        claims.delete(entry.property);
+        activeAbsoluteClaims--;
+        if (!claims.size) absoluteClaims.delete(entry.node);
+        if (owned) {
+          entry.node[entry.property].copy(entry.base);
+          restored++;
+        } else {
+          skipped++; // A newly authored pose or rebuilt parent must keep its current transform.
+        }
+      }
+      absoluteStats.restored += restored;
+      absoluteStats.skipped += skipped;
+      entries.length = 0;
+      return { restored, skipped };
+    }
+
+    const session = Object.freeze({ capture, owns, stamp, release, owner });
+    return session;
+  }
+
   function channelStore(name) {
     const key = String(name || '');
     if (!key) return null;
@@ -331,8 +456,8 @@
 
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
-    clear, clearAll, expireStale, channelStore,
-    getDebug() { return { ...stats, leasedSlots: leased.size }; },
+    clear, clearAll, expireStale, channelStore, createAbsoluteSession,
+    getDebug() { return { ...stats, ...absoluteStats, activeAbsoluteClaims, leasedSlots: leased.size }; },
   });
   // Both names are compatibility APIs over ONE ownership authority.
   global.ActorRigCompositor = compositor;
