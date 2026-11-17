@@ -169,6 +169,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
         riderHandY:rider.y-floorY+riderScale*handY,groundHandY:handY,
         expectedAboveFloor,poseY,sinkWorld,orbitY:axes.y,orbitDiameter:orbit?.diameter??null,orbitScale:orbit?.scale??null,heightRatio:height.heightRatio,riderScale, // Mobile/CI diagnostics expose WHY the raised weapon is correctly mounted.
+        openingBudgets:[omg,pora].map(c=>({max:c.def.maxStamina,cost:c.def.attackStaminaCost})), // Capture the real spawn-time budget before combat; diagnostics catch impossible attack costs immediately.
         live:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
     };});
     // Retry if a world reset removes the fighters while the smoke is running.
@@ -196,6 +197,8 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         spawned=await page.evaluate(()=>window.__spawnTribeQa());
         if(spawned.holderToRider==null)continue; // Wiped between spawn and measurement.
         assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
+        assert(spawned.openingBudgets.every(({max,cost})=>Number.isFinite(max)&&Number.isFinite(cost)&&cost>0&&max>=cost*2),
+          'tribe duelists must spawn with capacity for two opening attacks: '+JSON.stringify(spawned.openingBudgets)); // Fail before three 30s timeouts when stamina scaled below a weapon cost.
         assert.equal(spawned.species,'omgurku');
         assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
         assert.equal(spawned.enemyClass,'omgurku-hunter');

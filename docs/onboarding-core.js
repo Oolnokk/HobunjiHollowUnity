@@ -529,7 +529,7 @@
       toolMastery: {},
       weaponFamilyProficiency: {}, // Stores character-wide kill-earned proficiency by polearms, blades, axes, bludgeons and improvised weapons.
       toolPlating: {},
-      toolReinforcement: {},
+      toolReinforcement: Object.fromEntries(['hoe_nativeCopper', 'hatchet_nativeCopper', 'fishingmace_nativeCopper', 'fishingspear_nativeCopper', 'pickshovel_nativeCopper'].map(itemKey => [itemKey, { metalKey: 'nativeCopper', grade: 0 }])), // New-character tools begin at Copper I, the new 0.75x minimum.
       motesOfProwess: 0,
     };
   }

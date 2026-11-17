@@ -69,8 +69,9 @@ function markup(size) {
           window.__foundryDeps = {
             inventory: window.__inventory, getGearInventory: () => window.__gear,
             TOOL_ITEM_DEFS: { [itemKey]: definition }, UNLOCKED_TOOL_SHAPES: ['shaft', 'head'],
-            VERDIGRIS_METAL_KEYS: ['copper'], METAL_DEFS: { copper: { label: 'Copper', hex: '#b87333' } },
+            VERDIGRIS_METAL_KEYS: ['copper'], METAL_DEFS: { copper: { tier: 1, label: 'Copper', hex: '#b87333' } },
             metalBarItemKey: metal => 'bar_' + metal, clampInventoryStack() {}, saveGearInventory() {},
+            setToolReinforcement(item, metal, grade) { if (grade !== 0 || metal !== 'copper') throw Error('New Foundry weapons must start at Copper I'); }, // Real smith-grade save adapter is otherwise outside the isolated browser fixture.
             buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData() {},
             showToast: (message, ok) => window.__toasts.push({ message, ok }),
             rerender() { // Production smith UI clears this exact list before refreshing, so selectors rebuild too.
@@ -80,6 +81,7 @@ function markup(size) {
             },
           };
         }, { itemKey, longName });
+        await page.addScriptTag({ path: path.join(root, 'docs/js/metal-reinforcement.js') }); // Match real gameplay load order and use real tier-aware bar costs.
         await page.addScriptTag({ path: path.join(root, 'docs/js/foundry-shop.js') });
         await page.evaluate(() => {
           window.FoundryShop.init(window.__foundryDeps);
