@@ -21,9 +21,18 @@
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
-  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
+  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, lastTrimMs: 0, slowestTrimMs: 0, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
+
+  function finishToolIcon(output, startedAt) {
+    const url = output.toDataURL('image/png');
+    const elapsedMs = Math.round((performance.now() - startedAt) * 10) / 10; // Mobile-visible measurement includes PNG encoding, not just the scan.
+    toolIconDebug.lastTrimMs = elapsedMs;
+    toolIconDebug.slowestTrimMs = Math.max(toolIconDebug.slowestTrimMs, elapsedMs);
+    return url;
+  }
 
   function squareToolIcon(source, options = {}) {
+    const startedAt = performance.now(); // Profiles the cold tool-thumbnail path without per-frame instrumentation.
     const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
     const width = image.width; // Source dimensions bound the alpha scan.
     const height = image.height; // Source dimensions bound the alpha scan.
@@ -35,11 +44,18 @@
     const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
     let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
     for (let y = 0; y < height; y++) {
+      let rowLeft = width, rowRight = -1; // Track bounds once per occupied row, not with four Math.min/max calls per opaque pixel.
+      const alphaStart = y * width * 4 + 3; // Alpha-byte offset into this row of the existing 4-channel image buffer.
       for (let x = 0; x < width; x++) {
-        if (!pixels[(y * width + x) * 4 + 3]) continue;
-        left = Math.min(left, x); right = Math.max(right, x);
-        top = Math.min(top, y); bottom = Math.max(bottom, y);
+        if (!pixels[alphaStart + x * 4]) continue;
+        if (x < rowLeft) rowLeft = x;
+        rowRight = x;
       }
+      if (rowRight < 0) continue;
+      if (rowLeft < left) left = rowLeft;
+      if (rowRight > right) right = rowRight;
+      if (y < top) top = y;
+      bottom = y;
     }
     if (right < left) throw new Error('Tool sprite contains no opaque pixels');
     const side = right - left + 1; // Opaque width determines the square; tall sprites crop above its bottom edge.
@@ -52,12 +68,12 @@
       const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
       const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
       outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
-      return output.toDataURL('image/png');
+      return finishToolIcon(output, startedAt);
     }
     outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
       0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
     toolIconDebug.lastFrame = { left, top, right, bottom, side };
-    return output.toDataURL('image/png');
+    return finishToolIcon(output, startedAt);
   }
 
   function renderToolIcon(parent, def) {
