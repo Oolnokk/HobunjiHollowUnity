@@ -50,7 +50,7 @@
     if (_banditConfigPromise) return _banditConfigPromise;
     _banditConfigPromise = (async () => {
       try {
-        const r = await fetch('config/bandits/bandit-gang-config.json');
+        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261116tier8power075');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return await r.json();
       } catch (e) {
@@ -842,7 +842,8 @@
 
   function banditMasteryFor(cfg, rank, tier) {
     const base = Number(cfg?.masteryBaseByRank?.[rank] ?? 0);
-    return deps.clamp(Math.round(base + tier), 0, 5);
+    const tierBonus = cfg?._preserveMineEnemyTiers ? tier : (window.EnemyTierProgression?.progressionStep(tier) ?? Math.floor(Math.max(0, tier) / 2)); // Ghoul mine-floor mastery remains unchanged.
+    return deps.clamp(Math.round(base + tierBonus), 0, 5);
   }
 
   // A bandit's actual held weapon -- see weaponMetalTierRangeByRank's
@@ -867,7 +868,7 @@
   // The rank/tier weapon material roll, shared by the weapon itself and by rank metal armor (which must match it before the portrait is baked).
   function rollBanditWeaponMetalKey(cfg, rank, tier) {
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
-    const bonusT = tier;
+    const bonusT = cfg?._preserveMineEnemyTiers ? tier : (window.EnemyTierProgression?.progressionStep(tier) ?? Math.floor(Math.max(0, tier) / 2)); // One metal ceiling increase per TWO danger tiers, preserving the former upper bound.
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
@@ -883,7 +884,8 @@
     const rolledMetalKey = configuredMetalKey ? null : rollBanditWeaponMetalKey(cfg, rank, tier);
     const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
-    return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
+    const gradedMultiplier = cfg?._preserveMineEnemyTiers ? null : window.EnemyTierProgression?.weaponMultiplier(metalKey, tier, deps.METAL_DEFS, deps.VERDIGRIS_METAL_KEYS); // Humanoid weapon damage uses exactly the same I-IV power grades as smithing.
+    return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: gradedMultiplier ?? deps.metalDmgMultiplier(metalKey) };
   }
 
   function banditRangedWeaponFor(cfg, rank) {
@@ -1036,7 +1038,7 @@
         ? tierRankMultipliers[Math.min(Math.max(0, tier), tierRankMultipliers.length - 1)]
         : (cfg?.statWeakenMultiplierByRank?.[rank] ?? 1),
     );
-    const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
+    const tierMul = 1 + tier * (cfg?._preserveMineEnemyTiers ? 0.12 : Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0)); // Mine Ghouls retain their authored ten-floor curve.
     const statMul = weaken * tierMul;
     const weapon = banditWeaponFor(cfg, rank, tier);
     const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
@@ -1051,8 +1053,8 @@
       hostile: true, liveBirth: true,
       maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
       maxStamina: Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul)),
-      moveSpeed: 118 + tier * 4,
-      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 5,
+      moveSpeed: 118 + tier * (cfg?._preserveMineEnemyTiers ? 4 : 2), // Existing ten-floor ghoul movement stays as before.
+      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * (cfg?._preserveMineEnemyTiers ? 5 : 2.5), // Ghoul mine movement remains on its independent floor scale.
       attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
       attackRangePx: deps.TILE * BANDIT_ATTACK_RANGE_TILES * shapeStats.range,
       attackHalfConeRad: Math.min(Math.PI, BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range),
@@ -1060,11 +1062,12 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
-      banditFlaskPotencyTier: isFlasker ? Math.max(0, Math.min(4, tier)) : 0, // Used for both infinite AI throws and the matching corpse drops.
+      banditFlaskPotencyTier: isFlasker ? Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7)) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
@@ -2967,10 +2970,13 @@
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
+    const mineEnemy = opts.extra?.isMineGhoul === true; // True only for the independently balanced ten-floor Ghoul hierarchy.
+    tier = mineEnemy ? Math.max(1, Math.min(10, Math.floor(Number(tier) || 1))) : (window.EnemyTierProgression?.clampTier(tier) ?? Math.max(0, Math.min(7, Math.floor(Number(tier) || 0)))); // Validate before combat uses the tier.
     await window.EnemyLoadoutRules?.ready;
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
