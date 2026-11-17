@@ -166,6 +166,17 @@
   const VOORG_ASS_SPECIES = 'voorg-ass'; // Exterior-only herd species; deliberately excluded from cavern den population selection.
   const VOORG_ASS_HERD_MOTHER_SPECIES = 'voorg-ass-herd-mother'; // Uses Voorg-Ass art/genetics but carries the herd's recoverable babies.
   const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Added to the Herd-Mother corpse only after she has been killed.
+  const MOOT_SPECIES = 'moot'; // Shares the Northern Cliffs' daily rotating herd slots with Voorg-Ass.
+  const MOOT_HERD_MOTHER_SPECIES = 'moot-herd-mother'; // Exterior mother variant with Moot art, genes, and corpse products.
+  const MOOT_BABY_ITEM_KEY = 'mootBaby'; // The same deployable farm baby item already registered by MootRegistration.
+  const ROAMING_HERD_MOTHERS = Object.freeze({ // Single species-specific mapping used by wild mothers, their carried babies, and the nursery audit.
+    [VOORG_ASS_SPECIES]: Object.freeze({ kind: VOORG_ASS_HERD_MOTHER_SPECIES, babyItemKey: VOORG_ASS_BABY_ITEM_KEY }),
+    [MOOT_SPECIES]: Object.freeze({ kind: MOOT_HERD_MOTHER_SPECIES, babyItemKey: MOOT_BABY_ITEM_KEY }),
+  });
+  function roamingSpeciesFor(creature) { // Normalizes the variant only for renderer/rig lookup and herd census; keeps its corpse identity intact.
+    const kind = creature?.creatureKey;
+    return kind === VOORG_ASS_HERD_MOTHER_SPECIES ? VOORG_ASS_SPECIES : kind === MOOT_HERD_MOTHER_SPECIES ? MOOT_SPECIES : kind;
+  }
   const ROAMING_HERD_SIZE_MIN = 8;
   const ROAMING_HERD_SIZE_MAX = 12;
   const ROAMING_HERD_WANDER_TILES = 7; // Passed onto each member so game.js's ordinary wanderTick keeps the herd mobile over a broad cliff territory.
@@ -1288,16 +1299,19 @@
     };
   }
 
-  function attachVoorgBabiesToMother(mother, babyCount) {
+  function attachRoamingHerdBabiesToMother(mother, babyCount) {
+    const speciesKey = roamingSpeciesFor(mother); // Controls the carrier's own saddle position, size ratios and genotype-tinted artwork.
+    if (!ROAMING_HERD_MOTHERS[speciesKey]) return 0;
+    for (const prior of mother?._carriedBabyVisuals || []) prior?.parent?.remove?.(prior); // Prevent duplicate babies on stream-out/stream-in or repeated visual promotion.
     const parent = mother?.avatarRef?.group;
     const front = mother?.avatarRef?.frontPlane;
     const back = mother?.avatarRef?.backPlane;
     const THREE_NS = window.THREE;
     if (!parent || !front || !back || !THREE_NS?.Group) return 0;
 
-    const saddle = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[VOORG_ASS_SPECIES]?.anchors?.saddle?.position || { x: 0, y: 0.12, z: 0 };
-    const largeScale = window.CreatureGenetics?.creatureSizeScale?.(VOORG_ASS_SPECIES, 'large') || { x: 1, y: 1 };
-    const smallScale = window.CreatureGenetics?.creatureSizeScale?.(VOORG_ASS_SPECIES, 'small') || { x: 0.28, y: 0.28 };
+    const saddle = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[speciesKey]?.anchors?.saddle?.position || { x: 0, y: 0.12, z: 0 };
+    const largeScale = window.CreatureGenetics?.creatureSizeScale?.(speciesKey, 'large') || { x: 1, y: 1 };
+    const smallScale = window.CreatureGenetics?.creatureSizeScale?.(speciesKey, 'small') || { x: 0.28, y: 0.28 };
     const ratioX = (Number(smallScale.x) || 0.28) / Math.max(0.001, Number(largeScale.x) || 1); // Converts the adult parent scale into the authored small-class visual size.
     const ratioY = (Number(smallScale.y) || 0.28) / Math.max(0.001, Number(largeScale.y) || 1); // Used independently because creature size profiles can be non-uniform.
     const offsets = [
@@ -1311,8 +1325,9 @@
     for (let i = 0; i < Math.max(0, Math.min(offsets.length, babyCount)); i++) {
       const [ox, oy, oz, yaw] = offsets[i];
       const baby = new THREE_NS.Group();
-      baby.name = `voorg_ass_carried_baby_${i + 1}`;
-      baby.userData.voorgAssCarriedBaby = true;
+      baby.name = `${speciesKey.replace(/-/g, '_')}_carried_baby_${i + 1}`;
+      baby.userData.herdCarriedBaby = true; // Both herd species use this generic marker for inspection.
+      if (speciesKey === VOORG_ASS_SPECIES) baby.userData.voorgAssCarriedBaby = true; // Preserve the original Voorg-Ass diagnostic marker.
       baby.add(front.clone(), back.clone()); // Shares the mother's geometry/material maps, so genotype tint/animation updates cost no new texture composites.
       baby.position.set((Number(saddle.x) || 0) + ox, (Number(saddle.y) || 0.12) + oy, (Number(saddle.z) || 0) + oz);
       baby.rotation.y = yaw;
@@ -1335,7 +1350,8 @@
     const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Large Moot/Voorg-Ass herds; only dedicated foragers (Nazgraku) use 3-5 actors.
     const zoneData = deps.zoneLayouts.get(zoneId);
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
-    const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
+    const motherConfig = ROAMING_HERD_MOTHERS[speciesKey] || null; // Only supported large roaming species receive a carrier.
+    const motherIndex = motherConfig ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Moot or Voorg-Ass herd.
     const motherBabyCount = motherIndex >= 0 ? 2 + Math.floor(deps.rnd() * 3) : 0;
     const herdGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(speciesKey) || null; // One random bloodline per herd also shares the renderer's genotype/frame cache.
     if (herdGenotype) herdGenotype.sizeClass = 'large'; // Wild herd adults retain their authored Large size.
@@ -1352,7 +1368,7 @@
       const sleepRadius = deps.TILE * (0.25 + (i % 4) / 4 * ROAMING_HERD_SLEEP_RADIUS_TILES);
       const genotype = herdGenotype ? JSON.parse(JSON.stringify(herdGenotype)) : null; // Independent instance data preserves the shared genes without cross-animal mutation.
       const isMother = i === motherIndex;
-      const creatureKey = isMother ? VOORG_ASS_HERD_MOTHER_SPECIES : speciesKey;
+      const creatureKey = isMother ? motherConfig.kind : speciesKey;
       const opts = {
         homeX: anchor.x + Math.cos(formationAngle) * homeOffset,
         homeY: anchor.y + Math.sin(formationAngle) * homeOffset,
@@ -1372,13 +1388,13 @@
         ...(isMother ? {
           isHerdMother: true,
           herdMotherLabel: 'Herd-Mother',
-          carriedBabyItemKey: VOORG_ASS_BABY_ITEM_KEY,
+          carriedBabyItemKey: motherConfig.babyItemKey,
           carriedBabyCount: motherBabyCount,
         } : {}),
       };
       const creature = deps.makeCreatureEntity(creatureKey, x, y, opts);
       if (!creature) continue;
-      if (isMother) attachVoorgBabiesToMother(creature, motherBabyCount);
+      if (isMother) attachRoamingHerdBabiesToMother(creature, motherBabyCount);
       deps.hostileObjects.add(creature);
       spawned++;
     }
@@ -1549,8 +1565,8 @@
       const exempt = kind === 'tzatzul' || kind.startsWith('skeeri');
       const family = window.CreatureGenetics?.SPECIES_ALIAS?.[kind] || kind;
       const mother = mothers[kind];
-      const guardianKey = mother?.creatureKey || (kind === 'voorg-ass' ? 'voorg-ass-herd-mother'
-        : ((otherOffspring[kind] || exempt) ? kind : null)); // Herd-Mothers are a separate live creature; nest/hive guardians use their own species.
+      const guardianKey = mother?.creatureKey || ROAMING_HERD_MOTHERS[kind]?.kind
+        || ((otherOffspring[kind] || exempt) ? kind : null); // Both roaming-herd species audit their real mother variant; den/nest guardians remain unchanged.
       const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
       const registered = !!deps?.CREATURE_DB?.[kind];
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
@@ -2104,7 +2120,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
-    restoreHerdMotherVisuals: c => c?.isHerdMother ? attachVoorgBabiesToMother(c, c.carriedBabyCount) : 0, // Used by the canonical creature visual promotion path.
+    restoreHerdMotherVisuals: c => c?.isHerdMother ? attachRoamingHerdBabiesToMother(c, c.carriedBabyCount) : 0, // Rebuilds either species' babies after streamed visual promotion.
     denNestCensus,
     roamingHerdCensus: (zoneId = deps.getCurrentArea()) => {
       const zdef = deps.EXTERIOR_ZONES?.[zoneId] || {};
@@ -2117,7 +2133,7 @@
         for (const c of deps.hostileObjects) {
           if (c.herdKey !== herdKey || c.health <= 0) continue;
           adults++;
-          liveSpecies.add(c.isHerdMother ? VOORG_ASS_SPECIES : c.creatureKey);
+          liveSpecies.add(roamingSpeciesFor(c)); // Moot Herd-Mothers count as Moots, not as Voorg-Asses.
           if (c.isHerdMother) { mothers++; babies += Math.max(0, Number(c.carriedBabyCount) || 0); }
           if (c._animalSleeping) sleeping++;
         }

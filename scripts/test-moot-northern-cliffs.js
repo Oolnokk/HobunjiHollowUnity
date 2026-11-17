@@ -54,7 +54,7 @@ assert(blinkCoverage < 0.25, 'Moot blinking must not flash an opaque rectangle o
 const config = {
   game: {
     livestock: { itemKinds: {}, animalWidths: {}, diet: {}, resources: {} },
-    wildlife: { denMothers: { moot: { nestItemKey: 'staleMootEgg' } } },
+    wildlife: { denMothers: { moot: { nestItemKey: 'staleMootEgg' }, 'moot-herd-mother': { nestItemKey: 'staleMootMotherEgg' } } },
     creatureGenetics: { palettes: { default: [
       { id: 'brown', name: 'Brown', hex: '#6a412e', weight: 3 },
       { id: 'cream', name: 'Cream', hex: '#c7aa77', weight: 3 },
@@ -80,6 +80,7 @@ assert(api, 'Moot registration script must export the shared runtime');
 assert.equal(config.game.livestock.itemKinds.mootBaby, 'moot', 'Ranch baby must become deployable before game startup');
 assert.equal(config.game.livestock.diet.moot, 'prey', 'Moots eat ordinary plant fodder');
 assert.equal(config.game.wildlife.denMothers.moot, undefined, 'Moots must not use cave Den-Mothers');
+assert.equal(config.game.wildlife.denMothers['moot-herd-mother'], undefined, 'Moot Herd-Mothers must not become cavern guardians');
 
 const creatureDb = { 'uumkaoii-wild': {
   label: 'Wild Uumkao\'ii', hostile: false, speed: 1.25, health: 20,
@@ -96,13 +97,18 @@ const inventoryItems = []; // Must receive meat/hide exactly once even across re
 const deps = {
   CREATURE_DB: creatureDb,
   EXTERIOR_ZONES: { map_northern_cliffs: zone, map_western_slope: { roamingForagerSpecies: [] } },
-  DEN_MOTHER_DEFS: { moot: { creatureKey: 'moot' } },
+  DEN_MOTHER_DEFS: { moot: { creatureKey: 'moot' }, 'moot-herd-mother': { creatureKey: 'moot-herd-mother' } },
   ITEM_DEFS: itemDefs, inventoryItems,
 }; // Same injected-dependency shape the real wildlife init already receives.
 
 assert.equal(api.register(deps), true);
 assert.equal(api.register(deps), true, 'Repeated registration is idempotent');
 assert.equal(creatureDb.moot.label, 'Moot');
+assert.equal(api.HERD_MOTHER_KIND, 'moot-herd-mother');
+assert.equal(creatureDb['moot-herd-mother']?.label, 'Herd-Mother', 'Moot mother is a real spawnable creature variant');
+assert.equal(creatureDb['moot-herd-mother']?.defaultSizeClass, 'large');
+assert.equal(creatureDb['moot-herd-mother']?.lootPool, 'creature_moot', 'Mother yields normal Moot products alongside recovered babies');
+assert.deepEqual(creatureDb['moot-herd-mother']?.sprites, creatureDb.moot.sprites, 'Mother shares adult Moot animation frames');
 assert.equal(creatureDb.moot.hostile, false);
 assert.equal(creatureDb.moot.lootPool, 'creature_moot');
 assert.equal(creatureDb.moot.defaultSizeClass, 'large');
@@ -124,6 +130,7 @@ assert.equal(zone.roamingHerdCount, 2, 'Two herd slots now rotate between Voorg-
 assert.deepEqual(JSON.parse(JSON.stringify(zone.denSpecies)), ['grehlr']);
 assert.deepEqual(JSON.parse(JSON.stringify(zone.herbivoreSpecies)), ['uumkaoii-wild']);
 assert.equal(deps.DEN_MOTHER_DEFS.moot, undefined);
+assert.equal(deps.DEN_MOTHER_DEFS['moot-herd-mother'], undefined);
 assert.equal(deps.EXTERIOR_ZONES.map_western_slope.roamingForagerSpecies.length, 0, 'Moot does not leak to other regions');
 assert.equal(itemDefs.mootBaby.cat, 'livestock');
 assert(itemDefs.mootBaby.tags.includes('Baby'));
@@ -134,6 +141,7 @@ assert(log.some(x => /\[moot\].*northernCliffs=ok.*herds=\[voorg-ass,moot\]/.tes
 
 vm.runInContext(read('docs/js/creature-genetics.js'), context, { filename: 'creature-genetics.js' });
 windowStub.CreatureGenetics.init({ CREATURE_DB: creatureDb, clamp: (v, a, b) => Math.max(a, Math.min(b, v)) });
+assert.equal(windowStub.CreatureGenetics.SPECIES_ALIAS['moot-herd-mother'], 'moot', 'Mother inherits Moot recolor/eye/rig identity');
 const parentA = windowStub.CreatureGenetics.makeDefaultGenotype('moot'); // Genotype uses the generic species color inheritance, even with zero authored patterns.
 const parentB = windowStub.CreatureGenetics.makeDefaultGenotype('moot');
 const child = windowStub.CreatureGenetics.crossOffspring(parentA, parentB, 'moot');
@@ -157,4 +165,4 @@ assert.match(authorSource, /REQUIRED_KINDS[^\n]*'moot'/, 'Moot is part of the au
 assert.match(authorSource, /SEED_SOURCES[^\n]*moot: 'uumkaoii'/, 'Moot rig values are editable as a borrowed first-pass seed');
 
 
-console.log('PASS Moot Northern Cliffs wildlife, five sprites, farm baby, inherited coat, drops and mobile diagnostics');
+console.log('PASS Moot wild/farm registry, live Herd-Mother, eye sprites, inherited coat, drops and mobile diagnostics');

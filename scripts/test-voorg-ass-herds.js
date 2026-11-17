@@ -196,7 +196,7 @@ const corpseContext = vm.createContext({
     FarmAnimals: { queueItemGenotype: (key, genotype) => recoveredGenotypes.push({ key, genotype }) },
   },
   inventory,
-  ITEM_DEFS: { voorgAssBaby: { label: 'Voorg-Ass Baby' } },
+  ITEM_DEFS: { voorgAssBaby: { label: 'Voorg-Ass Baby' }, mootBaby: { label: 'Baby Moot' } },
   itemIconForKey: () => 'baby',
   corpseObjects: new Set(),
   despawnCreature() {},
@@ -221,6 +221,17 @@ assert.equal(inventory.voorgAssBaby, 99);
 assert.equal(recoveredGenotypes.length, originalBabyCount + 1, 'only accepted babies receive metadata near the inventory cap');
 corpseContext.makeCorpseWorldObject({ ...mother, carriedBabyCount: 4 }).onAction('obj_loot_corpse');
 assert.equal(recoveredGenotypes.length, originalBabyCount + 1, 'a full bag cannot leave phantom baby genotypes');
+
+const mootGenotype = { sizeClass: 'large', base: { color: '#9CBD9E', copies: 2 } }; // One known wild Moot bloodline for the shared corpse-recovery path.
+const mootMother = { ...mother, creatureKey: 'moot-herd-mother', carriedBabyItemKey: 'mootBaby', carriedBabyCount: 3, genotype: mootGenotype }; // Exercises the actual generic corpse handler with the new species.
+const beforeMootRecovery = recoveredGenotypes.length; // Asserts the recovery queue grows only by accepted Moot babies.
+const mootCorpse = corpseContext.makeCorpseWorldObject(mootMother);
+assert.equal(mootCorpse.onAction('obj_loot_corpse').ok, true);
+assert.equal(inventory.mootBaby, 3, 'Moot mother corpse grants the exact three carried babies');
+assert.deepEqual(recoveredGenotypes.slice(beforeMootRecovery).map(entry => entry.key), ['mootBaby', 'mootBaby', 'mootBaby']);
+assert(recoveredGenotypes.slice(beforeMootRecovery).every(entry => JSON.stringify(entry.genotype) === JSON.stringify(mootGenotype) && entry.genotype !== mootGenotype), 'every recovered Moot baby carries an independent clone of its herd genotype');
+mootCorpse.onAction('obj_loot_corpse');
+assert.equal(inventory.mootBaby, 3, 'repeated Moot corpse interaction cannot duplicate offspring');
 
 const census = windowStub.WildlifeSpawn.roamingHerdCensus(zoneId);
 assert.equal(census.configuredHerds, 2);
