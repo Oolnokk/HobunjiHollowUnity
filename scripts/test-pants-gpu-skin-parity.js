@@ -276,7 +276,7 @@ scaledRoots.x = 1.05; scaledRoots.y = 2;
 handle.update(true);
 assert.strictEqual(handle.spineCurve, hunch.curve, 'resize preserves the same authored hunch');
 for (let i = 0; i < handle.basePositions.length / 3; i += 13) {
-  const expectedX = (handle.basePositions[i * 3 + 1] - plane.position.y) * 0.25;
+  const expectedX = (handle.basePositions[i * 3 + 1] - model.getObjectByName('frontPlane').position.y) * 0.25;
   assert(Math.abs(handle.spineShift[i * 3] - expectedX) < 1e-5,
     'hunch offsets are resampled from the newly widened garment on a late body-scale change');
 }
