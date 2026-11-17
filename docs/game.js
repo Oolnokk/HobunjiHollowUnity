@@ -25282,7 +25282,9 @@
           // range where the body hasn't turned at all yet. Reloading/empty
           // keeps the ordinary body-relative stance, since there's nothing
           // to aim yet.
-          const rangedTracksAim = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the reticle in yaw and pitch.
+          // Character View pins the body/hands while the camera orbits freely, so the
+          // ready weapon must stay body-relative too or it swings off the hands.
+          const rangedTracksAim = !characterViewMode.enabled && window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the reticle in yaw and pitch.
           const reticleFrame = rangedTracksAim ? playerRangedReticleOrbitFrame() : null; // Exact body-centroid→reticle direction; avoids camera pitch sign conventions entirely.
           const toolVθ = rangedTracksAim
             ? (reticleFrame?.yawRad ?? (-currentPlayerAimAngle() + Math.PI / 2)) + bodyYawOffsetRad
