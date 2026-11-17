@@ -55,6 +55,21 @@ vm.runInNewContext(source, { window: customDefaultWindow, document: documentStub
   { filename: 'baby-animal-head-warp.js' });
 assert.equal(customDefaultWindow.BabyAnimalHeadWarp.getShortening(), 0.35,
   'preserve a user-selected global shortening that does not equal the retired default');
+const newChoiceStorage = new Map([ // New versioned settings must not re-migrate a consciously chosen 20%.
+  ['hobunji_baby_head_shortening_v1', '0.20'],
+  ['hobunji_baby_head_shortening_v2', '0.20'],
+]);
+const newChoiceWindow = { localStorage: {
+  getItem: key => newChoiceStorage.get(key) ?? null,
+  setItem: (key, value) => newChoiceStorage.set(key, value),
+} };
+vm.runInNewContext(source, { window: newChoiceWindow, document: documentStub, Uint8ClampedArray },
+  { filename: 'baby-animal-head-warp.js' });
+assert.equal(newChoiceWindow.BabyAnimalHeadWarp.getShortening(), 0.20,
+  'explicit 20% selection in the new storage format is not mistaken for an old inherited default');
+assert.equal(newChoiceWindow.BabyAnimalHeadWarp.setShortening(0.08), 0.08);
+assert.equal(newChoiceStorage.get('hobunji_baby_head_shortening_v2'), '0.08',
+  'new Nursery adjustments write the versioned setting');
 assert.equal(warp.maskModeForKind('grehlr'), 'idle-alpha', 'existing animals default to opaque idle-sprite head selection');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
