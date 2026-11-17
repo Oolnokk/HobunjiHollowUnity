@@ -554,11 +554,81 @@
   const PLAYER_BUDGET_KEY = 'hobunji_player_mesh_budget_v1'; // 'npc' | 'full'; per-device display preference, never part of a save.
   let playerBudgetMode = 'full';
   try { playerBudgetMode = window.localStorage?.getItem(PLAYER_BUDGET_KEY) === 'npc' ? 'npc' : 'full'; } catch (_) { /* storage can be blocked; default full */ }
+  // Dev-only portrait resolution experiment. This is independent of the pants and animal mesh budgets.
+  const PORTRAIT_DENSITY_MIN = 20; // Slider minimum; per-axis segments are never allowed below the skinning minimum.
+  let portraitDensityPercent = 100; // Session-only developer override used by every newly built skinned humanoid portrait.
+  const portraitMeshRefs = new Set(); // Weak references let a slider change update living rigs without retaining despawned actors.
+  const portraitMeshBuilds = new WeakMap(); // Per-mesh immutable inputs used only to regenerate skin geometry without touching pose/bones.
+  let lastPortraitRebuilds = 0; // Included in the developer readout after a resolution change.
+
+  function portraitGrid(mode, hostileMask = false) {
+    const budget = mode === 'npc' ? MESH_BUDGETS.npc : MESH_BUDGETS.full;
+    const x = hostileMask ? budget.hostileMaskX : budget.planeSegmentsX;
+    const y = hostileMask ? budget.hostileMaskY : budget.planeSegmentsY;
+    return {
+      segmentsX: Math.max(4, Math.round(x * portraitDensityPercent / 100)),
+      segmentsY: Math.max(6, Math.round(y * portraitDensityPercent / 100)),
+    };
+  }
+
+  function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false) {
+    if (typeof WeakRef !== 'function' || !mesh) return; // Older browsers retain build-time density but cannot live-retessellate.
+    portraitMeshBuilds.set(mesh, { THREE, width, height, neckLocal, options, mode, hostileMask });
+    portraitMeshRefs.add(new WeakRef(mesh));
+  }
+
+  function portraitDensityDebug() {
+    let tracked = 0, triangles = 0;
+    for (const ref of portraitMeshRefs) {
+      const mesh = ref.deref();
+      if (!mesh) { portraitMeshRefs.delete(ref); continue; }
+      if (!portraitMeshBuilds.has(mesh) || !mesh.geometry) continue;
+      tracked++;
+      triangles += (mesh.geometry.getAttribute?.('position')?.count || 0) / 3;
+    }
+    return { percent: portraitDensityPercent, player: portraitGrid('full'), npc: portraitGrid('npc'),
+      hostileMask: portraitGrid('npc', true), tracked, triangles, lastRebuilt: lastPortraitRebuilds };
+  }
+
+  function setPortraitDensityPercent(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return false;
+    const next = Math.max(PORTRAIT_DENSITY_MIN, Math.min(100, Math.round(number)));
+    if (next === portraitDensityPercent) return false;
+    portraitDensityPercent = next;
+    let rebuilt = 0;
+    for (const ref of portraitMeshRefs) {
+      const mesh = ref.deref();
+      if (!mesh) { portraitMeshRefs.delete(ref); continue; }
+      const spec = portraitMeshBuilds.get(mesh);
+      if (!spec || !mesh.geometry) continue;
+      const target = portraitGrid(spec.mode, spec.hostileMask);
+      const old = mesh.geometry;
+      if (old.userData?.segmentsX === target.segmentsX && old.userData?.segmentsY === target.segmentsY) continue;
+      const nextGeometry = buildSkinnedPlaneGeometry(spec.THREE, spec.width, spec.height, spec.neckLocal, {
+        ...spec.options, ...target,
+      });
+      if (!nextGeometry) continue;
+      // Hostile front/back meshes each use one material and one face of the shared topology.
+      if (spec.options.frontOnly) nextGeometry.setDrawRange(0, nextGeometry.groups[0].count);
+      mesh.geometry = nextGeometry;
+      old.dispose(); // Release the retired GPU buffers; the existing skeleton and transforms remain intact.
+      rebuilt++;
+    }
+    lastPortraitRebuilds = rebuilt;
+    try { window.dispatchEvent(new Event('hobunji:portrait-density-changed')); } catch (_) { /* tests/no DOM */ }
+    return true;
+  }
+
   const meshBudget = {
     table: MESH_BUDGETS,
     resolve: mode => (mode === 'npc' ? MESH_BUDGETS.npc : MESH_BUDGETS.full),
     forPlayer: () => playerBudgetMode, // Mode name handed to avatar/pants builders for the player rig.
     playerMode: () => playerBudgetMode,
+    portraitGrid,
+    portraitDensityPercent: () => portraitDensityPercent,
+    setPortraitDensityPercent,
+    portraitDensityDebug,
     setPlayerMode(mode) {
       const next = mode === 'npc' ? 'npc' : 'full';
       if (next === playerBudgetMode) return false;
@@ -691,7 +761,7 @@
       headBoundsPx: gatedHeadBounds,
       posteriorY,
       spineBaseY: spineBase.y,
-      ...(config.meshBudget === 'npc' ? { segmentsX: MESH_BUDGETS.npc.planeSegmentsX, segmentsY: MESH_BUDGETS.npc.planeSegmentsY } : null), // Capped characters draw this mesh in every scene pass.
+      ...portraitGrid(config.meshBudget), // Developer slider scales the player/NPC grid without changing the skinning rules.
     });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
@@ -729,6 +799,9 @@
     skinnedPlane.add(splineNodes[0]);
     const skeleton = new THREE.Skeleton([...splineNodes, neckJoint, headScaleJoint]);
     skinnedPlane.bind(skeleton);
+    registerSkinnedPortrait(skinnedPlane, THREE, modelWidth, modelHeight, neckLocal, {
+      pixelWidth: pxW, pixelHeight: pxH, headBoundsPx: gatedHeadBounds, posteriorY, spineBaseY: spineBase.y,
+    }, config.meshBudget === 'npc' ? 'npc' : 'full');
 
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
@@ -811,14 +884,16 @@
     const pixelWidth = sourceCanvas?.width || 1;
     const posteriorY = spinePosteriorLocalY(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, fallbackDimensions.handAttachY);
     const spineBase = spineNeckBase(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, { x: pivotLocalX, y: pivotLocalY }, posteriorY);
-    const hostileBudget = fallbackDimensions.meshBudget === 'full' ? MESH_BUDGETS.full : MESH_BUDGETS.npc; // Enemies default to the capped budget.
-    const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
-      {x:pivotLocalX,y:pivotLocalY,z:0}, {
-        frontOnly:true, posteriorY, spineBaseY: spineBase.y, pixelWidth, pixelHeight:sourceCanvas?.height || 1,
-        ...(headBounds?.headMask ? { segmentsX: hostileBudget.hostileMaskX, segmentsY: hostileBudget.hostileMaskY } // A finer grid keeps the mask-edge stretch band thin when body width is large.
-          : fallbackDimensions.meshBudget === 'full' ? {} : { segmentsX: hostileBudget.planeSegmentsX, segmentsY: hostileBudget.planeSegmentsY }),
-        headBoundsPx:headBounds && mirrorX ? {...headBounds,left:pixelWidth-headBounds.right,right:pixelWidth-headBounds.left} : headBounds,
-      });
+    const hostileMode = fallbackDimensions.meshBudget === 'full' ? 'full' : 'npc'; // Enemies default to the NPC budget.
+    const hostileMasked = !!headBounds?.headMask; // Preserve the finer masked-head grid at every density.
+    const neckLocal = { x: pivotLocalX, y: pivotLocalY, z: 0 };
+    const skinOptions = {
+      frontOnly: true, posteriorY, spineBaseY: spineBase.y, pixelWidth, pixelHeight: sourceCanvas?.height || 1,
+      headBoundsPx: headBounds && mirrorX ? { ...headBounds, left: pixelWidth - headBounds.right, right: pixelWidth - headBounds.left } : headBounds,
+    };
+    const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight, neckLocal, {
+      ...skinOptions, ...portraitGrid(hostileMode, hostileMasked),
+    });
     // The converted hostile keeps separate front/rear meshes. Reuse the exact
     // player skin grid/weights, drawing just its front half on each mesh.
     weightedGeometry.setDrawRange(0, weightedGeometry.groups[0].count);
@@ -849,7 +924,9 @@
     skinned.add(splineNodes[0]);
     const skeleton = new THREE.Skeleton([...splineNodes, neckBone, headScaleBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, spineBase, neckLocal: { x: pivotLocalX, y: pivotLocalY, z: 0 } };
+    registerSkinnedPortrait(skinned, THREE, planeWidth, planeHeight, neckLocal, skinOptions, hostileMode, hostileMasked);
+    // Keep the disposer bound to the current geometry after a developer slider retessellation.
+    return { mesh: skinned, get weightedGeometry() { return skinned.geometry; }, skeleton, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, spineBase, neckLocal };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1470,6 +1547,7 @@
     for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
     if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
     root.traverse(child => {
+      portraitMeshBuilds.delete(child); // Disposed preview/player rigs cannot be rebuilt by subsequent slider changes.
       if (child.geometry) child.geometry.dispose();
       const materials = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];
       for (const mat of materials) {
