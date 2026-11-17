@@ -557,9 +557,12 @@
   // Dev-only portrait resolution experiment. This is independent of the pants and animal mesh budgets.
   const PORTRAIT_DENSITY_MIN = 20; // Slider minimum; per-axis segments are never allowed below the skinning minimum.
   let portraitDensityPercent = 100; // Session-only developer override used by every newly built skinned humanoid portrait.
-  const portraitMeshRefs = new Set(); // Weak references let a slider change update living rigs without retaining despawned actors.
-  const portraitMeshBuilds = new WeakMap(); // Per-mesh immutable inputs used only to regenerate skin geometry without touching pose/bones.
-  let lastPortraitRebuilds = 0; // Included in the developer readout after a resolution change.
+  const portraitMeshRefs = new Set(); // Weak references to live skinned portrait meshes for developer retessellation.
+  const portraitMeshBuilds = new WeakMap(); // Per-mesh build recipe plus weak-ref token; only mesh owners can retain recipes.
+  const portraitMeshFinalizer = typeof FinalizationRegistry === 'function'
+    ? new FinalizationRegistry(ref => portraitMeshRefs.delete(ref))
+    : null; // Removes dead weak-ref entries even if the developer panel is never opened again.
+  let lastPortraitRebuilds = 0; // Number of live meshes actually retessellated by the latest slider change.
 
   function portraitGrid(mode, hostileMask = false) {
     const budget = mode === 'npc' ? MESH_BUDGETS.npc : MESH_BUDGETS.full;
@@ -572,9 +575,35 @@
   }
 
   function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false) {
-    if (typeof WeakRef !== 'function' || !mesh) return; // Older browsers retain build-time density but cannot live-retessellate.
-    portraitMeshBuilds.set(mesh, { THREE, width, height, neckLocal, options, mode, hostileMask });
-    portraitMeshRefs.add(new WeakRef(mesh));
+    if (typeof WeakRef !== 'function' || !mesh) return false; // Build-time density still works if live tracking is unavailable.
+    const previous = portraitMeshBuilds.get(mesh);
+    if (previous) { // Re-registration updates the recipe but must not add another WeakRef for the same mesh.
+      Object.assign(previous, { THREE, width, height, neckLocal, options, mode, hostileMask });
+      return true;
+    }
+    const ref = new WeakRef(mesh); // This token never keeps a despawned avatar alive.
+    portraitMeshBuilds.set(mesh, { THREE, width, height, neckLocal, options, mode, hostileMask, ref });
+    portraitMeshRefs.add(ref);
+    portraitMeshFinalizer?.register(mesh, ref, ref);
+    return true;
+  }
+
+  function unregisterSkinnedPortrait(mesh) {
+    const spec = portraitMeshBuilds.get(mesh);
+    if (!spec) return false;
+    portraitMeshBuilds.delete(mesh); // Used by avatar, hostile and cloned-visitor disposal.
+    portraitMeshRefs.delete(spec.ref);
+    portraitMeshFinalizer?.unregister(spec.ref);
+    return true;
+  }
+
+  function trackSkinnedClone(source, clone) {
+    const spec = portraitMeshBuilds.get(source);
+    if (!spec || !clone?.isSkinnedMesh || clone.geometry !== source.geometry) return false;
+    // Doorstep visitors share the source mesh's geometry but own separate bones;
+    // both users must change to the SAME new geometry before the old buffer is freed.
+    return registerSkinnedPortrait(clone, spec.THREE, spec.width, spec.height, spec.neckLocal,
+      spec.options, spec.mode, spec.hostileMask);
   }
 
   function portraitDensityDebug() {
@@ -597,6 +626,7 @@
     if (next === portraitDensityPercent) return false;
     portraitDensityPercent = next;
     let rebuilt = 0;
+    const replacements = new Map(); // One new BufferGeometry for every distinct old geometry; doorstep clones share the replacement.
     for (const ref of portraitMeshRefs) {
       const mesh = ref.deref();
       if (!mesh) { portraitMeshRefs.delete(ref); continue; }
@@ -605,16 +635,20 @@
       const target = portraitGrid(spec.mode, spec.hostileMask);
       const old = mesh.geometry;
       if (old.userData?.segmentsX === target.segmentsX && old.userData?.segmentsY === target.segmentsY) continue;
-      const nextGeometry = buildSkinnedPlaneGeometry(spec.THREE, spec.width, spec.height, spec.neckLocal, {
-        ...spec.options, ...target,
-      });
-      if (!nextGeometry) continue;
-      // Hostile front/back meshes each use one material and one face of the shared topology.
-      if (spec.options.frontOnly) nextGeometry.setDrawRange(0, nextGeometry.groups[0].count);
-      mesh.geometry = nextGeometry;
-      old.dispose(); // Release the retired GPU buffers; the existing skeleton and transforms remain intact.
+      let nextGeometry = replacements.get(old);
+      if (!nextGeometry) {
+        nextGeometry = buildSkinnedPlaneGeometry(spec.THREE, spec.width, spec.height, spec.neckLocal, {
+          ...spec.options, ...target,
+        });
+        if (!nextGeometry) continue;
+        // Hostile front/back meshes each use one material and one face of the shared topology.
+        if (spec.options.frontOnly) nextGeometry.setDrawRange(0, nextGeometry.groups[0].count);
+        replacements.set(old, nextGeometry);
+      }
+      mesh.geometry = nextGeometry; // Swap every live user before disposing its shared old GPU buffer.
       rebuilt++;
     }
+    for (const old of replacements.keys()) old.dispose();
     lastPortraitRebuilds = rebuilt;
     try { window.dispatchEvent(new Event('hobunji:portrait-density-changed')); } catch (_) { /* tests/no DOM */ }
     return true;
@@ -629,6 +663,8 @@
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
+    trackSkinnedClone,
+    unregisterSkinnedPortrait,
     setPlayerMode(mode) {
       const next = mode === 'npc' ? 'npc' : 'full';
       if (next === playerBudgetMode) return false;
@@ -1547,7 +1583,7 @@
     for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
     if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
     root.traverse(child => {
-      portraitMeshBuilds.delete(child); // Disposed preview/player rigs cannot be rebuilt by subsequent slider changes.
+      unregisterSkinnedPortrait(child); // Disposed preview/player rigs leave the live-density registry immediately.
       if (child.geometry) child.geometry.dispose();
       const materials = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];
       for (const mat of materials) {
