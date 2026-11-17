@@ -39,9 +39,15 @@ const { meshBudget, registerSkinnedPortrait } = vm.runInNewContext(
   { filename: 'png-plane-avatar.js:mesh-budget' },
 );
 
-assert.equal(meshBudget.portraitDensityPercent(), 100, 'starts at unchanged production resolution');
-assert.equal(meshBudget.portraitGrid('full').segmentsX, 28);
-assert.equal(meshBudget.portraitGrid('npc').segmentsY, 26);
+assert.equal(meshBudget.defaultPortraitDensityPercent, 40, 'the production baseline is shared with Dev Mode teardown');
+assert.equal(meshBudget.portraitDensityPercent(), 40, 'new game sessions start with the measured 40% subdivision density');
+assert.deepEqual([meshBudget.portraitGrid('full').segmentsX, meshBudget.portraitGrid('full').segmentsY], [11, 14], 'player subdivisions use 40% on both axes');
+assert.deepEqual([meshBudget.portraitGrid('npc').segmentsX, meshBudget.portraitGrid('npc').segmentsY], [8, 10], 'NPC subdivisions use 40% on both axes');
+assert.deepEqual([meshBudget.portraitGrid('npc', true).segmentsX, meshBudget.portraitGrid('npc', true).segmentsY], [14, 18], 'enemy mask topology uses the same default');
+assert.deepEqual([meshBudget.animalGrid(48, 128/75).segmentsX, meshBudget.animalGrid(48, 128/75).segmentsY], [12, 7], 'painted animal head meshes use the same 40% per-axis default');
+assert.deepEqual([meshBudget.animalGrid(48, 75/128).segmentsX, meshBudget.animalGrid(48, 75/128).segmentsY], [7, 12], 'tall animal UV maps keep their authored aspect');
+assert.deepEqual([meshBudget.animalGrid(12, 12).segmentsX, meshBudget.animalGrid(12, 12).segmentsY], [5, 4], 'minimum preserves a usable skin grid even for narrow painted rigs');
+assert.deepEqual([meshBudget.animalGrid(48, NaN).segmentsX, meshBudget.animalGrid(48, NaN).segmentsY], [12, 12], 'invalid authored aspect cannot poison GPU geometry');
 assert.equal(meshBudget.resolve('npc').pantsSegments, 32, 'portrait density leaves pants budget intact');
 assert.equal(meshBudget.resolve('npc').animalSegments, 30, 'portrait density leaves animal budget intact');
 
@@ -58,8 +64,8 @@ const originalFront = { map: 'player-front-png' }; // A real original material m
 const originalBack = { map: 'player-back-png' };
 const playerMaterials = [originalFront, originalBack]; // Two faces of the skinned portrait need two material groups.
 const enemyMaterial = { map: 'enemy-front-png' }; // Hostiles use one front-only material.
-const player = { isSkinnedMesh: true, geometry: geometry(28, 36), skeleton, position: pose, material: playerMaterials };
-const enemy = { isSkinnedMesh: true, geometry: geometry(34, 44, true), skeleton: { id: 'enemy' }, material: enemyMaterial };
+const player = { isSkinnedMesh: true, geometry: geometry(11, 14), skeleton, position: pose, material: playerMaterials }; // Simulates the actual 40%-density player spawn.
+const enemy = { isSkinnedMesh: true, geometry: geometry(14, 18, true), skeleton: { id: 'enemy' }, material: enemyMaterial }; // Simulates a front-only hostile mask at the same baseline.
 const previousPlayerGeometry = player.geometry;
 const previousEnemyGeometry = enemy.geometry;
 registerSkinnedPortrait(player, THREE, 2, 3, neckLocal, { pixelWidth: 120, pixelHeight: 160, headBoundsPx }, 'full');
@@ -67,6 +73,7 @@ registerSkinnedPortrait(enemy, THREE, 1, 1, neckLocal, { pixelWidth: 80, pixelHe
 assert.equal(meshBudget.portraitDensityDebug().tracked, 2);
 
 assert.equal(meshBudget.setPortraitDensityPercent(50), true, 'slider applies a new percentage');
+assert.deepEqual([meshBudget.animalGrid(48, 128/75).segmentsX, meshBudget.animalGrid(48, 128/75).segmentsY], [15, 9], 'animal head grid tracks developer slider without mutating the saved rig resolution');
 assert.equal(player.geometry.userData.segmentsX, 14, 'full portrait X dimensions scale');
 assert.equal(player.geometry.userData.segmentsY, 18, 'full portrait Y dimensions scale');
 assert.equal(player.geometry.getAttribute('position').count / 3, 1008, 'two-sided player portrait has quarter as many triangles');
@@ -88,6 +95,7 @@ assert.equal(meshBudget.portraitDensityPercent(), 20);
 assert.equal(meshBudget.portraitGrid('npc').segmentsX, 4, 'minimum still permits a valid weighted grid');
 assert.equal(meshBudget.portraitGrid('npc').segmentsY, 6);
 assert.equal(meshBudget.setPortraitDensityPercent(100), true, 'original resolution restored without recreating actors');
+assert.deepEqual([meshBudget.animalGrid(48, 128/75).segmentsX, meshBudget.animalGrid(48, 128/75).segmentsY], [30, 18], '100% remains available for high-detail animal authoring');
 assert.equal(player.geometry.userData.segmentsX, 28);
 assert.equal(player.geometry.userData.segmentsY, 36);
 assert.equal(meshBudget.portraitDensityDebug().triangles, 4032 + 2992, 'diagnostics count actual current geometry');
@@ -166,11 +174,16 @@ assert.equal(meshBudget.unregisterSkinnedPortrait(author), true);
 assert.strictEqual(author.material, authorMaterial, 'unregistering during wireframe restores editor portrait materials');
 assert.equal(meshBudget.setPortraitWireframeEnabled(false), true);
 assert.equal(meshBudget.setPortraitDensityPercent(100), true);
+assert.equal(meshBudget.setPortraitDensityPercent(meshBudget.defaultPortraitDensityPercent), true, 'developer override can return to the production baseline');
+assert.deepEqual([meshBudget.animalGrid(48, 128/75).segmentsX, meshBudget.animalGrid(48, 128/75).segmentsY], [12, 7], 'exiting developer mode restores 40% for animal painted skins too');
+assert.equal(player.geometry.userData.segmentsX, 11, 'returning to the default retessellates player portraits');
+assert.equal(enemy.geometry.userData.segmentsY, 18, 'returning to the default retessellates enemy masks');
 
+assert(uiSource.includes('painted animal head rigs') && uiSource.includes('flying-animal perches'), 'the developer UI describes both animal geometry systems accurately');
 assert(uiSource.includes("densitySlider.type = 'range'"), 'dev UI has a real range input');
 assert(uiSource.includes("densityRow.setAttribute('data-dev-only', '')"), 'slider is hidden outside developer mode');
 assert(uiSource.includes('portraitBudget.setPortraitDensityPercent(Number(densitySlider.value))'), 'the UI uses the production budget authority');
-assert(devSource.includes('meshBudget?.setPortraitDensityPercent?.(100)'), 'leaving developer mode restores normal portrait detail');
+assert(devSource.includes('portraitBudget?.setPortraitDensityPercent?.(portraitBudget.defaultPortraitDensityPercent)'), 'leaving developer mode restores the shared 40% production detail');
 assert(devSource.includes('meshBudget?.setPortraitWireframeEnabled?.(false)'), 'developer mode teardown restores textured portraits');
 assert(uiSource.includes("settingPortraitMeshWireframe"), 'the in-game wireframe checkbox is visible in developer diagnostics');
 assert(uiSource.includes('portraitBudget.setPortraitWireframeEnabled(wireframe.input.checked)'), 'wireframe UI calls the shared real material manager');

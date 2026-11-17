@@ -444,10 +444,24 @@
     if (!source?.geometry || !source?.skeleton || !source?.parent) return null;
     const geometry = source.geometry.clone(), sharedSkinWeight = source.geometry.getAttribute?.('skinWeight'), sharedSkinIndex = source.geometry.getAttribute?.('skinIndex');
     if (sharedSkinWeight) geometry.setAttribute('skinWeight', sharedSkinWeight); if (sharedSkinIndex) geometry.setAttribute('skinIndex', sharedSkinIndex);
-    const material = Array.isArray(source.material) ? source.material.map(cloneMaterialForOverlay) : cloneMaterialForOverlay(source.material), overlay = new THREE.SkinnedMesh(geometry, material);
+    const originalMaterial = window.PNGPlaneAvatar?.meshBudget?.originalPortraitMaterial?.(source) || source.material; // A new pet can spawn while dev wireframe is active; never permanently clone its temporary cyan diagnostic material.
+    const material = Array.isArray(originalMaterial) ? originalMaterial.map(cloneMaterialForOverlay) : cloneMaterialForOverlay(originalMaterial), overlay = new THREE.SkinnedMesh(geometry, material);
     overlay.name = `${source.name || 'animal'}_${suffix}`; overlay.position.copy(source.position); overlay.quaternion.copy(source.quaternion); overlay.scale.copy(source.scale); overlay.renderOrder = source.renderOrder || 0; overlay.frustumCulled = source.frustumCulled;
     overlay.userData = { ...source.userData, hobunjiShoulderSplitOverlay: true }; overlay.onBeforeRender = source.onBeforeRender; overlay.bindMode = source.bindMode; overlay.bind(source.skeleton, source.bindMatrix?.clone?.() || source.bindMatrix); overlay.visible = false; source.parent.add(overlay);
     return { mesh: overlay, geometry, material, textures: [] };
+  }
+  function refreshOverlayGeometry(layer, source) {
+    if (!layer?.mesh || !source?.geometry) return false;
+    const replacement = source.geometry.clone(); // Clone the NEW bind pose before the shoulder spline moves the source face.
+    for (const key of ['skinWeight', 'skinIndex']) {
+      const attribute = source.geometry.getAttribute?.(key);
+      if (attribute) replacement.setAttribute(key, attribute); // Preserve the skinned overlay's two-bone weighting and face UV parity.
+    }
+    const previous = layer.geometry; // Old overlay GPU buffer is no longer referenced after the live density change.
+    layer.mesh.geometry = replacement;
+    layer.geometry = replacement;
+    previous?.dispose?.();
+    return true;
   }
   function materialsFor(layer) { if (!layer?.material) return []; return Array.isArray(layer.material) ? layer.material : [layer.material]; }
   function copyTextureTransform(texture, template) {
@@ -475,10 +489,27 @@
       const runtimeDimensions = dimensionsForGeometry(frontMesh.geometry);
       if (runtimeDimensions.width > 0 && runtimeDimensions.height > 0) rest.separatorAspect = runtimeDimensions.width / runtimeDimensions.height;
     }
-    const front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null, back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
+    let front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null, back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null; // Refreshed after live animal geometry swaps.
     const frontOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, frontMesh, 'split_left_front') : null, backOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, backMesh, 'split_left_back') : null;
     const debug = { version: 10, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, separatorRotationDeg: rest.separatorRotationDeg, separatorAspect: rest.separatorAspect, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, shoulderMaps: { influence: !!rest._shoulderMaps?.influence, compressibility: !!rest._shoulderMaps?.compressibility, stretchability: !!rest._shoulderMaps?.stretchability }, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
 
+    avatarRef.refreshShoulderRestGeometry = () => {
+      front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null;
+      back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
+      // Split layers keep their current textures and skeletons while replacing their old vertex layout.
+      refreshOverlayGeometry(frontOverlay, frontMesh);
+      refreshOverlayGeometry(backOverlay, backMesh);
+      if (debug.enabled) { applyMeshState(front, true); applyMeshState(back, true); } // Reapply the authored shoulder pose to the new vertex arrays.
+      debug.frontVertices = front?.position?.count || 0;
+      debug.backVertices = back?.position?.count || 0;
+      return true;
+    };
+    avatarRef.refreshAnimalWireframe = enabled => {
+      // Split-frame overlays use cloned materials outside the central wireframe registry.
+      // Hide only their rendered layers; retain requested visibility for restoration.
+      if (frontOverlay?.mesh) frontOverlay.mesh.visible = !enabled && !!debug.splitOverlayVisible;
+      if (backOverlay?.mesh) backOverlay.mesh.visible = !enabled && !!debug.splitOverlayVisible;
+    };
     avatarRef.setShoulderRestEnabled = enabled => {
       const next = !!enabled && rest.useSpline && !!front && !!back;
       if (debug.enabled !== next) { applyMeshState(front, next); applyMeshState(back, next); debug.enabled = next; avatarRef.group.userData.hobunjiShoulderRest = debug; }
@@ -486,11 +517,15 @@
     };
     avatarRef.setShoulderSplitOverlayCanvas = (canvas, visible = true) => {
       const appliedFront = setLayerCanvas(THREE, frontOverlay, canvas), appliedBack = setLayerCanvas(THREE, backOverlay, canvas), next = !!visible && !!canvas && appliedFront && appliedBack;
-      if (frontOverlay?.mesh) frontOverlay.mesh.visible = next; if (backOverlay?.mesh) backOverlay.mesh.visible = next; debug.splitOverlayVisible = next; return next;
+      debug.splitOverlayVisible = next;
+      avatarRef.refreshAnimalWireframe?.(window.PNGPlaneAvatar?.meshBudget?.wireframeEnabled?.() === true);
+      return next;
     };
     avatarRef.setShoulderSplitOverlayEnabled = enabled => {
       const next = !!enabled && !!frontOverlay && !!backOverlay;
-      if (frontOverlay?.mesh) frontOverlay.mesh.visible = next; if (backOverlay?.mesh) backOverlay.mesh.visible = next; debug.splitOverlayVisible = next; return next;
+      debug.splitOverlayVisible = next;
+      avatarRef.refreshAnimalWireframe?.(window.PNGPlaneAvatar?.meshBudget?.wireframeEnabled?.() === true);
+      return next;
     };
     const previousDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null;
     avatarRef.dispose = () => { disposeLayer(frontOverlay); disposeLayer(backOverlay); if (previousDispose) previousDispose(); };

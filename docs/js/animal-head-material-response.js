@@ -175,8 +175,8 @@
     const group = avatarRef.group;
     const frontMesh = findRiggedMeshForBone(group, state.frontHeadBone); // Front weighted card created by png-plane-avatar.js.
     const backMesh = findRiggedMeshForBone(group, state.backHeadBone); // Mirrored reverse card created by png-plane-avatar.js.
-    const front = buildMeshResponseState(frontMesh, rawRig, decoded, false);
-    const back = buildMeshResponseState(backMesh, rawRig, decoded, true);
+    let front = buildMeshResponseState(frontMesh, rawRig, decoded, false);
+    let back = buildMeshResponseState(backMesh, rawRig, decoded, true); // Both weight-array snapshots must be regenerated if mesh density changes.
     if (!front || !back) return avatarRef;
 
     const debug = {
@@ -219,6 +219,13 @@
     wrapAfter('setHeadAdditiveRotation');
     wrapAfter('updateHeadYaw');
 
+    avatarRef.refreshHeadMaterialGeometry = () => {
+      front = buildMeshResponseState(frontMesh, rawRig, decoded, false);
+      back = buildMeshResponseState(backMesh, rawRig, decoded, true);
+      debug.lastAngleDeg = NaN; debug.lastYawDeg = NaN; // Force the current pitch/yaw material response into the new skin arrays.
+      applyCurrentResponse();
+      return !!(front && back);
+    };
     debug.applyNow = applyCurrentResponse; // Used by in-game/debug tooling to force-refresh after live data edits.
     debug.dump = () => ({
       active: debug.active,

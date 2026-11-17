@@ -1223,7 +1223,7 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261117handDepthReplay2', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261117portraitMeshAuthor1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261117animalWireSpawn1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261117hRigLegs2', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
@@ -4125,12 +4125,12 @@ function animationUiTemplate() {
           <section class="maaSection" id="maaPortraitMeshDevSection">
             <div class="maaSectionTitle"><b>Portrait mesh preview</b><span class="maaSmall maaMuted">Diagnostic only</span></div>
             <div class="maaField">
-              <label for="maaPortraitMeshDensity">Subdivisions <output id="maaPortraitMeshDensityValue">100%</output></label>
-              <input type="range" id="maaPortraitMeshDensity" min="20" max="100" step="5" value="100" style="width:100%;touch-action:pan-x" aria-label="Skinned portrait mesh density, percent per axis">
+              <label for="maaPortraitMeshDensity">Subdivisions <output id="maaPortraitMeshDensityValue">40%</output></label>
+              <input type="range" id="maaPortraitMeshDensity" min="20" max="100" step="5" value="40" style="width:100%;touch-action:pan-x" aria-label="Skinned portrait mesh density, percent per axis">
             </div>
             <label class="maaToggleLine" style="margin-top:7px"><input type="checkbox" id="maaPortraitMeshWireframe">Show portrait wireframe</label>
             <div class="maaSmall maaMuted" id="maaPortraitMeshStatus" role="status" aria-live="polite">Load the repository to adjust portrait geometry.</div>
-            <div class="maaSmall maaMuted" style="margin-top:5px">Wireframe temporarily replaces the portrait texture with a bright full-plane grid. Density changes keep poses and keys intact. Creature painted-head rigs and pants use their own meshes.</div>
+            <div class="maaSmall maaMuted" style="margin-top:5px">Wireframe temporarily replaces the portrait texture with a bright full-plane grid. Density changes keep poses and keys intact. Creature painted-head rigs share the density scale but retain their own painted skin weights; pants use independent meshes.</div>
           </section>
           <section class="maaSection" id="maaProjectSection">
             <div class="maaSectionTitle"><b id="maaProjectSectionTitle">Multi-avatar animation</b><span class="maaSmall maaMuted">Active tab only</span></div>
