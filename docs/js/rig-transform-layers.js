@@ -616,6 +616,22 @@
     return changed;
   }
 
+  function captureCleanOverlayBase(node, property, target) {
+    target.copy(node[property]); // Reuse one neutral hand-socket scratch per property, not new vectors for every dancer and frame.
+    const slots = slotsFor(node, false); // The ordinary hand driver already published these anatomical solver baselines.
+    if (!slots) return target;
+    if (property === 'quaternion') {
+      const slot = slots.get('quaternion'); // Shared quaternion ledger includes all named elbow/yawn/drunken wrist effects.
+      if (slot?.owners.size && matches(node, slot)) target.copy(slot.base);
+    } else {
+      for (const axis of ['x', 'y', 'z']) {
+        const slot = slots.get(property + '.' + axis); // Preserve only active, genuinely composed offsets in the neutral snapshot.
+        if (slot?.owners.size && matches(node, slot)) target[axis] = slot.base;
+      }
+    }
+    return target;
+  }
+
   function applyPoseOverlay(node, owner, apply) {
     if (!node?.position?.clone || !node?.quaternion?.clone
       || !node.position.copy || !node.quaternion.copy
@@ -644,9 +660,12 @@
       entry = {
         node, owner, parent: node.parent || null,
         basePos: node.position.clone(), baseQuat: node.quaternion.clone(),
+        cleanPos: node.position.clone(), cleanQuat: node.quaternion.clone(),
         appliedPos: node.position.clone(), appliedQuat: node.quaternion.clone(),
         claims: {},
       }; // One retained baseline and one last output per owned socket, reused for every draw.
+      captureCleanOverlayBase(node, 'position', entry.cleanPos);
+      captureCleanOverlayBase(node, 'quaternion', entry.cleanQuat); // Do not permanently preserve earlier additive effects in an authored dance baseline.
       const session = { owner }; // Shared owner identity permits other scoped sessions to reject conflicting claims.
       for (const property of ['position', 'quaternion']) {
         const claim = { session, overlay: true };
@@ -661,8 +680,14 @@
       || Math.abs(node.position.y - entry.appliedPos.y) > EPSILON
       || Math.abs(node.position.z - entry.appliedPos.z) > EPSILON;
     const rotationRefresh = !rotationMatches(node.quaternion, entry.appliedQuat);
-    if (positionRefresh) entry.basePos.copy(node.position);
-    if (rotationRefresh) entry.baseQuat.copy(node.quaternion);
+    if (positionRefresh) {
+      entry.basePos.copy(node.position);
+      captureCleanOverlayBase(node, 'position', entry.cleanPos); // Ordinary grip moves update the CLEAN return pose too.
+    }
+    if (rotationRefresh) {
+      entry.baseQuat.copy(node.quaternion);
+      captureCleanOverlayBase(node, 'quaternion', entry.cleanQuat);
+    }
     if (positionRefresh || rotationRefresh) overlayStats.overlayBaseRefreshes++;
     else overlayStats.overlayBaseReuses++;
     node.position.copy(entry.basePos);
@@ -703,14 +728,18 @@
     if (!entry) return false;
     const claims = absoluteClaims.get(node);
     const attached = (node.parent || null) === entry.parent;
-    const ownsPosition = attached && claims?.get('position') === entry.claims.position;
-    const ownsRotation = attached && claims?.get('quaternion') === entry.claims.quaternion;
-    // Position and forearm quaternion can change independently: restore each
-    // property only when no newer driver has authored a different value.
-    if (ownsPosition && Math.abs(node.position.x - entry.appliedPos.x) <= EPSILON
+    const claimedPosition = claims?.get('position') === entry.claims.position; // A reparented old socket still needs its suspended offsets discarded.
+    const claimedRotation = claims?.get('quaternion') === entry.claims.quaternion;
+    const ownsPosition = attached && claimedPosition;
+    const ownsRotation = attached && claimedRotation;
+    // The visible dance base may already contain other additive layers; restore
+    // the CLEAN IK pose before recomposing only effects that are still active.
+    const restorePosition = ownsPosition && Math.abs(node.position.x - entry.appliedPos.x) <= EPSILON
       && Math.abs(node.position.y - entry.appliedPos.y) <= EPSILON
-      && Math.abs(node.position.z - entry.appliedPos.z) <= EPSILON) node.position.copy(entry.basePos);
-    if (ownsRotation && rotationMatches(node.quaternion, entry.appliedQuat)) node.quaternion.copy(entry.baseQuat);
+      && Math.abs(node.position.z - entry.appliedPos.z) <= EPSILON;
+    const restoreRotation = ownsRotation && rotationMatches(node.quaternion, entry.appliedQuat);
+    if (restorePosition) node.position.copy(entry.cleanPos);
+    if (restoreRotation) node.quaternion.copy(entry.cleanQuat);
     for (const property of ['position', 'quaternion']) {
       if (claims?.get(property) !== entry.claims[property]) continue;
       claims.delete(property);
@@ -718,6 +747,10 @@
       changeAbsoluteOwnerCount(owner, -1);
     }
     if (claims && !claims.size) absoluteClaims.delete(node);
+    if (claimedPosition && !hasAbsolutePoseOwner(node, 'position'))
+      settleAbsoluteProperty(node, 'position', restorePosition); // Hand back without layering the old dance twice.
+    if (claimedRotation && !hasAbsolutePoseOwner(node, 'quaternion'))
+      settleAbsoluteProperty(node, 'quaternion', restoreRotation);
     overlays.delete(owner);
     if (!overlays.size) overlayClaims.delete(node);
     overlayStats.overlayReleases++;
