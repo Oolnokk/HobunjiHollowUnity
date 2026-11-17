@@ -1147,6 +1147,7 @@
     const puked = maybeTriggerPuke(entity, dt, cfg);
 
     enforceCaps(entity);
+    if (window.FeyIllusions?.hasRuntime?.(entity)) window.FeyIllusions.update(dt, entity); // Only active Fey reaction state incurs per-tick interpolation/collision work.
     const healthDelta = round1(entity.health - healthBeforeTick);
     if (healthDelta) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: healthDelta, reason: 'resource-tick', immediate: false } }));
     return { puked };
