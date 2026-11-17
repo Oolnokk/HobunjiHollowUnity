@@ -229,3 +229,56 @@ function buildScheduler() {
 }
 
 console.log('runtime frame scheduler v2 ordering contract passed');
+
+
+// --- A driver is a first-class owner of the RAF even without subscribers ---
+{
+  const { scheduler, frames, runFrame, cancelled } = buildScheduler();
+  const driver = () => { calls++; };
+  let calls = 0;
+  scheduler.setFrameDriver(driver);
+  assert.equal(frames.size, 1, 'a frame driver alone schedules the browser frame');
+  runFrame(1000);
+  assert.equal(calls, 1);
+  assert.equal(frames.size, 1, 'the driver schedules subsequent frames with zero subscribers');
+  scheduler.register('temporary', () => {});
+  scheduler.unregister('temporary');
+  assert.equal(frames.size, 1, 'unregistering the final visual subscriber never cancels a live driver');
+  runFrame(1016);
+  assert.equal(calls, 2);
+  assert.equal(scheduler.clearFrameDriver(() => {}), false, 'unrelated drivers cannot clear gameplay ownership');
+  assert.equal(scheduler.clearFrameDriver(driver), true);
+  assert.equal(frames.size, 0, 'clearing the only owner cancels the next browser frame');
+  assert.equal(cancelled.length, 1);
+}
+
+// --- Replacing an existing subscriber during dispatch is frame-atomic -----
+{
+  const { scheduler, runFrame } = buildScheduler();
+  const log = [];
+  scheduler.register('migrating', () => {
+    log.push('old-input');
+    scheduler.register('migrating', () => log.push('new-post'), { phase: 'post-game' });
+  }, { phase: 'input' });
+  scheduler.register('other', () => log.push('other-pre'), { phase: 'pre-game' });
+  runFrame(1000);
+  assert.deepEqual(log, ['old-input', 'other-pre'],
+    'a self-migrating subscriber runs at most once and cannot change phase mid-frame');
+  runFrame(1016);
+  assert.deepEqual(log, ['old-input', 'other-pre', 'other-pre', 'new-post'],
+    'replacement begins in its new phase on the next frame');
+}
+
+// --- A not-yet-visited subscriber preserves its old callback this frame ---
+{
+  const { scheduler, runFrame } = buildScheduler();
+  const log = [];
+  scheduler.register('first', () => {
+    scheduler.register('second', () => log.push('new-second'), { phase: 'post-game' });
+  }, { phase: 'input' });
+  scheduler.register('second', () => log.push('old-second'), { phase: 'pre-game' });
+  runFrame(1000);
+  assert.deepEqual(log, ['old-second'], 'mid-frame replacements do not skip the original phase callback');
+  runFrame(1016);
+  assert.deepEqual(log, ['old-second', 'new-second'], 'replacement is active on the next frame');
+}
