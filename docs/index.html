@@ -56,7 +56,7 @@
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
   <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
        and menu controller polling. Must load before game.js. -->
-  <script src="js/controller-input.js?v=20261114hcontrollerinputtiming1"></script>
+  <script src="js/controller-input.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
@@ -768,7 +768,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261116invPerfAudit2reinforcement24"></script>
+  <script src="js/equipment-panel.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -807,7 +807,7 @@
   <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
-  <script src="js/cavern-generator.js?v=20261114puzzleCaveVaultAudit2"></script>
+  <script src="js/cavern-generator.js?v=20261117deepAuditMainMerge1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
@@ -2922,7 +2922,7 @@
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261117toolStanceWalk1reinforcement24power075"></script>
+  <script src="game.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

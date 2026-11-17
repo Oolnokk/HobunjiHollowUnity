@@ -14,15 +14,28 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
+  let playerReadyListenerInstalled = false; // Ensures a repeated EquipmentPanel.init() cannot accumulate character-load handlers.
   let archivedToolsCollapsed = true; // Controls the optional long-term tool drawer in Gear.
   let archivedClothingCollapsed = true; // Controls the optional long-term clothing drawer in Gear.
   const CLOTHING_SLOTS = ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
-  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
+  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, lastTrimMs: 0, slowestTrimMs: 0, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
 
   function squareToolIcon(source, options = {}) {
+    // This function is also extracted standalone by framing tests and tools;
+    // keep profiling self-contained without depending on global performance.
+    const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now() : Date.now();
+    const startedAt = now(); // Cold-path timing only, never a per-frame profiler.
+    function finishToolIcon(output) {
+      const url = output.toDataURL('image/png');
+      const elapsedMs = Math.round((now() - startedAt) * 10) / 10; // Includes PNG encoding.
+      toolIconDebug.lastTrimMs = elapsedMs;
+      toolIconDebug.slowestTrimMs = Math.max(toolIconDebug.slowestTrimMs || 0, elapsedMs);
+      return url;
+    }
     const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
     const width = image.width; // Source dimensions bound the alpha scan.
     const height = image.height; // Source dimensions bound the alpha scan.
@@ -34,11 +47,18 @@
     const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
     let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
     for (let y = 0; y < height; y++) {
+      let rowLeft = width, rowRight = -1; // Track bounds once per occupied row, not with four Math.min/max calls per opaque pixel.
+      const alphaStart = y * width * 4 + 3; // Alpha-byte offset into this row of the existing 4-channel image buffer.
       for (let x = 0; x < width; x++) {
-        if (!pixels[(y * width + x) * 4 + 3]) continue;
-        left = Math.min(left, x); right = Math.max(right, x);
-        top = Math.min(top, y); bottom = Math.max(bottom, y);
+        if (!pixels[alphaStart + x * 4]) continue;
+        if (x < rowLeft) rowLeft = x;
+        rowRight = x;
       }
+      if (rowRight < 0) continue;
+      if (rowLeft < left) left = rowLeft;
+      if (rowRight > right) right = rowRight;
+      if (y < top) top = y;
+      bottom = y;
     }
     if (right < left) throw new Error('Tool sprite contains no opaque pixels');
     const side = right - left + 1; // Opaque width determines the square; tall sprites crop above its bottom edge.
@@ -51,12 +71,12 @@
       const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
       const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
       outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
-      return output.toDataURL('image/png');
+      return finishToolIcon(output);
     }
     outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
       0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
     toolIconDebug.lastFrame = { left, top, right, bottom, side };
-    return output.toDataURL('image/png');
+    return finishToolIcon(output);
   }
 
   function renderToolIcon(parent, def) {
@@ -91,8 +111,12 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     registerFluteDefinition();
-    // Existing characters receive the same starter instrument after their saved character data is loaded.
-    document?.addEventListener?.('hobunjiPlayerReady', () => { ensureStarterFlute(); reconcileArchivedGear(); });
+    // Existing characters receive the starter instrument only after saved
+    // character data loads. Repeated init must not multiply load reconciliations.
+    if (!playerReadyListenerInstalled && typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('hobunjiPlayerReady', onPlayerReady);
+      playerReadyListenerInstalled = true;
+    }
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -108,6 +132,11 @@
     });
     installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function onPlayerReady() {
+    ensureStarterFlute();
+    reconcileArchivedGear();
   }
 
   function registerFluteDefinition() {
@@ -190,7 +219,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261116invPerfAudit2reinforcement24';
+    script.src = 'js/inventory-ui.js?v=20261117deepAuditMainMerge1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
