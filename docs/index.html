@@ -192,7 +192,7 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261116skeeriChatheadLoader2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/rig-transform-layers.js?v=20261114hRigBaseline1"></script> <!-- Named removable offsets for procedural NPC/head/leg poses. -->
+  <script src="js/rig-transform-layers.js?v=20261117hRigLayers1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -204,7 +204,7 @@
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
-  <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
+  <script src="js/actor-body-sink.js?v=20261117hRigSink1"></script> <!-- Body sink for enemies and NPCs through named compositor layers and procedural knee folding. -->
   <script src="js/procedural-leg-animation.js?v=20261114footYaw1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
