@@ -803,11 +803,12 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(nHype.claimNpcMelee(npc),null,'one NPC payment cannot be claimed twice');
   assert.equal(nHype.claimNpcMelee(player),null,'player pending credits cannot be stolen by NPC attack stages');
   const npcResults=[]; // First and second actual committed payloads share the NPC's normal damage authority.
-  let npcCanHit=true, npcComplete=0, npcStrikeCount=0;
+  let npcCanHit=true, npcComplete=0, npcStrikeCount=0, npcEchoStarts=0, npcEchoMovementRatio=0; // Confirms the original NPC movement owner stages one scaled second lunge.
   const npcStagesBefore=hypedStages.length;
   const npcOptions={
     windupS:.2,strikeS:.1,recoverS:0,
     data:{isBandit:true,attacker:npc,voiceAbilityId:'opportunistJab'},
+    onFeyHypedNpcEchoStart(ratio){npcEchoStarts++;npcEchoMovementRatio=ratio;}, // Actual bandit owner uses the same callback to launch its second independently swept lunge.
     onStrike(){
       npcStrikeCount++;
       if (!npcCanHit) return; // An original miss cannot skip the paid, independently checked second attack.
@@ -824,6 +825,8 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   npcFirst.onStrike(npcFirst);
   npcFirst.onComplete(npcFirst);
   assert.equal(npcComplete,0,'NPC combo cooldown/retreat cannot run between paired attacks');
+  assert.equal(npcEchoStarts,1,'the second NPC strike starts one fresh lunge before its actual staged attack');
+  assert(Math.abs(npcEchoMovementRatio-.16)<.000001,'the second NPC lunge scales distance by 2% per committed Hyped point');
   assert.equal(hypedStages.length,npcStagesBefore+2,'NPC attack creates exactly two authoritatively staged actions');
   const npcSecond=npc._banditAction;
   assert(Math.abs(npcSecond.windupS-.1)<.00001&&Math.abs(npcSecond.strikeS-.05)<.00001,'NPC second attack also runs at 2x');
@@ -861,6 +864,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   const beforeNpcCancel=hypedStages.length;
   interruptedNpc.onCancel(interruptedNpc);
   assert.equal(hypedStages.length,beforeNpcCancel,'cancelled NPC action schedules no extra strike');
+  assert.equal(npcEchoStarts,2,'a cancelled third NPC attack never starts another lunge'); // The first two completed NPC pairs each issued one separate echo-lunge request.
   assert.equal(npc._feyHypedNpcSequence,undefined,'NPC cancellation cleans paid state');
   assert.equal(nHype.npcDamagePayload(npc,npcTarget,5,10),null,'ordinary later hits get no stale Hyped multiplier');
   assert.equal(nHype.debugSnapshot().npcReplayCount>=2,true,'mobile diagnostics count independently tested NPC second contacts');
@@ -873,6 +877,8 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
     'real NPC combo, quick and heavy stages use the shared Hyped executor');
   assert(banditHypeSource.includes('npcDamagePayload?.(c, target, amount, knockbackPxS, opts)'),
     'real NPC damage-to-player and damage-to-NPC owner applies the scaled second payload');
+  assert(banditHypeSource.includes('firstLunge.distancePx * ratio') && banditHypeSource.includes('beginBanditLunge(c, firstLunge.distancePx * ratio'),
+    'the second NPC lunge is swept by the original NPC movement owner and scaled by the committed Hyped ratio');
   assert(stagedDuelHypeSource.includes('claimNpcMelee?.(c)'),
     'fully offscreen NPC battles cannot silently discard paid Hyped');
   assert(resourceHypeSource.includes('combatNpcMelee'),'NPC Hyped must remain action-eligible in enhanced-resource definitions');
