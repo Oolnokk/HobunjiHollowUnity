@@ -133,7 +133,7 @@ assert.equal(lastPreviewScale, 1.45);
 assert.equal(lastShortening, 0.08, 'the universal 8% default reaches the runtime texture warp');
 assert.equal(lastPainted, true, 'original painted-Head method is initially active');
 assert.equal(lastPreviewFrame.width, ctx.paintedBabyHeadFrame().width, 'the default source frame comes from painted Head influence');
-assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, undefined, 'default painted selection does not require a redundant override');
+assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, true, 'default painted selection exports explicitly so it can supersede committed alpha overrides');
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
 assert.equal(applied, 1, 'no per-triangle recomposition');
 const split = ctx.previewSplitLayerCanvases();
@@ -171,7 +171,7 @@ assert.equal(lastPreviewFrame.width, canonical.width, 'alpha mode uses the dialo
 paintedCheckbox.checked = true;
 listeners.get('babyHeadUsePainted:change')[0]();
 ctx.draw();
-assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, undefined, 'checking restores inherited old painted method');
+assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, true, 'checking restores and saves the old painted method');
 ctx.previewImageForAnimal(image);
 assert.equal(lastPainted, true, 'rechecking uses the original painted selection without altering painted art');
 const shortenedPreview = ctx.previewImageForAnimal(image); // Cached result reflects the edited per-species 35% shortening.
