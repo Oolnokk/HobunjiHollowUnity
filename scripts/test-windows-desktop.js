@@ -60,7 +60,7 @@ async function checkClosePersistence() {
   const calls = []; // Records the ordering of the existing save APIs.
   const folder = {
     getStatus: () => ({ state: 'ready', folderName: 'Hobunji Saves', autoSyncArmed: true }),
-    syncNow: async options => { calls.push(['folder', options.reason]); return { state: 'ready', lastAction: 'saved' }; },
+    syncNow: async options => { calls.push(['folder', options.reason]); return { state: 'ready', lastAction: 'saved-browser-to-folder' }; },
   }; // Canonical folder writer used for successful close scenarios.
   const runtime = {
     isReady: () => true, // Live serializer readiness must gate writes to the primary save folder.
@@ -105,10 +105,18 @@ async function checkClosePersistence() {
   assert.equal(output.ok, false);
   assert.match(output.error, /Disk is read-only/);
 
-  folder.syncNow = async () => ({ state: 'ready', lastAction: 'saved', dataLossRisk: 'Missing world' });
+  folder.syncNow = async () => ({ state: 'ready', lastAction: 'saved-browser-to-folder', dataLossRisk: 'Missing world' });
   output = await persistBeforeClose(game);
   assert.equal(output.ok, false);
   assert.match(output.error, /Missing world/);
+
+  folder.syncNow = async () => ({ state: 'ready', lastAction: 'permission-restored-awaiting-choice' });
+  output = await persistBeforeClose(game);
+  assert.equal(output.ok, false, 'A ready folder with no completed write must not authorize quitting');
+
+  folder.syncNow = async () => ({ state: 'ready', lastAction: 'saved-primary-recovery-error', lastError: 'Recovery history unavailable' });
+  output = await persistBeforeClose(game);
+  assert.equal(output.ok, true, 'A completed primary save is valid even if secondary recovery history failed');
 
   folder.syncNow = async () => null;
   output = await persistBeforeClose(game);
