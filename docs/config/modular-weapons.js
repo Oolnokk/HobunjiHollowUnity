@@ -3475,11 +3475,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "dagger": {
-          "scaleX": 0.7,
-          "scaleY": 0.6,
-          "x": 35,
-          "y": -15,
-          "rotation": -90,
+          "y": 15,
           "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
@@ -3495,20 +3491,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "scaleX": 1.05,
-          "scaleY": 0.5,
-          "x": 35,
-          "y": -40,
-          "rotation": -90,
-          "layerOrder": "haft-over-head"
+          "y": 10,
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "scaleX": 1.05,
-          "scaleY": 0.5,
-          "x": 40,
-          "y": -35,
-          "rotation": -90,
-          "layerOrder": "haft-over-head"
+          "y": 25,
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "x": 5,
@@ -3528,22 +3516,18 @@ window.MODULAR_WEAPON_CONFIG = {
         "pick-shovel-pick": {
           "flipX": true,
           "flipY": true,
-          "x": 35,
-          "y": -25,
-          "rotation": -90,
-          "layerOrder": "head-over-haft"
+          "y": 15,
+          "layerOrder": "haft-over-head"
         },
         "pickshovel-scoop": {
-          "x": 5,
-          "y": 30,
+          "scaleX": 0.6,
+          "y": 5,
           "layerOrder": "haft-over-head"
         },
         "plains-blade": {
           "scaleX": 1.1,
-          "scaleY": 0.35,
-          "x": -65,
-          "y": -30,
-          "rotation": -90,
+          "scaleY": 0.4,
+          "y": 15,
           "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
@@ -3553,9 +3537,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "x": 5,
-          "y": 30,
-          "layerOrder": "haft-over-head"
+          "flipX": true,
+          "y": 20,
+          "layerOrder": "head-over-haft"
         },
         "warhammer": {
           "x": 5,
@@ -9455,17 +9439,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_warhammer.png",
       "overrides": {
         "dagger-sword": {
-          "x": 12,
-          "y": 5,
-          "layerOrder": "haft-over-head"
+          "y": 15,
+          "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "scaleX": 0.9,
-          "scaleY": 0.75,
-          "x": 40,
-          "y": -90,
-          "rotation": -90,
-          "layerOrder": "haft-over-head"
+          "y": 15,
+          "layerOrder": "head-over-haft"
         },
         "fishing-mace": {
           "scaleX": 1.1,
@@ -9473,25 +9452,16 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "scaleY": 1.2,
-          "flipX": true,
-          "x": -40,
-          "y": -90,
-          "rotation": -90,
-          "layerOrder": "haft-over-head"
+          "y": 25,
+          "layerOrder": "head-over-haft"
         },
         "harlyao-broadsword": {
-          "scaleX": 1.35,
-          "scaleY": 0.8,
-          "x": 25,
-          "y": -100,
-          "rotation": -90,
-          "layerOrder": "haft-over-head"
+          "y": 15,
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "scaleX": 1.65,
-          "x": 5,
-          "layerOrder": "haft-over-head"
+          "y": 15,
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "scaleX": 1.2,
@@ -9510,23 +9480,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "scaleX": 1.05,
-          "scaleY": 1.05,
           "flipX": true,
           "flipY": true,
-          "x": 40,
-          "y": -75,
-          "rotation": -90,
+          "y": 15,
           "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "x": 5,
-          "layerOrder": "haft-over-head"
+          "scaleX": 0.6,
+          "y": 15,
+          "layerOrder": "head-over-haft"
         },
         "plains-blade": {
-          "scaleX": 1.2,
-          "scaleY": 0.75,
-          "x": 5,
+          "scaleY": 0.4,
+          "y": 25,
           "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
