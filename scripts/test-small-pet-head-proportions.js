@@ -83,7 +83,7 @@ const warp = {
 };
 const win = {
   HobunjiGrehlrHeadRigCorrection: { version: 7 },
-  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-16-moot-painted-baby-pets1' },
+  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-17-gar-wolf-grehlr-rigs1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => true },
   AnimalShoulderSpline: {
     version: 10,
