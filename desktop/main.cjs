@@ -139,27 +139,36 @@ function installMenu() {
 async function saveAndClose(win) {
   if (closeInProgress || win.isDestroyed()) return;
   closeInProgress = true;
-  let outcome;
   try {
-    outcome = await win.webContents.executeJavaScript(CLOSE_SAVE_SCRIPT, true);
+    let outcome; // Result of the canonical folder/browser save executed in the renderer.
+    try {
+      outcome = await win.webContents.executeJavaScript(CLOSE_SAVE_SCRIPT, true);
+    } catch (error) {
+      outcome = { ok: false, error: String(error?.message || error) };
+    }
+    if (win.isDestroyed()) return;
+    if (outcome?.ok) {
+      closeAllowed = true;
+      win.close();
+      return;
+    }
+    const response = await dialog.showMessageBox(win, {
+      type: 'error', title: 'Hobunji Hollow — Save failed',
+      message: 'The game could not finish saving before exit.',
+      detail: String(outcome?.error || 'Unknown failure') + '\nYour Google Drive folder might not have the latest changes.',
+      buttons: ['Retry Save', 'Quit Without Saving', 'Cancel'], defaultId: 0, cancelId: 2,
+    });
+    if (win.isDestroyed()) return;
+    if (response.response === 1) { closeAllowed = true; win.close(); }
+    else if (response.response === 0) {
+      // Schedule the retry after releasing the guard, not inside this save attempt.
+      queueMicrotask(() => { if (!win.isDestroyed()) win.close(); });
+    }
   } catch (error) {
-    outcome = { ok: false, error: String(error?.message || error) };
+    console.error('[Hobunji desktop] Could not finish the save/close dialog', error);
+  } finally {
+    closeInProgress = false;
   }
-  closeInProgress = false;
-  if (win.isDestroyed()) return;
-  if (outcome?.ok) {
-    closeAllowed = true;
-    win.close();
-    return;
-  }
-  const response = await dialog.showMessageBox(win, {
-    type: 'error', title: 'Hobunji Hollow — Save failed',
-    message: 'The game could not finish saving before exit.',
-    detail: String(outcome?.error || 'Unknown failure') + '\nYour Google Drive folder might not have the latest changes.',
-    buttons: ['Retry Save', 'Quit Without Saving', 'Cancel'], defaultId: 0, cancelId: 2,
-  });
-  if (response.response === 1) { closeAllowed = true; win.close(); }
-  else if (response.response === 0) win.close();
 }
 
 function createWindow() {
