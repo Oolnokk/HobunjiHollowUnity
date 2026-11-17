@@ -169,7 +169,51 @@ owner blocks late talon replay. `scripts/test-tzatzul-captive-pose-ownership.js`
 covers successor fall rotation, position preservation, rejected competing
 owner, avatar replacement, duplicate release and claim cleanup.
 
-**Still not unified:** post-render NPC dance hand poses, ragdoll pivot
-reparenting, generic procedural hand/leg IK, species creature roots and
-other independent absolute writers. These require semantic handoffs and
-interruption testing, not global timed whole-skeleton resets.
+## Additional compositor integration: procedural IK and ragdoll (17 November 2026)
+
+**NPC dance hand presentation:** `npc-dance-presentation-runtime.js` now uses
+`applyPoseOverlay`/`releasePoseOverlay` with one named owner per hand socket.
+The shared registry retains the last ordinary grip baseline and last rendered
+dance pose, so repeat draws are idempotent, changing dance styles/rig generations
+releases old claims, and an exclusive paired-animation pose lock wins.
+`procedural-hand-forearm-alignment-runtime.js` stamps its final quaternion
+via `stampPoseOverlay`, so a later forearm correction is part of the same
+owned visible pose, including outline/depth passes; the dance sentinel does
+not repaint pre-aligned hands on same-frame override-material draws.
+
+**Recorded impact, prone and ragdoll pivots:** `impact-ragdoll-playback.js`
+acquires explicit `createAbsoluteSession` claims on humanoid prone and
+creature impact/death pivots. Each authored frame stamps position/quaternion,
+an externally displaced pose is preserved during interruption cleanup,
+and a rebuilt creature/avatar generation does not reuse the old pivot.
+Living hit reactions cannot displace a corpse's persistent recorded pose.
+Existing isolated editor previews retain their no-compositor compatibility.
+
+**Authoritative procedural IK:** `procedural-leg-animation.js` publishes
+the actual, already-solved hip/thigh/calf/foot baselines after ordinary gait,
+idle, seated, hover/airborne, lunge, suppression, external foot contact and
+recorded impact clips. It calls `restoreSolvedBase` *before* incremental
+IK sampling so an old additive sway does not become the next frame's input.
+`procedural-hand-frame-driver.js` similarly publishes actual ordinary
+grip/idle socket baselines. Shoulder and late forearm alignment publish their
+final neutral quaternion when an exclusive pose owner does not control that
+joint. All of these use the same compositor registry as named additive
+channels, without replacing the existing anatomical solvers.
+
+**Regression coverage:** `test-rig-transform-layers.js` covers named
+overlays, baseline updates, double recovery, exclusive IK claims and
+interrupted cleanup. `test-npc-dance-rig-ownership.js` runs the real
+render sentinel and verifies cancellation, lock takeover, baseline refresh,
+late forearm quaternion and same-frame outline behavior.
+`test-impact-ragdoll-rig-ownership.js` runs the real impact playback under
+rebuild, interrupted prone, live hit and corpse death cases.
+These focused tests are not a substitute for a live multi-actor WebGL soak
+or the full project CI suite.
+
+**Still beyond full unification:** bespoke render-transaction hand poses
+(e.g. cliff crawling and some animation-author tool previews), creature
+species-specific pose rigs, player-facing/neck providers and other specialist
+absolute writers require separate ownership and interruption audits. Avoid
+blind periodic whole-skeleton resets: they would override valid intentional
+poses. The old audit's earlier migration checklist is retained as historical
+context, not as the current list of unimplemented features.
