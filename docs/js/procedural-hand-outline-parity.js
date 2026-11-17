@@ -45,10 +45,14 @@
   }
 
   function secondaryPassKind(scene, camera, material) {
+    // Every colorless (depth-only) draw of the hand must use the visible hand's pose, not just
+    // the layer-4 PNG occluder replay: held-object-render-order's shell x-ray replay rebuilds
+    // depth with the full camera mask, and left unlocked it drew the hand at the stale
+    // pre-sync pose (~0.07u off) while the shell was locked to the visible pose, so the shell
+    // was not occluded by the hand and showed as black over it.
     if (
       !scene?.overrideMaterial
       && material?.colorWrite === false
-      && camera?.layers?.mask === (1 << 4)
     ) return 'occluder-depth';
     if (!scene?.overrideMaterial) return null;
     if (isShellMaterial(material)) return 'shell';
@@ -420,7 +424,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
+        latestChange: 'All colorless hand depth replays (not only the layer-4 occluder) reuse the visible hand pose, so the shell is occluded by the hand it outlines. Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
