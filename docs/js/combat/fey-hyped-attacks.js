@@ -7,6 +7,7 @@
 
   const credits = new WeakMap(); // Attacker -> enhanced Stamina committed to the next matching offensive weapon action.
   const pendingByActor = new WeakMap(); // Attacker -> prepared Hyped attack awaiting the normal staged action owner.
+  const replayingActors = new WeakSet(); // Actors locked to the second swing until the staged action's complete/cancel callback.
   const attacks = new Map(); // Attack serial -> first-hit snapshots retained only through the short second strike.
   const MAX_CREDIT_AGE_MS = 12000; // Covers a slow held-charge windup without allowing a stale payment to buff unrelated combat.
   const MIN_SECOND_S = 0.035; // Keeps a valid second-action cadence for zero-duration/instant staged effects.
@@ -132,6 +133,7 @@
     const duration = Math.max(MIN_SECOND_S, numeric(firstAction?.totalS, 0.22) / (attack.primaryAccelerated ? 1 : 2)); // Both swings run at 2x normal speed; legacy untimed owners get a double-speed echo fallback.
     const lead = Math.min(duration, Math.max(0, numeric(firstAction?.windupS) / 2));
     const last = attack.presentation;
+    replayingActors.add(attack.actor); // A consecutive double-speed second strike keeps the original player input locked until its recovery completes.
     const visual = last?.options || {
       anim: context.abilityId === 'chargedBreaker' ? 'sweep' : 'thrust',
       pose: window.AttackPoseTemplates?.poseFor?.(context.abilityId === 'chargedBreaker' ? 'hatchet_swing' : 'pickshovel_swing'),
@@ -172,8 +174,12 @@
         }
         lastEcho = { at: Date.now(), id: attack.id, used: attack.used, ratio, hits, duration, abilityId: context.abilityId };
       },
-      onComplete: () => { attacks.delete(attack.id); },
+      onComplete: () => {
+        replayingActors.delete(attack.actor);
+        attacks.delete(attack.id);
+      },
       onCancel: () => {
+        replayingActors.delete(attack.actor);
         attacks.delete(attack.id);
         lastEcho = { id: attack.id, cancelled: true, abilityId: context.abilityId };
       },
@@ -239,6 +245,7 @@
   installCombatBridge();
   window.FeyHypedAttacks = Object.freeze({
     onStaminaSpent, prepare, onHit, clearCredit, speedMultiplierForNextAction, installCombatBridge,
+    isReplaying: actor => !!actor && replayingActors.has(actor), // Central CombatInput gate prevents other player attacks interrupting the paid two-strike sequence.
     debugSnapshot: () => ({
       bridgeInstalled, replayCount, lastEcho, activeHypedAttacks: attacks.size,
       playerPending: !!pendingByActor.get(window.Combat?.deps?.player),
