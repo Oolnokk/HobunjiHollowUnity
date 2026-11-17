@@ -211,6 +211,27 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(Core.defaultBeltAtPosterior(NaN).every(p => Number.isFinite(p.y)), 'a missing posterior still yields a belt');
 }
 
+{ // Nuhongan pants must inherit the authored torso's WIDTH, not a pathological affine shear from the curved five-point belt.
+  const garment = [
+    { x: .34, y: .28 }, { x: .41512225534039254, y: .2896459066261255 },
+    { x: .4892831157757257, y: .29863517056835537 },
+    { x: .5791749990806067, y: .2918932091095862 }, { x: .66, y: .28 },
+  ]; // Actual starter-pants authored belt points, intentionally almost horizontal.
+  const nuhongan = [.9187355932151067, .9087355932151067, .9037355932151067, .9087355932151067, .9187355932151067]
+    .map((y, i) => ({ x: [.34, .42, .5, .58, .66][i], y })); // Nuhongan male portrait's existing five waist anchors.
+  const fit = Core.solveAffine(garment, nuhongan); // Runtime uses this exact core fit before binding to procedural legs.
+  const mappedLeft = Core.applyAffine(fit, garment[0]), mappedRight = Core.applyAffine(fit, garment[4]); // Visible belt endpoints in portrait pixels.
+  assert.strictEqual(fit.kind, 'belt-width', 'the near-flat garment uses a width-constrained belt fit');
+  assert(near(mappedLeft.x, .34, 1e-9) && near(mappedRight.x, .66, 1e-9), 'pants belt edges align with both Nuhongan torso edges');
+  assert(near(fit.c, 0, 1e-12), 'waist curvature never becomes a horizontal shear through pants legs');
+  assert(near(Core.applyAffine(fit, { x: .5, y: .65 }).x, Core.applyAffine(fit, { x: .5, y: .28 }).x, 1e-9), 'legs remain centred below the belt');
+  const widerTorso = nuhongan.map(p => ({ ...p, x: .5 + (p.x - .5) * 1.25 })); // Full Character Scale-like torso width variation, without changing authored belt y.
+  const widerFit = Core.solveAffine(garment, widerTorso); // Parent scaling must not be baked into the pant vertices a second time.
+  assert(near(Core.applyAffine(widerFit, garment[4]).x - Core.applyAffine(widerFit, garment[0]).x, .4, 1e-9), 'belt fit follows a different authored torso span exactly');
+  assert(near(widerFit.c, 0, 1e-12), 'wider torso still cannot create horizontal shear');
+}
+
+
 // ---- initial planar warp + animation motion ------------------------------------------
 {
   const P = (x, y, z = 0) => ({ x, y, z });
