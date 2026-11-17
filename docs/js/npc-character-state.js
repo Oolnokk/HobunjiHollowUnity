@@ -62,8 +62,10 @@
     // reaches zero sobriety at its strike frame, the authored drink pose can
     // finish before the NPC falls prone.
     if (movementLocked) {
-      if (!poseLocked && walker._npcRunLeanActive) walker._npcRunLeanPivot?.quaternion?.identity?.(); // A non-pose lock neutralizes sprint lean; a paired pose owns its own tilt pivot.
-      walker._npcRunLeanActive = false;
+      if (!poseLocked) {
+        if (walker._npcRunLeanActive) walker._npcRunLeanPivot?.quaternion?.identity?.(); // Ordinary non-paired movement locks clear a stale sprint lean.
+        walker._npcRunLeanActive = false; // Only forget the active lean once the reset can actually happen.
+      } // During a paired pose, retain the old run-lean flag: its reset must happen on the first unlocked idle frame, not be lost forever.
       holdAtCurrentSurface(walker, dt, options, poseLocked);
       return true;
     }
