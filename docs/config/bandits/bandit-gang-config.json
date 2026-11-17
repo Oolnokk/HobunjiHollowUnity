@@ -231,5 +231,32 @@
     "throwCooldownSeconds": 2.35,
     "lootMinPerType": 2,
     "lootMaxPerType": 4
+  },
+  "legacyMineStatMultiplierByRankAndTier": {
+    "_comment": "Only for ten-floor mine Ghouls using _preserveMineEnemyTiers. Snapshot of the pre-eight-tier rank curves; do not inherit wilderness bandit rank balancing.",
+    "grunt": [
+      0.28,
+      0.33,
+      0.4,
+      0.48
+    ],
+    "lieutenant": [
+      0.52,
+      0.58,
+      0.66,
+      0.74
+    ],
+    "captain": [
+      1.28,
+      1.26,
+      1.23,
+      1.2
+    ],
+    "flasker": [
+      0.45,
+      0.52,
+      0.59,
+      0.66
+    ]
   }
 }
