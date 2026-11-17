@@ -118,8 +118,12 @@ device='keyboard';assert.deepEqual(nativeIds([row]),['interact'],'keyboard door 
 torch=false;assert.deepEqual(nativeIds([row]),['action1'],'normal door keeps Action 1');
 
 const html=read('docs/index.html'),bootstrap=read('docs/js/dev-random-ruin-bootstrap.js'); // Both script loaders must invalidate stale cached builds.
+const hasVersionTag=(source,file)=>{ // Token value is intentionally not pinned: the cache-bust checker verifies it changed with the module.
+  const tail=source.split(file+'?v=')[1];
+  return !!tail && /^[A-Za-z0-9_-]+/.test(tail);
+};
 for(const file of ['game.js','js/action-prompt-ui.js','js/world-popup-text.js','js/shattercasks.js'])
-  assert(html.includes(file+'?v=20261117worldPromptInputs1'),file+' needs new cache token');
-assert(bootstrap.includes('js/dev-random-ruin-interactions.js?v=20261117worldPromptInputs1'),'ruin adapter needs new cache token');
+  assert(hasVersionTag(html,file),file+' needs a versioned loader entry');
+assert(hasVersionTag(bootstrap,'js/dev-random-ruin-interactions.js'),'ruin adapter needs a versioned bootstrap entry');
 
 console.log('interaction prompt colors and real input routes: PASS');
