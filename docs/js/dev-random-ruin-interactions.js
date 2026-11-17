@@ -578,7 +578,9 @@
 
   function bindingLabel(action, device = currentDevice(), touchIcon = '✋') {
     if (device === 'touch') return touchIcon;
-    const binding = bindingFor(action, device);
+    const binding = bindingFor(action, device); // Current device's live remapping, not a default/hardcoded prompt.
+    if (device === 'controller' && action === 'interact' && binding
+        && window.InputBindings?.resolveActionForButton?.('controller', binding) === 'jump') return ''; // Never advertise ruin controller A as Interact while it owns Jump.
     return window.InputBindings?.buttonLabel?.(binding, device) || binding || '';
   }
 
@@ -632,13 +634,16 @@
   function syncWorldPopup(rows) {
     const popup=window.WorldPopupText;
     if(!popup?.syncInteractionPrompts)return;
-    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Match prompt glyphs to the separate Interact binding while torch swings keep Action 1.
-    const buttons=actionButtonsFromRows(rows).map((button, index) => (
-      torchHeld && PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)
-        ? { ...button, inputAction: 'interact' } : button
-    ));
+    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Match the door hint to its real input without stealing Torch Swing/Throw.
+    const device=currentDevice(); // Used by the torch-door's physical arch-slot fallback when the Interact button is Jump or absent.
+    let torchDoorIndex=0; // Mirrors adventuringToolActionButtons' appended door order after Torch Swing and Throw.
+    const torchDoorSlots=['action3','itemAction1','itemAction2']; // Appended door rows occupy these arch slots, in order, on touch and controller.
+    const buttons=actionButtonsFromRows(rows).map((button, index) => {
+      if (!torchHeld || !PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)) return button;
+      const archAction=torchDoorSlots[torchDoorIndex++]||''; // No fourth actionable door slot exists in the current five-button arch.
+      return { ...button, inputAction: device === 'desktop' ? 'interact' : archAction };
+    });
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
-    const device=currentDevice();
     const promptInputs=buttons.map(button=>({
       actionId:button.inputAction||'',
       label:button.inputAction?bindingLabel(button.inputAction,device,button.icon):'',
