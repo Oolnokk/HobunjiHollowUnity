@@ -4,9 +4,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.ColorFill?.version) >= 7) return;
+  if (Number(window.ColorFill?.version) >= 8) return;
 
-  const VERSION = 7;
+  const VERSION = 8;
   let lastShadeFill = null; // Mobile/debug diagnostics: most recent relative-shading fill.
   const lastShadeFillByLabel = new Map(); // Used by Pixel Probe to retain named renderer passes even when later generic fills overwrite "last".
   let shadeFillSequence = 0; // Monotonic render-pass id used to distinguish a current named fill from an older one in copied diagnostics.
@@ -91,11 +91,13 @@
   // dark fur/body sprites whose real color range is intentionally low.
   function createShadeReference(sourceData, predicate = null, options = {}) {
     const cfg = options.config || shadeFillConfig();
+    const mask = options.sampleMask || null; // Uint8Array, one flag per pixel: same selection as `predicate` without a closure call per pixel.
     let peakValue = 0; // Used by shadeFillPixels as the 1.0 normalization anchor for the selected source region.
     let count = 0;
     for (let i = 0; i < sourceData.length; i += 4) {
-      if (sourceData[i + 3] === 0 || (predicate && !predicate(i))
-        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
+      if (sourceData[i + 3] === 0) continue;
+      if (mask ? !mask[i >> 2] : (predicate && !predicate(i))) continue;
+      if (isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
       peakValue = Math.max(peakValue, sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]));
       count++;
     }
@@ -114,19 +116,38 @@
     const cfg = reference.config || options.config || shadeFillConfig();
     const baseValue = Math.max(1 / 255, Number(reference.baseValue) || Number(reference.peakLuminance) || Number(reference.neutral) || Number(cfg.neutralLuminance) || 0.55); // Older supplied references remain compatible.
     const [tr, tg, tb] = targetRgb;
+    const applyMask = options.applyMask || null; // Uint8Array fast path (see createShadeReference).
     let appliedCount = 0;
 
+    // Pixel art repeats the same few source colors thousands of times, so remember
+    // the last result per packed source color in a small direct-mapped cache. The
+    // cached value is produced by the exact same expression as the slow path, so
+    // output is bit-identical; it only skips recomputation. Reset every call
+    // because the output depends on this call's target color and baseValue.
+    const CACHE_SIZE = 4096;
+    const cacheKeys = new Int32Array(CACHE_SIZE).fill(-1);
+    const cacheVals = new Int32Array(CACHE_SIZE);
+
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))
-        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
-      const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
-      // Preserve the source sprite's full authored perceptual-lightness range
-      // relative to its brightest eligible pixel. This is shared by base/body
-      // recolors and overlays that explicitly sample an untouched source raster.
-      const shade = Math.max(0, Math.min(1, value / baseValue));
-      data[i] = clampByte(tr * shade);
-      data[i + 1] = clampByte(tg * shade);
-      data[i + 2] = clampByte(tb * shade);
+      if (data[i + 3] === 0) continue;
+      if (applyMask ? !applyMask[i >> 2] : (applyPredicate && !applyPredicate(i))) continue;
+      if (isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
+      const sr = sourceData[i], sg = sourceData[i + 1], sb = sourceData[i + 2];
+      const packed = (sr << 16) | (sg << 8) | sb;
+      const slot = (Math.imul(packed, 0x9E3779B1) >>> 20) & (CACHE_SIZE - 1);
+      let out;
+      if (cacheKeys[slot] === packed) {
+        out = cacheVals[slot];
+      } else {
+        const value = sourceValue(sr, sg, sb);
+        const shade = Math.max(0, Math.min(1, value / baseValue));
+        out = (clampByte(tr * shade) << 16) | (clampByte(tg * shade) << 8) | clampByte(tb * shade);
+        cacheKeys[slot] = packed;
+        cacheVals[slot] = out;
+      }
+      data[i] = out >> 16;
+      data[i + 1] = (out >> 8) & 255;
+      data[i + 2] = out & 255;
       appliedCount++;
     }
 
@@ -137,7 +158,7 @@
       appliedCount,
       baseValue: Number(baseValue.toFixed(4)),
       peak: Number(baseValue.toFixed(4)),
-      separateSampleMask: !!samplePredicate && samplePredicate !== applyPredicate,
+      separateSampleMask: !!(options.sampleMask && options.sampleMask !== options.applyMask) || (!!samplePredicate && samplePredicate !== applyPredicate),
       externalSource: sourceData !== data,
     };
     if (lastShadeFill.label) lastShadeFillByLabel.set(lastShadeFill.label, { ...lastShadeFill });

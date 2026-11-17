@@ -20,7 +20,7 @@
     await loadClassicScript('furniture-daylight-windows.js?v=20261026ha5312a8');
     await loadClassicScript('furniture-decal-catalog.js?v=20260907a');
     await loadClassicScript('furniture-piece-animations.js?v=20261004hd781699');
-    await loadClassicScript('../../js/color-fill.js?v=20260923colorfill7');
+    await loadClassicScript('../../js/color-fill.js?v=20261117h93b0e83');
     await loadClassicScript('../../js/motif-store.js?v=20260920patterns1');
     await loadClassicScript('../../js/pattern-library.js?v=20261026hPlayerDefaults5');
     await loadClassicScript('../../js/repo-pattern-library.js?v=20261111h873ccf1');

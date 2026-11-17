@@ -8,6 +8,7 @@ const source = fs.readFileSync('docs/js/animal-baby-arrival.js', 'utf8'); // Ful
 const timers = []; // Simulated browser timers for asynchronous queue order and automatic reveal close.
 const lockState = { acquired: 0, released: 0 }; // Checks that game input focus is always restored.
 let controllerClaims = 0; // Checks explicit focus handoff instead of relying on a delayed DOM observer.
+const portraitCalls = []; // Records the real chathead-rendering seam for new-baby UI regression checks.
 const document = {
   activeElement: null,
   head: null,
@@ -33,6 +34,7 @@ function element(tag) {
           ['input', element('input')], ['p', element('p')], ['.aba-error', element('div')],
           ['[data-ctrl-cancel]', element('button')], ['.aba-reroll', element('button')],
           ['button', element('button')], ['h2', element('h2')], ['.aba-grown', element('span')],
+          ['.aba-chathead', element('canvas')], ['.aba-chathead-fallback', element('span')],
         ]);
       }
       return this.elements.get(selector) || null;
@@ -49,6 +51,12 @@ document.activeElement.isConnected = true;
 const window = {
   ControllerUI: { focusPanel(root) { assert.equal(root.id, 'animalBabyArrivalOverlay'); controllerClaims++; return true; } }, // Simulates the universal controller navigator's explicit modal claim.
   CREATURE_DB: { puktuk: { label: 'Puktuk' } },
+  AnimalChatheadFrame: {
+    async renderCreatureChathead(canvas, kind, options) {
+      portraitCalls.push({ canvas, kind, genotype: options.genotype }); // Captures the actual crop renderer invocation without requiring image assets in Node.
+      return true;
+    },
+  },
   CharacterActionLocks: {
     acquire() {
       lockState.acquired++;
@@ -70,15 +78,23 @@ const context = vm.createContext({ window, document, setTimeout: run, clearTimeo
 vm.runInContext(source, context, { filename: 'animal-baby-arrival.js' });
 const feature = window.AnimalBabyArrival;
 assert(feature, 'the arrival module exports its public UI API');
-for (let i = 0; i < 300; i++) {
+const twoSyllableName = /^(?:[BDFGKLMNPSTW][aeiou]|Ch[ui]|Sh[aiu])(?:[bdfgklmnpstw][aeiou]|ch[ui]|sh[aiu])[nmtkbgp]?$/; // Verifies actual two-syllable phonology instead of rejecting coincidental letter sequences such as shi+le+t = Shilet.
+for (let i = 0; i < 1500; i++) {
   const name = feature.generateName();
-  assert.match(name, /^[A-Z][a-z]{2,29}$/, 'generated pet names have a cute two-syllable format');
+  assert.match(name, twoSyllableName, 'names comprise two simple syllables and at most one permitted coda, never an added nickname suffix');
+}
+assert.match('Shilet', twoSyllableName, 'natural shi+le+t combinations are not mistaken for the removed let suffix');
+for (const [ending, index] of [['b', 4], ['g', 5], ['p', 6]]) {
+  const rolls = [0, 0.9, 0, 0, (index + 0.2) / 7]; // Selects two simple ba syllables, then the targeted single-letter coda.
+  let roll = 0; // Advances through the deterministic random draw sequence for each required final consonant.
+  assert.equal(feature.generateName(() => rolls[roll++]), 'Baba' + ending, 'supports a final ' + ending + ' without an ornamental suffix');
 }
 assert.equal(feature.requestName({}, { commit() {} }), false, 'cannot queue an animal without identity');
 
 let saved = ''; // Captures the player-approved name, not the random default before confirmation.
 let refreshes = 0; // Confirms successful renames refresh their owning panel exactly once.
-assert.equal(feature.requestName({ id: 'new_1', kind: 'puktuk' }, {
+const babyGenotype = { base: { color: '#ab78cd' } }; // Must reach the shared chathead renderer unchanged for inherited baby coloration.
+assert.equal(feature.requestName({ id: 'new_1', kind: 'puktuk', genotype: babyGenotype }, {
   scope: 'nursery',
   commit(name) { saved = name; return true; },
   refresh() { refreshes++; },
@@ -93,6 +109,11 @@ const root = document.getElementById('animalBabyArrivalOverlay');
 assert(root && !root.hidden && root.attributes['data-ctrl-modal'] === '', 'naming dialog captures controller/modal focus');
 const form = root.children[0];
 const input = form.querySelector('input');
+assert.equal(portraitCalls.length, 1, 'naming asks the canonical animal chathead renderer to paint the newborn');
+assert.equal(portraitCalls[0].kind, 'puktuk', 'the portrait uses the newborn species');
+assert.equal(portraitCalls[0].genotype, babyGenotype, 'the portrait uses the newborn inherited genotype');
+assert.equal(portraitCalls[0].canvas.attributes['aria-label'], 'Baby Puktuk portrait', 'the canvas has a meaningful accessible label');
+assert(!form.innerHTML.includes('🐣') && !form.innerHTML.includes('🎲'), 'the naming UI uses an animal portrait rather than emoji decorations');
 assert.match(input.value, /^[A-Z][a-z]+$/, 'input is prefilled with a suggested name');
 assert.equal(document.activeElement, input, 'input receives keyboard focus');
 assert.equal(controllerClaims, 1, 'naming dialog explicitly takes controller focus');
@@ -105,6 +126,7 @@ root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
 assert(root.hidden, 'Later dismisses without changing saved names');
 assert.equal(lockState.acquired, 1, 'both naming prompts share one input lock');
 assert.equal(lockState.released, 1, 'finishing the queue releases the player lock');
+assert.equal(portraitCalls.length, 2, 'each queued animal requests its own portrait, not the prior baby canvas');
 
 feature.celebrateMaturation({ id: 'adult_1', name: 'Pudding', kind: 'puktuk' });
 feature.celebrateMaturation({ id: 'adult_2', name: 'Bobo', kind: 'grehlr' });
@@ -119,4 +141,39 @@ assert.equal(lockState.acquired, 2, 'incubation uses a fresh input lock');
 assert.equal(lockState.released, 2, 'automatic dismissal also releases the input lock');
 assert.equal(feature.debugSnapshot().queued.length, 0, 'no stale work remains in the modal queue');
 assert.equal(controllerClaims, 4, 'each queued screen claims controller focus independently');
-console.log('Animal baby arrival/naming/animation tests passed.');
+
+window.AnimalChatheadFrame = null; // Simulates a missing/failed portrait dependency without changing the naming workflow.
+assert.equal(feature.requestName({ id: 'missing_portrait', kind: 'puktuk' }, { commit() { return true; } }), true);
+flush(0);
+const portraitFallbackForm = root.children[0]; // The naming modal remains usable when the portrait renderer is absent.
+assert.equal(portraitFallbackForm.querySelector('.aba-chathead').hidden, true, 'unavailable portrait canvas is hidden rather than showing a blank box');
+assert.equal(portraitFallbackForm.querySelector('.aba-chathead-fallback').hidden, false, 'non-emoji fallback explains the unavailable portrait');
+assert.equal(feature.debugSnapshot().lastPortrait.status, 'unavailable', 'mobile debug reports the portrait fallback state');
+portraitFallbackForm.querySelector('[data-ctrl-cancel]').listeners.click();
+assert(root.hidden, 'missing portraits never prevent dismissing the modal');
+assert.equal(lockState.released, 3, 'portrait failure still releases the input lock');
+// Async image loads must neither block input nor overwrite a later dialog's result.
+async function testAsyncPortraitOwnership() {
+  let resolveFirstPortrait; // Held image job simulates a delayed species asset while the player opens the next baby.
+  window.AnimalChatheadFrame = { renderCreatureChathead() {
+    return new Promise(resolve => { resolveFirstPortrait = resolve; });
+  } };
+  feature.requestName({ id: 'slow_baby', kind: 'puktuk' }, { commit: () => true });
+  flush(0);
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'loading', 'delayed image does not delay the naming modal');
+  root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
+
+  window.AnimalChatheadFrame = { async renderCreatureChathead() { return true; } };
+  feature.requestName({ id: 'fresh_baby', kind: 'puktuk' }, { commit: () => true });
+  flush(0);
+  await new Promise(resolve => setImmediate(resolve)); // Let Node flush the VM realm's separate async continuations before inspecting its DOM.
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'resolved image marks the active baby portrait ready');
+  resolveFirstPortrait(false);
+  await new Promise(resolve => setImmediate(resolve)); // The previous modal's rejected image must not change the visible, newer dialog.
+  assert.equal(feature.debugSnapshot().lastPortrait.id, 'fresh_baby', 'a stale portrait failure cannot overwrite another animal');
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'a stale portrait failure cannot hide the new chathead');
+  root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
+  assert.equal(lockState.released, 5, 'both delayed and new prompts release their input locks');
+  console.log('Animal baby arrival/naming/animation tests passed.');
+}
+testAsyncPortraitOwnership().catch(error => { console.error(error); process.exitCode = 1; });
