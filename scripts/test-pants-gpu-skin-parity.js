@@ -56,6 +56,25 @@ const handle = Renderer.attach(THREE, {
   garmentRecord: rigs.garments.pants_basic, characterRecord: rigs.characters.__default, meshBudget: 'npc',
 });
 assert(handle, 'garment attached to the synthetic avatar');
+const portraitRestZ = model.getObjectByName('frontPlane').position.z; // Genuine front/rear portrait rest surface in avatar-local depth.
+assert(handle.basePositions.every((coordinate, i) => (i % 3 !== 2) || Math.abs(coordinate - portraitRestZ) < 1e-6),
+  'unanimated pants lie on the portrait plane, never 0.012 units in front of opaque portrait pixels');
+
+// The feet remain farther from the camera than the coplanar pants: the separate camera-space
+// foot push must be recalculated when the garment depth moves to the portrait's rest plane.
+const nearFoot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial());
+nearFoot.position.set(0, 0.2, 0.1); // A foot projects 0.15 avatar-local units ahead of its portrait.
+model.add(nearFoot);
+let footPush = NaN; // Captures the real pants attachment's setFootDepthPush call.
+const footCheck = Renderer.attach(THREE, {
+  avatarGroup: model, legHandle: { group: legs, setFootDepthPush(value) { footPush = value; } },
+  footObjects: [nearFoot], speciesId: 'kenkari', gender: 'female',
+  garmentRecord: rigs.garments.pants_basic, characterRecord: rigs.characters.__default, meshBudget: 'npc',
+});
+assert(footCheck, 'depth-check pants attach to the same actual avatar');
+assert(Math.abs(footPush - 0.16) < 1e-5,
+  'a foot protruding 0.15 ahead of the portrait is pushed 0.16 behind the coplanar pants, including safety margin');
+footCheck.dispose(); model.remove(nearFoot); nearFoot.geometry.dispose(); nearFoot.material.dispose();
 const material = new THREE.MeshBasicMaterial();
 handle.mesh = new THREE.Mesh(handle.geometry, material); handle.material = material; model.add(handle.mesh);
 
