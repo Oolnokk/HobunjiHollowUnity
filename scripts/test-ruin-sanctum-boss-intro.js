@@ -72,7 +72,7 @@ function assertProjectedRevealLight(lights, spotlight) {
   }
   const fogSource=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8'); // Real lighting implementation is instrumented without copying its drawing algorithm.
   const probeSource=fogSource.replace('  function ordinaryBuildingInterior(area) {',
-    '  window.__probeRevealLight=(sources,deps)=>{lightingDeps=deps;drawRuinTraditionLightMasks(sources);return {...ruinFireMaskStats};};\\n  function ordinaryBuildingInterior(area) {');
+    '  window.__probeRevealLight=(sources,deps)=>{lightingDeps=deps;drawRuinTraditionLightMasks(sources);return {...ruinFireMaskStats};};\n  function ordinaryBuildingInterior(area) {');
   assert.notEqual(probeSource,fogSource,'the production lighting probe must be installed');
   const fogWindow={THREE:{Vector3:Vec},WeatherFX:{init(){}}}; // Minimal host for the unchanged 2D overlay module.
   vm.runInNewContext(probeSource,{window:fogWindow,performance:{now:()=>clock},console},{filename:'cloud-forest-fog.js'});
