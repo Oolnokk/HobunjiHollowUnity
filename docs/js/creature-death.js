@@ -204,6 +204,8 @@
     c.deathAwayAngle = awayAngle;
     c.deathHadImpulse = hasImpactImpulse; // Mobile-readable proof of whether the corpse actually received a horizontal hit.
     c.state = 'dying';
+    window.BurningEntityHazards?.beginCorpse?.(c); // A fire death keeps an actual flame hazard after resource ticks stop.
+    window.BurningAfflictionVfx?.syncEntity?.(c, c.avatarRef?.group); // The corpse flame shares the live actor's authored campfire emitter.
     c.deathT = 0;
     const clipSeconds = window.ImpactRagdollPlayback?.startCreatureDeath?.(c, c.deathDirection) || 0;
     c.deathRecorded = clipSeconds > 0;
@@ -256,6 +258,8 @@
     c.deathRecorded = false;
     c.health = 0;
     c.state = 'corpse';
+    window.BurningEntityHazards?.beginCorpse?.(c); // Recovery does not silently extinguish a fire death.
+    window.BurningAfflictionVfx?.syncEntity?.(c, c.avatarRef?.group);
     c.corpseCol = col; c.corpseRow = row;
     c.x = (col + 0.5) * TILE; c.y = (row + 0.5) * TILE;
     c.vx = 0; c.vy = 0;
@@ -389,6 +393,7 @@
     grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
     if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
     deps.corpseObjects.add(c);
+    if (window.BurningEntityHazards?.beginCorpse?.(c)) window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Pre-settled bodies only burn when a real fire state exists.
     return true;
   }
 
@@ -420,6 +425,7 @@
     if (!recorded) grp.rotation.set(Number(c.deathRestRotX) || 0, Number(c.deathRestRotY) || 0, Number.isFinite(c.deathRestRotZ) ? c.deathRestRotZ : Math.PI / 2);
     if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
     if (c.deathCause === 'fire') { _prepareScorch(c); c.deathT = Number(c.deathDurationS) || 1; _updateScorch(c); }
+    if (window.BurningEntityHazards?.isBurning?.(c)) window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Rebuilt corpse rig regains any unexpired flame.
     return true;
   }
 
