@@ -311,7 +311,7 @@ let sort = null;
 const renderer = { setTransparentSort(fn) { sort = fn; } };
 portraitOrder.withPortraitDrawOrder(renderer, { ranks, nearest: playerRank }, () => {
   assert.deepEqual([playerDraw,npcDraw].sort(sort), [npcDraw,playerDraw], 'actor depth wins over crossed NPC/player plane center depth and front/back draw order');
-  assert.equal(fogged.depthWrite, true, 'farther NPC keeps its PNG depth so its own pants and other actors are correctly occluded');
+  assert.equal(fogged.depthWrite, false, 'a pants-free farther NPC still defers depth to preserve actor-root ordered portrait crossings');
   assert.equal(nearby.depthWrite, true, 'the closest portrait still contributes normal depth');
 }, true);
 assert.equal(sort, null);
@@ -332,16 +332,20 @@ assert.equal(nearby.depthWrite, true);
   const playerFront = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .5, id: 42 };
   const nearPortrait = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .2, id: 43 };
   const playerPants = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 28, z: .5, id: 44 };
-  const ranks3 = new Map([[farPortrait.object, farRank], [playerFront.object, midRank], [nearPortrait.object, nearRank]]);
+  const unpantedClose = { object: { material: { depthWrite: true } }, groupOrder: 0, renderOrder: 2, z: .65, id: 45 }; // Close NPC with no garment keeps the original plane-crossing safeguard.
+  const unpantedRank = { owner: { id: 6 }, depth: .7, close: true }; // Deliberately farther than the nearest close actor.
+  const ranks3 = new Map([[farPortrait.object, farRank], [playerFront.object, midRank], [nearPortrait.object, nearRank], [unpantedClose.object, unpantedRank]]);
   const extras = new Map([[farPants.object, farRank], [playerPants.object, midRank]]);
   const sorted = [playerPants, nearPortrait, farPants, playerFront, farPortrait].sort((a, b) => portraitOrder.comparePortraitDraws(a, b, ranks3, extras));
   assert.deepEqual(sorted.map(d => d.id), [40, 41, 42, 44, 43], 'actors draw far to near; each actor\'s pants follow its own portrait');
   let sort3 = null;
   portraitOrder.withPortraitDrawOrder({ setTransparentSort(fn) { sort3 = fn; } }, { ranks: ranks3, extras, nearest: nearRank }, () => {
     assert.equal(farPortrait.object.material.depthWrite, true, 'actors outside the crossing radius keep their normal depth write');
-    assert.equal(playerFront.object.material.depthWrite, true, 'a close non-nearest portrait writes depth and blocks garments physically behind it');
+    assert.equal(playerFront.object.material.depthWrite, true, 'the close pants wearer keeps portrait depth, shielding its solid pixels from garment bleed');
+    assert.equal(unpantedClose.object.material.depthWrite, false, 'unclothed non-nearest actors still defer portrait depth for crossed-plane painter order');
     assert.equal(farPants.object.material.depthWrite, true, 'garments write depth normally, separate from the pants-to-feet adjustment');
   }, true);
+  assert.equal(unpantedClose.object.material.depthWrite, true, 'temporary pantless actor depth suppression restores after the base draw');
   assert.ok(/extras\.set\(mesh, rank\)/.test(source) && /PantsGarmentRenderer\?\.liveHandles/.test(source), 'real render path ranks worn pants with their actor');
 }
 
