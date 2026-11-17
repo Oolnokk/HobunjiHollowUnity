@@ -323,7 +323,7 @@
       const patterns = window.SpecialHarlyaoLiches?.ordinaryLichPatterns?.(def.id, random, patternColorFor(def.id, roster.lichDyeId));
       if (patterns) roster.clothingPatterns = patterns;
     }
-    const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
+    const tier = window.EnemyTierProgression?.clampTier(options.tier) ?? Math.max(0, Math.min(7, Math.round(Number(options.tier) || 0))); // Lich variants also accept the full eight-tier dev selection.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const generatedGivenName = !special && !options.roster && !options.nameOverride && /^[A-Z][a-z]{4,11}$/.test(roster.name || '') ? roster.name : null; // One Harlyao given name; custom rosters and authored liches retain their original identities.
     const surnameGenerator = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoSurname; // Use the same Harlyao family-name rules as seeded culture identities.
