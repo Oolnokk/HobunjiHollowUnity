@@ -82,7 +82,7 @@ const warp = {
   debugSnapshot: () => ({ lastError: null }),
 };
 const win = {
-  HobunjiGrehlrHeadRigCorrection: { version: 7 },
+  HobunjiGrehlrHeadRigCorrection: { version: 8 },
   HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-17-gar-wolf-grehlr-rigs1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => true },
   AnimalShoulderSpline: {
