@@ -1056,6 +1056,22 @@
     function applyFootRollOnly(mesh, roll) {
       mesh.quaternion.setFromAxisAngle(footAxisX, roll); // Never inherit a stale yaw/half-turn from a previous climbing, paired or recorded pose.
     }
+    function prepareLegSolve(side = null) {
+      const compositor = window.ActorRigCompositor; // Recover canonical, unmodified IK input before a new incremental seated/hover/walk solve.
+      if (!compositor?.restoreSolvedBase) return;
+      if (!side) compositor.restoreSolvedBase(root, 'position'); // Remove last frame's named vertical leg-group offsets before stance easing.
+      const count = side ? 1 : 2; // A recorded leg can update independently while the other still holds its authored sample.
+      for (let i = 0; i < count; i++) {
+        const name = side || (i === 0 ? 'left' : 'right'); // Stable anatomical side with no per-frame sides-array allocation.
+        const chain = legChains[name], foot = state[name];
+        if (!chain || !foot) continue;
+        for (const joint of [chain.hip, chain.thigh, chain.calf, foot]) {
+          compositor.restoreSolvedBase(joint, 'position');
+          compositor.restoreSolvedBase(joint, 'quaternion');
+        }
+      }
+    }
+
     function publishSolvedLegPose(side = null) {
       const compositor = window.ActorRigCompositor; // One shared registry receives real IK baselines before named additive effects.
       if (!compositor?.setSolvedBase) return;
@@ -1491,6 +1507,7 @@
     }
     function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false,allowDeepFold=false) {
       if(state.disposed || !window.LegBones)return false;
+      prepareLegSolve(); // External foot contact also has to begin from the clean, undecorated IK pose.
       root.updateWorldMatrix(true,false);
       pairedBend ||= new THREE.Euler(); // Lazily initialized only for an explicitly owned paired pose.
       for(const side of ['left','right']) {
@@ -1535,6 +1552,7 @@
       dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
+      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
@@ -1771,6 +1789,7 @@
     // owns interpolation between clip frames — this only ever applies one
     // already-resolved instant.
     function applyRecordedLegPose(side, record) {
+      if (record) prepareLegSolve(side); // Ragdoll interpolations never start from an additive-shifted older joint.
       const mesh = state[side];
       const chain = legChains[side];
       if (!mesh || !chain || !record) return;
