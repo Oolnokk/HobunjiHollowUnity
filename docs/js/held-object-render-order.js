@@ -981,7 +981,7 @@
     const extras = new Map();
     if (xrayRule('pants.sortWithActor') !== 'off') for (const handle of window.PantsGarmentRenderer?.liveHandles?.() || []) {
       const mesh = handle?.mesh;
-      if (!mesh?.parent) continue;
+      if (!mesh?.parent || mesh.visible === false) continue; // Only an actually displayed cuff needs a solid-depth portrait.
       const rank = actors.get(portraitStencilOwner(mesh, scene));
       if (rank) extras.set(mesh, rank);
     }
@@ -1007,13 +1007,24 @@
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
     if ((!order && xrayRule('layers.manualOrder') !== 'on' && !shoulderPetPresentation?.pet?.avatarRef) || !renderer.setTransparentSort) return draw();
-    // The actor-aware painter order is still essential when two portrait cards cross. But NEVER turn off
-    // a portrait's ordinary depth write in the base pass: worn pants are drawn after its owner's portrait,
-    // and a depth-write-free PNG cannot occlude the garment (or another actor's garment) even when it
-    // is physically in front. Feet retain their independent pants-only camera-depth push.
-    // protectNearPortrait remains an accepted argument for existing replay call sites; physical portrait
-    // occlusion now takes precedence over the old temporary far-portrait depth-write suppression.
-    return withVisualSort(renderer, order, draw);
+    const changed = new Set(); // Depth-write states of pants-free distant portraits, restored even on an interrupted draw.
+    if (protectNearPortrait && order) {
+      const pantsRanks = new Set(order.extras?.values() || []); // A wearer needs its real portrait depth to stop the pants drawn immediately afterward.
+      for (const [mesh, rank] of order.ranks) {
+        if (rank === order.nearest || rank.close === false || pantsRanks.has(rank)) continue;
+        // Without pants, preserve the original crossed-portrait protection: a distant actor's
+        // forward-leaning PNG should not punch physical depth across the nearer actor's art.
+        // Only pants wearers must keep their portrait's alpha-tested depth so their own cuffs,
+        // and the cuffs of other actors, cannot x-ray through a solid portrait pixel.
+        forEachMaterial(mesh.material, material => {
+          if (!material.depthWrite) return; // Shoulder-pet compositor owns its own special depth-write-free portrait stack.
+          material.depthWrite = false;
+          changed.add(material);
+        });
+      }
+    }
+    try { return withVisualSort(renderer, order, draw); }
+    finally { for (const material of changed) material.depthWrite = true; }
   }
 
   function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {
