@@ -13,7 +13,7 @@
 
   const APPLIED = '__hobunjiBodySinkApplied';
 
-  function setRootSink(entry, units) {
+  function setRootSink(entry, units, ownerId = 'actor-body-sink') {
     const obj = entry?.obj;
     if (!obj?.position) return;
     const factor = typeof entry.factor === 'function' ? entry.factor() : entry.factor;
@@ -21,7 +21,7 @@
     const prev = obj.userData[APPLIED] || 0;
     const compositor = global.ActorRigCompositor || global.RigTransformLayers; // Named body-sink owner shared with all procedural rig effects.
     if (compositor?.setAxis) {
-      compositor.setAxis(obj, 'actor-body-sink', 'position', 'y', -next);
+      compositor.setAxis(obj, ownerId, 'position', 'y', -next);
       obj.userData[APPLIED] = next;
       return; // The compositor recomposes from the clean root Y rather than subtracting a remembered offset.
     }
@@ -40,7 +40,7 @@
     legs.setStanceDrop(wanted, immediate);
     const applied = legs.getStanceDrop();
     for (const entry of actor.lower || []) {
-      if (entry?.obj) { entry.obj.userData ||= {}; setRootSink(entry, applied); }
+      if (entry?.obj) { entry.obj.userData ||= {}; setRootSink(entry, applied, actor.ownerId || 'actor-body-sink'); }
     }
     return applied;
   }
