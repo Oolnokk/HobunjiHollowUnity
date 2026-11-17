@@ -57,6 +57,12 @@
   // result is deterministic per seed and no caller mutates the returned
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
+  const _asyncCavernFloors = new Map(); // Coalesces concurrent den loading requests for the same seed and cave height.
+  const _cavernWorkerJobs = new Map(); // Pairs worker replies with the original promise without touching game state.
+  const _cavernWorkerDebug = { started: 0, completed: 0, failures: 0, lastDurationMs: 0, lastError: null }; // Readable from mobile diagnostics.
+  let _cavernWorker = null; // Lazy, reusable CPU-only worker for the expensive SDF floor carving.
+  let _cavernWorkerUnavailable = false; // Prevents repeated attempts after a blocked or unsupported worker load.
+  let _nextCavernWorkerJob = 0; // Unique ID for each worker request and reply.
   const CAVERN_SCULPT_SIZE_Y = 3.0, CAVERN_PATH_Y_SHIFT_FRAC = 0.3; // Mirrors CavernSculptor DEFAULT_OPTS sizeY/pathYShiftFrac; taller clearance carves scale from these.
   // Cave heights come from docs/config/cave-shape.js (window.
   // HobunjiCaveShapeConfig), read at carve time; these defaults apply when
@@ -159,10 +165,88 @@
     return { floor: floor.filter(([col, row]) => reached.has(`${col},${row}`)), removed: floor.length - reached.size };
   }
 
+  function cavernFloorCacheKey(seedText, generationOptions = {}) {
+    const shape = caveShape(); // Matches the synchronous generator's cache identity.
+    return `${seedText}${generationOptions.fast ? ':fast' : ''}${generationOptions.singleRoom === true ? ':single-room' : ''}:h${shape.base}`;
+  }
+
+  function cavernFloorWorker() {
+    if (_cavernWorkerUnavailable || typeof Worker !== 'function') return null;
+    if (_cavernWorker) return _cavernWorker;
+    try {
+      const worker = new Worker('js/cavern-generator-worker.js?v=20261117deepAudit3'); // Owns long-running SDF work, never the scene graph.
+      worker.onmessage = ({ data }) => {
+        const job = _cavernWorkerJobs.get(data?.id);
+        if (!job) return;
+        _cavernWorkerJobs.delete(data.id);
+        if (data.error) job.reject(new Error(data.error));
+        else job.resolve(data.floorData);
+      };
+      worker.onerror = (event) => {
+        const message = String(event?.message || 'Cavern worker failed to load or execute');
+        _cavernWorkerUnavailable = true;
+        _cavernWorker = null;
+        worker.terminate();
+        for (const job of _cavernWorkerJobs.values()) job.reject(new Error(message));
+        _cavernWorkerJobs.clear();
+      };
+      _cavernWorker = worker;
+      return worker;
+    } catch (error) {
+      _cavernWorkerUnavailable = true;
+      _cavernWorkerDebug.lastError = String(error?.message || error);
+      return null;
+    }
+  }
+
+  function generateCavernFloorAsync(seedText, generationOptions = {}) {
+    const cacheKey = cavernFloorCacheKey(seedText, generationOptions); // Uses the same seed and shape as the synchronous compatibility path.
+    const useCache = generationOptions.cache !== false; // An explicit cache:false request must perform its own fresh carve, not reuse an in-flight one.
+    if (useCache && _cavernFloorCache.has(cacheKey)) return Promise.resolve(_cavernFloorCache.get(cacheKey));
+    if (useCache && _asyncCavernFloors.has(cacheKey)) return _asyncCavernFloors.get(cacheKey);
+    const worker = cavernFloorWorker();
+    if (!worker) return Promise.resolve(generateCavernFloor(seedText, generationOptions)); // Explicit compatibility fallback when workers are blocked.
+    const startedAt = performance.now(); // Measures the wall-clock cost without a browser main-thread stall.
+    _cavernWorkerDebug.started++;
+    const job = new Promise((resolve, reject) => {
+      const id = ++_nextCavernWorkerJob; // Workers respond asynchronously and can finish out of request order.
+      _cavernWorkerJobs.set(id, { resolve, reject });
+      try {
+        const config = window.HobunjiCaveShapeConfig || {}; // A plain snapshot; do not structured-clone editor functions into a worker.
+        worker.postMessage({
+          id, seedText,
+          generationOptions: { ...generationOptions, cache: false },
+          caveShape: {
+            fullHeightScale: config.fullHeightScale,
+            minHeightFraction: config.minHeightFraction,
+            tallRadiusTiles: Array.isArray(config.tallRadiusTiles) ? [...config.tallRadiusTiles] : undefined,
+          },
+        });
+      } catch (error) {
+        _cavernWorkerJobs.delete(id);
+        reject(error);
+      }
+    }).then(floorData => {
+      if (useCache) _cavernFloorCache.set(cacheKey, floorData);
+      _cavernWorkerDebug.completed++;
+      _cavernWorkerDebug.lastDurationMs = Math.round(performance.now() - startedAt);
+      return floorData;
+    }).catch(error => {
+      _cavernWorkerDebug.failures++;
+      _cavernWorkerDebug.lastError = String(error?.message || error);
+      window.__farmLog?.('[cavern-worker] ' + _cavernWorkerDebug.lastError + '; using synchronous fallback.', 'warn');
+      return generateCavernFloor(seedText, generationOptions); // Keep the original entrance/dungeon generation path functional on restricted browsers.
+    }).finally(() => {
+      if (_asyncCavernFloors.get(cacheKey) === job) _asyncCavernFloors.delete(cacheKey);
+    }); // Only the owner may remove an in-flight cache entry.
+    if (useCache) _asyncCavernFloors.set(cacheKey, job);
+    return job;
+  }
+
   function generateCavernFloor(seedText, generationOptions = {}) {
     const singleRoom = generationOptions.singleRoom === true; // Explicit callers may request a compact room; named story caves no longer leak into the generic generator through map-id special cases.
     const shape = caveShape(); // Height is part of the cache key so a config change re-carves.
-    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}:h${shape.base}`; // Used to prevent a normal den carve from poisoning the one-room cache.
+    const cacheKey = cavernFloorCacheKey(seedText, generationOptions); // Used to prevent a normal den carve from poisoning the one-room cache.
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
     if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
@@ -617,12 +701,12 @@
       .find(zone => String(mapId).startsWith('map_i_den_' + zone + '_')) || '';
   }
 
-  function synthesizeCavernMapData(mapId) {
+  function synthesizeCavernMapData(mapId, options = {}) {
     // Ordinary wildlife dens remain fully procedural. Named/story caverns are
     // authored as cave_interior locales and use synthesizeLocaleCavernMapData
     // instead, so this generic path no longer knows about Banubu or any other
     // individual cave by map id.
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh, outerRimTiles } = generateCavernFloor(mapId, { fast: true });
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh, outerRimTiles } = options.floorData || generateCavernFloor(mapId, { fast: true }); // Worker-precomputed floor avoids the 25–40s blocking SDF carve.
     const floorSurface = floorSurfaceMap(floor, mesh); // Ordinary dens now share the same rendered-surface grounding contract as authored locale caverns.
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
@@ -656,6 +740,8 @@
   window.CavernGenerator = {
     init,
     generateCavernFloor,
+    generateCavernFloorAsync,
+    workerDebug: () => ({ ..._cavernWorkerDebug, pending: _asyncCavernFloors.size }), // Mobile-accessible carved-den worker diagnostics.
     entranceConnectedFloor,
     expandCavernMapData,
     rockCoveredFloorTiles,

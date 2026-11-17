@@ -14345,6 +14345,7 @@
 
       function discardGeneratedMineFloor(mapId) {
         if (!window.TownMine?.floorFromMapId?.(mapId)) return;
+        invalidatePendingBuildingLoad(mapId); // A discarded mine-floor build must not publish stale geometry after a later entrance.
         const info = _buildingScenes.get(mapId);
         if (info?.scene && currentArea === mapId) {
           info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
@@ -14374,6 +14375,7 @@
       // currently standing in mapId; only removes the player/tool meshes
       // from the outgoing scene when they actually are.
       function discardBuildingScene(mapId, options = {}) {
+        invalidatePendingBuildingLoad(mapId); // Live layout swaps invalidate a pending older interior, not just cached geometry.
         const info = _buildingScenes.get(mapId);
         if (!info?.scene) { _buildingScenes.delete(mapId); return; }
         if (currentArea === mapId) {
@@ -14405,14 +14407,57 @@
         _buildingScenes.delete(mapId);
       }
 
-      async function loadBuildingScene(mapId) {
-        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
-        _buildingScenes.set(mapId, null); // sentinel: loading in progress
+      const _buildingSceneInFlight = new Map(); // Coalesces concurrent interior requests; a pending null scene must not launch duplicate builders.
+      const _buildingSceneLoadTickets = new Map(); // Per-map token invalidates loads discarded during an awaited worker or layout refresh.
+      function invalidatePendingBuildingLoad(mapId) {
+        const ticket = _buildingSceneLoadTickets.get(mapId);
+        if (!ticket) return false;
+        ticket.cancelled = true;
+        _buildingSceneLoadTickets.delete(mapId);
+        _buildingSceneInFlight.delete(mapId);
+        return true;
+      }
+
+      function loadBuildingScene(mapId) {
+        if (_buildingScenes.get(mapId)) return Promise.resolve(); // A completed cached scene needs no extra build.
+        const existing = _buildingSceneInFlight.get(mapId);
+        if (existing) return existing; // Every concurrent caller awaits the same result or failure.
+        const ticket = { cancelled: false }; // Guards one async scene build across layout refresh/discard boundaries.
+        _buildingSceneLoadTickets.set(mapId, ticket);
+        _buildingScenes.set(mapId, null); // Preserve the original synchronous "loading" sentinel for legacy callers.
+        const pending = Promise.resolve().then(() => buildBuildingScene(mapId, ticket)); // Register before invoking any loader that could re-enter synchronously.
+        _buildingSceneInFlight.set(mapId, pending);
+        pending.then(
+          () => {
+            if (_buildingSceneInFlight.get(mapId) !== pending) return;
+            _buildingSceneInFlight.delete(mapId);
+            if (_buildingSceneLoadTickets.get(mapId) === ticket) _buildingSceneLoadTickets.delete(mapId);
+          },
+          error => {
+            if (_buildingSceneInFlight.get(mapId) !== pending) return; // Never clear a newer replacement load's sentinel.
+            _buildingSceneInFlight.delete(mapId);
+            if (_buildingSceneLoadTickets.get(mapId) === ticket) _buildingSceneLoadTickets.delete(mapId);
+            if (_buildingScenes.get(mapId) === null) _buildingScenes.delete(mapId); // Failed loads can retry.
+            if (_currentBuildingMapId === mapId && currentArea === mapId) window.LoadingScreenRuntime?.hide?.();
+            window.__farmLog?.(`[building] ${mapId}: scene load failed: ${String(error?.message || error)}`, 'warn');
+          }
+        ); // Rejection handler also covers fire-and-forget background load callers.
+        return pending;
+      }
+
+      async function buildBuildingScene(mapId, ticket) {
+        const ensureCurrentBuildingLoad = () => {
+          if (ticket.cancelled || _buildingSceneLoadTickets.get(mapId) !== ticket) {
+            throw new Error(`[building] ${mapId}: superseded scene generation`);
+          }
+        }; // Old asynchronous results cannot overwrite a newer rebuilt room.
+        ensureCurrentBuildingLoad();
         let mapData = null;
         let loadSource = 'missing';
         const localeCavernDefinition = (!window.TownMine?.floorFromMapId?.(mapId) && !mapId.startsWith('map_i_barn_'))
           ? await window.CavernGenerator?.loadLocaleCavernDefinition?.(mapId)
           : null; // Story caves resolve from cave_interior locales before the generic map_i_den_ fallback.
+        ensureCurrentBuildingLoad(); // A live layout rebuild might have discarded this room during the locale fetch.
         if (window.TownMine?.floorFromMapId?.(mapId)) {
           const mineLoadingLabel = document.getElementById('denLoadingLabel'); // Used to give mobile players feedback during the reused synchronous Den carve.
           if (mineLoadingLabel) mineLoadingLabel.style.display = 'flex';
@@ -14429,22 +14474,23 @@
           loadSource = 'locale-cavern';
           if (caveLoadingLabel) caveLoadingLabel.style.display = 'none';
         } else if (mapId.startsWith('map_i_den_')) {
-          // A den's cavern is generated in-memory, never fetched/persisted
-          // (see synthesizeCavernMapData) — but that generation is one
-          // unbroken synchronous SDF carve (~25-40s), during which the
-          // browser can't repaint at all, so the black scene-transition
-          // fade (see startSceneTransition/updateSceneTransition, which
-          // already holds it until _buildingScenes resolves) would
-          // otherwise sit there with no indication anything is happening.
-          // Two rAFs guarantee this label actually paints before the
-          // blocking call starts — a single rAF can still land in the
-          // same paint as this DOM write, showing nothing at all.
+          // Carve ordinary den floors on a pure-data Web Worker. The SDF maze
+          // used to monopolize the game/render thread for ~25-40 seconds.
+          // The existing scene transition stays active while the background
+          // job finishes; only the lightweight gameplay/den state joins here.
           const denLoadingLabel = document.getElementById('denLoadingLabel');
           if (denLoadingLabel) denLoadingLabel.style.display = 'flex';
-          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-          mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
-          loadSource = 'cavern';
-          if (denLoadingLabel) denLoadingLabel.style.display = 'none';
+          try {
+            await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res))); // Let the label paint before generation.
+            const floorData = window.CavernGenerator.generateCavernFloorAsync
+              ? await window.CavernGenerator.generateCavernFloorAsync(mapId, { fast: true })
+              : window.CavernGenerator.generateCavernFloor(mapId, { fast: true }); // Old-module compatibility fallback.
+            ensureCurrentBuildingLoad(); // A slow worker completion may belong to a discarded generation.
+            mapData = window.CavernGenerator.synthesizeCavernMapData(mapId, { floorData });
+            loadSource = 'cavern';
+          } finally {
+            if (denLoadingLabel) denLoadingLabel.style.display = 'none'; // Never strand the loading overlay on worker failure.
+          }
         } else if (mapId.startsWith('map_i_barn_')) {
           // A barn's interior is generated in-memory from its own exterior
           // record (see synthesizeBarnInteriorMapData) — never fetched/
@@ -14483,6 +14529,7 @@
         }
         }
 
+        ensureCurrentBuildingLoad(); // No discarded async room may register a stale layout or scene graph.
         // Swap in whichever `layouts` entry (if any) currently matches the
         // calendar — e.g. the temple's benches-to-the-walls/rug-away/
         // campfire "spirit_communion" layout during its scheduled window.
@@ -15098,6 +15145,7 @@
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          ensureCurrentBuildingLoad(); // Publish only the authoritative generation after async work.
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
@@ -15213,6 +15261,7 @@
         const occlusionMeshes = [];
         bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId, occlusionMeshes };
+        ensureCurrentBuildingLoad(); // Publish only the authoritative generation after async work.
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {

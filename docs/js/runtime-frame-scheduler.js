@@ -25,6 +25,7 @@
   const PHASE_SET = new Set(PHASES);
 
   const subscribers = new Map(); // Used to retain one stable, inspectable record per registered runtime.
+  const pendingRegistrationUpdates = new Map(); // Existing subscriber changes during a frame apply only after its ordered dispatch finishes.
   const frameContext = { timestamp: 0, deltaMs: 0, frameId: 0 }; // Reused for every dispatch so the scheduler itself allocates no per-frame context object.
   let rafHandle = 0; // Used to guarantee that all subscribers share exactly one scheduled browser callback.
   let browserFrameId = 0; // Used by browser-frame-lifetime caches and mobile diagnostics.
@@ -37,7 +38,15 @@
   let driverErrorState = { errorCount: 0, lastError: null, lastReportedError: null, lastErrorReportAt: -Infinity }; // Mirrors a subscriber record's error bookkeeping for the one frame driver.
 
   function schedule() {
-    if (!rafHandle && subscribers.size) rafHandle = requestAnimationFrame(runFrame);
+    // The gameplay driver owns the browser cadence even with zero visual subscribers.
+    if (!rafHandle && (frameDriver || subscribers.size)) rafHandle = requestAnimationFrame(runFrame);
+  }
+
+  function cancelIfIdle() {
+    if ((frameDriver || subscribers.size) || !rafHandle) return;
+    cancelAnimationFrame(rafHandle);
+    rafHandle = 0;
+    previousTimestamp = null;
   }
 
   function reportError(record, error, timestamp) {
@@ -54,7 +63,7 @@
   }
 
   function dispatchOne(record, timestamp) {
-    if (!record.enabled || browserFrameId < record.firstFrameId) return;
+    if (!record.enabled || browserFrameId < record.firstFrameId || record.lastFrameId === browserFrameId) return;
     const startedAt = profilingEnabled ? performance.now() : 0; // Sampled only during an explicit profiling session.
     record.callCount++;
     record.lastFrameId = browserFrameId;
@@ -108,11 +117,20 @@
     previousTimestamp = timestamp;
     dispatching = true;
     preRenderFiredThisFrame = false;
-    dispatchPhase('input', timestamp);
-    dispatchPhase('pre-game', timestamp);
-    runFrameDriver(timestamp);
-    dispatchPhase('post-game', timestamp);
-    dispatching = false;
+    try {
+      dispatchPhase('input', timestamp);
+      dispatchPhase('pre-game', timestamp);
+      runFrameDriver(timestamp);
+      dispatchPhase('post-game', timestamp);
+    } finally {
+      dispatching = false;
+      // Replacing an existing ID mid-frame must not replace callbacks already
+      // queued to execute later in this frame, or migrate it into another phase.
+      for (const [id, pending] of pendingRegistrationUpdates) {
+        if (subscribers.get(id) === pending.record) Object.assign(pending.record, pending.patch);
+      }
+      pendingRegistrationUpdates.clear();
+    }
   }
 
   function register(id, callback, options = {}) {
@@ -123,11 +141,16 @@
     }
     const existing = subscribers.get(id); // Updated in place so development reloads cannot create duplicate permanent work.
     if (existing) {
-      existing.callback = callback;
-      existing.enabled = options.enabled ?? existing.enabled;
-      existing.phase = options.phase || existing.phase;
-      existing.owner = options.owner || existing.owner;
-      existing.description = options.description || existing.description;
+      const prior = pendingRegistrationUpdates.get(id)?.patch || existing; // Repeated same-frame updates compose without losing earlier options.
+      const patch = {
+        callback,
+        enabled: options.enabled ?? prior.enabled,
+        phase: options.phase || prior.phase,
+        owner: options.owner || prior.owner,
+        description: options.description || prior.description,
+      };
+      if (dispatching) pendingRegistrationUpdates.set(id, { record: existing, patch });
+      else Object.assign(existing, patch);
     } else {
       subscribers.set(id, {
         id,
@@ -156,17 +179,16 @@
     const record = subscribers.get(id); // Resolved by stable ID so feature modules never retain scheduler internals.
     if (!record) return false;
     record.enabled = !!enabled;
+    const pending = pendingRegistrationUpdates.get(id); // Explicit toggles take precedence over a staged re-registration.
+    if (pending) pending.patch.enabled = record.enabled;
     schedule();
     return true;
   }
 
   function unregister(id) {
     const removed = subscribers.delete(id); // Returned to let module dispose paths verify that they actually owned a subscription.
-    if (!subscribers.size && rafHandle) {
-      cancelAnimationFrame(rafHandle);
-      rafHandle = 0;
-      previousTimestamp = null;
-    }
+    pendingRegistrationUpdates.delete(id); // Never resurrect an unregistered record at the end of the frame.
+    cancelIfIdle();
     return removed;
   }
 
@@ -180,6 +202,15 @@
     if (frameDriver && frameDriver !== fn) throw new Error('RuntimeFrameScheduler.setFrameDriver: a frame driver is already set; only one gameplay RAF cadence owner is allowed');
     frameDriver = fn;
     schedule();
+  }
+
+  // Explicit teardown counterpart to setFrameDriver; prevents an idle page from
+  // retaining an RAF after gameplay and every subscriber have been disposed.
+  function clearFrameDriver(fn) {
+    if (!frameDriver || (fn !== undefined && frameDriver !== fn)) return false;
+    frameDriver = null;
+    cancelIfIdle();
+    return true;
   }
 
   // Called by the frame driver itself, synchronously, at the exact point
@@ -231,6 +262,7 @@
     setEnabled,
     unregister,
     setFrameDriver,
+    clearFrameDriver,
     checkpoint,
     frameId: () => browserFrameId,
     setProfilingEnabled: enabled => { profilingEnabled = !!enabled; },
