@@ -1025,6 +1025,76 @@
     return copies;
   }
 
+  // A freshly created but holstered flail may never have entered updateOne(),
+  // so its live head and connector still sit at the origin. Compute a deterministic
+  // idle pose from the same authored contact points, without moving gameplay nodes.
+  function neutralPreviewMatrices(state) {
+    const { THREE, plane, config: { flail }, chainImage, chainTop, chainBottom, headAnchorImage, headAnchor } = state;
+    const baseImage = plane.material?.map?.image;
+    if (!baseImage || !chainImage || !chainTop || !chainBottom || !headAnchor) return null;
+    const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImage.naturalWidth || baseImage.width || 1);
+    const shaftPoint = pixelPoint(baseImage, anchor(baseImage, flail.haftAnchor, 'top'), unit, null, new THREE.Vector3()); // Unmodified haft artwork determines the attachment.
+    const chainX = connectorAxisScale(flail.chain, 'scaleX');
+    let chainY = connectorAxisScale(flail.chain, 'scaleY');
+    const mountLength = Number(flail.chain.mountLengthPx);
+    if (!state.chain.userData?.hobunjiRuinRopeSprite && Number.isFinite(mountLength) && mountLength > 0) {
+      const spanX = (chainBottom.x - chainTop.x) * chainX;
+      const spanY = Math.abs(chainBottom.y - chainTop.y);
+      if (spanY > 1e-5) chainY = Math.sqrt(Math.max(1e-8, mountLength ** 2 - spanX ** 2)) / spanY;
+    }
+    const top = pixelPoint(chainImage, chainTop, unit, null, new THREE.Vector3());
+    const bottom = pixelPoint(chainImage, chainBottom, unit, null, new THREE.Vector3());
+    top.x *= chainX; top.y *= chainY;
+    bottom.x *= chainX; bottom.y *= chainY; // Authored scaled opaque contacts, not guessed mesh edges.
+    const span = bottom.clone().sub(top);
+    if (span.lengthSq() < 1e-10) return null;
+    const angle = -Math.PI / 2 - Math.atan2(span.y, span.x); // Render the idle connector downward from the haft.
+    const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+    const chainPosition = shaftPoint.clone().sub(top.applyQuaternion(rotation));
+    const end = chainPosition.clone().add(bottom.applyQuaternion(rotation));
+    const rope = !!state.chain.userData?.hobunjiRuinRopeSprite;
+    const chainScale = rope
+      ? new THREE.Vector3(chainY, chainY, chainY)
+      : new THREE.Vector3(chainX, chainY, state.chain.userData?.hobunjiGeneratedRope ? chainX : 1);
+    const headSpec = flail.head;
+    const headLayer = headSpec.layers.find(layer => layer.id === headSpec.anchorLayer);
+    const contact = headSpec.anchorSpace === 'composite'
+      ? new THREE.Vector3(headAnchor.x * unit, -headAnchor.y * unit, 0)
+      : pixelPoint(headAnchorImage, headAnchor, unit, headLayer?.offsetPx, new THREE.Vector3());
+    const visual = headSpec.visualTransform; // The same paired flip/rotation correction used by the live hanging head.
+    if (visual) {
+      const sx = (Number(visual.scaleX) || 1) * (visual.flipX ? -1 : 1);
+      const sy = (Number(visual.scaleY) || 1) * (visual.flipY ? -1 : 1);
+      const theta = -(Number(visual.rotation) || 0) * Math.PI / 180;
+      const x = contact.x * sx, y = contact.y * sy;
+      contact.set(Math.cos(theta) * x - Math.sin(theta) * y, Math.sin(theta) * x + Math.cos(theta) * y, 0);
+    }
+    const headScale = relativePartScale(headSpec);
+    const headPosition = end.sub(contact.multiplyScalar(headScale));
+    if (visual) headPosition.add(new THREE.Vector3((Number(visual.x) || 0) * unit * headScale,
+      -(Number(visual.y) || 0) * unit * headScale, 0));
+    return {
+      chain: new THREE.Matrix4().compose(chainPosition, rotation, chainScale),
+      headRoot: new THREE.Matrix4().compose(headPosition, new THREE.Quaternion(), new THREE.Vector3(headScale, headScale, headScale)),
+    }; // Preview-owned values; never mutate state.chain, state.headRoot or their persistent pendulum.
+  }
+
+  // Read-only assembly bridge for the Loadout viewport: flexible parts are siblings
+  // of the haft plane, not children of it. Never reparent the live equipment.
+  function previewParts(plane) {
+    const state = states.get(plane?.parent); // Only the exact cached weapon root can supply this head, rope and its authored metal masks.
+    if (!state || state.plane !== plane || !state.config.flail) return null;
+    if (!state.root.parent && state.chain && state.headRoot) {
+      effects?.refreshMetal(state, performance.now()); // Holstered, never-held flail heads still receive their own saved plating/verdigris before previewing.
+    }
+    return {
+      ready: !!(state.chain && state.headRoot && state.headParts.length === state.config.flail.head.layers.length),
+      chain: state.chain, headRoot: state.headRoot,
+      neutralMatrices: neutralPreviewMatrices(state), // Valid even if this cached flail has never been drawn in the world.
+      metalTargets: (state.metalTargets || []).slice(), // The live per-layer, post-occlusion head masks; the natural rope is not a metal emitter.
+    };
+  }
+
   function enchantmentTargets(visual) {
     const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
     const plane = visual?.userData?.toolPlane;
@@ -1044,7 +1114,7 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
