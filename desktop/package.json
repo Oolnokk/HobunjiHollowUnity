@@ -22,6 +22,7 @@
     "files": [
       "main.cjs",
       "game-protocol.cjs",
+      "close-save.cjs",
       "package.json"
     ],
     "extraResources": [
