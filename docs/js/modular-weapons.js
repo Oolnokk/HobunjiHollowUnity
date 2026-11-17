@@ -6,7 +6,119 @@
   const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
   const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
+  const PAIR_FIT_MIGRATION_KEY = 'hobunji.modularWeapons.authoredPerpendicularPairFits.v1'; // Adopt the new neutral-angle pair fits only once for preexisting browser drafts.
   const CORRECTED_COMPANION_TANG_SHAFTS = new Set(['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']); // Only the six shipped automatically generated sideways tangs require reversed arrow direction.
+  const PAIR_VISUAL_FIELDS = Object.freeze(["scaleX","scaleY","flipX","flipY","x","y","rotation","layerOrder"]); // Source-to-head corrections only; weapon behavior, bridges and authored art remain independent.
+  const LEGACY_PAIR_VISUALS = Object.freeze({
+    "fishing-mace": {
+      "dagger": {
+        "scaleX": 0.7,
+        "scaleY": 0.6,
+        "x": 35,
+        "y": -15,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "harlyao-broadsword": {
+        "scaleX": 1.05,
+        "scaleY": 0.5,
+        "x": 35,
+        "y": -40,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "harlyao-longsword": {
+        "scaleX": 1.05,
+        "scaleY": 0.5,
+        "x": 40,
+        "y": -35,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "pick-shovel-pick": {
+        "flipX": true,
+        "flipY": true,
+        "x": 35,
+        "y": -25,
+        "rotation": -90,
+        "layerOrder": "head-over-haft"
+      },
+      "pickshovel-scoop": {
+        "x": 5,
+        "y": 30,
+        "layerOrder": "haft-over-head"
+      },
+      "plains-blade": {
+        "scaleX": 1.1,
+        "scaleY": 0.35,
+        "x": -65,
+        "y": -30,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "war-cleaver": {
+        "x": 5,
+        "y": 30,
+        "layerOrder": "haft-over-head"
+      }
+    },
+    "warhammer": {
+      "dagger-sword": {
+        "x": 12,
+        "y": 5,
+        "layerOrder": "haft-over-head"
+      },
+      "dagger": {
+        "scaleX": 0.9,
+        "scaleY": 0.75,
+        "x": 40,
+        "y": -90,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "fishing-spear": {
+        "scaleY": 1.2,
+        "flipX": true,
+        "x": -40,
+        "y": -90,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "harlyao-broadsword": {
+        "scaleX": 1.35,
+        "scaleY": 0.8,
+        "x": 25,
+        "y": -100,
+        "rotation": -90,
+        "layerOrder": "haft-over-head"
+      },
+      "harlyao-longsword": {
+        "scaleX": 1.65,
+        "x": 5,
+        "layerOrder": "haft-over-head"
+      },
+      "pick-shovel-pick": {
+        "scaleX": 1.05,
+        "scaleY": 1.05,
+        "flipX": true,
+        "flipY": true,
+        "x": 40,
+        "y": -75,
+        "rotation": -90,
+        "layerOrder": "head-over-haft"
+      },
+      "pickshovel-scoop": {
+        "x": 5,
+        "layerOrder": "haft-over-head"
+      },
+      "plains-blade": {
+        "scaleX": 1.2,
+        "scaleY": 0.75,
+        "x": 5,
+        "layerOrder": "haft-over-head"
+      }
+    }
+  }); // Exact pre-fix appearances on the two sleeve-first hafts, used only to recognize old draft presets.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
   const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
@@ -17,6 +129,7 @@
   const boredCanvases = new Map(); // One regenerated source-art image per edited shaft and revision, shared by all head/metal combinations.
   let config = global.MODULAR_WEAPON_CONFIG; // Current authored attachment data.
   let revision = 0; // Discards stale preview renders after edits.
+  let migratedPairFits = 0; // Counts upgraded old presets for the existing in-game diagnostic surface.
 
   function finite(value, fallback, min, max) {
     const number = Number(value); // Rejects malformed editor transforms.
@@ -401,6 +514,32 @@
       changed = true;
     }
     return changed;
+  }
+
+  function migrateOldPairFits(draft) {
+    if (draft?.schema !== SCHEMA) return 0;
+    const equalVisual = (pair, legacy) => PAIR_VISUAL_FIELDS.every(key =>
+      Object.hasOwn(pair, key) === Object.hasOwn(legacy, key) &&
+      (!Object.hasOwn(legacy, key) || pair[key] === legacy[key])); // Never overwrite a distinct visual correction authored in a draft.
+    let count = 0; // Number of old head/haft pair fits updated in this draft.
+    for (const [shaftKey, oldPairs] of Object.entries(LEGACY_PAIR_VISUALS)) {
+      for (const [headKey, oldVisual] of Object.entries(oldPairs)) {
+        const pair = draft.shafts?.[shaftKey]?.overrides?.[headKey];
+        if (!pair || typeof pair !== 'object') continue;
+        if (equalVisual(pair, oldVisual)) {
+          const shipped = global.MODULAR_WEAPON_CONFIG.shafts[shaftKey]?.overrides?.[headKey] || {};
+          for (const field of PAIR_VISUAL_FIELDS) {
+            delete pair[field]; // Only replaces unchanged old visual fields; nonvisual settings, bridges and exclusions survive.
+            if (Object.hasOwn(shipped, field)) pair[field] = shipped[field];
+          }
+          count++;
+        } else if (pair.rotation === -90) {
+          delete pair.rotation; // Custom pair edits retain their other authored corrections, without the obsolete -90° override.
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
   function convertLegacy(raw, reference) {
@@ -964,21 +1103,24 @@
     const needsKylieUpgrade = storage?.getItem(KYLIE_TOOL_MIGRATION_KEY) !== '1'; // One-time migration preserves future explicit checkbox edits.
     const needsPickShaftUpgrade = storage?.getItem(PICK_SHAFT_MIGRATION_KEY) !== '1'; // Previously stored catalog drafts still allow the newly forgeable Pick-Shovel shaft.
     const needsTangDirectionUpgrade = storage?.getItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY) !== '1'; // Existing v5 drafts may contain the old reversed automatic arrows.
+    const needsPairFitUpgrade = storage?.getItem(PAIR_FIT_MIGRATION_KEY) !== '1'; // Authored neutral-angle presets must supersede only their matching old copies.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
       if (needsPickShaftUpgrade && draft.shafts?.['pick-shovel']) draft.shafts['pick-shovel'].editorOnly = false; // Enables old user-authored drafts without altering their mounts or pair art.
       const repairedTangDirection = needsTangDirectionUpgrade && repairLegacyCompanionTangDirections(draft); // Only repair unchanged backwards companion arrows.
-      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || repairedTangDirection);
+      migratedPairFits = needsPairFitUpgrade ? migrateOldPairFits(draft) : 0; // Keep deliberately edited pair corrections intact.
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || repairedTangDirection || migratedPairFits > 0);
     }
     if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
     if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
+    if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
       flailOwner: decode(key) ? (config.heads[decode(key).head].flailAssembly ? 'head' : config.shafts[decode(key).shaft].flailAssembly ? 'haft' : null) : null,
-      cachedSprites: canvases.size, revision }) };
+      cachedSprites: canvases.size, migratedPairFits, revision }) };
 })(window);
