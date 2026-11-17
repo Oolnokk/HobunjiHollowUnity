@@ -70,7 +70,7 @@ assert.equal(newChoiceWindow.BabyAnimalHeadWarp.getShortening(), 0.20,
 assert.equal(newChoiceWindow.BabyAnimalHeadWarp.setShortening(0.08), 0.08);
 assert.equal(newChoiceStorage.get('hobunji_baby_head_shortening_v2'), '0.08',
   'new Nursery adjustments write the versioned setting');
-assert.equal(warp.maskModeForKind('grehlr'), 'idle-alpha', 'existing animals default to opaque idle-sprite head selection');
+assert.equal(warp.maskModeForKind('grehlr'), 'legacy-frame', 'all species default to the original painted Head selection');
 assert.equal(warp.frameForKind('grehlr').width, 0.4);
 assert.equal(warp.frameForKind('missing'), null, 'an unknown sprite species never guesses where the head is');
 windowStub.AnimalChatheadFrame = { frameForKind: () => ({ ...head, source: 'animal-head-rig-fallback' }) }; // The dialogue module returns a generic crop even for non-species.
@@ -155,7 +155,7 @@ assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1.32)),
   'without an established idle mask no rectangular fallback is permitted');
 
 const input = { width, height, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
-const output = warp.applyToCanvas(input, 'grehlr', 1.32, null, 0); // Match the existing exact pixel-position fixture's explicit 132% comparison scale.
+const output = warp.applyToCanvas(input, 'grehlr', 1.32, null, 0, false); // Explicitly request idle-alpha mode to compare its established pixel fixture.
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
@@ -190,12 +190,20 @@ assert.deepEqual(rgbaAt(layeredWarp, 26, 22), [19, 155, 235, 255],
 assert.equal(warp.applyToCanvas(input, 'missing'), input, 'unsupported baby species retain their original appearance');
 const paintedRig = { width: 4, height: 4, encoding: 'rle-u9', data: [5, 0, 2, 255, 2, 0, 2, 255, 5, 0] };
 windowStub.HobunjiAuthoredAnimalHeadRigs = { get: kind => kind === 'grehlr' ? { babyHeadScale: 1.33, weightMap: paintedRig } : null };
-assert.equal(warp.frameForKind('grehlr').width, head.width,
-  'chathead bounds, not painted head influence, define the alpha-mask source rectangle');
+assert.notEqual(warp.frameForKind('grehlr').width, head.width,
+  'default original growth method derives the box from painted Head influence instead of the chathead');
+assert.equal(warp.frameForKind('grehlr', false).width, head.width,
+  'the optional idle alpha method still uses the authored dialogue head frame');
 assert.equal(warp.frameFromRig({ weightMap: { ...paintedRig, data: [1, 255, -2, 0] } }), null, 'malformed painted-map runs cannot produce a head frame');
 assert.equal(warp.scaleForKind('grehlr'), 1.33, 'a committed species head-rig overrides the global Nursery default');
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: { babyHeadScale: 1.4 } }));
 assert.equal(warp.scaleForKind('grehlr'), 1.4, 'a saved head-rigger preview overrides the committed species rig');
+assert.equal(warp.maskModeForKind('grehlr'), 'legacy-frame', 'a saved rig without mode override inherits the original method');
+writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: {
+  babyHeadScale: 1.4, babyHeadUsePaintedFrame: false,
+} }));
+assert.equal(warp.maskModeForKind('grehlr'), 'idle-alpha', 'explicit false selects the newer idle-alpha method for one species');
+assert.equal(warp.frameForKind('grehlr').width, head.width, 'alpha opt-in uses the chathead frame');
 writes.set('hobunji_animal_head_rigs_v1', JSON.stringify({ grehlr: {
   babyHeadScale: 1.4, babyHeadShortening: 0.35, babyHeadUsePaintedFrame: true,
   weightMap: paintedRig,
