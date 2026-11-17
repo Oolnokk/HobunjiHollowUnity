@@ -127,4 +127,73 @@ assert.equal(garAvatar.options.headRig.shoulderRest.frameShiftX, .43);
 const avatar = avatarApi.buildAnimalPlaneAvatarModel(null, 'moot_idle.png', {creatureId:'moot'});
 assert(avatar.options.headRig?.shoulderRest, 'Moot avatar receives its published shoulder rig through the avatar bridge');
 
+
+// Upload-integrity fingerprints: FNV-1a across the original 16-bit RLE values, including the 256 unset marker.
+function paintedMapFingerprint(map) {
+  let hash = 0x811c9dc5;
+  for (const value of map.data) {
+    hash = Math.imul(hash ^ (value & 255), 0x01000193);
+    hash = Math.imul(hash ^ (value >>> 8), 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+const uploadedMapFingerprints = {
+  'gar-wolf': { weightMap: '1b3d0a54' },
+  grehlr: { weightMap: '72fe5e4c', compressibilityMap: 'd59e15f9', stretchabilityMap: 'ef76e3e2' },
+}; // Known fingerprints of the two uploaded source JSON head maps.
+for (const [kind, maps] of Object.entries(uploadedMapFingerprints)) {
+  const rig = api.get(kind);
+  for (const [name, digest] of Object.entries(maps)) {
+    assert.equal(paintedMapFingerprint(rig[name]), digest, kind + '/' + name + ' matches the uploaded paint values');
+    assert.equal(rig[name].data.reduce((sum, value, i) => sum + (i % 2 ? 0 : value), 0),
+      rig[name].width * rig[name].height, kind + '/' + name + ' RLE fills exactly its map dimensions');
+  }
+}
+assert.equal(grehlr.babyHeadUsePaintedFrame, false, 'Grehlr explicitly uses alpha rather than the universal painted fallback');
+assert.equal(grehlr.babyHeadUseCustomFrame, false, 'Grehlr keeps its stored custom rectangle disabled');
+assert.equal(grehlr.babyHeadCustomFrame.width, 0.43339554704016914, 'Grehlr custom rectangle remains available if later re-enabled');
+assert.equal(gar.babyAbdomenEnabled, true, 'Gar-wolf abdomen growth remains enabled');
+assert.equal(gar.babyAbdomenScale, 1.2);
+assert.equal(gar.babyHeadUseCustomFrame, false);
+
+// Load the real production baby warp in the same browser VM as the uploaded authored rigs.
+const babyWarpSource = fs.readFileSync('docs/js/baby-animal-head-warp.js', 'utf8');
+const outputCanvases = [];
+context.document = { createElement(tag) {
+  assert.equal(tag, 'canvas');
+  const output = { width: 0, height: 0, data: null };
+  output.getContext = () => ({
+    createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+    putImageData: image => { output.data = image.data; },
+  });
+  outputCanvases.push(output);
+  return output;
+} };
+vm.runInContext(babyWarpSource, context, { filename: 'baby-animal-head-warp.js' });
+const warp = windowStub.BabyAnimalHeadWarp;
+for (const [kind, w, h, expectedScale, expectedShortening, hasAbdomen] of [
+  ['gar-wolf', 128, 56, 1.23, 0.24, true],
+  ['grehlr', 128, 96, 1.15, 0.06, false],
+]) {
+  assert.equal(warp.scaleForKind(kind), expectedScale, kind + ' uses uploaded or inherited size');
+  assert.equal(warp.shorteningForKind(kind), expectedShortening, kind + ' uses uploaded shortening');
+  assert.equal(warp.maskModeForKind(kind), 'idle-alpha', kind + ' uses uploaded alpha choice');
+  assert.equal(warp.abdomenForKind(kind).enabled, hasAbdomen, kind + ' abdomen switch survives game integration');
+  assert.deepEqual(JSON.parse(JSON.stringify(warp.frameForKind(kind))), JSON.parse(JSON.stringify(api.get(kind).babyHeadFrame)),
+    kind + ' uses its enabled source frame, not the stored disabled custom head rectangle');
+  const rgba = new Uint8ClampedArray(w * h * 4); // Synthetic opaque idle PNG with deterministic body and head pixels.
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    rgba[i] = x * 2; rgba[i + 1] = y * 3; rgba[i + 2] = x + y; rgba[i + 3] = 255;
+  }
+  const input = { width: w, height: h, data: rgba,
+    getContext: () => ({ getImageData: () => ({ data: rgba }) }) };
+  const mask = warp.primeIdleMask(kind, input);
+  assert(mask?.opaquePixels > 0, kind + ' can prime an alpha mask using its actual authored frame');
+  const enlarged = warp.applyToCanvas(input, kind);
+  assert(enlarged !== input && enlarged.data?.some((v, i) => v !== rgba[i]),
+    kind + ' grows baby head pixels after mask preparation without rewriting original artwork');
+  assert.equal(input.data, rgba, kind + ' keeps its shared adult pixels untouched');
+}
+
 console.log('uploaded animal head rigs: Moot retains its independently uploaded head/shoulder painting');
