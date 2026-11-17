@@ -103,7 +103,7 @@
     const afflictionRatio = first ? ratio : numeric(mods.affliction, 1) * ratio; // First-hit maps already contain mastery/enchantment scaling; never apply it twice.
     const afflictions = window.CombatAttackEvents?.scaleAfflictions?.(rawAfflictions, afflictionRatio)
       || Object.fromEntries(Object.entries(rawAfflictions || {}).map(([id, amount]) => [id, numeric(amount) * afflictionRatio]));
-    deps.damageCreature(target, damage, numeric(attack.actor.x), numeric(attack.actor.y), knockback, {
+    const applied = deps.damageCreature(target, damage, numeric(attack.actor.x), numeric(attack.actor.y), knockback, {
       abilityId: attack.context.abilityId,
       tag: deps.currentWeaponDamageType?.() || 'sharp',
       heavy: !!attack.context.fullCharge || !!attack.context.comboFinisher,
@@ -111,6 +111,7 @@
       footingDamageMultiplier: numeric(mods.footingDamage, 1), // Damage is already ratio-scaled: multiplying Footing again would incorrectly yield ratio squared.
       feyHypedReplay: true, // Never creates another Hyped credit, mastery payout or recursive attack.
     });
+    if (applied === false) return false; // A real rejected melee/iframes block must also suppress its secondary Fey procs.
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
       if (window.EnchantmentSystem?.hasBase?.(id, attack.context.weaponKey)) {
         window.FeyIllusions?.apply?.(id, target, {
@@ -119,6 +120,7 @@
       }
     }
     replayCount++;
+    return true;
   }
 
   function beginEcho(attack, firstAction, nativeStaged) {
@@ -169,8 +171,7 @@
             pitch: deps.getPlayerMeleeAimPitch?.() || 0,
           });
           if (!connected || numeric(target.invulnUntil) > now()) continue;
-          replayTarget(attack, target, deps, ratio);
-          hits++;
+          if (replayTarget(attack, target, deps, ratio)) hits++; // Counts only a second impact admitted by the real damage authority.
         }
         lastEcho = { at: Date.now(), id: attack.id, used: attack.used, ratio, hits, duration, abilityId: context.abilityId };
       },
