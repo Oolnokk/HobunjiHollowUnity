@@ -117,6 +117,11 @@
 
     const delta = new THREE.Quaternion().setFromUnitVectors(base.direction, currentDirection).normalize();
     socket.quaternion.copy(delta.multiply(base.quaternion)).normalize();
+    const compositor = global.ActorRigCompositor; // The final forearm correction belongs to the active hand pose owner, not a new additive layer.
+    const stamped = compositor?.stampPoseOverlay?.(socket, 'quaternion'); // NPC dance includes this final visible wrist orientation in its release baseline.
+    if (!stamped && !compositor?.absoluteOwner?.(socket, 'quaternion')) {
+      compositor?.setSolvedBase?.(socket, 'quaternion', socket.quaternion); // Otherwise this is the ordinary procedural IK baseline.
+    }
     socket.updateMatrix?.();
     socket.updateMatrixWorld?.(true);
     record.alignments[side]++;

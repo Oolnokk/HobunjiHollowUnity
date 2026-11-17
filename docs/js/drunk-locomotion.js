@@ -160,12 +160,14 @@
     return scratchEuler;
   }
 
-  function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion) {
+  function applyTrackedFootTwist(THREE, foot, side, yaw, roll, trackedQuaternion) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const safeYaw = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(yaw) || 0));
     const safeRoll = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(roll) || 0));
     trackedQuaternion.setFromEuler(reuseEuler(THREE, 0, safeYaw, safeRoll));
-    foot.quaternion.multiply(trackedQuaternion);
+    const compositor = window.ActorRigCompositor || window.RigTransformLayers; // Quaternion layers must share the same ownership and lease clock as the thigh offsets.
+    if (compositor?.setQuaternion?.(foot, 'drunk-foot-' + side, trackedQuaternion, { leaseMs: 500 })) return;
+    foot.quaternion.multiply(trackedQuaternion); // Standalone editor fallback when the shared layer has not loaded.
   }
 
   function publishBodyChannel(state) {
@@ -213,13 +215,25 @@
     };
 
     function clearPreviousFootTwist() {
-      removeTrackedFootTwist(legPart(handle.group, 'left_foot'), state.footTwist.left);
-      removeTrackedFootTwist(legPart(handle.group, 'right_foot'), state.footTwist.right);
+      const compositor = window.ActorRigCompositor || window.RigTransformLayers; // Release only this gait's twist before the authoritative IK solver.
+      for (const side of ['left', 'right']) {
+        const foot = legPart(handle.group, side + '_foot');
+        if (compositor?.setQuaternion && compositor?.clear) {
+          compositor.clear(foot, 'drunk-foot-' + side);
+          state.footTwist[side].identity();
+        } else removeTrackedFootTwist(foot, state.footTwist[side]);
+      }
     }
 
     function clearPreviousBodyTilt() {
       const bodyRoot = options.drunkBodyRoot;
       if (!bodyRoot?.quaternion || !state.bodyTilt?.isQuaternion) return;
+      const compositor = window.ActorRigCompositor || window.RigTransformLayers; // Body tilt is a removable quaternion layer, not an inverse multiply.
+      if (compositor?.setQuaternion && compositor?.clear) {
+        compositor.clear(bodyRoot, 'drunk-npc-body');
+        state.bodyTilt.identity();
+        return;
+      }
       const hasDelta = Math.abs(state.bodyTilt.x) + Math.abs(state.bodyTilt.y) + Math.abs(state.bodyTilt.z) > 1e-10
         || Math.abs(state.bodyTilt.w - 1) > 1e-10;
       if (hasDelta) bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
@@ -234,7 +248,10 @@
       const bodyRoot = options.drunkBodyRoot;
       if (!bodyRoot?.quaternion) return;
       state.bodyTilt.setFromEuler(reuseEuler(THREE, state.pitch, 0, state.roll));
-      bodyRoot.quaternion.multiply(state.bodyTilt);
+      const compositor = window.ActorRigCompositor || window.RigTransformLayers;
+      if (!compositor?.setQuaternion?.(bodyRoot, 'drunk-npc-body', state.bodyTilt, { leaseMs: 500 })) {
+        bodyRoot.quaternion.multiply(state.bodyTilt);
+      }
     }
 
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
@@ -302,11 +319,11 @@
       }
 
       const toeStrength = DRUNK_LEG_SWAY_SCALE * extreme * (0.35 + 0.65 * Math.sqrt(movement));
-      applyTrackedFootTwist(THREE, legPart(handle.group, 'left_foot'),
+      applyTrackedFootTwist(THREE, legPart(handle.group, 'left_foot'), 'left',
         toeStrength * DEG * (25 * Math.sin(p * 0.83 + 0.4) + 14 * Math.sin(p * 0.29 - 0.5)),
         toeStrength * DEG * (12 * Math.sin(p * 0.67 - 0.2)),
         state.footTwist.left);
-      applyTrackedFootTwist(THREE, legPart(handle.group, 'right_foot'),
+      applyTrackedFootTwist(THREE, legPart(handle.group, 'right_foot'), 'right',
         toeStrength * DEG * (-27 * Math.sin(p * 0.79 + 1.1) + 13 * Math.sin(p * 0.33 + 0.8)),
         toeStrength * DEG * (-13 * Math.sin(p * 0.71 + 0.6)),
         state.footTwist.right);

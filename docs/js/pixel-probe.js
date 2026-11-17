@@ -1019,6 +1019,8 @@
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
+    const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
+    if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     try {
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
@@ -1688,7 +1690,8 @@
     const api = window.HobunjiRigDump;
     if (!api) { deps.showToast?.('Rig dump module not loaded.', false); return; }
     const { dumps, text } = await api.dumpGame(2);
-    const report = `${text}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
+    const ownership = window.ActorRigCompositor?.getDebug?.() || null; // Snapshot shared pose owners at the same visible rig-dump boundary.
+    const report = `${text}\n\n--- Rig transform ownership / possible leaks ---\n${JSON.stringify(ownership)}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
     const resultEl = document.getElementById('debugProbeResult');
     if (resultEl) resultEl.textContent = report;
     const screenshotEl = document.getElementById('debugProbeScreenshot');

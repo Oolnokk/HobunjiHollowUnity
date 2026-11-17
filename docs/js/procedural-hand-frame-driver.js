@@ -839,6 +839,7 @@
         else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
+      publishHandSolvedBases(record); // Exactly one authoritative hand solve for the renderer's first pass this frame.
     };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
@@ -855,6 +856,17 @@
     const frameId = global.RuntimeFrameScheduler?.frameId?.();
     if (frameId == null || record._lastRenderedFrameId == null) return true; // No frame scheduler (tool pages): keep the old every-frame behavior.
     return frameId - record._lastRenderedFrameId <= UNRENDERED_GRACE_FRAMES;
+  }
+
+  function publishHandSolvedBases(record) {
+    const compositor = global.ActorRigCompositor; // One registry for authored hand-placement baselines and named dance/yawn/grip overlays.
+    if (!compositor?.setSolvedBase) return;
+    for (const side of ['left', 'right']) {
+      const socket = record.rig?.group?.getObjectByName?.(side + '_hand_socket'); // Existing authored socket, never another preview hand.
+      if (!socket?.parent) continue;
+      compositor.setSolvedBase(socket, 'position', socket.position);
+      compositor.setSolvedBase(socket, 'quaternion', socket.quaternion); // The complete scale-free shoulder/grip solve is the neutral orientation.
+    }
   }
 
   function updateManagedRigs() {
@@ -887,6 +899,7 @@
         else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
+      publishHandSolvedBases(record); // Compose on the active rig only, after its actual grip/idle solver has finished.
     }
   }
 
@@ -930,6 +943,7 @@
             results.push({ direct: true, toolVisible: false, secondaryActive: false });
           }
         }
+        publishHandSolvedBases(record); // Explicit mobile/editor sync follows the same authoritative pose handoff.
       }
       return results;
     },

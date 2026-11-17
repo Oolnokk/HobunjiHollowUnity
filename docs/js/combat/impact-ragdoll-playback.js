@@ -122,7 +122,16 @@
 
   function holdHumanoidProne(walker, direction = 'front', blend = 1) {
     blend = Math.max(0, Math.min(1, Number(blend) || 0));
-    if (!walker?.avatarGroup || walker._cinematicProneBlend === blend) return;
+    if (!walker?.avatarGroup || !walker?.root) return;
+    if (walker._cinematicPosePivot && (walker._cinematicPosePivot.parent !== walker.root
+      || (walker.alcoholPoseGroup || walker.avatarGroup).parent !== walker._cinematicPosePivot
+      || (walker.legs?.group && walker.legs.group.parent !== walker._cinematicPosePivot))) {
+      walker._cinematicPronePoseSession?.release(); // The old rig generation no longer owns the current actor.
+      walker._cinematicPronePoseSession = null;
+      walker._cinematicPosePivot = null;
+      walker._cinematicProneBlend = undefined;
+    }
+    if (walker._cinematicProneBlend === blend && walker._cinematicPronePoseSession?.owns?.()) return;
     const clip = window.ImpactBlendLibrary?.getClip('breakThrow', direction); // Combat holds the settled tail of this same knockdown bank while prone.
     const frame = clip?.frames?.[clip.frames.length - 1]; // A held pose uses the authored final frame without replaying the initial throw.
     if (!frame) return;
@@ -140,20 +149,45 @@
       pivot.userData.posteriorY = posteriorY;
       walker._cinematicPosePivot = pivot;
     }
+    const compositor = window.ActorRigCompositor; // Authored absolute pivot owner; normal leg IK and torso offsets keep their separate namespaces.
+    if (!walker._cinematicPronePoseSession && compositor?.createAbsoluteSession) {
+      const session = compositor.createAbsoluteSession('impact-humanoid-prone');
+      if (!session?.capture(pivot, ['position', 'quaternion'])) {
+        session?.release();
+        return; // Never steal a pivot from an active scripted pose.
+      }
+      walker._cinematicPronePoseSession = session;
+    }
+    if (walker._cinematicPronePoseSession && !walker._cinematicPronePoseSession.owns()) {
+      clearHumanoidProne(walker); // A newer authored pivot pose took over.
+      return;
+    }
     const body = sampleBody(clip.frames[0], frame, blend); // Same quaternion/height sampling as combat's held player frame.
     pivot.quaternion.copy(body.quaternion);
     pivot.position.y = pivot.userData.posteriorY + body.y - (Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0);
     for (const side of ['left', 'right']) walker.legs?.applyRecordedLegPose(side, sampleLeg(clip.frames[0].ragdoll.ik[side], frame.ragdoll.ik[side], blend));
+    walker._cinematicPronePoseSession?.stamp();
     walker._cinematicProneBlend = blend;
     walker._cinematicProneHeld = blend > 0;
   }
 
   function clearHumanoidProne(walker) {
-    if (!walker?._cinematicProneHeld) return;
-    walker._cinematicPosePivot.quaternion.identity();
-    walker._cinematicPosePivot.position.y = walker._cinematicPosePivot.userData.posteriorY;
+    if (!walker?._cinematicProneHeld && !walker?._cinematicPronePoseSession) return;
+    const owned = walker._cinematicPronePoseSession;
+    walker._cinematicPronePoseSession = null;
+    if (owned) owned.release(); // Only restore the neutral persistent pivot if the same generation still owns its pose.
+    else if (walker._cinematicPosePivot?.parent === walker.root) {
+      walker._cinematicPosePivot.quaternion.identity();
+      walker._cinematicPosePivot.position.y = walker._cinematicPosePivot.userData.posteriorY;
+    }
     walker._cinematicProneHeld = false;
     walker._cinematicProneBlend = undefined;
+  }
+
+  function belongsToCreatureAvatar(node, root) {
+    if (!root?.isObject3D) return true; // Isolated preview rigs may not expose their outer avatar group.
+    for (let cursor = node; cursor; cursor = cursor.parent) if (cursor === root) return true;
+    return false;
   }
 
   function ensureCreatureImpactPivot(entity) {
@@ -161,8 +195,16 @@
     const front = avatarRef?.frontPlane;
     const back = avatarRef?.backPlane;
     if (!front?.isObject3D || !back?.isObject3D) return null;
-    if (avatarRef.impactPivot?.isObject3D) return avatarRef.impactPivot;
-    if (!front.parent || front.parent !== back.parent) return null;
+    const oldPivot = avatarRef.impactPivot; // The previous creature card can still be rendered if a rebuild leaves its pivot attached.
+    if (oldPivot?.isObject3D && oldPivot.parent
+      && front.parent === oldPivot && back.parent === oldPivot
+      && belongsToCreatureAvatar(oldPivot, avatarRef.group)) {
+      return oldPivot; // All of the planes, pivot and current avatar root belong to this exact rig generation.
+    }
+    oldPivot?.parent?.remove?.(oldPivot); // Retire stale rendered cards rather than leaving a duplicate ghost of the old impact pose.
+    avatarRef.impactPivot = null;
+    if (!front.parent || front.parent !== back.parent
+      || !belongsToCreatureAvatar(front, avatarRef.group)) return null;
 
     const parent = front.parent;
     const pivot = new THREE.Group(); // Isolates impact pitch/roll from the creature group's persistent facing yaw.
@@ -174,14 +216,34 @@
     return pivot;
   }
 
+  function createCreaturePoseSession(pivot, owner) {
+    const session = window.ActorRigCompositor?.createAbsoluteSession?.(owner) || null;
+    if (session && !session.capture(pivot, ['position', 'quaternion'])) {
+      session.release(); // A new recording cannot seize a pivot from a still-authoritative corpse/impact owner.
+      return false;
+    }
+    return session;
+  }
+
+  function releaseCreaturePose(state) {
+    if (state?.poseSession) state.poseSession.release();
+    else if (state?.pivot && state.pivot.parent) {
+      state.pivot.quaternion?.identity?.();
+      if (state.pivot.position) state.pivot.position.y = 0;
+    } // Standalone animation tools without the shared compositor keep the old reset.
+  }
+
   function applyCreatureFrame(state, frameA, frameB, t) {
-    if (!frameA || !frameB || !state?.pivot) return;
+    if (!frameA || !frameB || !state?.pivot || !state.pivot.parent) return false;
+    if (state.poseSession && !state.poseSession.owns()) return false;
     const body = sampleBody(frameA, frameB, t);
     // Animal cards face along local X rather than the player's local Z.
     // Conjugating by +90° Y rotates the authored pitch/roll axes with the
     // blendspace instead of merely renaming its four directional clips.
     state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
+    state.poseSession?.stamp(); // Every sample is an absolute authored result; no frame accumulates a prior tilt.
+    return true;
   }
 
   // Death owns an independent, persistent sample of the same recorded prone
@@ -193,6 +255,8 @@
     const clip = window.ImpactBlendLibrary?.getClip('breakThrow', mappedDirection);
     const pivot = ensureCreatureImpactPivot(entity);
     if (!clip?.frames?.length || !pivot) return 0;
+    const poseSession = createCreaturePoseSession(pivot, 'impact-creature-death');
+    if (poseSession === false) return 0;
     // Bandit hands and legs are siblings of the portrait planes; take them
     // along for a death without changing the normal live knockdown rig.
     for (const limb of [entity.avatarRef?.handsPivot, entity.avatarRef?.legsPivot]) {
@@ -200,7 +264,7 @@
     }
     const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
     entity._deathRecordedThrow = {
-      pivot, clip,
+      pivot, clip, poseSession,
       baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
       heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
     }; // Sampled by CreatureDeath while dying and retained as the corpse's pose.
@@ -213,7 +277,10 @@
     if (!state?.clip?.frames?.length) return false;
     const time = Math.max(0, Math.min(1, Number(phase) || 0)) * state.clip.durationSeconds;
     const [frameA, frameB, blend] = findBracket(state.clip.frames, time);
-    applyCreatureFrame(state, frameA, frameB, blend);
+    if (!applyCreatureFrame(state, frameA, frameB, blend)) {
+      stopCreatureDeath(entity); // A newer creature visual owns this pose: do not keep recording legs over it.
+      return false;
+    }
     const legs = entity.avatarRef?.legs;
     if (typeof legs?.applyRecordedLegPose === 'function') {
       for (const side of ['left', 'right']) {
@@ -228,8 +295,7 @@
   function stopCreatureDeath(entity) {
     const state = entity?._deathRecordedThrow;
     if (!state) return false;
-    state.pivot?.quaternion?.identity?.();
-    if (state.pivot?.position) state.pivot.position.y = 0;
+    releaseCreaturePose(state);
     entity._deathRecordedThrow = null;
     return true;
   }
@@ -237,19 +303,21 @@
   function stopCreature(entity) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return;
-    state.pivot?.quaternion?.identity?.();
-    if (state.pivot?.position) state.pivot.position.y = 0;
+    releaseCreaturePose(state);
     creatureStates.delete(state);
     entity._impactRagdollPlayback = null;
   }
 
   function triggerCreature(entity, bank, direction, opts = {}) {
+    if (entity?._deathRecordedThrow) return 0; // Never change corpse geometry just because a live attack tried to start.
     const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
     const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
+    if (!clip?.frames?.length) return 0;
+    stopCreature(entity); // Release the previous rig claim before deciding whether a replacement pivot is safe.
     const pivot = ensureCreatureImpactPivot(entity);
-    if (!clip?.frames?.length || !pivot) return 0;
-
-    stopCreature(entity);
+    if (!pivot) return 0;
+    const poseSession = createCreaturePoseSession(pivot, 'impact-creature-reaction');
+    if (poseSession === false) return 0;
     const requestedDurationS = Number(opts.durationSeconds);
     const durationMultiplier = requestedDurationS > 0 && clip.durationSeconds > 0
       ? Math.max(0.01, requestedDurationS / clip.durationSeconds)
@@ -257,7 +325,7 @@
     const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
     const state = {
       entity,
-      pivot,
+      pivot, poseSession,
       bank,
       direction: mappedDirection,
       clip,
@@ -277,6 +345,10 @@
   function updateCreature(entity, dt) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return false;
+    if (state.poseSession && !state.poseSession.owns()) {
+      stopCreature(entity); // Another visual actor superseded the live impact.
+      return false;
+    }
     if (state.holding) {
       if (!entity.prone) stopCreature(entity);
       return true;
