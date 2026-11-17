@@ -46,6 +46,7 @@ function near(actual, expected, message) { assert(Math.abs(actual - expected) < 
 for (const beat of [0, 0.25, 0.5, 0.75, -0.5]) {
   const left = socket('left'), right = socket('right'); // Each trial starts at the ordinary resting wrist pose.
   const rig = { armLengthForSide, group: { getObjectByName: name => name === left.name ? left : right } }; // Supplies identical anatomy to the player and NPC adapters.
+  left.parent = right.parent = rig.group; // The real hand sockets are children of this rig, which the new compositor checks before reusing a pose.
   const walker = { root: {}, state: 'idle', avatarHeight: 1.062, avatarGroup: { userData: { proceduralHandRig: rig } }, rec: { id: 'mashtzarr' } }; // A large portrait must not enlarge the arm lift.
   const target = { socialDance: { armStyle: 'overhead-punch' } }; // Exercises the reported dance arm style.
   const entry = { walker, left, right, session: null, handPoseState: {} }; // Mirrors the NPC sentinel's per-dancer record.
