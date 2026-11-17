@@ -20,13 +20,19 @@
     <label>Head enlargement <span id="babyHeadScaleLabel">123% · inherited default</span>
       <input id="babyHeadScale" type="range" min="100" max="145" step="1" value="123">
     </label>
+    <label>Head shortening · brachycephaly <span id="babyHeadShorteningLabel">20% shorter · inherited default</span>
+      <input id="babyHeadShortening" type="range" min="0" max="45" step="1" value="20" aria-label="Head shortening percentage">
+    </label>
+    <label class="row" style="margin-top:8px;justify-content:flex-start">
+      <input id="babyHeadUsePainted" type="checkbox"> Use earlier painted Head selection (instead of idle-sprite alpha)
+    </label>
     <div class="row" style="margin-top:8px;">
       <button id="babyHeadCompare" type="button" aria-pressed="false">Show original for comparison</button>
       <span id="babyHeadPreviewState" class="small" role="status" aria-live="polite">Load a species to preview.</span>
     </div>
-    <div class="hint" style="margin-top:6px;">Choose an animal above, then watch the Live deformation preview. Opaque idle-sprite pixels inside the chathead frame define the head mask for every pose. 100% is original; 145% makes the change easiest to see. Original paint coordinates stay intact. Saving the rig exports this species' setting.</div>
-    <div class="row" style="justify-content:space-around;font-size:12px;margin-top:8px"><span>Original head</span><span>Enlarged head</span></div>
-    <canvas id="babyHeadComparisonCanvas" width="580" height="180" aria-label="Original and enlarged head pixels side by side" style="width:100%;height:135px;border:1px solid var(--line);border-radius:8px;background:#30353c;image-rendering:pixelated;touch-action:auto"></canvas>
+    <div class="hint" style="margin-top:6px;">Choose an animal above, then watch the Live deformation preview. By default, opaque idle-sprite pixels within the chathead frame select the head. Check the older painted Head selection to use the painted Head-influence bounding region and its soft falloff instead. Head shortening compresses only the horizontal head profile; set enlargement to 100% and shortening to 0% for original art. Original paint coordinates stay intact. Saving the rig exports this species' setting.</div>
+    <div class="row" style="justify-content:space-around;font-size:12px;margin-top:8px"><span>Original head</span><span>Shortened / enlarged head</span></div>
+    <canvas id="babyHeadComparisonCanvas" width="580" height="180" aria-label="Original versus shortened and enlarged baby head pixels" style="width:100%;height:135px;border:1px solid var(--line);border-radius:8px;background:#30353c;image-rendering:pixelated;touch-action:auto"></canvas>
     <div id="babyHeadPixelDelta" class="hint" role="status" aria-live="polite">Load an animal to compare its actual head pixels.</div>
   </div>
   <div><h2>Animal variables</h2><div class="grid2"><label>ID<input id="animalId" placeholder="grehlr"></label><label>Label<input id="animalLabel" placeholder="Grehlr"></label><label>Model width<input id="modelWidth" type="number" min=".01" step=".01" value="1"></label><label>Sprite aspect<input id="spriteAspect" type="number" min=".01" step=".00001" value="1"></label><label>Tint<input id="tint" type="color" value="#ffffff"></label><label>Diet<input id="diet" placeholder="omnivore"></label></div><label class="row" style="margin-top:8px;justify-content:flex-start"><input id="hostile" type="checkbox"> Hostile</label><label>Idle sprite path<input id="idleSprite" placeholder="assets/creaturesprites/..._idle.png"></label><label>Additional variables (JSON object)<textarea id="extraVars" spellcheck="false">{}</textarea></label><div class="hint">Unknown/new animal fields are preserved. This remains usable as the general animal-variable editor while authoring the rig.</div></div>
@@ -65,7 +71,7 @@
 </div>
 <script src="../../js/creature-genetics-render.js?v=20261117animalRetry4"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261116skeeriGrip1"></script> <!-- Match the game's authored chathead boxes in baby-size previews. -->
-<script src="../../js/baby-animal-head-warp.js?v=20261116baby123"></script>
+<script src="../../js/baby-animal-head-warp.js?v=20261117brachymask1"></script>
 <script src="../../js/creature-genetics.js"></script>
 <script src="../../js/grehlr-head-rig-correction.js?v=20260917uploads1"></script>
 <script src="../../js/animal-head-rig-authored.js?v=20261116mootPaint132b"></script>
