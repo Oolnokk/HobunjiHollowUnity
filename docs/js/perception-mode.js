@@ -199,6 +199,13 @@
     landmarkCache.at = -Infinity; // Forces the next active Sense scan to consult scene owners again.
   }
 
+  function releaseLandmarkCache() {
+    // A cached scene owns its full terrain and attached entities; release it
+    // immediately when Sense is disabled or re-initialized, rather than retaining
+    // an old wilderness zone until the next successful target scan.
+    landmarkCache = { scene: null, col: NaN, row: NaN, multiplier: NaN, at: -Infinity, candidates: [] };
+  }
+
   function nearbyLandmarks(scene, player, now, senseRangeMultiplier) {
     const col = Math.floor(player.x); // Uses the same world-tile coordinates as the central player transition event.
     const row = Math.floor(player.z); // Used to reuse source enumeration while the player remains in this tile.
@@ -554,6 +561,7 @@
     invalidateLandmarkCache(); // Toggling Sense must not retain a stale static provider snapshot.
     if (!active) {
       targets = [];
+      releaseLandmarkCache(); // Do not retain unloaded zones through stationary landmark roots.
       window.WorldPopupText?.clearInfoLists?.();
       lastStats = { targets: 0, meshes: 0, infoLists: 0, rendered: 0 };
     }
@@ -583,7 +591,7 @@
     deps = injectedDeps;
     unsubscribeTileEvents?.();
     unsubscribeTileEvents = window.PlayerTileEvents?.subscribe?.(invalidateLandmarkCache) || null; // Central tile/area event invalidates only stationary discovery.
-    invalidateLandmarkCache();
+    releaseLandmarkCache(); // A fresh runtime cannot reuse the previous game's scene roots.
     bindButton();
     return api;
   }
@@ -604,7 +612,7 @@
     debugSnapshot: () => ({
       active,
       ...lastStats,
-      landmarkCache: { rebuilds: landmarkRebuilds, reuses: landmarkReuses, candidates: landmarkCache.candidates.length, ttlMs: LANDMARK_CACHE_TTL_MS }, // Visible through PerceptionMode.debugSnapshot on mobile.
+      landmarkCache: { rebuilds: landmarkRebuilds, reuses: landmarkReuses, candidates: landmarkCache.candidates.length, ttlMs: LANDMARK_CACHE_TTL_MS, holdingScene: !!landmarkCache.scene }, // Visible through PerceptionMode.debugSnapshot on mobile.
       landmarkRanges: LANDMARK_RANGE_TILES, // Unbuffed base radii remain available for mobile debugging.
       rangeMultiplier: rangeMultiplier(), // Current food/potion multiplier is visible without browser devtools.
       ordinaryRangeTiles: effectiveRangeTiles(RANGE_TILES), // Current regular silhouette reveal radius in tiles.
