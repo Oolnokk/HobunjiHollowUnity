@@ -82,7 +82,11 @@
       "chancePerGrunt": 0.06,
       "maxPerCamp": 1,
       "speciesId": "tletingan",
-      "speciesWeights": { "tletingan": 79.16666666666667, "nuhongan": 15.833333333333334, "longoran": 5 },
+      "speciesWeights": {
+        "tletingan": 79.16666666666667,
+        "nuhongan": 15.833333333333334,
+        "longoran": 5
+      },
       "label": "Slagothim Beastmaster",
       "companionCreatureKey": "dabinggi-hound",
       "companionHealthMultiplier": 0.6,
@@ -92,7 +96,7 @@
     }
   },
   "weaponMetalTierRangeByRank": {
-    "_comment": "A bandit's actual held weapon: a random TOOL_SHAPE_DEFS shape (the same hatchet/fishing-mace/fishing-spear/pick-shovel improvised-weapon pool the player fights with -- this game has no dedicated 'sword' item) crafted from a random METAL_DEFS verdigris metal whose tier falls in this [min,max] range for the bandit's rank, bumped by +1 per difficulty tier (clamped to the strongest verdigris metal tier) -- 'their weapons have mastery ranks too, with randomly chosen upgrades, tied to their rank within the gang.' Drives both the rendered weapon prop and an attackDamage bump via game.js's own metalDmgMultiplier, and the weapon shape's own dmgType (sharp/blunt) replaces the flat hardcoded attackTag.",
+    "_comment": "Actual rolled metal still controls weapon appearance and armor. Each two enemy danger tiers expand the available metal ceiling by one step (up to leaded bronze). Metal reinforcement grade rises at the same cadence, from I to IV, using the same multiplier as player weapons.",
     "grunt": [
       1,
       2
@@ -102,8 +106,8 @@
       4
     ],
     "captain": [
-      4,
-      7
+      3,
+      4
     ],
     "flasker": [
       1,
@@ -143,7 +147,7 @@
     "flasker": 0
   },
   "masteryBaseByRank": {
-    "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
+    "_comment": "Added to floor(dangerTier / 2), capped at 5, so mastery and held ability power advance across eight danger tiers without maxing out halfway through.",
     "grunt": 0,
     "lieutenant": 1,
     "captain": 2,
@@ -164,10 +168,10 @@
     "flasker": 0.5
   },
   "difficultyTiers": {
-    "_comment": "tier = floor(distanceFromWildernessEntrance / tierDistanceTiles), clamped to maxTier. Added to masteryBaseByRank per rank, and multiplies statWeakenMultiplierByRank's result by (1 + tier*tierStatBonus) so camps farther from town hit harder in both mastery-driven ability access and raw stats.",
-    "tierDistanceTiles": 14,
-    "maxTier": 3,
-    "tierStatBonusPerTier": 0.12
+    "_comment": "Eight danger tiers (0-7), one per 12 tiles from the wilderness entrance. Every tier adds modest stats; every TWO tiers improves the mastery and weapon-grade bands. Higher danger is driven primarily by better gear/abilities, not huge health inflation. Existing camp rank roles and loot tables stay unchanged.",
+    "tierDistanceTiles": 12,
+    "maxTier": 7,
+    "tierStatBonusPerTier": 0.06
   },
   "campLifecycle": {
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
@@ -177,30 +181,46 @@
     "simpleHydraDelaySeconds": 5
   },
   "statMultiplierByRankAndTier": {
-    "_comment": "Rank multiplier for [1-star, 2-star, 3-star, 4-star] camps, applied before the ordinary per-tier bonus. The 1-star captain has about 4.5x a grunt's raw health/damage and 2.45x a lieutenant's, comparable to the effective boss-vs-fodder gap produced by Skyrim bandit chiefs' higher health, equipment and perks. The gap tapers at high stars so veteran lieutenants remain meaningful.",
+    "_comment": "The first bandit tiers stay weaker so a Copper-I (0.75x) player preserves Death Mark / charged-attack kill breakpoints. Health rises gradually through eight tiers. Captains remain clearly tougher while advanced enemies rely more on metal/abilities than hit-point inflation.",
     "grunt": [
-      0.28,
-      0.33,
-      0.4,
-      0.48
+      0.24,
+      0.27,
+      0.31,
+      0.35,
+      0.39,
+      0.43,
+      0.47,
+      0.51
     ],
     "lieutenant": [
-      0.52,
-      0.58,
-      0.66,
-      0.74
+      0.42,
+      0.47,
+      0.53,
+      0.59,
+      0.65,
+      0.7,
+      0.74,
+      0.78
     ],
     "captain": [
       1.28,
+      1.27,
       1.26,
+      1.245,
       1.23,
-      1.2
+      1.215,
+      1.2,
+      1.18
     ],
     "flasker": [
       0.45,
+      0.49,
       0.52,
+      0.56,
       0.59,
-      0.66
+      0.63,
+      0.66,
+      0.69
     ]
   },
   "flasker": {
