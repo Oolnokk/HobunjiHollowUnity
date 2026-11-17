@@ -137,6 +137,14 @@
     return true;
   }
 
+  function setActionDuration(entity, durationS) {
+    const turn = entity && activeTurns.get(entity); // Only active hallucinated rotation needs its actual combat action timeline.
+    const actualS = finite(durationS);
+    if (!turn || !(actualS > 0)) return false;
+    turn.remainingS = Math.max(0.001, actualS); // Replaces the .22s fallback with the exact authored windup/strike duration.
+    return true;
+  }
+
   function onDodgeStarted(entity) {
     const roll = entity && panicRolls.get(entity); // Pending panic is created by the real ResourceSystem stamina payment.
     if (!roll || !entity.dodging || roll.boosted) return false;
@@ -146,6 +154,7 @@
       entity._enemyDodge.remainingS *= roll.multiplier;
     }
     roll.boosted = true; // The same charge can never multiply a reused dodge state twice.
+    setActionDuration(entity, entity.dodgeT); // Panicked travel and Demented camera rotation share the final dodge's actual timeline.
     return true;
   }
 
@@ -245,7 +254,7 @@
 
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
-    onStaminaSpent, onDodgeStarted, onDodgeBlocked, update,
+    onStaminaSpent, onDodgeStarted, setActionDuration, onDodgeBlocked, update,
     movementRotationRad, cameraYawDeg,
     isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
