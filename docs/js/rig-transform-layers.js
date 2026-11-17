@@ -538,6 +538,10 @@
     if (property === 'quaternion') {
       const slot = slots.get('quaternion');
       if (!slot?.owners.size) return false;
+      if (!matches(node, slot)) {
+        reconcile(node, slot); // A competing absolute writer displaced this pose; do not quietly reclaim it as ours.
+        return false;
+      }
       node.quaternion.copy(slot.base);
       return true;
     }
@@ -546,6 +550,10 @@
     for (const axis of ['x', 'y', 'z']) {
       const slot = slots.get(property + '.' + axis);
       if (!slot?.owners.size) continue;
+      if (!matches(node, slot)) {
+        reconcile(node, slot); // Unknown IK writes cannot be laundered into the clean solved baseline.
+        continue;
+      }
       node[property][axis] = slot.base;
       changed = true;
     }
