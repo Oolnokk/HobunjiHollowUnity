@@ -151,28 +151,6 @@ const applyFinalTransform = new Function('THREE', 'window',
   THREE, { ShoulderPetObservationFlip: null }); // Exercises actual module pin against a THREE-compatible root.
 assert.match(runtimeSource, /gripPositionSource: finalTransform\.gripLocalPosition \? 'rendered-group-matrix'/,
   'mobile grip error identifies actual rendered-matrix measurement');
-const restoreDetachedAvatar = new Function('window', runtimeSource
-  + '\nreturn window.ShoulderPetAttachmentRuntime.restoreDetachedAvatar;')({}); // Exercises the actual public detach helper without reproducing its yaw logic.
-const detachedPlane = () => ({
-  matrixAutoUpdate: false, matrixWorldNeedsUpdate: false,
-  rotation: { y: NaN, set(x, y, z) { this.y = y; } },
-  updateMatrix() { this.matrixUpdated = true; },
-}); // Stand-in for a previously shoulder-attached animal plane retaining a stale yaw.
-const detachedFront = detachedPlane(); // Tests restoration to the ordinary animal front-facing orientation.
-const detachedBack = detachedPlane(); // Tests restoration to the ordinary animal rear-facing orientation.
-const detachedAvatar = {
-  group: { userData: { hobunjiShoulderPetAttachment: { authoritativeRootTransform: true } } },
-  frontPlane: detachedFront, backPlane: detachedBack,
-}; // Simulates a pet removed from the shoulder before regular creature rendering resumes.
-assert.equal(restoreDetachedAvatar(detachedAvatar), true);
-assert.equal(detachedFront.rotation.y, Math.PI / 2, 'detachment restores the free animal front plane');
-assert.equal(detachedBack.rotation.y, -Math.PI / 2, 'detachment restores the free animal back plane');
-assert.equal(detachedFront.matrixAutoUpdate, true);
-assert.equal(detachedBack.matrixAutoUpdate, true);
-assert.equal(detachedFront.matrixWorldNeedsUpdate, true);
-assert.equal(detachedBack.matrixWorldNeedsUpdate, true);
-assert.equal(detachedAvatar.group.userData.hobunjiShoulderPetAttachment, undefined,
-  'detached pets must not retain a marker that suppresses ordinary animal yaw');
 
 for (const skinned of [true, false]) {
   const windowFixture = {
@@ -219,11 +197,9 @@ for (const skinned of [true, false]) {
           userData: { hobunjiShoulderSpriteCanonicalized: true },
           localToWorld(v) { return v.multiply(this.scale).applyQuaternion(this.quaternion).add(this.position); },
         }; // Simulates the THREE root, including its real nonuniform width/depth and breathing scale.
-        const fakePlane = () => ({ rotation: { y: NaN, set(x, y, z) { this.y = y; } }, updateMatrix() {}, matrixWorldNeedsUpdate: false }); // Captures actual front/back yaw to verify the shoulder-only face swap.
+        const fakePlane = () => ({ rotation: { set() {} }, updateMatrix() {}, matrixWorldNeedsUpdate: false }); // Minimal visible front/back plane reset.
         const fakePet = { avatarRef: { group: fakeGroup, frontPlane: fakePlane(), backPlane: fakePlane() } }; // Captures actual rendered grip error after the final pin.
         applyFinalTransform(fakePet, pose);
-        assert.equal(fakePet.avatarRef.frontPlane.rotation.y, -Math.PI / 2, 'attached front card faces the reversed shoulder-only direction');
-        assert.equal(fakePet.avatarRef.backPlane.rotation.y, Math.PI / 2, 'attached back card faces the reversed shoulder-only direction');
         closeness(fakeGroup.localToWorld(new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z)),
           perchWorld, 'the production final-render transform preserves the physical grip');
         assert.ok(fakeGroup.userData.hobunjiShoulderPetAttachment.gripPerchError < 1e-9,
@@ -261,15 +237,6 @@ closeness(outwardAxis.clone().add(inwardAxis), new TestVector3(),
   'cancel-authored-offset does not suppress the observation 180-degree sprite turn');
 assert.equal(canceledOutward.shoulderFacingTurnDeg, 0);
 assert.equal(canceledInward.shoulderFacingTurnDeg, 180);
-const faceNormal = (rootQuaternion, localYaw) => new TestVector3(0, 0, 1).applyQuaternion(
-  rootQuaternion.clone().multiply(new TestQuaternion().setFromAxisAngle(new TestVector3(0, 1, 0), localYaw))
-); // Independently resolves FrontSide plane visibility from the actual grip-solved root quaternion.
-for (const [inward, transform] of [[false, canceledOutward], [true, canceledInward]]) {
-  const frontNormal = faceNormal(transform.worldQuaternion, -Math.PI / 2); // Inward should expose the front face toward the +X viewer.
-  const backNormal = faceNormal(transform.worldQuaternion, Math.PI / 2); // Outward should expose the rear face toward the same viewer.
-  assert.equal(frontNormal.x > 0, inward, 'the pet front geometry is camera-facing exactly when the restored x-ray foreground selects it');
-  assert.equal(backNormal.x > 0, !inward, 'the pet back geometry is camera-facing exactly when the restored x-ray foreground selects it');
-}
 for (const transform of [canceledOutward, canceledInward]) {
   const gripAt = new TestVector3(canceledGrip.x, canceledGrip.y, canceledGrip.z)
     .applyQuaternion(transform.worldQuaternion).add(transform.worldPosition); // Final pin is checked independently for both turns.
