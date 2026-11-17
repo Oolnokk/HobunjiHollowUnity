@@ -166,10 +166,10 @@ async function testAsyncPortraitOwnership() {
   window.AnimalChatheadFrame = { async renderCreatureChathead() { return true; } };
   feature.requestName({ id: 'fresh_baby', kind: 'puktuk' }, { commit: () => true });
   flush(0);
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve)); // Let Node flush the VM realm's separate async continuations before inspecting its DOM.
   assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'resolved image marks the active baby portrait ready');
   resolveFirstPortrait(false);
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve)); // The previous modal's rejected image must not change the visible, newer dialog.
   assert.equal(feature.debugSnapshot().lastPortrait.id, 'fresh_baby', 'a stale portrait failure cannot overwrite another animal');
   assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'a stale portrait failure cannot hide the new chathead');
   root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
