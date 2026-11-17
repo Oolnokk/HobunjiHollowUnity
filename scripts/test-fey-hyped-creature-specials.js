@@ -297,5 +297,36 @@ assert(pingdortSource.includes('state.boulder.pendingFeyHypedImpactRatio=echoSca
   && pingdortSource.includes('delete burden.pendingFeyHypedImpactRatio')
   && pingdortSource.includes('150*feyScale'),
   'Hyped Pingdort boulder carries exactly one reduced impact, then returns to an ordinary burden');
+// A full-strength echo is still a secondary attack. Its one-use tag must not
+// disappear merely because 50 Hyped points happen to produce a ratio of 1.
+{
+  const begin = pingdortSource.indexOf('  function boulderImpact(');
+  const end = pingdortSource.indexOf('  function ensureBoulderFactory(', begin);
+  assert(begin >= 0 && end > begin, 'real Pingdort boulder impact function is available');
+  const hits = []; // Spy on real boulder damage options to catch full-strength replay flags.
+  const deps = { TILE: 64, hostileObjects: [{ health: 100, areaId: 'arena', x: 0, y: 0 }],
+    damageCreature(target, amount, x, y, knockback, opts) { hits.push({ amount, knockback, replay: opts.feyHypedReplay }); return true; } };
+  const hit = vm.runInNewContext(pingdortSource.slice(begin, end) + '\n boulderImpact', {
+    window: { THREE: { Vector3: class Vector3 {} }, Combat: { deps } },
+    performance: { now: () => 1000 },
+  });
+  const dropped = ratio => {
+    const burden = { mapId: 'arena', group: { getWorldPosition: () => ({ x: 0, z: 0 }) } };
+    if (ratio !== null) burden.pendingFeyHypedImpactRatio = ratio;
+    hit(burden, 'test');
+    assert.equal('pendingFeyHypedImpactRatio' in burden, false, 'the impact consumes its replay marker exactly once');
+  };
+  dropped(null);
+  dropped(.16);
+  dropped(1);
+  assert.equal(hits.length, 3, 'all ordinary/partial/full boulders use the original impact owner');
+  close(hits[0].amount, 18, 'ordinary boulders retain full damage');
+  assert.equal(hits[0].replay, false, 'ordinary boulders remain ordinary hits');
+  close(hits[1].amount, 2.88, '8 Hyped points produce a sixteen-percent boulder');
+  assert.equal(hits[1].replay, true, 'partial-strength boulder is tagged as a replay');
+  close(hits[2].amount, 18, '50 Hyped points produce a full-strength second boulder');
+  assert.equal(hits[2].replay, true, 'full-strength second boulder must still be tagged as a replay');
+}
+
 assert(hype.debugSnapshot().creatureReplayCount >= 5, 'mobile diagnostics track all real creature secondary contacts');
 console.log('Hyped creature specials: native Pounce, Charge, paid top-ups, movement, afflictions, whiff, cancellation, map safety, Furious precedence PASS');
