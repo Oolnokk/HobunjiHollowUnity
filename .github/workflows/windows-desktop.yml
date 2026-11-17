@@ -28,7 +28,7 @@ jobs:
   build-installer:
     runs-on: windows-latest
     permissions:
-      contents: write # Used by the main-only release publishing step.
+      contents: read # PR and main packaging never need a release-writing token.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -78,11 +78,23 @@ jobs:
             desktop/dist/latest.yml
           if-no-files-found: error
           retention-days: 14
+  publish-release:
+    if: github.event_name == 'push'
+    needs: build-installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Only this main-only job can create a GitHub release.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Hobunji-Hollow-Windows-Installer
+          path: release
       - name: Publish main as a Windows auto-update release
-        if: github.event_name == 'push'
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
-          gh release create "desktop-v$version" "desktop/dist/Hobunji-Hollow-Setup-$version.exe" "desktop/dist/Hobunji-Hollow-Setup-$version.exe.blockmap" "desktop/dist/latest.yml" --target "${{ github.sha }}" --title "Hobunji Hollow Windows $version" --notes "Automatic Windows build of main at commit ${{ github.sha }}." --latest
+          version="0.1.${{ github.run_number }}"
+          gh release create "desktop-v${version}" "release/Hobunji-Hollow-Setup-${version}.exe" "release/Hobunji-Hollow-Setup-${version}.exe.blockmap" "release/latest.yml" \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "Hobunji Hollow Windows ${version}" --notes "Automatic Windows build of main at commit ${{ github.sha }}." --latest
