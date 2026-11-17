@@ -57,6 +57,7 @@ const inputClaims=new Map(); // Cancellation stays on the existing physical inpu
 let releaseCount=0,activeShot=null,cameraRefreshes=0; // Existing game owners, injected without a second camera or update loop.
 const window={THREE,WorldActionInputClaims:{setClaims:(id,claims)=>inputClaims.set(id,claims),clearClaims:id=>inputClaims.delete(id)},CharacterActionLocks:{acquire(opts){assert.deepEqual(Array.from(opts.participants,p=>p.id),['player','npc:sloomi']);assert(opts.participants[1].channels.includes('pose'),'NPC pose lock uses the shared character participant');return {release(){releaseCount++;}};}},
  CinematicCameraRuntime:{isActive:()=>!!activeShot,activeRecord:()=>activeShot,activate(_area,shot){activeShot={camera:shot};return activeShot;},deactivate(){activeShot=null;}}};
+vm.runInNewContext(fs.readFileSync('docs/js/rig-transform-layers.js','utf8'),{window,console}); // Standalone workshop and game share the scoped absolute rig owner.
 vm.runInNewContext(fs.readFileSync('docs/js/festival-wheel-dance-runtime.js','utf8'),{window,console});
 const api=window.FestivalWheelDanceRuntime,scene=new Node(); // Real public lifecycle under test.
 function actor(height,x){
@@ -144,6 +145,30 @@ inputClaims.get('paired-dance').find(c=>c.actionId==='dodge').onPress();assert(!
 assert(api.start(cancelWalker,cancelA.root));const replacementShot={camera:{id:'new-cutscene'}};activeShot=replacementShot;api.update(.01,false,'town');
 assert.equal(api.isActive(),false);assert.strictEqual(activeShot,replacementShot,'a new cinematic owner is preserved');activeShot=null;
 assert(api.start(cancelWalker,cancelA.root));cancelB.root.parent=null;api.update(.01,false,'town');assert(!api.isActive(),'unloaded partner releases all owners');
+
+// A newer absolute animation must survive cancellation of an interrupted paired dance.
+{
+ const newA=actor(1,0),newB=actor(1,.6),newWalker={rec:{id:'sloomi'},area:'town',root:newB.root,avatarGroup:newB.model,legs:newB.legs};
+ const beforeB=newB.root.position.clone(); // The untouched partner's base is still restored.
+ api.init({getPlayerModel:()=>newA.model,getPlayerLegs:()=>newA.legs,surfaceY:()=>0});
+ assert(api.start(newWalker,newA.root),'scoped action acquires both rigs');
+ assert.equal(api.diagnostics().poseOwnership,'actor-rig-compositor');
+ const replacement=newA.root.position.clone().add(new Vector3(1.3,0,-.4)); // A newer teleport/animation owner takes over one claimed transform.
+ newA.root.position.copy(replacement);
+ api.update(.016,false,'town');
+ assert(!api.isActive(),'an unexpected absolute owner stops the previous dance');
+ assert.equal(api.diagnostics().lastStopReason,'pose-owner-taken-over');
+ assert(newA.root.position.distanceTo(replacement)<1e-8,'newer root position must survive delayed cleanup');
+ assert(newB.root.position.distanceTo(beforeB)<1e-8,'the untouched partner returns to the pre-dance pose');
+ assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'all paired ownership claims release after takeover');
+ assert(api.start(newWalker,newA.root),'a replacement action may acquire the released rigs');
+ const neckReplacement=newB.model.userData.neckRig.neckJoint;
+ neckReplacement.quaternion.setFromAxisAngle(new Vector3(1,0,0),.41);
+ const preservedNeck=neckReplacement.quaternion.clone(); // A newer scripted gaze replaces just the neck while the dance is active.
+ assert(api.stop('script-took-over'),'explicit cancellation releases every surviving claim');
+ assert(Math.abs(neckReplacement.quaternion.x-preservedNeck.x)<1e-8,'newer neck rotation survives delayed paired cleanup');
+ assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'no residual absolute owner after normal cancel');
+}
 
 window.SocialActionWheel={isDancing:()=>true};
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'solo-dance-active');

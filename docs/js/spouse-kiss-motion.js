@@ -472,6 +472,12 @@
     } else body.rotation.y = yaw; // Non-Three test rigs preserve the original Euler fallback.
     const torso = session.playerModel;
     if (torso !== body) {
+      // This paired pose owns the entire torso orientation. A late tool or
+      // camera writer may change yaw/roll after the simulation tick: restoring
+      // X alone can poison the quaternion and defeat scoped cleanup.
+      if (session.originalPlayerModelQuaternion && torso.quaternion?.copy) {
+        torso.quaternion.copy(session.originalPlayerModelQuaternion);
+      }
       torso.position.y = session.originalPlayerModelY - drop;
       torso.rotation.x = session.originalPlayerModelPitch + bow;
     }
@@ -530,48 +536,68 @@
     const old = active;
     if (!old) return false;
     active = null;
+    let poseRelease = null; // Used in the last-result mobile diagnostic to reveal displaced transform owners.
     try {
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
-      old.releasePlayerRenderPose?.(); // Remove the festival-style late-render player pose owner before normal camera/weapon gaze resumes.
+      old.releasePlayerRenderPose?.(); // Remove late-render pose ownership before releasing its saved transforms.
       old.playerHands?.setPoseProvider?.(SOURCE, null);
-      if (old.player?.parent === old.playerParent && old.originalPlayerPosition) {
-        Object.assign(old.player.position, old.originalPlayerPosition); // Restore from festival-style temporary root hop/retreat.
-        if (old.originalPlayerQuaternion && old.player.quaternion?.copy) {
-          old.player.quaternion.copy(old.originalPlayerQuaternion); // Restore initial tool-independent root transform, including terrain pitch/roll.
-        } else old.player.rotation.y = old.originalPlayerYaw;
+      const scoped = !!old.poseSession; // Scoped ownership is the live game path; retain the original restoration for isolated previews.
+      poseRelease = old.poseSession?.release() || null;
+      const playerRestored = !scoped || (
+        old.poseSession.wasRestored(old.player, 'position')
+        && old.poseSession.wasRestored(old.player, 'quaternion'));
+      const npcRestored = !scoped || (
+        old.poseSession.wasRestored(old.walker?.root, 'position')
+        && old.poseSession.wasRestored(old.walker?.root, 'quaternion'));
+
+      if (!scoped) {
+        if (old.player?.parent === old.playerParent && old.originalPlayerPosition) {
+          Object.assign(old.player.position, old.originalPlayerPosition);
+          if (old.originalPlayerQuaternion && old.player.quaternion?.copy) old.player.quaternion.copy(old.originalPlayerQuaternion);
+          else old.player.rotation.y = old.originalPlayerYaw;
+        }
+        if (old.playerModel && old.playerModel !== old.player) {
+          old.playerModel.position.y = old.originalPlayerModelY;
+          old.playerModel.rotation.x = old.originalPlayerModelPitch;
+        }
+        if (old.originalPlayerHands && old.playerHands?.group) {
+          old.playerHands.group.position.y = old.originalPlayerHands.y;
+          old.playerHands.group.rotation.x = old.originalPlayerHands.pitch;
+        }
       }
-      if (old.playerModel && old.playerModel !== old.player) {
-        old.playerModel.position.y = old.originalPlayerModelY;
-        old.playerModel.rotation.x = old.originalPlayerModelPitch;
+      if (playerRestored) {
+        old.playerHands?.useIdlePose?.(); // A displaced player's newer grip must not be replaced with the spouse's old idle pose.
+        old.playerLegs?.setExternalFootTargets?.(null);
+        old.playerLegs?.setStanceDrop?.(0, true);
+        old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
       }
-      if (old.originalPlayerHands && old.playerHands?.group) {
-        old.playerHands.group.position.y = old.originalPlayerHands.y;
-        old.playerHands.group.rotation.x = old.originalPlayerHands.pitch;
+      if (npcRestored) {
+        old.npcLegs?.setExternalFootTargets?.(null);
+        if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
+        old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
+      } else {
+        window.ActorRigCompositor?.clear?.(old.npcRigRoot, old.npcSink?.ownerId); // Release only this action's sink, without changing a successor's knee target.
       }
-      old.playerHands?.useIdlePose?.(); // Restores held-tool/idle ownership instead of leaving wrists glued to the spouse's shoulders.
-      old.playerLegs?.setExternalFootTargets?.(null); // Release externally planted posterior feet on cancel, spouse switch, or completion.
-      old.npcLegs?.setExternalFootTargets?.(null);
-      old.playerLegs?.setStanceDrop?.(0, true);
-      if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
-      old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
-      old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
-      if (old.npcTiltPivot?.rotation && Number.isFinite(old.originalNpcTiltX)) old.npcTiltPivot.rotation.x = old.originalNpcTiltX;
-      if (old.walker?.root?.parent === old.npcParent) {
-        old.walker.root.position.y = old.originalNpcPosition.y; // Restore world-floor elevation after the small partner's hop.
-        old.walker.root.rotation.y = old.originalNpcYaw;
-        old.walker.root.position.x = old.originalNpcPosition.x; // Restores the approach displacement, including early dodge.
-        old.walker.root.position.z = old.originalNpcPosition.z;
+      if (!scoped) {
+        if (old.npcTiltPivot?.rotation && Number.isFinite(old.originalNpcTiltX)) old.npcTiltPivot.rotation.x = old.originalNpcTiltX;
+        if (old.walker?.root?.parent === old.npcParent) {
+          old.walker.root.position.y = old.originalNpcPosition.y;
+          old.walker.root.rotation.y = old.originalNpcYaw;
+          old.walker.root.position.x = old.originalNpcPosition.x;
+          old.walker.root.position.z = old.originalNpcPosition.z;
+        }
+        if (old.npcNeck && old.originalNpcNeck) old.npcNeck.quaternion.copy(old.originalNpcNeck);
+        if (old.playerNeck && old.originalPlayerNeck) old.playerNeck.quaternion.copy(old.originalPlayerNeck);
+        if (old.playerNeck?.position && old.originalPlayerNeckPosition) old.playerNeck.position.copy(old.originalPlayerNeckPosition);
+        if (old.npcNeck?.position && old.originalNpcNeckPosition) old.npcNeck.position.copy(old.originalNpcNeckPosition);
       }
-      if (old.npcNeck && old.originalNpcNeck) old.npcNeck.quaternion.copy(old.originalNpcNeck);
-      if (old.playerNeck && old.originalPlayerNeck) old.playerNeck.quaternion.copy(old.originalPlayerNeck);
-      if (old.playerNeck?.position && old.originalPlayerNeckPosition) old.playerNeck.position.copy(old.originalPlayerNeckPosition); // Remove residual lips-to-lips reach on exit.
-      if (old.npcNeck?.position && old.originalNpcNeckPosition) old.npcNeck.position.copy(old.originalNpcNeckPosition);
     } finally {
       old.lock?.release?.();
       window.WorldActionInputClaims?.clearClaims?.(SOURCE);
     }
-    lastResult = { reason, npcId: old.walker?.rec?.id || null, touched: old.touched, height: old.height, elapsedS: old.elapsed };
+    lastResult = { reason, npcId: old.walker?.rec?.id || null, touched: old.touched, height: old.height, elapsedS: old.elapsed,
+      poseRelease }; // Skipped restores identify a newer owner in the game's existing diagnostic view.
     return true;
   }
 
@@ -658,7 +684,7 @@
       }
     }
 
-    const npcSink = { legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] };
+    const npcSink = { ownerId: SOURCE + '-npc-sink', legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] }; // Action-scoped sink cannot overwrite watchman/combat sink owners.
     const npcTiltPivot = walker._npcRunLeanPivot || (walker.avatarGroup?.parent?.name === 'npc_run_lean_visual'
       ? walker.avatarGroup.parent : walker.avatarGroup); // The existing portrait lean pivot keeps the legs out of the torso bow.
     if (height.taller === 'second' && height.tallerBowDeg > 1 && !npcTiltPivot?.rotation) {
@@ -672,15 +698,33 @@
           channels: ['movement', 'tools', 'actions', 'pose', 'facing', 'head'] },
       ],
     });
+    const poseSession = window.ActorRigCompositor?.createAbsoluteSession?.(SOURCE) || null; // One shared absolute-pose owner across both actors and their authored joints.
+    if (poseSession) {
+      const targets = [
+        [player, ['position', 'quaternion']], [playerModel, ['position', 'quaternion']],
+        [walker.root, ['position', 'quaternion']], [playerNeck, ['position', 'quaternion']],
+        [npcNeck, ['position', 'quaternion']], [npcTiltPivot, ['quaternion']],
+      ]; // Captures only transform nodes directly written by this animation, never the world movement or impact solver.
+      if (playerHands.group && !isWithinRig(playerHands.group, playerModel)) {
+        targets.push([playerHands.group, ['position', 'quaternion']]); // External player GLB hands follow their own authored pose.
+      }
+      if (!targets.every(([node, fields]) => node && poseSession.capture(node, fields))) {
+        poseSession.release();
+        lock?.release?.();
+        lastError = 'spouse-pose-already-owned'; // No authored pose writes occurred before a complete claim.
+        return false;
+      }
+    }
     const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
-      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer,
+      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer, poseSession,
       playerParent: player.parent, // A rebuild or scene switch invalidates this exact paired character.
       originalPlayerPosition: { x: player.position.x, y: player.position.y, z: player.position.z }, // Festival-style root staging restores this on exit.
       originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
       originalPlayerQuaternion: player.quaternion?.clone?.() || null, // Restore exact rooted facing after authored yaw, not an Euler approximation.
       originalPlayerModelY: playerModel.position.y, originalPlayerModelPitch: playerModel.rotation.x, // Preserve the skinned torso's neutral transform.
+      originalPlayerModelQuaternion: playerModel.quaternion?.clone?.() || null, // Reassert all torso axes after late render/tool interference.
       originalPlayerHands: playerHands.group ? { y: playerHands.group.position.y, pitch: playerHands.group.rotation.x } : null, // GLB hands may live outside the portrait pivot.
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
@@ -764,6 +808,11 @@
       clearMotion('partner-or-rig-changed');
       return;
     }
+    if (session.poseSession && !session.poseSession.owns()) {
+      clearMotion('pose-owner-taken-over'); // A newer absolute pose or rebuilt rig took over before this tick.
+      return;
+    }
+    try {
     session.elapsed += clamp(finite(context.deltaMs) / 1000, 0, .08);
     const pose = samplePose(session.elapsed);
     const playerIsTaller = session.height.taller === 'first';
@@ -805,6 +854,7 @@
     const expectedKneeWorld = kneeWorld;
     if (pose.blend > .8 && Math.abs(actualKneeWorld - expectedKneeWorld) > Math.max(.03, expectedKneeWorld * .09)) {
       lastError = 'actual-knee-limit-prevents-mouth-contact';
+      session.poseSession?.stamp(); // Capture this partial authored frame so cancellation can restore the affected body.
       clearMotion('knee-limit-mismatch');
       return;
     }
@@ -829,7 +879,18 @@
       try { session.onContact?.(); }
       catch (error) { lastError = 'contact-callback: ' + (error?.message || error); }
     }
+    if (session.poseSession && !session.poseSession.stamp()) {
+      clearMotion('pose-owner-replaced-during-frame');
+      return;
+    }
     if (session.elapsed >= DURATION_S) clearMotion('completed');
+    } catch (error) {
+      if (active === session) {
+        session.poseSession?.stamp(); // A partially completed solver frame must still be undone before locks release.
+        clearMotion('pose-solver-exception');
+      }
+      lastError = 'pose-solver-exception: ' + String(error?.message || error);
+    }
   }
 
   function init() {

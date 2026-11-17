@@ -1015,6 +1015,8 @@
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
     if (playerAppearanceDebug) lines.push('Player appearance: ' + JSON.stringify(playerAppearanceDebug));
+    const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
+    if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
@@ -1684,7 +1686,8 @@
     const api = window.HobunjiRigDump;
     if (!api) { deps.showToast?.('Rig dump module not loaded.', false); return; }
     const { dumps, text } = await api.dumpGame(2);
-    const report = `${text}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
+    const ownership = window.ActorRigCompositor?.getDebug?.() || null; // Snapshot shared pose owners at the same visible rig-dump boundary.
+    const report = `${text}\n\n--- Rig transform ownership / possible leaks ---\n${JSON.stringify(ownership)}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
     const resultEl = document.getElementById('debugProbeResult');
     if (resultEl) resultEl.textContent = report;
     const screenshotEl = document.getElementById('debugProbeScreenshot');

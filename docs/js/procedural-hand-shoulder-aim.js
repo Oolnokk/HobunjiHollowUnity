@@ -455,6 +455,10 @@
       targetDirection.copy(elbow).sub(socket.position); // Forearm direction: the wrist-facing hand axis points back toward the elbow.
       if (targetDirection.lengthSq() < 1e-10) {
         socket.quaternion.copy(authoredQuaternion);
+        const compositor = window.ActorRigCompositor; // Shoulder fallback produces an absolute hand base, not a fresh additive twist.
+        if (!compositor?.absoluteOwner?.(socket, 'quaternion')) {
+          compositor?.setSolvedBase?.(socket, 'quaternion', socket.quaternion);
+        }
         socket.updateMatrix?.();
         socket.updateMatrixWorld?.(true);
         updatePaperArmGuide(side, shoulder, elbowSolve);
@@ -490,6 +494,10 @@
       localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).normalize();
       outputQuaternion.copy(authoredQuaternion).multiply(localCorrectionQuaternion).normalize(); // Right multiply keeps both hinge axes hand-local.
       socket.quaternion.copy(outputQuaternion);
+      const compositor = window.ActorRigCompositor; // Preserve additive effects above a clean, scale-free elbow/shoulder IK solve.
+      if (!compositor?.absoluteOwner?.(socket, 'quaternion')) {
+        compositor?.setSolvedBase?.(socket, 'quaternion', socket.quaternion);
+      }
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       updatePaperArmGuide(side, shoulder, elbowSolve);
