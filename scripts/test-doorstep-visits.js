@@ -562,6 +562,12 @@ console.log('doorstep visits: ok');
   source.avatarGroup.userData.neckRig = { available: true, neckJoint: neck, skinnedPlane: portrait, skeleton: portrait.skeleton };
   source.avatarGroup.userData.proceduralHandRig = { avatarRoot: source.avatarGroup, parent: source.root, group: hands, dispose() { throw new Error('must not dispose source hands'); } };
   const originalData = source.avatarGroup.userData; // Identity check detects temporary mutations to the original metadata.
+  const densityClones = []; // Observes the production bridge without replacing its actual visitor cloning implementation.
+  const densityRemoved = []; // Confirms borrowed geometry stops being tracked on visitor cleanup.
+  ctx.window.PNGPlaneAvatar = { meshBudget: {
+    trackSkinnedClone(original, copied) { densityClones.push([original, copied]); },
+    unregisterSkinnedPortrait(mesh) { densityRemoved.push(mesh); },
+  } };
   assert.throws(() => source.root.clone(true), /Maximum call stack size exceeded/, 'ordinary Three-style cloning reproduces the reported failure');
   assert.equal(ctx.window.DoorstepVisits.spawnVisit({ key: 'hreesh-test', npcId: 'hreesh', tree: { nodes: [] } }), true);
   const visitor = world.walkers.find(walker => walker._doorstepVisitor); // Inspects the runtime proxy rather than a test-only clone API.
@@ -575,12 +581,15 @@ console.log('doorstep visits: ok');
   assert.strictEqual(clonedRig.skeleton, clonedRig.skinnedPlane.skeleton);
   assert.strictEqual(clonedRig.skinnedPlane.geometry, portrait.geometry);
   assert.strictEqual(clonedRig.skinnedPlane.material, portrait.material);
+  assert(densityClones.some(([original, copied]) => original === portrait && copied === clonedRig.skinnedPlane),
+    'doorstep clones register their shared portrait geometry for live density updates');
   assert.equal(visitor.neckJoint.rotation.y, 0);
   assert.equal(neck.rotation.y, 0.75);
   assert.equal(visitor.avatarGroup.userData.proceduralHandRig, undefined, 'source driver callbacks never migrate into the visitor');
   assert(visitor.root.children.some(child => child.name === 'hand-visuals'));
   assert.strictEqual(source.avatarGroup.userData, originalData);
   ctx.window.DoorstepVisits.removeActiveVisitor();
+  assert(densityRemoved.includes(clonedRig.skinnedPlane), 'visitor cleanup unregisters its portrait without disposing borrowed geometry');
   assert.equal(clonedRig.skinnedPlane.skeleton.disposed, true, 'visitor-owned skeleton resources are released');
   assert.equal(portrait.skeleton.disposed, undefined, 'source skeleton resources remain live');
   assert.strictEqual(source.avatarGroup.userData.proceduralHandRig.avatarRoot, source.avatarGroup);

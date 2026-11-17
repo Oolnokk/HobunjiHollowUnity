@@ -1223,6 +1223,7 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261117hRigHands2', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261117portraitMeshAuthor1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261117hRigLegs2', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
@@ -1572,6 +1573,7 @@ async function loadRepositoryRuntime(settings) {
     const path = settings.docsRoot + relativePath;
     const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
       : relativePath === 'js/character-spine.js' ? AUTHOR_SPINE_RUNTIME_SCRIPT
+      : relativePath === 'js/png-plane-avatar.js' ? AUTHOR_PORTRAIT_RUNTIME_SCRIPT
       : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
         : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT
         : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Hands, feet and shoulder rigs must match this author page's preview contract.
@@ -1617,6 +1619,7 @@ async function loadRepositoryRuntime(settings) {
   state.runtimeKey = key;
   if (!state.creature.genotype) loadCreatureProfile(state.creature.kind);
   refreshCreatureEditor();
+  syncAuthorPortraitMeshControls(); // The editor draws before asynchronous repository scripts load; unlock its portrait controls now.
   log('Portrait and creature runtimes loaded.');
 }
 
@@ -4119,6 +4122,16 @@ function animationUiTemplate() {
       <details id="maaLeftPanel" class="maaPanel maaGlass maaInteractive" open>
         <summary><span id="maaLeftPanelTitle">Actors & avatar library</span><span id="maaActorCount" class="pill">0 actors</span></summary>
         <div class="maaPanelBody">
+          <section class="maaSection" id="maaPortraitMeshDevSection">
+            <div class="maaSectionTitle"><b>Portrait mesh preview</b><span class="maaSmall maaMuted">Diagnostic only</span></div>
+            <div class="maaField">
+              <label for="maaPortraitMeshDensity">Subdivisions <output id="maaPortraitMeshDensityValue">100%</output></label>
+              <input type="range" id="maaPortraitMeshDensity" min="20" max="100" step="5" value="100" style="width:100%;touch-action:pan-x" aria-label="Skinned portrait mesh density, percent per axis">
+            </div>
+            <label class="maaToggleLine" style="margin-top:7px"><input type="checkbox" id="maaPortraitMeshWireframe">Show portrait wireframe</label>
+            <div class="maaSmall maaMuted" id="maaPortraitMeshStatus" role="status" aria-live="polite">Load the repository to adjust portrait geometry.</div>
+            <div class="maaSmall maaMuted" style="margin-top:5px">Wireframe temporarily replaces the portrait texture with a bright full-plane grid. Density changes keep poses and keys intact. Creature painted-head rigs and pants use their own meshes.</div>
+          </section>
           <section class="maaSection" id="maaProjectSection">
             <div class="maaSectionTitle"><b id="maaProjectSectionTitle">Multi-avatar animation</b><span class="maaSmall maaMuted">Active tab only</span></div>
             <div class="maaField">
@@ -4295,6 +4308,22 @@ function installAnimationDrawerTouchScrolling() {
   document.querySelectorAll('#maaLeftPanel .maaPanelBody, #maaRightPanel .maaPanelBody').forEach(installTouchDragScroll);
 }
 
+let authorPortraitDensityDebounce = 0; // Avoids re-tessellating every actor on every intermediate mobile slider event.
+function syncAuthorPortraitMeshControls() {
+  const budget = window.PNGPlaneAvatar?.meshBudget;
+  const slider = $('maaPortraitMeshDensity');
+  const wireframe = $('maaPortraitMeshWireframe');
+  const label = $('maaPortraitMeshDensityValue');
+  const status = $('maaPortraitMeshStatus');
+  if (!slider || !wireframe || !status || !label) return;
+  if (!budget) { status.textContent = 'Load the repository to adjust portrait geometry.'; return; }
+  const snap = budget.portraitDensityDebug();
+  slider.value = String(snap.percent);
+  wireframe.checked = !!snap.wireframe;
+  label.textContent = snap.percent + '%';
+  status.textContent = `Full portrait grid ${budget.portraitGrid('full').segmentsX}×${budget.portraitGrid('full').segmentsY} · ${snap.tracked} live skins · ${Math.round(snap.triangles).toLocaleString()} triangles`;
+}
+
 function prepareMultiAvatarAnimationAuthor() {
   document.body.dataset.multiAvatarAuthor = 'true';
   document.body.dataset.animationAuthorMode = animationAuthor.mode;
@@ -4303,6 +4332,31 @@ function prepareMultiAvatarAnimationAuthor() {
   if (!root) return;
   root.innerHTML = animationUiTemplate();
   installAnimationDrawerTouchScrolling();
+  const densitySlider = $('maaPortraitMeshDensity'); // Preview-only slider; never written to project JSON, keyframes or repository profiles.
+  const wireframeToggle = $('maaPortraitMeshWireframe'); // Preview-only wireframe inspection of the actual current skinned topology.
+  const applyDensity = () => {
+    if (authorPortraitDensityDebounce) { clearTimeout(authorPortraitDensityDebounce); authorPortraitDensityDebounce = 0; }
+    if (window.PNGPlaneAvatar?.meshBudget?.setPortraitDensityPercent?.(Number(densitySlider.value)) === undefined) {
+      $('maaPortraitMeshStatus').textContent = 'Load the repository first.';
+    }
+    syncAuthorPortraitMeshControls();
+  };
+  densitySlider?.addEventListener('input', () => {
+    $('maaPortraitMeshDensityValue').textContent = densitySlider.value + '%';
+    if (authorPortraitDensityDebounce) clearTimeout(authorPortraitDensityDebounce);
+    authorPortraitDensityDebounce = setTimeout(applyDensity, 100);
+  });
+  densitySlider?.addEventListener('change', applyDensity);
+  wireframeToggle?.addEventListener('change', () => {
+    window.PNGPlaneAvatar?.meshBudget?.setPortraitWireframeEnabled?.(wireframeToggle.checked);
+    syncAuthorPortraitMeshControls();
+  });
+  if (!window.__maaPortraitDevControlsBound) {
+    window.__maaPortraitDevControlsBound = true; // Tool lifecycle guard: the workspace can be re-rendered without stacking global handlers.
+    window.addEventListener('hobunji:portrait-density-changed', syncAuthorPortraitMeshControls);
+    window.addEventListener('hobunji:portrait-wireframe-changed', syncAuthorPortraitMeshControls);
+  }
+  syncAuthorPortraitMeshControls();
   // The existing status pill is reused in the visible authoring toolbar for mobile-safe feedback.
   const statusPill = $('statusPill');
   if (statusPill) $('maaTopbar').insertBefore(statusPill, $('maaRepoBtn'));
@@ -4859,7 +4913,9 @@ async function buildNpcNeckRig(model, avatar, npc) {
   const backTexture = makeRigTexture(THREE, backAnimated, `${model.name}_skinned_back_texture`);
   const frontMaterial = makeRigMaterial(THREE, frontTexture, `${model.name}_skinned_front_material`);
   const backMaterial = makeRigMaterial(THREE, backTexture, `${model.name}_skinned_back_material`);
-  const geometry = buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal);
+  const densityBudget = window.PNGPlaneAvatar?.meshBudget; // Shares the runtime portrait-density percentage with the game while keeping the author's custom neck weights.
+  const geometry = buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal,
+    densityBudget?.portraitGrid?.('full') || { segmentsX: 28, segmentsY: 36 });
 
   const torsoBone = new THREE.Bone();
   torsoBone.name = `${model.name}_torso_bone`;
@@ -4911,6 +4967,31 @@ async function buildNpcNeckRig(model, avatar, npc) {
     canvases: { baseHead, frontSource, frontAnimated, backSource, backAnimated },
   };
   model.userData.neckRig = rig;
+  densityBudget?.registerExternalSkinnedPortrait?.(skinnedPlane, {
+    THREE, width: modelWidth, height: modelHeight, neckLocal,
+    buildGeometry: grid => buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, grid),
+    afterGeometryChange(nextGeometry) {
+      rig.mesh.segmentsX = nextGeometry.userData.segmentsX;
+      rig.mesh.segmentsY = nextGeometry.userData.segmentsY;
+      // A shoulder-pet's lazily built hat uses cloned skin weights. Refresh those face-only
+      // meshes too, otherwise reducing the body grid leaves an old, denser animated hat.
+      for (const mesh of rig.hatXrayOverlay?.meshes || []) {
+        const facingBack = mesh.name.endsWith('_back_lazy_hat_plane');
+        const face = nextGeometry.groups[facingBack ? 1 : 0];
+        if (!face) continue;
+        const replacement = nextGeometry.clone();
+        replacement.clearGroups();
+        replacement.addGroup(face.start, face.count, 0);
+        const previous = mesh.geometry;
+        mesh.geometry = replacement;
+        previous?.dispose?.();
+      }
+    },
+    onWireframeChanged(enabled) {
+      if (rig.hatXrayOverlay?.group) rig.hatXrayOverlay.group.visible = !enabled;
+    },
+  });
+  syncAuthorPortraitMeshControls(); // Keep the mobile triangle readout current when a new actor or rig-reference preview appears.
   log(`Built one skinned portrait plane for ${npc.name || npc.id}; neck pivot (${detected.pivotPx.x.toFixed(1)}, ${detected.pivotPx.y.toFixed(1)}) px drives bone-weighted upper-plane deformation.`);
   return rig;
 }
@@ -5154,6 +5235,7 @@ function removeAnimationActor(id) {
     animationAuthor.relationLines.delete(id);
   }
   renderAllAnimationUi();
+  syncAuthorPortraitMeshControls();
   updateAnimationSelectionBox();
   attachAnimationGizmo();
   setAnimationRecentChange(`Removed actor “${actor.label}”; its children became roots.`);
@@ -5175,6 +5257,7 @@ function clearAnimationActors() {
   animationAuthor.relationLines.clear();
   animationAuthor.actors = [];
   animationAuthor.selectedActorId = null;
+  syncAuthorPortraitMeshControls();
   updateAnimationSelectionBox();
 }
 
@@ -11437,6 +11520,7 @@ async function buildLazyHatOverlayV1521(carrier) {
     rig.rigRoot.add(group);
     const overlay = { group, materials, meshes, enabledForShoulderPet: false, policy: 'hat-slot-only-lazy-skinned' };
     rig.hatXrayOverlay = overlay;
+    group.visible = !window.PNGPlaneAvatar?.meshBudget?.wireframeEnabled?.(); // A wireframe inspection never lets the old textured hat obscure the grid.
     model.userData.hatXrayOverlay = overlay;
     log(`Built ${source.npcName}'s hat-only shoulder-pet overlay with the portrait's shared skin weights and skeleton.`);
     return overlay;

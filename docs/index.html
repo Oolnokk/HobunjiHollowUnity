@@ -146,7 +146,7 @@
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261117loafProbe1"></script>
+  <script src="debug.js?v=20261117portraitWireAuthor2"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261116boneyKasaCfg1"></script>
@@ -175,7 +175,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261116liveRigCards1"></script>
+  <script src="js/png-plane-avatar.js?v=20261117portraitWireAuthor2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -192,7 +192,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261117kissRenderClaims9"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261117hRigDanceLoader3"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261117portraitWireLoader2"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -302,7 +302,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261109missingNpcRestore1"></script>
+  <script src="js/condition-registry.js?v=20261117devPortraitCloneLoader1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js.

@@ -329,6 +329,7 @@
         skeletons.push(skeleton);
       }
       copied.skeleton = skeleton;
+      global.PNGPlaneAvatar?.meshBudget?.trackSkinnedClone?.(sourceNode, copied); // Visitor must follow live source portrait density without replacing its own pose/bones.
     }
     const seen = new WeakMap(); // Preserves shared passive metadata references without recursing through Three.js serialization.
     for (const [sourceNode, copied] of copies) {
@@ -501,6 +502,7 @@
     current.root?.traverse?.(node => {
       // Cloned visitor meshes share the source NPC's materials/textures; do not
       // dispose shared GPU resources here. Removing the clone is sufficient.
+      global.PNGPlaneAvatar?.meshBudget?.unregisterSkinnedPortrait?.(node); // Visitor borrows geometry; stop tracking it without disposing the source's GPU buffers.
       node.userData && (node.userData.doorstepVisitorRemoved = true);
     });
     activeVisit = null;
