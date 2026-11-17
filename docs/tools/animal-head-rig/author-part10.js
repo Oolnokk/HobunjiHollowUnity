@@ -39,7 +39,7 @@ function syncBabyHeadScaleControl() {
 }
 
 function syncBabyHeadShorteningControl() {
-  const inherited = babyHeadWarp?.getShortening?.() ?? 0.20; // Universal head-depth reduction when no species override is authored.
+  const inherited = babyHeadWarp?.getShortening?.() ?? 0.08; // Universal 8% inherited head-depth reduction unless species overrides it.
   const percent = Math.round((authoredBabyHeadShortening ?? inherited) * 100);
   babyHeadShorteningSlider.value = String(percent);
   babyHeadShorteningLabel.textContent = percent + '% shorter' + (authoredBabyHeadShortening == null ? ' · inherited default' : ' · species override');
