@@ -138,7 +138,7 @@ windowFrame.Fishing = { state: { phase: 'caught' } }; // Selects the normal auth
 const releasedFrame = new Function(
   'window', 'playerMesh', 'playerLegs', 'dt', 'wx', 'wz', 'targetY', 'player',
   'playerFacing', 'mountSeatLift', 'performance',
-  lockSource + moveSource + mountSource + facingSource + '\\nreturn pairedPoseLocked;'
+  lockSource + moveSource + mountSource + facingSource + '\nreturn pairedPoseLocked;'
 );
 assert.equal(releasedFrame(
   windowFrame, player, { group: { rotation: { y: 0 } } },
