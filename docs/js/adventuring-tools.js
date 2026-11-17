@@ -114,8 +114,15 @@
     if (!lit) {
       if (ruinPuzzles?.touchesIgnitionSource?.(contact)) source = 'ruin brazier';
       else {
-        const furniture = findFireSource(scene, contact);
-        if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
+        const burning = window.BurningEntityHazards?.findTorchSource?.(contact, {
+          area, player, hostileObjects: api.hostileObjects, companionObjects: api.companionObjects,
+          corpseObjects: window.CreatureDeath?.getCorpseObjects?.(),
+        }); // Shares the real 3D/contact-cover test with furniture; allies and corpses are not attack targets.
+        if (burning) source = 'burning ' + (burning.name || burning.def?.label || burning.creatureKey || 'character');
+        else {
+          const furniture = findFireSource(scene, contact);
+          if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
+        }
       }
       if (source && light()) window.RuinInteractionAudio?.igniteTorch?.();
     }
