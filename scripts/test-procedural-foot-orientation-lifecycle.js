@@ -166,7 +166,7 @@ const perpWindow = { SCRATCHBONES_CONFIG: { game: { movement: { perpRotDeadzoneD
 vm.runInNewContext(perpSource, {
   window: perpWindow, THREE: { MathUtils: { degToRad: deg } }, performance: { now: () => 1000 },
 }, { filename: 'perp-rotation.js' });
-perpWindow.PerpRotation.init({ angleDiff: signed });
+perpWindow.PerpRotation.init({ angleDiff: (a, b) => signed(a - b) }); // Real two-angle API: compare heading against each camera perpendicular.
 const turnApi = perpWindow.PerpRotation; // Production clamp, not a synthetic edge-selector.
 const turnState = {}; // Persistent private player deadzone state across successive render passes.
 const facingSource = between(composerSource,
