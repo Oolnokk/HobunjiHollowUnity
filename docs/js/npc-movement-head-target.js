@@ -24,7 +24,9 @@
       || 'npc:' + String(walker.rec?.id || 'unknown'); // Shared NPC character ID used by paired-kiss/dance scoped head locks.
     if (window.CharacterActionLocks?.isLocked?.(participantId, 'head')
         || window.CharacterActionLocks?.isLocked?.(participantId, 'pose')) {
-      walker._npcMotionLookActive = false; // An old walk target must not reapply after the authored gaze releases ownership.
+      // Preserve _npcMotionLookActive while the scoped head owner is present:
+      // after its release the ordinary idle/movement path must still know to
+      // retire the old walk gaze, otherwise a sideways neck can remain stuck.
       window.PerpRotation?.clearHeadtrackHint?.(walker.perpState);
       return false; // Never touch the neck quaternion, even for stale walking gaze, LOD transitions, or a lingering bed flag.
     }
