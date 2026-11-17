@@ -42,6 +42,66 @@
     return deps?.getLastInputDevice?.() || null;
   } // Shared by HUD affordances that need to mirror the same canonical last-input state as world action prompts.
 
+
+  const ARCH_ACTIONS = Object.freeze(['action1', 'action2', 'action3', 'itemAction1', 'itemAction2']); // Shared physical arch slots used by game.js and the ruin adapter.
+  const TOUCH_ACTION_LABELS = Object.freeze({
+    action1: 'Action 1', action2: 'Action 2', action3: 'Action 3',
+    itemAction1: 'Item Action 1', itemAction2: 'Item Action 2',
+    jump: 'Jump', dodge: 'Dodge', toolSelect: 'Tool Select',
+  }); // Names printed beside actionable touch-world prompts.
+
+  function currentBindings() {
+    return window.InputBindings?.getCurrentBindings?.() || deps?.inputBindings || {};
+  } // Uses live remaps with the initialized game.js binding reference as fallback.
+
+  function controllerActionAvailable(actionId, requireOwnership = false) {
+    const binding = currentBindings().controller?.[actionId]; // Physical key currently assigned to this semantic action.
+    if (!binding) return false;
+    const owner = window.InputBindings?.resolveActionForButton?.('controller', binding); // Applies dungeon Jump priority and other contextual remaps.
+    return owner === actionId || (!requireOwnership && !owner);
+  }
+
+  function requiresInteractFallback(device = getLastInputDevice()) {
+    return device === 'touch' || (device === 'controller' && !controllerActionAvailable('interact'));
+  } // Touch has no Interact key; inside ruins the controller's Interact key may be claimed by Jump.
+
+  function createActionArchLayout(buttons, heldMode, sitInteraction) {
+    const nonClimbBtns = buttons.filter(b => b.action !== 'climb_branch' && b.nativeInput !== true); // Only these occupy the five physical action buttons.
+    const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
+      || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument'
+      || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
+      || b.action.startsWith('place_') || b.action.startsWith('spawn_'); // Item-owned actions use separate arch slots in tool mode.
+    const toolBtns = nonClimbBtns.filter(b => !isItemButton(b)); // Used by active-action selection and the physical tool arch.
+    const itemBtns = nonClimbBtns.filter(isItemButton); // Used by the physical item arch.
+    const slots = heldMode === 'item' && !sitInteraction
+      ? [nonClimbBtns[0], nonClimbBtns[1], nonClimbBtns[2], nonClimbBtns[3], nonClimbBtns[4]]
+      : [toolBtns[0], toolBtns[1], toolBtns[2], itemBtns[0], itemBtns[1]]; // One layout supplies both the buttons and their floating hints.
+    return { nonClimbBtns, toolBtns, itemBtns, slots };
+  }
+
+  function worldPromptLabel(actionId, device = getLastInputDevice(), touchIcon = '✋', touchOverride = null) {
+    if (!actionId) return '';
+    if (device === 'touch') return actionId === 'interact' ? '' : (touchOverride || TOUCH_ACTION_LABELS[actionId] || touchIcon);
+    return actionPromptGlyph(actionId, null, device);
+  } // Shared renderer for game.js prompts and the direct native-ruin popup.
+
+  function resolveWorldPromptInputs(buttons, archLayout = null, device = getLastInputDevice()) {
+    return buttons.map(button => {
+      const physicalSlot = archLayout?.slots?.indexOf(button) ?? -1; // Prompt-only casks and native Dodge rows have no tool arch slot.
+      const archAction = physicalSlot >= 0 ? ARCH_ACTIONS[physicalSlot] : null; // Physical input, not the arbitrary order of actions supplied.
+      const useArch = button.inputAction === 'interact' && physicalSlot >= 0 && requiresInteractFallback(device); // Interact is unavailable on touch or Jump-owned controllers.
+      const archAvailable = device !== 'controller' || controllerActionAvailable(archAction); // Don't suggest an unbound/stolen controller arch key.
+      const actionId = (useArch ? (archAvailable ? archAction : '') :
+        button.inputAction || (button.action === 'climb_branch' ? 'jump' : archAction)) || '';
+      const touchOverride = button.touchInputLabel || (physicalSlot >= 0 ? TOUCH_ACTION_LABELS[archAction] : null); // Name the real touch arch button, including item slots.
+      return {
+        actionId,
+        label: worldPromptLabel(actionId, device, button.icon, touchOverride),
+        color: actionId ? actionPromptColor(actionId) : '#B8C5C0',
+      };
+    });
+  }
+
   let actionPromptEls = null;
   let pressAction = null; // Used by the retained pointer handler so frame updates don't create new closures.
   let cancelAction = null; // Used by the retained cancel handler while the prompt is visible.
@@ -84,15 +144,13 @@
   // correctly here too. Touch has no key to name, so callers pass the same
   // icon already shown for that action in the tool arch (see e.g. the
   // harpoon's 🎣 fallback in _openToolArc).
-  function actionPromptGlyph(actionId, touchIcon) {
-    const lastInputDevice = getLastInputDevice();
-    if (lastInputDevice === 'controller') {
-      const binding = deps.inputBindings.controller[actionId]; // The live controller binding checked before displaying an interaction hint.
-      if (actionId === 'interact' && binding && window.InputBindings.resolveActionForButton?.('controller', binding) === 'jump') return ''; // Ruin A currently jumps; never advertise it as an Interact pickup.
-      return window.InputBindings.buttonLabel(binding);
-    }
-    if (lastInputDevice === 'touch') return touchIcon || '👆';
-    return window.InputBindings.buttonLabel(deps.inputBindings.desktop[actionId]);
+  function actionPromptGlyph(actionId, touchIcon, device = getLastInputDevice()) {
+    if (!actionId) return '';
+    if (device === 'touch') return touchIcon || '👆';
+    if (device === 'controller' && !controllerActionAvailable(actionId)) return ''; // Never advertise a button stolen by Jump or another action.
+    const desktopOrPad = device === 'controller' ? 'controller' : 'desktop'; // Keyboard and mouse share desktop bindings.
+    const binding = currentBindings()[desktopOrPad]?.[actionId]; // Live remaps, rather than stale defaults.
+    return binding ? window.InputBindings.buttonLabel(binding) : '';
   }
 
   function actionPromptColor(actionId) {
@@ -149,6 +207,7 @@
 
   window.ActionPromptUI = {
     init, getLastInputDevice, buildActionPromptDom, actionPromptGlyph, actionPromptColor, showActionPrompt, hideActionPrompt,
+    archActions: ARCH_ACTIONS, controllerActionAvailable, requiresInteractFallback, createActionArchLayout, worldPromptLabel, resolveWorldPromptInputs,
     getDebug: () => ({ ...styleDebug, visible: !!actionPromptEls?.el.classList.contains('open') }),
   };
 })();
