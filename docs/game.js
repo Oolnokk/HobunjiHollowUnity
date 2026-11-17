@@ -14385,8 +14385,29 @@
         _buildingScenes.delete(mapId);
       }
 
-      async function loadBuildingScene(mapId) {
-        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
+      const _buildingSceneInFlight = new Map(); // Coalesces concurrent interior requests; a pending null scene must not launch duplicate builders.
+      function loadBuildingScene(mapId) {
+        if (_buildingScenes.get(mapId)) return Promise.resolve(); // A completed, cached scene needs no extra build.
+        const existing = _buildingSceneInFlight.get(mapId);
+        if (existing) return existing; // All consumers await the same initial request and error outcome.
+        const pending = buildBuildingScene(mapId);
+        _buildingSceneInFlight.set(mapId, pending);
+        pending.then(
+          () => {
+            if (_buildingSceneInFlight.get(mapId) === pending) _buildingSceneInFlight.delete(mapId);
+          },
+          error => {
+            if (_buildingSceneInFlight.get(mapId) !== pending) return;
+            _buildingSceneInFlight.delete(mapId);
+            if (_buildingScenes.get(mapId) === null) _buildingScenes.delete(mapId); // Release the in-progress sentinel so a later attempt can retry.
+            if (_currentBuildingMapId === mapId && currentArea === mapId) window.LoadingScreenRuntime?.hide?.();
+            window.__farmLog?.(`[building] ${mapId}: scene load failed: ${String(error?.message || error)}`, 'warn');
+          }
+        ); // Explicit rejection handler also covers fire-and-forget NPC/zone load call sites.
+        return pending;
+      }
+
+      async function buildBuildingScene(mapId) {
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
