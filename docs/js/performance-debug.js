@@ -1174,6 +1174,55 @@
     npcHidden.input.addEventListener('change', () => root.NpcViewFrustumCull?.setDiagnosticHideAll?.(npcHidden.input.checked));
     box.appendChild(npcHidden.row);
 
+    // Developer-only live A/B control: change skin-grid subdivisions, not the separate pants/animal budgets.
+    const portraitBudget = root.PNGPlaneAvatar?.meshBudget;
+    if (portraitBudget?.setPortraitDensityPercent) {
+      const densityRow = document.createElement('div');
+      densityRow.setAttribute('data-dev-only', '');
+      densityRow.style.cssText = 'padding:8px 0;border-top:1px solid rgba(255,255,255,.08)';
+      const densityLabel = document.createElement('label');
+      densityLabel.htmlFor = 'settingPortraitMeshDensity';
+      densityLabel.style.cssText = 'display:block;font-size:12px;font-weight:600';
+      const densitySlider = document.createElement('input');
+      densitySlider.id = 'settingPortraitMeshDensity';
+      densitySlider.type = 'range';
+      densitySlider.min = '20';
+      densitySlider.max = '100';
+      densitySlider.step = '5';
+      densitySlider.value = String(portraitBudget.portraitDensityPercent());
+      densitySlider.style.cssText = 'display:block;width:100%;margin:7px 0;touch-action:pan-x';
+      densitySlider.setAttribute('aria-label', 'Portrait mesh subdivisions, percent per axis');
+      const densityStatus = document.createElement('div');
+      densityStatus.style.cssText = 'font-size:10px;line-height:1.4;opacity:.75';
+      const densityHelp = document.createElement('div');
+      densityHelp.textContent = 'Retessellates existing player, town NPC and enemy skinned portraits without resetting bones or changing textures. Pants and animal meshes are unchanged. Drag to compare; resets to 100% when Dev Mode is turned off.';
+      densityHelp.style.cssText = 'font-size:10px;line-height:1.4;opacity:.7;margin-top:4px';
+      let pendingDensityUpdate = 0; // Debounces potentially expensive live GPU geometry swaps during touch dragging.
+      function updateDensityLabel() {
+        const snapshot = portraitBudget.portraitDensityDebug();
+        densityLabel.textContent = `Portrait mesh density: ${densitySlider.value}% per axis`;
+        densityStatus.textContent = `Player ${snapshot.player.segmentsX}×${snapshot.player.segmentsY} (${snapshot.player.segmentsX * snapshot.player.segmentsY * 4} triangles) · NPC ${snapshot.npc.segmentsX}×${snapshot.npc.segmentsY} (${snapshot.npc.segmentsX * snapshot.npc.segmentsY * 4} triangles) · ${snapshot.tracked} live skins tracked`;
+      }
+      function applyDensity() {
+        if (pendingDensityUpdate) { clearTimeout(pendingDensityUpdate); pendingDensityUpdate = 0; }
+        portraitBudget.setPortraitDensityPercent(Number(densitySlider.value));
+        updateDensityLabel();
+      }
+      densitySlider.addEventListener('input', () => {
+        densityLabel.textContent = `Portrait mesh density: ${densitySlider.value}% per axis (applying…)`;
+        if (pendingDensityUpdate) clearTimeout(pendingDensityUpdate);
+        pendingDensityUpdate = setTimeout(applyDensity, 100);
+      });
+      densitySlider.addEventListener('change', applyDensity); // Guaranteed final value even if a drag finishes before the timer.
+      root.addEventListener('hobunji:portrait-density-changed', () => {
+        densitySlider.value = String(portraitBudget.portraitDensityPercent());
+        updateDensityLabel();
+      }); // Also reflects the automatic reset when developer mode is disabled.
+      densityRow.append(densityLabel, densitySlider, densityStatus, densityHelp);
+      box.appendChild(densityRow);
+      updateDensityLabel();
+    }
+
     const livestockTrace = makeCheckboxRow('settingTraceLivestockCallers', 'Trace livestock callers (expensive)', traceLivestockCallers,
       'Captures a stack for livestock reads while Performance Profiler is enabled. Off on every reload; leave off for normal performance measurements.'); // Mobile-accessible opt-in for the nursery caller investigation.
     livestockTrace.input.addEventListener('change', () => { traceLivestockCallers = livestockTrace.input.checked; });
