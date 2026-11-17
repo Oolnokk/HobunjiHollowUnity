@@ -185,6 +185,8 @@ class XYZ {
   const first = layers.createAbsoluteSession('first-paired-animation');
   assert(first.capture(root, ['position', 'quaternion']));
   assert(first.capture(neck, ['position', 'quaternion']));
+  assert(layers.getDebug().absoluteOwners.some(entry => entry.owner === 'first-paired-animation' && entry.claims === 4),
+    'mobile rig diagnostics must identify the active paired action and its claimed transforms');
   const concurrent = layers.createAbsoluteSession('other-action');
   assert.equal(concurrent.capture(root, ['position']), false, 'a second action cannot seize the same live position');
   root.position.x = .5;
