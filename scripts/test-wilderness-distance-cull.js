@@ -96,6 +96,10 @@ terrainChunk.geometry.computeBoundingBox = function () {
 }; // Actual THREE computes every vertex in the shared buffer, ignoring the chunk's drawRange.
 const protectedChunk = attach(scene, group('WildernessChunk_rain_99', { wildernessChunk: true, hobunjiNeverDistanceCull: true }));
 const protectedRock = attach(protectedChunk, mesh('rock', 190)); // Explicit exclusions must still win over geographic names.
+const unsplitTerrain = attach(scene, mesh('terrain_far', 190, { terrainRenderChunkEligible: true }));
+const unsplitEdgeFloor = attach(scene, mesh('zone_floor', 190, { hobunjiTerrainEdgeIdColor: { r: 1 } }));
+// TerrainRenderChunks runs its first spatial split after this cull begins;
+// source.visible must stay true or its newly created children inherit false forever.
 const actor = attach(scene, mesh('npc_walker_01', 190));
 const untagged = attach(scene, mesh('ordinary_debug_mesh', 195));
 const camera = { isCamera: true, matrixWorld: matrixAt(0), updateMatrixWorld() {} };
@@ -117,7 +121,9 @@ for (const [object, message] of [
   [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
   [farWater, 'water surface'], [nearEdge, 'large bounds intersect near space'],
   [invisibleChild, 'hidden ancestor'], [plantBatch, 'reagent vegetation batch'],
-  [actor, 'actor'], [protectedRock, 'explicitly no-cull chunk'], [untagged, 'untagged unrelated mesh'],
+  [actor, 'actor'], [protectedRock, 'explicitly no-cull chunk'],
+  [unsplitTerrain, 'unpartitioned explicit terrain source'], [unsplitEdgeFloor, 'unpartitioned edge-ID floor source'],
+  [untagged, 'untagged unrelated mesh'],
 ]) assert.equal(object.visible, true, message + ' must not be altered');
 assert.equal(api.snapshot().hidden, 5, 'only five actually drawable distant meshes are suppressed');
 assert.equal(api.snapshot().hiddenInstanced, 1, 'tagged instanced meshes are measured separately');
@@ -215,7 +221,37 @@ const chunks = fs.readFileSync('docs/js/wilderness-chunks.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 assert(index.includes('id="wildernessDistanceCullBtn"'), 'mobile wildlife debug pane exposes a distance culling A/B button');
 assert(chunks.includes('culler.setEnabled(culler.snapshot().enabled === false)'), 'debug button toggles the real renderer feature');
-assert(index.includes('wilderness-chunks.js?v=20261117hNonvegDistanceCull2'), 'changed debug wiring has a fresh browser cache token');
+assert(index.includes('js/wilderness-chunks.js?v='), 'wilderness chunk debug wiring loads through a versioned browser script');
+
+// Execute actual wilderness debug wiring with a minimal touch-button DOM; no
+// console or browser developer tools are needed to run the in-game A/B switch.
+const events = {}; // Simulated DOM listeners installed by WildernessChunks.init().
+const attributes = {}; // Tracks the accessible aria-pressed toggle state.
+const cullButton = {
+  dataset: {}, textContent: 'Distance Cull: ON',
+  addEventListener(type, callback) { events[type] = callback; },
+  getAttribute(key) { return attributes[key] ?? null; },
+  setAttribute(key, value) { attributes[key] = value; },
+  click() { events.click?.(); },
+};
+const debugElements = {
+  wildernessDistanceCullBtn: cullButton,
+  wildernessChunkStatus: { textContent: '' },
+};
+vm.runInNewContext(chunks, {
+  window,
+  document: { getElementById(id) { return debugElements[id] || null; } },
+  performance: { now: () => clock.now },
+}, { filename: 'wilderness-chunks.js' });
+window.WildernessChunks.init({ getCurrentArea: () => 'wilderness' });
+assert.equal(cullButton.textContent, 'Distance Cull: ON', 'debug controller initializes as enabled');
+cullButton.click();
+assert.equal(api.snapshot().enabled, false, 'touch click disables the runtime culler');
+assert.equal(cullButton.textContent, 'Distance Cull: OFF', 'label updates on tap');
+assert.equal(attributes['aria-pressed'], 'false', 'accessible control state tracks disabled culling');
+cullButton.click();
+assert.equal(api.snapshot().enabled, true, 'second tap re-enables the runtime culler');
+assert.equal(attributes['aria-pressed'], 'true', 'accessible state follows the live culler');
 const batchIndex = game.indexOf('const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender');
 const distanceIndex = game.indexOf('const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender');
 const renderTryIndex = game.indexOf('        try {\n        // Frame-scoped whole-actor suppression', distanceIndex);
@@ -225,4 +261,4 @@ const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
 const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
 assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
   'distance cull is restored by renderWorldPasses finally before wall/prop restore');
-console.log('PASS wilderness distance cull: terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
+console.log('PASS wilderness distance cull: pre-split terrain sources, terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');

@@ -46,6 +46,14 @@
   function meshEligible(mesh, ownedByChunk, taggedWorld) {
     if (!ownedByChunk && !taggedWorld && mesh.userData?.hobunjiInstanceBounds !== true) return false;
     if (!mesh.isMesh || mesh.isSkinnedMesh) return false;
+    // TerrainRenderChunks splits direct scene-level sources in its first
+    // renderer.render() wrapper. Hiding one before that split would copy
+    // visible=false into every new child permanently; cull the finished
+    // terrainRenderChunk children instead, after the next candidate scan.
+    if (mesh.userData?.terrainRenderChunkSource === true) return false;
+    if (mesh.parent?.isScene && mesh.userData?.terrainRenderChunk !== true
+      && (mesh.userData?.terrainRenderChunkEligible === true
+        || mesh.userData?.hobunjiTerrainEdgeIdColor != null)) return false;
     // An InstancedMesh's base geometry box is NOT the bounds of its instances.
     if (mesh.isInstancedMesh) return mesh.userData?.hobunjiInstanceBounds === true
       && !!window.InstancedMeshBounds?.worldSphere && !!window.THREE?.Sphere;
