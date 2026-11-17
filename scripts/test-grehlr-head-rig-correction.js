@@ -46,6 +46,17 @@ assert.equal(sharedRig.babyHeadShortening, .06);
 assert.equal(sharedRig.babyHeadUsePaintedFrame, false);
 assert.equal(sharedRig.babyHeadUseCustomFrame, false);
 assert.equal(sharedRig.babyAbdomenEnabled, false);
+
+const bestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json', 'utf8'));
+const currentGrehlr = bestiary.creatures.find(creature => creature.id === 'grehlr')?.headRig; // Bestiary is the source imported by the painter.
+assert(currentGrehlr, 'Grehlr must remain registered in the bestiary');
+assert.deepEqual(JSON.parse(JSON.stringify(api.authored)), currentGrehlr,
+  'the compatibility correction must never drift from the current Grehlr export');
+const runtimeLoader = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8'); // Game load version must invalidate stale browser scripts.
+const painterHtml = fs.readFileSync('docs/tools/animal-head-rig/index.html', 'utf8'); // Mobile author reload must use the same corrected export.
+assert.match(runtimeLoader, /GrehlrHeadRigCorrection\.version\) < 8/);
+assert(runtimeLoader.includes('grehlr-head-rig-correction.js?v=20261117GrehlrCorr8'));
+assert(painterHtml.includes('grehlr-head-rig-correction.js?v=20261117GrehlrCorr8'));
 assert.equal(rest.followFrameShiftX, true);
 
 // The uploaded Grehlr shoulder pose is already authored as explicit BEFORE/AFTER curves;
