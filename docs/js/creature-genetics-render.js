@@ -687,7 +687,13 @@
   async function prewarm(kinds) {
     const t0 = performance.now();
     const targets = kinds && kinds.length ? kinds : Object.keys(SPECIES);
-    await loadBaseMasks();
+    try { await loadBaseMasks(); }
+    catch (error) {
+      // Prewarm is opportunistic: a transient mask failure must not cancel the
+      // rest of the sprite prefetch or become an unhandled rejection at startup.
+      // composeFrame itself still rejects incomplete art and retries the masks.
+      window.__farmLog?.('[genotype-render] prewarm masks deferred: ' + String(error?.message || error), 'warn');
+    }
     const urls = [];
     for (const kind of targets) {
       const spec = SPECIES[kind];
