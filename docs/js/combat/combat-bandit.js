@@ -842,7 +842,7 @@
 
   function banditMasteryFor(cfg, rank, tier) {
     const base = Number(cfg?.masteryBaseByRank?.[rank] ?? 0);
-    return deps.clamp(Math.round(base + tier), 0, 5);
+    return deps.clamp(Math.round(base + (window.EnemyTierProgression?.progressionStep(tier) ?? Math.floor(Math.max(0, tier) / 2))), 0, 5);
   }
 
   // A bandit's actual held weapon -- see weaponMetalTierRangeByRank's
@@ -867,7 +867,7 @@
   // The rank/tier weapon material roll, shared by the weapon itself and by rank metal armor (which must match it before the portrait is baked).
   function rollBanditWeaponMetalKey(cfg, rank, tier) {
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
-    const bonusT = tier;
+    const bonusT = window.EnemyTierProgression?.progressionStep(tier) ?? Math.floor(Math.max(0, tier) / 2); // One metal ceiling increase per TWO danger tiers, preserving the former upper bound.
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
@@ -883,7 +883,8 @@
     const rolledMetalKey = configuredMetalKey ? null : rollBanditWeaponMetalKey(cfg, rank, tier);
     const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
-    return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
+    const gradedMultiplier = window.EnemyTierProgression?.weaponMultiplier(metalKey, tier, deps.METAL_DEFS, deps.VERDIGRIS_METAL_KEYS); // Humanoid weapon damage uses exactly the same I-IV power grades as smithing.
+    return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: gradedMultiplier ?? deps.metalDmgMultiplier(metalKey) };
   }
 
   function banditRangedWeaponFor(cfg, rank) {
@@ -1051,8 +1052,8 @@
       hostile: true, liveBirth: true,
       maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
       maxStamina: Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul)),
-      moveSpeed: 118 + tier * 4,
-      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 5,
+      moveSpeed: 118 + tier * 2, // Eight danger steps retain roughly the former maximum locomotion bonus.
+      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 2.5, // Two smaller increments replace each former chase-speed jump.
       attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
       attackRangePx: deps.TILE * BANDIT_ATTACK_RANGE_TILES * shapeStats.range,
       attackHalfConeRad: Math.min(Math.PI, BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range),
@@ -1064,7 +1065,7 @@
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
-      banditFlaskPotencyTier: isFlasker ? Math.max(0, Math.min(4, tier)) : 0, // Used for both infinite AI throws and the matching corpse drops.
+      banditFlaskPotencyTier: isFlasker ? Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7)) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
@@ -2967,6 +2968,7 @@
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
+    tier = window.EnemyTierProgression?.clampTier(tier) ?? Math.max(0, Math.min(7, Math.floor(Number(tier) || 0))); // Validate before armor, mastery, movement and damage read this level.
     await window.EnemyLoadoutRules?.ready;
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
