@@ -62,6 +62,9 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', event => event.preventDefault());
     win.webContents.on('did-finish-load', () => win.webContents.send(CHANNELS.changed, snapshot()));
+    win.on('close', event => {
+      if (state.phase === 'saving') event.preventDefault(); // Do not imply cancellation while a final save is in flight.
+    });
     win.once('ready-to-show', () => win.show());
     win.on('closed', () => {
       if (updateWindow === win) {
@@ -165,6 +168,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     ipcMain.handle(CHANNELS.install, event => { requireUpdateWindow(event); void install(); });
     ipcMain.handle(CHANNELS.later, event => {
       requireUpdateWindow(event);
+      if (state.phase === 'saving' || state.phase === 'installing') return; // No misleading dismissal during a committed restart request.
       dismissedVersion = state.targetVersion;
       updateWindow.hide();
     });
