@@ -25,6 +25,7 @@ const close = (actual, expected, label) => assert(Math.abs(actual - expected) < 
 assert.equal(progression.MAX_TIER, 7, 'eight danger tiers, zero-based');
 assert.equal(progression.DANGER_LABELS.length, 8, 'eight readable danger names');
 assert.equal(config.difficultyTiers.maxTier, 7, 'wilderness camps may actually reach the new maximum');
+for (const rank of ['grunt', 'lieutenant', 'captain', 'flasker']) assert.equal(config.legacyMineStatMultiplierByRankAndTier[rank].length, 4, 'Ghoul mine curves retain their historical four authored rank weights');
 assert.equal(config.difficultyTiers.tierDistanceTiles, 12, 'danger should take longer to max out than 42 entrance tiles');
 assert.equal(progression.clampTier(-8), 0, 'bad negative tier cannot weaken enemies indefinitely');
 assert.equal(progression.clampTier(99), 7, 'bad positive tier cannot overlevel enemies');
@@ -89,6 +90,7 @@ close(vm.runInContext("banditWeaponFor(mineConfig,'grunt',10).dmgMultiplier",con
 assert.match(bandit, /opts\.extra\?\.isMineGhoul === true/, 'mine and bandit tiers are separated before scaling');
 assert.match(bandit, /tier = mineEnemy \? Math\.max\(1, Math\.min\(10,/, 'ten-tier floor enemies must not clamp to seven');
 assert.match(bandit, /tier \* \(cfg\?\._preserveMineEnemyTiers \? 0\.12 :/, 'old mine stat progression is unaffected');
+assert.match(bandit, /cfg\?\._preserveMineEnemyTiers \? cfg\?\.legacyMineStatMultiplierByRankAndTier/, 'mine HP fallback uses its original four-rank curve');
 assert.match(bandit, /weaponMetalPowerMultiplier: weapon\.dmgMultiplier/, 'live enemy debug reports actual graded power');
 assert.match(arena, /metalPower=\$\{creature\.def\.weaponMetalPowerMultiplier/, 'mobile arena shows power without devtools');
 assert.match(arena, /MAX_TIER \?\? 7/, 'arena can select tier seven');
