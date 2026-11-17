@@ -17,6 +17,7 @@
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const DEFAULT_SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
+  const PANTS_REST_PLANE_Z = 0; // Garment rest art shares the portrait plane, rather than protruding through its front pixels.
   const NPC_SEGMENTS = 32; // Fallback for meshBudget:'npc' when PNGPlaneAvatar.meshBudget is absent; its table is the one place to tune this.
   const segmentsForBudget = mode => (mode === 'npc' ? (global.PNGPlaneAvatar?.meshBudget?.table?.npc?.pantsSegments || NPC_SEGMENTS) : DEFAULT_SEGMENTS);
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
@@ -146,7 +147,7 @@
       const displacement = Core.inverseDistanceDisplacement({ x: u, y: v }, controls.source, controls.target, 2);
       const fitted = { x: Core.clamp(u + displacement.x), y: Core.clamp(v + displacement.y) };
       const portrait = Core.applyAffine(transform, fitted);
-      point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012);
+      point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, PANTS_REST_PLANE_Z);
       placed.copy(point);
       plane.localToWorld(placed);
       model.worldToLocal(placed);
@@ -302,7 +303,7 @@
         front = Math.max(front, corner.z);
       }
     }
-    return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - 0.012 + 0.01)) : 0;
+    return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - PANTS_REST_PLANE_Z + 0.01)) : 0;
   }
 
   // ── GPU skinning ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -567,10 +568,11 @@
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
-      // The garment is a real 3D plane like the portrait's own front/back planes: depth-tested AND depth-writing, so whatever is nearer the camera covers
-      // whatever is behind it, with no other rule (a leg turned behind the portrait is hidden by it; a turned leg's own faces occlude each other).
-      // The small polygon offset is only a tie-breaker for the coplanar rest pose.
-      const overrides = { side: DOUBLE_SIDE, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      // Pants and the portrait share the exact rest plane. Favor the portrait on coplanar pixels
+      // from EITHER camera direction; a negative polygon offset (and the old +0.012 local depth)
+      // previously forced the garment in front of opaque portrait art. Animated legs still use
+      // genuine 3D depth, while the separate foot camera-depth push keeps feet behind pants.
+      const overrides = { side: DOUBLE_SIDE, depthTest: true, depthWrite: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
       material.onBeforeCompile = shader => {
@@ -812,6 +814,7 @@
       if (!handle.restCaptured) handle.captureRest();
       if (Math.abs(openingWidthRatioForFeet() - handle.openingWidthScale) > 1e-6) {
         handle.alignToRest(); // A late NPC rig scale or live editor change must resize the hems without stacking stretches.
+        rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
       }
       let aim = aimAtLiveLegs();
@@ -825,7 +828,7 @@
         const stance = restStanceBones(handle);
         let stanceDelta = 0, k = 0; // Max change in the standing bind joints, separate from the moving-pose flag.
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; stanceDelta = Math.max(stanceDelta, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
+        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); rebuildSpineShift(spineProfile()); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.

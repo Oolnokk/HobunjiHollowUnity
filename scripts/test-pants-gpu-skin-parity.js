@@ -56,6 +56,25 @@ const handle = Renderer.attach(THREE, {
   garmentRecord: rigs.garments.pants_basic, characterRecord: rigs.characters.__default, meshBudget: 'npc',
 });
 assert(handle, 'garment attached to the synthetic avatar');
+const portraitRestZ = model.getObjectByName('frontPlane').position.z; // Genuine front/rear portrait rest surface in avatar-local depth.
+assert(handle.basePositions.every((coordinate, i) => (i % 3 !== 2) || Math.abs(coordinate - portraitRestZ) < 1e-6),
+  'unanimated pants lie on the portrait plane, never 0.012 units in front of opaque portrait pixels');
+
+// The feet remain farther from the camera than the coplanar pants: the separate camera-space
+// foot push must be recalculated when the garment depth moves to the portrait's rest plane.
+const nearFoot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial());
+nearFoot.position.set(0, 0.2, 0.1); // A foot projects 0.15 avatar-local units ahead of its portrait.
+model.add(nearFoot);
+let footPush = NaN; // Captures the real pants attachment's setFootDepthPush call.
+const footCheck = Renderer.attach(THREE, {
+  avatarGroup: model, legHandle: { group: legs, setFootDepthPush(value) { footPush = value; } },
+  footObjects: [nearFoot], speciesId: 'kenkari', gender: 'female',
+  garmentRecord: rigs.garments.pants_basic, characterRecord: rigs.characters.__default, meshBudget: 'npc',
+});
+assert(footCheck, 'depth-check pants attach to the same actual avatar');
+assert(Math.abs(footPush - 0.16) < 1e-5,
+  'a foot protruding 0.15 ahead of the portrait is pushed 0.16 behind the coplanar pants, including safety margin');
+footCheck.dispose(); model.remove(nearFoot); nearFoot.geometry.dispose(); nearFoot.material.dispose();
 const material = new THREE.MeshBasicMaterial();
 handle.mesh = new THREE.Mesh(handle.geometry, material); handle.material = material; model.add(handle.mesh);
 
@@ -214,5 +233,75 @@ for (const side of ['left', 'right']) assert(Math.abs(spanFor(side) - initialSpa
   `${side} opening returns to the original authored fit with no accumulated stretch`);
 for (let i = 0; i < originalGrid.length; i++) assert(Math.abs(handle.basePositions[i] - originalGrid[i]) < 1e-5,
   'neutral body X/Y completely restores original pants rest grid');
+
+// The initial revision used the raw foot-width multiplier on the mesh, but the ends of
+// real authored splines have different calf weights. Test ACTUAL fitted spans for every
+// authored character at both player and NPC mesh budgets, not just a synthetic flat hoop.
+for (const meshBudget of ['player', 'npc']) {
+  for (const [key, character] of Object.entries(rigs.characters)) {
+    const actor = makeAvatar(); // Real Three.js avatar/leg hierarchy, with its own garment.
+    const [species, gender] = key === '__default' ? ['kenkari', 'female'] : key.split('::');
+    const pants = Renderer.attach(THREE, {
+      avatarGroup: actor.model, legHandle: { group: actor.legs },
+      speciesId: species, gender, garmentRecord: rigs.garments.pants_basic,
+      characterRecord: character, meshBudget,
+    });
+    assert(pants, `pants attached for ${key}/${meshBudget}`);
+    const fittedPoint = (sample, axis) => {
+      const grid = pants.basePositions, rowStride = (pants.segments + 1) * 3, i = sample.i * 3 + axis;
+      const a = grid[i] + (grid[i + 3] - grid[i]) * sample.fx;
+      const b = grid[i + rowStride] + (grid[i + rowStride + 3] - grid[i + rowStride]) * sample.fx;
+      return a + (b - a) * sample.fy;
+    }; // Renderer-exact bilinear sampling (including its final-row/column clamping).
+    const fittedSpan = side => {
+      const points = pants.splineSpec[`${side}Ankle`].samples;
+      return Math.hypot(...[0, 1, 2].map(axis => fittedPoint(points[points.length - 1], axis) - fittedPoint(points[0], axis)));
+    }; // Both five-point ankle splines, measured after CPU/GPU-shared rest fitting.
+    const baseline = { left: fittedSpan('left'), right: fittedSpan('right') }; // Unscaled ankle opening lengths.
+    const originalRest = Float32Array.from(pants.basePositions); // Reversible rebind baseline, including original belt.
+    const anchors = ['left', 'right'].map(side => [0, 1, 2].map(axis => fittedPoint(pants.rings[side].anchor, axis)));
+    scaledRoots.x = 1.05; scaledRoots.y = 2;
+    pants.alignToRest();
+    const expected = (scaledRoots.x + scaledRoots.y) / (2 * scaledRoots.x);
+    for (const [index, side] of ['left', 'right'].entries()) {
+      const actual = fittedSpan(side) / baseline[side];
+      assert(Math.abs(actual - expected) < 0.0005,
+        `${key}/${meshBudget} ${side}: actual opening ${actual} matches the foot-width ratio ${expected}`);
+      for (let axis = 0; axis < 3; axis++) assert(Math.abs(fittedPoint(pants.rings[side].anchor, axis) - anchors[index][axis]) < 1e-5,
+        `${key}/${meshBudget}: the ${side} calf-bone opening centre does not drift`);
+    }
+    for (let i = 0; i < (pants.segments + 1) * 3; i++) assert.strictEqual(pants.basePositions[i], originalRest[i],
+      `${key}/${meshBudget}: the waistband never stretches with the feet`);
+    scaledRoots.x = scaledRoots.y = 1;
+    pants.alignToRest();
+    for (let i = 0; i < originalRest.length; i++) assert(Math.abs(pants.basePositions[i] - originalRest[i]) < 1e-5,
+      `${key}/${meshBudget}: resizing back to neutral never accumulates garment drift`);
+    pants.dispose();
+  }
+}
+
+// A hunch is sampled from REST positions, not animated feet. Resizing the cuff with an
+// unchanged spine profile must still rebuild those sampled shifts; otherwise the PNG
+// upper-body portrait and the pants separate after a late species-scale update.
+const hunch = { curve: {} }; // Same persistent spine-curve identity across both refits.
+const previousSpine = win.HobunjiCharacterSpine; // Restore the test sandbox after checking the hunch.
+model.userData.hobunjiSpine = hunch;
+win.HobunjiCharacterSpine = { deformAt: (_profile, height, displacement) => {
+  displacement.x = height * 0.25; displacement.y = height * 0.02; displacement.z = 0;
+} };
+handle.update(true);
+assert(handle.spineShift, 'test hunch installs actual per-vertex pants shifts');
+scaledRoots.x = 1.05; scaledRoots.y = 2;
+handle.update(true);
+assert.strictEqual(handle.spineCurve, hunch.curve, 'resize preserves the same authored hunch');
+for (let i = 0; i < handle.basePositions.length / 3; i += 13) {
+  const expectedX = (handle.basePositions[i * 3 + 1] - model.getObjectByName('frontPlane').position.y) * 0.25;
+  assert(Math.abs(handle.spineShift[i * 3] - expectedX) < 1e-5,
+    'hunch offsets are resampled from the newly widened garment on a late body-scale change');
+}
+scaledRoots.x = scaledRoots.y = 1;
+handle.update(true);
+delete model.userData.hobunjiSpine;
+win.HobunjiCharacterSpine = previousSpine;
 
 console.log(`ok pants GPU skin parity (${cpu.length / 3} vertices, max error ${worst.toExponential(2)})`);
