@@ -7380,9 +7380,11 @@
                   const triggerRangePx = def.attackRangePx || TILE * 0.85;
                   if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
                     if (defensiveKick && !isCreatureSwimming(c) && c.stamina >= def.attackStaminaCost) {
-                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick');
+                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick',
+                        { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' }); // Fund the committed Voorg-Ass special from the creature's own Hyped reserve.
                       c.attackCooldownT = def.attackCooldownS || 1.0;
                       if (window.Combat?.animalAttacks?.start(c, 'rearKick', { target: prey })) aimAngle = c.facing;
+                      else window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial'); // A rejected special cannot buff a later action.
                     } else if (defensiveKick) {
                       c._voorgRearKickSpent = true; // No Stamina or unsuitable water: flee instead of repeatedly trying to kick.
                       c._voorgRearKickThreat = null;
@@ -7466,11 +7468,15 @@
                   return false;
                 }
                 c.facing = alignment.desiredFacing;
-                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
+                const creatureSpecialId = def.attacks?.length ? def.attacks[Math.floor(rnd() * def.attacks.length)] : null; // Selection precedes payment so ordinary bites cannot burn Hyped.
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack',
+                  creatureSpecialId ? { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' } : {});
                 c.attackCooldownT = def.attackCooldownS;
-                return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
+                const startedCreatureSpecial = !!(creatureSpecialId && window.Combat?.animalAttacks?.start(
+                  c, creatureSpecialId, { target: targetPlayer }
                 ));
+                if (!startedCreatureSpecial) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
+                return startedCreatureSpecial;
               });
               aimAngle = result.aimAngle;
               moving = result.moving;
@@ -7487,12 +7493,15 @@
                   if (alignment.eligible) { c.facing = alignment.nextFacing; aimAngle = alignment.nextFacing; }
                 } else {
                 c.facing = alignment.desiredFacing;
-                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
-                c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
-                const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
+                const creatureSpecialId = hadNamedAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : null; // Keep the original random selection, now committed before paying its cost.
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack',
+                  creatureSpecialId ? { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' } : {});
+                c.attackCooldownT = def.attackCooldownS;
+                const startedModular = creatureSpecialId && window.Combat?.animalAttacks?.start(
+                  c, creatureSpecialId, { target: targetPlayer }
                 );
+                if (!startedModular) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
                   if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against opponent (fallback: plain bite telegraph).`, 'wildlife');
@@ -8913,7 +8922,6 @@
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
                   if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
                   if (!tacticalAttack?.waiting) {
-                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack');
                     c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
                     // Saved tactics choose the action for trained companions;
                     // legacy actors retain their existing species cadence.
@@ -8923,7 +8931,10 @@
                     const attackId = tacticalAttack?.id || (kickSpecies
                       ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
                       : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge')); // Legacy cadence remains the fallback for enemy pets or unavailable training.
+                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack',
+                      { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' }); // Named companion moves and Guard Charge may spend Hyped only once.
                     const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                    if (!startedModular) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
                     if (startedModular) {
                       aimAngle = c.facing;
                     } else {
