@@ -334,8 +334,36 @@
   const MIN_VERTICAL_SCALE_RATIO = 0.7; // Vertical scale of the belt fit relative to its horizontal scale.
   const MAX_VERTICAL_SCALE_RATIO = 1.5;
 
+  const NEAR_HORIZONTAL_BELT_RATIO = 0.12; // Source belts this flat cannot reliably determine horizontal shear from their small y curvature.
+
+  // The belt is a horizontal-width constraint, not a 2D calibration target. Solving an unconstrained
+  // affine from a five-point nearly flat arc made pants_basic's x-vs-y shear ~0.48: at calf height
+  // this dragged the legs sideways by ~18% of the portrait width even though its waistband looked aligned.
+  // Resolve the waist span exactly and let the existing leg bind position the hems separately.
+  function solveNearHorizontalBeltFit(sourcePoints, targetPoints) {
+    const sourceXs = sourcePoints.map(point => point.x); // Garment belt x bounds determine its real span.
+    const sourceYs = sourcePoints.map(point => point.y); // Only the source's flatness chooses this stable fit.
+    const sourceMinX = Math.min(...sourceXs), sourceMaxX = Math.max(...sourceXs); // Input waistband limits.
+    const sourceSpanX = sourceMaxX - sourceMinX; // Guard against degenerate garment belts.
+    if (!(sourceSpanX > 1e-9) || Math.max(...sourceYs) - Math.min(...sourceYs) > NEAR_HORIZONTAL_BELT_RATIO * sourceSpanX) return null;
+    const targetXs = targetPoints.map(point => point.x); // Authored torso belt x bounds, independent of Full Character Scale.
+    const targetMinX = Math.min(...targetXs), targetMaxX = Math.max(...targetXs); // Desired exact waistband span.
+    const targetSpanX = targetMaxX - targetMinX; // A valid character belt has positive visible width.
+    if (!(targetSpanX > 1e-9)) return null;
+    const sourceCenter = centroid(sourcePoints), targetCenter = centroid(targetPoints); // Anchor the belt's vertical mean without shifting its torso centre.
+    const a = targetSpanX / sourceSpanX; // Width of the trousers relative to the authored body belt.
+    const varianceX = sourcePoints.reduce((sum, p) => sum + (p.x - sourceCenter.x) ** 2, 0); // Stable x axis for a possible torso tilt.
+    const b = varianceX > 1e-9 ? sourcePoints.reduce((sum, p, index) => sum + (p.x - sourceCenter.x) * (targetPoints[index].y - targetCenter.y), 0) / varianceX : 0; // Target belt tilt, without inventing x shear.
+    const d = a; // Keep leg height proportional until the existing 3D leg/rest bind aligns the actual ankles.
+    const tx = (targetMinX + targetMaxX) / 2 - a * (sourceMinX + sourceMaxX) / 2; // Precisely align the source and torso waistband centres.
+    const ty = targetCenter.y - b * sourceCenter.x - d * sourceCenter.y; // Preserve average authored belt height.
+    return { a, b, c: 0, d, tx, ty, kind: 'belt-width' };
+  }
+
   function solveAffine(sourcePoints, targetPoints) {
     if (!validateFivePointSpline(sourcePoints) || !validateFivePointSpline(targetPoints)) return null;
+    const widthConstrained = solveNearHorizontalBeltFit(sourcePoints, targetPoints); // Near-flat garment belts must not extrapolate curvature errors through the legs.
+    if (widthConstrained) return widthConstrained;
     const normal = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
     const bx = [0, 0, 0];
     const by = [0, 0, 0];
