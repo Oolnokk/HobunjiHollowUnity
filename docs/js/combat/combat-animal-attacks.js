@@ -178,7 +178,7 @@
   function update(c, dt) {
     const aa = c?._animalAttack;
     if (!aa) return false;
-    if (!(Number(c.health) > 0) || (aa.hyped?.area && c.areaId !== aa.hyped.area)) { cancel(c); return false; }
+    if ((Number.isFinite(Number(c.health)) && Number(c.health) <= 0) || (aa.hyped?.area && c.areaId !== aa.hyped.area)) { cancel(c); return false; } // Health-less editor/test actors remain active; only explicit death or map departure cancels.
     // Hyped and Furious each mean 2x speed; these are exclusive commitments,
     // never a 4x compound tempo or a free third attack.
     const speed = (aa.hyped || c._furiousSpecial) ? 2 : 1;
