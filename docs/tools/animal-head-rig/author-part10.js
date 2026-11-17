@@ -141,11 +141,11 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   rig.babyHeadUsePaintedFrame = authoredBabyHeadUsePainted; // Persist either choice; explicit true must override previously committed alpha-only rigs.
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
   const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
-  const frame = (authoredBabyHeadUsePainted ? paintedBabyHeadFrame() : null)
-    || babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
-    || babyHeadWarp?.validateFrame?.(state.baseRecord?.headRig?.babyHeadFrame)
+  const frame = babyHeadWarp?.validateFrame?.(state.baseRecord?.headRig?.babyHeadFrame)
     || babyHeadWarp?.validateFrame?.(window.HobunjiAuthoredAnimalHeadRigs?.get?.(base)?.babyHeadFrame)
-    || paintedBabyHeadFrame(); // Preserve Moot/custom source frames even while the numeric scale inherits.
+    || (authoredBabyHeadUsePainted ? paintedBabyHeadFrame() : null)
+    || babyHeadWarp?.validateFrame?.(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[base]?.chatheadFrame)
+    || paintedBabyHeadFrame(); // Preserve previously authored source boxes; the painted mode reads the weight map regardless.
   if (frame) rig.babyHeadFrame = frame;
   else delete rig.babyHeadFrame;
   return rig;
