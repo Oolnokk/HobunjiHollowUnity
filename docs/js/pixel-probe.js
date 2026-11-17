@@ -606,6 +606,18 @@
         const size = bounds ? bounds.getSize(new THREE.Vector3()) : null;
         const worldPos = plane.getWorldPosition ? plane.getWorldPosition(new THREE.Vector3()) : plane.position;
         planeDetails.push({ label, plane, localScale, worldScale, params, size, worldPos });
+        const expectedLocalYawDeg = label === 'front' ? -90 : 90; // Attached face normal expected by the restored pet foreground policy.
+        const actualLocalYawDeg = Number(plane.rotation?.y) * 180 / Math.PI; // Live local face rotation, not the player's root observation turn.
+        const yawDifferenceDeg = Number.isFinite(actualLocalYawDeg)
+          ? Math.atan2(Math.sin((actualLocalYawDeg - expectedLocalYawDeg) * Math.PI / 180),
+              Math.cos((actualLocalYawDeg - expectedLocalYawDeg) * Math.PI / 180)) * 180 / Math.PI
+          : NaN; // Wrap-safe mismatch check prevents a false alarm at equivalent ±180° representations.
+        lines.push('Plane ' + label + ' local yaw: ' + (Number.isFinite(actualLocalYawDeg) ? actualLocalYawDeg.toFixed(1) + '°' : 'unavailable')
+          + '; attached expected=' + expectedLocalYawDeg + '°');
+        if (liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetAttachment?.authoritativeRootTransform
+            && Number.isFinite(yawDifferenceDeg) && Math.abs(yawDifferenceDeg) > 0.25) {
+          lines.push('>>> SHOULDER PLANE ORIENTATION MISMATCH: ' + label + ' differs by ' + yawDifferenceDeg.toFixed(1) + '°');
+        }
         lines.push('Plane ' + label + ': localScale=(' + [localScale.x, localScale.y, localScale.z].map(v => v.toFixed(4)).join(',') + ') worldScale=(' + (worldScale ? [worldScale.x, worldScale.y, worldScale.z].map(v => v.toFixed(4)).join(',') : '-') + ') geometry=' + (Number.isFinite(params.width) ? params.width.toFixed(4) : '-') + '×' + (Number.isFinite(params.height) ? params.height.toFixed(4) : '-') + ' bounds=' + (size ? [size.x, size.y, size.z].map(v => v.toFixed(4)).join('×') : '-') + ' worldPos=(' + [worldPos.x, worldPos.y, worldPos.z].map(v => v.toFixed(4)).join(',') + ')');
       }
       if (planeDetails.length === 2) {
@@ -1049,9 +1061,9 @@
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
-    const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Reports the latest real panic, direction drift and Hyped echo for copyable on-phone diagnostics.
-    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.lastSecondaryStrike || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining)) {
-      lines.push('Fey illusions: ' + JSON.stringify(feyIllusionDebug)); // No new HUD or continuous per-frame debug allocations.
+    const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Copyable mobile proof for player perception, panic impacts and Hyped follow-ups.
+    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
+      lines.push('Fey illusions: ' + JSON.stringify(feyIllusionDebug));
     }
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);

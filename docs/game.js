@@ -10501,7 +10501,7 @@
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
         return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
-          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Compose perceived yaw at the shared camera-bearing owner, without mutating the player's camera settings.
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Perceptual yaw composes into shared camera-bearing without overwriting customized camera settings.
       }
       // The world direction the camera is actually looking (as opposed to
       // activeCameraAzimuthRad(), which is where the camera SITS relative to
@@ -17754,6 +17754,13 @@
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(boxStacks.length, 1) / 7) * 7);
 
         const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
+        const equipBadgesByKey = new Map(); // Reuses each equipped slot's short badge across all visible stacks of that item.
+        for (const [slot, key] of Object.entries(equipmentSlots)) {
+          if (!key) continue;
+          if (!equipBadgesByKey.has(key)) equipBadgesByKey.set(key, []);
+          equipBadgesByKey.get(key).push(_slotAbbr[slot] || slot.charAt(0).toUpperCase());
+        }
+        const gridFragment = document.createDocumentFragment(); // Inserts the complete Pack grid once, rather than triggering connected-DOM work per tile.
         boxStacks.forEach(stack => {
           const { key, count, stars } = stack; // One independently selectable quality/genotype box.
           const def   = ITEM_DEFS[key];
@@ -17766,9 +17773,7 @@
             `<span class="iib-icon">${itemIconForKey(key)}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
-          const badges = Object.entries(equipmentSlots)
-            .filter(([, v]) => v === key)
-            .map(([s]) => _slotAbbr[s] || s.charAt(0).toUpperCase());
+          const badges = equipBadgesByKey.get(key) || [];
           if (badges.length) {
             const badge = document.createElement('span');
             badge.className = 'iib-equip-badge';
@@ -17777,9 +17782,10 @@
           }
           box.addEventListener('click', () => selectInventoryItem(key, false, stack));
           box.addEventListener('hobunji-controller-focus', () => selectInventoryItem(key, true, stack)); // Passive controller preview preserves the actual selection and exact item variant.
-          applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
-          window.InventoryStacks.applyHeadIcon(box.querySelector('.iib-icon'), LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
-          grid.appendChild(box);
+          const icon = box.querySelector('.iib-icon'); // Shared by the sprite and genotype renderers for this tile.
+          applyItemSpriteIcon(icon, def, key);
+          window.InventoryStacks.applyHeadIcon(icon, LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
+          gridFragment.appendChild(box);
         });
 
         for (let i = boxStacks.length; i < visibleSlotCount; i++) {
@@ -17788,8 +17794,9 @@
           box.type = 'button';
           box.disabled = true;
           box.setAttribute('aria-label', 'Empty inventory slot');
-          grid.appendChild(box);
+          gridFragment.appendChild(box);
         }
+        grid.appendChild(gridFragment);
 
         // Refresh wallet
         const wd = document.getElementById('invWalletAmount');
@@ -18983,12 +18990,12 @@
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
-            const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // First rejected swept center is the same obstacle sample used by real knockback.
+            const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
             const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
             window.FeyIllusions?.onDodgeBlocked?.(player, {
               descriptor, hooks: knockbackImpactHooks(player, descriptor, player.dodgeDirX, player.dodgeDirY),
               remainingPx: DODGE_SPEED_PX * Math.max(0, player.dodgeT) * heavyDistanceMul,
-            }); // Only a Panicked roll reacts; ordinary dodges still slide exactly as before.
+            }); // Ordinary dodges bypass all Fey-only collision classification work.
           }
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * dodgeSpeedPx;
@@ -19170,9 +19177,8 @@
           const rIy =  ix * c - iy * s;
           ix = rIx; iy = rIy;
         } else if (ix !== 0 || iy !== 0) {
-          // Non-shoulder modes use world-relative input. Shoulder mode already
-          // inherits this shift from cameraFacingAngleRad, so do not rotate twice.
-          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composed with ordinary input only while Demented perception remains active.
+          // Shoulder mode already inherits the hallucinated yaw from camera bearing; world-space input receives it once here.
+          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composes after cardinal bias, preserving user input strength.
           if (drift) {
             const cos = Math.cos(drift), sin = Math.sin(drift);
             const movedX = ix * cos - iy * sin;
@@ -22791,7 +22797,7 @@
         let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg
-          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Visual camera and movement bearing receive the same hallucinated additive offset.
+          + (window.FeyIllusions?.cameraYawDeg?.(player) || 0)); // Rendered camera and movement bearing share the same hallucinated turn.
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
@@ -30933,9 +30939,9 @@
         damagePlayer,
         applyKnockback,
         describeFeyDodgeCollision: (actor, swept, radiusPx, dirX, dirY) => {
-          const contact = swept?.blockedAt || { x: actor?.x || 0, y: actor?.y || 0 }; // First actual swept obstruction, not a guessed solid tile.
-          const descriptor = knockbackCollisionDescriptorAt(contact.x, contact.y, radiusPx, dirX, dirY); // Reuses every wood, stone, hazard and furniture collision classification.
-          return { descriptor, hooks: knockbackImpactHooks(actor, descriptor, dirX, dirY) }; // Same resource death, stagger and Footing hooks as physical knockback.
+          const contact = swept?.blockedAt || { x: actor?.x || 0, y: actor?.y || 0 }; // Physical swept rejection shared with knockback.
+          const descriptor = knockbackCollisionDescriptorAt(contact.x, contact.y, radiusPx, dirX, dirY);
+          return { descriptor, hooks: knockbackImpactHooks(actor, descriptor, dirX, dirY) }; // Reuse material hazards and lethal impact hooks.
         },
         weaponAbility,
         combatConfig,

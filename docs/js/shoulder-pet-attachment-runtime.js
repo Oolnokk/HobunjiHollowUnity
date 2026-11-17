@@ -4,6 +4,22 @@
 (() => {
   'use strict';
 
+  const setCanonicalPlaneRotation = (plane, y) => {
+    if (!plane) return;
+    plane.matrixAutoUpdate = true;
+    plane.rotation.set(0, y, 0);
+    plane.updateMatrix?.();
+    plane.matrixWorldNeedsUpdate = true;
+  }; // Shared by the attached face reversal and the normal face restoration after unequipping.
+
+  function restoreDetachedAvatar(avatar) {
+    if (!avatar) return false;
+    setCanonicalPlaneRotation(avatar.frontPlane, Math.PI / 2);
+    setCanonicalPlaneRotation(avatar.backPlane, -Math.PI / 2);
+    if (avatar.group?.userData) delete avatar.group.userData.hobunjiShoulderPetAttachment;
+    return !!(avatar.frontPlane || avatar.backPlane);
+  }
+
   function create({ THREE, getPlayerMesh, getPlayerNeckJoint, getRotationSource,
     getInvertRotationSource, getCancelRotationalOffset } = {}) {
     if (!THREE?.Quaternion || !THREE?.Vector3 || typeof getPlayerMesh !== 'function'
@@ -137,15 +153,9 @@
       // and rendering. Restore normal matrix inheritance and only retain the
       // canonical mirrored face rotations; png-plane-avatar's render hook
       // recognizes the marker below and no longer replaces this orientation.
-      const setCanonicalPlaneRotation = (plane, y) => {
-        if (!plane) return;
-        plane.matrixAutoUpdate = true;
-        plane.rotation.set(0, y, 0);
-        plane.updateMatrix();
-        plane.matrixWorldNeedsUpdate = true;
-      };
-      setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
-      setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
+      // Swap the shoulder-only face normals, not the observation root's 0/180° turn or the grip-point pivot.
+      setCanonicalPlaneRotation(c.avatarRef.frontPlane, -Math.PI / 2);
+      setCanonicalPlaneRotation(c.avatarRef.backPlane, Math.PI / 2);
       const alignedGripWorldPosition = finalTransform.gripLocalPosition
         ? group.localToWorld(new THREE.Vector3( // Read the actual rendered root matrix, not merely undoing the same offset calculation.
             finalTransform.gripLocalPosition.x, finalTransform.gripLocalPosition.y, finalTransform.gripLocalPosition.z))
@@ -154,7 +164,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+        recentChange: 'The grip-anchored root turn is unchanged; attached front/back animal planes face the opposite direction while original x-ray pairing is restored.',
         rotationSource: finalTransform.rotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
@@ -188,5 +198,5 @@
     }); // game.js calls these once per final shoulder-pet pin, not from a second render loop.
   }
 
-  window.ShoulderPetAttachmentRuntime = Object.freeze({ create }); // Existing classic-script loader registers this before game.js.
+  window.ShoulderPetAttachmentRuntime = Object.freeze({ create, restoreDetachedAvatar }); // The compositor calls restoreDetachedAvatar when a pet leaves the shoulder; gameplay still owns the live pin.
 })();

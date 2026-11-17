@@ -13,7 +13,7 @@ async function main() {
   const sticky = read('docs/js/item-arch-sticky-category-heading.js'); // Verifies category CSS cannot conceal item sprites.
   const original = read('docs/js/item-arch-original-presentation.js'); // Verifies the final selector style permits sprite backgrounds.
   const actionArc = read('docs/js/action-arc-ui.js'); // Verifies selector calls the same item icon renderer.
-  assert.match(game, /applyItemSpriteIcon\(box\.querySelector\('\.iib-icon'\), def, key\)/);
+  assert.match(game, /const icon = box\.querySelector\('\.iib-icon'\);[^\n]*\n\s*applyItemSpriteIcon\(icon, def, key\);\s*window\.InventoryStacks\.applyHeadIcon\(icon,/, 'both icon renderers receive the same queried tile element');
   assert.match(actionArc, /deps\.applyItemSpriteIcon\(iconEl, deps\.ITEM_DEFS\[s\.key\], s\.key\)/);
   assert.match(game, /frameFlask = def\.spriteIcon === 'throwing_flask\.png'/);
   for (const css of [sticky, original]) {

@@ -44,9 +44,9 @@
       lateLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline');
     }
   }
-  if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
-    if (!parserLoad('js/animal-shoulder-spline-layering.js?v=20261115shoulderStencil4', 'animal-shoulder-spline-layering')) {
-      lateLoad('js/animal-shoulder-spline-layering.js?v=20261115shoulderStencil4', 'animal-shoulder-spline-layering');
+  if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 4) {
+    if (!parserLoad('js/animal-shoulder-spline-layering.js?v=20261116petFaceFlip3', 'animal-shoulder-spline-layering')) {
+      lateLoad('js/animal-shoulder-spline-layering.js?v=20261116petFaceFlip3', 'animal-shoulder-spline-layering');
     }
   }
 
