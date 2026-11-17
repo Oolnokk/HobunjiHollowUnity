@@ -513,7 +513,7 @@
     handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261115hposelease06', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261115h9c3b24e', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261117toolWalkProbe1', docsBase).href);
   }
 
   function loadSequentially(urls) {

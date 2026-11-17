@@ -176,7 +176,7 @@ assert(torchActionStart >= 0 && torchActionQueued > torchActionStart, 'torch act
 const torchDispatch = game.slice(torchActionStart, torchActionQueued);
 assert(torchDispatch.includes('synchronizedSwing.call(window.Combat.deps, torchVisual.durationS, torchVisual.options)'), 'torch uses the shared hand-grip/visual clock when available');
 assert(torchDispatch.includes('else triggerWeaponSwingVisual(torchVisual.durationS, torchVisual.options)'), 'fallback is present before combat hooks initialize');
-assert(game.includes("toolSwingT > 0 && (!!combatSwingPose || activeTool === 'adventuring')"), 'all torch actions suppress world-upright correction while active');
+assert(game.includes("authoredToolActionActive = activeTool !== 'weapon' && toolSwingT > 0"), 'all tool strokes, including torch, suppress idle stance while active');
 assert(game.includes("opts.toolSlot === 'adventuring'"), 'visual trigger only permits explicitly tagged adventuring poses');
 const arc = read('docs/js/action-arc-ui.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');

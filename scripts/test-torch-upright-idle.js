@@ -244,14 +244,21 @@ assert.equal(hands.currentElbow('left', avatarRoot)?.y, -0.10531282069027048, 'i
 assert.equal(hands.currentElbow('right', { parent: root }), null, 'unrelated NPC rigs do not inherit player torch elbows');
 
 active.slot = 'axe';
-holder.updateMatrixWorld(); // First tool-frame records a new relative quaternion.
+holder.updateMatrixWorld(); // Switch from the torch to an ordinary carried axe.
 time += 16;
-holder.quaternion.setFromAxisAngle(axis(0, 0, 1), 1.8);
+holder.quaternion.setFromAxisAngle(axis(0, 0, 1), 1.8); // Normal walking/turning is not a tool action.
 holder.updateMatrixWorld();
-assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, false, 'other tools retain active-motion suppression');
+assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'an axe keeps its authored idle stance through walking');
+assert.equal(window.WeaponToolStances.debugSnapshot().holderPoseOwner, 'idle-holder', 'mobile stance diagnostics report the idle owner');
+holder.userData.authoredToolActionActive = true;
+holder.updateMatrixWorld();
+assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, false, 'a real axe swing owns the holder without an idle overlay');
+holder.userData.authoredToolActionActive = false;
+holder.updateMatrixWorld();
+assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'axe idle returns immediately after the swing');
 active.slot = 'adventuring';
 holder.updateMatrixWorld();
-assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'torch never inherits a previous tool motion cooldown');
+assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'torch returns to its upright idle after a tool swap');
 
 assert.match(read('docs/js/weapon-tool-stances.js'), /torchIdle \? -1 : 1/, 'runtime selects the torch-specific authored tip');
 assert.match(read('docs/tools/attack-animation-editor/index.html'), /currentToolKey === 'torch' \? -1 : 1/, 'editor preview selects the same authored tip');

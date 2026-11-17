@@ -25107,7 +25107,7 @@
           return;
         }
         heldItemHolder.visible = false;
-        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && toolSwingT > 0 && (!!combatSwingPose || activeTool === 'adventuring'); // The torch's swing/throw disables world-up idle rotation for its full active animation.
+        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && toolSwingT > 0; // All real tool strokes (legacy, modular, fishing and torch) own their holder pose; locomotion never does.
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
