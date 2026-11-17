@@ -125,6 +125,9 @@ const window = {
   CinematicCameraRuntime: { isActive() { return false; } },
   FestivalWheelDanceRuntime: { isActive() { return false; } },
 }; // Minimal registered owners; no preview clones or shadow animation code.
+vm.runInNewContext(fs.readFileSync('docs/js/rig-transform-layers.js','utf8'), {
+  window, console, performance: { now() { return 1000; } },
+}, { filename: 'rig-transform-layers.js' }); // Live Three rig uses the real shared absolute-pose ownership store.
 vm.runInNewContext(fs.readFileSync('docs/js/spouse-kiss-motion.js','utf8'), {
   window, console, performance: { now() { return 1000; } },
 }, { filename: 'spouse-kiss-motion.js' });
@@ -166,6 +169,29 @@ assert(Math.abs(playerModel.position.y) < .00001 && Math.abs(playerModel.rotatio
   'canceled/finished kiss returns the player torso to its original transform');
 assert.equal(playerHands.provider, null, 'hand rig is no longer owned by the kiss');
 assert.equal(kiss.diagnostics().active, false);
+
+// External authors can take over a root or head before cancellation. The old
+// paired session must not overwrite those replacement transforms.
+assert(kiss.start(walker, () => buffTriggers++), 'new scoped kiss can start after normal teardown');
+update({ deltaMs: 70 }); // Own a non-neutral sample before an outside writer intervenes.
+const displaced = player.position.clone().add(new THREE.Vector3(.53, 0, -.28)); // Simulated newer teleport/animation root.
+player.position.copy(displaced);
+update({ deltaMs: 70 });
+assert.equal(kiss.diagnostics().active, false, 'a displaced player stops the obsolete kiss on its next tick');
+assert.equal(kiss.diagnostics().lastResult.reason, 'pose-owner-taken-over');
+assert(player.position.distanceTo(displaced) < 1e-8, 'obsolete pose teardown preserves a newer root position');
+assert(kiss.diagnostics().lastResult.poseRelease.skipped > 0, 'the user-visible diagnostic reports the skipped overwritten transforms');
+assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'takeover fully releases the paired pose registry');
+player.position.set(0, 0, 0); // Explicit new world position after releasing the old absolute owner.
+
+assert(kiss.start(walker, () => buffTriggers++), 'new scoped kiss may start after owner takeover');
+update({ deltaMs: 70 });
+npcNeck.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), .41); // A later authored gaze now owns this neck.
+const otherGaze = npcNeck.quaternion.clone(); // Teardown must retain the newer gaze instead of its original snapshot.
+kiss.stop('newer-gaze');
+assert(npcNeck.quaternion.angleTo(otherGaze) < 1e-7, 'spouse cleanup never overwrites a newer head rotation');
+assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'explicit cancel leaves no scoped claims');
+npcNeck.quaternion.identity(); // Restore the fixture's authored standing neck before the reverse-height scenario.
 
 // Reverse the stature assignment on the very same live objects: now the player reaches
 // for a taller spouse first, before the recipient kneels. This is the historically broken
