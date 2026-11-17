@@ -169,6 +169,49 @@ assert.equal(rig.getOutlineParityDebug().lockedWaterMaskDraws, 1);
 rig.dispose();
 assert.equal(feet.window.HobunjiFeetOutlineParity.refreshRig(root), false, 'disposed rigs cannot register more meshes');
 
+// The foot's existing draw hook pushes geometry away from the perspective eye while
+// preserving its projected pixels. The parity hook wraps it and temporarily swaps
+// the shell/water matrix for the captured visible pose: both transforms must unwind
+// in reverse order, or the parity cleanup reinstalls the depth push after rendering.
+const layeredFoot = mesh('left_foot'); // New fixture uses actual depth-push code before registering parity.
+layeredFoot.onBeforeRender = function originalBefore() {};
+layeredFoot.onAfterRender = function originalAfter() {};
+layeredFoot.matrixWorld.elements[14] = 1;
+const depthSource = read('docs/js/procedural-leg-animation.js'); // Real foot draw-time push implementation, not a stand-in translation.
+const depthStart = depthSource.indexOf('    function installFootDepthPush(foot) {');
+const depthEnd = depthSource.indexOf('    function installFootAxes(foot) {', depthStart);
+assert(depthStart >= 0 && depthEnd > depthStart, 'found real camera-relative foot depth hook');
+class EyeVector {
+  setFromMatrixPosition(matrix) {
+    const e = matrix.elements;
+    this.x = e[12]; this.y = e[13]; this.z = e[14];
+    return this;
+  }
+} // The only THREE.Vector3 method used by the extracted rendering hook.
+const depthState = { footDepthPush: 0.4, leftTarget: { z: 0 }, rightTarget: { z: 0 } }; // Applied render offset without changing physical foot targets.
+const installRealDepthPush = new Function('THREE', 'state', 'root', 'externalFootTargets', 'externalFootExtendedReach',
+  'const pushCamera = new THREE.Vector3(); const rootScaleY = () => 1;\n'
+  + depthSource.slice(depthStart, depthEnd) + '\nreturn installFootDepthPush;')(
+    { Vector3: EyeVector }, depthState, { matrixWorld: new Matrix4() }, null, false);
+installRealDepthPush(layeredFoot);
+const layeredRig = { group: group([layeredFoot]), dispose() {} };
+loadParity('feet', layeredRig);
+const eyeCamera = { isPerspectiveCamera: true, matrixWorld: new Matrix4(), layers: { mask: 1 } }; // Simulated camera looking at the foot.
+eyeCamera.matrixWorld.elements[14] = 5;
+const finishLayeredBase = draw(layeredFoot, {}, eyeCamera, { colorWrite: true });
+const visibleFootZ = layeredFoot.matrixWorld.elements[14]; // Same matrix cached by the parity hook for the later shell.
+assert(visibleFootZ < 1, 'perspective base draw pushes the foot farther from the camera');
+finishLayeredBase();
+assert(Math.abs(layeredFoot.matrixWorld.elements[14] - 1) < 1e-6, 'base draw restores physical foot position');
+layeredFoot.matrixWorld.elements[14] = 2; // An intervening body/compositor change must survive the outline pass.
+const finishLayeredShell = draw(layeredFoot, { overrideMaterial: shell }, eyeCamera, shell);
+assert(Math.abs(layeredFoot.matrixWorld.elements[14] - visibleFootZ) < 1e-6, 'shell draws the last visible depth-correct foot pose');
+finishLayeredShell();
+assert(Math.abs(layeredFoot.matrixWorld.elements[14] - 2) < 1e-6, 'shell restores pre-draw matrix, not the temporary foot depth push');
+const finishLayeredWater = draw(layeredFoot, {}, { ...eyeCamera, layers: { mask: 1 << 26 } }, { colorWrite: false });
+finishLayeredWater();
+assert(Math.abs(layeredFoot.matrixWorld.elements[14] - 2) < 1e-6, 'water-mask pass also completely unwinds both transform hooks');
+
 async function testPortraitLayers() {
   const draws = []; // Records the compositing order from the actual portrait renderer.
   const window = { SCRATCHBONES_CONFIG: { game: {} } }; // Minimal browser configuration.
