@@ -186,12 +186,28 @@
     return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
   }
 
+  function onDodgeBlocked(entity) {
+    const roll = entity && panicRolls.get(entity); // Handles enemy swept-move collisions that cancel the dodge before its next resource tick.
+    if (!roll || roll.collided) return false;
+    roll.collided = true;
+    const tilePx = Math.max(1, finite(window.Combat?.deps?.TILE, 64)); // Existing resource collision owner expects an impact deficit in tile units.
+    window.KnockbackCollisionImpact?.resolveStrength?.(entity, {
+      kind: 'fallback', label: 'Panicked roll blocked by terrain',
+    }, roll.spent * 0.1, tilePx, {}, { mode: 'fey-panicked-roll' });
+    lastEffect = { id: 'panicWallCollision', panicSpent: roll.spent, traveled: roll.traveled };
+    return true;
+  }
+
   function updatePanicRoll(entity, dt) {
     const roll = panicRolls.get(entity);
     if (!roll) return;
     if (!entity.dodging) { panicRolls.delete(entity); return; }
     if (!roll.boosted) {
       entity.dodgeT = Math.max(0, finite(entity.dodgeT)) * roll.multiplier; // The existing swept roll movement and collision remain authoritative.
+      if (entity._enemyDodge) {
+        entity._enemyDodge.durationS *= roll.multiplier; // Enemy dodge AI owns remaining time independently of the player's roll state.
+        entity._enemyDodge.remainingS *= roll.multiplier; // Extend actual swept travel rather than only its cosmetic indicator.
+      }
       roll.boosted = true; // Never multiply its remaining time twice when Combat.update runs multiple times.
     }
     const nextX = finite(entity.x), nextY = finite(entity.y), step = Math.hypot(nextX - roll.lastX, nextY - roll.lastY);
@@ -213,11 +229,7 @@
     if (roll.peakStep > tilePx * 0.015 && step < roll.peakStep * 0.06) roll.stalledS += dt;
     else roll.stalledS = 0;
     if (!roll.collided && roll.elapsedS > 0.075 && roll.stalledS >= 0.06) {
-      roll.collided = true;
-      window.KnockbackCollisionImpact?.resolveStrength?.(entity, {
-        kind: 'fallback', label: 'Panicked roll blocked by terrain',
-      }, roll.spent * 0.1, tilePx, {}, { mode: 'fey-panicked-roll' }); // Reuses the existing collision-Footing pipeline, without inventing impact Health damage.
-      lastEffect = { id: 'panicWallCollision', panicSpent: roll.spent, traveled: roll.traveled };
+      onDodgeBlocked(entity); // Same collision effect used by enemy swept dodges; exactly once per roll.
     }
     roll.lastX = nextX;
     roll.lastY = nextY;
@@ -267,7 +279,7 @@
 
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
-    onStaminaSpent, prepareHypedAttack, replayHypedHit, update,
+    onStaminaSpent, prepareHypedAttack, replayHypedHit, onDodgeBlocked, update,
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
       registered, lastEffect, lastSecondaryStrike, replayCount,
