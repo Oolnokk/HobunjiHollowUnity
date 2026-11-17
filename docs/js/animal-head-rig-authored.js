@@ -121,5 +121,5 @@
     rigs: AUTHORED_HEAD_RIGS,
     get: kind => AUTHORED_HEAD_RIGS[baseSpeciesFor(kind)] || null,
   });
-  window.__farmLog?.('[head-rig] Independent shoulder poses installed; uploaded Gar-wolf and Grehlr head rigs active alongside Moot's independent painted pose.', 'wildlife');
+  window.__farmLog?.('[head-rig] Independent shoulder poses installed; uploaded Gar-wolf and Grehlr head rigs active alongside the independent Moot painted pose.', 'wildlife');
 })();
