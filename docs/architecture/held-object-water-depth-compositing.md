@@ -110,7 +110,9 @@ While attached, its **front plane faces local -90° and its back plane local +90
 (the reverse of the normal free-roaming animal planes), instead of reversing the
 x-ray policy. The root turn and the pet's actual grip position are unchanged.
 Unequipping or swapping the pet restores its normal +90°/-90° free-animal card
-directions and clears the stale authoritative shoulder transform.
+directions and clears the stale authoritative shoulder transform. Pixel Probe
+shows each live local plane yaw (and warns if the pinned face deviates from its
+expected ±90° angle), so the correction is inspectable without browser devtools.
 
 An active pet and its owner remain a single depth-tested,
 depth-write-free portrait stack, preventing the intersecting cards from clipping

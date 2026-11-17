@@ -128,6 +128,10 @@ assert.doesNotMatch(attachmentSource, /authoredRotationOffset\.invert\(\)|desire
   'shoulder facing never uses quaternion inversion or sprite-mirror parity');
 assert.match(probeSource, /Shoulder local facing transform: facing=/,
   'Pixel Probe exposes the 0/180-degree local facing transform');
+assert.match(probeSource, /Plane ' \+ label \+ ' local yaw:/,
+  'mobile Pixel Probe reports both actual local plane orientations for the pet');
+assert.match(probeSource, /SHOULDER PLANE ORIENTATION MISMATCH/,
+  'mobile diagnostics distinguish a stale face plane from an x-ray sorting mismatch');
 assert.match(source,
   /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;/,
   'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
